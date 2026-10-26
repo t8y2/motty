@@ -192,15 +192,14 @@ not signed. Homebrew, AUR and `.AppImage` are not available yet.
 Requirements:
 
 - Go 1.26 or newer.
-- Viva is a separate project with its own licence and is not vendored. This
-  branch temporarily pins a public fork commit in `go.mod` for the Windows text
-  editing fix ([upstream PR](https://github.com/vivaui/viva/pull/1)). Go downloads
-  it automatically; switch to an official version containing the fix after merge.
+- The Viva framework checked out beside this repository as `../viva`. Viva is a
+  separate project with its own licence and is not vendored.
 - macOS with Metal and Xcode command-line tools, Windows 10/11, or Linux with
   X11.
 
 ```sh
 git clone https://github.com/t8y2/motty
+git clone https://github.com/vivaui/viva
 cd motty
 go run ./cmd/motty
 ```
@@ -218,10 +217,9 @@ python3 tools/headless_drive.py /tmp/motty-home tools/e2e/host_menu_move_e2e.txt
 ```
 
 `tools/README.md` describes the headless driver, fixtures and end-to-end
-scripts. Packaging goes through a separate Viva CLI checkout:
+scripts. Packaging goes through Viva:
 
 ```sh
-git clone https://github.com/vivaui/viva ../viva
 cd ../viva
 go run ./cmd/viva package -C ../motty --format app,dmg
 go run ./cmd/viva package -C ../motty --target linux --arch amd64 --format tar.gz,deb
