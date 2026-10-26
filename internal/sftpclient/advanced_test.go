@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -183,6 +185,9 @@ func TestRecursiveTransferRejectsSymbolicLinksBeforeWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("outside", filepath.Join(localRoot, "link")); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("Windows account lacks symbolic-link privilege: %v", err)
+		}
 		t.Fatal(err)
 	}
 	id, queued := worker.QueueUpload(localRoot, "unsafe", true, ExistingFail)

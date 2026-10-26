@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
@@ -196,6 +197,8 @@ func BenchmarkPaintTerminalFindUnchanged(b *testing.B) {
 
 func TestTerminalFindThrottlesStreamingRescansAndCatchesUp(t *testing.T) {
 	state, _, _, shell := liveSession(t)
+	clock := time.Second
+	state.options.Now = func() time.Duration { return clock }
 	shell.say("needle one\r\n")
 	state.Wake()
 	session, find := openFindForTest(t, state)
@@ -220,7 +223,7 @@ func TestTerminalFindThrottlesStreamingRescansAndCatchesUp(t *testing.T) {
 
 	// The frame the find bar asks for runs after the interval, and the trailing
 	// change is then scanned.
-	find.lastScan = state.now() - terminalFindRefreshInterval
+	clock += terminalFindRefreshInterval
 	state.Wake()
 	if find.pending || find.lastScan == scanned || len(find.matches) != 3 {
 		t.Fatalf("trailing update: pending=%t lastScan=%v (was %v) matches=%d", find.pending, find.lastScan, scanned, len(find.matches))
