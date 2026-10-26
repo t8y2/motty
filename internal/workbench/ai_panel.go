@@ -319,7 +319,8 @@ func (state *State) aiPanelReset() {
 }
 
 func (state *State) aiPanelClick(id ui.ID) bool {
-	if !inAIPanel(id) {
+	// Modal controls (including AI rename) are dispatched by State.Click.
+	if state.modal != modalNone || !inAIPanel(id) {
 		return false
 	}
 	ai := &state.ai
