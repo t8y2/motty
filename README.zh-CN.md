@@ -235,6 +235,10 @@ QQ 群已建好，微信群的二维码放在腾讯文档里；Discord 仍是占
 
 欢迎 issue 和 pull request。较大的改动请先开 issue 讨论方案。
 
+在 issue 下评论 `/claim` 认领：机器人会把你设为 assignee 并回复确认。评论
+`/unclaim` 释放认领，关联 PR 合并后评论 `/close` 关闭。命令被拒绝的原因、以及
+如何用 GitHub App 运行机器人：[docs/issue-commands.md](docs/issue-commands.md)。
+
 提交 PR 前：
 
 ```sh

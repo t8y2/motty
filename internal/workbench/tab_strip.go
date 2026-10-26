@@ -1,8 +1,8 @@
 package workbench
 
 import (
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // tabStrip is the scroll state of the window bar's tabs. Idle, it is two floats

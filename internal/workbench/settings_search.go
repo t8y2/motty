@@ -3,10 +3,10 @@ package workbench
 import (
 	"strings"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // Searching the settings. The search box above the category list looks through

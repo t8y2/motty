@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/serial"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // streamWorld replaces the opener of Telnet and serial streams with one that

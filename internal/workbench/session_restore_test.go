@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {

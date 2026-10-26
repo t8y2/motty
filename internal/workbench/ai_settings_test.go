@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 const testSecretKey = "sk-test-SECRET-0123456789"

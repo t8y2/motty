@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/highlight"
 	"motty/internal/sshconn"
 	"motty/internal/term"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // buildWith prepares row 0 of a screen holding input under a palette with rules.

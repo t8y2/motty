@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/vivaui/viva/ui"
 	"strings"
 	"testing"
-	"github.com/vivaui/viva/ui"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/text"
+	"motty/internal/sshconn"
 )
 
 func proxyWorld(t testing.TB) (*world, Options) {

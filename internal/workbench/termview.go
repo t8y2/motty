@@ -4,9 +4,9 @@ import (
 	"math"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/highlight"
 	"motty/internal/term"
-	"github.com/vivaui/viva/ui"
 )
 
 // The terminal's fixed-pitch font size and the margins around its grid.

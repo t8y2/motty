@@ -1,13 +1,13 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/app"
 	"sync/atomic"
 	"testing"
-	"github.com/vivaui/viva/app"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
-	"github.com/vivaui/viva/ui"
 )
 
 // twoWindows makes two windows of one group, side by side on a pretend screen:

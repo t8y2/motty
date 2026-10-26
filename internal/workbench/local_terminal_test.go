@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {

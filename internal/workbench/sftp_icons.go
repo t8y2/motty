@@ -5,8 +5,8 @@ import (
 	"path"
 	"strings"
 
-	"motty/internal/workbench/icons"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 // sftpExtensionIcons maps a lower-case extension to its file-type glyph. The

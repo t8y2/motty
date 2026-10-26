@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/xymodem"
-	"motty/internal/zmodem"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/xymodem"
+	"motty/internal/zmodem"
 )
 
 // remote wires an engine to the fake shell as the program on the other side.

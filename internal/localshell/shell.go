@@ -8,10 +8,10 @@ package localshell
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/leaks"
 	"io"
 	"sync"
 	"time"
-	"github.com/vivaui/viva/leaks"
 )
 
 const (

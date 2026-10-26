@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func reconnectingSession(t testing.TB, policy reconnectPolicy) (*State, *world, *fakeConn, *time.Duration) {

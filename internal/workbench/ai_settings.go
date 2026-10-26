@@ -13,12 +13,12 @@ import (
 	"time"
 	"unicode"
 
-	"motty/internal/ai/mcp"
-	"motty/internal/ai/store"
-	"motty/internal/vault"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/mcp"
+	"motty/internal/ai/store"
+	"motty/internal/vault"
 )
 
 // The assistant's settings section is a part of the Settings page. Its state

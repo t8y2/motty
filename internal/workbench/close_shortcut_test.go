@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // commandW presses the close shortcut with the modifier this platform's defaults

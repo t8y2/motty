@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 func searchSettings(t *testing.T, state *State, query string) *ui.Canvas {

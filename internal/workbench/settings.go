@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // The terminal's font size is any whole number of points from the smallest that

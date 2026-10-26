@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // clockedWorld is a world whose clock the test moves.

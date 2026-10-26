@@ -3,9 +3,9 @@ package workbench
 import (
 	"fmt"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // tabsClose is a bulk close waiting for the user's answer: the tab that stays,

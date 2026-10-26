@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"motty/internal/ai/agent"
-	"motty/internal/ai/risk"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
+	"motty/internal/ai/risk"
 )
 
 const (

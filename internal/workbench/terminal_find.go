@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"motty/internal/i18n"
-	"motty/internal/term"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
+	"motty/internal/term"
 )
 
 // terminalFindHits is the place of the controls this file paints.

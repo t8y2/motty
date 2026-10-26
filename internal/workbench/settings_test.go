@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {

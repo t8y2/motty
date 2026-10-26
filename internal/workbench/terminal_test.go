@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // liveSession opens the selected host and takes its connection to the point

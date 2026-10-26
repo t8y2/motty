@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"motty/internal/i18n"
-	"motty/internal/term"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
+	"motty/internal/term"
 )
 
 func TestTerminalLinkUsesConfiguredExternalOpenerAndReportsFailure(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sftpclient"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 func typeLinkField(t *testing.T, state *State, hit ui.ID, value string) {

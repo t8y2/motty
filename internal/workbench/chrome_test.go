@@ -4,10 +4,10 @@ import (
 	"math"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func hitByID(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {

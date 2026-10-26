@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 type connectionEventKind uint8

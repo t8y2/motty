@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"time"
 
-	"motty/internal/otp"
-	"motty/internal/sshconn"
-	"motty/internal/vault"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/otp"
+	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 // Saved passwords. The vault package keeps them encrypted; this file is what the

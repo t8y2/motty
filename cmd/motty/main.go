@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"motty/internal/diag"
-	"motty/internal/workbench"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/app/singleinstance"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/diag"
+	"motty/internal/workbench"
 )
 
 // tray is the application's status-area presence: an icon, and the menu that

@@ -3,8 +3,8 @@ package workbench
 import (
 	"math"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 type terminalSelection struct {

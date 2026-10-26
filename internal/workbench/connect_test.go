@@ -3,10 +3,10 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func typeSearch(state *State, value string) {

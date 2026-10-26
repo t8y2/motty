@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"motty/internal/otp"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/otp"
+	"motty/internal/sshconn"
 )
 
 // The password dialog answers one keyboard-interactive round. A round is one

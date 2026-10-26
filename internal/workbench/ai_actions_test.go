@@ -1,5 +1,3 @@
-//go:build !windows
-
 package workbench
 
 import (
@@ -22,7 +20,7 @@ func TestLastAnswerShowsCopyAndUsageOnHover(t *testing.T) {
 			{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 1991, OutputTokens: 90}},
 		}
 	}}
-	state, _ := assistantSession(t, model)
+	state, _ := assistantTestSession(t, model)
 	state.activeSection = sectionTerminal
 	state.ai.open = true
 	ask(state, "question", agent.ModeAsk)
@@ -72,7 +70,7 @@ func TestAnswerActionsFollowThePointer(t *testing.T) {
 	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event {
 		return []llm.Event{{Kind: llm.EventText, Text: "the answer"}, {Kind: llm.EventDone}}
 	}}
-	state, _ := assistantSession(t, model)
+	state, _ := assistantTestSession(t, model)
 	state.activeSection = sectionTerminal
 	state.ai.open = true
 	ask(state, "question", agent.ModeAsk)

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/serial"
-	"motty/internal/zmodem"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/serial"
+	"motty/internal/zmodem"
 )
 
 // zrqinit is what sz prints first: "rz\r" and a ZRQINIT hex header.

@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"motty/internal/i18n"
-	"motty/internal/knownhosts"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
+	"motty/internal/knownhosts"
 )
 
 const knownHostsPageSize = 15

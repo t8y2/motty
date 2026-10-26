@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/i18n"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
+	"motty/internal/sshconn"
 )
 
 // requirePrivateFile checks that a file is readable by its owner alone. Windows

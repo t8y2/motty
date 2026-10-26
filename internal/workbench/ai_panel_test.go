@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var (

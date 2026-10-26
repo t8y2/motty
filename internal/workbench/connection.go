@@ -4,22 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/diag"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"github.com/vivaui/viva/ui"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/text"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/update"
 	"motty/internal/vault"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/text"
 )
 
 // Connection is what the workbench needs from one SSH connection. It is

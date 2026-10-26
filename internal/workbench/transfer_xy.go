@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"motty/internal/xymodem"
-	"motty/internal/zmodem"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/xymodem"
+	"motty/internal/zmodem"
 )
 
 // XMODEM and YMODEM. Neither announces itself in the stream, so the user starts

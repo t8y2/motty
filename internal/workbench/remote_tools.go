@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"motty/internal/remotetools"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/remotetools"
+	"motty/internal/sshconn"
 )
 
 // Remote tools: the server's processes and Docker containers in one dialog.

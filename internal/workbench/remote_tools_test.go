@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"motty/internal/remotetools"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/remotetools"
 )
 
 const processFixture = `    1 root      0.1  0.2    10-02:03:04 /sbin/init

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/update"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/update"
 )
 
 func TestLaunchTextReadsWhatPeopleTypeAtACommandLine(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"motty/internal/sftpclient"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 // The file panel can show this computer's files in place of the server's, to

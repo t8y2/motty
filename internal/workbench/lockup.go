@@ -5,8 +5,8 @@ import (
 	"image/png"
 	"sync"
 
-	"motty/assets"
 	"github.com/vivaui/viva/ui"
+	"motty/assets"
 )
 
 const (

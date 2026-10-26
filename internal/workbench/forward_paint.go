@@ -1,10 +1,10 @@
 package workbench
 
 import (
-	"motty/internal/portforward"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/portforward"
 )
 
 const forwardHostPageSize = 6

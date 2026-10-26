@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"motty/internal/sftpclient"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 func dropFixture(t *testing.T) (*State, *Session, *workbenchSFTPRemote, ui.Rect, []string) {

@@ -3,10 +3,10 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/sshconn"
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
 )
 
 func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 type hostCatalogDocument struct {

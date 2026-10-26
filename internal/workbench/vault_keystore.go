@@ -3,8 +3,8 @@ package workbench
 import (
 	"errors"
 
-	"motty/internal/vault"
 	"github.com/vivaui/viva/app"
+	"motty/internal/vault"
 )
 
 // systemKeystore is the vault's key store on the real machine: the system's own

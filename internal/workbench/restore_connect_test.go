@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
-	"github.com/vivaui/viva/ui"
 )
 
 // restoredWorld leaves two tabs saved, the first one active, and returns the

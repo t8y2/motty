@@ -5,9 +5,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/term"
-	"github.com/vivaui/viva/ui"
 )
 
 // Inline command suggestions: the rest of a command that the line being typed

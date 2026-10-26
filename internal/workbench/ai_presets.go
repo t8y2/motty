@@ -4,11 +4,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 	"motty/internal/workbench/icons"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // aiPreset is a provider the add dialog can fill in: its name, which API it

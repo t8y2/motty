@@ -3,11 +3,11 @@ package workbench
 import (
 	"strings"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // tabRename is the rename dialog's state: which tab, and the name being typed.

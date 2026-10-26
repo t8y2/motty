@@ -1,12 +1,12 @@
 package workbench
 
 import (
-	"math"
-	"motty/internal/sshconn"
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"math"
+	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
 )
 
 const (

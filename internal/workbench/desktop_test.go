@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // vncFixture is a loopback server that speaks RFB 3.8 with a password, draws a

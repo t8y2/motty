@@ -1,11 +1,11 @@
 package workbench
 
 import (
-	"motty/internal/term"
-	"motty/internal/workbench/icons"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
+	"motty/internal/workbench/icons"
 )
 
 const terminalFindButtonSize = float32(24)

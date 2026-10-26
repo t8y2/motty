@@ -5,13 +5,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"motty/internal/ai/agent"
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
+	layoutcore "motty/internal/workspace"
 )
 
 // The assistant's panel: a column at the right edge of a terminal workspace.

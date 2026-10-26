@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/text"
 )
 
 // hostEditor holds the New Host dialog state: one text editor per field.

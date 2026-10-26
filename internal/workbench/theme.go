@@ -1,8 +1,8 @@
 package workbench
 
 import (
-	"motty/internal/highlight"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/highlight"
 )
 
 // appearance selects one of the two palettes.

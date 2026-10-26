@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/app"
+	"motty/internal/term"
 )
 
 func TestTerminalPredictionNeedsVerifiedEchoAndReconcilesRemoteOutput(t *testing.T) {

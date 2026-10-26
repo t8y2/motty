@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"golang.org/x/crypto/ssh"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"golang.org/x/crypto/ssh"
+	"motty/internal/sshconn"
 )
 
 // lockedIdentities holds one passphrase-protected key per passphrase: protecting

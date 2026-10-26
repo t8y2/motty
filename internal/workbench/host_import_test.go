@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func TestSSHConfigImportHitChoosesOneFileAndShowsResult(t *testing.T) {

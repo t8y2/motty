@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 func rightClick(state *State, session *Session, x, y float32) ui.EventResult {

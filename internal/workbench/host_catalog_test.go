@@ -10,11 +10,11 @@ import (
 	"testing"
 	"unsafe"
 
-	"motty/internal/sshconn"
-	"motty/internal/workbench/icons"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	"motty/internal/workbench/icons"
 )
 
 func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {

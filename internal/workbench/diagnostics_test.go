@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/diag"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
 )
 
 func TestTheDiagnosticsReportNamesNoHostAccountOrAddress(t *testing.T) {

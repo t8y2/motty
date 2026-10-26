@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func TestTerminalStatusFollowsShellStartup(test *testing.T) {

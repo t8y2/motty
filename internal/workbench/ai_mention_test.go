@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/ui"
 )
 
 // twoHostAssistant is a window with a live tab on Production and one on Staging,

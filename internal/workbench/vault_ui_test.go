@@ -5,10 +5,10 @@ import (
 	"sync"
 	"testing"
 
-	"motty/internal/sshconn"
-	"motty/internal/vault"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 // memKeys is the system's secret store in memory, which a test can take away.

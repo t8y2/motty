@@ -1,0 +1,9 @@
+# Headers Cloudflare Pages applies from this file (it is copied into out/ as
+# _headers and never served). The Next export hashes everything under
+# _next/static/, so those files can be cached for a year. The prerendered search
+# index has no file extension, and Pages would label it octet-stream otherwise.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/api/search
+  Content-Type: application/json

@@ -6,10 +6,10 @@ import (
 	"path"
 	"time"
 
-	"motty/internal/sftpclient"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 // The file panel is a column a few hundred pixels wide (a side panel or a

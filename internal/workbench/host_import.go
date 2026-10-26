@@ -3,13 +3,13 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/ui"
 	"path/filepath"
 	"strings"
-	"github.com/vivaui/viva/ui"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/i18n"
 	"motty/internal/sshconfig"
-	"github.com/vivaui/viva/app"
 )
 
 const maxVisibleHostImportWarnings = 7

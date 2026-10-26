@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 // build prepares row 0 of a screen holding input.

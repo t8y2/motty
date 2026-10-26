@@ -7,14 +7,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 	"motty/internal/x11fwd"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // Shell is what the workbench needs from a remote shell. *sshconn.Shell

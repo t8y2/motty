@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sftpclient"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 func localFixture(t *testing.T) string {

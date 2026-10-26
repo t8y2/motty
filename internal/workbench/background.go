@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // A picture behind the interface. The file is copied into the data folder (so

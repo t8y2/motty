@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/remotestats"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/remotestats"
 )
 
 // Two readings a second apart from a server 37.5% busy that uses 3 of 8 GiB and

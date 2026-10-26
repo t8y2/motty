@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"motty/internal/cmdhistory"
-	"motty/internal/fuzzy"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/cmdhistory"
+	"motty/internal/fuzzy"
 )
 
 // Command history: the lines typed in terminals, kept to search and reuse.

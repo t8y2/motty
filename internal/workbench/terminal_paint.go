@@ -4,11 +4,11 @@ import (
 	"math"
 	"time"
 
-	"motty/internal/sshconn"
-	"motty/internal/term"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	"motty/internal/term"
 )
 
 // spinnerStep is how long a spinner spoke stays lit.

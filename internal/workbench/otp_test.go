@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/otp"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/text"
 )
 
 // The seed of RFC 6238's test key, "12345678901234567890", and the code it gives

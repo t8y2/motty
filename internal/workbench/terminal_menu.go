@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"strings"
 
-	"motty/internal/sshconn"
-	"motty/internal/term"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	"motty/internal/term"
 )
 
 // terminalMenuHits is the place of the controls this file paints.

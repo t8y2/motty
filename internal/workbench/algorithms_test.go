@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/text"
+	"motty/internal/sshconn"
 )
 
 func TestAHostRemembersItsAlgorithmChoiceAcrossRestartAndCatalog(t *testing.T) {

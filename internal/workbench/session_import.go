@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"motty/internal/sessionimport"
-	"motty/internal/sshconfig"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sessionimport"
+	"motty/internal/sshconfig"
 )
 
 // Importing the saved sessions of PuTTY, Xshell, MobaXterm and WindTerm. The files are read

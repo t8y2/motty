@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // historyWorld is a live SSH session whose shell echoes what is typed unless

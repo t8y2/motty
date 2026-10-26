@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"strings"
 
-	"motty/internal/i18n"
-	"motty/internal/sshconn"
-	"motty/internal/vault"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
+	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 // The outbound proxy: one SOCKS5 or HTTP CONNECT proxy that carries the first

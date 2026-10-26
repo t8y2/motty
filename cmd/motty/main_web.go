@@ -5,11 +5,11 @@ package main
 import (
 	"fmt"
 
-	"motty/internal/workbench"
 	platform "github.com/vivaui/viva/internal/platform"
 	"github.com/vivaui/viva/internal/platform/web"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench"
 )
 
 func main() {

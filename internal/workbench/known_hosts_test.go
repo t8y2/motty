@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"golang.org/x/crypto/ssh"
 	sshknownhosts "golang.org/x/crypto/ssh/knownhosts"
 	"motty/internal/knownhosts"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestKnownHostsWorkspacePaintsEntriesAndInteractiveHits(t *testing.T) {

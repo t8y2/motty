@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 )
 
 // fakeConn stands in for a network connection: tests set its status the way

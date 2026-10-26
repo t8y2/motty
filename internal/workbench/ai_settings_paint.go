@@ -3,11 +3,11 @@ package workbench
 import (
 	"fmt"
 
-	"motty/internal/ai/risk"
-	"motty/internal/ai/store"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/risk"
+	"motty/internal/ai/store"
 )
 
 // Heights of the rows the assistant's section adds to the page. The page's own

@@ -3,13 +3,13 @@ package workbench
 import (
 	"strings"
 
-	"motty/internal/sshconn"
-	"motty/internal/workbench/icons"
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
+	"motty/internal/workbench/icons"
+	layoutcore "motty/internal/workspace"
 )
 
 const (

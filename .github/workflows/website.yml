@@ -1,0 +1,67 @@
+# Builds the static site in website/ and publishes it to the Cloudflare Pages
+# project "motty-page", which serves https://motty.page. A push to main deploys
+# production; a pull request only builds, so a fork cannot deploy. Setup and the
+# required secrets: docs/website.md.
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The version matches the pnpm used to write pnpm-lock.yaml. Cloudflare
+      # only receives the built directory, so the build environment is this job.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.18.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: website
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the static export
+        working-directory: website
+        run: pnpm build
+
+      # The project name, branch and output directory all come from
+      # website/wrangler.toml, so there is one place to rename them.
+      #
+      # wrangler runs through dlx instead of cloudflare/wrangler-action: the
+      # action installs wrangler into website/ with `pnpm add`, which pnpm 11
+      # rejects because workerd's build script is not allowlisted. Uploading
+      # needs no workerd, and dlx leaves package.json and the lockfile alone.
+      - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request'
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm dlx wrangler@4.152.0 pages deploy --branch=main

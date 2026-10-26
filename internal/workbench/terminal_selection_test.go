@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 func selectionState() (*State, *Session, terminalGeometry) {

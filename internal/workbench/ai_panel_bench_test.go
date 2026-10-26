@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
-	"github.com/vivaui/viva/ui"
 )
 
 // longConversation fills the panel with n messages of every kind.

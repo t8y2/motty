@@ -1,0 +1,57 @@
+# Handles the /claim, /unclaim and /close comments on issues: it assigns the
+# commenter, releases a claim, or closes the issue once the claimer's linked pull
+# request has merged. Setup and the rules: docs/issue-commands.md.
+name: Issue commands
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: issue-commands-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  commands:
+    name: Handle the comment
+    if: >-
+      ${{ !github.event.issue.pull_request && github.event.comment.user.type != 'Bot' &&
+          (contains(github.event.comment.body, '/claim') ||
+           contains(github.event.comment.body, '/unclaim') ||
+           contains(github.event.comment.body, '/close')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # A GitHub App comments as itself and can assign any commenter. Without
+      # one the command still runs, commenting as github-actions[bot].
+      - name: Create the bot token
+        id: bot-token
+        if: ${{ vars.MOTTY_BOT_APP_ID != '' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.MOTTY_BOT_APP_ID }}
+          private-key: ${{ secrets.MOTTY_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-pull-requests: read
+
+      - name: Run the command
+        env:
+          # The App token when it was minted, this workflow's token otherwise.
+          GH_TOKEN: ${{ steps.bot-token.outputs.token || github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type }}
+        run: go run ./tools/issuecommands

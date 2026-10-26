@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 type terminalClipboardPolicy uint8

@@ -4,8 +4,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 const (

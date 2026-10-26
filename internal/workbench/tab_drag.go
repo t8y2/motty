@@ -1,9 +1,9 @@
 package workbench
 
 import (
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // Dragging a tab. Pressed on a tab and moved past a few pixels, a tab follows

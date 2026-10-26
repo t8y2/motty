@@ -1,9 +1,9 @@
 package workbench
 
 import (
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // tabMenuHits is the place of the controls this file paints.

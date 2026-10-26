@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 func TestConnectionLogContainsSafeStoryAndRetainedTerminalText(t *testing.T) {

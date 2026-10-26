@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // threeTabs opens three sessions in three tabs and paints once, so the tab

@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // lightKind is how a status light looks.

@@ -3,9 +3,9 @@ package workbench
 import (
 	"sync"
 
-	"motty/assets"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/app/iconpng"
+	"motty/assets"
 )
 
 var appIcon = sync.OnceValue(func() app.WindowIcon {

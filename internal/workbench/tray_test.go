@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/app"
+	layoutcore "motty/internal/workspace"
 )
 
 type fakeTrayWindow struct {

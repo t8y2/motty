@@ -12,9 +12,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/scpclient"
 	"motty/internal/sftpclient"
-	"github.com/vivaui/viva/app"
 )
 
 // scpServer is a server that has no SFTP and answers the few commands the SCP

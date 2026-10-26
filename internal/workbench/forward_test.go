@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/portforward"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/portforward"
+	"motty/internal/sshconn"
 )
 
 func TestForwardDialogValidatesConfiguration(t *testing.T) {

@@ -4,20 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/ui"
 	"io/fs"
 	"motty/internal/configstore"
 	"os"
 	"strings"
 	"time"
-	"github.com/vivaui/viva/ui"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"motty/internal/backup"
 	"motty/internal/cloudsync"
 	"motty/internal/i18n"
 	"motty/internal/vault"
 	"motty/internal/webdav"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 )
 
 // Backup and sync. A backup is the hosts, settings, trusted host keys and saved

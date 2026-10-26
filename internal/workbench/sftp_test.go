@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 )
 
 type workbenchSFTPRemote struct {

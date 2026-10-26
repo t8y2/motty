@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func addTestProxyRoute(t testing.TB, state *State) proxyRecord {

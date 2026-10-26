@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"time"
 
-	"motty/internal/zmodem"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/zmodem"
 )
 
 // File transfer over the terminal's own stream (ZMODEM): a program on the other

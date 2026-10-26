@@ -3,9 +3,9 @@ package workbench
 import (
 	"sync"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
-	"github.com/vivaui/viva/ui"
 )
 
 // distroBadge is a distribution's white glyph on the color of its brand.

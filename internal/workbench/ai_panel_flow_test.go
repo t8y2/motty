@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/ai/agent"
-	"motty/internal/ai/llm"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
+	"motty/internal/ai/llm"
 )
 
 // The whole path through the window's entry points: type, Enter, a tool card,

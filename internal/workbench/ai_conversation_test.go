@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
-	"github.com/vivaui/viva/text"
 )
 
 // TestUsageAccumulatesAcrossRuns proves the token accounting of the finished

@@ -3,9 +3,9 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // typingRig is a connected terminal driven through the framework's real

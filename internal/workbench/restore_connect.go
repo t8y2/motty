@@ -1,8 +1,8 @@
 package workbench
 
 import (
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // restoreConnectPolicy is what reopening the app does with the tabs of the

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 type notifyWorld struct {

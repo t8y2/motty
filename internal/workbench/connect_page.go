@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 // A connection goes through four stages. The page shown while it is made keeps

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/diag"
 	"motty/internal/sshconn"
 	"motty/internal/update"
-	"github.com/vivaui/viva/app"
 )
 
 // The diagnostics report is what a user attaches to a bug report: the build, the

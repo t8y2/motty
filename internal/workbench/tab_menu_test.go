@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 func rightClickTab(state *State, target ui.ID) ui.EventResult {

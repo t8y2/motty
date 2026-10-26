@@ -5,10 +5,10 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 func TestHeadlessIdleMultiPaneWorkspaceDoesNotRepaint(t *testing.T) {

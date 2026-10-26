@@ -1,8 +1,8 @@
 package workbench
 
 import (
-	"motty/internal/term"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 func (state *State) paintTerminalLink(canvas *ui.Canvas, terminal *terminal, geometry terminalGeometry, row int) {

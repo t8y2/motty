@@ -1,11 +1,11 @@
 package workbench
 
 import (
-	"motty/internal/serial"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/serial"
 )
 
 // The protocol part of the host dialog: which way the host is reached, and for

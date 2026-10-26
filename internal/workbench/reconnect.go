@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 )
 
 type reconnectPolicy uint8

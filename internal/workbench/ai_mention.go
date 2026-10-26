@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	"motty/internal/ai/agent"
 	"github.com/vivaui/viva/text"
+	"motty/internal/ai/agent"
 )
 
 // An @name in a message to the assistant brings that session's recent terminal

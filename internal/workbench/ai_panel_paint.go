@@ -6,13 +6,13 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"motty/internal/ai/risk"
-	"motty/internal/ai/tools"
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/risk"
+	"motty/internal/ai/tools"
+	"motty/internal/i18n"
 )
 
 // Metrics of the panel, in logical pixels.

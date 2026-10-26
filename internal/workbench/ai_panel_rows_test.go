@@ -3,10 +3,10 @@ package workbench
 import (
 	"testing"
 
-	"motty/internal/ai/llm"
-	"motty/internal/ai/risk"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/llm"
+	"motty/internal/ai/risk"
 )
 
 // The list places a message by the height measured for it, and declares it with
