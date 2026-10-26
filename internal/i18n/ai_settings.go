@@ -109,6 +109,14 @@ type AISettingsMessages struct {
 	MCPTokenDesc   string
 	MCPReset       string
 	MCPResetDone   string
+	MCPConfig      string
+	MCPConfigDesc  string
+	MCPCopyURL     string
+	MCPCopyToken   string
+	MCPClaudeHint  string
+	MCPCursorHint  string
+	MCPCodexHint   string
+	MCPPreviewHint string
 }
 
 var englishAISettings = AISettingsMessages{
@@ -205,7 +213,15 @@ var englishAISettings = AISettingsMessages{
 	MCPEndpoint:    "Endpoint",
 	MCPNotRunning:  "Not running",
 	MCPOff:         "Off",
-	MCPCopy:        "Copy client configuration",
+	MCPCopy:        "Copy configuration",
+	MCPConfig:      "Client configuration",
+	MCPConfigDesc:  "Choose a client. Access permissions apply to every client.",
+	MCPCopyURL:     "Copy URL",
+	MCPCopyToken:   "Copy token",
+	MCPClaudeHint:  "Run in your project terminal to register Motty with Claude Code.",
+	MCPCursorHint:  "Merge into .cursor/mcp.json in your project, preserving existing servers.",
+	MCPCodexHint:   "Add to ~/.codex/config.toml (or config.toml in CODEX_HOME). Replace any existing motty entry.",
+	MCPPreviewHint: "The preview hides the token. Copied configuration includes the real token.",
 	MCPCopied:      "Copied",
 	MCPCopyFailed:  "Copy failed",
 	MCPToken:       "Access token",
@@ -308,7 +324,15 @@ var chineseAISettings = AISettingsMessages{
 	MCPEndpoint:    "地址",
 	MCPNotRunning:  "未运行",
 	MCPOff:         "已关闭",
-	MCPCopy:        "复制客户端配置",
+	MCPCopy:        "复制配置",
+	MCPConfig:      "客户端配置",
+	MCPConfigDesc:  "选择要接入的客户端，访问权限对所有客户端统一生效。",
+	MCPCopyURL:     "复制地址",
+	MCPCopyToken:   "复制令牌",
+	MCPClaudeHint:  "在项目终端执行，将 Motty 注册到 Claude Code。",
+	MCPCursorHint:  "合并到项目的 .cursor/mcp.json，保留已有的其他服务器配置。",
+	MCPCodexHint:   "添加到 ~/.codex/config.toml（或 CODEX_HOME 下的 config.toml），替换已有的 motty 配置项。",
+	MCPPreviewHint: "预览已隐藏令牌，复制配置会包含真实令牌。",
 	MCPCopied:      "已复制",
 	MCPCopyFailed:  "复制失败",
 	MCPToken:       "访问令牌",

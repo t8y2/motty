@@ -381,19 +381,7 @@ func (state *State) paintAIMCP(page *settingsPage) {
 			endpoint = url
 		}
 	}
-	copyLabel := m.MCPCopy
-	switch state.ai.cfg.copied {
-	case aiCopyDone:
-		copyLabel = m.MCPCopied
-	case aiCopyFailed:
-		copyLabel = m.MCPCopyFailed
-	}
-	// The button is as wide as the longer of its labels, so it does not jump.
-	copyWidth, _ := state.aiButtonSize(page.f.Canvas(), m.MCPCopy)
-	if width, _ := state.aiButtonSize(page.f.Canvas(), copyLabel); width > copyWidth {
-		copyWidth = width
-	}
-	ready := state.ai.mcpAddr != "" && state.ai.mcpToken != ""
+	ready := state.aiMCPReady()
 	description, color := m.MCPTokenDesc, pal.muted
 	if state.ai.cfg.tokenReset {
 		description, color = m.MCPResetDone, pal.success
@@ -402,16 +390,20 @@ func (state *State) paintAIMCP(page *settingsPage) {
 		page.aiFrameFor(hitAISetMCPEnabled, settingsRowHeight, m.MCPEnable, m.MCPEnableDesc, pal.muted, func() {
 			page.switchSlot(hitAISetMCPEnabled, settings.mcpEnabled, false, m.MCPEnable)
 		})
-		page.aiFrame(settingsRowHeight, m.MCPMode, m.MCPModeDesc, pal.muted, func() {
+		page.mcpFrame(m.MCPMode, m.MCPModeDesc, pal.muted, func() {
 			page.segmentSlot(min(float32(220), page.width*0.34), modes[:], selected)
 		})
-		page.aiFrame(settingsRowHeight, m.MCPEndpoint, endpoint, pal.muted, func() {
-			page.button(hitAISetMCPCopy, copyLabel, aiButtonOutline, !ready).Width(copyWidth)
+		page.mcpFrame(m.MCPEndpoint, endpoint, pal.muted, func() {
+			page.mcpCopyButton(hitAISetMCPCopyURL, m.MCPCopyURL, !ready)
 		})
-		page.aiFrame(settingsRowHeight, m.MCPToken, description, color, func() {
-			page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
+		page.mcpFrame(m.MCPToken, description, color, func() {
+			page.f.Row().Gap(8).Children(func() {
+				page.mcpCopyButton(hitAISetMCPCopyToken, m.MCPCopyToken, !ready)
+				page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
+			})
 		})
 	})
+	state.paintAIMCPConfig(page, endpoint, ready)
 }
 
 // paintAIDialogs paints the section's open dialog above everything else.

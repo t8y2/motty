@@ -70,6 +70,11 @@ var (
 	hitAISetMCPObserve        = tree.ID(aiSettingsHits, "ai-set-mcp-observe")
 	hitAISetMCPAsk            = tree.ID(aiSettingsHits, "ai-set-mcp-ask")
 	hitAISetMCPCopy           = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
+	hitAISetMCPCopyURL        = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
+	hitAISetMCPCopyToken      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
+	hitAISetMCPClaude         = tree.ID(aiSettingsHits, "ai-set-mcp-claude")
+	hitAISetMCPCursor         = tree.ID(aiSettingsHits, "ai-set-mcp-cursor")
+	hitAISetMCPCodex          = tree.ID(aiSettingsHits, "ai-set-mcp-codex")
 	hitAISetMCPReset          = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
 )
 
@@ -138,16 +143,20 @@ type aiSettingsUI struct {
 	page       int    // page of that provider's models
 	modelInput text.Editor
 
-	fetch       *aiFetch
-	fetched     bool // a fetch ended: with fetchCount models, or fetchErr
-	fetchCount  int
-	fetchErr    string
-	modelErr    string
-	notice      string // why the last change could not be stored
-	clearedDone bool
-	copied      aiCopyState
-	tokenReset  bool
-	loadPosted  bool // the first load was queued from a paint
+	fetch           *aiFetch
+	fetched         bool // a fetch ended: with fetchCount models, or fetchErr
+	fetchCount      int
+	fetchErr        string
+	modelErr        string
+	notice          string // why the last change could not be stored
+	clearedDone     bool
+	copied          aiCopyState
+	copyTarget      ui.ID
+	mcpClient       aiMCPClient
+	mcpTabsVertical bool
+	mcpPreviewLines []string
+	tokenReset      bool
+	loadPosted      bool // the first load was queued from a paint
 }
 
 func (state *State) aiSettingsVisible() bool {
@@ -241,11 +250,22 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		state.aiPut("ai.mcp.mode", "ask")
 	case id == hitAISetMCPCopy:
 		state.aiCopyClientConfig()
+	case id == hitAISetMCPCopyURL:
+		state.aiCopyMCP(id, state.aiMCPURL())
+	case id == hitAISetMCPCopyToken:
+		state.aiCopyMCP(id, state.ai.mcpToken)
+	case id == hitAISetMCPClaude:
+		cfg.mcpClient = aiMCPClaude
+	case id == hitAISetMCPCursor:
+		cfg.mcpClient = aiMCPCursor
+	case id == hitAISetMCPCodex:
+		cfg.mcpClient = aiMCPCodex
 	case id == hitAISetMCPReset:
 		// An empty token makes the application create a fresh one when it next
 		// reconfigures the server.
 		if state.aiPut("ai.mcp.token", "") {
 			cfg.tokenReset = true
+			state.ai.mcpToken = "" // Wait for the hub to publish the replacement.
 		}
 	default:
 		return false
@@ -359,6 +379,18 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitAISetMCPObserve, hitAISetMCPAsk:
 		modes = state.aiMCPModeOptions()
 		options = modes[:]
+	case hitAISetMCPClaude, hitAISetMCPCursor, hitAISetMCPCodex:
+		tabs := aiMCPClientTabs()
+		orientation := components.TabsHorizontal
+		if cfg.mcpTabsVertical {
+			orientation = components.TabsVertical
+		}
+		next, handled := components.TabsKeyDown(event.Target, tabs[:], orientation, components.DirectionLTR, event.Key)
+		if !handled {
+			return ui.EventResult{}, true
+		}
+		state.Click(next)
+		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 	default:
 		return ui.EventResult{}, false
 	}
@@ -963,15 +995,22 @@ func (state *State) aiMCPURL() string {
 	return "http://" + state.ai.mcpAddr + mcp.Path
 }
 
-// aiCopyClientConfig puts the command that connects Claude Code to the server
-// on the clipboard.
+// aiCopyClientConfig copies the selected client's configuration with the live token.
 func (state *State) aiCopyClientConfig() {
-	cfg := &state.ai.cfg
-	if state.ai.mcpAddr == "" || state.ai.mcpToken == "" {
+	state.aiCopyMCP(hitAISetMCPCopy, aiMCPConfig(state.ai.cfg.mcpClient, state.aiMCPURL(), state.ai.mcpToken))
+}
+
+func (state *State) aiMCPReady() bool {
+	return state.ai.settings.mcpEnabled && state.ai.mcpAddr != "" && state.ai.mcpToken != ""
+}
+
+func (state *State) aiCopyMCP(target ui.ID, value string) {
+	if !state.aiMCPReady() {
 		return
 	}
-	command := fmt.Sprintf(aiMCPClientFormat, state.aiMCPURL(), state.ai.mcpToken)
-	if err := state.options.SetClipboardText(command); err != nil {
+	cfg := &state.ai.cfg
+	cfg.copyTarget = target
+	if err := state.options.SetClipboardText(value); err != nil {
 		cfg.copied = aiCopyFailed
 		return
 	}
