@@ -218,8 +218,7 @@ python3 tools/headless_drive.py /tmp/motty-home tools/e2e/host_menu_move_e2e.txt
 ```
 
 `tools/README.md` describes the headless driver, fixtures and end-to-end
-scripts. The [Windows form checklist](docs/windows-form-editing.md) covers this
-branch's editing changes. Packaging goes through a separate Viva CLI checkout:
+scripts. Packaging goes through a separate Viva CLI checkout:
 
 ```sh
 git clone https://github.com/vivaui/viva ../viva
