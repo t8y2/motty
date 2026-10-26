@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/vivaui/viva/ui"
@@ -248,21 +247,6 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 		state.shortcutError = ""
 		state.save()
 		return ui.EventResult{Handled: true, Repaint: true}
-	}
-	// Viva's Windows text fields do not yet translate Ctrl+V into a paste.
-	// Handle the host form here before the modal guard, without routing its
-	// clipboard text to the active terminal or changing other platforms.
-	if runtime.GOOS == "windows" && state.modal == modalNewHost &&
-		chord == (shortcutChord{Modifiers: ui.ModifierControl, Key: 'v'}) {
-		if editor := state.EditorFor(event.Target); editor != nil {
-			value, err := state.options.ClipboardText()
-			if err != nil {
-				state.dialogError = fmt.Sprintf(state.messages.StatusClipboardReadFailedFmt, err)
-			} else if value != "" {
-				editor.Paste(value)
-			}
-			return ui.EventResult{Handled: true, Repaint: true}
-		}
 	}
 	if state.modal != modalNone {
 		return ui.EventResult{}

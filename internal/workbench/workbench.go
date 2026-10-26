@@ -1748,6 +1748,13 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.hostManagementKey(event); handled {
 		return result
 	}
+	if state.modal == modalNewHost && event.Key == ui.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
+		_, composing := state.EditorFor(event.Target).Composition()
+		if !event.Repeat && !composing {
+			state.submitHostDialog()
+		}
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
 	if result, handled := state.aiRenameKey(event); handled {
 		return result
 	}
