@@ -397,6 +397,14 @@ func (state *State) paintAIMCP(page *settingsPage) {
 			page.mcpCopyButton(hitAISetMCPCopyURL, m.MCPCopyURL, !ready)
 		})
 		page.mcpFrame(m.MCPToken, description, color, func() {
+			// The two token actions do not fit side by side in a narrow page.
+			if page.width < 500 {
+				page.f.Column().Gap(8).Children(func() {
+					page.mcpCopyButton(hitAISetMCPCopyToken, m.MCPCopyToken, !ready)
+					page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
+				})
+				return
+			}
 			page.f.Row().Gap(8).Children(func() {
 				page.mcpCopyButton(hitAISetMCPCopyToken, m.MCPCopyToken, !ready)
 				page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)

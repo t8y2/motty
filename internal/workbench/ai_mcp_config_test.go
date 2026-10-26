@@ -207,6 +207,37 @@ func TestMCPCopyWaitsForLiveCredentials(t *testing.T) {
 	if len(world.clip) != 1 || world.clip[0] != "new-token" {
 		t.Fatal("did not copy the replacement token")
 	}
+	// A changed endpoint must clear the copy feedback of the old credentials.
+	state.setMCPEndpoint("http://127.0.0.1:4455/mcp", "changed-token")
+	pumpSettings(t, state, "changed token", func() bool { return state.ai.mcpToken == "changed-token" })
+	if state.ai.cfg.copied != aiCopyIdle {
+		t.Fatal("stale copy feedback survived an endpoint change")
+	}
+	canvas, _ := world.paint()
+	if hit, ok := hitByID(canvas, hitAISetMCPCopyToken); !ok || hit.Label != state.messages.AISettings.MCPCopyToken {
+		t.Fatalf("stale copied label survived an endpoint change: %+v", hit)
+	}
+}
+
+func TestMCPCopyWarnsThatTheTokenMustNotBeCommitted(t *testing.T) {
+	for _, test := range []struct {
+		language i18n.Language
+		warning  string
+		user     string
+	}{
+		{i18n.English, "never commit", "user-level"},
+		{i18n.Chinese, "不要提交", "用户级"},
+	} {
+		world := newSettingsWorld(t, newLister())
+		state := world.state
+		state.setLanguage(test.language)
+		state.selectSettingsCategory(settingsMCP)
+		m := state.messages.AISettings
+		if !strings.Contains(m.MCPPreviewHint, test.warning) || !strings.Contains(m.MCPCursorHint, test.user) ||
+			!strings.Contains(m.MCPVSCodeHint, test.user) || !strings.Contains(m.MCPOpenCodeHint, test.user) {
+			t.Fatalf("%s hints do not keep the token out of committed files: %+v", test.language, m)
+		}
+	}
 }
 
 func TestMCPClientSelectShortWindow(t *testing.T) {
@@ -267,16 +298,27 @@ func TestMCPConfigurationLayout(t *testing.T) {
 		state.selectSettingsCategory(settingsMCP)
 		state.Click(hitAISetMCPEnabled)
 		state.ai.mcpAddr, state.ai.mcpToken = "127.0.0.1:4455", "test-secret"
-		for _, width := range []float32{720, 1000, 1400} {
+		for _, width := range []float32{570, 600, 720, 1000, 1400} {
 			for _, tab := range aiMCPClientOptions() {
 				state.Click(tab.ID)
 				var canvas ui.Canvas
 				state.Paint(&canvas, ui.Size{Width: width, Height: 1600})
+				var copyToken, reset ui.Hit
 				for _, id := range []ui.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width || hit.Bounds.Width <= 0 {
 						t.Fatalf("width %v: control outside window: %+v", width, hit)
 					}
+					if id == hitAISetMCPCopyToken {
+						copyToken = hit
+					}
+					if id == hitAISetMCPReset {
+						reset = hit
+					}
+				}
+				// Narrow pages stack the token actions instead of clipping one.
+				if width <= 600 && copyToken.Bounds.Y+copyToken.Bounds.Height > reset.Bounds.Y {
+					t.Fatalf("width %v: token actions are still one row: copy=%+v reset=%+v", width, copyToken.Bounds, reset.Bounds)
 				}
 			}
 		}
