@@ -262,6 +262,18 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 	if action == shortcutNone {
 		return ui.EventResult{}
 	}
+	if action == shortcutCopy && chord.Modifiers == ui.ModifierControl && chord.Key == 'c' {
+		// With no selection, Ctrl+C belongs to the foreground terminal
+		// program. Let the normal key path encode it (including kitty and
+		// win32-input-mode), rather than consuming an empty copy operation.
+		_, target, embedded := state.decodePaneHit(event.Target)
+		if !embedded {
+			target = event.Target
+		}
+		if session := state.terminalSession(target); session != nil && session.term != nil && !session.term.selection.selected {
+			return ui.EventResult{}
+		}
+	}
 	if event.Repeat {
 		return ui.EventResult{Handled: true}
 	}
