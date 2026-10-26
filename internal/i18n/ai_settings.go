@@ -93,30 +93,41 @@ type AISettingsMessages struct {
 	ClearConfirm     string
 
 	// External access.
-	MCPEnable      string
-	MCPEnableDesc  string
-	MCPMode        string
-	MCPModeDesc    string
-	MCPModeObserve string
-	MCPModeAsk     string
-	MCPEndpoint    string
-	MCPNotRunning  string
-	MCPOff         string
-	MCPCopy        string
-	MCPCopied      string
-	MCPCopyFailed  string
-	MCPToken       string
-	MCPTokenDesc   string
-	MCPReset       string
-	MCPResetDone   string
-	MCPConfig      string
-	MCPConfigDesc  string
-	MCPCopyURL     string
-	MCPCopyToken   string
-	MCPClaudeHint  string
-	MCPCursorHint  string
-	MCPCodexHint   string
-	MCPPreviewHint string
+	MCPEnable        string
+	MCPEnableDesc    string
+	MCPMode          string
+	MCPModeDesc      string
+	MCPModeObserve   string
+	MCPModeAsk       string
+	MCPEndpoint      string
+	MCPNotRunning    string
+	MCPOff           string
+	MCPCopy          string
+	MCPCopied        string
+	MCPCopyFailed    string
+	MCPToken         string
+	MCPTokenDesc     string
+	MCPReset         string
+	MCPResetDone     string
+	MCPConfig        string
+	MCPConfigDesc    string
+	MCPCopyURL       string
+	MCPCopyToken     string
+	MCPClaudeHint    string
+	MCPCursorHint    string
+	MCPCodexHint     string
+	MCPCherryHint    string
+	MCPCodeBuddyHint string
+	MCPDeepSeekHint  string
+	MCPOpenCodeHint  string
+	MCPQoderHint     string
+	MCPTraeHint      string
+	MCPVSCodeHint    string
+	MCPWindsurfHint  string
+	MCPWorkBuddyHint string
+	MCPZCodeHint     string
+	MCPClientLabel   string
+	MCPPreviewHint   string
 }
 
 var englishAISettings = AISettingsMessages{
@@ -204,30 +215,41 @@ var englishAISettings = AISettingsMessages{
 	ClearBody:        "Every saved conversation will be deleted. This cannot be undone.",
 	ClearConfirm:     "Clear history",
 
-	MCPEnable:      "Allow external agents (MCP)",
-	MCPEnableDesc:  "Lets tools such as Claude Code use your sessions through a local server.",
-	MCPMode:        "Access level",
-	MCPModeDesc:    "Observe only reads. Ask also runs commands, each one approved here first.",
-	MCPModeObserve: "Observe",
-	MCPModeAsk:     "Ask",
-	MCPEndpoint:    "Endpoint",
-	MCPNotRunning:  "Not running",
-	MCPOff:         "Off",
-	MCPCopy:        "Copy configuration",
-	MCPConfig:      "Client configuration",
-	MCPConfigDesc:  "Choose a client. Access permissions apply to every client.",
-	MCPCopyURL:     "Copy URL",
-	MCPCopyToken:   "Copy token",
-	MCPClaudeHint:  "Run in your project terminal to register Motty with Claude Code.",
-	MCPCursorHint:  "Merge into .cursor/mcp.json in your project, preserving existing servers.",
-	MCPCodexHint:   "Add to ~/.codex/config.toml (or config.toml in CODEX_HOME). Replace any existing motty entry.",
-	MCPPreviewHint: "The preview hides the token. Copied configuration includes the real token.",
-	MCPCopied:      "Copied",
-	MCPCopyFailed:  "Copy failed",
-	MCPToken:       "Access token",
-	MCPTokenDesc:   "Clients must send it. Resetting it disconnects every client.",
-	MCPReset:       "Reset token",
-	MCPResetDone:   "Token reset",
+	MCPEnable:        "Allow external agents (MCP)",
+	MCPEnableDesc:    "Lets tools such as Claude Code use your sessions through a local server.",
+	MCPMode:          "Access level",
+	MCPModeDesc:      "Observe only reads. Ask also runs commands, each one approved here first.",
+	MCPModeObserve:   "Observe",
+	MCPModeAsk:       "Ask",
+	MCPEndpoint:      "Endpoint",
+	MCPNotRunning:    "Not running",
+	MCPOff:           "Off",
+	MCPCopy:          "Copy configuration",
+	MCPConfig:        "Client configuration",
+	MCPClientLabel:   "Client",
+	MCPConfigDesc:    "Choose a client. Access permissions apply to every client.",
+	MCPCopyURL:       "Copy URL",
+	MCPCopyToken:     "Copy token",
+	MCPClaudeHint:    "Run in your project terminal to register Motty with Claude Code.",
+	MCPCursorHint:    "Merge into .cursor/mcp.json in your project, preserving existing servers.",
+	MCPCodexHint:     "Add to ~/.codex/config.toml (or config.toml in CODEX_HOME). Replace any existing motty entry.",
+	MCPCherryHint:    "In Cherry Studio Settings > MCP Servers, import this JSON, then enable motty.",
+	MCPCodeBuddyHint: "Run in your project terminal to register Motty with CodeBuddy Code CLI.",
+	MCPDeepSeekHint:  "Save as motty.cordis.yml, then run: dsh web --patch ./motty.cordis.yml",
+	MCPOpenCodeHint:  "Merge into opencode.json in your project. Motty uses a bearer token, so OAuth is disabled.",
+	MCPQoderHint:     "In Qoder Settings > MCP, add a server using this JSON configuration.",
+	MCPTraeHint:      "In TRAE Settings > MCP, choose Add > Manual configuration and paste the JSON.",
+	MCPVSCodeHint:    "Merge into .vscode/mcp.json in your project. VS Code uses the servers key.",
+	MCPWindsurfHint:  "Open the MCP configuration file from Cascade and merge this entry into mcp_config.json.",
+	MCPWorkBuddyHint: "Merge into ~/.workbuddy/mcp.json, preserving existing servers.",
+	MCPZCodeHint:     "Merge into ~/.zcode/cli/config.json under mcp.servers, preserving existing entries.",
+	MCPPreviewHint:   "The preview hides the token. Copied configuration includes the real token.",
+	MCPCopied:        "Copied",
+	MCPCopyFailed:    "Copy failed",
+	MCPToken:         "Access token",
+	MCPTokenDesc:     "Clients must send it. Resetting it disconnects every client.",
+	MCPReset:         "Reset token",
+	MCPResetDone:     "Token reset",
 }
 
 var chineseAISettings = AISettingsMessages{
@@ -315,28 +337,39 @@ var chineseAISettings = AISettingsMessages{
 	ClearBody:        "所有已保存的对话都会被删除，且无法恢复。",
 	ClearConfirm:     "清除历史",
 
-	MCPEnable:      "允许外部代理（MCP）",
-	MCPEnableDesc:  "让 Claude Code 等工具通过本地服务使用你的会话。",
-	MCPMode:        "访问级别",
-	MCPModeDesc:    "“观察”只读；“询问”还可执行命令，每条都要先在这里批准。",
-	MCPModeObserve: "观察",
-	MCPModeAsk:     "询问",
-	MCPEndpoint:    "地址",
-	MCPNotRunning:  "未运行",
-	MCPOff:         "已关闭",
-	MCPCopy:        "复制配置",
-	MCPConfig:      "客户端配置",
-	MCPConfigDesc:  "选择要接入的客户端，访问权限对所有客户端统一生效。",
-	MCPCopyURL:     "复制地址",
-	MCPCopyToken:   "复制令牌",
-	MCPClaudeHint:  "在项目终端执行，将 Motty 注册到 Claude Code。",
-	MCPCursorHint:  "合并到项目的 .cursor/mcp.json，保留已有的其他服务器配置。",
-	MCPCodexHint:   "添加到 ~/.codex/config.toml（或 CODEX_HOME 下的 config.toml），替换已有的 motty 配置项。",
-	MCPPreviewHint: "预览已隐藏令牌，复制配置会包含真实令牌。",
-	MCPCopied:      "已复制",
-	MCPCopyFailed:  "复制失败",
-	MCPToken:       "访问令牌",
-	MCPTokenDesc:   "客户端必须携带它。重置后所有客户端都会断开。",
-	MCPReset:       "重置令牌",
-	MCPResetDone:   "令牌已重置",
+	MCPEnable:        "允许外部代理（MCP）",
+	MCPEnableDesc:    "让 Claude Code 等工具通过本地服务使用你的会话。",
+	MCPMode:          "访问级别",
+	MCPModeDesc:      "“观察”只读；“询问”还可执行命令，每条都要先在这里批准。",
+	MCPModeObserve:   "观察",
+	MCPModeAsk:       "询问",
+	MCPEndpoint:      "地址",
+	MCPNotRunning:    "未运行",
+	MCPOff:           "已关闭",
+	MCPCopy:          "复制配置",
+	MCPConfig:        "客户端配置",
+	MCPClientLabel:   "客户端",
+	MCPConfigDesc:    "选择要接入的客户端，访问权限对所有客户端统一生效。",
+	MCPCopyURL:       "复制地址",
+	MCPCopyToken:     "复制令牌",
+	MCPClaudeHint:    "在项目终端执行，将 Motty 注册到 Claude Code。",
+	MCPCursorHint:    "合并到项目的 .cursor/mcp.json，保留已有的其他服务器配置。",
+	MCPCodexHint:     "添加到 ~/.codex/config.toml（或 CODEX_HOME 下的 config.toml），替换已有的 motty 配置项。",
+	MCPCherryHint:    "在 Cherry Studio 设置 → MCP 服务器中导入此 JSON，然后启用 motty。",
+	MCPCodeBuddyHint: "在项目终端执行，将 Motty 注册到 CodeBuddy Code CLI。",
+	MCPDeepSeekHint:  "保存为 motty.cordis.yml，然后运行：dsh web --patch ./motty.cordis.yml",
+	MCPOpenCodeHint:  "合并到项目的 opencode.json。Motty 使用令牌认证，此配置关闭 OAuth。",
+	MCPQoderHint:     "在 Qoder 设置 → MCP 中，使用此 JSON 配置添加服务器。",
+	MCPTraeHint:      "在 TRAE 设置 → MCP → 添加 → 手动添加中粘贴 JSON。",
+	MCPVSCodeHint:    "合并到项目的 .vscode/mcp.json，VS Code 使用 servers 字段。",
+	MCPWindsurfHint:  "在 Cascade 中打开 MCP 配置文件，将此配置合并到 mcp_config.json。",
+	MCPWorkBuddyHint: "合并到 ~/.workbuddy/mcp.json，保留已有的其他服务器配置。",
+	MCPZCodeHint:     "合并到 ~/.zcode/cli/config.json 的 mcp.servers，保留已有配置。",
+	MCPPreviewHint:   "预览已隐藏令牌，复制配置会包含真实令牌。",
+	MCPCopied:        "已复制",
+	MCPCopyFailed:    "复制失败",
+	MCPToken:         "访问令牌",
+	MCPTokenDesc:     "客户端必须携带它。重置后所有客户端都会断开。",
+	MCPReset:         "重置令牌",
+	MCPResetDone:     "令牌已重置",
 }

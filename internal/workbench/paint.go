@@ -92,6 +92,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.contextRect = ui.Rect{}
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
 	state.debugSelect = ui.Rect{}
+	state.ai.cfg.mcpSelectBounds = ui.Rect{}
+	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
+		state.ai.cfg.mcpSelectOpen = false
+	}
 	// The select's popup is transient: leaving the Debug page closes it.
 	if state.activeSection != sectionDebug {
 		state.debugSelectOpen = false
@@ -169,6 +173,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	viewport := state.windowRect()
 	state.beginMenus()
+	state.paintMCPClientSelect(canvas)
 	// The Debug page's select is painted here, outside the workspace's clip and
 	// inside the frame's menu pass, so its popup can leave the page and keeps the
 	// menu state its keyboard handling needs.

@@ -48,6 +48,14 @@ func (state *State) selectTypeaheadKey(event ui.KeyEvent) (ui.EventResult, bool)
 // currently showing its value rather than its list.
 func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
 	switch {
+	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetMCPSelect && !state.ai.cfg.mcpSelectOpen:
+		options := aiMCPClientOptions()
+		items := make([]components.MenuTypeaheadItem, 0, len(options))
+		for _, option := range options {
+			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
+		}
+		return items, state.aiSettingsClick, true
+
 	case state.modal == modalNewForward && target == hitForwardDialogHost && !state.forwardEditor.hostOpen:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.hosts))
 		for _, host := range state.hosts {

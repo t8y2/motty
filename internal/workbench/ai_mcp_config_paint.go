@@ -1,6 +1,41 @@
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import (
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/ui"
+)
+
+// Paint after the workspace clip and inside the menu pass, as other selects do.
+func (state *State) paintMCPClientSelect(canvas *ui.Canvas) {
+	cfg, m := &state.ai.cfg, state.messages.AISettings
+	bounds := cfg.mcpSelectBounds
+	if bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
+		cfg.mcpSelectOpen = false
+		return
+	}
+	options := aiMCPClientOptions()
+	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
+	above := max(bounds.Y-windowBarHeight-8, 0)
+	height := min(float32(8+len(options)*32), max(above, below))
+	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	if below < height {
+		content.Y = bounds.Y - height - 4
+	}
+	selectControl := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
+		TriggerID: hitAISetMCPSelect, Label: m.MCPClientLabel, Value: options[cfg.mcpClient].Label,
+		Open: cfg.mcpSelectOpen, Content: content, Layer: popupLayer,
+		DismissID: hitAISetMCPSelectDismiss, Viewport: state.windowRect(),
+		Scroll: state.selectScroll(cfg.mcpSelectOpen, hitAISetMCPSelectDismiss),
+	})
+	defer selectControl.End()
+	if cfg.mcpSelectOpen {
+		state.menuPlaced(selectControl.ContentBounds())
+	}
+	for index, option := range options {
+		option.Selected = index == int(cfg.mcpClient)
+		selectControl.AddItem(option)
+	}
+}
 
 // Keep explanations and actions readable when the settings navigation leaves
 // too little room for a two-column row.
@@ -46,6 +81,26 @@ func (state *State) paintAIMCPConfig(page *settingsPage, endpoint string, ready 
 		hint = m.MCPCursorHint
 	case aiMCPCodex:
 		hint = m.MCPCodexHint
+	case aiMCPCodeBuddy:
+		hint = m.MCPCodeBuddyHint
+	case aiMCPZCode:
+		hint = m.MCPZCodeHint
+	case aiMCPTrae:
+		hint = m.MCPTraeHint
+	case aiMCPVSCode:
+		hint = m.MCPVSCodeHint
+	case aiMCPWindsurf:
+		hint = m.MCPWindsurfHint
+	case aiMCPDeepSeek:
+		hint = m.MCPDeepSeekHint
+	case aiMCPOpenCode:
+		hint = m.MCPOpenCodeHint
+	case aiMCPCherry:
+		hint = m.MCPCherryHint
+	case aiMCPQoder:
+		hint = m.MCPQoderHint
+	case aiMCPWorkBuddy:
+		hint = m.MCPWorkBuddyHint
 	}
 	preview := endpoint // The off / not-running state, not a runnable example.
 	if ready {
@@ -54,12 +109,7 @@ func (state *State) paintAIMCPConfig(page *settingsPage, endpoint string, ready 
 	page.group(m.MCPConfig, func() {
 		f.Column().Pad(18).Gap(14).Children(func() {
 			f.Wrap(m.MCPConfigDesc).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
-			cfg.mcpTabsVertical = page.width < 366
-			height := float32(36)
-			if cfg.mcpTabsVertical {
-				height *= 3
-			}
-			page.add(settingsControl{kind: controlMCPTabs, slot: f.Slot().FillWidth().Height(height)})
+			page.add(settingsControl{kind: controlMCPSelect, slot: f.Slot().FillWidth().Height(36)})
 			f.Wrap(hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 			f.Column().Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
 				f.Row().Pad(12).Children(func() {

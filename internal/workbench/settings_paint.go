@@ -31,7 +31,7 @@ const (
 	controlModelInput                            // the assistant's model-name field
 	controlSwatches                              // a strip of round color dots
 	controlLabel                                 // the words of a row, which label the control beside them
-	controlMCPTabs                               // client configuration tabs
+	controlMCPSelect                             // client configuration select
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -143,13 +143,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 		switch control.kind {
 		case controlSegments:
 			components.BeginSegmentedControl(canvas, theme, rect, state.settings.options[control.first:control.first+control.count], control.selected).Paint()
-		case controlMCPTabs:
-			options := aiMCPClientTabs()
-			tabs := components.BeginTabs(canvas, theme, rect, options[:], options[state.ai.cfg.mcpClient].ID)
-			if state.ai.cfg.mcpTabsVertical {
-				tabs = tabs.Vertical()
-			}
-			tabs.Paint()
+		case controlMCPSelect:
+			state.ai.cfg.mcpSelectBounds = rect
 		case controlSwitch:
 			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
 		case controlButtons:

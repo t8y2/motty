@@ -72,10 +72,13 @@ var (
 	hitAISetMCPCopy           = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
 	hitAISetMCPCopyURL        = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
 	hitAISetMCPCopyToken      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
-	hitAISetMCPClaude         = tree.ID(aiSettingsHits, "ai-set-mcp-claude")
-	hitAISetMCPCursor         = tree.ID(aiSettingsHits, "ai-set-mcp-cursor")
-	hitAISetMCPCodex          = tree.ID(aiSettingsHits, "ai-set-mcp-codex")
+	hitAISetMCPClients        = tree.Sub(aiSettingsHits, tree.Name("ai-set-mcp-client"))
+	hitAISetMCPClaude         = aiMCPClientID(aiMCPClaude)
+	hitAISetMCPCursor         = aiMCPClientID(aiMCPCursor)
+	hitAISetMCPCodex          = aiMCPClientID(aiMCPCodex)
 	hitAISetMCPReset          = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
+	hitAISetMCPSelect         = tree.ID(aiSettingsHits, "ai-set-mcp-select")
+	hitAISetMCPSelectDismiss  = tree.ID(aiSettingsHits, "ai-set-mcp-select-dismiss")
 )
 
 // Rows of the provider and model lists have a block of identities each.
@@ -153,7 +156,8 @@ type aiSettingsUI struct {
 	copied          aiCopyState
 	copyTarget      ui.ID
 	mcpClient       aiMCPClient
-	mcpTabsVertical bool
+	mcpSelectOpen   bool
+	mcpSelectBounds ui.Rect
 	mcpPreviewLines []string
 	tokenReset      bool
 	loadPosted      bool // the first load was queued from a paint
@@ -254,12 +258,15 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		state.aiCopyMCP(id, state.aiMCPURL())
 	case id == hitAISetMCPCopyToken:
 		state.aiCopyMCP(id, state.ai.mcpToken)
-	case id == hitAISetMCPClaude:
-		cfg.mcpClient = aiMCPClaude
-	case id == hitAISetMCPCursor:
-		cfg.mcpClient = aiMCPCursor
-	case id == hitAISetMCPCodex:
-		cfg.mcpClient = aiMCPCodex
+	case id.Scope() == hitAISetMCPClients:
+		if index, ok := id.In(hitAISetMCPClients); ok && index >= 0 && index < int(aiMCPClientCount) {
+			cfg.mcpClient = aiMCPClient(index)
+			cfg.mcpSelectOpen = false
+		}
+	case id == hitAISetMCPSelect:
+		cfg.mcpSelectOpen = !cfg.mcpSelectOpen
+	case id == hitAISetMCPSelectDismiss:
+		cfg.mcpSelectOpen = false
 	case id == hitAISetMCPReset:
 		// An empty token makes the application create a fresh one when it next
 		// reconfigures the server.
@@ -358,6 +365,10 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 	}
 	var options []components.SegmentOption
+	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+		cfg.mcpSelectOpen = true
+		return ui.EventResult{Focus: aiMCPClientID(cfg.mcpClient), FocusVisible: true, Handled: true, Repaint: true}, true
+	}
 	var kind [2]components.SegmentOption
 	var risks [3]components.SegmentOption
 	var steps [3]components.SegmentOption
@@ -379,18 +390,6 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitAISetMCPObserve, hitAISetMCPAsk:
 		modes = state.aiMCPModeOptions()
 		options = modes[:]
-	case hitAISetMCPClaude, hitAISetMCPCursor, hitAISetMCPCodex:
-		tabs := aiMCPClientTabs()
-		orientation := components.TabsHorizontal
-		if cfg.mcpTabsVertical {
-			orientation = components.TabsVertical
-		}
-		next, handled := components.TabsKeyDown(event.Target, tabs[:], orientation, components.DirectionLTR, event.Key)
-		if !handled {
-			return ui.EventResult{}, true
-		}
-		state.Click(next)
-		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 	default:
 		return ui.EventResult{}, false
 	}
