@@ -27,4 +27,4 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 )
 
-replace github.com/vivaui/viva => github.com/Ezreal-byte/viva v0.1.1-0.20261026034824-56ce59a7d832
+replace github.com/vivaui/viva => github.com/Ezreal-byte/viva v0.1.1-0.20261026041041-06f6c6d16ab5

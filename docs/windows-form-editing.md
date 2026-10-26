@@ -4,6 +4,12 @@
 `go.mod` 临时固定修复分支的公开提交，避免仅在本机 `../viva` 含修改时生效。
 上游 Viva PR 合并后，应将依赖切回包含该修复的官方版本。
 
+配套修复：[Viva PR #1](https://github.com/vivaui/viva/pull/1)，
+产品集成：[Motty PR #5](https://github.com/t8y2/motty/pull/5)。
+输入事件、剪贴板、选区绘制和输入法属于可复用桌面能力，由 Viva 提供；
+Motty 仅保留产品表单提交逻辑和真实表单路径的回归测试。
+Viva 的 `docs/windows-text-editing.md` 记录代码审查修正与输入/绘制性能基线。
+
 ## 开发与构建
 
 ```sh
