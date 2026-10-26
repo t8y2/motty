@@ -3,10 +3,65 @@
 package localshell
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vivaui/viva/ui"
+	"golang.org/x/sys/windows"
+	"motty/internal/term"
 )
+
+// Run the test binary inside ConPTY as a raw VT reader, like a Node TTY.
+func TestConPTYRawReader(t *testing.T) {
+	if os.Getenv("MOTTY_TEST_RAW_READER") != "1" {
+		t.Skip("ConPTY child only")
+	}
+	input := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(input, &mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetConsoleMode(input, windows.ENABLE_VIRTUAL_TERMINAL_INPUT|windows.ENABLE_EXTENDED_FLAGS); err != nil {
+		t.Fatal(err)
+	}
+	defer windows.SetConsoleMode(input, mode)
+	fmt.Println("RAW-READER-READY")
+	var received []byte
+	for len(received) < 2 {
+		var buffer [32]byte
+		n, err := os.Stdin.Read(buffer[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		received = append(received, buffer[:n]...)
+	}
+	fmt.Printf("RAW-READER-BYTES:%x\n", received)
+}
+
+func TestConPTYWin32ControlCharactersReachRawReader(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell, wakes := startWindows(t, Config{Env: []string{"MOTTY_TEST_RAW_READER=1"}})
+	command := windows.ComposeCommandLine([]string{executable, "-test.run=^TestConPTYRawReader$"})
+	shell.Write([]byte(command + "\r"))
+	untilWindows(t, shell, wakes, "RAW-READER-READY")
+	for _, record := range []ui.Win32Key{
+		{VirtualKey: 13, ScanCode: 28, Unicode: 13},
+		{VirtualKey: 'D', ScanCode: 32, Unicode: 4, ControlState: 8},
+	} {
+		for _, release := range []bool{false, true} {
+			if !shell.Write(term.EncodeWin32Key(ui.KeyEvent{Win32: record, Release: release})) {
+				t.Fatal("Write refused")
+			}
+		}
+	}
+	untilWindows(t, shell, wakes, "RAW-READER-BYTES:0d04")
+}
 
 func startWindows(t *testing.T, config Config) (*Shell, chan struct{}) {
 	t.Helper()
