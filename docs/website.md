@@ -86,6 +86,36 @@ The apex record is a `CNAME` at the root, which only works because Cloudflare
 flattens it. A registrar that is not Cloudflare cannot hold that record; this is
 one more reason the zone has to be on Cloudflare.
 
+## Search engines and answer engines
+
+Everything a crawler reads is generated from the same two sources: the metadata
+blocks Next emits per page, and the content under `website/content/docs/`.
+
+- `website/lib/seo.ts` holds the site constants, the per-language copy, the
+  canonical/hreflang helper, the Open Graph and Twitter cards, the shared robots
+  policy and the JSON-LD builders (Organization, WebSite, SoftwareApplication,
+  FAQPage, BreadcrumbList, TechArticle).
+- Each page sets its own canonical and hreflang set. `alternates()` only lists a
+  translation that exists, and marks `x-default` as `/zh` because `/` answers 301
+  to the Chinese home page.
+- `/sitemap.xml`, `/robots.txt` and `/llms.txt` are static routes in `app/`; the
+  sitemap walks `source.getPages()` for both languages, so adding an MDX file
+  needs no sitemap edit. `llms.txt` lists the docs with their one-line
+  descriptions for answer engines, and `robots.txt` names the AI crawlers
+  explicitly so a future `Disallow` cannot silently block them.
+- The `/` fallback page (public/_redirects sends it to `/zh`) and `/api/*` are
+  `noindex`; `public/_headers` sets the types and short caches for the crawler
+  files.
+- `public/og.png` (1200×630) and the flattened `public/icon-512.png` /
+  `public/apple-touch-icon.png` are committed assets. They were rendered from
+  `public/logo-dark.svg` and `public/icon.svg` with `rsvg-convert`; redo them if
+  the wordmark changes.
+
+`defaultLanguage` in `lib/i18n.ts` follows the file naming, not the site's entry
+point: unsuffixed `page.mdx` is the default language and `page.zh.mdx` is the
+translation. It must stay `en`, or every `/en/docs` page falls back to the
+Chinese body while keeping its English URL.
+
 ## Local checks
 
 ```sh
@@ -98,7 +128,8 @@ pnpm dlx wrangler@4 pages dev out --port 8788
 ```
 
 `out/` holds `index.html`, `en.html`, `zh.html`, the hashed bundles under
-`_next/static/`, `404.html` and the prerendered search index at `api/search`.
+`_next/static/`, `404.html`, `sitemap.xml`, `robots.txt`, `llms.txt` and the
+prerendered search index at `api/search`.
 Pages serves `/en` from `en.html`; `python3 -m http.server` would return 404 for
 it, so use `wrangler pages dev` when verifying routing.
 

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/ui"
@@ -49,6 +50,86 @@ func TestRightClickOnATabOpensItsMenu(t *testing.T) {
 	}
 	if state.deck.ActiveWorkspace() != tabs[3] {
 		t.Fatal("right-clicking a tab must not switch to it")
+	}
+}
+
+func TestTabMenuOffersDuplicateForSessionTab(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	workspace := state.deck.ActiveWorkspace()
+	rightClickTab(state, hitTabList.At(int(workspace)))
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for _, hit := range canvas.Hits() {
+		if hit.Label == "Duplicate Tab" && !hit.Disabled {
+			return
+		}
+	}
+	t.Fatal("a session tab does not offer Duplicate Tab")
+}
+
+func TestTabMenuDuplicateOpensAnIndependentSessionForTheSameHost(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	originalWorkspace := state.deck.ActiveWorkspace()
+	firstPane := state.sessions[0]
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	const sourceOnly = "source-only-output"
+	sourceTerminal := state.sessions[1].term
+	sourceTerminal.screen.Write([]byte(sourceOnly))
+	sourceShell := &fakeShell{done: make(chan struct{})}
+	sourceTerminal.shell = sourceShell
+	source := state.sessions[1]
+	if state.activeSessionID != source.ID || source.HostID == firstPane.HostID {
+		t.Fatalf("split setup active=%d source=%d hosts=%d/%d", state.activeSessionID, source.ID, firstPane.HostID, source.HostID)
+	}
+	rightClickTab(state, hitTabList.At(int(originalWorkspace)))
+
+	state.Click(hitTabMenuDuplicate)
+
+	workspaces := state.deck.Workspaces(nil)
+	if len(workspaces) != 2 || len(state.sessions) != 3 {
+		t.Fatalf("duplicate created workspaces=%d sessions=%d, want 2/3", len(workspaces), len(state.sessions))
+	}
+	duplicate := state.sessions[2]
+	if duplicate.ID == source.ID || duplicate.HostID != source.HostID || duplicate.Address != source.Address ||
+		duplicate.host.CatalogID != source.host.CatalogID || duplicate.host.Address != source.host.Address {
+		t.Fatalf("duplicate = %+v, active source = %+v", duplicate, source)
+	}
+	if duplicate.term == nil || source.term == nil || duplicate.term == source.term || duplicate.term.screen == source.term.screen || duplicate.term.shell == sourceShell {
+		t.Fatalf("duplicate terminal/screen/shell = %p/%p/%p, source = %p/%p/%p; want independent state",
+			duplicate.term, duplicate.term.screen, duplicate.term.shell, source.term, source.term.screen, source.term.shell)
+	}
+	if text := duplicate.term.screen.Text(); strings.Contains(text, sourceOnly) {
+		t.Fatalf("duplicate copied source terminal buffer: %q", text)
+	}
+	if state.deck.ActiveWorkspace() == originalWorkspace || state.activeSessionID != duplicate.ID {
+		t.Fatalf("active workspace/session = %d/%d, want the duplicate %d", state.deck.ActiveWorkspace(), state.activeSessionID, duplicate.ID)
+	}
+}
+
+func TestTabMenuDuplicateDoesNotConsumeAPendingEmptyPane(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	sourceWorkspace := state.deck.ActiveWorkspace()
+	openEmptyTab(state)
+	pendingWorkspace := state.deck.ActiveWorkspace()
+	pendingPane := state.deck.ActivePane(pendingWorkspace)
+	state.Click(hitPaneChooseHost)
+	rightClickTab(state, hitTabList.At(int(sourceWorkspace)))
+
+	state.Click(hitTabMenuDuplicate)
+
+	if workspaces := state.deck.Workspaces(nil); len(workspaces) != 3 {
+		t.Fatalf("duplicate created %d workspaces, want a new third tab", len(workspaces))
+	}
+	pane, ok := state.deck.Pane(pendingWorkspace, pendingPane)
+	if !ok || pane.SessionID != 0 {
+		t.Fatalf("pending pane = %+v, found %v; want it left empty", pane, ok)
+	}
+	if state.pendingWorkspace != 0 || state.pendingPane != 0 {
+		t.Fatalf("pending target survived duplicate: workspace=%d pane=%d", state.pendingWorkspace, state.pendingPane)
 	}
 }
 

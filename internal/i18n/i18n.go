@@ -320,6 +320,7 @@ type Messages struct {
 	NewTabConnectTo         string
 	MenuCloseOtherTabs      string
 	MenuCloseTabsToRight    string
+	MenuDuplicateTab        string
 	MenuRenameTab           string
 	CloseTabsTitleFmt       string
 	CloseTabsDescription    string
@@ -957,6 +958,7 @@ var EnglishMessages = Messages{
 	NewTabConnectTo:                "Connect to",
 	MenuCloseOtherTabs:             "Close Other Tabs",
 	MenuCloseTabsToRight:           "Close Tabs to the Right",
+	MenuDuplicateTab:               "Duplicate Tab",
 	MenuRenameTab:                  "Rename",
 	CloseTabsTitleFmt:              "Close %d tabs?",
 	CloseTabsDescription:           "Their sessions will be disconnected and their terminals closed.",
@@ -1577,6 +1579,7 @@ var ChineseMessages = Messages{
 	NewTabConnectTo:                "连接到",
 	MenuCloseOtherTabs:             "关闭其他标签页",
 	MenuCloseTabsToRight:           "关闭右侧标签页",
+	MenuDuplicateTab:               "复制标签页",
 	MenuRenameTab:                  "重命名",
 	CloseTabsTitleFmt:              "关闭 %d 个标签页？",
 	CloseTabsDescription:           "这些标签页里的会话会断开，终端也会关闭。",

@@ -7,3 +7,28 @@
 
 /api/search
   Content-Type: application/json
+
+# The search index is data for the site's own search box, not a page. Keep it
+# out of search results even if something links to it.
+/api/*
+  X-Robots-Tag: noindex
+
+# Crawler-facing files: correct types without relying on Pages' extension map,
+# and short caches so an edit shows up the same day.
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/robots.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/og.png
+  Cache-Control: public, max-age=604800
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800

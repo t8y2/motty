@@ -127,6 +127,18 @@ export function Landing({ lang }: { lang: string }) {
         </div>
       </section>
 
+      <section className="mx-auto max-w-5xl px-4 py-16">
+        <h2 className="mb-10 text-center text-2xl font-semibold tracking-tight">{c.faqTitle}</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {c.faq.map((item) => (
+            <div key={item.q} className="rounded-2xl border bg-fd-card p-5">
+              <h3 className="mb-1.5 font-medium">{item.q}</h3>
+              <p className="text-sm leading-relaxed text-fd-muted-foreground">{item.a}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <footer className="mx-auto max-w-5xl px-4 pb-14">
         <div className="flex flex-col items-center justify-between gap-3 border-t pt-8 text-sm text-fd-muted-foreground sm:flex-row">
           <p>

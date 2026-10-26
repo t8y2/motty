@@ -11,6 +11,8 @@ export type LandingContent = {
   screens: { title: string; body: string; image: string; alt: string }[];
   principlesTitle: string;
   principles: { title: string; body: string }[];
+  faqTitle: string;
+  faq: { q: string; a: string }[];
   // The page's foot: who made it, on what, under what. Kept apart from the
   // license link so the line reads as two facts rather than one claim.
   footer: { copyright: string; platforms: string; license: string };
@@ -85,6 +87,29 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       { title: 'Built for the keyboard', body: 'Tabs, splits, SFTP and the assistant are palette commands. The mouse is optional.' },
       { title: 'Honest about limits', body: 'These docs say what was verified and what was not, including protocol gaps.' },
     ],
+    faqTitle: 'Frequently asked questions',
+    faq: [
+      {
+        q: 'Is Motty free?',
+        a: 'Yes. Motty is open source under the Apache-2.0 license, and the packages for macOS, Windows and Linux cost nothing to download.',
+      },
+      {
+        q: 'Which platforms does Motty run on?',
+        a: 'macOS on Apple silicon and Intel, Windows on x64 and arm64, and Linux on x64 and arm64. Releases carry .dmg and .zip for macOS, an installer and .zip for Windows, and .deb and .tar.gz for Linux.',
+      },
+      {
+        q: 'Does Motty use Electron?',
+        a: 'No. It is a native application written in Go on the Viva desktop framework, drawing through Metal, Direct3D and Vulkan. There is no embedded browser and no JavaScript layer, and nothing runs while the window is idle.',
+      },
+      {
+        q: 'What can Motty do beyond SSH?',
+        a: 'SFTP and SCP with a resumable queue, ZMODEM, XMODEM and YMODEM, local, remote, SOCKS5 and HTTP CONNECT forwarding with X11, jump chains, serial, Telnet and local shells, and VNC and RDP desktops in a tab.',
+      },
+      {
+        q: 'Can an AI agent use Motty?',
+        a: 'Yes. Ask and Agent modes run inside the app behind a risk-classified approval gate, and an optional MCP server bound to loopback lets external agents drive your sessions.',
+      },
+    ],
     footer: {
       copyright: '© 2026 Motty',
       platforms: 'macOS · Windows · Linux',
@@ -158,6 +183,29 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       { title: '原生，不是网页', body: '直接调用 Metal、Direct3D 和 Vulkan。启动快，空闲时不空转。' },
       { title: '为键盘而生', body: '标签页、分屏、SFTP 和助手都是命令面板里的命令，鼠标是可选的。' },
       { title: '如实说明限制', body: '文档会写明哪些已验证、哪些没有，包括协议缺口。' },
+    ],
+    faqTitle: '常见问题',
+    faq: [
+      {
+        q: 'Motty 是免费的吗？',
+        a: '是。Motty 以 Apache-2.0 许可开源，macOS、Windows 和 Linux 的安装包都可以免费下载。',
+      },
+      {
+        q: 'Motty 支持哪些平台？',
+        a: '支持 Apple 芯片与 Intel 的 macOS、x64 与 arm64 的 Windows，以及 x64 与 arm64 的 Linux。发布包提供 .dmg 与 .zip、安装程序与 .zip、.deb 与 .tar.gz。',
+      },
+      {
+        q: 'Motty 用 Electron 吗？',
+        a: '不用。它是 Go 编写的原生应用，基于 Viva 桌面框架，直接调用 Metal、Direct3D 和 Vulkan；没有内嵌浏览器，也没有 JavaScript 层，窗口空闲时不运行任何东西。',
+      },
+      {
+        q: '除了 SSH，Motty 还能做什么？',
+        a: 'SFTP 与 SCP（带可续传队列）、ZMODEM/XMODEM/YMODEM、本地/远程/SOCKS5/HTTP CONNECT 转发与 X11、跳板链、串口、Telnet 与本地 Shell，以及标签页里的 VNC 与 RDP 远程桌面。',
+      },
+      {
+        q: 'AI agent 能用 Motty 吗？',
+        a: '可以。应用内的 Ask 与 Agent 模式按风险分级审批，可选的 MCP 服务器仅监听回环，让外部 agent 驱动你的会话。',
+      },
     ],
     footer: {
       copyright: '© 2026 Motty',

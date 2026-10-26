@@ -21,12 +21,12 @@ type barTool struct {
 	hint     string
 	disabled bool
 	style    iconButtonStyle
-	groupEnd bool // the group of split buttons ends here: a wider gap follows
+	groupEnd bool // the group of pane controls ends here: a wider gap follows
 	slot     flex.Box
 }
 
 // maxBarTools is how many tools the bar can hold: Files, export log, export
-// recording, record, the resource monitor, the two splits and broadcast.
+// recording, record, the resource monitor, close, the two splits and broadcast.
 const maxBarTools = 9
 
 const (
@@ -43,6 +43,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	barHeight := state.terminalInfoBarHeight(session.ID)
 	geometry := terminalLayoutWithInfoBar(size, state.cellWidth, state.cellHeight, barHeight, state.padding())
 	inactive := state.paneIsInactive(session.ID)
+	inSplit := state.paneInSplit(session.ID)
 	finding := !inactive && session.term.find.open
 
 	// The right edge, from the right: Files, export log, export recording,
@@ -73,9 +74,12 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 		if hint, style, offered := state.remoteStatsToggle(session); offered {
 			tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
 		}
-		tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, style: iconButtonQuiet, groupEnd: true})
+		if inSplit {
+			tools = append(tools, barTool{id: hitPaneClose, icon: iconClose, hint: state.messages.PaneClose, style: iconButtonQuiet, groupEnd: true})
+		}
+		tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, style: iconButtonQuiet, groupEnd: !inSplit})
 		tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, style: iconButtonQuiet})
-		if state.paneInSplit(session.ID) {
+		if inSplit {
 			hint, style := state.messages.Tools.BroadcastStart, iconButtonQuiet
 			if state.broadcasting(session.ID) {
 				hint, style = state.messages.Tools.BroadcastStop, iconButtonActive
@@ -91,7 +95,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	}
 	// Anything but a plain connection says so in words.
 	showStatus := session.phase != sshconn.PhaseConnected || !session.term.live
-	showProgress := !session.isLocal() && !session.term.live && !(state.paneInSplit(session.ID) && session.quietOK())
+	showProgress := !session.isLocal() && !session.term.live && !(inSplit && session.quietOK())
 	var light, spinner, statsSlot, progressSlot flex.Box
 	var find findBarSlots
 

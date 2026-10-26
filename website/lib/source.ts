@@ -11,3 +11,8 @@ export const source = loader({
   source: docs.toFumadocsSource(),
   i18n,
 });
+
+/** The locale-independent path of a docs page: `/docs/terminal`. */
+export function docsPath(slugs: readonly string[] | undefined): string {
+  return slugs && slugs.length > 0 ? `/docs/${slugs.join('/')}` : '/docs';
+}

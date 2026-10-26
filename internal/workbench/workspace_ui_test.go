@@ -58,8 +58,9 @@ func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
 				t.Fatalf("pane %d has no session", pane.ID)
 			}
 			_, hasFiles := hitByID(&canvas, tree.MountID(paneMount(session), hitSFTPOpen))
-			if hasFiles != pane.Active {
-				t.Fatalf("pane %d active=%v Files=%v", pane.ID, pane.Active, hasFiles)
+			_, hasClose := hitByID(&canvas, tree.MountID(paneMount(session), hitPaneClose))
+			if hasFiles != pane.Active || hasClose != pane.Active {
+				t.Fatalf("pane %d active=%v Files=%v Close=%v", pane.ID, pane.Active, hasFiles, hasClose)
 			}
 			barHeight := infoBarHeight // the same whether or not the pane is active
 			bounds := pixelBounds(frame, pane.Bounds)
@@ -80,6 +81,41 @@ func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
 		t.Fatal("activate first pane")
 	}
 	assertToolbarOwnership()
+}
+
+func TestMountedPaneCloseToolbarButtonClosesItsPane(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	closedSession := state.activeSessionID
+	size := ui.Size{Width: 1200, Height: 800}
+	driver, err := app.NewDriver(app.Config{
+		Title: "pane close", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+
+	session, _ := state.sessionByIDPointer(closedSession)
+	closeID := tree.MountID(paneMount(session), hitPaneClose)
+	var closeHit ui.Hit
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == closeID {
+			closeHit = hit
+			break
+		}
+	}
+	if closeHit.ID.IsZero() {
+		t.Fatalf("active pane close hit %d is missing", closeID)
+	}
+	if err := driver.Click(closeHit.Bounds.X+closeHit.Bounds.Width/2, closeHit.Bounds.Y+closeHit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := state.sessionByIDPointer(closedSession); present || len(state.sessions) != 1 || len(state.Panes(nil)) != 1 {
+		t.Fatalf("toolbar close left sessions=%d panes=%+v closed=%d present=%v", len(state.sessions), state.Panes(nil), closedSession, present)
+	}
 }
 
 func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {

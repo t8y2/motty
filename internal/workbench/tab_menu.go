@@ -15,6 +15,7 @@ var (
 	hitTabMenuClose       = tree.ID(tabMenuHits, "tab-menu-close")
 	hitTabMenuCloseOthers = tree.ID(tabMenuHits, "tab-menu-close-others")
 	hitTabMenuCloseRight  = tree.ID(tabMenuHits, "tab-menu-close-right")
+	hitTabMenuDuplicate   = tree.ID(tabMenuHits, "tab-menu-duplicate")
 	hitTabMenuReconnect   = tree.ID(tabMenuHits, "tab-menu-reconnect")
 	hitTabMenuRename      = tree.ID(tabMenuHits, "tab-menu-rename")
 )
@@ -112,6 +113,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitTabMenuRename, Label: messages.MenuRenameTab, Icon: icon(iconPencil)})
+	rows.add(components.ContextMenuItem{ID: hitTabMenuDuplicate, Label: messages.MenuDuplicateTab, Icon: icon(iconCopy), Disabled: !hasSession})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuClose, Label: messages.LabelCloseTab, Icon: icon(iconClose), Keys: closeKeys})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseOthers, Label: messages.MenuCloseOtherTabs, Icon: icon(iconCloseOthers), Disabled: len(state.workspaceTabs) < 2})
@@ -145,6 +147,11 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	switch id {
 	case hitTabMenuRename:
 		state.openTabRename(workspace)
+	case hitTabMenuDuplicate:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			state.pendingWorkspace, state.pendingPane = 0, 0
+			state.newHostSession(session.host)
+		}
 	case hitTabMenuClose:
 		state.closeWorkspace(workspace)
 	case hitTabMenuCloseOthers:
