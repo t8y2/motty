@@ -913,14 +913,20 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if result, handled := state.menuWheel(event); handled {
 		return result
 	}
-	if result, handled := state.tabStrip.scroll(event); handled {
-		return result
-	}
 	if state.modal == modalFontPicker {
 		return state.scrollFontPicker(event)
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	// Dialogs own the wheel even over their backdrop. Menus and scrollable
+	// dialogs above have their own handlers; nothing behind them should move.
+	if state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
+		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
+		return ui.EventResult{Handled: true}
+	}
+	if result, handled := state.tabStrip.scroll(event); handled {
+		return result
 	}
 	if result, handled := state.aiScroll(event); handled {
 		return result
