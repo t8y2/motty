@@ -264,6 +264,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.requestAutofillFrames(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
 }
 
 // windowRect is the whole window as last painted: the viewport a popup gives

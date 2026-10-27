@@ -50,7 +50,7 @@ func init() {
 	register(&codeLanguage{keywords: words("true false null"), quotes: "\"", keys: true}, "json", "jsonc", "json5")
 	register(&codeLanguage{
 		keywords: words("true false null yes no on off"), comment: "#", quotes: "\"'", keys: true, sections: true, wordExtra: "-./",
-	}, "yaml", "yml", "toml", "ini")
+	}, "yaml", "yml", "toml", "ini", "properties", "conf", "env")
 	register(&codeLanguage{
 		keywords: words("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var true false nil"),
 		comment:  "//", block: true, quotes: "\"'`", calls: true,
@@ -77,6 +77,9 @@ func init() {
 // highlightCode appends to dst the colored stretches of one line of code in the
 // language the fence named.
 func highlightCode(language, line string, dst []components.MarkdownCodeRun) []components.MarkdownCodeRun {
+	if language == "xml" {
+		return highlightXML(line, dst)
+	}
 	lang := codeLanguages[strings.ToLower(language)]
 	if lang == nil || line == "" {
 		return dst
@@ -120,7 +123,7 @@ func highlightCode(language, line string, dst []components.MarkdownCodeRun) []co
 		case strings.IndexByte(lang.quotes, c) >= 0:
 			end := stringEnd(line, i)
 			class := components.CodeString
-			if lang.keys && strings.HasPrefix(strings.TrimLeft(line[end:], " \t"), ":") {
+			if rest := strings.TrimLeft(line[end:], " \t"); lang.keys && (strings.HasPrefix(rest, ":") || strings.HasPrefix(rest, "=")) {
 				class = components.CodeKey
 			}
 			mark(i, end, class)
@@ -159,7 +162,7 @@ func highlightCode(language, line string, dst []components.MarkdownCodeRun) []co
 			}
 			rest := strings.TrimLeft(line[end:], " \t")
 			switch {
-			case lang.keys && strings.HasPrefix(rest, ":") && (len(rest) == 1 || rest[1] == ' '):
+			case lang.keys && (strings.HasPrefix(rest, "=") || strings.HasPrefix(rest, ":") && (len(rest) == 1 || rest[1] == ' ')):
 				mark(i, end, components.CodeKey)
 			case lang.keywords[key]:
 				mark(i, end, components.CodeKeyword)

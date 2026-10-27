@@ -62,6 +62,7 @@ func main() {
 	}
 	hub := workbench.NewAIHub(aiDatabasePath(os.Getenv(dataDirVariable)))
 	err := app.RunApplication(func(application *app.Application) error {
+		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
 		var openWindow func() error
 		firstWindow := true
@@ -90,7 +91,7 @@ func main() {
 // newTray puts the icon in the status area. Without one, a desktop with no
 // StatusNotifier host, the application simply has no tray.
 func newTray(application *app.Application) *tray {
-	list := workbench.NewTray(application.Quit)
+	list := workbench.NewTray(func() { windows.quitWithDocuments(application.Quit) })
 	item, err := application.AddStatusItem(app.StatusItemConfig{
 		Icon: workbench.TrayIcon(),
 		// The system's menu, built when it opens. Where a desktop reports a
@@ -198,7 +199,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 	state = workbench.New(workbench.Options{
 		Invalidate: invalidate, NewWindow: newWindow,
-		Group: windowGroup, Blank: place.blank, Log: recentLog,
+		OpenContentWindow: application.OpenContentWindow,
+		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		RememberWindowFrame: place.rememberFrame,
 		TearOff: func(origin ui.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
@@ -209,7 +211,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		Raise:              func() { mainWindow.Show() },
 		StartAtLogin:       loginStart(),
 		Updater:            updater(),
-		Quit:               application.Quit,
+		Quit:               func() { windows.quitWithDocuments(application.Quit) },
 		AISettingsChanged: func() {
 			if err := hub.Reconfigure(); err != nil {
 				log.Printf("motty: external agent access: %v", err)

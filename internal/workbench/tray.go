@@ -89,6 +89,13 @@ func (state *State) WantsToStay() bool { return len(state.sessions) > 0 }
 // over; false means nothing is open and the caller may close at once. Asking a
 // second time while the question is up closes, since the user insists.
 func (state *State) ConfirmClose(allow func()) bool {
+	if state.ConfirmDocumentClose(func() {
+		if !state.ConfirmClose(allow) {
+			allow()
+		}
+	}) {
+		return true
+	}
 	if len(state.sessions) == 0 || state.closeAsked && state.modal == modalForm {
 		return false
 	}

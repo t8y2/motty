@@ -3,6 +3,14 @@ package i18n
 // The English catalog lives here, one file per language.
 
 var EnglishMessages = Messages{
+	FileWindow: FileWindowMessages{
+		Title: "File preview and editor", Save: "Save", Reload: "Reload", Encoding: "Encoding", Auto: "Auto", Fit: "Fit", Actual: "Actual size", ZoomIn: "Zoom in", ZoomOut: "Zoom out",
+		Ready: "Ready", Saved: "Saved with the original encoding, BOM and line endings", Dirty: "Unsaved changes", Saving: "Saving…", Loading: "Opening file…",
+		ChooseEncoding: "The encoding cannot be determined safely. Choose the original encoding to preview and edit.", EncodingLoss: "The current text cannot be saved losslessly in %s. The original file is unchanged; remove characters this encoding cannot represent.",
+		CannotOpen: "Cannot preview file", Unsupported: "This file format cannot be previewed", TooLarge: "Preview limit: 16 MiB for images, 1 MiB for text", TooMany: "Close a preview window before opening more files (limit: 8)", ImageTooLarge: "The image exceeds the 16 megapixel preview limit",
+		ConfirmTitle: "Unsaved changes", ConfirmClose: "Save before closing, or discard the changes?", ConfirmReload: "Reloading will discard the unsaved changes.", SaveClose: "Save and close", Discard: "Discard", Cancel: "Cancel",
+		Local: "Local", Remote: "Server", ReadOnly: "Image preview · read only", EncodingChanged: "Encoding changes reinterpret the original bytes; save or discard edits first.",
+	},
 
 	NavHosts:                  "Hosts",
 	NavKeychain:               "Keychain",

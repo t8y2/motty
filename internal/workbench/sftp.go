@@ -415,6 +415,10 @@ func (state *State) openSelectedSFTP(view *sftpView) {
 		state.openSFTPDirectory(view, remotePath)
 		return
 	}
+	if state.options.OpenContentWindow != nil {
+		state.openFileWindow(view, remotePath, false)
+		return
+	}
 	if view.worker.OpenText(remotePath) {
 		view.busy = true
 		view.operation = sftpclient.OperationOpenText

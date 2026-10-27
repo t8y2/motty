@@ -266,7 +266,11 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 // openLocalSelected goes into the selected local folder.
 func (state *State) openLocalSelected(view *sftpView) {
 	entry, ok := state.selectedSFTPEntry(view)
-	if !ok || !entry.IsDir() {
+	if !ok {
+		return
+	}
+	if !entry.IsDir() {
+		state.openFileWindow(view, filepath.Join(view.lfolder.path, entry.Name), true)
 		return
 	}
 	state.listLocal(view, filepath.Join(view.lfolder.path, entry.Name))

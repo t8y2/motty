@@ -3,6 +3,14 @@ package i18n
 // The Chinese catalog lives here, one file per language.
 
 var ChineseMessages = Messages{
+	FileWindow: FileWindowMessages{
+		Title: "文件预览与编辑", Save: "保存", Reload: "重新载入", Encoding: "编码", Auto: "自动", Fit: "适应窗口", Actual: "实际大小", ZoomIn: "放大", ZoomOut: "缩小",
+		Ready: "就绪", Saved: "已按原编码、BOM 和换行格式保存", Dirty: "有未保存的更改", Saving: "正在保存…", Loading: "正在打开文件…",
+		ChooseEncoding: "无法可靠确定编码，请选择原文件的编码后预览和编辑。", EncodingLoss: "当前内容不能无损保存为 %s。原文件未修改，请删除该编码无法表示的字符后重试。",
+		CannotOpen: "无法预览文件", Unsupported: "此文件格式暂不支持预览", TooLarge: "预览上限：图片 16 MiB，文本 1 MiB", TooMany: "请先关闭部分预览窗口（最多 8 个）", ImageTooLarge: "图片超过 1600 万像素，暂不支持预览",
+		ConfirmTitle: "有未保存的更改", ConfirmClose: "保存后关闭，还是放弃这些更改？", ConfirmReload: "重新载入将丢失未保存的更改。", SaveClose: "保存并关闭", Discard: "放弃更改", Cancel: "取消",
+		Local: "本机", Remote: "服务器", ReadOnly: "图片预览 · 只读", EncodingChanged: "切换编码会重新解释原文件，请先保存或放弃当前更改。",
+	},
 
 	NavHosts:                  "主机",
 	NavKeychain:               "密钥链",
