@@ -81,6 +81,7 @@ const (
 	iconWeChat
 	iconDiscord
 	iconGitHub
+	iconChevronLeft
 )
 
 // Paint renders the application from state using stable hit identities.
@@ -1408,6 +1409,7 @@ var lucideIcons = [...]ui.Icon{
 	iconHistory:      icons.History,
 	iconCopy:         icons.Copy,
 	iconChevronRight: icons.ChevronRight,
+	iconChevronLeft:  icons.ChevronLeft,
 	iconChevronDown:  icons.ChevronDown,
 	iconSliders:      icons.SlidersHorizontal,
 	iconAlert:        icons.CircleAlert,

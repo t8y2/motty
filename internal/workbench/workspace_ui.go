@@ -28,10 +28,10 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	bounds := state.baseWorkspacePixelBounds(size)
 	context, ok := state.deck.Context(workspaceID)
 	if ok && context.Open && size.Width >= contextDrawerAt {
-		// The files panel sits on the left, so the panes start after it and its
-		// one-pixel divider.
 		panel := state.contextPanelExtent(bounds, context.Width) + 1
-		bounds.X += panel
+		if context.Side == layoutcore.ContextLeft {
+			bounds.X += panel
+		}
 		bounds.Width = max(0, bounds.Width-panel)
 	}
 	// The assistant's panel sits on the right, so the panes end before it.
@@ -87,6 +87,10 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	}
 	if len(state.panes) == 1 {
 		pane := state.panes[0]
+		// The pane's own ground, as in a split: a press here is a press inside the
+		// pane, so it must reach the pane rather than fall through to the window
+		// and take the keyboard away from the page.
+		canvas.HitWithOptions(hitPaneActivateList.At(0), pixelBounds(frame, pane.Bounds), state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
 		if session, ok := state.sessionByIDPointer(pane.SessionID); ok {
 			state.paneCanvas.BeginEmbedded(canvas, 0)
 			state.paintSessionPage(&state.paneCanvas, paneVirtualSize(frame), session)
@@ -265,9 +269,13 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 		defer state.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, session.files)
 	}
 	if size.Width < contextDrawerAt {
+		side := components.DrawerLeft
+		if context.Side == layoutcore.ContextRight {
+			side = components.DrawerRight
+		}
 		drawer := components.BeginDrawer(canvas, state.Theme(), state.baseWorkspacePixelBounds(size), components.DrawerOptions{
 			Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPClose, CloseID: hitSFTPClose,
-			Side: components.DrawerLeft, ContentExtent: min(context.Width, size.Width*0.82),
+			Side: side, ContentExtent: min(context.Width, size.Width*0.82),
 			InitialFocusID: hitSFTPClose,
 		})
 		description := ""
@@ -279,15 +287,12 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 		drawer.End()
 		return
 	}
-	base := state.baseWorkspacePixelBounds(size)
-	panelWidth := state.contextPanelExtent(base, context.Width)
-	maximumPanel := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
-	minimumPanel := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	resizable := components.BeginResizable(canvas, state.Theme(), hitContextDivider, base, panelWidth/max(base.Width-1, 1)).
-		Limits(minimumPanel/max(base.Width-1, 1), maximumPanel/max(base.Width-1, 1)).
-		HandleSize(paneDividerHitWidth)
+	resizable := state.sftpPanelResizable(canvas, size, context)
 	layout := resizable.Paint(state.messages.SFTPFiles)
 	panel := layout.First
+	if context.Side == layoutcore.ContextRight {
+		panel = layout.Second
+	}
 	state.paintContextSFTP(canvas, panel, session)
 }
 
@@ -318,13 +323,14 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 	// The message sits a little above the middle of the panel.
 	middle := bounds.Height * 0.38
 
-	var closeButton, sessionTitle, openButton flex.Box
+	var closeButton, sideButton, sessionTitle, openButton flex.Box
 	buttonWidth := min(max(size.Width-2*sftpPad, 0), 160)
 	f := state.filesLayout.Begin(canvas, state.Theme(), bounds)
 	f.Stack().Fill().Background(pal.workspace).Children(func() {
 		f.Column().Fill().PadX(sftpPad).Children(func() {
 			f.Row().Height(infoBarHeight).Shrink(0).Gap(8).Items(flex.Center).Children(func() {
 				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				sideButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 				closeButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 			})
 			if session != nil {
@@ -344,6 +350,8 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 	f.End()
 
 	state.paintIconButton(canvas, hitSFTPClose, iconClose, closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, pal.workspace)
+	moveIcon, moveHint := state.sftpPanelMoveAction()
+	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, sideButton.Rect(), moveHint, false, iconButtonQuiet, pal.workspace)
 	if session != nil {
 		titleBounds := sessionTitle.Rect()
 		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, ui.WeightRegular, titleBounds.Width), titleBounds, ui.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
@@ -460,12 +468,12 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true}
 	}
 	base := state.baseWorkspacePixelBounds(event.Viewport)
-	maximumPanel := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
-	minimumPanel := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	resizable := components.BeginResizable(nil, state.Theme(), ui.ID{}, base, 0.5).
-		Limits(minimumPanel/max(base.Width-1, 1), maximumPanel/max(base.Width-1, 1)).
-		HandleSize(paneDividerHitWidth)
+	base.Width -= state.aiReserve(workspaceID, event.Viewport)
+	resizable := state.sftpPanelResizable(nil, event.Viewport, context)
 	ratio := resizable.FractionAt(event.X)
+	if context.Side == layoutcore.ContextRight {
+		ratio = 1 - ratio
+	}
 	width := (base.Width - 1) * ratio
 	if width == context.Width {
 		return ui.EventResult{Handled: true}
@@ -479,17 +487,58 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: true}
 }
 
+// paneGroundFocus is where the keyboard goes when a pane's own ground — its bar,
+// its padding, the page behind its controls — is pressed: the surface the page
+// types into, or the one action of a page that has no terminal. Zero when the
+// page has nowhere to put the keyboard.
+//
+// The identity is the one the page paints, before the pane's mount: a page does
+// not know which pane it is in.
+func (state *State) paneGroundFocus(session *Session) ui.ID {
+	switch {
+	case session.restored:
+		return hitConnRetry // the page's one action, the key it shows
+	case state.showsProgress(session):
+		return ui.ID{}
+	case session.desk != nil, session.term != nil:
+		return hitTerminalList.At(int(session.ID))
+	}
+	return ui.ID{}
+}
+
+// paneGround finds the pane whose ground a hit is, the area a page leaves open
+// between its controls. It is where a press switches panes. ok is false for
+// everything a page or the window declared itself.
+func (state *State) paneGround(hit ui.ID) (*Session, bool) {
+	if hit.Scope() != hitPaneActivateList || state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	state.refreshWorkspaceViews()
+	index := item(hit)
+	if index >= len(state.panes) {
+		return nil, false
+	}
+	return state.sessionByIDPointer(state.panes[index].SessionID)
+}
+
+// paneIdentity names an identity a session's page painted as the pane paints it:
+// side by side the pane's mount is part of it, while a workspace of one pane
+// paints its page in place and the page's own identity is the one the window
+// knows.
+func (state *State) paneIdentity(session *Session, local ui.ID) ui.ID {
+	state.refreshWorkspaceViews()
+	if len(state.panes) > 1 {
+		return tree.MountID(paneMount(session), local)
+	}
+	return local
+}
+
 func (state *State) activeTerminalFocusHit() ui.ID {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term == nil {
 		return ui.ID{}
 	}
-	id := hitTerminalList.At(int(session.ID))
-	state.refreshWorkspaceViews()
-	if len(state.panes) > 1 {
-		id = tree.MountID(paneMount(session), id)
-	}
-	return id
+	return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
 }
 
 func (state *State) dragPaneDivider(event ui.PointerEvent) ui.EventResult {

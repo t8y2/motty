@@ -236,6 +236,7 @@ func (state *State) ensureWorkspaceDeck() {
 		workspaceID, paneID, err := state.deck.Create(state.sessions[0].Title)
 		if err == nil {
 			_ = state.deck.Bind(workspaceID, paneID, layoutcore.SessionID(state.sessions[0].ID))
+			state.initializeSFTPPanel(workspaceID, false)
 		}
 	}
 	wantedSession := state.activeSessionID
@@ -383,6 +384,9 @@ func (state *State) restoreWorkspaceDeck(saved *layoutcore.DeckDTO, sourceSessio
 		}
 		if deck, err := layoutcore.RestoreDeck(dto); err == nil {
 			state.deck = deck
+			for _, workspace := range state.deck.Workspaces(nil) {
+				state.initializeSFTPPanel(workspace.ID, true)
+			}
 			state.syncActiveSession()
 			return
 		}

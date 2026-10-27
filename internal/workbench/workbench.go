@@ -374,6 +374,7 @@ const (
 type State struct {
 	fileWindows   fileWindowManager
 	fileNotices   fileNotices
+	sftpWindows   map[uint32]*sftpWindow
 	remoteWindows []*remoteToolsWindow
 	remoteWindow  *remoteToolsWindow // set only on a native tool window's isolated presenter
 	closed        bool
@@ -525,6 +526,8 @@ type State struct {
 	sftpKeepTimesOff  bool
 	sftpFollowOff     bool
 	sftpPathInput     bool
+	sftpPanelAutoOpen bool
+	sftpPanelSide     layoutcore.ContextSide
 	sftpBookmarks     []sftpBookmark
 	transferLeftover  []byte
 	secrets           secretsUI
@@ -665,6 +668,7 @@ func (state *State) Close() {
 	state.closed = true
 	state.closeRemoteToolsWindows()
 	state.closeFileWindows()
+	state.closeSFTPWindows()
 	if state.update.install.cancel != nil {
 		state.update.install.cancel()
 		state.update.install.cancel = nil
@@ -1638,6 +1642,27 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.paneDividerPointer(event); handled {
 		return result
 	}
+	// A press on a pane's own ground switches to that pane, and the keyboard goes
+	// with it: the pane the window shows as active is the pane keys and IME text
+	// reach. Nothing focusable was under the press, so the page says where the
+	// keyboard belongs; a page with no such place leaves the keyboard nowhere,
+	// since a keystroke still aimed at the pane it was in would switch back.
+	if event.Kind == ui.PointerDown {
+		if session, ok := state.paneGround(event.Target); ok {
+			changed := state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
+			result := ui.EventResult{Handled: true, Repaint: true}
+			if target := state.paneGroundFocus(session); target.IsZero() {
+				result.Blur = true
+			} else {
+				result.Focus = state.paneIdentity(session, target)
+			}
+			if changed {
+				state.save()
+			}
+			return result
+		}
+	}
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
 		mount, _ := tree.MountOf(event.Target.Scope())
 		// A pane becomes the active one when it is pressed, not when the pointer
@@ -1755,6 +1780,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.menuKey(event); handled {
+		return result
+	}
+	if result, handled := state.devSwatchKey(event); handled {
 		return result
 	}
 	if result, handled := state.selectTypeaheadKey(event); handled {
@@ -1958,6 +1986,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 		return nil
 	}
 	state.nextSessionID++
+	state.initializeSFTPPanel(workspaceID, false)
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title

@@ -201,6 +201,12 @@ type ToolsMessages struct {
 
 	// The file panel.
 	CatFiles                        string
+	FilesPanelAutoOpen              string
+	FilesPanelAutoOpenDescription   string
+	FilesPanelPosition              string
+	FilesPanelPositionDescription   string
+	FilesPanelLeft, FilesPanelRight string
+	FilesMoveLeft, FilesMoveRight   string
 	FilesParallel                   string
 	FilesPathInput                  string
 	FilesPathStyle                  string
@@ -243,6 +249,20 @@ type ToolsMessages struct {
 	ExtractRunningFmt               string
 	ExtractDoneFmt                  string
 	ExtractFailedFmt                string
+	ExtractFailedTitle              string
+	Compress                        string
+	CompressTitle                   string
+	CompressDescriptionFmt          string
+	CompressName                    string
+	CompressConfirm                 string
+	CompressErrorName               string
+	CompressRunningFmt              string
+	CompressDoneFmt                 string
+	CompressFailedTitle             string
+	CompressFailedFmt               string
+	ArchiveToolMissingFmt           string
+	ArchiveDestinationExistsFmt     string
+	ArchiveCanceledFmt              string
 	TransferPause                   string
 	TransferResume                  string
 	TransferPausedFmt               string
@@ -264,6 +284,7 @@ type ToolsMessages struct {
 	XYStart                         string
 	XYSaveTitle                     string
 	DropUploadingFmt                string
+	DropUploadHint                  string
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string

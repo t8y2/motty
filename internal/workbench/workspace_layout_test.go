@@ -154,7 +154,8 @@ func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing
 		t.Fatalf("restored workspaces=%+v production=%+v database=%+v", workspaces, restored.deck.Panes(production, nil), restored.deck.Panes(database, nil))
 	}
 	context, ok := restored.deck.Context(database)
-	if !ok || context != (layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: true, Width: 404}) {
+	// Width remains workspace-owned; startup visibility follows the preference.
+	if !ok || context != (layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: false, Width: 404}) {
 		t.Fatalf("restored context = %+v, %v", context, ok)
 	}
 	for index := range restored.sessions {

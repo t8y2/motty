@@ -222,7 +222,7 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 
 func TestExtractCommandsQuoteEverythingAndNeverOverwrite(t *testing.T) {
 	command := extractCommand(archiveZip, "/srv/it's here/a b.zip", "/srv/it's here/a b")
-	for _, want := range []string{`'/srv/it'\''s here/a b.zip'`, `mkdir -- '/srv/it'\''s here/a b'`, "unzip -q --", "exit 17"} {
+	for _, want := range []string{`'/srv/it'\''s here/a b.zip'`, `mkdir -- '/srv/it'\''s here/a b'`, "unzip -q -n --", "exit 17"} {
 		if !strings.Contains(command, want) {
 			t.Errorf("command %q lacks %q", command, want)
 		}
@@ -298,9 +298,9 @@ func TestAFailedExtractionShowsWhyAndAPlainFileOffersNone(t *testing.T) {
 	view.dialogEditor.Insert("x")
 	view.dialog = sftpDialogExtract
 	state.submitSFTPExtract(view)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
-	if !strings.Contains(view.errorText, "already exists") {
-		t.Fatalf("error = %q", view.errorText)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && len(state.fileNotices.items) > 0 })
+	if view.errorText != "" || !strings.Contains(state.fileNotices.items[0].detail, "already exists") {
+		t.Fatalf("inline error = %q, global errors = %+v", view.errorText, state.fileNotices.items)
 	}
 	clickSFTPRow(t, state, view, "notes.txt")
 	var canvas ui.Canvas

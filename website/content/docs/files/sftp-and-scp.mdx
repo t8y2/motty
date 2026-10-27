@@ -10,6 +10,12 @@ Open the file panel with **Command+Shift+S** (**Control+Shift+S** elsewhere).
 - A bounded transfer queue with resume, cancel and retry.
 - Rename, delete, permissions and bookmarks.
 
+Right-click a remote folder and choose **Compress…**. Enter an archive name ending in `.tar.gz`
+(the default), `.tgz` or `.zip`. Compression runs on the server and does not replace an existing destination.
+Archives can be extracted into a new folder. The server needs the corresponding `tar`, `gzip`, `zip` or
+`unzip` tools. Missing tools and failures appear in a global toast with the file and reason;
+Motty does not download archives for local processing or install tools automatically.
+
 Select **Input field** under **Settings → Files → Path bar style** to replace the breadcrumbs with an editable path.
 Enter an absolute path or a path relative to the current folder and press Enter to navigate;
 press Escape to restore the current path. This applies to both remote and local file panels.

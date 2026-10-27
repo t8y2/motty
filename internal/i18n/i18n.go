@@ -29,6 +29,7 @@ func (language Language) String() string {
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
 	FileWindow FileWindowMessages
+	SFTPWindow SFTPWindowMessages
 	Transfers  TransferCenterMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
@@ -81,6 +82,9 @@ type Messages struct {
 	DebugEnvironmentDevelopment string
 	DebugEnvironmentStaging     string
 	DebugEnvironmentProduction  string
+	DebugColorSwatchTitle       string
+	DebugColorSwatchDescription string
+	DebugColorSwatchChoice      string
 
 	// What the user is told when the saved state could not be loaded as it was.
 	// The Fmt strings take the file names or versions named in persist.go.

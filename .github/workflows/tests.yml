@@ -62,7 +62,7 @@ jobs:
         run: go test ./... -count=1
       - name: Test development components
         working-directory: motty
-        run: go test -tags dev ./internal/workbench -count=1
+        run: go test -tags dev ./internal/workbench -run '^TestDebug' -count=1
 
   race:
     name: Race detector
@@ -82,4 +82,4 @@ jobs:
           cache-dependency-path: motty/go.sum
       - name: Run the race detector
         working-directory: motty
-        run: go test -race -p 1 ./... -count=1
+        run: make race

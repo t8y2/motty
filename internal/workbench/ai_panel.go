@@ -404,9 +404,9 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 		}
 	case id == hitAISetup:
 		state.openSettings()
+		state.selectSettingsCategory(settingsAssistant)
 		if ai.needLogin != "" {
 			id := ai.needLogin
-			state.selectSettingsCategory(settingsAssistant)
 			ai.cfg.selected, ai.needLogin = id, ""
 			state.aiStartCLILogin(id, false)
 		}

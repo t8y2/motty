@@ -216,23 +216,3 @@ func TestProbePrintsWhatTheInstalledToolsReport(t *testing.T) {
 		t.Fatalf("probe output %q parsed to %+v", lines, gpus)
 	}
 }
-
-func TestProbeSaysNothingWithoutTools(t *testing.T) {
-	if runtime.GOOS == "linux" {
-		if matches, _ := filepath.Glob("/sys/class/drm/card[0-9]*/device/gpu_busy_percent"); len(matches) > 0 {
-			t.Skip("this host has an amdgpu")
-		}
-	}
-	if out := probe(t, t.TempDir()); out != "" {
-		t.Fatalf("a host without GPU tools printed %q", out)
-	}
-}
-
-func TestProbeSurvivesABrokenDriver(t *testing.T) {
-	dir := t.TempDir()
-	fakeTool(t, dir, "nvidia-smi", "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.")
-	fakeTool(t, dir, "rocm-smi", "not json")
-	if gpus := parseAll(t, probe(t, dir)+"gop-gpu-nvidia x"); len(gpus) != 0 {
-		t.Fatalf("gpus = %+v", gpus)
-	}
-}

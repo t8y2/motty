@@ -90,6 +90,8 @@ func terminalToolAccent(id ui.ID) ui.Color {
 		return hostAccent("#22c55e")
 	case hitSFTPOpen:
 		return hostAccent("#eab308")
+	case hitSFTPDetach:
+		return hostAccent("#06b6d4")
 	case hitConnExport, hitTerminalRecordingExport:
 		return hostAccent("#a855f7")
 	case hitTerminalRecord:

@@ -54,6 +54,8 @@ type savedState struct {
 	SFTPKeepTimes              string              `json:"sftp_keep_times,omitempty"`
 	SFTPFollow                 string              `json:"sftp_follow,omitempty"`
 	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
+	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
 	UpdateCheck                string              `json:"update_check,omitempty"`
 	UpdateSkipped              string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks              []savedBookmark     `json:"sftp_bookmarks,omitempty"`
@@ -330,6 +332,8 @@ func (state *State) snapshot() savedState {
 		SFTPKeepTimes:              notifyString(state.sftpKeepTimesOff),
 		SFTPFollow:                 notifyString(state.sftpFollowOff),
 		SFTPPathInput:              state.sftpPathInput,
+		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
+		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,

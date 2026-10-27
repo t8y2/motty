@@ -35,6 +35,7 @@ var (
 	hitTransfersResume    = tree.Sub(transferCenterHits, tree.Name("resume"))
 	hitTransfersSkip      = tree.Sub(transferCenterHits, tree.Name("skip"))
 	hitTransfersStatus    = tree.Sub(transferCenterHits, tree.Name("status"))
+	hitTransfersPaths     = tree.Sub(transferCenterHits, tree.Name("paths"))
 )
 
 const transferCardHeight = float32(108)
@@ -315,6 +316,9 @@ func (state *State) removeTransfer(index int) {
 	if transferActive(entry.snapshot) {
 		return
 	}
+	if entry.owner != nil {
+		entry.owner.invalidateDetached()
+	}
 	if entry.owner != nil && !entry.owner.worker.ForgetTransfer(entry.snapshot.ID) {
 		entry.removed = true
 	} else {
@@ -371,6 +375,11 @@ func (state *State) clickTransferCenter(id ui.ID) bool {
 		center.filter, center.scroll = min(filter, 2), 0
 		return true
 	}
+	return state.clickTransferTask(id)
+}
+
+func (state *State) clickTransferTask(id ui.ID) bool {
+	center := &state.transfers
 	for index := range center.entries {
 		entry := &center.entries[index]
 		if item(id) != entry.id {
@@ -411,14 +420,23 @@ func (state *State) clickTransferCenter(id ui.ID) bool {
 		}
 		if retrying {
 			entry.owner.errorText = ""
+			if entry.owner.detached != nil && snapshot.Operation == sftpclient.OperationDownload {
+				entry.owner.detached.localRefresh = true
+			}
 		}
 		state.refreshSFTPTransfers(entry.owner)
+		entry.owner.invalidateDetached()
 		return true
 	}
 	return id.Scope() == transferCenterHits
 }
 
 func (state *State) refreshAllTransfers() {
+	for _, window := range state.sftpWindows {
+		if !window.closed && window.view.worker != nil {
+			state.refreshSFTPTransfers(window.view)
+		}
+	}
 	for index := range state.sessions {
 		if view := state.sessions[index].files; view != nil && view.worker != nil {
 			state.refreshSFTPTransfers(view)

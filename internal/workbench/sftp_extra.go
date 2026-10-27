@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -16,6 +14,7 @@ import (
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 // What the file panel does beyond listing, moving and editing: links, bookmarks,
@@ -29,6 +28,7 @@ var (
 	hitSFTPBookmarkList    = tree.ID(sftpHits, "sftp-bookmark-list")
 	hitSFTPBookmarkDismiss = tree.ID(sftpHits, "sftp-bookmark-dismiss")
 	hitSFTPExtract         = tree.ID(sftpHits, "sftp-extract")
+	hitSFTPCompress        = tree.ID(sftpHits, "sftp-compress")
 	hitSFTPDialogField2    = tree.ID(sftpHits, "sftp-dialog-field2")
 )
 
@@ -41,6 +41,9 @@ var (
 	hitSettingsPathBreadcrumbs = tree.ID(sftpHits, "settings-path-breadcrumbs")
 	hitSettingsPathInput       = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup     = tree.ID(sftpHits, "settings-follow-setup")
+	hitSettingsPanelAutoOpen   = tree.ID(sftpHits, "settings-panel-auto-open")
+	hitSettingsPanelLeft       = tree.ID(sftpHits, "settings-panel-left")
+	hitSettingsPanelRight      = tree.ID(sftpHits, "settings-panel-right")
 )
 
 var (
@@ -133,8 +136,10 @@ func (state *State) clickSFTPExtra(session *Session, view *sftpView, id ui.ID) b
 			state.removeBookmark(session, marks[index])
 			state.save()
 		}
-	case id == hitSFTPExtract && !view.busy:
+	case id == hitSFTPExtract && !view.busy && !view.extracting:
 		state.openSFTPExtractDialog(view)
+	case id == hitSFTPCompress && !view.busy && !view.extracting:
+		state.openSFTPCompressDialog(view)
 	default:
 		return false
 	}
@@ -192,8 +197,8 @@ const (
 	archiveTar
 )
 
-// archiveKindOf recognizes the archives a server can unpack with the tools every
-// server has: zip, and tar in its common compressions.
+// archiveKindOf recognizes ZIP and tar in its common compressions. The command
+// checks that the server has the required unpacker before creating a directory.
 func archiveKindOf(name string) archiveKind {
 	lower := strings.ToLower(name)
 	switch {
@@ -224,21 +229,28 @@ func shellQuote(s string) string {
 }
 
 // extractCommand is the command that unpacks archive into a new folder next to
-// it. The folder is created by the command and the command refuses to go on if
-// something of that name is there, so nothing is ever overwritten; the tools
-// themselves refuse paths that climb out of the folder.
+// it. Check the unpacker before creating anything, and refuse an existing
+// destination, including a dangling symbolic link. ZIP never prompts for input.
 func extractCommand(kind archiveKind, archive, folder string) string {
-	var unpack string
+	var unpack, tool string
 	switch kind {
 	case archiveZip:
-		unpack = "unzip -q -- " + shellQuote(archive)
+		tool = "unzip"
+		unpack = "unzip -q -n -- " + shellQuote(archive)
 	case archiveTar:
+		tool = "tar"
 		unpack = "tar -xf " + shellQuote(archive)
 	default:
 		return ""
 	}
-	return "if [ -e " + shellQuote(folder) + " ]; then echo 'already exists'; exit 17; fi; " +
-		"mkdir -- " + shellQuote(folder) + " && cd -- " + shellQuote(folder) + " && " + unpack + " 2>&1"
+	checks := archiveToolCheck(tool)
+	if kind == archiveZip {
+		checks += archiveUTF8Locale()
+	}
+	return "( " + checks + archiveDestinationCheck(folder) +
+		"mkdir -- " + shellQuote(folder) + " && cd -- " + shellQuote(folder) + " || exit; " +
+		unpack + "; result=$?; if [ \"$result\" -ne 0 ]; then rmdir -- " + shellQuote(folder) +
+		" 2>/dev/null || :; fi; exit \"$result\" ) 2>&1"
 }
 
 func (state *State) selectedArchive(session *Session, view *sftpView) (sftpclient.Entry, bool) {
@@ -250,7 +262,7 @@ func (state *State) selectedArchive(session *Session, view *sftpView) (sftpclien
 }
 
 func (state *State) openSFTPExtractDialog(view *sftpView) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	if !ok {
 		return
 	}
@@ -260,13 +272,14 @@ func (state *State) openSFTPExtractDialog(view *sftpView) {
 	}
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = entry
+	view.archiveDirectory = view.path
 	view.dialogError = ""
 	view.dialogEditor.Insert(archiveFolderName(entry.Name))
 	view.dialog = sftpDialogExtract
 }
 
 func (state *State) submitSFTPExtract(view *sftpView) bool {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	m := state.messages.Tools
 	if !ok || session.conn == nil {
 		return false
@@ -278,53 +291,16 @@ func (state *State) submitSFTPExtract(view *sftpView) bool {
 	}
 	entry := view.dialogEntry
 	kind := archiveKindOf(entry.Name)
-	command := extractCommand(kind, path.Join(view.path, entry.Name), path.Join(view.path, folder))
+	directory := view.archiveDirectory
+	if directory == "" {
+		directory = view.path
+	}
+	command := extractCommand(kind, path.Join(directory, entry.Name), path.Join(directory, folder))
 	if command == "" {
 		return false
 	}
-	state.closeSFTPDialog(view)
-	view.busy = true
-	view.operation = sftpclient.OperationList // nothing the worker knows; the panel waits on the command
-	view.extracting = true
-	view.status = fmt.Sprintf(m.ExtractRunningFmt, entry.Name)
-	view.errorText = ""
-	connection, sessionID, directory := session.conn, session.ID, view.path
-	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
-	view.cancelExtract = cancel
-	go func() {
-		defer cancel()
-		output, err := connection.RunCommand(ctx, command, maxExtractOutput)
-		state.aiPost(func(state *State) { state.finishExtract(sessionID, directory, entry.Name, folder, output, err) })
-	}()
+	state.startSFTPArchive(session, view, directory, entry.Name, folder, command, false)
 	return true
-}
-
-// finishExtract takes in the outcome of an extraction on the window's thread.
-func (state *State) finishExtract(sessionID uint32, directory, archive, folder string, output []byte, err error) {
-	session, ok := state.sessionByIDPointer(sessionID)
-	if !ok || session.files == nil || !session.files.extracting {
-		return
-	}
-	view, m := session.files, state.messages.Tools
-	view.extracting, view.busy, view.cancelExtract = false, false, nil
-	if err != nil {
-		reason := strings.TrimSpace(string(output))
-		if reason == "" {
-			reason = err.Error()
-		}
-		if errors.Is(err, context.Canceled) {
-			reason = state.messages.SFTPCanceled
-		}
-		view.errorText = fmt.Sprintf(m.ExtractFailedFmt, archive, firstLines(reason, 3))
-		return
-	}
-	view.forgetListings()
-	view.refreshStatus = fmt.Sprintf(m.ExtractDoneFmt, archive, folder)
-	if view.path == directory {
-		state.listSFTP(view, directory)
-	} else {
-		view.status = view.refreshStatus
-	}
 }
 
 // firstLines is the first n lines of s, joined on one line.
@@ -375,8 +351,20 @@ func (state *State) settingsPathOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsSFTPPanelPositionOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsPanelLeft, Label: state.messages.Tools.FilesPanelLeft},
+		{ID: hitSettingsPanelRight, Label: state.messages.Tools.FilesPanelRight},
+	}
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
+	position := state.settingsSFTPPanelPositionOptions()
+	selectedPosition := hitSettingsPanelLeft
+	if state.sftpPanelSide == layoutcore.ContextRight {
+		selectedPosition = hitSettingsPanelRight
+	}
 	parallel := state.settingsParallelOptions()
 	pathOptions := state.settingsPathOptions()
 	selectedPath := hitSettingsPathBreadcrumbs
@@ -392,6 +380,8 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	}
 	page.groups(func() {
 		page.group("", func() {
+			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
+			page.row(m.FilesPanelPosition, m.FilesPanelPositionDescription, position[:], selectedPosition)
 			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
@@ -405,6 +395,18 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id ui.ID) bool {
 	switch id {
+	case hitSettingsPanelAutoOpen:
+		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
+		state.save()
+	case hitSettingsPanelLeft, hitSettingsPanelRight:
+		side := layoutcore.ContextLeft
+		if id == hitSettingsPanelRight {
+			side = layoutcore.ContextRight
+		}
+		if state.sftpPanelSide != side {
+			state.sftpPanelSide = side
+			state.save()
+		}
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		input := id == hitSettingsPathInput
 		if state.sftpPathInput != input {
@@ -439,6 +441,11 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 
 // applySFTPSettings gives every open file panel the current transfer settings.
 func (state *State) applySFTPSettings() {
+	for _, window := range state.sftpWindows {
+		if !window.closed && window.view.worker != nil {
+			state.configureSFTPWorker(window.view)
+		}
+	}
 	for index := range state.sessions {
 		if view := state.sessions[index].files; view != nil && view.worker != nil {
 			state.configureSFTPWorker(view)
@@ -575,6 +582,11 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpKeepTimesOff = saved.SFTPKeepTimes == "off"
 	state.sftpFollowOff = saved.SFTPFollow == "off"
 	state.sftpPathInput = saved.SFTPPathInput
+	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.sftpPanelSide = layoutcore.ContextLeft
+	if saved.SFTPPanelSide == "right" {
+		state.sftpPanelSide = layoutcore.ContextRight
+	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)
