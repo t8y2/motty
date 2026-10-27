@@ -193,6 +193,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	}
 	state.language = language
 	state.messages = i18n.For(language)
+	state.invalidateRemoteToolsWindows()
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
 	state.refreshHostSelection()

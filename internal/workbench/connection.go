@@ -592,6 +592,7 @@ func (state *State) Wake() {
 	state.showNextPrompt()
 	state.drainAI()
 	state.aiPumpCLILogin()
+	state.syncRemoteToolsWindows()
 }
 
 // apply reads one status into a session: its dot, its busy flag, and the next
