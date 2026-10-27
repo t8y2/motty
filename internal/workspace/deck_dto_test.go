@@ -20,7 +20,7 @@ func TestDeckDTORoundTripPreservesTabsTreesEmptyPanesAndBindings(t *testing.T) {
 	}
 	deck.ActivateWorkspace(production)
 	deck.ActivatePane(production, second)
-	if err := deck.SetContext(production, ContextState{Kind: ContextSFTP, Open: true, Width: 412}); err != nil {
+	if err := deck.SetContext(production, ContextState{Kind: ContextSFTP, Open: true, Width: 412, Side: ContextRight}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,7 +32,7 @@ func TestDeckDTORoundTripPreservesTabsTreesEmptyPanesAndBindings(t *testing.T) {
 	if got := restored.DTO(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("round trip = %+v, want %+v", got, want)
 	}
-	if context, ok := restored.Context(production); !ok || context != (ContextState{Kind: ContextSFTP, Open: true, Width: 412}) {
+	if context, ok := restored.Context(production); !ok || context != (ContextState{Kind: ContextSFTP, Open: true, Width: 412, Side: ContextRight}) {
 		t.Fatalf("restored context = %+v, %v", context, ok)
 	}
 }
@@ -57,6 +57,7 @@ func TestDeckDTORejectsCorruptionWithoutPartialRestore(t *testing.T) {
 		{"duplicate workspace", DeckDTO{Version: DeckDTOVersion, ActiveWorkspace: 1, Workspaces: []WorkspaceDTO{valid.Workspaces[0], valid.Workspaces[0]}}},
 		{"open context without kind", DeckDTO{Version: DeckDTOVersion, ActiveWorkspace: 1, Workspaces: []WorkspaceDTO{{ID: 1, ActivePane: 1, Layout: valid.Workspaces[0].Layout, Panes: valid.Workspaces[0].Panes, Context: ContextStateDTO{Open: true}}}}},
 		{"context width", DeckDTO{Version: DeckDTOVersion, ActiveWorkspace: 1, Workspaces: []WorkspaceDTO{{ID: 1, ActivePane: 1, Layout: valid.Workspaces[0].Layout, Panes: valid.Workspaces[0].Panes, Context: ContextStateDTO{Kind: ContextSFTP, Width: 900}}}}},
+		{"context side", DeckDTO{Version: DeckDTOVersion, ActiveWorkspace: 1, Workspaces: []WorkspaceDTO{{ID: 1, ActivePane: 1, Layout: valid.Workspaces[0].Layout, Panes: valid.Workspaces[0].Panes, Context: ContextStateDTO{Side: ContextRight + 1}}}}},
 	}
 	if _, err := RestoreDeck(valid); err != nil {
 		t.Fatalf("valid deck: %v", err)

@@ -75,7 +75,6 @@ var (
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
-	hitDialogColor             = tree.ID(shellHits, "dialog-color")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
 	hitHostKeyTrust            = tree.ID(shellHits, "host-key-trust")
 	hitHostKeyOnce             = tree.ID(shellHits, "host-key-once")
@@ -119,6 +118,7 @@ var (
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
+	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
 	hitStateNoticeOK           = tree.ID(shellHits, "state-notice-ok")
 )
 
@@ -288,6 +288,11 @@ var (
 	hitSFTPEditReload      = tree.ID(sftpHits, "sftp-edit-reload")
 	hitSFTPBreadcrumbList  = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
 	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
+
+	// hitSFTPDrawerClose is the close button of the drawer a narrow window shows
+	// the panel in. It is a hit of its own, apart from the backdrop that
+	// hitSFTPClose dismisses the drawer with: one ID cannot name both targets.
+	hitSFTPDrawerClose = tree.ID(sftpHits, "sftp-drawer-close")
 )
 
 // Remote resource monitoring owns a fixed hit outside every page range. Only
@@ -372,10 +377,12 @@ const (
 // Paint reads it synchronously and never starts work or allocates background
 // resources.
 type State struct {
-	fileWindows fileWindowManager
-	sftpWindows map[uint32]*sftpWindow
-	fileNotices fileNotices
-	closed      bool
+	fileWindows   fileWindowManager
+	fileNotices   fileNotices
+	sftpWindows   map[uint32]*sftpWindow
+	remoteWindows []*remoteToolsWindow
+	remoteWindow  *remoteToolsWindow // set only on a native tool window's isolated presenter
+	closed        bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
@@ -524,6 +531,8 @@ type State struct {
 	sftpKeepTimesOff  bool
 	sftpFollowOff     bool
 	sftpPathInput     bool
+	sftpPanelAutoOpen bool
+	sftpPanelSide     layoutcore.ContextSide
 	sftpBookmarks     []sftpBookmark
 	transferLeftover  []byte
 	secrets           secretsUI
@@ -662,6 +671,7 @@ func (state *State) Close() {
 		return
 	}
 	state.closed = true
+	state.closeRemoteToolsWindows()
 	state.closeFileWindows()
 	state.closeSFTPWindows()
 	if state.update.install.cancel != nil {
@@ -858,6 +868,7 @@ func (state *State) setAppearance(appearance appearance) {
 	state.pal = appearance.palette()
 	state.theme = state.pal.theme()
 	state.rebuildTerminalLook()
+	state.invalidateRemoteToolsWindows()
 }
 
 // systemLogin is the account name SSH uses for a host that names none.
@@ -917,7 +928,13 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.hostTagPicker().control.Query
 		}
 		if isDialogField(hit) {
+			if state.editor.colorPicker.open {
+				return nil
+			}
 			return state.editor.field(fieldForDialogHit(hit))
+		}
+		if state.editor.colorPicker.open && hit == hostPickerIDs.Hex {
+			return &state.editor.colorPicker.hex
 		}
 		if hit == hitDialogAlgorithms && state.editor.protocol == protocolSSH && state.editor.algoMode == algoCustom {
 			return &state.editor.algorithms
@@ -1335,6 +1352,7 @@ func (state *State) openNewWindow() {
 // closeSession ends a tab: its connection and shell are released and the
 // neighbouring tab, or the host list when it was the last, takes over.
 func (state *State) closeSession(id uint32) {
+	defer state.syncRemoteToolsWindows()
 	index := -1
 	for at := range state.sessions {
 		if state.sessions[at].ID == id {
@@ -1463,6 +1481,12 @@ func (state *State) reconnect(session *Session) {
 // focus, which the runtime already did; clicks anywhere else are swallowed.
 func (state *State) clickHostDialog(id ui.ID) {
 	if state.clickHostTags(id) {
+		return
+	}
+	if state.clickHostColorPicker(id) {
+		return
+	}
+	if state.editor.colorPicker.open {
 		return
 	}
 	switch id {
@@ -1699,9 +1723,23 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
+		// A press outside the open tag picker closes only the picker. The
+		// popup is painted inside the form's scroll area, so its dismiss
+		// backdrop is clipped to that area and cannot own a press that lands
+		// anywhere else; the press is swallowed here so the dialog stays.
+		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostTagsTarget(event.Target) {
+			state.editor.tagPicker.control.Open = false
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 		if result := state.editor.tagPicker.control.Pointer(event); result.Handled {
 			return result
 		}
+	}
+	if result := state.hostFormPointer(event); result.Handled {
+		return result
+	}
+	if result := state.hostPickerPointer(event); result.Handled {
+		return result
 	}
 	if result, handled := state.terminalFindPointer(event); handled {
 		return result
@@ -1721,10 +1759,21 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	return ui.EventResult{}
 }
 
+// isHostTagsTarget reports whether a press belongs to the open tag picker.
+func isHostTagsTarget(id ui.ID) bool {
+	switch {
+	case id == hitDialogTags, id == hitHostTagsTrigger, id == hitHostTagsScroll:
+		return true
+	case id.Scope() == hitHostTagOptions, id.Scope() == hitHostTagRemove:
+		return true
+	}
+	return false
+}
+
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
 func isDialogField(id ui.ID) bool {
 	switch id {
-	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags, hitDialogColor:
+	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags:
 		return true
 	}
 	return false
@@ -1745,8 +1794,6 @@ func fieldForDialogHit(id ui.ID) hostField {
 		return fieldGroup
 	case hitDialogTags:
 		return fieldTags
-	case hitDialogColor:
-		return fieldColor
 	default:
 		return fieldPort
 	}
@@ -1772,6 +1819,12 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.hostTagsKey(event); handled {
+		return result
+	}
+	if result := state.hostPickerKey(event); result.Handled {
+		return result
+	}
+	if result := state.hostFormKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.transferCenterKey(event); handled {
@@ -1993,6 +2046,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 		return nil
 	}
 	state.nextSessionID++
+	state.initializeSFTPPanel(workspaceID, false)
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title

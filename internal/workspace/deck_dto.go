@@ -27,6 +27,7 @@ type ContextStateDTO struct {
 	Kind  ContextKind `json:"kind,omitempty"`
 	Open  bool        `json:"open,omitempty"`
 	Width float32     `json:"width,omitempty"`
+	Side  ContextSide `json:"side,omitempty"`
 }
 
 // PaneDTO stores one stable pane and its optional session association.
@@ -48,7 +49,7 @@ func (deck *Deck) DTO() DeckDTO {
 		entry := WorkspaceDTO{
 			ID: workspace.id, Title: workspace.title, ActivePane: workspace.activePane,
 			Layout:  workspace.layout.DTO(),
-			Context: ContextStateDTO{Kind: workspace.context.Kind, Open: workspace.context.Open, Width: normalizeContext(workspace.context).Width},
+			Context: ContextStateDTO{Kind: workspace.context.Kind, Open: workspace.context.Open, Width: normalizeContext(workspace.context).Width, Side: workspace.context.Side},
 		}
 		visual := workspace.layout.Sessions(nil)
 		entry.Panes = make([]PaneDTO, 0, len(visual))
@@ -78,7 +79,7 @@ func RestoreDeck(dto DeckDTO) (Deck, error) {
 		workspace := workspaceRecord{
 			id: entry.ID, title: entry.Title, activePane: entry.ActivePane, layout: layout,
 			panes:    make([]Pane, len(entry.Panes)),
-			context:  normalizeContext(ContextState{Kind: entry.Context.Kind, Open: entry.Context.Open, Width: entry.Context.Width}),
+			context:  normalizeContext(ContextState{Kind: entry.Context.Kind, Open: entry.Context.Open, Width: entry.Context.Width, Side: entry.Context.Side}),
 			revision: 1,
 		}
 		for paneIndex, pane := range entry.Panes {
@@ -124,7 +125,7 @@ func (dto DeckDTO) Validate() error {
 		if err := workspace.Layout.Validate(); err != nil {
 			return err
 		}
-		if err := validateContext(ContextState{Kind: workspace.Context.Kind, Open: workspace.Context.Open, Width: workspace.Context.Width}); err != nil {
+		if err := validateContext(ContextState{Kind: workspace.Context.Kind, Open: workspace.Context.Open, Width: workspace.Context.Width, Side: workspace.Context.Side}); err != nil {
 			return err
 		}
 		if len(workspace.Layout.Nodes) != 0 && len(workspace.Panes)*2-1 != len(workspace.Layout.Nodes) || len(workspace.Layout.Nodes) == 0 && len(workspace.Panes) != 0 {

@@ -60,6 +60,7 @@ func (state *State) paintTransferChoice(canvas *ui.Canvas, bounds ui.Rect) {
 		{ID: hitDialogTransferSCP, Label: "SCP"},
 	}
 	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[state.editor.transfer].ID).Paint()
+	state.rememberHostControl(options[state.editor.transfer].ID, content)
 }
 
 // clickTransferChoice handles a click on the choice and reports whether it was one.

@@ -504,6 +504,16 @@ func (state *State) fileOpenNotice(origin *sftpWindow, title, detail string, kin
 	state.options.Invalidate()
 }
 
+func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, location, reason string, kind components.ToastType) {
+	if origin != nil && !origin.closed && origin.window != nil {
+		origin.notices.showPathReason(title, format, location, reason, kind)
+		origin.window.Invalidate()
+		return
+	}
+	state.fileNotices.showPathReason(title, format, location, reason, kind)
+	state.options.Invalidate()
+}
+
 func readLocalDocument(location string) ([]byte, error) {
 	source, err := os.Open(location)
 	if err != nil {

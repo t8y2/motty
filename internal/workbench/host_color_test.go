@@ -75,15 +75,31 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 			t.Fatal("color choice missing or outside dialog")
 		}
 	}
-	for _, hit := range canvas.Hits() {
-		if hit.ID == hitDialogColor && hit.Role == ui.RoleTextField {
-			if hit.Bounds.Width < 100 {
-				t.Fatalf("custom color input too narrow: %+v", hit.Bounds)
-			}
-			return
+	var hit ui.Hit
+	for _, h := range canvas.Hits() {
+		if h.ID == hostPickerIDs.Trigger && !h.IsLabel {
+			hit = h
+			break
 		}
 	}
-	t.Fatal("custom color input missing")
+	if hit.ID.IsZero() || hit.Role != ui.RoleButton || hit.Bounds.Width != 32 || hit.Bounds.Y+hit.Bounds.Height > footer.Bounds.Y {
+		t.Fatalf("custom color trigger missing or clipped: %+v", hit)
+	}
+	for _, hit := range canvas.Hits() {
+		if hit.Label == state.messages.FieldColorCustom && hit.Role == ui.RoleTextField {
+			t.Fatal("HEX input should only appear inside the picker")
+		}
+	}
+	var name ui.Hit
+	for _, h := range canvas.Hits() {
+		if h.ID == hitDialogLabel && h.Role == ui.RoleTextField {
+			name = h
+			break
+		}
+	}
+	if name.Bounds.Width < 290 {
+		t.Fatal("color field is taking too much name space", name.Bounds)
+	}
 }
 
 func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {

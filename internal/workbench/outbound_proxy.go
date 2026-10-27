@@ -568,10 +568,11 @@ func (state *State) paintHostProxyRow(canvas *ui.Canvas, bounds ui.Rect) {
 	f := state.partLayout.Begin(canvas, theme, content)
 	f.Row().Fill().Items(flex.Center).Gap(8).Children(func() {
 		f.Text(state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-		action = f.Slot().Width(button.BoundsWidth())
+		action = f.Slot().Size(button.BoundsWidth(), 24)
 	})
 	f.End()
 	components.BeginButton(canvas, theme, hitHostProxyConfigure, action.Rect()).XSmall().Outline(m.ProxyConfigure)
+	state.rememberHostControl(hitHostProxyConfigure, action.Rect())
 }
 
 // paintOutboundProxyRow is the Outbound proxy row of the Connection settings.

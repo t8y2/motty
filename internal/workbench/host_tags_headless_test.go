@@ -114,6 +114,12 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		t.Logf("viewport=%+v open=%v dismiss=%v", state.viewport, p.control.Open, p.control.Choices() != nil)
+		for _, hit := range view.Snapshot().Hits {
+			if hit.Bounds.X <= 20 && hit.Bounds.X+hit.Bounds.Width > 20 && hit.Bounds.Y <= 20 && hit.Bounds.Y+hit.Bounds.Height > 20 {
+				t.Logf("hit at point: id=%v role=%v backdrop=%v layer=%d bounds=%+v", hit.ID, hit.Role, hit.Backdrop, hit.Layer, hit.Bounds)
+			}
+		}
 		if err := view.Click(20, 20); err != nil {
 			t.Fatal(err)
 		}

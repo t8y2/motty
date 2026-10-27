@@ -231,6 +231,9 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 			state.openHostDialog()
 			state.editor.setProtocol(test.protocol)
 			canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+			initial := canvas
+			state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+			canvas, _ = paintAt(state, ui.Size{Width: 900, Height: 600})
 			last, ok := hitByID(canvas, test.last)
 			if !ok {
 				t.Fatalf("last control %d was not painted", test.last)
@@ -243,7 +246,7 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 				t.Fatalf("last control ends at %.0f inside footer starting at %.0f", bottom, submit.Bounds.Y)
 			}
 			password := false
-			for _, hit := range canvas.Hits() {
+			for _, hit := range initial.Hits() {
 				if hit.ID == hitDialogPassword && hit.Role == ui.RoleTextField {
 					password = hit.Secure && hit.Bounds.Y+hit.Bounds.Height <= submit.Bounds.Y
 				}

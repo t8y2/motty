@@ -495,6 +495,8 @@ func TestHostProxyConfigurationFitsEveryNetworkDialogInAShortWindow(t *testing.T
 			state.openHostDialog()
 			state.editor.setProtocol(protocol)
 			canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+			state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+			canvas, _ = paintAt(state, ui.Size{Width: 900, Height: 600})
 			proxy, ok := hitByID(canvas, hitHostProxyConfigure)
 			if !ok {
 				t.Fatal("proxy configuration was not painted")

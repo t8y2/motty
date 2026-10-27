@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -251,6 +252,59 @@ func TestStateFromANewerBuildIsLeftAloneAndNeverSavedOver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone keeps the two
+// targets of the dialog apart. The backdrop is the window-wide dismiss region
+// and the corner button a control, so the pointer anywhere over the page must
+// not paint the button as hovered; once both were one hit ID, it did.
+func TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
+	if err := os.WriteFile(options.StatePath, []byte("not a store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if state.modal != modalStateNotice {
+		t.Fatalf("modal = %d, want the state notice", state.modal)
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	var quiet ui.Canvas
+	state.Paint(&quiet, size)
+	dismiss := ui.ID{}
+	for _, hit := range quiet.Hits() {
+		if hit.Backdrop {
+			dismiss = hit.ID
+			break
+		}
+	}
+	if dismiss.IsZero() {
+		t.Fatal("the dialog has no backdrop to hover")
+	}
+	paintedWith := func(hovered ui.ID) []ui.Rectangle {
+		var canvas ui.Canvas
+		canvas.SetInteraction(hovered, ui.ID{}, ui.ID{}, false)
+		state.Paint(&canvas, size)
+		return dialogLayerRectangles(&canvas)
+	}
+	if !slices.Equal(paintedWith(ui.ID{}), paintedWith(dismiss)) {
+		t.Fatal("hovering the backdrop paints the dialog's controls as hovered")
+	}
+	if slices.Equal(paintedWith(ui.ID{}), paintedWith(hitStateNoticeClose)) {
+		t.Fatal("the close button paints no hover look of its own")
+	}
+}
+
+// dialogLayerRectangles is what the dialog painted: the page behind it is not
+// part of the comparison.
+func dialogLayerRectangles(canvas *ui.Canvas) []ui.Rectangle {
+	rectangles := make([]ui.Rectangle, 0, len(canvas.Rectangles()))
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Layer == dialogLayer {
+			rectangles = append(rectangles, rectangle)
+		}
+	}
+	return rectangles
 }
 
 func TestTheLastGoodStateIsKeptBesideTheFile(t *testing.T) {

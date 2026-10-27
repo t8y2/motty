@@ -152,12 +152,23 @@ func (state *State) openRemoteTools(session *Session) {
 	if !state.remoteToolsOffered(session) {
 		return
 	}
+	if state.options.OpenContentWindow != nil {
+		state.openRemoteToolsWindow(session)
+		return
+	}
 	state.remote = remoteToolsView{session: session.ID, title: session.Title, tab: state.remote.tab, sort: state.remote.sort, serial: state.remote.serial + 1}
 	state.modal = modalRemoteTools
 	state.refreshRemoteTools()
 }
 
 func (state *State) remoteSession() (*Session, bool) {
+	if window := state.remoteWindow; window != nil {
+		owner, session, ok := window.source()
+		if !ok || !owner.remoteToolsOffered(session) {
+			return nil, false
+		}
+		return &window.session, true
+	}
 	session, ok := state.sessionByIDPointer(state.remote.session)
 	return session, ok && session.conn != nil
 }
@@ -197,7 +208,7 @@ func (state *State) clickRemoteTools(id ui.ID) {
 			view.pageText = ""
 		}
 	case id == hitRemoteNext:
-		if (view.page+1)*remoteRowsPerPage < len(view.rows) {
+		if (view.page+1)*state.remotePageSize() < len(view.rows) {
 			view.page++
 			view.pageText = ""
 		}
@@ -366,12 +377,12 @@ func (state *State) askPullImage() {
 				return m.RemoteBadImage
 			}
 			session, found := state.remoteSession()
-			if !found || !state.typed(session, []byte(command+"\r")) {
+			if !found || !state.typeRemoteCommand(session, command) {
 				return state.messages.History.StatusNotConnected
 			}
 			state.status = command
 			state.remote.serial++
-			state.closeModal()
+			state.finishRemoteTerminalAction()
 			return ""
 		},
 		cancel: back,
@@ -471,7 +482,7 @@ func (state *State) refreshRemoteTools() {
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
 	runner := remotetools.Runner(session.conn)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), remoteTimeout)
+		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
 		var (
 			procs      []remotetools.Process
@@ -489,7 +500,7 @@ func (state *State) refreshRemoteTools() {
 		} else {
 			containers, err = remotetools.Containers(ctx, runner)
 		}
-		state.aiPost(func(state *State) {
+		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
 			if view.serial != serial || view.session != sourceID || view.tab != tab || state.modal != modalRemoteTools {
 				return
@@ -542,10 +553,10 @@ func (state *State) runRemoteAction(done string, action func(context.Context, re
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
 	runner := remotetools.Runner(session.conn)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), remoteTimeout)
+		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
 		err := action(ctx, runner)
-		state.aiPost(func(state *State) {
+		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
 			if view.serial != serial || view.session != sourceID || view.tab != tab || state.modal != modalRemoteTools {
 				return
@@ -591,10 +602,10 @@ func (state *State) openContainerShell(container remotetools.Container) {
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
 	runner := remotetools.Runner(session.conn)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), remoteTimeout)
+		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
 		command, err := remotetools.ShellCommand(ctx, runner, container.ID)
-		state.aiPost(func(state *State) {
+		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
 			if state.modal != modalRemoteTools || view.serial != serial || view.session != sourceID || view.tab != remoteContainers {
 				return
@@ -604,14 +615,14 @@ func (state *State) openContainerShell(container remotetools.Container) {
 				return
 			}
 			if err == nil {
-				err = state.openContainerTab(sourceID, container.Name, command)
+				err = state.openRemoteContainerTab(sourceID, container.Name, command)
 			}
 			if err != nil {
 				view.failed, view.status = true, state.remoteErrorText(err)
 				return
 			}
 			view.serial++
-			state.closeModal()
+			state.finishRemoteTerminalAction()
 		})
 	}()
 }
@@ -621,12 +632,12 @@ func (state *State) openContainerShell(container remotetools.Container) {
 func (state *State) followContainerLog(container remotetools.Container) {
 	session, ok := state.remoteSession()
 	command, valid := remotetools.LogsCommand(container.ID)
-	if !ok || !valid || !state.typed(session, []byte(command+"\r")) {
+	if !ok || !valid || !state.typeRemoteCommand(session, command) {
 		return
 	}
 	state.status = fmt.Sprintf(state.messages.Tools.RemoteLogsFmt, container.Name)
 	state.remote.serial++
-	state.closeModal()
+	state.finishRemoteTerminalAction()
 }
 
 func (state *State) rebuildRemoteRows() {
@@ -656,16 +667,16 @@ func (state *State) rebuildRemoteRows() {
 			}})
 		}
 	}
-	if view.page*remoteRowsPerPage >= len(view.rows) {
+	if view.page*state.remotePageSize() >= len(view.rows) {
 		view.page = 0
 	}
 	view.pageText = ""
 }
 
 func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
-	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
+	m, theme := state.messages.Tools, state.Theme()
 	view := &state.remote
-	source, ok := state.remoteSession()
+	_, ok := state.remoteSession()
 	if !ok {
 		state.closeModal()
 		return
@@ -677,6 +688,17 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 		ContentSize: ui.Size{Width: 940}, FitBody: true, BodyHeight: 52 + tableHeight + 34,
 	})
 	layout := dialog.Begin(m.RemoteTitle, fmt.Sprintf(m.RemoteDescriptionFmt, view.title))
+	state.paintRemoteToolsBody(canvas, layout.Body)
+	actions, count := state.remoteToolActions()
+	dialog.Actions(layout, actions[:count]...)
+	dialog.End()
+}
+
+func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
+	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
+	view := &state.remote
+	pageSize := state.remotePageSize()
+	tableHeight := components.TableHeaderHeight(theme) + float32(pageSize)*components.TableRowHeight(theme)
 	tabs := [...]components.SegmentOption{
 		{ID: hitRemoteTabProcesses, Label: m.RemoteTabProcesses},
 		{ID: hitRemoteTabContainers, Label: m.RemoteTabContainers},
@@ -697,27 +719,34 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 
 	// The tabs and the sort order on one line, the table under them, then the
 	// status with the pages.
-	pages := (len(view.rows) + remoteRowsPerPage - 1) / remoteRowsPerPage
+	pages := (len(view.rows) + pageSize - 1) / pageSize
 	status := view.status
 	color := pal.muted
 	if view.failed {
 		color = pal.danger
 	}
 	var tabsSlot, sortSlot, tableSlot, pagesSlot flex.Box
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
+	f := state.partLayout.Begin(canvas, theme, bounds)
+	stacked := state.remoteWindow != nil && bounds.Width < 800 && view.tab == remoteProcesses
 	f.Column().Fill().Children(func() {
 		f.Row().Height(34).Shrink(0).Gap(12).Children(func() {
 			// In a window too narrow for both they share the line instead of overlapping.
 			tabsSlot = f.Slot().Width(600).Shrink(1)
 			f.Spacer()
-			if view.tab == remoteProcesses {
+			if view.tab == remoteProcesses && !stacked {
 				sortSlot = f.Slot().Width(240).Shrink(1)
 			}
 		})
+		if stacked {
+			f.Row().Height(34).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
+				f.Spacer()
+				sortSlot = f.Slot().Width(240).Height(34)
+			})
+		}
 		tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(12, 0, 0, 0)
 		f.Row().Height(30).Shrink(0).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			f.Text(status).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1).MarginSides(0, 0, 0, 2)
-			if len(view.rows) > remoteRowsPerPage {
+			if len(view.rows) > pageSize {
 				pagesSlot = f.Slot().Width(250).Height(30).Shrink(0)
 			}
 		})
@@ -757,16 +786,30 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 		headings = view.columns[:5]
 	}
 	components.FitTableHeadings(canvas, theme, columns, headings)
+	if state.remoteWindow != nil {
+		// Keep the last column visible as a native window is narrowed; fixed
+		// desktop widths otherwise consume all space before reaching it.
+		var fixed float32
+		for _, column := range columns[:len(columns)-1] {
+			fixed += column.Width
+		}
+		available := max(bounds.Width-120, 0)
+		if fixed > available {
+			for i := range columns[:len(columns)-1] {
+				columns[i].Width *= available / fixed
+			}
+		}
+	}
 	table := components.BeginTable(canvas, theme, tableSlot.Rect(), columns)
 	table.Header(headings)
-	start := view.page * remoteRowsPerPage
-	end := min(start+remoteRowsPerPage, len(view.rows))
+	start := view.page * pageSize
+	end := min(start+pageSize, len(view.rows))
 	for index := start; index < end; index++ {
 		row := &view.rows[index]
 		table.Row(hitRemoteRowList.At(index), row.cells[:len(headings)], row.key == view.selected)
 	}
 
-	if len(view.rows) > remoteRowsPerPage {
+	if len(view.rows) > pageSize {
 		if view.pageText == "" {
 			view.pageText = strconv.Itoa(view.page+1) + "/" + strconv.Itoa(pages)
 		}
@@ -775,9 +818,11 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 		pagination.AddPage(ui.ID{}, view.pageText, true)
 		pagination.AddNext(hitRemoteNext, state.messages.KnownHostsNext, view.page+1 >= pages)
 	}
+}
 
-	var actions [8]components.ButtonAction
-	count := 0
+func (state *State) remoteToolActions() (actions [8]components.ButtonAction, count int) {
+	m, view := state.messages.Tools, &state.remote
+	source, connected := state.remoteSession()
 	add := func(action components.ButtonAction) {
 		actions[count] = action
 		count++
@@ -808,9 +853,8 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 		add(components.ButtonAction{ID: hitRemoteRestart, Label: m.RemoteRestart, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteLogs, Label: m.RemoteLogs, Variant: components.ButtonOutline})
 		container, selected := state.selectedContainer()
-		add(components.ButtonAction{ID: hitRemoteShell, Label: m.RemoteEnterShell, Variant: components.ButtonOutline, Disabled: !selected || !container.Running() || view.loading || source.host.System == sshconn.SystemWindows})
+		add(components.ButtonAction{ID: hitRemoteShell, Label: m.RemoteEnterShell, Variant: components.ButtonOutline, Disabled: !selected || !container.Running() || view.loading || !connected || source.host.System == sshconn.SystemWindows})
 		add(components.ButtonAction{ID: hitRemoteRemove, Label: m.RemoteRemove, Variant: components.ButtonDestructive})
 	}
-	dialog.Actions(layout, actions[:count]...)
-	dialog.End()
+	return actions, count
 }

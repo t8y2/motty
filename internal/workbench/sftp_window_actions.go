@@ -5,7 +5,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPChmod, hitSFTPExtract, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink}
+var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink}
 
 func sftpWindowActionIndex(id ui.ID) int {
 	for i, action := range sftpWindowActionIDs {
@@ -73,6 +73,9 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		if !entry.IsDir() && archiveKindOf(entry.Name) != archiveNone && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPExtract, iconArchive, m.Tools.Extract)
 		}
+		if entry.IsDir() && !entry.IsLink() && w.session.host.System != sshconn.SystemWindows {
+			add(hitSFTPCompress, iconArchive, m.Tools.Compress)
+		}
 		add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 	}
 	return actions
@@ -136,6 +139,10 @@ func (w *sftpWindow) fileAction(local bool, id ui.ID) {
 	case hitSFTPExtract:
 		if !local {
 			w.owner.openSFTPExtractDialog(w.view)
+		}
+	case hitSFTPCompress:
+		if !local {
+			w.owner.openSFTPCompressDialog(w.view)
 		}
 	}
 }

@@ -59,11 +59,12 @@ func (state *State) paintHostColorChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	for index, color := range hostColors {
 		swatch := ui.Rect{X: content.X + float32(index)*35, Y: content.Y, Width: 32, Height: 32}
 		components.BeginColorSwatch(canvas, state.Theme(), hitHostColors.At(index), swatch, hostAccent(color)).Label(labels[index]).Selected(strings.EqualFold(selected, color)).Paint()
+		state.rememberHostControl(hitHostColors.At(index), swatch)
 	}
-	custom := bounds
-	custom.X += 258
-	custom.Width -= 258
-	state.paintDialogField(canvas, hitDialogColor, fieldColor, m.FieldColorCustom, "#3B82F6", custom)
+	p := &state.editor.colorPicker
+	p.trigger = ui.Rect{X: content.X + float32(len(hostColors))*35, Y: content.Y, Width: 32, Height: 32}
+	state.rememberHostControl(hostPickerIDs.Trigger, p.trigger)
+	components.BeginColorPicker(canvas, state.Theme(), p.trigger, state.hostPickerOptions(canvas)).PaintTrigger()
 }
 
 // Color stays on the header, never on the terminal cells or status light.

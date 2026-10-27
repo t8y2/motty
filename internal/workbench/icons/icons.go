@@ -5924,6 +5924,40 @@ var Pencil = ui.Icon{
 	},
 }
 
+// pipette is a compiled vector icon.
+var Pipette = ui.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(12.0, 9.0),
+		ui.LineTo(3.586, 17.414),
+		ui.CubicTo(3.2109, 17.789, 3.00011, 18.2976, 3.0, 18.828),
+		ui.LineTo(3.0, 20.172),
+		ui.CubicTo(2.99989, 20.7024, 2.7891, 21.211, 2.414, 21.586),
+		ui.CubicTo(2.78899, 21.2109, 3.29761, 21.0001, 3.828, 21.0),
+		ui.LineTo(5.172, 21.0),
+		ui.CubicTo(5.70239, 20.9999, 6.21101, 20.7891, 6.586, 20.414),
+		ui.LineTo(15.0, 12.0),
+		ui.MoveTo(18.0, 9.0),
+		ui.LineTo(18.4, 9.4),
+		ui.CubicTo(19.2284, 10.2284, 19.2284, 11.5716, 18.4, 12.4),
+		ui.CubicTo(17.5716, 13.2284, 16.2284, 13.2284, 15.4, 12.4),
+		ui.LineTo(11.6, 8.6),
+		ui.CubicTo(10.7716, 7.77157, 10.7716, 6.42843, 11.6, 5.6),
+		ui.CubicTo(12.4284, 4.77157, 13.7716, 4.77157, 14.6, 5.6),
+		ui.LineTo(15.0, 6.0),
+		ui.LineTo(18.4, 2.6),
+		ui.CubicTo(18.9359, 2.0641, 19.717, 1.85481, 20.449, 2.05096),
+		ui.CubicTo(21.1811, 2.24711, 21.7529, 2.81891, 21.949, 3.55096),
+		ui.CubicTo(22.1452, 4.28301, 21.9359, 5.0641, 21.4, 5.6),
+		ui.ClosePath(),
+		ui.MoveTo(2.0, 22.0),
+		ui.LineTo(2.414, 21.586),
+	},
+}
+
 // play is a compiled vector icon.
 var Play = ui.Icon{
 	ViewBox: 24.0,

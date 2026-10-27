@@ -67,7 +67,7 @@ func (state *State) paintStateNotice(canvas *ui.Canvas, viewport ui.Rect) {
 	lines := min(wrappedLines(canvas, state.stateNotice.body, metrics.FontSizeM, bodyWidth), stateNoticeLines)
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitStateNoticeDismiss, CloseID: hitStateNoticeDismiss, InitialFocusID: hitStateNoticeOK,
+		DismissID: hitStateNoticeDismiss, CloseID: hitStateNoticeClose, InitialFocusID: hitStateNoticeOK,
 		ContentSize: ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: float32(lines) * stateNoticeLine,
 	})
 	// The dialog's own description is a single line; this text is longer.
@@ -82,7 +82,7 @@ func (state *State) paintStateNotice(canvas *ui.Canvas, viewport ui.Rect) {
 }
 
 func (state *State) clickStateNotice(id ui.ID) {
-	if id != hitStateNoticeDismiss && id != hitStateNoticeOK {
+	if id != hitStateNoticeDismiss && id != hitStateNoticeClose && id != hitStateNoticeOK {
 		return
 	}
 	state.closeModal()

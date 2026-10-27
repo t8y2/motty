@@ -167,7 +167,7 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test" })
 }
 
-func TestSFTPWindowExtractionUsesBoundConnectionAndView(t *testing.T) {
+func TestSFTPWindowArchivesUseBoundConnectionViewAndNotices(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1)
 	view := host.windows[0].view
 	remote.mu.Lock()
@@ -195,6 +195,42 @@ func TestSFTPWindowExtractionUsesBoundConnectionAndView(t *testing.T) {
 	dualWait(t, state, w, view, func() bool { return !w.view.extracting && !w.view.busy })
 	if !strings.Contains(command, "'/home/test/pack.zip'") {
 		t.Fatal("wrong extraction target", command)
+	}
+
+	longDirectory := "/home/test/" + strings.Repeat("very-long-directory/", 20)
+	w.view.path = longDirectory
+	for i := range w.view.rows {
+		w.view.rows[i].selected = w.view.rows[i].entry.Name == "docs"
+	}
+	w.selectionChanged(false)
+	w.activeLocal, w.view.local = false, false
+	conn.mu.Lock()
+	conn.runCommand = func(_ context.Context, value string, _ int) ([]byte, error) {
+		command = value
+		return []byte(archiveMissingTool + "gzip\n"), fmt.Errorf("exit 127")
+	}
+	conn.mu.Unlock()
+	w.window.Invalidate()
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	view.Rest()
+	compress := sftpWindowActions[1].At(sftpWindowActionIndex(hitSFTPCompress))
+	button := dualHit(t, view, compress)
+	if err := view.Click(button.X+button.Width/2, button.Y+button.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if w.view.dialog != sftpDialogCompress {
+		t.Fatal("compress action followed the active tab")
+	}
+	w.click(hitSFTPDialogSubmit)
+	dualWait(t, state, w, view, func() bool { return !w.view.extracting && !w.view.busy && len(w.notices.items) == 1 })
+	if !strings.Contains(command, longDirectory+"docs") {
+		t.Fatal("wrong compression target", command)
+	}
+	detail := w.notices.items[0].detail
+	if len(state.fileNotices.items) != 0 || !strings.Contains(detail, "gzip") || !strings.Contains(detail, "docs") || !strings.Contains(detail, "…") {
+		t.Fatalf("archive failure escaped its origin window: main=%+v detached=%q", state.fileNotices.items, detail)
 	}
 }
 

@@ -176,4 +176,12 @@ func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
 		Invalid: query != "" && !validHostTag(query),
 	})
 	p.popup = layout.Popup
+	// The form's tab ring is built from registered stops while it is clipped.
+	// Each chip is a focusable remove button painted by the component, so take
+	// its bounds from the hits it just declared and keep it in that order.
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitHostTagRemove {
+			state.rememberHostControl(hit.ID, hit.Bounds)
+		}
+	}
 }

@@ -119,6 +119,9 @@ func (state *State) authLabel(authentication hostAuth) string {
 func (state *State) paintHostAuthenticationChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	editor, theme := &state.editor, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.FieldAuthentication, "", "")
+	state.rememberHostControl(hitDialogAuth, content)
+	portal := state.beginHostFormPopup(canvas, editor.authOpen)
+	defer state.endHostFormPopup(canvas, portal)
 	list := state.hostAuthListBounds(content, int(authCount))
 	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
 		TriggerID: hitDialogAuth, Label: state.messages.FieldAuthentication, Value: state.authLabel(editor.auth),
@@ -146,6 +149,9 @@ func (state *State) paintHostIdentityChoice(canvas *ui.Canvas, bounds ui.Rect) {
 		}
 	}
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.FieldIdentity, "", "")
+	state.rememberHostControl(hitDialogIdentity, content)
+	portal := state.beginHostFormPopup(canvas, editor.identityOpen)
+	defer state.endHostFormPopup(canvas, portal)
 	rows := min(len(state.identities)+2, 6)
 	list := state.hostAuthListBounds(content, rows)
 	var scroll *components.MenuScroll

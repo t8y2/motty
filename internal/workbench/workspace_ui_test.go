@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -407,6 +408,41 @@ func TestContextPanelCollapseRemovesGapAndNarrowWindowUsesDrawer(t *testing.T) {
 	}
 }
 
+// TestHoveringTheSFTPDrawerBackdropLeavesItsCloseButtonAlone is the drawer's
+// half of the rule the dialog follows: the backdrop that dismisses the drawer
+// and its corner button are separate targets, so the hover of the one must not
+// reach the other.
+func TestHoveringTheSFTPDrawerBackdropLeavesItsCloseButtonAlone(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	size := ui.Size{Width: 800, Height: 700}
+	var quiet ui.Canvas
+	state.Paint(&quiet, size)
+	dismiss := ui.ID{}
+	for _, hit := range quiet.Hits() {
+		if hit.Backdrop {
+			dismiss = hit.ID
+			break
+		}
+	}
+	if dismiss.IsZero() {
+		t.Fatal("the drawer has no backdrop to hover")
+	}
+	paintedWith := func(hovered ui.ID) []ui.Rectangle {
+		var canvas ui.Canvas
+		canvas.SetInteraction(hovered, ui.ID{}, ui.ID{}, false)
+		state.Paint(&canvas, size)
+		return dialogLayerRectangles(&canvas)
+	}
+	if !slices.Equal(paintedWith(ui.ID{}), paintedWith(dismiss)) {
+		t.Fatal("hovering the backdrop paints the drawer's controls as hovered")
+	}
+	// The drawer's own button closes the panel, as the panel's does.
+	state.Click(hitSFTPDrawerClose)
+	if context, _ := state.deck.Context(state.deck.ActiveWorkspace()); context.Open {
+		t.Fatal("the drawer's close button left the panel open")
+	}
+}
+
 func TestContextDividerPersistsWidthAndRestoresTerminalFocus(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
 	size := ui.Size{Width: 1400, Height: 900}
@@ -432,7 +468,7 @@ func TestContextDividerPersistsWidthAndRestoresTerminalFocus(t *testing.T) {
 	restored := New(state.options)
 	t.Cleanup(restored.Close)
 	restoredContext, ok := restored.deck.Context(restored.deck.ActiveWorkspace())
-	if !ok || !restoredContext.Open || restoredContext.Kind != layoutcore.ContextSFTP || restoredContext.Width != context.Width {
+	if !ok || restoredContext.Open != state.sftpPanelAutoOpen || restoredContext.Kind != layoutcore.ContextSFTP || restoredContext.Width != context.Width {
 		t.Fatalf("restored context = %+v, %v; want %+v", restoredContext, ok, context)
 	}
 }

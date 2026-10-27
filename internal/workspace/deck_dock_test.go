@@ -161,6 +161,9 @@ func TestInsertPutsAPaneBeforeItsTarget(t *testing.T) {
 func TestExportThenImportMovesATabBetweenDecksWithFreshIdentifiers(t *testing.T) {
 	source, ids, _ := deckWith(t, 3, 1)
 	target, targetIDs, _ := deckWith(t, 2)
+	if err := source.SetContext(ids[0], ContextState{Kind: ContextSFTP, Open: true, Width: 404, Side: ContextRight}); err != nil {
+		t.Fatal(err)
+	}
 	dto, ok := source.ExportWorkspace(ids[0])
 	if !ok {
 		t.Fatal("no export")
@@ -184,6 +187,9 @@ func TestExportThenImportMovesATabBetweenDecksWithFreshIdentifiers(t *testing.T)
 	}
 	if !slices.Equal(got, []SessionID{101, 102, 103}) {
 		t.Fatalf("sessions %v", got)
+	}
+	if context, ok := target.Context(id); !ok || context != (ContextState{Kind: ContextSFTP, Open: true, Width: 404, Side: ContextRight}) {
+		t.Fatalf("context %+v, %t", context, ok)
 	}
 	if err := target.Validate(); err != nil {
 		t.Fatal(err)

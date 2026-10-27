@@ -58,6 +58,7 @@ func (state *State) paintHostProtocolSwitch(canvas *ui.Canvas, bounds ui.Rect) {
 		{ID: hitDialogProtocolRDP, Label: state.messages.Desktop.ProtocolRDP},
 	}
 	selected := options[state.editor.protocol].ID
+	state.rememberHostControl(selected, bounds)
 	components.BeginSegmentedControl(canvas, state.Theme(), bounds, options[:], selected).Paint()
 }
 
@@ -136,6 +137,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 			{ID: hitDialogFlowSoftware, Label: tools.FlowSoftware},
 		}
 		components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[editor.flow].ID).Paint()
+		state.rememberHostControl(options[editor.flow].ID, content)
 	case protocolTelnet:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
@@ -185,6 +187,9 @@ func (state *State) hostPasswordHint() string {
 func (state *State) paintPortsTrigger(canvas *ui.Canvas, bounds ui.Rect) {
 	m, editor := state.messages.Tools, &state.editor
 	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.PortsPicker, "", "")
+	state.rememberHostControl(hitDialogPortsTrigger, content)
+	portal := state.beginHostFormPopup(canvas, state.editor.portsOpen)
+	defer state.endHostFormPopup(canvas, portal)
 	count := min(len(editor.ports), maxListedPorts)
 	popupWidth := max(content.Width, 340)
 	selectControl := components.BeginSelect(canvas, state.Theme(), content, components.SelectOptions{
@@ -295,15 +300,11 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 }
 
 // hostFormRowHeight is the height of one labelled row of the host dialog.
-const hostFormRowHeight = 58
+const hostFormRowHeight = 70
 
 // hostPortWidth is the width of the port field: the label and five digits fit,
 // and the address keeps the rest of the row.
 const hostPortWidth = 84
-
-// hostDialogBaseHeight is the content height of the host dialog for its base
-// form, whose endpoint block takes two rows, before the protocol's own rows.
-const hostDialogBaseHeight = 472
 
 // hostEndpointRows is how many labelled rows the endpoint block of the form
 // takes: the address with the port and, under it, the credentials. A serial
@@ -321,10 +322,16 @@ func (state *State) hostEndpointRows() int {
 	return 2
 }
 
-// hostDialogHeight is the content height of the host dialog: the base form, less
-// the endpoint rows the protocol does not need, plus the rows it adds.
-func (state *State) hostDialogHeight() float32 {
-	return hostDialogBaseHeight - float32(2-state.hostEndpointRows())*hostFormRowHeight + state.hostDialogExtra()
+// Size the body from its rows; short viewports scroll instead of shrinking them.
+func (state *State) hostFormHeight() float32 {
+	height := float32(2+44+(3+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
+	if state.editor.protocol != protocolSerial {
+		height += hostFormRowHeight
+	}
+	if state.dialogError != "" {
+		height += 32
+	}
+	return height
 }
 
 // switchRowsHeight is the room of the three switches under the algorithm
@@ -378,6 +385,7 @@ func (state *State) paintAdvancedSection(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 	var icon flex.Box
 	header := ui.Rect{X: bounds.X, Y: bounds.Y + advancedHeaderHeight - 32, Width: bounds.Width, Height: 32}
+	state.rememberHostControl(hitDialogAdvanced, header)
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(flex.Center).
 		Radius(radius.control).HoverBackground(pal.surfaceSoft).
@@ -430,6 +438,7 @@ func (state *State) paintAlgorithmRows(canvas *ui.Canvas, x, y, width, rowHeight
 		{ID: hitDialogAlgoCustom, Label: m.AlgoCustom},
 	}
 	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[editor.algoMode].ID).Paint()
+	state.rememberHostControl(options[editor.algoMode].ID, content)
 	if editor.algoMode == algoCustom {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, custom.Rect())
 	}
@@ -460,7 +469,9 @@ func (state *State) paintOTPRow(canvas *ui.Canvas, field, scan, paste, remove ui
 	}
 	state.paintDialogField(canvas, hitDialogOTP, fieldOTP, m.OTPField, placeholder, field)
 	components.BeginButton(canvas, state.Theme(), hitDialogOTPScan, scan).Small().Outline(m.OTPScan)
+	state.rememberHostControl(hitDialogOTPScan, scan)
 	components.BeginButton(canvas, state.Theme(), hitDialogOTPPaste, paste).Small().Outline(m.OTPPaste)
+	state.rememberHostControl(hitDialogOTPPaste, paste)
 	if !editor.otpChecked || editor.otpSaved {
 		label := m.OTPCheck
 		if editor.otpChecked {
@@ -470,6 +481,7 @@ func (state *State) paintOTPRow(canvas *ui.Canvas, field, scan, paste, remove ui
 			label = m.OTPKeep
 		}
 		components.BeginButton(canvas, state.Theme(), hitDialogOTPRemove, remove).Small().Outline(label)
+		state.rememberHostControl(hitDialogOTPRemove, remove)
 	}
 }
 

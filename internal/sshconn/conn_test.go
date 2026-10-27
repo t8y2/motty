@@ -708,10 +708,11 @@ func TestCancelClosesEveryEstablishedProxyJumpConnection(t *testing.T) {
 		h.conn.SubmitPassword(password)
 	}
 	h.phase(PhaseConnected)
+	// A server counts its connection on its own goroutine, after its handshake
+	// returns, which can trail the client's PhaseConnected on a loaded runner.
 	for name, server := range map[string]*testServer{"outer": outer, "inner": inner, "target": target} {
-		if active := server.activeConnections(); active != 1 {
-			t.Fatalf("%s active connections = %d, want 1", name, active)
-		}
+		server := server
+		waitFor(t, "the "+name+" connection to be counted", func() bool { return server.activeConnections() == 1 })
 	}
 
 	h.conn.Cancel()
