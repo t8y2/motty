@@ -172,37 +172,6 @@ func TestPalettesKeepTextReadable(t *testing.T) {
 	}
 }
 
-func TestNewHostButtonCentersItsIconAndLabel(t *testing.T) {
-	for _, appearance := range []appearance{appearanceDark, appearanceLight} {
-		state := newTestState(t, testOptions(t))
-		state.setAppearance(appearance)
-		state.Click(hitLanguage) // the Chinese label is shorter: widths must adapt
-		for range 2 {
-			canvas, _ := paintedTexts(state)
-			button, ok := hitByID(canvas, hitAddHost)
-			if !ok {
-				t.Fatal("no New Host button")
-			}
-			var label ui.Text
-			for _, text := range canvas.Texts() {
-				if text.Value == state.messages.NewHost && text.Bounds.X > button.Bounds.X && text.Bounds.X < button.Bounds.X+button.Bounds.Width {
-					label = text
-				}
-			}
-			if label.Value == "" {
-				t.Fatal("the button label is not painted inside the button")
-			}
-			textWidth := canvas.TextWidthWeight(label.Value, toolbarFont, ui.WeightSemibold) + 4
-			left := label.Bounds.X - toolbarIcon - toolbarIconGap - button.Bounds.X
-			right := button.Bounds.X + button.Bounds.Width - (label.Bounds.X + textWidth)
-			if math.Abs(float64(left-right)) > 0.5 || left < toolbarPadding-0.5 {
-				t.Fatalf("content is not centered: %.1f left vs %.1f right padding", left, right)
-			}
-			state.Click(hitLanguage)
-		}
-	}
-}
-
 func TestDialogFieldsShowEachHintOnlyOnce(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)

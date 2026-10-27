@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,7 +76,7 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 // place; a large one is scanned, sorted and prepared on a goroutine and applied
 // on the window thread when it arrives. localSeq drops an answer that a newer
 // listing has overtaken.
-func (state *State) listLocal(view *sftpView, dir string) {
+func (state *State) listLocal(view *sftpView, dir string) error {
 	folder := &view.lfolder
 	dir = filepath.Clean(dir)
 	file, err := os.Open(dir)
@@ -84,27 +85,30 @@ func (state *State) listLocal(view *sftpView, dir string) {
 		if folder.path == "" {
 			folder.path = dir // an empty list is better than none on a first visit
 		}
-		return
+		return err
 	}
 	// Read just past the inline limit on this thread. A folder that ends before
 	// it is small enough to finish now; a larger one continues on a goroutine,
 	// so even the directory enumeration leaves the window thread. os.File keeps
 	// the read position across that goroutine.
 	first, readErr := file.ReadDir(localListingInlineEntries + 1)
-	if readErr != nil && len(first) == 0 {
+	// ReadDir reports io.EOF when a directory has no more entries. That is a
+	// successful empty listing when the first read returns no rows, not a
+	// filesystem failure.
+	if readErr != nil && len(first) == 0 && !errors.Is(readErr, io.EOF) {
 		file.Close()
 		view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, readErr)
 		if folder.path == "" {
 			folder.path = dir
 		}
-		return
+		return readErr
 	}
 	view.localSeq++
 	seq := view.localSeq
 	if len(first) <= localListingInlineEntries {
 		file.Close()
 		state.applyLocalListing(view, scanLocalListing(dir, first), seq)
-		return
+		return nil
 	}
 	view.errorText = ""
 	view.status = state.messages.SFTPLoading
@@ -127,6 +131,7 @@ func (state *State) listLocal(view *sftpView, dir string) {
 			state.applyLocalListing(view, listing, seq)
 		})
 	}()
+	return nil
 }
 
 // localListing is a local folder scanned away from the window thread.
@@ -266,7 +271,11 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 // openLocalSelected goes into the selected local folder.
 func (state *State) openLocalSelected(view *sftpView) {
 	entry, ok := state.selectedSFTPEntry(view)
-	if !ok || !entry.IsDir() {
+	if !ok {
+		return
+	}
+	if !entry.IsDir() {
+		state.openFileWindow(view, filepath.Join(view.lfolder.path, entry.Name), true)
 		return
 	}
 	state.listLocal(view, filepath.Join(view.lfolder.path, entry.Name))

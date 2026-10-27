@@ -327,10 +327,10 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 		selectedReconnect = hitSettingsReconnectForever
 	}
 	restore := state.settingsRestoreOptions()
-	selectedRestore := hitSettingsRestoreActive
+	selectedRestore := hitSettingsRestoreOff
 	switch state.restoreConnect {
-	case restoreConnectOff:
-		selectedRestore = hitSettingsRestoreOff
+	case restoreConnectActive:
+		selectedRestore = hitSettingsRestoreActive
 	case restoreConnectAll:
 		selectedRestore = hitSettingsRestoreAll
 	}

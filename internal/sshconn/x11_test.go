@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,12 +29,20 @@ func xauthFile(hostname, number string, cookie []byte) []byte {
 // environment that finds it, plus the cookie it will be sent.
 func localX(t *testing.T) (env x11fwd.Environ, setups <-chan x11fwd.Setup) {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "X9")
+	dir, err := os.MkdirTemp("", "motty-x11-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(dir, "X9:9")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Skipf("no unix sockets: %v", err)
 	}
-	t.Cleanup(func() { listener.Close() })
+	t.Cleanup(func() {
+		listener.Close()
+		os.RemoveAll(dir)
+	})
 	received := make(chan x11fwd.Setup, 4)
 	go func() {
 		for {
@@ -55,7 +64,7 @@ func localX(t *testing.T) (env x11fwd.Environ, setups <-chan x11fwd.Setup) {
 	file := xauthFile("testhost", "9", []byte("the-real-cookie!"))
 	env = x11fwd.Environ{
 		// The absolute form names the socket itself, as XQuartz's launchd path does.
-		Display: socket + ":9", Hostname: "testhost", GOOS: "linux", Xauthority: "/test/xauthority",
+		Display: socket, Hostname: "testhost", GOOS: "linux", Xauthority: "/test/xauthority",
 		ReadFile: func(string) ([]byte, error) { return file, nil },
 	}
 	return env, received

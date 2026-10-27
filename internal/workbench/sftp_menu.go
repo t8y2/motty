@@ -134,7 +134,8 @@ func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	case view.localOnly:
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
 	case local:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer, Icon: icon(iconUpload)})
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
+			Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
 	default:
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
 		if view.lfolder.path != "" {
@@ -159,6 +160,9 @@ func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 
 	width, height := rows.size(canvas, state.contextMenuTheme())
+	// Long server paths should not stretch the menu across the whole window.
+	// Viva ellipsizes the second line; its full value remains in the item's hint.
+	width = min(width, 480)
 	bounds := state.popupAt(canvas, viewport, state.sftpMenu.at, width, height, 6)
 	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSFTPMenuDismiss),

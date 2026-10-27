@@ -98,6 +98,11 @@ func (state *State) queueReconnect(session *Session) bool {
 }
 
 func (state *State) updateReconnect(session *Session, status sshconn.Status) {
+	if session.containerCommand != "" && (status.Phase == sshconn.PhaseClosed || status.Phase == sshconn.PhaseFailed) {
+		session.established = false
+		state.cancelReconnect(session)
+		return
+	}
 	switch status.Phase {
 	case sshconn.PhaseConnected:
 		session.established = true

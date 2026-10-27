@@ -10,8 +10,8 @@ import (
 )
 
 // maxCommandPaletteEntries is what the palette can list: its commands and
-// sessions, or, as the new-tab picker, this computer and as many saved hosts as
-// fit. Counts are bytes, so it cannot pass 255.
+// sessions, or, as the new-tab picker, this computer, the host groups and as
+// many saved hosts as fit. Counts are bytes, so it cannot pass 255.
 const maxCommandPaletteEntries = 255
 
 // commandPaletteHits is the place of the controls this file paints.
@@ -23,6 +23,9 @@ var (
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
 	hitCommandPaletteSearch  = tree.ID(commandPaletteHits, "command-palette-search")
 	hitCommandPaletteItems   = tree.Sub(commandPaletteHits, tree.Name("command-palette-items"))
+	// The group headings of the new-tab picker are places too: the pointer over
+	// one shows no choice lit, and a press on one chooses nothing.
+	hitCommandPaletteHeaders = tree.Sub(commandPaletteHits, tree.Name("command-palette-group"))
 )
 
 type commandPaletteEntry struct {
@@ -30,6 +33,9 @@ type commandPaletteEntry struct {
 	detail string // shown after the label, muted (a host's address)
 	search string
 	target ui.ID
+	// header marks a group of the new-tab picker, not a choice in it. Putting
+	// the cursor on one shows nothing selected, and the keyboard steps over it.
+	header bool
 }
 
 type commandPalette struct {
@@ -148,6 +154,15 @@ func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
 	palette.entryCount++
 }
 
+// addHeader names a group in the new-tab picker: a row to read, not to choose.
+func (palette *commandPalette) addHeader(label, detail string) {
+	if palette.entryCount >= uint8(len(palette.entries)) {
+		return
+	}
+	palette.entries[palette.entryCount] = commandPaletteEntry{label: label, detail: detail, header: true}
+	palette.entryCount++
+}
+
 func (state *State) refreshCommandPalette() {
 	palette := &state.commandPalette
 	rawQuery := strings.TrimSpace(palette.search.String())
@@ -160,6 +175,15 @@ func (state *State) refreshCommandPalette() {
 	palette.filtered = true
 	palette.visibleCount = 0
 	for index := uint8(0); index < palette.entryCount; index++ {
+		if palette.entries[index].header {
+			// Group names only head the unfiltered list: a search shows what
+			// matches, not the folders the matches came from.
+			if query == "" {
+				palette.visible[palette.visibleCount] = index
+				palette.visibleCount++
+			}
+			continue
+		}
 		if query != "" && !strings.Contains(palette.entries[index].search, query) {
 			continue
 		}
@@ -167,6 +191,18 @@ func (state *State) refreshCommandPalette() {
 		palette.visibleCount++
 	}
 	palette.selected, palette.top = 0, 0
+}
+
+// choiceAt returns the first choice from index and in direction, stepping over
+// headings. It returns -1 when the direction runs out of choices.
+func (palette *commandPalette) choiceAt(index, direction int) int {
+	for index >= 0 && index < int(palette.visibleCount) {
+		if !palette.entries[palette.visible[index]].header {
+			return index
+		}
+		index += direction
+	}
+	return -1
 }
 
 // followCommandPalette moves the window of rows so that the selected one shows.
@@ -222,6 +258,9 @@ func (state *State) executeCommandPalette(visible uint8) {
 		return
 	}
 	target := palette.entries[palette.visible[visible]].target
+	if target.IsZero() {
+		return
+	}
 	state.closeCommandPalette()
 	state.Click(target)
 }
@@ -241,29 +280,49 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
-	visible += int(palette.top)
-	if !ok || visible >= int(palette.visibleCount) {
+	if !ok {
 		return ui.EventResult{}, false
 	}
-	palette.selected = uint8(visible)
-	move := func(selected int) (ui.EventResult, bool) {
-		palette.selected = uint8(min(max(selected, 0), int(palette.visibleCount)-1))
+	row := int(palette.top) + visible
+	if row >= int(palette.visibleCount) {
+		return ui.EventResult{}, false
+	}
+	palette.selected = uint8(row)
+	move := func(selected, direction int) (ui.EventResult, bool) {
+		selected = min(max(selected, 0), int(palette.visibleCount)-1)
+		selected = palette.choiceAt(selected, direction)
+		if selected < 0 {
+			// The move ran past the end of the list: it lands on the last
+			// choice there is, not on nothing.
+			if direction > 0 {
+				selected = palette.choiceAt(int(palette.visibleCount)-1, -1)
+			} else {
+				selected = palette.choiceAt(0, 1)
+			}
+		}
+		if selected < 0 {
+			return ui.EventResult{Handled: true}, true
+		}
+		palette.selected = uint8(selected)
 		palette.follow()
-		return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(int(palette.selected - palette.top)), FocusVisible: true}, true
+		return ui.EventResult{
+			Handled: true, Repaint: true,
+			Focus: hitCommandPaletteItems.At(int(palette.selected - palette.top)), FocusVisible: true,
+		}, true
 	}
 	switch event.Key {
 	case ui.KeyUp:
-		return move(visible - 1)
+		return move(row-1, -1)
 	case ui.KeyDown:
-		return move(visible + 1)
+		return move(row+1, 1)
 	case ui.KeyHome:
-		return move(0)
+		return move(0, 1)
 	case ui.KeyEnd:
-		return move(int(palette.visibleCount) - 1)
+		return move(int(palette.visibleCount)-1, -1)
 	case ui.KeyPageUp:
-		return move(visible - commandPaletteVisibleRows)
+		return move(row-commandPaletteVisibleRows, -1)
 	case ui.KeyPageDown:
-		return move(visible + commandPaletteVisibleRows)
+		return move(row+commandPaletteVisibleRows, 1)
 	case ui.KeyEnter, ui.KeySpace:
 		if !event.Repeat {
 			state.executeCommandPalette(palette.selected)

@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 func rightClick(state *State, session *Session, x, y float32) ui.EventResult {
@@ -55,6 +56,53 @@ func TestTerminalMenuStaysInsideTheWindow(t *testing.T) {
 	last, ok := hitByID(&canvas, hitTerminalMenuFiles)
 	if !ok || last.Bounds.X+last.Bounds.Width > 1400 || last.Bounds.Y+last.Bounds.Height > 900 {
 		t.Fatalf("the menu runs off the window: %+v, %v", last.Bounds, ok)
+	}
+}
+
+// A right click on one pane of a split does not move focus, so the menu's close
+// row must close the pane it was opened on, and only while there is a split to
+// close: a tab of one pane would lose the tab instead.
+func TestTheTerminalMenuClosesThePaneItWasOpenedOn(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	first, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("no session to split")
+	}
+	firstID := first.ID
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	second, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || second.ID == firstID {
+		t.Fatalf("split active session = %v, want a second one", state.activeSessionID)
+	}
+	secondID := second.ID
+	workspace := state.deck.ActiveWorkspace()
+	if panes := state.deck.Panes(workspace, nil); len(panes) != 2 {
+		t.Fatalf("panes = %+v", panes)
+	}
+
+	state.terminalMenu = terminalMenu{open: true, session: firstID}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitTerminalMenuClosePane); !ok {
+		t.Fatal("a split tab's menu does not offer closing the pane")
+	}
+	state.Click(hitTerminalMenuClosePane)
+	if _, ok := state.sessionByIDPointer(firstID); ok {
+		t.Fatal("the pane the menu was opened on is still open")
+	}
+	if panes := state.deck.Panes(workspace, nil); len(panes) != 1 || panes[0].SessionID != layoutcore.SessionID(secondID) {
+		t.Fatalf("panes after closing = %+v, want the other pane", panes)
+	}
+	if state.deck.ActiveWorkspace() != workspace {
+		t.Fatal("closing a pane closed the tab")
+	}
+
+	// One pane left: the row would close the tab, which this menu does not do.
+	state.terminalMenu = terminalMenu{open: true, session: secondID}
+	canvas = ui.Canvas{}
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitTerminalMenuClosePane); ok {
+		t.Fatal("a tab of one pane offers closing the pane")
 	}
 }
 

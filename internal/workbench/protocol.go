@@ -92,6 +92,11 @@ type savedTransport struct {
 	// the default algorithms; AlgorithmList is the custom list.
 	Algorithms    string `json:"algorithms,omitempty"`
 	AlgorithmList string `json:"algorithm_list,omitempty"`
+	// Authentication is "password", "key" or "agent" when an SSH host does
+	// not use the automatic authentication order. Identity optionally selects
+	// one imported key fingerprint for the key policy.
+	Authentication string `json:"authentication,omitempty"`
+	Identity       string `json:"identity,omitempty"`
 	// ForwardX11 is set for an SSH host that forwards X11.
 	ForwardX11 bool `json:"forward_x11,omitempty"`
 	// AgentForward is set for an SSH host whose shells may use the local
@@ -134,6 +139,7 @@ func (host Host) transport() savedTransport {
 	}
 	mode, list := host.savedAlgo()
 	transport.Algorithms, transport.AlgorithmList = mode, list
+	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
 	return transport
 }
@@ -146,6 +152,14 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
+		var ok bool
+		if host.Auth, ok = parseHostAuth(transport.Authentication); !ok {
+			return false
+		}
+		host.Identity = strings.TrimSpace(transport.Identity)
+		if host.Auth != authPrivateKey {
+			host.Identity = ""
+		}
 		host.ForwardX11 = transport.ForwardX11
 		host.AgentForward = transport.AgentForward
 		host.NoHistory = transport.NoHistory

@@ -149,6 +149,34 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	}
 }
 
+func TestCommandShellUsesItsOwnPTYAndCarriesInteractiveInput(t *testing.T) {
+	const command = "docker exec -it 0f1e2d3c4b5a /bin/sh"
+	seen := make(chan string, 1)
+	server := passwordServer(t, nil)
+	server.command = func(got string, channel ssh.Channel) {
+		seen <- got
+		_, _ = channel.Write([]byte("inside$ "))
+		buffer := make([]byte, 64)
+		n, _ := channel.Read(buffer)
+		_, _ = channel.Write(buffer[:n])
+		_ = channel.Close()
+	}
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 92, Rows: 30, Command: command})
+	w.until("container prompt", func(output string) bool { return strings.Contains(output, "inside$ ") })
+	if got := <-seen; got != command {
+		t.Fatalf("executed %q, want %q", got, command)
+	}
+	term, cols, rows, env, _ := fakeShellState(server)
+	if term != "xterm-256color" || cols != 92 || rows != 30 || !strings.Contains(strings.ToLower(env["LANG"]), "utf") {
+		t.Fatalf("PTY=%s %dx%d environment=%v", term, cols, rows, env)
+	}
+	if !w.shell.Write([]byte("echo ok\r")) {
+		t.Fatal("command PTY rejected input")
+	}
+	w.until("interactive echo", func(output string) bool { return strings.Contains(output, "echo ok\r") })
+}
+
 // fakeShellState reads the single shell session the server is running.
 func fakeShellState(server *testServer) (term string, cols, rows int, env map[string]string, resizes [][2]int) {
 	server.mu.Lock()

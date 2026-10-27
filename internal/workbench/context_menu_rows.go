@@ -62,7 +62,7 @@ func (rows *menuRows) size(canvas *ui.Canvas, theme ui.Theme) (width, height flo
 			height += contextMenuSeparator
 			continue
 		}
-		height += contextMenuRow
+		height += components.ContextMenuItemHeight(theme, entry.item, contextMenuRow)
 		width = max(width, components.ContextMenuItemWidth(canvas, theme, entry.item))
 	}
 	return width, height

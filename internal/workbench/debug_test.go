@@ -151,6 +151,55 @@ func TestDebugPagePaintDoesNotAllocateOnceWarm(t *testing.T) {
 	}
 }
 
+// The palette is Viva's ColorSwatch: each color is a radio choice with its own
+// ring, pointer selection is remembered, the disabled choice cannot be chosen,
+// and the arrow keys move through the enabled colors.
+func TestDebugPaletteChoosesAndMovesBetweenColors(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitDebug)
+
+	canvas, texts := paintedTexts(state)
+	labels := state.debugSwatchLabels()
+	for index, label := range labels {
+		hit, ok := hitByID(canvas, hitDebugSwatchList.At(index))
+		if !ok || hit.Role != ui.RoleRadio || hit.Label != label ||
+			hit.Checked != (index == 0) || hit.Disabled != (index == debugSwatches-1) {
+			t.Fatalf("swatch %d = %+v, ok=%v; want %q", index, hit, ok, label)
+		}
+	}
+	if !contains(texts, state.messages.DebugColorSwatchTitle) {
+		t.Fatalf("the palette card is not painted: %v", texts)
+	}
+
+	state.Click(hitDebugSwatchList.At(1))
+	canvas, texts = paintedTexts(state)
+	if state.dev.swatch != 1 {
+		t.Fatalf("selected swatch = %d, want green", state.dev.swatch)
+	}
+	if hit, ok := hitByID(canvas, hitDebugSwatchList.At(1)); !ok || !hit.Checked {
+		t.Fatalf("the chosen color is not checked: %+v, ok=%v", hit, ok)
+	}
+	if countText(texts, labels[1]) != 1 {
+		t.Fatalf("the chosen color is not named beside %q: %v", state.messages.DebugColorSwatchChoice, texts)
+	}
+
+	// A disabled swatch is a hit for accessibility but chooses nothing.
+	state.Click(hitDebugSwatchList.At(debugSwatches - 1))
+	if state.dev.swatch != 1 {
+		t.Fatalf("pressing the disabled swatch chose %d, want green", state.dev.swatch)
+	}
+
+	// Right from blue skips the disabled red and wraps to no color.
+	result := state.Key(ui.KeyEvent{Target: hitDebugSwatchList.At(2), Key: ui.KeyRight})
+	if !result.Handled || !result.Repaint || result.Focus != hitDebugSwatchList.At(0) || state.dev.swatch != 0 {
+		t.Fatalf("Right from blue: result=%+v swatch=%d", result, state.dev.swatch)
+	}
+	result = state.Key(ui.KeyEvent{Target: hitDebugSwatchList.At(0), Key: ui.KeyLeft})
+	if !result.Handled || result.Focus != hitDebugSwatchList.At(2) || state.dev.swatch != 2 {
+		t.Fatalf("Left from no color: result=%+v swatch=%d", result, state.dev.swatch)
+	}
+}
+
 func countText(texts []string, value string) int {
 	count := 0
 	for _, text := range texts {

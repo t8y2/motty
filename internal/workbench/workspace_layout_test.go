@@ -125,8 +125,6 @@ func TestWorkspaceLayoutRoundTrip(t *testing.T) {
 func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	production := first.deck.ActiveWorkspace()
 	first.Click(hitPaneSplitHorizontal) // opens a second shell on the same host
@@ -179,7 +177,6 @@ func TestCorruptDeckDegradesToSafeDisconnectedPanes(t *testing.T) {
 	}
 	if err := saveState(options.StatePath, savedState{
 		Workspace: "terminal", Sessions: []savedSession{{Label: "Safe", Address: "safe.example.com", Port: 22}}, Deck: &invalid,
-		RestoreConnect: restoreConnectOff.String(), // a corrupt deck must degrade safely without dialing
 	}); err != nil {
 		t.Fatal(err)
 	}

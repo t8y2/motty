@@ -28,6 +28,8 @@ func (language Language) String() string {
 // Messages is the complete set of user-visible workbench strings. Adding a
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
+	FileWindow FileWindowMessages
+	Transfers  TransferCenterMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages
@@ -79,6 +81,9 @@ type Messages struct {
 	DebugEnvironmentDevelopment string
 	DebugEnvironmentStaging     string
 	DebugEnvironmentProduction  string
+	DebugColorSwatchTitle       string
+	DebugColorSwatchDescription string
+	DebugColorSwatchChoice      string
 
 	// What the user is told when the saved state could not be loaded as it was.
 	// The Fmt strings take the file names or versions named in persist.go.
@@ -265,6 +270,15 @@ type Messages struct {
 	FieldPasswordHint           string
 	FieldPasswordKeepHint       string
 	FieldPasswordCopyHint       string
+	FieldAuthentication         string
+	AuthAutomatic               string
+	AuthPassword                string
+	AuthPrivateKey              string
+	AuthAgent                   string
+	FieldIdentity               string
+	AuthAllKeys                 string
+	AuthKeyUnavailable          string
+	AuthImportKey               string
 	FieldVNCPassword            string
 	HostPasswordShared          string
 	HostPasswordNotCarried      string
@@ -274,6 +288,16 @@ type Messages struct {
 	FieldTags                   string
 	FieldTagsPlaceholder        string
 	FieldIcon                   string
+	FieldColor                  string
+	FieldColorCustom            string
+	ColorNone                   string
+	ColorGreen                  string
+	ColorYellow                 string
+	ColorOrange                 string
+	ColorRed                    string
+	ColorBlue                   string
+	ColorPurple                 string
+	ErrHostColorInvalid         string
 	IconAuto                    string
 	IconServer                  string
 	IconTerminal                string
@@ -482,6 +506,7 @@ type Messages struct {
 	KeyNothingImported          string
 	KeySelected                 string
 	KeyRemoved                  string
+	KeyInUseFmt                 string
 	KeyPassphraseTitle          string
 	KeyPassphraseDescriptionFmt string
 	KeyPassphraseLabel          string

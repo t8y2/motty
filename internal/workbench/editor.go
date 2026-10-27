@@ -25,6 +25,7 @@ type hostEditor struct {
 	group    text.Editor
 	tags     text.Editor
 	icon     hostIcon
+	color    text.Editor
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -37,9 +38,13 @@ type hostEditor struct {
 	port text.Editor
 
 	// algoMode is the SSH algorithm choice; algorithms holds the custom list.
-	algoMode   algoMode
-	transfer   transferMode
-	algorithms text.Editor
+	algoMode     algoMode
+	auth         hostAuth
+	identity     string
+	authOpen     bool
+	identityOpen bool
+	transfer     transferMode
+	algorithms   text.Editor
 	// forwardX11 is the host's "Forward X11" switch.
 	forwardX11 bool
 	// agentForward is the host's "Forward ssh-agent" switch.
@@ -80,6 +85,7 @@ const (
 	fieldGroup
 	fieldPort
 	fieldTags
+	fieldColor
 	fieldAlgorithms
 	fieldOTP
 	fieldCount
@@ -100,6 +106,8 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 		return &editor.group
 	case fieldTags:
 		return &editor.tags
+	case fieldColor:
+		return &editor.color
 	case fieldAlgorithms:
 		return &editor.algorithms
 	case fieldOTP:
@@ -173,6 +181,9 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	if _, ok := parseHostTags(editor.value(fieldTags)); !ok {
 		return messages.ErrHostTagsInvalid
 	}
+	if _, ok := normalizeHostColor(editor.value(fieldColor)); !ok {
+		return messages.ErrHostColorInvalid
+	}
 	candidate := editor.host(0)
 	for _, host := range hosts {
 		if host.ID != ignoreID && sameEndpoint(host, candidate) {
@@ -183,6 +194,8 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 }
 
 func (editor *hostEditor) load(host Host) {
+	editor.color = text.Editor{}
+	editor.color.Insert(host.Color)
 	editor.label = text.Editor{}
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
@@ -194,6 +207,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.algorithms = text.Editor{}
 	editor.otp, editor.otpChecked, editor.otpSaved, editor.otpRemove = text.Editor{}, true, false, false
 	editor.algoMode = host.algoMode()
+	editor.auth, editor.identity = host.Auth, host.Identity
+	editor.authOpen, editor.identityOpen = false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
 	editor.noHistory = host.NoHistory
@@ -222,7 +237,9 @@ func (editor *hostEditor) load(host Host) {
 // host builds the host the form currently describes.
 func (editor *hostEditor) host(id uint32) Host {
 	tags, _ := parseHostTags(editor.value(fieldTags))
+	color, _ := normalizeHostColor(editor.value(fieldColor))
 	host := Host{
+		Color:    color,
 		ID:       id,
 		Label:    editor.value(fieldLabel),
 		Group:    editor.value(fieldGroup),
@@ -240,6 +257,10 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.ViaSSH, host.Clipboard = editor.viaSSH, editor.clipboard
 	}
 	if editor.protocol == protocolSSH {
+		host.Auth, host.Identity = editor.auth, editor.identity
+		if host.Auth != authPrivateKey {
+			host.Identity = ""
+		}
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
 		host.NoHistory = editor.noHistory
@@ -262,6 +283,7 @@ func (editor *hostEditor) host(id uint32) Host {
 
 // reset clears every field back to defaults for a fresh dialog session.
 func (editor *hostEditor) reset() {
+	editor.color = text.Editor{}
 	editor.label = text.Editor{}
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
@@ -272,7 +294,9 @@ func (editor *hostEditor) reset() {
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.otp, editor.otpChecked, editor.otpSaved, editor.otpRemove = text.Editor{}, true, false, false
-	editor.algoMode, editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = algoDefault, false, false, false, transferAuto
+	editor.algoMode, editor.auth, editor.identity = algoDefault, authAutomatic, ""
+	editor.authOpen, editor.identityOpen = false, false
+	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.proxy, editor.proxyPassword = nil, ""
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
@@ -313,6 +337,7 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 		}
 	}
 	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
+	editor.authOpen, editor.identityOpen = false, false
 	if protocol == protocolSerial {
 		editor.ports = serial.Ports()
 		if editor.value(fieldAddress) == "" && len(editor.ports) > 0 {

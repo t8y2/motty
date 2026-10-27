@@ -202,6 +202,16 @@ type ToolsMessages struct {
 	// The file panel.
 	CatFiles                        string
 	FilesParallel                   string
+	FilesPathInput                  string
+	FilesPathStyle                  string
+	FilesPathDescription            string
+	FilesPathBreadcrumbs            string
+	FilesPathLabel                  string
+	FilesPathPlaceholder            string
+	FilesPathRequired               string
+	FilesPathErrorTitle             string
+	FilesPathNotFoundFmt            string
+	FilesPathFailedFmt              string
 	FilesKeepTimes                  string
 	FilesKeepTimesDescription       string
 	FilesFollow                     string
@@ -268,6 +278,7 @@ type ToolsMessages struct {
 	XYStart                         string
 	XYSaveTitle                     string
 	DropUploadingFmt                string
+	DropUploadHint                  string
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
@@ -425,6 +436,7 @@ type ToolsMessages struct {
 	RemoteConfirmDownFmt            string
 	RemoteDown                      string
 	RemoteErrNoCompose              string
+	RemoteErrComposeListUnsupported string
 	RemoteReniceLower               string
 	RemoteReniceNormal              string
 	RemoteReniceHigher              string
@@ -462,6 +474,10 @@ type ToolsMessages struct {
 	RemoteStop                      string
 	RemoteRestart                   string
 	RemoteLogs                      string
+	RemoteEnterShell                string
+	RemoteErrNoShell                string
+	RemoteShellRequiresRunning      string
+	RemoteShellUnsupportedHost      string
 	RemoteRemove                    string
 	RemotePull                      string
 	RemotePullTitle                 string

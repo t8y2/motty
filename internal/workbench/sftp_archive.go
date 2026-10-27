@@ -175,7 +175,7 @@ func (state *State) finishSFTPArchive(sessionID uint32, view *sftpView, sequence
 		case reason == "":
 			reason = err.Error()
 		}
-		state.fileNotices.show(title, fmt.Sprintf(format, path.Join(directory, source), firstLines(reason, 3)), components.ToastError)
+		state.fileNotices.showPathReason(title, format, path.Join(directory, source), firstLines(reason, 3), components.ToastError)
 		return
 	}
 	view.forgetListings()

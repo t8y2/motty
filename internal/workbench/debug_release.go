@@ -32,6 +32,8 @@ func (state *State) devWorkspaceName() (string, bool) { return "", false }
 
 func (state *State) devRestoreWorkspace(string) bool { return false }
 
+func (state *State) devSwatchKey(ui.KeyEvent) (ui.EventResult, bool) { return ui.EventResult{}, false }
+
 func (state *State) devSelectTypeahead(ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
 	return nil, nil, false
 }

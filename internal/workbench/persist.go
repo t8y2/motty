@@ -53,6 +53,7 @@ type savedState struct {
 	SFTPParallel               int                 `json:"sftp_parallel,omitempty"`
 	SFTPKeepTimes              string              `json:"sftp_keep_times,omitempty"`
 	SFTPFollow                 string              `json:"sftp_follow,omitempty"`
+	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
 	UpdateCheck                string              `json:"update_check,omitempty"`
 	UpdateSkipped              string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks              []savedBookmark     `json:"sftp_bookmarks,omitempty"`
@@ -110,6 +111,7 @@ type savedShortcut struct {
 }
 
 type savedHost struct {
+	Color   string   `json:"color,omitempty"`
 	ID      string   `json:"id"`
 	Label   string   `json:"label"`
 	Group   string   `json:"group,omitempty"`
@@ -327,6 +329,7 @@ func (state *State) snapshot() savedState {
 		SFTPParallel:               state.sftpParallel,
 		SFTPKeepTimes:              notifyString(state.sftpKeepTimesOff),
 		SFTPFollow:                 notifyString(state.sftpFollowOff),
+		SFTPPathInput:              state.sftpPathInput,
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
@@ -371,7 +374,7 @@ func (state *State) snapshot() savedState {
 	}
 	for _, host := range state.hosts {
 		saved.Hosts = append(saved.Hosts, savedHost{
-			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(),
+			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
 			Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(),
 			savedTransport: host.transport(),
 		})
@@ -405,10 +408,13 @@ func (state *State) snapshot() savedState {
 	}
 	for index := range state.sessions {
 		session := &state.sessions[index]
+		if session.containerCommand != "" {
+			continue
+		}
 		if session.isLocal() {
 			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Local: true})
 			if session.ID == state.activeSessionID {
-				saved.ActiveSession = index + 1
+				saved.ActiveSession = len(saved.Sessions)
 			}
 			continue
 		}
@@ -418,7 +424,7 @@ func (state *State) snapshot() savedState {
 			savedTransport: session.host.transport(),
 		})
 		if session.ID == state.activeSessionID {
-			saved.ActiveSession = index + 1
+			saved.ActiveSession = len(saved.Sessions)
 		}
 	}
 	saved.AIProviders = state.savedAIProviders()
@@ -609,6 +615,7 @@ func (state *State) restoreShared(saved savedState) {
 			continue
 		}
 		host.Icon, _ = parseHostIcon(entry.Icon)
+		host.Color, _ = normalizeHostColor(entry.Color)
 		if tags, ok := normalizeHostTags(entry.Tags); ok {
 			setHostTags(&host, tags)
 		}

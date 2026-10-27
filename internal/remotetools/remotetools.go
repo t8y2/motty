@@ -26,6 +26,8 @@ var (
 	ErrUnsupported = errors.New("remotetools: this server's ps is not supported")
 	// ErrNoDocker means Docker is not installed on the server.
 	ErrNoDocker = errors.New("remotetools: docker is not installed")
+	// ErrNoShell means none of the supported interactive shells could start.
+	ErrNoShell = errors.New("remotetools: no supported shell inside this container")
 	// ErrMalformed means the output was not what the command prints.
 	ErrMalformed = errors.New("remotetools: unexpected output")
 )
@@ -104,7 +106,22 @@ func ownPipeline(command string) bool {
 // Processes lists the busiest processes, most first.
 func Processes(ctx context.Context, runner Runner, key SortKey) ([]Process, error) {
 	output, err := runner.RunCommand(ctx, processCommand(key), maxOutput)
-	if len(output) == 0 && err != nil {
+	if unsupportedPSOptions(output) {
+		output, err = runner.RunCommand(ctx, legacyProcessCommand, maxOutput)
+		if err != nil {
+			if unsupportedPSOptions(output) {
+				line, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
+				return nil, &Failure{Message: line, Err: ErrUnsupported}
+			}
+			return nil, err
+		}
+		return parseLegacyProcesses(output, key)
+	}
+	if err != nil {
+		if text := strings.TrimSpace(string(output)); text != "" {
+			line, _, _ := strings.Cut(text, "\n")
+			return nil, &Failure{Message: line, Err: err}
+		}
 		return nil, err
 	}
 	list, parseErr := ParseProcesses(output, key)
@@ -218,13 +235,20 @@ type Container struct {
 func (container Container) Running() bool { return container.State == "running" }
 
 const containerCommand = "docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}' 2>&1"
+const legacyContainerCommand = "docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}' 2>&1"
 
 // Containers lists every container, running ones first.
 func Containers(ctx context.Context, runner Runner) ([]Container, error) {
 	output, err := runner.RunCommand(ctx, containerCommand, maxOutput)
+	if err != nil && strings.Contains(string(output), "<.State>") && strings.Contains(string(output), "can't evaluate field State") {
+		output, err = runner.RunCommand(ctx, legacyContainerCommand, maxOutput)
+		if err == nil {
+			return parseLegacyContainers(output)
+		}
+	}
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if strings.Contains(text, "not found") || strings.Contains(text, "No such file") {
+		if missingDockerCLI(output) {
 			return nil, ErrNoDocker
 		}
 		if text == "" {
@@ -234,6 +258,49 @@ func Containers(ctx context.Context, runner Runner) ([]Container, error) {
 		return nil, &Failure{Message: line, Err: err}
 	}
 	return ParseContainers(output)
+}
+
+func stateFromStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch {
+	case strings.HasPrefix(status, "up"):
+		if strings.Contains(status, "(paused)") {
+			return "paused"
+		}
+		return "running"
+	case strings.HasPrefix(status, "exited"):
+		return "exited"
+	case strings.HasPrefix(status, "created"):
+		return "created"
+	case strings.HasPrefix(status, "restarting"):
+		return "restarting"
+	case strings.HasPrefix(status, "dead"):
+		return "dead"
+	case strings.HasPrefix(status, "removing"):
+		return "removing"
+	default:
+		return "unknown"
+	}
+}
+
+func parseLegacyContainers(output []byte) ([]Container, error) {
+	var list []Container
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 4)
+		if len(parts) != 4 || !validName(parts[0]) {
+			return nil, &Failure{Message: line, Err: ErrMalformed}
+		}
+		list = append(list, Container{ID: parts[0], Name: parts[1], Image: parts[2], State: stateFromStatus(parts[3]), Status: parts[3]})
+		if len(list) == maxItems {
+			break
+		}
+	}
+	sort.SliceStable(list, func(a, b int) bool { return list[a].Running() && !list[b].Running() })
+	return list, nil
 }
 
 // ParseContainers reads the listing command's output.
@@ -258,6 +325,7 @@ func ParseContainers(output []byte) ([]Container, error) {
 }
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+var containerIDPattern = regexp.MustCompile(`^[0-9a-f]{12,64}$`)
 
 func validName(value string) bool { return namePattern.MatchString(value) }
 
@@ -299,4 +367,44 @@ func LogsCommand(id string) (string, bool) {
 		return "", false
 	}
 	return "docker logs -f --tail 200 " + id, true
+}
+
+// ShellCommand probes a fixed set of shells before opening a PTY. A shell's
+// later exit status belongs to the user and never triggers another candidate.
+func ShellCommand(ctx context.Context, runner Runner, id string) (string, error) {
+	if !containerIDPattern.MatchString(id) {
+		return "", fmt.Errorf("remotetools: %q is not a container id", id)
+	}
+	if len(id) != 64 {
+		output, err := runner.RunCommand(ctx, "docker inspect --format '{{.Id}}' "+id+" 2>&1", maxOutput)
+		if err != nil {
+			message, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
+			if message != "" {
+				return "", &Failure{Message: message, Err: err}
+			}
+			return "", err
+		}
+		id = strings.TrimSpace(string(output))
+		if len(id) != 64 || !containerIDPattern.MatchString(id) {
+			return "", ErrMalformed
+		}
+	}
+	for _, shell := range [...]string{"sh", "bash", "ash"} {
+		output, err := runner.RunCommand(ctx, "docker exec "+id+" "+shell+" -c : 2>&1", maxOutput)
+		if err == nil {
+			return "docker exec -it " + id + " " + shell, nil
+		}
+		message := strings.ToLower(string(output))
+		if strings.Contains(message, "exec: \""+shell+"\"") &&
+			(strings.Contains(message, "executable file not found") || strings.Contains(message, "no such file or directory")) {
+			continue
+		}
+		if line, _, found := strings.Cut(strings.TrimSpace(string(output)), "\n"); found {
+			return "", &Failure{Message: line, Err: err}
+		} else if line != "" {
+			return "", &Failure{Message: line, Err: err}
+		}
+		return "", err
+	}
+	return "", ErrNoShell
 }

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -10,6 +11,8 @@ import (
 
 var fileNoticeHits = tree.Feature("file-notices")
 var hitFileNotices = tree.Sub(fileNoticeHits, tree.Name("dismiss"))
+
+const maxFileNoticeDetailRunes = 240
 
 type fileNotice struct {
 	id            ui.ID
@@ -23,8 +26,8 @@ type fileNotices struct {
 }
 
 func (notices *fileNotices) show(title, detail string, kind components.ToastType) {
-	if utf8.RuneCountInString(detail) > 240 {
-		detail = string([]rune(detail)[:240]) + "…"
+	if utf8.RuneCountInString(detail) > maxFileNoticeDetailRunes {
+		detail = string([]rune(detail)[:maxFileNoticeDetailRunes]) + "…"
 	}
 	now := time.Now()
 	for _, item := range notices.items {
@@ -40,6 +43,44 @@ func (notices *fileNotices) show(title, detail string, kind components.ToastType
 		notices.removeItem(evicted)
 		notices.items = append(notices.items, fileNotice{id: id, title: title, detail: detail, kind: kind})
 	}
+}
+
+func (notices *fileNotices) showPathReason(title, format, location, reason string, kind components.ToastType) {
+	locationBudget := maxFileNoticeDetailRunes - utf8.RuneCountInString(fmt.Sprintf(format, "", reason))
+	if locationBudget < 1 {
+		locationBudget = 1
+		reasonBudget := maxFileNoticeDetailRunes - utf8.RuneCountInString(fmt.Sprintf(format, "…", ""))
+		if reasonBudget < 1 {
+			reasonBudget = 1
+		}
+		reason = truncateRunes(reason, reasonBudget)
+	}
+	notices.show(title, fmt.Sprintf(format, elideMiddleRunes(location, locationBudget), reason), kind)
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
+}
+
+func elideMiddleRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return "…"
+	}
+	kept := limit - 1
+	left := (kept + 1) / 2
+	right := kept / 2
+	return string(runes[:left]) + "…" + string(runes[len(runes)-right:])
 }
 func (notices *fileNotices) removeItem(id ui.ID) {
 	for i, item := range notices.items {

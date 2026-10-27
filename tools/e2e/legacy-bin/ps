@@ -1,0 +1,10 @@
+#!/bin/sh
+if [ "$1" = '-eo' ]; then
+  echo 'ps: invalid option -- e' >&2
+  exit 1
+fi
+if [ "$1" = 'aux' ]; then
+  printf '%s\n' 'USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND' 'www 9 22.7 5.4 9182 128 ? S 08:15 0:02 nginx: worker'
+  exit 0
+fi
+exec /bin/ps "$@"

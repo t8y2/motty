@@ -67,13 +67,15 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return view.dialog == sftpDialogOverwrite })
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
+	})
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitSFTPDialogSkip); !ok {
-		t.Fatal("the conflict dialog has no Skip button")
+	if _, ok := hitByID(&canvas, hitTransfersSkip.At(state.transfers.entries[0].id)); !ok {
+		t.Fatal("the transfer center has no Skip button")
 	}
-	state.Click(hitSFTPDialogSkip)
+	state.Click(hitTransfersSkip.At(state.transfers.entries[0].id))
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return view.dialog == sftpDialogNone && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
 	})

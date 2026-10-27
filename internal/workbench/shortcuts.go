@@ -107,6 +107,16 @@ func (chord shortcutChord) label() string {
 	return label.String()
 }
 
+// keycapText is the text of each key code, made once: converting a rune to a
+// string allocates, and keycaps are painted on every restored page and menu.
+var keycapText = func() [256]string {
+	var table [256]string
+	for code := range table {
+		table[code] = string(rune(code))
+	}
+	return table
+}()
+
 // keys splits a chord into the keycaps a menu shows for it: one per modifier,
 // then the key. Where the platform has symbols for the modifiers it uses them.
 func (chord shortcutChord) keys(dst []string) []string {
@@ -129,7 +139,7 @@ func (chord shortcutChord) keys(dst []string) []string {
 	if key >= 'a' && key <= 'z' {
 		key -= 'a' - 'A'
 	}
-	return append(dst, string(rune(key)))
+	return append(dst, keycapText[key])
 }
 
 func shortcutChordFromEvent(event ui.KeyEvent) (shortcutChord, bool) {

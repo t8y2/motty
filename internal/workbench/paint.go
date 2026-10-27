@@ -175,6 +175,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	viewport := state.windowRect()
 	state.beginMenus()
 	state.paintMCPClientSelect(canvas)
+	state.paintTransferCenter(canvas)
 	// The gallery's select is painted here, outside the workspace's clip and
 	// inside the frame's menu pass, so its popup can leave the page and keeps the
 	// menu state its keyboard handling needs.
@@ -293,6 +294,7 @@ const (
 // out: the assistant's button and, for each tab, where its system and its light go.
 type windowBar struct {
 	assistant flex.Box
+	transfers flex.Box
 	tabs      []barTab
 }
 
@@ -441,6 +443,11 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 			}
 		})
 		f.Row().Shrink(0).MarginSides(0, 0, 0, 10).Gap(2).Children(func() {
+			transferLabel := m.Transfers.Title
+			if state.transfers.buttonLabel != "" {
+				transferLabel = state.transfers.buttonLabel
+			}
+			bar.transfers = state.barButton(f, probe, hitTransferCenter, iconTransfer, transferLabel)
 			bar.assistant = f.Slot().Size(barButtonSize, barButtonSize)
 			state.barButton(f, probe, hitWindowLocalTerminal, iconTerminal, m.LocalTerminal)
 			state.barButton(f, probe, hitCommandPalette, iconSearch, m.CommandPaletteTitle)
@@ -502,6 +509,7 @@ func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	}
 	canvas.Unclip()
 	state.paintAIBarButton(canvas, state.chrome.bar.assistant.Rect().X)
+	state.paintTransferBadge(canvas)
 }
 
 // paintBarButton is a square icon button of the window bar whose left edge is at x,
@@ -1463,7 +1471,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		DismissID:      hitDialogDismiss,
 		CloseID:        hitDialogClose,
 		InitialFocusID: hitDialogLabel,
-		ContentSize:    ui.Size{Width: 460, Height: state.hostDialogHeight() + proxyHeight},
+		ContentSize:    ui.Size{Width: 680, Height: state.hostDialogHeight() + proxyHeight},
 	})
 	layout := dialog.Begin(title, "")
 
@@ -1471,11 +1479,14 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	ssh := sshHost
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
 	var vncRows flex.Box
-	var protocol, label, endpoint, group, tags, iconField, transfer, proxy, advanced flex.Box
+	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, advanced flex.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
-		label = f.Slot().Height(rowHeight)
+		f.Row().Height(rowHeight).Gap(16).Children(func() {
+			label = f.Slot().Grow(1)
+			colorField = f.Slot().Width(394).Shrink(0)
+		})
 		endpoint = f.Slot().Height(float32(state.hostEndpointRows()) * rowHeight)
 		f.Row().Height(rowHeight).Gap(8).Children(func() {
 			group = f.Slot().Grow(1)
@@ -1510,6 +1521,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	state.paintDialogField(canvas, hitDialogGroup, fieldGroup, m.FieldGroup, m.FieldGroupPlaceholder, group.Rect())
 	state.paintDialogField(canvas, hitDialogTags, fieldTags, m.FieldTags, m.FieldTagsPlaceholder, tags.Rect())
 	state.paintHostIconChoice(canvas, iconField.Rect())
+	state.paintHostColorChoice(canvas, colorField.Rect())
 	if networkHost {
 		state.paintHostProxyRow(canvas, proxy.Rect())
 	}

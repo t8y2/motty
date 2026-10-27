@@ -35,7 +35,7 @@ import (
 // when it saved the record, a value it would reject) raises it; a build refuses a
 // store or a synced file with a higher number than its own, so that it never
 // saves over data it only half understands.
-const configFormat = 2
+const configFormat = 3
 
 const (
 	kindSetting = "setting"
@@ -108,6 +108,7 @@ var syncedSettings = map[string]bool{
 	"sftp_parallel":                true,
 	"sftp_keep_times":              true,
 	"sftp_follow":                  true,
+	"sftp_path_input":              true,
 	"command_history":              true,
 	"command_suggest_off":          true,
 }

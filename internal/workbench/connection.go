@@ -139,6 +139,8 @@ type Options struct {
 	// NewWindow creates another independent workbench window through Viva's
 	// application lifecycle. Nil means the host did not enable multi-window.
 	NewWindow func() error
+	// OpenContentWindow is Viva's reusable native content-window factory.
+	OpenContentWindow func(app.Config, *ui.Canvas) (*app.ContentWindow, error)
 	// CloseWindow closes this window the way its close button does. Command+W
 	// calls it on a page that has no tab to close. Nil leaves that key unbound.
 	CloseWindow func()
@@ -458,9 +460,12 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 		Agent:                   true,
 		DialTimeout:             state.connectionTimeout,
 		AdditionalIdentityFiles: state.identityPaths(),
+		Authentication:          make(map[sshconn.Endpoint]sshconn.Authentication, 1),
 		Notify:                  state.notifyFor(session),
 		Proxy:                   proxy,
 	}
+	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
+	config.Authentication[targetEndpoint] = state.authenticationFor(host)
 	if state.connectionKeepAlive > 0 {
 		config.KeepAlive = sshconn.KeepAliveConfig{Interval: state.connectionKeepAlive, Timeout: 10 * time.Second}
 	}
@@ -471,11 +476,14 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 		config.Host = ""
 	} else if len(chain) > 0 {
 		config.ProxyJumps = make([]sshconn.Endpoint, len(chain))
+		config.Authentication = make(map[sshconn.Endpoint]sshconn.Authentication, len(chain)+1)
+		config.Authentication[targetEndpoint] = state.authenticationFor(host)
 		var path strings.Builder
 		for source := len(chain) - 1; source >= 0; source-- {
 			jump := chain[source]
 			endpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: state.login(jump)}
 			config.ProxyJumps[len(chain)-1-source] = endpoint
+			config.Authentication[endpoint] = state.authenticationFor(jump)
 			if path.Len() > 0 {
 				path.WriteString(" → ")
 			}
@@ -546,6 +554,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	state.pumpFileWindows()
 	if state.syncPending {
 		state.syncPending = false
 		if state.syncLeader() == state {

@@ -172,6 +172,12 @@ func (state *State) removeSelectedIdentity() {
 		if identity.ID != state.selectedIdentityID {
 			continue
 		}
+		for _, host := range state.hosts {
+			if host.Auth == authPrivateKey && host.Identity == identity.Fingerprint {
+				state.status = fmt.Sprintf(state.messages.KeyInUseFmt, host.Label)
+				return
+			}
+		}
 		state.identities = slices.Delete(state.identities, index, index+1)
 		state.selectedIdentityID = 0
 		if len(state.identities) > 0 {

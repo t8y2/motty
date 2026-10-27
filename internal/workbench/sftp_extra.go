@@ -29,7 +29,6 @@ var (
 	hitSFTPExtract         = tree.ID(sftpHits, "sftp-extract")
 	hitSFTPCompress        = tree.ID(sftpHits, "sftp-compress")
 	hitSFTPDialogField2    = tree.ID(sftpHits, "sftp-dialog-field2")
-	hitSFTPDialogSkip      = tree.ID(sftpHits, "sftp-dialog-skip")
 )
 
 var (
@@ -38,13 +37,14 @@ var (
 	hitSettingsParallel4       = tree.ID(sftpHits, "settings-parallel4")
 	hitSettingsKeepTimesToggle = tree.ID(sftpHits, "settings-keep-times")
 	hitSettingsFollowToggle    = tree.ID(sftpHits, "settings-follow")
+	hitSettingsPathBreadcrumbs = tree.ID(sftpHits, "settings-path-breadcrumbs")
+	hitSettingsPathInput       = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup     = tree.ID(sftpHits, "settings-follow-setup")
 )
 
 var (
 	hitSFTPBookmarkItemList   = tree.Sub(sftpHits, tree.Name("sftp-bookmark-item")) // + index of a bookmark of the host
 	hitSFTPBookmarkRemoveList = tree.Sub(sftpHits, tree.Name("sftp-bookmark-remove"))
-	hitSFTPTransferPauseList  = tree.Sub(sftpHits, tree.Name("sftp-transfer-pause")) // + row of the transfer queue
 )
 
 const (
@@ -136,27 +136,10 @@ func (state *State) clickSFTPExtra(session *Session, view *sftpView, id ui.ID) b
 		state.openSFTPExtractDialog(view)
 	case id == hitSFTPCompress && !view.busy && !view.extracting:
 		state.openSFTPCompressDialog(view)
-	case id.Scope() == hitSFTPTransferPauseList:
-		state.togglePauseSFTPTransfer(view, item(id))
 	default:
 		return false
 	}
 	return true
-}
-
-// togglePauseSFTPTransfer pauses a running or queued transfer, or lets a paused
-// one go on.
-func (state *State) togglePauseSFTPTransfer(view *sftpView, index int) {
-	if index < 0 || index >= len(view.transferRows) {
-		return
-	}
-	snapshot := view.transferRows[index].snapshot
-	if snapshot.State == sftpclient.TransferPaused {
-		view.worker.Resume(snapshot.ID)
-	} else {
-		view.worker.Pause(snapshot.ID)
-	}
-	state.refreshSFTPTransfers(view)
 }
 
 // ---- symbolic links ----
@@ -165,7 +148,6 @@ func (state *State) openSFTPLinkDialog(view *sftpView) {
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogError = ""
-	view.dialogTransferID = 0
 	if entry, ok := state.selectedSFTPEntry(view); ok {
 		view.dialogEditor2.Insert(entry.Name) // a link to what is selected is the usual wish
 	}
@@ -358,9 +340,21 @@ func (state *State) settingsParallelOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsPathOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsPathBreadcrumbs, Label: state.messages.Tools.FilesPathBreadcrumbs},
+		{ID: hitSettingsPathInput, Label: state.messages.Tools.FilesPathInput},
+	}
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
 	parallel := state.settingsParallelOptions()
+	pathOptions := state.settingsPathOptions()
+	selectedPath := hitSettingsPathBreadcrumbs
+	if state.sftpPathInput {
+		selectedPath = hitSettingsPathInput
+	}
 	selectedParallel := hitSettingsParallel2
 	switch state.sftpParallel {
 	case 1:
@@ -370,6 +364,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	}
 	page.groups(func() {
 		page.group("", func() {
+			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
 			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
@@ -382,6 +377,12 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id ui.ID) bool {
 	switch id {
+	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
+		input := id == hitSettingsPathInput
+		if state.sftpPathInput != input {
+			state.sftpPathInput = input
+			state.save()
+		}
 	case hitSettingsParallel1, hitSettingsParallel2, hitSettingsParallel4:
 		count := map[ui.ID]int{hitSettingsParallel1: 1, hitSettingsParallel2: 2, hitSettingsParallel4: 4}[id]
 		if state.sftpParallel != count {
@@ -545,6 +546,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.sftpKeepTimesOff = saved.SFTPKeepTimes == "off"
 	state.sftpFollowOff = saved.SFTPFollow == "off"
+	state.sftpPathInput = saved.SFTPPathInput
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)

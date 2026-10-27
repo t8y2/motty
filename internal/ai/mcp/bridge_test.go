@@ -115,8 +115,9 @@ func TestBridgeWithPipesStopsOnEOFAndOnContext(t *testing.T) {
 }
 
 func TestBridgeSlowCallDoesNotBlockPing(t *testing.T) {
-	b := &fakeBackend{block: true}
-	_, ts := newServer(t, okGate(b), func(c *Config) { c.CallTimeout = 2 * time.Second })
+	release := make(chan struct{})
+	b := &fakeBackend{block: true, execRelease: release}
+	_, ts := newServer(t, okGate(b), nil)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	go func() { Bridge(context.Background(), inR, outW, ts.URL+Path, testToken, nil); outW.Close() }()
@@ -127,6 +128,7 @@ func TestBridgeSlowCallDoesNotBlockPing(t *testing.T) {
 	if !strings.Contains(line, `"id":2`) {
 		t.Fatalf("ping did not overtake the slow call: %q", line)
 	}
+	close(release)
 	inW.Close()
 	io.Copy(io.Discard, outR)
 }

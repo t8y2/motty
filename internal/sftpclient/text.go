@@ -14,6 +14,18 @@ import (
 
 const MaxEditFileBytes = 1 << 20
 
+const MaxPreviewFileBytes = 16 << 20
+
+var ErrPreviewFileTooLarge = errors.New("file exceeds the 16 MiB preview limit")
+var ErrNotRegularFile = errors.New("sftp: preview requires a regular file")
+
+func editSizeError(limit int) error {
+	if limit == MaxEditFileBytes {
+		return ErrEditFileTooLarge
+	}
+	return ErrPreviewFileTooLarge
+}
+
 var (
 	ErrEditFileTooLarge    = errors.New("sftp: remote text file exceeds 1 MiB")
 	ErrUnsupportedEncoding = errors.New("sftp: remote file is not UTF-8 text")
@@ -42,39 +54,46 @@ func (worker *Worker) openText(client Remote, remotePath string, generation uint
 	return decodeTextDocument(content)
 }
 
-func (worker *Worker) saveText(client Remote, remotePath, value string, revision Revision, utf8BOM bool, generation uint64) (document TextDocument, err error) {
-	advanced, ok := client.(transferRemote)
-	if !ok {
-		if IsSCP(client) {
-			return TextDocument{}, ErrSCPNoEdit
-		}
-		return TextDocument{}, fmt.Errorf("sftp: atomic remote text replacement is not supported")
-	}
+func (worker *Worker) saveText(client Remote, remotePath, value string, revision Revision, utf8BOM bool, generation uint64) (TextDocument, error) {
 	content, err := encodeTextDocument(value, utf8BOM)
 	if err != nil {
 		return TextDocument{}, err
 	}
-	current, err := worker.readEditBytes(client, remotePath, generation)
-	if err != nil {
-		if editReadMeansConflict(err) {
-			return TextDocument{}, fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
-		}
+	if err = worker.replaceDocumentBytes(client, remotePath, content, revision, generation); err != nil {
 		return TextDocument{}, err
 	}
+	return decodeTextDocument(content)
+}
+
+func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, content []byte, revision Revision, generation uint64) (err error) {
+	advanced, ok := client.(transferRemote)
+	if !ok {
+		if IsSCP(client) {
+			return ErrSCPNoEdit
+		}
+		return fmt.Errorf("sftp: atomic remote file replacement is not supported")
+	}
+	current, err := worker.readFileBytes(client, remotePath, generation, MaxPreviewFileBytes)
+	if err != nil {
+		if editReadMeansConflict(err) {
+			return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+		}
+		return err
+	}
 	if Revision(sha256.Sum256(current)) != revision {
-		return TextDocument{}, fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
 	}
 	info, exists, err := remoteLstat(advanced, remotePath)
 	if err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	if !exists || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return TextDocument{}, fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
 	}
 
 	temporary, target, err := openEditTemporary(advanced, remotePath)
 	if err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	committed := false
 	closed := false
@@ -87,44 +106,51 @@ func (worker *Worker) saveText(client Remote, remotePath, value string, revision
 		}
 	}()
 	if err = temporary.Truncate(0); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	if _, err = temporary.Seek(0, io.SeekStart); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	if _, err = worker.copy(temporary, bytes.NewReader(content), generation, 0, 0, 0, 0); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	if err = temporary.Sync(); err != nil && !isUnsupportedSFTP(err) {
-		return TextDocument{}, err
+		return err
 	}
 	if err = temporary.Close(); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	closed = true
 	if err = advanced.Chmod(target, info.Mode().Perm()); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 
-	current, err = worker.readEditBytes(client, remotePath, generation)
+	current, err = worker.readFileBytes(client, remotePath, generation, MaxPreviewFileBytes)
 	if err != nil || Revision(sha256.Sum256(current)) != revision {
 		if err != nil && !editReadMeansConflict(err) {
-			return TextDocument{}, err
+			return err
 		}
-		return TextDocument{}, fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+	}
+	if worker.canceled(generation) {
+		return ErrCanceled
 	}
 	if err = commitRemote(advanced, target, remotePath, true); err != nil {
-		return TextDocument{}, err
+		return err
 	}
 	committed = true
-	return decodeTextDocument(content)
+	return nil
 }
 
 func editReadMeansConflict(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrEditFileTooLarge) || errors.Is(err, ErrUnsupportedEncoding)
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrEditFileTooLarge) || errors.Is(err, ErrPreviewFileTooLarge) || errors.Is(err, ErrUnsupportedEncoding) || errors.Is(err, ErrNotRegularFile)
 }
 
 func (worker *Worker) readEditBytes(client Remote, remotePath string, generation uint64) ([]byte, error) {
+	return worker.readFileBytes(client, remotePath, generation, MaxEditFileBytes)
+}
+
+func (worker *Worker) readFileBytes(client Remote, remotePath string, generation uint64, limit int) ([]byte, error) {
 	if remotePath == "" {
 		return nil, fmt.Errorf("sftp: remote text path is empty")
 	}
@@ -137,10 +163,13 @@ func (worker *Worker) readEditBytes(client Remote, remotePath string, generation
 			return nil, os.ErrNotExist
 		}
 		if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			if limit != MaxEditFileBytes {
+				return nil, fmt.Errorf("%w: %s", ErrNotRegularFile, remotePath)
+			}
 			return nil, fmt.Errorf("%w: %s", ErrUnsupportedEncoding, remotePath)
 		}
-		if info.Size() > MaxEditFileBytes {
-			return nil, ErrEditFileTooLarge
+		if info.Size() > int64(limit) {
+			return nil, editSizeError(limit)
 		}
 	}
 	source, err := client.Open(remotePath)
@@ -151,15 +180,15 @@ func (worker *Worker) readEditBytes(client Remote, remotePath string, generation
 	pair := bufferPool.Get().(*[2][32 * 1024]byte)
 	defer bufferPool.Put(pair)
 	buffer := pair[0][:]
-	content := make([]byte, 0, min(MaxEditFileBytes, 32*1024))
+	content := make([]byte, 0, min(limit, 32*1024))
 	for {
 		if worker.canceled(generation) {
 			return nil, ErrCanceled
 		}
 		count, readErr := source.Read(buffer)
 		if count > 0 {
-			if len(content)+count > MaxEditFileBytes {
-				return nil, ErrEditFileTooLarge
+			if len(content)+count > limit {
+				return nil, editSizeError(limit)
 			}
 			content = append(content, buffer[:count]...)
 		}
@@ -208,10 +237,12 @@ func encodeTextDocument(value string, utf8BOM bool) ([]byte, error) {
 }
 
 func openEditTemporary(client transferRemote, remotePath string) (TransferFile, string, error) {
-	base := path.Base(remotePath)
+	// Do not append to the source basename: it may already use NAME_MAX bytes.
+	// Keep the temporary sibling short while separating simultaneous targets.
+	identity := sha256.Sum256([]byte(remotePath))
 	directory := path.Dir(remotePath)
 	for attempt := 0; attempt < 16; attempt++ {
-		target := path.Join(directory, fmt.Sprintf(".motty.%s.edit-%02x.part", base, attempt))
+		target := path.Join(directory, fmt.Sprintf(".motty.edit-%x-%02x.part", identity[:8], attempt))
 		file, err := client.OpenTransferFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if err == nil {
 			return file, target, nil

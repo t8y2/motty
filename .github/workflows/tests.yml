@@ -1,0 +1,85 @@
+name: Go tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: Format and vet
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # Motty's go.mod replaces Viva with the sibling ../viva checkout.
+      - uses: actions/checkout@v4
+        with:
+          path: motty
+      - uses: actions/checkout@v4
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Check formatting
+        working-directory: motty
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: Vet release build
+        working-directory: motty
+        run: go vet ./...
+      - name: Vet development components
+        working-directory: motty
+        run: go vet -tags dev ./internal/workbench
+
+  tests:
+    name: Unit and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: motty
+      - uses: actions/checkout@v4
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test release build
+        working-directory: motty
+        run: go test ./... -count=1
+      - name: Test development components
+        working-directory: motty
+        run: go test -tags dev ./internal/workbench -run '^TestDebug' -count=1
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: motty
+      - uses: actions/checkout@v4
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Run the race detector
+        working-directory: motty
+        run: make race

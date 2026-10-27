@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -28,7 +29,15 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 	if view.dialog != sftpDialogCompress || view.dialogEditor.String() != "docs.tar.gz" {
 		t.Fatalf("compression dialog = %v, name = %q", view.dialog, view.dialogEditor.String())
 	}
-	*state.EditorFor(hitSFTPDialogField) = *text.NewEditor("bad/name.zip")
+	var dialogCanvas ui.Canvas
+	state.Paint(&dialogCanvas, ui.Size{Width: 1400, Height: 900})
+	fieldID := hitSFTPDialogField
+	if _, ok := hitByID(&dialogCanvas, fieldID); !ok {
+		t.Fatal("compression dialog did not paint its archive-name input")
+	}
+	editor := state.EditorFor(fieldID)
+	app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(editor)
+	app.TextEvent{Kind: app.TextInsert, Text: "bad/name.zip"}.Apply(editor)
 	state.Click(hitSFTPDialogSubmit)
 	if view.dialog != sftpDialogCompress || view.dialogError == "" {
 		t.Fatal("invalid archive filename was accepted")
@@ -43,7 +52,8 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 		return nil, nil
 	}
 	fake.mu.Unlock()
-	*state.EditorFor(hitSFTPDialogField) = *text.NewEditor("docs.zip")
+	app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(editor)
+	app.TextEvent{Kind: app.TextInsert, Text: "docs.zip"}.Apply(editor)
 	state.Click(hitSFTPDialogSubmit)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && !view.extracting && len(view.rows) == 3 })
 	if !strings.Contains(command, "zip -qr") || !strings.Contains(command, "'/home/test/docs.zip'") || !strings.Contains(command, "-- 'docs'") {
@@ -51,6 +61,22 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 	}
 	if len(view.transfers) != 0 || view.errorText != "" || !strings.Contains(view.status, "docs.zip") {
 		t.Fatalf("compression unexpectedly transferred a file or failed: %q", view.status)
+	}
+}
+
+func TestArchiveFailureNoticePreservesReasonAfterLongPath(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	state.setLanguage(i18n.Chinese)
+	view := session.files
+	view.busy, view.extracting, view.archiveSequence = true, true, 1
+	directory := "/home/test/" + strings.Repeat("very-long-directory/", 20)
+	state.finishSFTPArchive(session.ID, view, 1, directory, "中文.zip", "destination", false, []byte(archiveMissingTool+"unzip\n"), errors.New("exit 127"))
+	if len(state.fileNotices.items) != 1 {
+		t.Fatalf("archive notices = %d", len(state.fileNotices.items))
+	}
+	detail := state.fileNotices.items[0].detail
+	if !strings.Contains(detail, "服务器未安装 unzip") || !strings.Contains(detail, "中文.zip") || !strings.Contains(detail, "…") {
+		t.Fatalf("long-path archive notice lost its path or reason: %q", detail)
 	}
 }
 

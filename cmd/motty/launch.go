@@ -63,6 +63,20 @@ type windowSet struct {
 
 var windows windowSet
 
+// Quitting from any window or the status menu visits unsaved native documents
+// first. A canceled document close leaves the application running.
+func (set *windowSet) quitWithDocuments(allow func()) {
+	set.mu.Lock()
+	states := append([]*workbench.State(nil), set.states...)
+	set.mu.Unlock()
+	for _, state := range states {
+		if state.ConfirmDocumentClose(func() { set.quitWithDocuments(allow) }) {
+			return
+		}
+	}
+	allow()
+}
+
 // launch hands a request to the window opened last, or keeps it for the first.
 func (set *windowSet) launch(args []string) {
 	set.mu.Lock()

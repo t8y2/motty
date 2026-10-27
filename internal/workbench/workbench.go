@@ -75,6 +75,7 @@ var (
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
+	hitDialogColor             = tree.ID(shellHits, "dialog-color")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
 	hitHostKeyTrust            = tree.ID(shellHits, "host-key-trust")
 	hitHostKeyOnce             = tree.ID(shellHits, "host-key-once")
@@ -263,32 +264,30 @@ var (
 
 // SFTP: its page and the lists on it.
 var (
-	hitSFTPOpen               = tree.ID(sftpHits, "sftp-open")
-	hitSFTPClose              = tree.ID(sftpHits, "sftp-close")
-	hitSFTPUp                 = tree.ID(sftpHits, "sftp-up")
-	hitSFTPRefresh            = tree.ID(sftpHits, "sftp-refresh")
-	hitSFTPDownload           = tree.ID(sftpHits, "sftp-download")
-	hitSFTPCancel             = tree.ID(sftpHits, "sftp-cancel")
-	hitSFTPUpload             = tree.ID(sftpHits, "sftp-upload")
-	hitSFTPUploadDirectory    = tree.ID(sftpHits, "sftp-upload-directory")
-	hitSFTPNewDirectory       = tree.ID(sftpHits, "sftp-new-directory")
-	hitSFTPOpenEntry          = tree.ID(sftpHits, "sftp-open-entry")
-	hitSFTPRename             = tree.ID(sftpHits, "sftp-rename")
-	hitSFTPDelete             = tree.ID(sftpHits, "sftp-delete")
-	hitSFTPChmod              = tree.ID(sftpHits, "sftp-chmod")
-	hitSFTPDialogDismiss      = tree.ID(sftpHits, "sftp-dialog-dismiss")
-	hitSFTPDialogClose        = tree.ID(sftpHits, "sftp-dialog-close")
-	hitSFTPDialogCancel       = tree.ID(sftpHits, "sftp-dialog-cancel")
-	hitSFTPDialogSubmit       = tree.ID(sftpHits, "sftp-dialog-submit")
-	hitSFTPDialogField        = tree.ID(sftpHits, "sftp-dialog-field")
-	hitSFTPEditor             = tree.ID(sftpHits, "sftp-editor")
-	hitSFTPEditSave           = tree.ID(sftpHits, "sftp-edit-save")
-	hitSFTPEditBack           = tree.ID(sftpHits, "sftp-edit-back")
-	hitSFTPEditReload         = tree.ID(sftpHits, "sftp-edit-reload")
-	hitSFTPBreadcrumbList     = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
-	hitSFTPEntryList          = tree.Sub(sftpHits, tree.Name("sftp-entry"))
-	hitSFTPTransferCancelList = tree.Sub(sftpHits, tree.Name("sftp-transfer-cancel"))
-	hitSFTPTransferRetryList  = tree.Sub(sftpHits, tree.Name("sftp-transfer-retry"))
+	hitSFTPOpen            = tree.ID(sftpHits, "sftp-open")
+	hitSFTPClose           = tree.ID(sftpHits, "sftp-close")
+	hitSFTPUp              = tree.ID(sftpHits, "sftp-up")
+	hitSFTPRefresh         = tree.ID(sftpHits, "sftp-refresh")
+	hitSFTPDownload        = tree.ID(sftpHits, "sftp-download")
+	hitSFTPCancel          = tree.ID(sftpHits, "sftp-cancel")
+	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
+	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")
+	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
+	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
+	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
+	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPDialogDismiss   = tree.ID(sftpHits, "sftp-dialog-dismiss")
+	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
+	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
+	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
+	hitSFTPDialogField     = tree.ID(sftpHits, "sftp-dialog-field")
+	hitSFTPEditor          = tree.ID(sftpHits, "sftp-editor")
+	hitSFTPEditSave        = tree.ID(sftpHits, "sftp-edit-save")
+	hitSFTPEditBack        = tree.ID(sftpHits, "sftp-edit-back")
+	hitSFTPEditReload      = tree.ID(sftpHits, "sftp-edit-reload")
+	hitSFTPBreadcrumbList  = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
+	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 )
 
 // Remote resource monitoring owns a fixed hit outside every page range. Only
@@ -303,6 +302,7 @@ var (
 	hitTerminalMenuClear      = tree.ID(terminalMenuHits, "terminal-menu-clear")
 	hitTerminalMenuSplitRight = tree.ID(terminalMenuHits, "terminal-menu-split-right")
 	hitTerminalMenuSplitDown  = tree.ID(terminalMenuHits, "terminal-menu-split-down")
+	hitTerminalMenuClosePane  = tree.ID(terminalMenuHits, "terminal-menu-close-pane")
 	hitTerminalMenuFiles      = tree.ID(terminalMenuHits, "terminal-menu-files")
 	hitTerminalMenuStats      = tree.ID(terminalMenuHits, "terminal-menu-stats")
 	hitLocalTerminal          = tree.ID(terminalMenuHits, "local-terminal")
@@ -372,6 +372,7 @@ const (
 // Paint reads it synchronously and never starts work or allocates background
 // resources.
 type State struct {
+	fileWindows fileWindowManager
 	fileNotices fileNotices
 	closed      bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
@@ -506,8 +507,9 @@ type State struct {
 	dialDesktop func(context.Context, desktopRequest) (desktop.Session, error)
 	// transfer is the file transfer in progress, if any; transferLeftover is what
 	// followed the end of one and belongs to the screen.
-	transfer fileTransfer
-	xy       xySetup
+	transfer  fileTransfer
+	transfers transferCenter
+	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
 	launchBacklog [][]string
@@ -520,6 +522,7 @@ type State struct {
 	sftpParallel      int
 	sftpKeepTimesOff  bool
 	sftpFollowOff     bool
+	sftpPathInput     bool
 	sftpBookmarks     []sftpBookmark
 	transferLeftover  []byte
 	secrets           secretsUI
@@ -658,6 +661,7 @@ func (state *State) Close() {
 		return
 	}
 	state.closed = true
+	state.closeFileWindows()
 	if state.update.install.cancel != nil {
 		state.update.install.cancel()
 		state.update.install.cancel = nil
@@ -1037,6 +1041,9 @@ func (state *State) Click(id ui.ID) {
 		id = local
 	}
 	messages := state.messages
+	if state.clickTransferCenter(id) {
+		return
+	}
 	if state.aiClick(id) {
 		return
 	}
@@ -1189,7 +1196,7 @@ func (state *State) Click(id ui.ID) {
 		state.clickConnection(id)
 	case id == hitHosts || id == hitHome:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.closeSFTP(session)
+			state.releaseIdleSFTP(session)
 		}
 		state.activeSection = sectionHosts
 		state.save()
@@ -1434,12 +1441,15 @@ func (state *State) closeWorkspace(id layoutcore.WorkspaceID) {
 
 // canReconnect reports whether a tab has nothing live left to talk to.
 func (state *State) canReconnect(session *Session) bool {
-	return session.restored || session.term != nil && session.term.shell == nil &&
-		(session.term.ended || session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed)
+	return session.containerCommand == "" && (session.restored || session.term != nil && session.term.shell == nil &&
+		(session.term.ended || session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed))
 }
 
 // reconnect dials a tab's host again in the same tab.
 func (state *State) reconnect(session *Session) {
+	if session.containerCommand != "" {
+		return
+	}
 	state.startConnection(session, session.host)
 	state.status = state.messages.StatusOpened + session.Title
 }
@@ -1587,6 +1597,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result, handled := state.transferCenterPointer(event); handled {
+		return result
+	}
 	if state.aiTrackPointer(event) {
 		defer func() { outcome.Repaint = true }()
 	}
@@ -1619,6 +1632,27 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	}
 	if result, handled := state.paneDividerPointer(event); handled {
 		return result
+	}
+	// A press on a pane's own ground switches to that pane, and the keyboard goes
+	// with it: the pane the window shows as active is the pane keys and IME text
+	// reach. Nothing focusable was under the press, so the page says where the
+	// keyboard belongs; a page with no such place leaves the keyboard nowhere,
+	// since a keystroke still aimed at the pane it was in would switch back.
+	if event.Kind == ui.PointerDown {
+		if session, ok := state.paneGround(event.Target); ok {
+			changed := state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
+			result := ui.EventResult{Handled: true, Repaint: true}
+			if target := state.paneGroundFocus(session); target.IsZero() {
+				result.Blur = true
+			} else {
+				result.Focus = state.paneIdentity(session, target)
+			}
+			if changed {
+				state.save()
+			}
+			return result
+		}
 	}
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
 		mount, _ := tree.MountOf(event.Target.Scope())
@@ -1677,7 +1711,7 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
 func isDialogField(id ui.ID) bool {
 	switch id {
-	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags:
+	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags, hitDialogColor:
 		return true
 	}
 	return false
@@ -1698,6 +1732,8 @@ func fieldForDialogHit(id ui.ID) hostField {
 		return fieldGroup
 	case hitDialogTags:
 		return fieldTags
+	case hitDialogColor:
+		return fieldColor
 	default:
 		return fieldPort
 	}
@@ -1722,6 +1758,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result, handled := state.transferCenterKey(event); handled {
+		return result
+	}
 	// A tooltip is the topmost transient thing when no popup menu is open:
 	// Escape hides it before it can reach a dialog or the page.
 	if event.Key == ui.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {
@@ -1732,6 +1771,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.menuKey(event); handled {
+		return result
+	}
+	if result, handled := state.devSwatchKey(event); handled {
 		return result
 	}
 	if result, handled := state.selectTypeaheadKey(event); handled {
@@ -1878,7 +1920,7 @@ func (state *State) openHostSession(host Host) *Session {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		// A saved host owns its tab; a typed target is reused by its address.
-		if session.HostID != host.ID || host.ID == 0 && session.Address != address {
+		if session.containerCommand != "" || session.HostID != host.ID || host.ID == 0 && session.Address != address {
 			continue
 		}
 		state.activeSessionID = session.ID
@@ -1903,6 +1945,10 @@ func (state *State) newHostSession(host Host) *Session {
 }
 
 func (state *State) createHostSession(host Host, address string) *Session {
+	return state.createHostSessionWithConnection(host, address, nil, "", nil)
+}
+
+func (state *State) createHostSessionWithConnection(host Host, address string, conn Connection, command string, relay *notifyRelay) *Session {
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
@@ -1914,11 +1960,16 @@ func (state *State) createHostSession(host Host, address string) *Session {
 		}
 	}
 	state.sessions = append(state.sessions, Session{
-		ID:       state.nextSessionID,
-		HostID:   host.ID,
-		Title:    host.Label,
-		Address:  address,
-		paneSlot: state.claimPaneSlot(),
+		ID:               state.nextSessionID,
+		HostID:           host.ID,
+		Title:            host.Label,
+		Address:          address,
+		paneSlot:         state.claimPaneSlot(),
+		conn:             conn,
+		shared:           conn != nil,
+		host:             host,
+		relay:            relay,
+		containerCommand: command,
 	})
 	session := &state.sessions[len(state.sessions)-1]
 	if err := state.deck.Bind(workspaceID, paneID, layoutcore.SessionID(session.ID)); err != nil {
@@ -1929,7 +1980,13 @@ func (state *State) createHostSession(host Host, address string) *Session {
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title
-	state.startConnection(session, host)
+	if conn == nil {
+		state.startConnection(session, host)
+	} else {
+		state.finishStartingConnection(session, false)
+		state.apply(session, conn.Status())
+		state.pump(session)
+	}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 	state.rebuildTabOptions()

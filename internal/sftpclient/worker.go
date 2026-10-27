@@ -60,6 +60,8 @@ const (
 	OperationOpenText
 	OperationSaveText
 	OperationSymlink
+	OperationOpenDocument
+	OperationSaveDocument
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -105,6 +107,9 @@ type TransferSnapshot struct {
 	Resumed        int64
 	Error          string
 	Retryable      bool
+	QueuedAt       time.Time
+	StartedAt      time.Time
+	FinishedAt     time.Time
 }
 
 // Entry is one remote directory item prepared for presentation.
@@ -139,6 +144,7 @@ const maxLinkLookups = 200
 
 // Result is the immutable completion of one worker request.
 type Result struct {
+	Data []byte // immutable bounded bytes for independent document windows
 	// Background marks the result of Prefetch: a listing the caller asked for in
 	// advance. It is the caller's to cache, not to show as the outcome of an
 	// action, and its failure is not worth reporting.
@@ -183,6 +189,7 @@ type linkJob struct {
 }
 
 type request struct {
+	data        []byte
 	id          uint64
 	background  bool // a listing nobody is waiting on: its Result says so
 	operation   Operation
@@ -211,6 +218,11 @@ type transferRecord struct {
 
 // rateWindow is the shortest interval a transfer's speed is measured over.
 const rateWindow = 400 * time.Millisecond
+
+// Progress counters remain exact for every chunk. UI notifications need at
+// most one wake per display frame, even when a fast download writes thousands
+// of 32 KiB chunks per second. State changes bypass this limit.
+const progressFrameInterval = time.Second / 60
 
 // DefaultParallel is how many transfers run at once unless told otherwise;
 // MaxParallel is the most that can be asked for.
@@ -286,6 +298,7 @@ type Worker struct {
 	// the listing itself was published.
 	linksGroup sync.WaitGroup
 	clock      func() time.Time
+	progressAt time.Time // last progress-only notification, protected by mu
 	// ids are the user and group names the server's account files gave, read
 	// once, on the first listing.
 	ids       IDNames
@@ -393,6 +406,20 @@ func (worker *Worker) OpenText(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationOpenText, remote: remotePath})
 }
 
+// OpenDocument reads bounded raw bytes without treating an image as UTF-8.
+func (worker *Worker) OpenDocument(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath})
+}
+
+// SaveDocument replaces a revision-checked document without reinterpreting its
+// bytes. Encoding and image/text policy belong to the document editor.
+func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision) bool {
+	if len(data) > MaxPreviewFileBytes {
+		return false
+	}
+	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
+}
+
 // SaveText atomically replaces one previously opened remote text file when its
 // contents still match revision. The caller keeps ownership of the editor text.
 func (worker *Worker) SaveText(remotePath, value string, revision Revision, utf8BOM bool) bool {
@@ -419,6 +446,7 @@ func (worker *Worker) enqueueTransfer(next request) (uint64, bool) {
 		snapshot: TransferSnapshot{
 			ID: next.id, Operation: next.operation, Source: source,
 			Destination: destination, Recursive: next.recursive, State: TransferQueued,
+			QueuedAt: worker.clock(),
 		},
 	})
 	worker.mu.Unlock()
@@ -458,6 +486,7 @@ func (worker *Worker) schedule() {
 		}
 		record.active = true
 		record.snapshot.State = TransferRunning
+		record.snapshot.StartedAt = worker.clock()
 		record.rateAt, record.rateBytes, record.rate = worker.clock(), 0, 0
 		running++
 		worker.transferGroup.Add(1)
@@ -564,8 +593,9 @@ func (worker *Worker) makeTransferRoomLocked() bool {
 		return true
 	}
 	for index := range worker.transfers {
-		state := worker.transfers[index].snapshot.State
-		if state == TransferCompleted || state == TransferFailed || state == TransferCanceled {
+		record := &worker.transfers[index]
+		state := record.snapshot.State
+		if record.settled && !record.active && (state == TransferCompleted || state == TransferFailed || state == TransferCanceled) {
 			worker.transfers = slices.Delete(worker.transfers, index, index+1)
 			return true
 		}
@@ -589,6 +619,24 @@ func (worker *Worker) enqueue(next request) bool {
 
 func (worker *Worker) Results() <-chan Result { return worker.results }
 func (worker *Worker) Done() <-chan struct{}  { return worker.finished }
+
+// ForgetTransfer removes an ended task from history, never its files. An active
+// copy keeps its record until its goroutine has settled.
+func (worker *Worker) ForgetTransfer(id uint64) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	for index := range worker.transfers {
+		record := &worker.transfers[index]
+		if record.snapshot.ID == id {
+			if record.active || (record.snapshot.State != TransferCompleted && record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
+				return false
+			}
+			worker.transfers = slices.Delete(worker.transfers, index, index+1)
+			return true
+		}
+	}
+	return false
+}
 
 // Transfers copies the bounded transfer history into dst.
 func (worker *Worker) Transfers(dst []TransferSnapshot) []TransferSnapshot {
@@ -621,6 +669,9 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	record.snapshot.BytesDone = 0
 	record.snapshot.Resumed = 0
 	record.snapshot.Retryable = false
+	record.snapshot.QueuedAt = worker.clock()
+	record.snapshot.StartedAt, record.snapshot.FinishedAt = time.Time{}, time.Time{}
+	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.settled = false
 	record.paused = false
 	worker.mu.Unlock()
@@ -637,11 +688,16 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 		return false
 	}
 	record.snapshot.State = TransferCanceled
+	record.snapshot.FinishedAt = worker.clock()
 	record.snapshot.Error = ErrCanceled.Error()
 	record.snapshot.Retryable = false
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.paused = false
 	active := record.active
+	if !active {
+		// A queued task has no copy goroutine to finish its cancellation.
+		record.settled, record.snapshot.Retryable = true, true
+	}
 	others := 0
 	for index := range worker.transfers {
 		if worker.transfers[index].active && worker.transfers[index].snapshot.ID != id {
@@ -668,6 +724,7 @@ func (worker *Worker) Cancel() {
 		record := &worker.transfers[index]
 		if record.active && record.snapshot.State != TransferCanceled {
 			record.snapshot.State = TransferCanceled
+			record.snapshot.FinishedAt = worker.clock()
 			record.snapshot.Error = ErrCanceled.Error()
 			record.snapshot.Retryable = true
 			record.snapshot.BytesPerSecond, record.rate = 0, 0
@@ -692,6 +749,8 @@ func (worker *Worker) Close() {
 			if state == TransferQueued || state == TransferRunning || state == TransferPaused {
 				worker.transfers[index].snapshot.State = TransferCanceled
 				worker.transfers[index].snapshot.Error = ErrCanceled.Error()
+				worker.transfers[index].snapshot.FinishedAt = worker.clock()
+				worker.transfers[index].snapshot.BytesPerSecond = 0
 			}
 		}
 		worker.mu.Unlock()
@@ -800,6 +859,7 @@ func (worker *Worker) finishTransfer(id uint64, result Result) {
 			record.snapshot.Retryable = false
 		}
 		record.settled = true
+		record.snapshot.FinishedAt = worker.clock()
 		record.active, record.paused = false, false
 		record.snapshot.BytesPerSecond, record.rate = 0, 0
 	}
@@ -818,12 +878,16 @@ func (worker *Worker) setTotals(id uint64, files int, bytes int64) {
 }
 
 func (worker *Worker) setProgress(id uint64, files int, bytes, resumed int64) {
+	notify := false
 	worker.mu.Lock()
 	if record := worker.transferLocked(id); record != nil && (record.snapshot.State == TransferRunning || record.snapshot.State == TransferPaused) {
+		fileChanged := record.snapshot.FilesDone != files
+		changed := fileChanged || record.snapshot.BytesDone != bytes || record.snapshot.Resumed != resumed
+		now := worker.clock()
 		record.snapshot.FilesDone = files
 		record.snapshot.BytesDone = bytes
 		record.snapshot.Resumed = resumed
-		if now := worker.clock(); record.snapshot.State == TransferRunning && now.Sub(record.rateAt) >= rateWindow {
+		if record.snapshot.State == TransferRunning && now.Sub(record.rateAt) >= rateWindow {
 			instant := float64(bytes-record.rateBytes) / now.Sub(record.rateAt).Seconds()
 			if record.rate == 0 {
 				record.rate = instant
@@ -833,9 +897,16 @@ func (worker *Worker) setProgress(id uint64, files int, bytes, resumed int64) {
 			record.rateAt, record.rateBytes = now, bytes
 			record.snapshot.BytesPerSecond = int64(max(record.rate, 0))
 		}
+		finishedBytes := record.snapshot.BytesTotal > 0 && bytes >= record.snapshot.BytesTotal
+		if changed && (worker.progressAt.IsZero() || now.Sub(worker.progressAt) >= progressFrameInterval || fileChanged || finishedBytes) {
+			notify = true
+			worker.progressAt = now
+		}
 	}
 	worker.mu.Unlock()
-	worker.changed()
+	if notify {
+		worker.changed()
+	}
 }
 
 func (worker *Worker) execute(next request) Result {
@@ -883,6 +954,13 @@ func (worker *Worker) execute(next request) Result {
 		result.Document, result.Err = worker.openText(client, next.remote, generation)
 	case OperationSaveText:
 		result.Document, result.Err = worker.saveText(client, next.remote, next.text, next.revision, next.utf8BOM, generation)
+	case OperationOpenDocument:
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxPreviewFileBytes)
+	case OperationSaveDocument:
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, generation)
+		if result.Err == nil {
+			result.Data = next.data
+		}
 	default:
 		result.Err = fmt.Errorf("sftp: unknown operation %d", next.operation)
 	}
@@ -1517,10 +1595,6 @@ func (worker *Worker) downloadFile(client transferRemote, remotePath, localPath 
 	return written, resumed, nil
 }
 
-// downloadCopy moves a remote file to a local writer. When the remote file can
-// write itself (the SFTP client pipelines reads for that), it does, so a high
-// latency link no longer caps the transfer at one 32 KiB request per round trip.
-// The sequential copy remains the fallback for backends that cannot.
 // uploadCopy moves a local file to a remote writer. The SFTP client can keep
 // many writes in flight for one file; without that a high latency link pays one
 // round trip per 32 KiB, the same limit downloads had. A destination that does
@@ -1534,15 +1608,26 @@ func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, genera
 	}
 	progress := &copyReadProgress{
 		worker: worker, source: source, generation: generation, transferID: transferID,
-		filesDone: filesDone, bytesBefore: bytesBefore, resumed: resumed,
 	}
-	_, err := readFrom.ReadFromWithConcurrency(progress, uploadConcurrency)
-	if err != nil && progress.read == 0 {
-		// Nothing was written, so the source is still at its start and the
-		// sequential path can take over (for a server that cannot pipeline).
-		return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+	var written int64
+	for {
+		// ReadFrom only confirms the writes when it returns. Keep pipelining
+		// bounded batches, publishing acknowledged bytes rather than read-ahead.
+		n, err := readFrom.ReadFromWithConcurrency(io.LimitReader(progress, uploadProgressBatch), uploadConcurrency)
+		if err != nil {
+			if progress.read == 0 {
+				return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+			}
+			return written, err
+		}
+		written += n
+		if transferID != 0 {
+			worker.setProgress(transferID, filesDone, bytesBefore+resumed+written, resumed)
+		}
+		if n < uploadProgressBatch {
+			return written, nil
+		}
 	}
-	return progress.read, err
 }
 
 // uploadConcurrency is how many 32 KiB writes one uploaded file keeps in
@@ -1550,17 +1635,16 @@ func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, genera
 // leave room for the other transfer of a panel and for other SFTP requests.
 const uploadConcurrency = 16
 
-// copyReadProgress counts an upload's reads, which pace its pipelined writes,
-// and is where pause and cancel stop it.
+const uploadProgressBatch = int64(uploadConcurrency * 32 * 1024)
+
+// copyReadProgress tracks read-ahead for fallback detection and applies pause
+// and cancel to the reader. Only uploadCopy publishes acknowledged progress.
 type copyReadProgress struct {
-	worker      *Worker
-	source      io.Reader
-	generation  uint64
-	transferID  uint64
-	filesDone   int
-	bytesBefore int64
-	resumed     int64
-	read        int64
+	worker     *Worker
+	source     io.Reader
+	generation uint64
+	transferID uint64
+	read       int64
 }
 
 func (progress *copyReadProgress) Read(chunk []byte) (int, error) {
@@ -1573,12 +1657,12 @@ func (progress *copyReadProgress) Read(chunk []byte) (int, error) {
 	}
 	read, err := progress.source.Read(chunk)
 	progress.read += int64(read)
-	if progress.transferID != 0 && read > 0 {
-		progress.worker.setProgress(progress.transferID, progress.filesDone, progress.bytesBefore+progress.resumed+progress.read, progress.resumed)
-	}
 	return read, err
 }
 
+// downloadCopy keeps pipelined reads when the source supports WriteTo. Fallback
+// is only safe before the destination was tried; a local write failure must not
+// be hidden by retrying from the source's already advanced offset.
 func (worker *Worker) downloadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
 	writerTo, ok := source.(io.WriterTo)
 	if !ok {
@@ -1589,7 +1673,7 @@ func (worker *Worker) downloadCopy(destination io.Writer, source io.Reader, gene
 		filesDone: filesDone, bytesBefore: bytesBefore, resumed: resumed,
 	}
 	_, err := writerTo.WriteTo(progress)
-	if err != nil && progress.written == 0 {
+	if err != nil && !progress.started {
 		// A server that refuses a stat on an open file still reads fine one
 		// request at a time; WriteTo gave up before moving any byte, so the
 		// source is still where it started.
@@ -1609,6 +1693,7 @@ type copyProgress struct {
 	bytesBefore int64
 	resumed     int64
 	written     int64
+	started     bool
 }
 
 func (progress *copyProgress) Write(chunk []byte) (int, error) {
@@ -1619,7 +1704,11 @@ func (progress *copyProgress) Write(chunk []byte) (int, error) {
 	} else if progress.worker.canceled(progress.generation) {
 		return 0, ErrCanceled
 	}
+	progress.started = true
 	written, err := progress.destination.Write(chunk)
+	if err == nil && written < len(chunk) {
+		err = io.ErrShortWrite
+	}
 	progress.written += int64(written)
 	if progress.transferID != 0 {
 		progress.worker.setProgress(progress.transferID, progress.filesDone, progress.bytesBefore+progress.resumed+progress.written, progress.resumed)

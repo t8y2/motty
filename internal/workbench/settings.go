@@ -130,7 +130,7 @@ func terminalOptionModeFromString(value string) terminalOptionMode {
 
 func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-		state.closeSFTP(session)
+		state.releaseIdleSFTP(session)
 	}
 	state.activeSection = sectionSettings
 	state.settingsScroll = 0
@@ -193,6 +193,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	}
 	state.language = language
 	state.messages = i18n.For(language)
+	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
 	state.refreshHostSelection()
 	state.refreshHostGroups()
@@ -429,6 +430,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	var next ui.ID
 	var handled bool
 	switch event.Target {
+	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
+		options := state.settingsPathOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
 		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
