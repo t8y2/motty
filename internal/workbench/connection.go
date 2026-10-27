@@ -585,6 +585,7 @@ func (state *State) Wake() {
 	}
 	state.showNextPrompt()
 	state.drainAI()
+	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 }
 

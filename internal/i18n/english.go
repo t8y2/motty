@@ -3,6 +3,13 @@ package i18n
 // The English catalog lives here, one file per language.
 
 var EnglishMessages = Messages{
+	SFTPWindow: SFTPWindowMessages{
+		QueueRejectedFmt: "%d items could not be queued. Try again later.",
+		SelectedFmt:      "%d selected", CopyPath: "Copy full path",
+		Open: "Open in a separate window", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
+		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to",
+		CloseTitle: "Transfers are still active", CloseDescription: "Closing this window cancels its unfinished transfers.", CloseTransfers: "Cancel transfers and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
+	},
 	FileWindow: FileWindowMessages{
 		Title: "File preview and editor", Save: "Save", Reload: "Reload", Encoding: "Encoding", Auto: "Auto", Fit: "Fit", Actual: "Actual size", ZoomIn: "Zoom in", ZoomOut: "Zoom out",
 		Ready: "Ready", Saved: "Saved with the original encoding, BOM and line endings", Dirty: "Unsaved changes", Saving: "Saving…", Loading: "Opening file…",

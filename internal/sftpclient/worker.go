@@ -1903,11 +1903,11 @@ func localLstat(localPath string) (os.FileInfo, bool, error) {
 }
 
 func remotePartialPath(remotePath string) string {
-	return path.Join(path.Dir(remotePath), ".motty."+path.Base(remotePath)+".part")
+	return path.Join(path.Dir(remotePath), transferPartialName(path.Base(remotePath), false))
 }
 
 func localPartialPath(localPath string) string {
-	return filepath.Join(filepath.Dir(localPath), ".motty."+filepath.Base(localPath)+".part")
+	return filepath.Join(filepath.Dir(localPath), transferPartialName(filepath.Base(localPath), true))
 }
 
 func safeRemoteName(name string) bool {

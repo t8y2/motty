@@ -71,7 +71,8 @@ type sftpFolder struct {
 }
 
 type sftpView struct {
-	worker *sftpclient.Worker
+	detached *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
+	worker   *sftpclient.Worker
 	// sftpFolder is the server's folder; lfolder is this computer's, shown
 	// instead of it while local is set.
 	sftpFolder
@@ -194,6 +195,10 @@ func (state *State) clickSFTP(id ui.ID) {
 		state.openSFTP(session)
 		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 		state.save()
+		return
+	}
+	if id == hitSFTPDetach {
+		state.openSFTPWindow(session)
 		return
 	}
 	if id == hitSFTPClose {
@@ -596,12 +601,19 @@ func (state *State) prefetchSFTP(view *sftpView, remotePath string) {
 
 // showSFTPListing puts a folder on screen.
 func (state *State) showSFTPListing(view *sftpView, remotePath string, entries []sftpclient.Entry) {
+	if view.deferDraggedListing(false, func() { state.showSFTPListing(view, remotePath, entries) }) {
+		return
+	}
 	state.applySFTPListing(view, remotePath, prepareSFTPRows(view.rows, entries))
 }
 
 // applySFTPListing puts prepared rows on screen. It is separate from the row
 // preparation so a large folder can prepare them on a goroutine.
 func (state *State) applySFTPListing(view *sftpView, remotePath string, rows []sftpRow) {
+	defer view.invalidateDetached()
+	if view.deferDraggedListing(false, func() { state.applySFTPListing(view, remotePath, rows) }) {
+		return
+	}
 	view.remoteSeq++ // a shown listing invalidates an older one still being prepared
 	view.path = remotePath
 	view.rows = rows
@@ -652,6 +664,10 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 // losing the user's place: the same names stay selected and the list keeps its
 // scroll position as far as it still reaches.
 func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
+	defer view.invalidateDetached()
+	if view.deferDraggedListing(false, func() { state.updateSFTPRows(view, entries) }) {
+		return
+	}
 	var selected []string
 	for index := range view.rows {
 		if view.rows[index].selected {

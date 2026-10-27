@@ -3,6 +3,13 @@ package i18n
 // The Chinese catalog lives here, one file per language.
 
 var ChineseMessages = Messages{
+	SFTPWindow: SFTPWindowMessages{
+		QueueRejectedFmt: "有 %d 个项目未能加入传输队列，请稍后重试。",
+		SelectedFmt:      "已选择 %d 项", CopyPath: "复制完整路径",
+		Open: "在独立窗口中打开", Title: "文件传输", Local: "本机", Remote: "服务器", Path: "目录路径", Name: "名称", Size: "大小", Modified: "修改时间",
+		Upload: "上传 →", Download: "← 下载", DragHint: "拖动文件或文件夹到另一侧，即可复制传输", DropUpload: "上传到", DropDownload: "下载到",
+		CloseTitle: "仍有文件正在传输", CloseDescription: "关闭此窗口会取消本窗口中尚未完成的传输。", CloseTransfers: "取消传输并关闭", Disconnected: "原连接已断开，请重新连接后重新打开文件传输窗口。",
+	},
 	FileWindow: FileWindowMessages{
 		Title: "文件预览与编辑", Save: "保存", Reload: "重新载入", Encoding: "编码", Auto: "自动", Fit: "适应窗口", Actual: "实际大小", ZoomIn: "放大", ZoomOut: "缩小",
 		Ready: "就绪", Saved: "已按原编码、BOM 和换行格式保存", Dirty: "有未保存的更改", Saving: "正在保存…", Loading: "正在打开文件…",
