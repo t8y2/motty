@@ -139,6 +139,8 @@ type Options struct {
 	// NewWindow creates another independent workbench window through Viva's
 	// application lifecycle. Nil means the host did not enable multi-window.
 	NewWindow func() error
+	// OpenContentWindow is Viva's reusable native content-window factory.
+	OpenContentWindow func(app.Config, *ui.Canvas) (*app.ContentWindow, error)
 	// CloseWindow closes this window the way its close button does. Command+W
 	// calls it on a page that has no tab to close. Nil leaves that key unbound.
 	CloseWindow func()
@@ -546,6 +548,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	state.pumpFileWindows()
 	if state.syncPending {
 		state.syncPending = false
 		if state.syncLeader() == state {

@@ -60,6 +60,8 @@ const (
 	OperationOpenText
 	OperationSaveText
 	OperationSymlink
+	OperationOpenDocument
+	OperationSaveDocument
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -139,6 +141,7 @@ const maxLinkLookups = 200
 
 // Result is the immutable completion of one worker request.
 type Result struct {
+	Data []byte // immutable bounded bytes for independent document windows
 	// Background marks the result of Prefetch: a listing the caller asked for in
 	// advance. It is the caller's to cache, not to show as the outcome of an
 	// action, and its failure is not worth reporting.
@@ -183,6 +186,7 @@ type linkJob struct {
 }
 
 type request struct {
+	data        []byte
 	id          uint64
 	background  bool // a listing nobody is waiting on: its Result says so
 	operation   Operation
@@ -391,6 +395,20 @@ func (worker *Worker) Chmod(remotePath string, mode os.FileMode) bool {
 // editor path. It does not start work until called.
 func (worker *Worker) OpenText(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationOpenText, remote: remotePath})
+}
+
+// OpenDocument reads bounded raw bytes without treating an image as UTF-8.
+func (worker *Worker) OpenDocument(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath})
+}
+
+// SaveDocument replaces a revision-checked document without reinterpreting its
+// bytes. Encoding and image/text policy belong to the document editor.
+func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision) bool {
+	if len(data) > MaxPreviewFileBytes {
+		return false
+	}
+	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
 }
 
 // SaveText atomically replaces one previously opened remote text file when its
@@ -883,6 +901,13 @@ func (worker *Worker) execute(next request) Result {
 		result.Document, result.Err = worker.openText(client, next.remote, generation)
 	case OperationSaveText:
 		result.Document, result.Err = worker.saveText(client, next.remote, next.text, next.revision, next.utf8BOM, generation)
+	case OperationOpenDocument:
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxPreviewFileBytes)
+	case OperationSaveDocument:
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, generation)
+		if result.Err == nil {
+			result.Data = next.data
+		}
 	default:
 		result.Err = fmt.Errorf("sftp: unknown operation %d", next.operation)
 	}
