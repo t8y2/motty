@@ -248,7 +248,7 @@ func (state *State) selectedArchive(session *Session, view *sftpView) (sftpclien
 }
 
 func (state *State) openSFTPExtractDialog(view *sftpView) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	if !ok {
 		return
 	}
@@ -264,7 +264,7 @@ func (state *State) openSFTPExtractDialog(view *sftpView) {
 }
 
 func (state *State) submitSFTPExtract(view *sftpView) bool {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	m := state.messages.Tools
 	if !ok || session.conn == nil {
 		return false
@@ -286,13 +286,13 @@ func (state *State) submitSFTPExtract(view *sftpView) bool {
 	view.extracting = true
 	view.status = fmt.Sprintf(m.ExtractRunningFmt, entry.Name)
 	view.errorText = ""
-	connection, sessionID, directory := session.conn, session.ID, view.path
+	connection, directory := session.conn, view.path
 	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 	view.cancelExtract = cancel
 	go func() {
 		defer cancel()
 		output, err := connection.RunCommand(ctx, command, maxExtractOutput)
-		state.aiPost(func(state *State) { state.finishExtract(sessionID, directory, entry.Name, folder, output, err) })
+		state.aiPost(func(state *State) { state.finishExtractView(view, directory, entry.Name, folder, output, err) })
 	}()
 	return true
 }
@@ -303,7 +303,16 @@ func (state *State) finishExtract(sessionID uint32, directory, archive, folder s
 	if !ok || session.files == nil || !session.files.extracting {
 		return
 	}
-	view, m := session.files, state.messages.Tools
+	view := session.files
+	state.finishExtractView(view, directory, archive, folder, output, err)
+}
+
+func (state *State) finishExtractView(view *sftpView, directory, archive, folder string, output []byte, err error) {
+	if !view.extracting {
+		return
+	}
+	defer view.invalidateDetached()
+	m := state.messages.Tools
 	view.extracting, view.busy, view.cancelExtract = false, false, nil
 	if err != nil {
 		reason := strings.TrimSpace(string(output))

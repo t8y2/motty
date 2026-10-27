@@ -4,11 +4,12 @@ package i18n
 
 var EnglishMessages = Messages{
 	SFTPWindow: SFTPWindowMessages{
+		DropUploadHint: "Drop here to upload", DropDownloadHint: "Drop here to download",
 		QueueRejectedFmt: "%d items could not be queued. Try again later.",
 		SelectedFmt:      "%d selected", CopyPath: "Copy full path",
 		Open: "Open in a separate window", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
 		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to",
-		CloseTitle: "Transfers are still active", CloseDescription: "Closing this window cancels its unfinished transfers.", CloseTransfers: "Cancel transfers and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
+		CloseTitle: "Tasks are still active", CloseDescription: "Closing stops unfinished transfers, archive extraction and external editor synchronization in this window.", CloseTransfers: "Stop tasks and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
 	},
 	FileWindow: FileWindowMessages{
 		Title: "File preview and editor", Save: "Save", Reload: "Reload", Encoding: "Encoding", Auto: "Auto", Fit: "Fit", Actual: "Actual size", ZoomIn: "Zoom in", ZoomOut: "Zoom out",

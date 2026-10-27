@@ -214,14 +214,17 @@ func TestSFTPWindowConflictNeedsConfirmation(t *testing.T) {
 	file := filepath.Join(dir, "notes.txt")
 	os.WriteFile(file, []byte("new content"), 0600)
 	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}}, dir, w.view.path)
-	dualWait(t, state, w, view, func() bool { return w.view.dialog == sftpDialogOverwrite })
+	dualWait(t, state, w, view, func() bool {
+		return len(w.view.transfers) == 1 && w.view.transfers[0].State == sftpclient.TransferFailed
+	})
 	remote.mu.Lock()
 	before := string(remote.files["/home/test/notes.txt"])
 	remote.mu.Unlock()
 	if before != "hello world" {
 		t.Fatal("conflict overwrote without confirmation")
 	}
-	w.click(hitSFTPDialogSubmit)
+	index := state.transfers.byTask[transferKey{w.view, w.view.transfers[0].ID}]
+	w.click(hitTransfersReplace.At(state.transfers.entries[index].id))
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
 	remote.mu.Lock()
 	after := string(remote.files["/home/test/notes.txt"])

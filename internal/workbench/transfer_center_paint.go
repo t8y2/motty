@@ -147,7 +147,7 @@ func (state *State) paintTransferCard(canvas *ui.Canvas, box ui.Rect, entry *tra
 			f.Text(entry.status).FontSize(metrics.FontSizeS).Color(statusColor).HitWith(hitTransfersStatus.At(entry.id), entry.status, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: snapshot.Error})
 		})
 		bar = f.Slot().Height(3).Shrink(0).MarginSides(2, 0, 2, 0)
-		f.Text(entry.paths).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(16).Shrink(0)
+		f.Text(entry.paths).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(16).Shrink(0).HitWith(hitTransfersPaths.At(entry.id), entry.paths, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: entry.paths})
 		f.Row().Height(22).Shrink(0).Gap(6).Items(flex.Center).Children(func() {
 			f.Text(entry.amount).FontSize(metrics.FontSizeS).Color(pal.text)
 			f.Text(entry.clock).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1)

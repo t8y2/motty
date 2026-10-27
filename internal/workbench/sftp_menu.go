@@ -117,6 +117,18 @@ func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		state.sftpMenu.open = false
 		return
 	}
+	rows := state.sftpMenuRows(session, view)
+	width, height := rows.size(canvas, state.contextMenuTheme())
+	bounds := state.popupAt(canvas, viewport, state.sftpMenu.at, width, height, 6)
+	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
+		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSFTPMenuDismiss), RowHeight: contextMenuRow,
+	})
+	state.menuPlaced(menu.Bounds())
+	rows.paint(&menu, nil)
+	menu.End()
+}
+
+func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	messages := state.messages
 	count, selected := selectedSFTP(view)
 	one, local := count == 1, view.local
@@ -152,15 +164,7 @@ func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDelete, Label: messages.SFTPDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive, Disabled: busy})
 	}
 
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, state.sftpMenu.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSFTPMenuDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	return rows
 }
 
 // clickSFTPMenu runs a menu choice. A press anywhere else only closes the menu.

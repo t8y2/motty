@@ -28,6 +28,7 @@ type sftpCrumb struct {
 
 type sftpRow struct {
 	entry    sftpclient.Entry
+	sortName string
 	selected bool
 	cells    [5]string
 	icon     *ui.Icon // the file-type glyph, chosen when the listing arrives
@@ -63,7 +64,7 @@ type sftpFolder struct {
 }
 
 type sftpView struct {
-	detached *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
+	detached                        *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
 	worker                          *sftpclient.Worker
 	transferScan                    uint64
 	transferServer, transferAddress string
@@ -606,6 +607,7 @@ func (state *State) applySFTPListing(view *sftpView, remotePath string, rows []s
 	view.remoteSeq++ // a shown listing invalidates an older one still being prepared
 	view.path = remotePath
 	view.rows = rows
+	view.sortedDetached(false)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	view.selected = -1
 	view.first = 0
@@ -671,6 +673,7 @@ func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
 		}
 	}
 	view.first = min(view.first, max(0, len(view.rows)-max(view.visibleRows, 1)))
+	view.sortedDetached(false)
 	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
 }
 
@@ -958,7 +961,9 @@ func (state *State) pumpSFTP(session *Session) {
 					if errors.Is(result.Err, sftpclient.ErrCanceled) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
-						state.transfers.open = true
+						if view.detached == nil {
+							state.transfers.open = true
+						}
 					} else {
 						view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
 					}

@@ -36,6 +36,7 @@ type sftpWindow struct {
 	ui                      sftpWindowUI
 	drag                    sftpWindowDrag
 	deferredListings        [2]func()
+	externalConflict        uint32
 }
 
 func (state *State) openSFTPWindow(source *Session) {
@@ -48,6 +49,7 @@ func (state *State) openSFTPWindow(source *Session) {
 	}
 	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
 	w.view = &sftpView{detached: w, busy: true, status: state.messages.SFTPLoading, operation: sftpclient.OperationList}
+	w.view.transferServer, w.view.transferAddress = source.Title, source.Address
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
 	w.ui.fraction = .5
@@ -62,7 +64,7 @@ func (state *State) openSFTPWindow(source *Session) {
 	}
 	state.sftpWindows[source.ID] = w
 	connection, mode := source.conn, source.host.Transfer
-	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, window.Invalidate)
+	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, func() { window.Invalidate(); state.options.Invalidate() })
 	state.configureSFTPWorker(w.view)
 	remoteDir, localDir := "", localStart()
 	if source.files != nil {
@@ -90,6 +92,9 @@ func (w *sftpWindow) wake() {
 		return
 	}
 	w.owner.pumpSFTP(&w.session)
+	if w.externalConflict != 0 && w.owner.editByID(w.externalConflict) == nil {
+		w.externalConflict = 0
+	}
 	if w.view.dialog != sftpDialogNone {
 		w.cancelDrag()
 	}
@@ -133,7 +138,7 @@ func (state *State) closeSFTPWindows() {
 }
 
 func (w *sftpWindow) requestClose(allow func()) {
-	if w.view.worker != nil && sftpTransfersActive(w.view.worker.Transfers(nil)) {
+	if w.hasWork() {
 		w.allowClose = allow
 		w.closeConfirm = true
 		w.cancelDrag()
@@ -151,9 +156,17 @@ func (w *sftpWindow) onClosed() {
 	w.deferredListings = [2]func(){}
 	w.view.localSeq++
 	w.view.remoteSeq++
+	if w.view.cancelExtract != nil {
+		w.view.cancelExtract()
+	}
+	w.view.extracting = false
+	w.owner.dropWindowExternalEdits(w)
 	if w.view.worker != nil {
 		w.view.worker.Close()
+		w.owner.refreshSFTPTransfers(w.view)
+		w.owner.archiveTransfers(w.view)
 	}
+	w.owner.options.Invalidate()
 	w.view.rows = nil
 	w.view.lfolder.rows = nil
 	w.view.forgetListings()
@@ -169,7 +182,7 @@ func (w *sftpWindow) onClosed() {
 
 func (state *State) confirmSFTPWindows(allow func()) bool {
 	for _, w := range state.sftpWindows {
-		if w.view.worker == nil || !sftpTransfersActive(w.view.worker.Transfers(nil)) {
+		if !w.hasWork() {
 			continue
 		}
 		w.afterClosed = func() {
@@ -182,6 +195,18 @@ func (state *State) confirmSFTPWindows(allow func()) bool {
 		return true
 	}
 	return false
+}
+
+func (w *sftpWindow) hasWork() bool {
+	if w.view.extracting || w.owner.edits.opening.active && w.owner.edits.opening.origin == w {
+		return true
+	}
+	for i := range w.owner.edits.list {
+		if w.owner.edits.list[i].origin == w {
+			return true
+		}
+	}
+	return w.view.worker != nil && sftpTransfersActive(w.view.worker.Transfers(nil))
 }
 
 func (w *sftpWindow) folder(local bool) *sftpFolder {
@@ -222,6 +247,7 @@ func (w *sftpWindow) openEntry(local bool, index int) {
 	}
 	w.activeLocal, w.view.local = local, local
 	folder.selectRow(index, 0)
+	w.selectionChanged(local)
 	if entry.IsDir() {
 		location := path.Join(folder.path, entry.Name)
 		if local {

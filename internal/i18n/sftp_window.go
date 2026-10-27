@@ -1,6 +1,7 @@
 package i18n
 
 type SFTPWindowMessages struct {
+	DropUploadHint, DropDownloadHint                           string
 	QueueRejectedFmt                                           string
 	Open, Title, Local, Remote, Path, Name, Size, Modified     string
 	Upload, Download, DragHint, DropUpload, DropDownload       string
