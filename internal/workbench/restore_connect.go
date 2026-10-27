@@ -13,10 +13,13 @@ import (
 type restoreConnectPolicy uint8
 
 const (
-	// restoreConnectActive is the zero value and the default: the tab in front
-	// is the one the user returns to.
-	restoreConnectActive restoreConnectPolicy = iota
-	restoreConnectOff
+	// restoreConnectOff is the zero value and the default: a restored tab is
+	// metadata until the user connects it, so reopening the app never dials.
+	restoreConnectOff restoreConnectPolicy = iota
+	// restoreConnectActive is the tab in front, all its panes, when the user
+	// chose to connect on restore.
+	restoreConnectActive
+	// restoreConnectAll is every restored tab, when the user chose it.
 	restoreConnectAll
 )
 
@@ -26,25 +29,29 @@ const maxAutoRestoreConnections = 8
 
 func (policy restoreConnectPolicy) String() string {
 	switch policy {
-	case restoreConnectOff:
-		return "off"
+	case restoreConnectActive:
+		return "current"
 	case restoreConnectAll:
-		return "all"
+		return "all-tabs"
 	default:
-		return "active"
+		return "off"
 	}
 }
 
-// restoreConnectPolicyFromString reads a saved policy; a state saved before the
-// setting existed has none and gets the default.
+// restoreConnectPolicyFromString reads a saved policy. Files written before the
+// default changed carry "active" or "all": "active" was the old default and
+// cannot be told apart from a choice, so both read as off and the user chooses
+// again. Choices written since then use tokens of their own ("current",
+// "all-tabs"), which is what keeps them from being taken for a legacy value. A
+// state saved before the setting existed has none at all, which is off too.
 func restoreConnectPolicyFromString(value string) restoreConnectPolicy {
 	switch value {
-	case restoreConnectOff.String():
-		return restoreConnectOff
+	case restoreConnectActive.String():
+		return restoreConnectActive
 	case restoreConnectAll.String():
 		return restoreConnectAll
 	default:
-		return restoreConnectActive
+		return restoreConnectOff
 	}
 }
 

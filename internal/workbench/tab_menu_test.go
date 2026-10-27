@@ -230,12 +230,10 @@ func TestTabMenuClosesWithoutActingOnAnOutsidePressOrEscape(t *testing.T) {
 func TestTabMenuOffersReconnectOnlyForATabThatNeedsIt(t *testing.T) {
 	_, options := newWorld(t)
 	first := newTestState(t, options)
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	first.save()
 
 	state := newTestState(t, options)
-	state.restoreConnect = restoreConnectOff
 	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
 	tab := state.deck.ActiveWorkspace()
 	session, _ := state.sessionByIDPointer(state.activeSessionID)

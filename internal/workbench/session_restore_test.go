@@ -12,8 +12,6 @@ import (
 func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	first.Click(hitHosts)
 	first.Click(hitHostList.At(2))
@@ -120,8 +118,6 @@ func TestWorkspaceAndClosedTabsPersist(t *testing.T) {
 func TestTypedSessionRestoresAsAnEphemeralTarget(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	first.search.Insert("guest@typed.example.com:2222")
 	first.Click(hitConnect)
 	if len(world.conns) != 1 || len(first.sessions) != 1 || first.sessions[0].HostID != 0 {

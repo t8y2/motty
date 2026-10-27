@@ -10,8 +10,8 @@ import (
 )
 
 // restoredWorld leaves two tabs saved, the first one active, and returns the
-// options a new State restores them from. policy "" saves a state from before
-// the setting existed.
+// options a new State restores them from. legacy blanks the saved policy, as a
+// state written before the setting existed had none.
 func restoredWorld(t *testing.T, policy restoreConnectPolicy, legacy bool) (*world, Options) {
 	t.Helper()
 	world, options := newWorld(t)
@@ -39,8 +39,9 @@ func restoredWorld(t *testing.T, policy restoreConnectPolicy, legacy bool) (*wor
 	return world, options
 }
 
-func TestRestoreConnectsOnlyTheActiveTabByDefault(t *testing.T) {
-	world, options := restoredWorld(t, restoreConnectActive, true) // saved before the setting existed
+// The current tab is connected on restore only when the user chose it.
+func TestRestoreConnectsOnlyTheActiveTabWhenChosen(t *testing.T) {
+	world, options := restoredWorld(t, restoreConnectActive, false)
 	second := newTestState(t, options)
 	if len(world.conns) != 2 {
 		t.Fatalf("New dialed %d connections before the window existed", len(world.conns)-2)
@@ -60,6 +61,68 @@ func TestRestoreConnectsOnlyTheActiveTabByDefault(t *testing.T) {
 	}
 	if !second.showsProgress(active) {
 		t.Fatal("the connecting tab does not show its connection page")
+	}
+}
+
+// A state saved before the setting existed has no policy: reopening must not
+// dial, and every tab must wait on its page for the user.
+func TestRestoreDoesNotDialByDefault(t *testing.T) {
+	world, options := restoredWorld(t, restoreConnectOff, true)
+	second := newTestState(t, options)
+	second.Wake()
+	second.Wake()
+	if len(world.conns) != 2 {
+		t.Fatalf("restore dialed %d connections, want none", len(world.conns)-2)
+	}
+	if second.restoreConnect != restoreConnectOff {
+		t.Fatalf("policy = %v, want off", second.restoreConnect)
+	}
+	for index := range second.sessions {
+		if session := &second.sessions[index]; session.conn != nil || !session.restored {
+			t.Fatalf("tab %d was connected: %+v", session.ID, session)
+		}
+	}
+}
+
+// Restore policies written before the default changed must not dial: "active"
+// was the old default, so it cannot be told apart from a choice, and "all" is
+// reset with it. The next save writes the new off token, so the reset sticks.
+func TestLegacyRestorePoliciesDialNothing(t *testing.T) {
+	for _, legacy := range []string{"", "active", "all", "off"} {
+		name := legacy
+		if name == "" {
+			name = "none"
+		}
+		t.Run("legacy_"+name, func(t *testing.T) {
+			world, options := restoredWorld(t, restoreConnectOff, false)
+			saved, _, err := loadState(options.StatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved.RestoreConnect = legacy
+			if err := saveState(options.StatePath, saved); err != nil {
+				t.Fatal(err)
+			}
+
+			second := newTestState(t, options)
+			second.Wake()
+			second.Wake()
+			if len(world.conns) != 2 {
+				t.Fatalf("restart with restore_connect=%q dialed %d connections", legacy, len(world.conns)-2)
+			}
+			if second.restoreConnect != restoreConnectOff {
+				t.Fatalf("restore_connect=%q read as %v, want off", legacy, second.restoreConnect)
+			}
+
+			second.save()
+			reloaded, _, err := loadState(options.StatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reloaded.RestoreConnect != restoreConnectOff.String() {
+				t.Fatalf("restore_connect=%q was saved back as %q, want %q", legacy, reloaded.RestoreConnect, restoreConnectOff.String())
+			}
+		})
 	}
 }
 
@@ -169,8 +232,8 @@ func TestRestoredConnectionThatNeedsNoOneJustConnects(t *testing.T) {
 
 func TestRestoreConnectSettingChoosesAndPersists(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	if state.restoreConnect != restoreConnectActive {
-		t.Fatalf("default = %v, want the active tab", state.restoreConnect)
+	if state.restoreConnect != restoreConnectOff {
+		t.Fatalf("default = %v, want off", state.restoreConnect)
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
@@ -205,6 +268,7 @@ func TestRestoreConnectSettingChoosesAndPersists(t *testing.T) {
 func TestRestoreConnectsEveryPaneOfTheActiveTab(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
+	first.restoreConnect = restoreConnectActive
 	openHost(first)
 	openHostInSplit(t, first, 2, layoutcore.Horizontal)
 	first.Click(hitHosts)
@@ -240,6 +304,7 @@ func TestRestoreConnectsEveryPaneOfTheActiveTab(t *testing.T) {
 func TestRestoredSplitPanesConnectWithoutProgressPages(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
+	first.restoreConnect = restoreConnectActive
 	openHost(first)
 	openHostInSplit(t, first, 2, layoutcore.Horizontal)
 	first.Click(hitHosts)
@@ -271,12 +336,10 @@ func TestRestoredSplitPanesConnectWithoutProgressPages(t *testing.T) {
 func TestRestoredPageTakesEnterAndCommandWAndShowsTheKeys(t *testing.T) {
 	_, options := newWorld(t)
 	first := newTestState(t, options)
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	first.save()
 
 	state := newTestState(t, options)
-	state.restoreConnect = restoreConnectOff
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	if !session.restored {
 		t.Fatal("setup: the session was not restored")
@@ -294,7 +357,6 @@ func TestRestoredPageTakesEnterAndCommandWAndShowsTheKeys(t *testing.T) {
 	}
 
 	second := newTestState(t, options)
-	second.restoreConnect = restoreConnectOff
 	tabs := len(second.deck.Workspaces(nil))
 	if result := commandW(second); !result.Handled || len(second.deck.Workspaces(nil)) != tabs-1 {
 		t.Fatalf("Command+W on the restored page: %+v tabs %d→%d", result, tabs, len(second.deck.Workspaces(nil)))
@@ -306,12 +368,10 @@ func TestRestoredPageTakesEnterAndCommandWAndShowsTheKeys(t *testing.T) {
 func TestEnterOnTheActiveTabConnectsARestoredPage(t *testing.T) {
 	_, options := newWorld(t)
 	first := newTestState(t, options)
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	first.save()
 
 	state := newTestState(t, options)
-	state.restoreConnect = restoreConnectOff
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	if !session.restored {
 		t.Fatal("setup: the session was not restored")
