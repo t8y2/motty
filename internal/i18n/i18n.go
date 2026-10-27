@@ -82,6 +82,9 @@ type Messages struct {
 	DebugEnvironmentDevelopment string
 	DebugEnvironmentStaging     string
 	DebugEnvironmentProduction  string
+	DebugColorSwatchTitle       string
+	DebugColorSwatchDescription string
+	DebugColorSwatchChoice      string
 
 	// What the user is told when the saved state could not be loaded as it was.
 	// The Fmt strings take the file names or versions named in persist.go.
@@ -268,6 +271,15 @@ type Messages struct {
 	FieldPasswordHint           string
 	FieldPasswordKeepHint       string
 	FieldPasswordCopyHint       string
+	FieldAuthentication         string
+	AuthAutomatic               string
+	AuthPassword                string
+	AuthPrivateKey              string
+	AuthAgent                   string
+	FieldIdentity               string
+	AuthAllKeys                 string
+	AuthKeyUnavailable          string
+	AuthImportKey               string
 	FieldVNCPassword            string
 	HostPasswordShared          string
 	HostPasswordNotCarried      string
@@ -495,6 +507,7 @@ type Messages struct {
 	KeyNothingImported          string
 	KeySelected                 string
 	KeyRemoved                  string
+	KeyInUseFmt                 string
 	KeyPassphraseTitle          string
 	KeyPassphraseDescriptionFmt string
 	KeyPassphraseLabel          string

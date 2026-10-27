@@ -302,6 +302,7 @@ var (
 	hitTerminalMenuClear      = tree.ID(terminalMenuHits, "terminal-menu-clear")
 	hitTerminalMenuSplitRight = tree.ID(terminalMenuHits, "terminal-menu-split-right")
 	hitTerminalMenuSplitDown  = tree.ID(terminalMenuHits, "terminal-menu-split-down")
+	hitTerminalMenuClosePane  = tree.ID(terminalMenuHits, "terminal-menu-close-pane")
 	hitTerminalMenuFiles      = tree.ID(terminalMenuHits, "terminal-menu-files")
 	hitTerminalMenuStats      = tree.ID(terminalMenuHits, "terminal-menu-stats")
 	hitLocalTerminal          = tree.ID(terminalMenuHits, "local-terminal")
@@ -1634,6 +1635,27 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.paneDividerPointer(event); handled {
 		return result
 	}
+	// A press on a pane's own ground switches to that pane, and the keyboard goes
+	// with it: the pane the window shows as active is the pane keys and IME text
+	// reach. Nothing focusable was under the press, so the page says where the
+	// keyboard belongs; a page with no such place leaves the keyboard nowhere,
+	// since a keystroke still aimed at the pane it was in would switch back.
+	if event.Kind == ui.PointerDown {
+		if session, ok := state.paneGround(event.Target); ok {
+			changed := state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
+			result := ui.EventResult{Handled: true, Repaint: true}
+			if target := state.paneGroundFocus(session); target.IsZero() {
+				result.Blur = true
+			} else {
+				result.Focus = state.paneIdentity(session, target)
+			}
+			if changed {
+				state.save()
+			}
+			return result
+		}
+	}
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
 		mount, _ := tree.MountOf(event.Target.Scope())
 		// A pane becomes the active one when it is pressed, not when the pointer
@@ -1751,6 +1773,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.menuKey(event); handled {
+		return result
+	}
+	if result, handled := state.devSwatchKey(event); handled {
 		return result
 	}
 	if result, handled := state.selectTypeaheadKey(event); handled {

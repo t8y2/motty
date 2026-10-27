@@ -79,6 +79,33 @@ type Endpoint struct {
 	User string
 }
 
+// Authentication describes which credentials one endpoint may use. A zero
+// Methods value enables every supported SSH method; identity files and agent
+// use remain explicit fields.
+type Authentication struct {
+	// Methods limits the SSH authentication methods offered. Zero enables every
+	// supported method for compatibility with callers that do not set a policy.
+	Methods AuthMethods
+	// IdentityFiles lists private keys to try. Nil means the default OpenSSH
+	// identities; an empty slice disables identity files.
+	IdentityFiles []string
+	// AdditionalIdentityFiles are tried after IdentityFiles, or after the
+	// default identities when IdentityFiles is nil.
+	AdditionalIdentityFiles []string
+	// Agent controls whether the running ssh-agent is offered.
+	Agent bool
+}
+
+// AuthMethods is a bit set of SSH authentication methods.
+type AuthMethods uint8
+
+const (
+	AuthPublicKey AuthMethods = 1 << iota
+	AuthKeyboardInteractive
+	AuthPassword
+	AuthAll = AuthPublicKey | AuthKeyboardInteractive | AuthPassword
+)
+
 // EndpointRole says which endpoint currently owns the connection status.
 type EndpointRole uint8
 
@@ -164,6 +191,10 @@ type Config struct {
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when SSH_AUTH_SOCK is unset.
 	Agent bool
+	// Authentication overrides the legacy identity, agent and password policy
+	// for individual endpoints. An endpoint not in the map uses the fields
+	// above and every supported authentication method.
+	Authentication map[Endpoint]Authentication
 	// Proxy, when set and not bypassed for the destination, carries the first
 	// TCP connection: to the target, or to the first jump host.
 	Proxy *Proxy
@@ -578,10 +609,11 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
+	authentication := conn.authentication(endpoint)
 	clientConfig := &ssh.ClientConfig{
 		Config: ssh.Config{KeyExchanges: wanted.KeyExchanges, Ciphers: wanted.Ciphers, MACs: wanted.MACs},
 		User:   endpoint.User,
-		Auth:   conn.authMethods(),
+		Auth:   conn.authMethods(authentication),
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return conn.verifyHostKey(known, hostname, remote, key)
 		},
@@ -607,6 +639,18 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 		conn.update(func(status *Status) { status.Negotiated = negotiated })
 	}
 	return ssh.NewClient(sshConn, channels, requests), string(sshConn.ServerVersion()), nil
+}
+
+func (conn *Conn) authentication(endpoint Endpoint) Authentication {
+	if authentication, ok := conn.config.Authentication[endpoint.normalized()]; ok {
+		return authentication
+	}
+	return Authentication{
+		Methods:                 AuthAll,
+		IdentityFiles:           conn.config.IdentityFiles,
+		AdditionalIdentityFiles: conn.config.AdditionalIdentityFiles,
+		Agent:                   conn.config.Agent,
+	}
 }
 
 // explain turns a handshake error into one of the package errors when it is

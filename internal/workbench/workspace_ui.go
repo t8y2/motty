@@ -87,6 +87,10 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	}
 	if len(state.panes) == 1 {
 		pane := state.panes[0]
+		// The pane's own ground, as in a split: a press here is a press inside the
+		// pane, so it must reach the pane rather than fall through to the window
+		// and take the keyboard away from the page.
+		canvas.HitWithOptions(hitPaneActivateList.At(0), pixelBounds(frame, pane.Bounds), state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
 		if session, ok := state.sessionByIDPointer(pane.SessionID); ok {
 			state.paneCanvas.BeginEmbedded(canvas, 0)
 			state.paintSessionPage(&state.paneCanvas, paneVirtualSize(frame), session)
@@ -479,17 +483,58 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: true}
 }
 
+// paneGroundFocus is where the keyboard goes when a pane's own ground — its bar,
+// its padding, the page behind its controls — is pressed: the surface the page
+// types into, or the one action of a page that has no terminal. Zero when the
+// page has nowhere to put the keyboard.
+//
+// The identity is the one the page paints, before the pane's mount: a page does
+// not know which pane it is in.
+func (state *State) paneGroundFocus(session *Session) ui.ID {
+	switch {
+	case session.restored:
+		return hitConnRetry // the page's one action, the key it shows
+	case state.showsProgress(session):
+		return ui.ID{}
+	case session.desk != nil, session.term != nil:
+		return hitTerminalList.At(int(session.ID))
+	}
+	return ui.ID{}
+}
+
+// paneGround finds the pane whose ground a hit is, the area a page leaves open
+// between its controls. It is where a press switches panes. ok is false for
+// everything a page or the window declared itself.
+func (state *State) paneGround(hit ui.ID) (*Session, bool) {
+	if hit.Scope() != hitPaneActivateList || state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	state.refreshWorkspaceViews()
+	index := item(hit)
+	if index >= len(state.panes) {
+		return nil, false
+	}
+	return state.sessionByIDPointer(state.panes[index].SessionID)
+}
+
+// paneIdentity names an identity a session's page painted as the pane paints it:
+// side by side the pane's mount is part of it, while a workspace of one pane
+// paints its page in place and the page's own identity is the one the window
+// knows.
+func (state *State) paneIdentity(session *Session, local ui.ID) ui.ID {
+	state.refreshWorkspaceViews()
+	if len(state.panes) > 1 {
+		return tree.MountID(paneMount(session), local)
+	}
+	return local
+}
+
 func (state *State) activeTerminalFocusHit() ui.ID {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term == nil {
 		return ui.ID{}
 	}
-	id := hitTerminalList.At(int(session.ID))
-	state.refreshWorkspaceViews()
-	if len(state.panes) > 1 {
-		id = tree.MountID(paneMount(session), id)
-	}
-	return id
+	return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
 }
 
 func (state *State) dragPaneDivider(event ui.PointerEvent) ui.EventResult {

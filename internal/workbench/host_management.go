@@ -375,6 +375,9 @@ func (state *State) hostPasswordSecretName(host Host) (string, bool) {
 	endpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port}
 	switch host.Protocol {
 	case protocolSSH:
+		if host.Auth == authPrivateKey || host.Auth == authAgent {
+			return "", false
+		}
 		endpoint.User = state.login(host)
 	case protocolVNC:
 		endpoint.User = vncAccount

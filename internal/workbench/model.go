@@ -28,6 +28,11 @@ type Host struct {
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.
 	Algo *hostAlgo
+	// Auth limits which credentials an SSH connection offers. Identity is the
+	// fingerprint of a specific imported private key when Auth is authPrivateKey;
+	// an empty value lets that mode try the default and imported keys.
+	Auth     hostAuth
+	Identity string
 	// ForwardX11 asks the server to forward the X11 connections of this host's
 	// shells to the local display. Off unless the user turned it on.
 	ForwardX11 bool

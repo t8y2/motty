@@ -14,6 +14,9 @@ const (
 	debugPreviewActions = 3
 	// debugSelectOptions is the number of choices in its select.
 	debugSelectOptions = 3
+	// debugSwatches is the number of colors in its palette, the disabled last
+	// choice included.
+	debugSwatches = 4
 )
 
 // The gallery's place in the sidebar and its controls. A release build has none
@@ -25,11 +28,12 @@ var (
 	hitDebugSelectDismiss  = tree.ID(debugHits, "select-dismiss")
 	hitDebugActionList     = tree.Sub(debugHits, tree.Name("action"))
 	hitDebugSelectItemList = tree.Sub(debugHits, tree.Name("select-item"))
+	hitDebugSwatchList     = tree.Sub(debugHits, tree.Name("swatch"))
 )
 
 // devState is the gallery's own state: the layout of its previews, the button
-// group action pressed last, and the select's trigger and popup. A release
-// build keeps none of it.
+// group action pressed last, the select's trigger and popup, and the color
+// chosen in the palette. A release build keeps none of it.
 type devState struct {
 	layout flex.View
 	action int
@@ -38,6 +42,8 @@ type devState struct {
 	selectRect   ui.Rect
 	selectOpen   bool
 	selectOption int
+	// swatch is the color chosen in the palette; it indexes debugSwatchColors.
+	swatch int
 }
 
 // devDeclareNavigation puts the gallery in the sidebar, above Settings.
@@ -155,6 +161,51 @@ func (state *State) debugSelectLabels() [debugSelectOptions]string {
 	}
 }
 
+// debugSwatchLabels names the palette's choices in the active language, in the
+// order debugSwatchColors draws them.
+func (state *State) debugSwatchLabels() [debugSwatches]string {
+	messages := state.messages
+	return [debugSwatches]string{
+		messages.ColorNone, messages.ColorGreen, messages.ColorBlue, messages.ColorRed,
+	}
+}
+
+// debugSwatchOptions builds the palette's stable choices for keyboard
+// navigation. The last color is disabled, so arrows and Tab skip it.
+func (state *State) debugSwatchOptions() [debugSwatches]components.RadioOption {
+	labels := state.debugSwatchLabels()
+	var options [debugSwatches]components.RadioOption
+	for index, label := range labels {
+		options[index] = components.RadioOption{
+			ID: hitDebugSwatchList.At(index), Label: label, Disabled: index == debugSwatches-1,
+		}
+	}
+	return options
+}
+
+// devSwatchKey moves through the gallery's palette with the arrow keys, as a
+// radio group does. Tab traversal and the hits themselves are Viva's.
+func (state *State) devSwatchKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if state.modal != modalNone || state.activeSection != sectionDebug {
+		return ui.EventResult{}, false
+	}
+	if _, ok := event.Target.In(hitDebugSwatchList); !ok {
+		return ui.EventResult{}, false
+	}
+	options := state.debugSwatchOptions()
+	next, handled := components.RadioGroupKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	if !handled {
+		return ui.EventResult{}, false
+	}
+	index, ok := next.In(hitDebugSwatchList)
+	if !ok || index < 0 || index >= debugSwatches {
+		return ui.EventResult{}, false
+	}
+	changed := state.dev.swatch != index
+	state.dev.swatch = index
+	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: changed}, true
+}
+
 // clickDebug handles the Debug page's preview controls. The group's hits and the
 // select's popup are Viva's; the page only keeps the values and the open state.
 func (state *State) clickDebug(id ui.ID) bool {
@@ -176,6 +227,10 @@ func (state *State) clickDebug(id ui.ID) bool {
 	if index, ok := id.In(hitDebugSelectItemList); ok && index < debugSelectOptions {
 		state.dev.selectOption = index
 		state.dev.selectOpen = false
+		return true
+	}
+	if index, ok := id.In(hitDebugSwatchList); ok && index < debugSwatches-1 {
+		state.dev.swatch = index
 		return true
 	}
 	return false

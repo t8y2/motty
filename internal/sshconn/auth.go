@@ -17,27 +17,39 @@ var defaultIdentities = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 // authMethods builds the client's authentication order: keys first, then the
 // account password through keyboard-interactive and password. Prompts for the
 // password block the connection goroutine and show up as Status.
-func (conn *Conn) authMethods() []ssh.AuthMethod {
-	return []ssh.AuthMethod{
-		ssh.PublicKeysCallback(conn.publicKeySigners),
-		ssh.RetryableAuthMethod(ssh.KeyboardInteractive(conn.keyboardInteractive), maxPasswordAttempts),
-		ssh.RetryableAuthMethod(ssh.PasswordCallback(conn.passwordPrompt), maxPasswordAttempts),
+func (conn *Conn) authMethods(authentication Authentication) []ssh.AuthMethod {
+	methods := authentication.Methods
+	if methods == 0 {
+		methods = AuthAll
 	}
+	auth := make([]ssh.AuthMethod, 0, 3)
+	if methods&AuthPublicKey != 0 {
+		auth = append(auth, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			return conn.publicKeySigners(authentication)
+		}))
+	}
+	if methods&AuthKeyboardInteractive != 0 {
+		auth = append(auth, ssh.RetryableAuthMethod(ssh.KeyboardInteractive(conn.keyboardInteractive), maxPasswordAttempts))
+	}
+	if methods&AuthPassword != 0 {
+		auth = append(auth, ssh.RetryableAuthMethod(ssh.PasswordCallback(conn.passwordPrompt), maxPasswordAttempts))
+	}
+	return auth
 }
 
 // publicKeySigners runs only after the server's host key is accepted. That
 // ordering ensures the app never asks for a private-key passphrase on behalf
 // of an untrusted endpoint.
-func (conn *Conn) publicKeySigners() ([]ssh.Signer, error) {
+func (conn *Conn) publicKeySigners(authentication Authentication) ([]ssh.Signer, error) {
 	conn.method("publickey")
-	signers, skipped, err := conn.loadIdentities()
+	signers, skipped, err := conn.loadIdentities(authentication)
 	if err != nil {
 		return nil, err
 	}
 	if len(skipped) > 0 {
 		conn.update(func(status *Status) { status.Skipped = append(status.Skipped, skipped...) })
 	}
-	if conn.config.Agent {
+	if authentication.Agent {
 		if agentSigners, err := conn.agentSigners(); err == nil {
 			signers = append(agentSigners, signers...)
 		}
@@ -129,8 +141,8 @@ func (conn *Conn) askPassword(question string) (string, error) {
 // loadIdentities reads configured private keys and asks for encrypted-key
 // passphrases one at a time. A declined key is skipped without canceling the
 // connection, so agent and password authentication can still proceed.
-func (conn *Conn) loadIdentities() (signers []ssh.Signer, skipped []string, err error) {
-	paths := conn.config.IdentityFiles
+func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.Signer, skipped []string, err error) {
+	paths := authentication.IdentityFiles
 	if paths == nil {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -140,7 +152,7 @@ func (conn *Conn) loadIdentities() (signers []ssh.Signer, skipped []string, err 
 			paths = append(paths, filepath.Join(home, ".ssh", name))
 		}
 	}
-	paths = append(paths, conn.config.AdditionalIdentityFiles...)
+	paths = append(paths, authentication.AdditionalIdentityFiles...)
 	for _, path := range paths {
 		signer, err := keyidentity.Load(path, nil)
 		if err != nil {

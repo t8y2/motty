@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 // terminalMenuHits is the place of the controls this file paints.
@@ -170,6 +171,13 @@ func (state *State) terminalMenuSession() (*Session, bool) {
 	return session, ok && session.term != nil
 }
 
+// terminalMenuSplits reports whether the session is one pane of a split tab, so
+// closing it takes away a pane rather than the whole tab.
+func (state *State) terminalMenuSplits(session *Session) bool {
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	return ok && len(state.deck.Panes(workspaceID, nil)) > 1
+}
+
 func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	session, ok := state.terminalMenuSession()
 	if !ok {
@@ -200,6 +208,11 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitRight, Label: messages.PaneSplitHorizontal, Icon: icon(iconColumns2), Keys: caps(shortcutPaneSplitHorizontal)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitDown, Label: messages.PaneSplitVertical, Icon: icon(iconRows2), Keys: caps(shortcutPaneSplitVertical)})
+	// A tab of one pane closes as a tab, which this menu does not offer: closing
+	// its only pane would look like the same thing under a narrower name.
+	if state.terminalMenuSplits(session) {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuClosePane, Label: messages.PaneClose, Icon: icon(iconClose), Keys: caps(shortcutPaneClose)})
+	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Keys: caps(shortcutSFTP), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || state.transfer.phase != transferNone})
@@ -301,6 +314,10 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 		state.Click(hitPaneSplitHorizontal)
 	case hitTerminalMenuSplitDown:
 		state.Click(hitPaneSplitVertical)
+	case hitTerminalMenuClosePane:
+		// The session the menu was opened on, not whichever pane has the
+		// keyboard: a right click does not move focus.
+		state.closeSession(session.ID)
 	case hitTerminalMenuFiles:
 		state.Click(hitSFTPOpen)
 	case hitTerminalMenuAsk:

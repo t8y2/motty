@@ -68,7 +68,7 @@ func (state *State) paintHostProtocolSwitch(canvas *ui.Canvas, bounds ui.Rect) {
 func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHeight float32) {
 	m, tools := state.messages, state.messages.Tools
 	editor := &state.editor
-	var address, picker, second, password, third flex.Box
+	var address, picker, second, password, third, authentication, identity flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: y, Width: width, Height: float32(state.hostEndpointRows()) * rowHeight})
 	f.Column().Fill().Children(func() {
 		switch editor.protocol {
@@ -97,6 +97,20 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 					second = f.Slot().Grow(1)
 				}
 				password = f.Slot().Grow(1)
+			})
+		case protocolSSH:
+			f.Row().Height(rowHeight).Gap(8).Children(func() {
+				address = f.Slot().Grow(1)
+				third = f.Slot().Width(hostPortWidth).Shrink(0)
+			})
+			f.Row().Height(rowHeight).Gap(8).Children(func() {
+				second = f.Slot().Grow(1)
+				authentication = f.Slot().Grow(1)
+				if editor.auth == authPrivateKey {
+					identity = f.Slot().Grow(1)
+				} else if editor.auth != authAgent {
+					password = f.Slot().Grow(1)
+				}
 			})
 		default:
 			f.Row().Height(rowHeight).Gap(8).Children(func() {
@@ -136,6 +150,16 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 			state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldSSHUser, m.FieldUserPlaceholder, second.Rect())
 		}
 		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldVNCPassword, state.hostPasswordHint(), password.Rect())
+		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
+	case protocolSSH:
+		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
+		state.paintDialogField(canvas, hitDialogUser, fieldUser, m.FieldUser, m.FieldUserPlaceholder, second.Rect())
+		state.paintHostAuthenticationChoice(canvas, authentication.Rect())
+		if editor.auth == authPrivateKey {
+			state.paintHostIdentityChoice(canvas, identity.Rect())
+		} else if editor.auth != authAgent {
+			state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
+		}
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
 	default:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
@@ -227,6 +251,7 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 		editor.agentForward = !editor.agentForward
 	case id == hitDialogNoHistory:
 		editor.noHistory = !editor.noHistory
+	case state.clickHostAuthentication(id):
 	case state.clickTransferChoice(id):
 	case state.clickHostColor(id):
 	case id == hitDialogOTPRemove:
@@ -290,6 +315,8 @@ func (state *State) hostEndpointRows() int {
 		return 3
 	case protocolTelnet:
 		return 1
+	case protocolSSH:
+		return 2
 	}
 	return 2
 }

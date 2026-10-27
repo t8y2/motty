@@ -247,6 +247,46 @@ func TestIdentityFileAuthenticatesWithoutAPasswordPrompt(t *testing.T) {
 	}
 }
 
+func TestEndpointPasswordPolicyDoesNotOfferAValidIdentity(t *testing.T) {
+	path, signer := writeKey(t, t.TempDir())
+	server := startServer(t, func(server *testServer) {
+		server.authorized = []ssh.PublicKey{signer.PublicKey()}
+		server.password = "pw"
+	})
+	harness := dial(t, server, func(config *Config) {
+		endpoint := Endpoint{Host: config.Host, Port: config.Port, User: config.User}
+		config.Authentication = map[Endpoint]Authentication{
+			endpoint: {Methods: AuthKeyboardInteractive | AuthPassword, IdentityFiles: []string{path}},
+		}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	harness.phase(PhasePasswordPrompt)
+	harness.conn.SubmitPassword("pw")
+	if connected := harness.phase(PhaseConnected); connected.Method != "password" {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+func TestEndpointKeyPolicyDoesNotFallBackToPassword(t *testing.T) {
+	server := startServer(t, func(server *testServer) { server.password = "pw" })
+	harness := dial(t, server, func(config *Config) {
+		endpoint := Endpoint{Host: config.Host, Port: config.Port, User: config.User}
+		config.Authentication = map[Endpoint]Authentication{
+			endpoint: {Methods: AuthPublicKey, IdentityFiles: []string{}},
+		}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	failed := harness.phase(PhaseFailed)
+	if !errors.Is(failed.Err, ErrAuthFailed) {
+		t.Fatalf("failure = %v", failed.Err)
+	}
+	if offered := server.offered(); len(offered) != 0 {
+		t.Fatalf("passwords offered = %v", offered)
+	}
+}
+
 func TestUnauthorizedKeyFallsBackToPassword(t *testing.T) {
 	path, _ := writeKey(t, t.TempDir())
 	other := newSigner(t)
