@@ -98,9 +98,10 @@ func (state *State) SetWindow(frame func() (ui.Rect, bool), visible func() bool)
 // and the live sessions in them. Nothing in it is closed or copied; the sessions
 // are the ones the user was working in.
 type tabPayload struct {
-	title    string
-	dto      layoutcore.WorkspaceDTO
-	sessions []Session
+	title     string
+	dto       layoutcore.WorkspaceDTO
+	sessions  []Session
+	transfers []transferEntry
 }
 
 // detachWorkspace takes a tab out of this window without ending its sessions.
@@ -131,6 +132,7 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 	}
 	for index := range payload.sessions {
 		session := &payload.sessions[index]
+		payload.transfers = state.detachTransfers(session.files, payload.transfers)
 		// What belongs to this window rather than to the session ends here: the
 		// reconnect timer, the port forwards that were opened through it, the
 		// files open in an outside editor, and a dialog about it.
@@ -247,6 +249,7 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		}
 		id = dockInto
 	}
+	state.adoptTransfers(payload.transfers)
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
 	state.rebuildTabOptions()

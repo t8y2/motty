@@ -263,32 +263,30 @@ var (
 
 // SFTP: its page and the lists on it.
 var (
-	hitSFTPOpen               = tree.ID(sftpHits, "sftp-open")
-	hitSFTPClose              = tree.ID(sftpHits, "sftp-close")
-	hitSFTPUp                 = tree.ID(sftpHits, "sftp-up")
-	hitSFTPRefresh            = tree.ID(sftpHits, "sftp-refresh")
-	hitSFTPDownload           = tree.ID(sftpHits, "sftp-download")
-	hitSFTPCancel             = tree.ID(sftpHits, "sftp-cancel")
-	hitSFTPUpload             = tree.ID(sftpHits, "sftp-upload")
-	hitSFTPUploadDirectory    = tree.ID(sftpHits, "sftp-upload-directory")
-	hitSFTPNewDirectory       = tree.ID(sftpHits, "sftp-new-directory")
-	hitSFTPOpenEntry          = tree.ID(sftpHits, "sftp-open-entry")
-	hitSFTPRename             = tree.ID(sftpHits, "sftp-rename")
-	hitSFTPDelete             = tree.ID(sftpHits, "sftp-delete")
-	hitSFTPChmod              = tree.ID(sftpHits, "sftp-chmod")
-	hitSFTPDialogDismiss      = tree.ID(sftpHits, "sftp-dialog-dismiss")
-	hitSFTPDialogClose        = tree.ID(sftpHits, "sftp-dialog-close")
-	hitSFTPDialogCancel       = tree.ID(sftpHits, "sftp-dialog-cancel")
-	hitSFTPDialogSubmit       = tree.ID(sftpHits, "sftp-dialog-submit")
-	hitSFTPDialogField        = tree.ID(sftpHits, "sftp-dialog-field")
-	hitSFTPEditor             = tree.ID(sftpHits, "sftp-editor")
-	hitSFTPEditSave           = tree.ID(sftpHits, "sftp-edit-save")
-	hitSFTPEditBack           = tree.ID(sftpHits, "sftp-edit-back")
-	hitSFTPEditReload         = tree.ID(sftpHits, "sftp-edit-reload")
-	hitSFTPBreadcrumbList     = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
-	hitSFTPEntryList          = tree.Sub(sftpHits, tree.Name("sftp-entry"))
-	hitSFTPTransferCancelList = tree.Sub(sftpHits, tree.Name("sftp-transfer-cancel"))
-	hitSFTPTransferRetryList  = tree.Sub(sftpHits, tree.Name("sftp-transfer-retry"))
+	hitSFTPOpen            = tree.ID(sftpHits, "sftp-open")
+	hitSFTPClose           = tree.ID(sftpHits, "sftp-close")
+	hitSFTPUp              = tree.ID(sftpHits, "sftp-up")
+	hitSFTPRefresh         = tree.ID(sftpHits, "sftp-refresh")
+	hitSFTPDownload        = tree.ID(sftpHits, "sftp-download")
+	hitSFTPCancel          = tree.ID(sftpHits, "sftp-cancel")
+	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
+	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")
+	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
+	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
+	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
+	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPDialogDismiss   = tree.ID(sftpHits, "sftp-dialog-dismiss")
+	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
+	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
+	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
+	hitSFTPDialogField     = tree.ID(sftpHits, "sftp-dialog-field")
+	hitSFTPEditor          = tree.ID(sftpHits, "sftp-editor")
+	hitSFTPEditSave        = tree.ID(sftpHits, "sftp-edit-save")
+	hitSFTPEditBack        = tree.ID(sftpHits, "sftp-edit-back")
+	hitSFTPEditReload      = tree.ID(sftpHits, "sftp-edit-reload")
+	hitSFTPBreadcrumbList  = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
+	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 )
 
 // Remote resource monitoring owns a fixed hit outside every page range. Only
@@ -505,8 +503,9 @@ type State struct {
 	dialDesktop func(context.Context, desktopRequest) (desktop.Session, error)
 	// transfer is the file transfer in progress, if any; transferLeftover is what
 	// followed the end of one and belongs to the screen.
-	transfer fileTransfer
-	xy       xySetup
+	transfer  fileTransfer
+	transfers transferCenter
+	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
 	launchBacklog [][]string
@@ -1033,6 +1032,9 @@ func (state *State) Click(id ui.ID) {
 		id = local
 	}
 	messages := state.messages
+	if state.clickTransferCenter(id) {
+		return
+	}
 	if state.aiClick(id) {
 		return
 	}
@@ -1185,7 +1187,7 @@ func (state *State) Click(id ui.ID) {
 		state.clickConnection(id)
 	case id == hitHosts || id == hitHome:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.closeSFTP(session)
+			state.releaseIdleSFTP(session)
 		}
 		state.activeSection = sectionHosts
 		state.save()
@@ -1583,6 +1585,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result, handled := state.transferCenterPointer(event); handled {
+		return result
+	}
 	if state.aiTrackPointer(event) {
 		defer func() { outcome.Repaint = true }()
 	}
@@ -1718,6 +1723,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result, handled := state.transferCenterKey(event); handled {
+		return result
+	}
 	// A tooltip is the topmost transient thing when no popup menu is open:
 	// Escape hides it before it can reach a dialog or the page.
 	if event.Key == ui.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {

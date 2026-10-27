@@ -175,6 +175,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	viewport := state.windowRect()
 	state.beginMenus()
 	state.paintMCPClientSelect(canvas)
+	state.paintTransferCenter(canvas)
 	// The gallery's select is painted here, outside the workspace's clip and
 	// inside the frame's menu pass, so its popup can leave the page and keeps the
 	// menu state its keyboard handling needs.
@@ -292,6 +293,7 @@ const (
 // out: the assistant's button and, for each tab, where its system and its light go.
 type windowBar struct {
 	assistant flex.Box
+	transfers flex.Box
 	tabs      []barTab
 }
 
@@ -440,6 +442,11 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 			}
 		})
 		f.Row().Shrink(0).MarginSides(0, 0, 0, 10).Gap(2).Children(func() {
+			transferLabel := m.Transfers.Title
+			if state.transfers.buttonLabel != "" {
+				transferLabel = state.transfers.buttonLabel
+			}
+			bar.transfers = state.barButton(f, probe, hitTransferCenter, iconTransfer, transferLabel)
 			bar.assistant = f.Slot().Size(barButtonSize, barButtonSize)
 			state.barButton(f, probe, hitWindowLocalTerminal, iconTerminal, m.LocalTerminal)
 			state.barButton(f, probe, hitCommandPalette, iconSearch, m.CommandPaletteTitle)
@@ -501,6 +508,7 @@ func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	}
 	canvas.Unclip()
 	state.paintAIBarButton(canvas, state.chrome.bar.assistant.Rect().X)
+	state.paintTransferBadge(canvas)
 }
 
 // paintBarButton is a square icon button of the window bar whose left edge is at x,
