@@ -108,6 +108,65 @@ func TestDocumentWindowNativeTextInputAndLayoutAtDisplayScales(t *testing.T) {
 	}
 }
 
+func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
+		for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
+			for _, size := range []ui.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 760}} {
+				d := documentFixture(t)
+				d.owner.setLanguage(language)
+				d.name = strings.Repeat("配置", 40) + ".yaml"
+				d.location = "/etc/" + strings.Repeat("很长的目录/", 80) + d.name
+				d.format.Encoding = "Windows-1252" // widest selector value, independent of buffer content
+				config := d.config()
+				config.Width, config.Height = int(size.Width), int(size.Height)
+				view, err := headless.Open(config, nil, headless.Options{Scale: scale})
+				if err != nil {
+					t.Fatal(err)
+				}
+				checkBounds := func(bounds ui.Rect) {
+					t.Helper()
+					if bounds.X < 0 || bounds.Y < 0 || bounds.Width <= 0 || bounds.Height <= 0 || bounds.X+bounds.Width > size.Width+.01 || bounds.Y+bounds.Height > size.Height+.01 {
+						t.Fatalf("language %v scale %.2f viewport %+v: control escaped viewport: %+v", language, scale, size, bounds)
+					}
+				}
+				for _, hit := range view.Snapshot().Hits {
+					if hit.ID == hitDocumentLocation {
+						if hit.Hint != d.source+" · "+d.location {
+							t.Fatal("long path hint was replaced by truncated display text")
+						}
+						checkBounds(hit.Bounds)
+					}
+					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentReload || hit.ID == hitDocumentSave || hit.ID == hitDocumentInput {
+						checkBounds(hit.Bounds)
+					}
+				}
+				d.encodingOpen = true
+				if err := view.Resize(int(size.Width), int(size.Height)+1); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Rest(); err != nil {
+					t.Fatal(err)
+				}
+				visible := 0
+				for _, hit := range view.Snapshot().Hits {
+					if hit.ID.Scope() == hitDocumentEncodings && !hit.Block {
+						visible++
+						checkBounds(hit.Bounds)
+						if hit.Bounds.Y+hit.Bounds.Height > d.ui.encodingBounds.Y {
+							t.Fatal("footer menu failed to open above the selector")
+						}
+					}
+				}
+				if visible == 0 {
+					t.Fatal("no encoding choices visible")
+				}
+				d.encodingOpen = false
+				view.Close()
+			}
+		}
+	}
+}
+
 func TestDocumentLocalSavePreservesBytesAndRejectsExternalChanges(t *testing.T) {
 	for _, encoding := range []string{"UTF-8", "UTF-16LE", "GB18030", "Windows-1252"} {
 		value := "name: 中文\nnext: yes\n"

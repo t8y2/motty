@@ -5,9 +5,50 @@ import (
 	"crypto/sha256"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestWorkerSavesDocumentsWithLongPathsAndNames(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	directory := strings.Repeat("nested-directory/", 18)
+	localDirectory := filepath.Join(root, filepath.FromSlash(directory))
+	if err := os.MkdirAll(localDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name          string
+		before, after []byte
+	}{
+		{strings.Repeat("c", 250) + ".yml", []byte("名称=before\r\n"), []byte("名称=after\r\n")},
+		{strings.Repeat("配", 83) + ".conf", []byte{0xff, 0xfe, 0x2d, 0x4e, 13, 0, 10, 0}, []byte{0xff, 0xfe, 0x87, 0x65, 13, 0, 10, 0}},
+		{"配置.properties", []byte{0xd6, 0xd0, 13, 10}, []byte{0xce, 0xc4, 13, 10}},
+	} {
+		localPath := filepath.Join(localDirectory, test.name)
+		if err := os.WriteFile(localPath, test.before, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		remotePath := path.Join(directory, test.name)
+		opened := requireQueuedResult(t, worker.OpenDocument(remotePath), worker, OperationOpenDocument)
+		if opened.Err != nil || !bytes.Equal(opened.Data, test.before) {
+			t.Fatalf("long-path open: %v", opened.Err)
+		}
+		saved := requireQueuedResult(t, worker.SaveDocument(remotePath, test.after, Revision(sha256.Sum256(opened.Data))), worker, OperationSaveDocument)
+		if saved.Err != nil {
+			t.Fatalf("long-path save: %v", saved.Err)
+		}
+		actual, err := os.ReadFile(localPath)
+		if err != nil || !bytes.Equal(actual, test.after) {
+			t.Fatalf("long-path save changed encoded bytes: %x, %v", actual, err)
+		}
+	}
+	leftovers, err := filepath.Glob(filepath.Join(localDirectory, ".motty.*.part"))
+	if err != nil || len(leftovers) != 0 {
+		t.Fatalf("temporary files leaked: %v, %v", leftovers, err)
+	}
+}
 
 func TestWorkerDocumentBytesRemainUnchangedAndRejectStaleRevision(t *testing.T) {
 	worker, root := newProtocolWorker(t)

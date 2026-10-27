@@ -114,7 +114,7 @@ func TestWorkerSavesTextAtomicallyAndDetectsConflict(t *testing.T) {
 	if info, err := os.Stat(remotePath); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
 		t.Fatalf("mode = %+v, %v", info, err)
 	}
-	matches, err := filepath.Glob(filepath.Join(root, ".motty.notes.txt.edit-*.part"))
+	matches, err := filepath.Glob(filepath.Join(root, ".motty.*.part"))
 	if err != nil || len(matches) != 0 {
 		t.Fatalf("temporary files = %v, %v", matches, err)
 	}
