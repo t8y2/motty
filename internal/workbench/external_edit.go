@@ -34,6 +34,7 @@ const (
 
 // externalEdit is one remote file open in the system's editor.
 type externalEdit struct {
+	origin  *sftpWindow
 	id      uint32
 	session uint32
 	remote  string
@@ -67,6 +68,7 @@ type externalEdits struct {
 	// opening is the read that starts an edit, or, with replace set, the one that
 	// refreshes the revision of an edit the user chose to send over a conflict.
 	opening struct {
+		origin  *sftpWindow
 		active  bool
 		session uint32
 		remote  string
@@ -139,6 +141,7 @@ func (state *State) startExternalEdit(session *Session, view *sftpView) {
 		return
 	}
 	state.edits.opening.active, state.edits.opening.session, state.edits.opening.remote, state.edits.opening.replace = true, session.ID, remote, 0
+	state.edits.opening.origin = view.detached
 	view.status = fmt.Sprintf(state.messages.SFTPEditOpeningFmt, entry.Name)
 	view.errorText = ""
 }
@@ -150,7 +153,7 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 	opening := &state.edits.opening
 	switch result.Operation {
 	case sftpclient.OperationOpenText:
-		if !opening.active || opening.session != session.ID || opening.remote != result.Path {
+		if !opening.active || opening.session != session.ID || opening.remote != result.Path || opening.origin != view.detached {
 			return false
 		}
 		replace := opening.replace
@@ -170,13 +173,16 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 		return true
 	case sftpclient.OperationSaveText:
 		edit := state.editForRemote(session.ID, result.Path)
-		if edit == nil || !edit.saving {
+		if edit == nil || !edit.saving || edit.origin != view.detached {
 			return false
 		}
 		edit.saving = false
 		switch {
 		case result.Err == nil:
 			edit.revision, edit.bom, edit.synced = result.Document.Revision, result.Document.UTF8BOM, edit.sending
+			if edit.origin != nil {
+				view.refreshAfterTransfers = true
+			}
 			view.status = fmt.Sprintf(m.ExtEditSentFmt, edit.name)
 			view.errorText = ""
 		case errors.Is(result.Err, sftpclient.ErrRemoteChanged):
@@ -223,7 +229,8 @@ func (state *State) openInSystemEditor(session *Session, view *sftpView, result 
 	}
 	state.edits.next++
 	state.edits.list = append(state.edits.list, externalEdit{
-		id: state.edits.next, session: session.ID, remote: result.Path, name: name, dir: dir, local: local,
+		origin: view.detached,
+		id:     state.edits.next, session: session.ID, remote: result.Path, name: name, dir: dir, local: local,
 		revision: result.Document.Revision, bom: result.Document.UTF8BOM, synced: sha256.Sum256(content),
 		seenSize: info.Size(), seenTime: info.ModTime(),
 	})
@@ -291,6 +298,9 @@ func (state *State) pollExternalEdits() {
 func (state *State) sendExternalEdit(edit *externalEdit) {
 	m := state.messages.Tools
 	session, ok := state.sessionByIDPointer(edit.session)
+	if edit.origin != nil {
+		session, ok = &edit.origin.session, !edit.origin.closed
+	}
 	if !ok {
 		return
 	}
@@ -323,6 +333,9 @@ func (state *State) sendExternalEdit(edit *externalEdit) {
 }
 
 func (state *State) setExternalStatus(session *Session, message string, failed bool) {
+	if session.files != nil {
+		defer session.files.invalidateDetached()
+	}
 	if session.files == nil {
 		state.status = message
 		return
@@ -348,6 +361,12 @@ func (state *State) askExternalConflict() {
 		}
 		edit.asking = true
 		id, m := edit.id, state.messages.Tools
+		if edit.origin != nil {
+			edit.origin.externalConflict = id
+			edit.origin.window.Show()
+			edit.origin.window.Invalidate()
+			return
+		}
 		state.openForm(formDialog{
 			title: m.ExtEditConflictTitle, description: fmt.Sprintf(m.ExtEditConflictDescriptionFmt, edit.name),
 			submit: m.ExtEditReplace, danger: true,
@@ -377,11 +396,15 @@ func (state *State) replaceOverConflict(id uint32) {
 		return
 	}
 	session, ok := state.sessionByIDPointer(edit.session)
+	if edit.origin != nil {
+		session, ok = &edit.origin.session, !edit.origin.closed
+	}
 	if !ok || session.files == nil || session.files.worker == nil || state.edits.opening.active || !session.files.worker.OpenText(edit.remote) {
 		state.keepAfterConflict(id)
 		return
 	}
 	state.edits.opening.active, state.edits.opening.session, state.edits.opening.remote, state.edits.opening.replace = true, edit.session, edit.remote, id
+	state.edits.opening.origin = edit.origin
 	edit.asking, edit.conflicted = false, false
 	if info, err := os.Stat(edit.local); err == nil {
 		edit.seenSize, edit.seenTime = info.Size(), info.ModTime()
@@ -410,3 +433,23 @@ func (state *State) dropExternalEdits(session uint32) {
 }
 
 func isExecutablePathError(err error) bool { return errors.Is(err, app.ErrExecutablePath) }
+
+func (state *State) dropWindowExternalEdits(window *sftpWindow) {
+	kept := state.edits.list[:0]
+	for _, edit := range state.edits.list {
+		if edit.origin == window {
+			_ = os.RemoveAll(edit.dir)
+			continue
+		}
+		kept = append(kept, edit)
+	}
+	clear(state.edits.list[len(kept):])
+	state.edits.list = kept
+	if state.edits.opening.origin == window {
+		state.edits.opening.active = false
+		state.edits.opening.origin = nil
+	}
+	if len(kept) == 0 {
+		state.stopWatchingExternalEdits()
+	}
+}

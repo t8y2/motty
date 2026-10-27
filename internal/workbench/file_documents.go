@@ -51,6 +51,7 @@ type fileDocument struct {
 	allowClose, afterClosed          func()
 	closeAfter                       bool
 	notices                          fileNotices
+	origin                           *sftpWindow
 	ui                               fileDocumentUI
 }
 
@@ -77,11 +78,14 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 			break
 		}
 	}
+	if view.detached != nil {
+		session = &view.detached.session
+	}
 	if session == nil {
 		return
 	}
 	if entry, ok := state.selectedSFTPEntry(view); ok && entry.Size > sftpclient.MaxPreviewFileBytes {
-		state.fileNotices.show(state.messages.FileWindow.CannotOpen, state.messages.FileWindow.TooLarge, components.ToastWarning)
+		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.FileWindow.TooLarge, components.ToastWarning)
 		return
 	}
 	key := fmt.Sprintf("%d:%t:%s", session.ID, local, location)
@@ -92,7 +96,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		return
 	}
 	if len(state.fileWindows.documents) >= 8 {
-		state.fileNotices.show(state.messages.FileWindow.CannotOpen, state.messages.FileWindow.TooMany, components.ToastWarning)
+		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.FileWindow.TooMany, components.ToastWarning)
 		return
 	}
 	if state.fileWindows.documents == nil {
@@ -105,6 +109,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		source = state.messages.FileWindow.Local
 	}
 	d := &fileDocument{owner: state, cacheKey: key, location: location, name: name, source: source, local: local, status: state.messages.FileWindow.Loading}
+	d.origin = view.detached
 	state.fileWindows.documents[key] = d
 	if local {
 		go func() {
@@ -117,7 +122,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	conn, mode := session.conn, session.host.Transfer
 	if conn == nil {
 		delete(state.fileWindows.documents, key)
-		state.fileNotices.show(state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
+		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
 		return
 	}
 	d.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(conn, mode) }, func() {})
@@ -134,7 +139,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	if !d.worker.OpenDocument(location) {
 		delete(state.fileWindows.documents, key)
 		d.worker.Close()
-		state.fileNotices.show(state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
+		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
 	}
 }
 
@@ -161,6 +166,7 @@ func decodeFileEvent(document *fileDocument, data []byte, err error) fileDocumen
 }
 
 func (state *State) pumpFileWindows() {
+	defer state.releaseClosedSFTPConnections()
 	m := &state.fileWindows
 	m.mu.Lock()
 	events := m.events
@@ -196,7 +202,7 @@ func (state *State) pumpFileWindows() {
 				d.window.Invalidate()
 				continue
 			}
-			state.fileNotices.show(state.messages.FileWindow.CannotOpen, d.name+": "+state.fileProblem(event.err), components.ToastWarning)
+			state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, d.name+": "+state.fileProblem(event.err), components.ToastWarning)
 			delete(m.documents, d.cacheKey)
 			d.closed = true
 			if d.worker != nil {
@@ -209,7 +215,7 @@ func (state *State) pumpFileWindows() {
 		if d.window == nil {
 			window, err := state.options.OpenContentWindow(d.config(), nil)
 			if err != nil {
-				state.fileNotices.show(state.messages.FileWindow.CannotOpen, err.Error(), components.ToastError)
+				state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, err.Error(), components.ToastError)
 				delete(m.documents, d.cacheKey)
 				d.closed = true
 				if d.worker != nil {
@@ -431,6 +437,9 @@ func (d *fileDocument) onClosed() {
 	if d.owner.fileWindows.documents[d.cacheKey] == d {
 		delete(d.owner.fileWindows.documents, d.cacheKey)
 	}
+	if d.origin != nil {
+		d.origin.releaseConnection()
+	}
 	if d.afterClosed != nil {
 		next := d.afterClosed
 		d.afterClosed = nil
@@ -478,7 +487,31 @@ func (state *State) ConfirmDocumentClose(allow func()) bool {
 			return true
 		}
 	}
-	return false
+	return state.confirmSFTPWindows(func() {
+		if !state.ConfirmDocumentClose(allow) {
+			allow()
+		}
+	})
+}
+
+func (state *State) fileOpenNotice(origin *sftpWindow, title, detail string, kind components.ToastType) {
+	if origin != nil && !origin.closed && origin.window != nil {
+		origin.notices.show(title, detail, kind)
+		origin.window.Invalidate()
+		return
+	}
+	state.fileNotices.show(title, detail, kind)
+	state.options.Invalidate()
+}
+
+func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, location, reason string, kind components.ToastType) {
+	if origin != nil && !origin.closed && origin.window != nil {
+		origin.notices.showPathReason(title, format, location, reason, kind)
+		origin.window.Invalidate()
+		return
+	}
+	state.fileNotices.showPathReason(title, format, location, reason, kind)
+	state.options.Invalidate()
 }
 
 func readLocalDocument(location string) ([]byte, error) {

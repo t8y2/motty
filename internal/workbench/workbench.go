@@ -373,6 +373,7 @@ const (
 // resources.
 type State struct {
 	fileWindows fileWindowManager
+	sftpWindows map[uint32]*sftpWindow
 	fileNotices fileNotices
 	closed      bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
@@ -664,6 +665,7 @@ func (state *State) Close() {
 	}
 	state.closed = true
 	state.closeFileWindows()
+	state.closeSFTPWindows()
 	if state.update.install.cancel != nil {
 		state.update.install.cancel()
 		state.update.install.cancel = nil

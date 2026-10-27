@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -91,7 +92,10 @@ func (state *State) listLocal(view *sftpView, dir string) error {
 	// so even the directory enumeration leaves the window thread. os.File keeps
 	// the read position across that goroutine.
 	first, readErr := file.ReadDir(localListingInlineEntries + 1)
-	if readErr != nil && len(first) == 0 {
+	// ReadDir reports io.EOF when a directory has no more entries. That is a
+	// successful empty listing when the first read returns no rows, not a
+	// filesystem failure.
+	if readErr != nil && len(first) == 0 && !errors.Is(readErr, io.EOF) {
 		file.Close()
 		view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, readErr)
 		if folder.path == "" {
@@ -191,14 +195,23 @@ func scanLocalListing(dir string, items []os.DirEntry) localListing {
 // applyLocalListing puts a finished local listing on screen. seq must still be
 // the view's current one.
 func (state *State) applyLocalListing(view *sftpView, listing localListing, seq uint64) {
+	defer view.invalidateDetached()
 	if seq != view.localSeq {
 		return
+	}
+	if view.deferDraggedListing(true, func() { state.applyLocalListing(view, listing, seq) }) {
+		return
+	}
+	if view.detached != nil {
+		view.detached.pendingLocal = ""
 	}
 	folder := &view.lfolder
 	folder.path = listing.dir
 	folder.rows = listing.rows
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	folder.selected, folder.first = -1, 0
+	folder.anchor = 0
+	view.sortedDetached(true)
 	view.errorText = ""
 	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(folder.rows))
 }

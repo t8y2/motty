@@ -28,6 +28,7 @@ type sftpCrumb struct {
 
 type sftpRow struct {
 	entry    sftpclient.Entry
+	sortName string
 	selected bool
 	cells    [5]string
 	icon     *ui.Icon // the file-type glyph, chosen when the listing arrives
@@ -47,6 +48,7 @@ const (
 	sftpDialogRemoteChanged
 	sftpDialogSymlink
 	sftpDialogExtract
+	sftpDialogCompress
 )
 
 // sftpFolder is a folder on show: where it is, its rows and the user's place in
@@ -64,6 +66,7 @@ type sftpFolder struct {
 }
 
 type sftpView struct {
+	detached                        *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
 	worker                          *sftpclient.Worker
 	transferScan                    uint64
 	transferServer, transferAddress string
@@ -92,6 +95,9 @@ type sftpView struct {
 	dropRow               int  // the folder row they are over, or -1
 	details               sftpDetails
 	extracting            bool
+	archiveSequence       uint64
+	archiveDirectory      string
+	archiveResults        chan archiveResult
 	cancelExtract         context.CancelFunc
 	dialogEntry           sftpclient.Entry
 	dialogError           string
@@ -191,6 +197,10 @@ func (state *State) clickSFTP(id ui.ID) {
 		state.openSFTP(session)
 		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 		state.save()
+		return
+	}
+	if id == hitSFTPDetach {
+		state.openSFTPWindow(session)
 		return
 	}
 	if id == hitSFTPClose {
@@ -594,18 +604,28 @@ func (state *State) prefetchSFTP(view *sftpView, remotePath string) {
 
 // showSFTPListing puts a folder on screen.
 func (state *State) showSFTPListing(view *sftpView, remotePath string, entries []sftpclient.Entry) {
+	if view.deferDraggedListing(false, func() { state.showSFTPListing(view, remotePath, entries) }) {
+		return
+	}
 	state.applySFTPListing(view, remotePath, prepareSFTPRows(view.rows, entries))
 }
 
 // applySFTPListing puts prepared rows on screen. It is separate from the row
 // preparation so a large folder can prepare them on a goroutine.
 func (state *State) applySFTPListing(view *sftpView, remotePath string, rows []sftpRow) {
+	defer view.invalidateDetached()
+	if view.deferDraggedListing(false, func() { state.applySFTPListing(view, remotePath, rows) }) {
+		return
+	}
 	view.remoteSeq++ // a shown listing invalidates an older one still being prepared
+	view.busy = false
 	view.path = remotePath
 	view.rows = rows
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	view.selected = -1
 	view.first = 0
+	view.anchor = 0
+	view.sortedDetached(false)
 	view.errorText = ""
 	if view.refreshStatus != "" {
 		view.status = view.refreshStatus
@@ -650,20 +670,42 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 // losing the user's place: the same names stay selected and the list keeps its
 // scroll position as far as it still reaches.
 func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
-	var selected []string
+	defer view.invalidateDetached()
+	if view.deferDraggedListing(false, func() { state.updateSFTPRows(view, entries) }) {
+		return
+	}
+	cursor, anchor := "", ""
+	if view.selected >= 0 && view.selected < len(view.rows) {
+		cursor = view.rows[view.selected].entry.Name
+	}
+	if view.anchor >= 0 && view.anchor < len(view.rows) {
+		anchor = view.rows[view.anchor].entry.Name
+	}
+	var selected map[string]struct{}
 	for index := range view.rows {
 		if view.rows[index].selected {
-			selected = append(selected, view.rows[index].entry.Name)
+			if selected == nil {
+				selected = make(map[string]struct{})
+			}
+			selected[view.rows[index].entry.Name] = struct{}{}
 		}
 	}
 	view.rows = prepareSFTPRows(view.rows, entries)
+	view.selected, view.anchor = -1, 0
 	for index := range view.rows {
-		if slices.Contains(selected, view.rows[index].entry.Name) {
+		if view.rows[index].entry.Name == cursor {
+			view.selected = index
+		}
+		if view.rows[index].entry.Name == anchor {
+			view.anchor = index
+		}
+		if _, ok := selected[view.rows[index].entry.Name]; ok {
 			view.rows[index].selected = true
 			view.rows[index].cells[0] = sftpSelectionCell(true)
 		}
 	}
 	view.first = min(view.first, max(0, len(view.rows)-max(view.visibleRows, 1)))
+	view.sortedDetached(false)
 	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
 }
 
@@ -846,6 +888,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 	case sftpDialogExtract:
 		state.submitSFTPExtract(view)
 		return
+	case sftpDialogCompress:
+		state.submitSFTPCompress(view)
+		return
 	case sftpDialogCreateDirectory:
 		if view.local {
 			state.submitLocalDirectory(view, value)
@@ -912,6 +957,14 @@ func (state *State) pumpSFTP(session *Session) {
 		return
 	}
 	view := session.files
+	state.pumpSFTPArchive(session, view)
+	defer func() {
+		// A list or transfer reply must not unlock the panel while an archive
+		// command is still using its captured source and destination.
+		if view.extracting {
+			view.busy = true
+		}
+	}()
 	if view.worker == nil {
 		return
 	}
@@ -951,7 +1004,9 @@ func (state *State) pumpSFTP(session *Session) {
 					if errors.Is(result.Err, sftpclient.ErrCanceled) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
-						state.transfers.open = true
+						if view.detached == nil {
+							state.transfers.open = true
+						}
 					} else {
 						view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
 					}
@@ -969,7 +1024,7 @@ func (state *State) pumpSFTP(session *Session) {
 			if result.Operation == sftpclient.OperationList && view.pathRequest != "" && result.Path == view.pathRequest {
 				view.pathRequest = ""
 				if result.Err != nil && !errors.Is(result.Err, sftpclient.ErrCanceled) {
-					state.showSFTPPathError(result.Path, result.Err)
+					state.showSFTPPathErrorAt(view, result.Path, result.Err)
 					view.errorText = ""
 					view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.active().rows))
 					continue
@@ -993,6 +1048,7 @@ func (state *State) pumpSFTP(session *Session) {
 				view.remoteSeq++
 				view.preparingPath, view.followUpPath, view.followUpEntries = "", "", nil
 				if len(result.Entries) > sftpPrepInlineEntries {
+					view.busy = true // navigation completes only when its prepared rows are published
 					seq, entries := view.remoteSeq, result.Entries
 					view.preparingPath = result.Path
 					view.status = state.messages.SFTPLoading
@@ -1185,6 +1241,13 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		case ui.KeyEnter:
 			if event.Target == hitSFTPDialogField || event.Target == hitSFTPDialogField2 || event.Target == hitSFTPDialogSubmit {
+				if view.dialog == sftpDialogCompress || view.dialog == sftpDialogExtract {
+					if editor := state.sftpEditor(event.Target); editor != nil {
+						if _, composing := editor.Composition(); composing {
+							return ui.EventResult{Handled: true}, true
+						}
+					}
+				}
 				state.submitSFTPDialog(view)
 				return ui.EventResult{Handled: true, Repaint: true}, true
 			}

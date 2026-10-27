@@ -25,6 +25,7 @@ type fakeBackend struct {
 	execs, writes, removes atomic.Int32
 	execStarted            chan struct{}
 	execCtxDone            chan struct{}
+	execRelease            <-chan struct{}
 	block                  bool
 }
 
@@ -40,11 +41,14 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 		if b.execStarted != nil {
 			close(b.execStarted)
 		}
-		<-ctx.Done()
-		if b.execCtxDone != nil {
-			close(b.execCtxDone)
+		select {
+		case <-ctx.Done():
+			if b.execCtxDone != nil {
+				close(b.execCtxDone)
+			}
+			return gate.ExecResult{}, ctx.Err()
+		case <-b.execRelease:
 		}
-		return gate.ExecResult{}, ctx.Err()
 	}
 	return gate.ExecResult{Output: "out", ExitCode: 3}, nil
 }

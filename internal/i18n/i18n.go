@@ -29,6 +29,7 @@ func (language Language) String() string {
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
 	FileWindow FileWindowMessages
+	SFTPWindow SFTPWindowMessages
 	Transfers  TransferCenterMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.

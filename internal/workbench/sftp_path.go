@@ -79,7 +79,7 @@ func (state *State) submitSFTPPath(view *sftpView) {
 	destination := folder.pathInput().String()
 	view.errorText = ""
 	if destination == "" {
-		state.fileNotices.show(state.messages.Tools.FilesPathErrorTitle, state.messages.Tools.FilesPathRequired, components.ToastError)
+		state.fileOpenNotice(view.detached, state.messages.Tools.FilesPathErrorTitle, state.messages.Tools.FilesPathRequired, components.ToastError)
 		return
 	}
 	view.bookmarksOpen = false
@@ -88,12 +88,18 @@ func (state *State) submitSFTPPath(view *sftpView) {
 			destination = filepath.Join(folder.path, destination)
 		}
 		destination = filepath.Clean(destination)
+		if view.detached != nil {
+			view.detached.pendingLocal = destination
+		}
 		if destination == folder.path {
 			folder.resetPathInput()
 		}
 		if err := state.listLocal(view, destination); err != nil {
+			if view.detached != nil {
+				view.detached.pendingLocal = ""
+			}
 			view.errorText = ""
-			state.showSFTPPathError(destination, err)
+			state.showSFTPPathErrorAt(view, destination, err)
 		}
 		return
 	}
@@ -102,7 +108,7 @@ func (state *State) submitSFTPPath(view *sftpView) {
 	}
 	destination = path.Clean(destination)
 	if view.worker == nil {
-		state.showSFTPPathError(destination, errors.New(state.messages.SFTPUnavailable))
+		state.showSFTPPathErrorAt(view, destination, errors.New(state.messages.SFTPUnavailable))
 		return
 	}
 	if destination == folder.path {
@@ -114,16 +120,24 @@ func (state *State) submitSFTPPath(view *sftpView) {
 	state.listSFTP(view, destination)
 	if !view.busy {
 		view.pathRequest = ""
-		state.showSFTPPathError(destination, errors.New(state.messages.SFTPUnavailable))
+		state.showSFTPPathErrorAt(view, destination, errors.New(state.messages.SFTPUnavailable))
 	}
 }
 
 func (state *State) showSFTPPathError(destination string, err error) {
+	state.showSFTPPathErrorAt(nil, destination, err)
+}
+
+func (state *State) showSFTPPathErrorAt(view *sftpView, destination string, err error) {
 	m := state.messages.Tools
 	detail := fmt.Sprintf(m.FilesPathFailedFmt, destination, err)
 	var status *sftp.StatusError
 	if errors.Is(err, os.ErrNotExist) || errors.As(err, &status) && status.FxCode() == sftp.ErrSSHFxNoSuchFile {
 		detail = fmt.Sprintf(m.FilesPathNotFoundFmt, destination)
 	}
-	state.fileNotices.show(m.FilesPathErrorTitle, detail, components.ToastError)
+	var origin *sftpWindow
+	if view != nil {
+		origin = view.detached
+	}
+	state.fileOpenNotice(origin, m.FilesPathErrorTitle, detail, components.ToastError)
 }

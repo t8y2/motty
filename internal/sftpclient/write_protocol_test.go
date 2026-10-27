@@ -8,11 +8,48 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/pkg/sftp"
 )
+
+func TestTransfersSupportMaximumLengthNames(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	for _, name := range []string{strings.Repeat("a", 250) + ".bin", strings.Repeat("配", 83) + ".conf"} {
+		localDir := t.TempDir()
+		source := filepath.Join(localDir, name)
+		data := []byte("中文\r\n\x00binary\xff\n")
+		if err := os.WriteFile(source, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		upload := requireQueuedResult(t, worker.Upload(source, name), worker, OperationUpload)
+		if upload.Err != nil {
+			t.Fatal("long-name upload failed", upload.Err)
+		}
+		actual, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil || !bytes.Equal(actual, data) {
+			t.Fatal("upload changed bytes", err)
+		}
+		downloadDir := t.TempDir()
+		target := filepath.Join(downloadDir, name)
+		download := requireQueuedResult(t, worker.Download(name, target), worker, OperationDownload)
+		if download.Err != nil {
+			t.Fatal("long-name download failed", download.Err)
+		}
+		actual, err = os.ReadFile(target)
+		if err != nil || !bytes.Equal(actual, data) {
+			t.Fatal("download changed bytes", err)
+		}
+		for _, directory := range []string{root, downloadDir} {
+			partials, err := filepath.Glob(filepath.Join(directory, ".motty.*.part"))
+			if err != nil || len(partials) != 0 {
+				t.Fatal("partial file leaked", partials, err)
+			}
+		}
+	}
+}
 
 func newProtocolWorker(t *testing.T) (*Worker, string) {
 	t.Helper()
