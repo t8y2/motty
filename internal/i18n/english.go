@@ -20,6 +20,7 @@ var EnglishMessages = Messages{
 		ConfirmTitle: "Unsaved changes", ConfirmClose: "Save before closing, or discard the changes?", ConfirmReload: "Reloading will discard the unsaved changes.", SaveClose: "Save and close", Discard: "Discard", Cancel: "Cancel",
 		Local: "Local", Remote: "Server", ReadOnly: "Image preview · read only", EncodingChanged: "Encoding changes reinterpret the original bytes; save or discard edits first.",
 	},
+
 	Transfers: TransferCenterMessages{
 		Title: "Transfers", Description: "Uploads, downloads and history across all connections", Close: "Close transfers",
 		Empty: "No transfers yet", EmptyFiltered: "No transfers in this view",
@@ -1099,6 +1100,16 @@ var englishTools = ToolsMessages{
 
 	CatFiles:                        "Files",
 	FilesParallel:                   "Parallel transfers",
+	FilesPathStyle:                  "Path bar style",
+	FilesPathDescription:            "Choose breadcrumbs or an input field. In the input field, edit the path and press Enter to open the folder.",
+	FilesPathBreadcrumbs:            "Breadcrumbs",
+	FilesPathInput:                  "Input field",
+	FilesPathLabel:                  "Folder path",
+	FilesPathPlaceholder:            "Enter a folder path, then press Enter",
+	FilesPathRequired:               "Enter a folder path",
+	FilesPathErrorTitle:             "Unable to open folder",
+	FilesPathNotFoundFmt:            "Path does not exist: %s",
+	FilesPathFailedFmt:              "Unable to open path “%s”: %s",
 	FilesKeepTimes:                  "Keep modification times",
 	FilesKeepTimesDescription:       "A copied file gets the time of the original. Permissions are always kept.",
 	FilesFollow:                     "Follow the terminal's folder",

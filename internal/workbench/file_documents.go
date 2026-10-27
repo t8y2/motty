@@ -495,7 +495,7 @@ func (state *State) ConfirmDocumentClose(allow func()) bool {
 }
 
 func (state *State) fileOpenNotice(origin *sftpWindow, title, detail string, kind components.ToastType) {
-	if origin != nil && !origin.closed {
+	if origin != nil && !origin.closed && origin.window != nil {
 		origin.notices.show(title, detail, kind)
 		origin.window.Invalidate()
 		return

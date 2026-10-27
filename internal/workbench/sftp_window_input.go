@@ -414,7 +414,7 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 	for side, id := range sftpWindowPath {
 		if context.ID == id {
 			w.activeLocal, w.view.local = side == 0, side == 0
-			w.input = app.TextInput{Editor: &w.paths[side]}
+			w.input = app.TextInput{Editor: w.folder(side == 0).pathInput()}
 			return &w.input
 		}
 	}
@@ -439,8 +439,10 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			w.view.bookmarksOpen = false
 			for side, id := range sftpWindowPath {
 				if event.Target == id {
-					app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.paths[side])
-					w.paths[side].Insert(w.folder(side == 0).path)
+					folder := w.folder(side == 0)
+					if _, composing := folder.pathInput().Composition(); !composing && !event.Repeat {
+						folder.resetPathInput()
+					}
 				}
 			}
 		}
@@ -473,14 +475,10 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 	for side, id := range sftpWindowPath {
 		if event.Target == id {
 			if event.Key == ui.KeyEnter {
-				location := w.paths[side].String()
-				if strings.TrimSpace(location) != "" {
-					if side == 0 && !filepath.IsAbs(location) {
-						location = filepath.Join(w.view.lfolder.path, location)
-					} else if side == 1 {
-						location = sftpRemotePath(w.view.path, location)
-					}
-					w.navigate(side == 0, location)
+				if _, composing := w.folder(side == 0).pathInput().Composition(); !composing && !event.Repeat && event.Modifiers == 0 && (side == 0 || !w.view.busy) {
+					w.cancelDrag()
+					w.activeLocal, w.view.local = side == 0, side == 0
+					w.owner.submitSFTPPath(w.view)
 				}
 				return handled
 			}
@@ -580,7 +578,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 		return handled
 	case "l":
 		side := sideIndex(w.activeLocal)
-		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.paths[side])
+		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(w.folder(w.activeLocal).pathInput())
 		handled.Focus = sftpWindowPath[side]
 		return handled
 	case "r":

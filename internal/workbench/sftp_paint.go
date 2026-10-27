@@ -120,7 +120,11 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 		// folders kept, and a star for this one.
 		f.Row().Height(sftpButton).Shrink(0).Gap(4).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			icon(sftpButton, hitSFTPUp, iconArrowUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
-			crumbs = f.Slot().Grow(1).Height(24)
+			height := float32(24)
+			if state.sftpPathInput {
+				height = sftpButton
+			}
+			crumbs = f.Slot().Grow(1).Height(height)
 			if !local {
 				f.Row().Gap(2).Shrink(0).Children(func() {
 					icon(sftpButton, hitSFTPBookmarkList, iconChevronDown, messages.Tools.Bookmarks, false, iconButtonQuiet)
@@ -196,7 +200,11 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	f.End()
 
 	state.paintSFTPIconButtons(canvas, buttons[:buttonCount])
-	state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
+	if state.sftpPathInput {
+		state.paintSFTPPathInput(canvas, crumbs.Rect(), view)
+	} else {
+		state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
+	}
 	state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
 	if view.bookmarksOpen && !local {
 		state.paintSFTPBookmarkPopup(canvas, popupTop.Rect().Y, size, session, view)

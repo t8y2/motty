@@ -7,15 +7,14 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/text"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
 
-// A transfer window owns its browser and worker, but borrows the exact SSH
-// connection it was opened from. It never consults the active workbench tab.
-// Closing it releases only its SFTP channels, not the shared SSH connection.
+// A transfer window fixes its SSH source at creation, never at the active tab.
+// The terminal entry borrows that connection; the host-menu entry owns its
+// connection or authenticated share. Both own their browser and SFTP worker.
 type sftpWindow struct {
 	owner                       *State
 	session                     Session
@@ -29,7 +28,6 @@ type sftpWindow struct {
 	phase                       sshconn.Phase
 	language                    i18n.Language
 	pal                         *palette
-	paths                       [2]text.Editor
 	shownPaths                  [2]string
 	input                       app.TextInput
 	notices                     fileNotices
@@ -125,8 +123,6 @@ func (w *sftpWindow) wake() {
 		if folder.path != w.shownPaths[side] {
 			w.ui.offset[side] = 0
 			w.shownPaths[side] = folder.path
-			w.paths[side] = text.Editor{}
-			w.paths[side].Insert(folder.path)
 		}
 	}
 }

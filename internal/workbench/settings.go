@@ -430,6 +430,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	var next ui.ID
 	var handled bool
 	switch event.Target {
+	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
+		options := state.settingsPathOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
 		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)

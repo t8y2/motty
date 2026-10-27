@@ -75,7 +75,7 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 // place; a large one is scanned, sorted and prepared on a goroutine and applied
 // on the window thread when it arrives. localSeq drops an answer that a newer
 // listing has overtaken.
-func (state *State) listLocal(view *sftpView, dir string) {
+func (state *State) listLocal(view *sftpView, dir string) error {
 	folder := &view.lfolder
 	dir = filepath.Clean(dir)
 	file, err := os.Open(dir)
@@ -84,7 +84,7 @@ func (state *State) listLocal(view *sftpView, dir string) {
 		if folder.path == "" {
 			folder.path = dir // an empty list is better than none on a first visit
 		}
-		return
+		return err
 	}
 	// Read just past the inline limit on this thread. A folder that ends before
 	// it is small enough to finish now; a larger one continues on a goroutine,
@@ -97,14 +97,14 @@ func (state *State) listLocal(view *sftpView, dir string) {
 		if folder.path == "" {
 			folder.path = dir
 		}
-		return
+		return readErr
 	}
 	view.localSeq++
 	seq := view.localSeq
 	if len(first) <= localListingInlineEntries {
 		file.Close()
 		state.applyLocalListing(view, scanLocalListing(dir, first), seq)
-		return
+		return nil
 	}
 	view.errorText = ""
 	view.status = state.messages.SFTPLoading
@@ -127,6 +127,7 @@ func (state *State) listLocal(view *sftpView, dir string) {
 			state.applyLocalListing(view, listing, seq)
 		})
 	}()
+	return nil
 }
 
 // localListing is a local folder scanned away from the window thread.

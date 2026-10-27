@@ -61,6 +61,7 @@ type sftpFolder struct {
 	first       int
 	visibleRows int     // rows the last paint had room for
 	wheel       float32 // wheel travel not yet worth a whole row
+	pathField   sftpPathField
 }
 
 type sftpView struct {
@@ -117,6 +118,7 @@ type sftpView struct {
 	listingLimitBytes int
 	prefetching       map[string]struct{}
 	waiting           string
+	pathRequest       string // the directory submitted through the path input, awaiting its listing
 }
 
 // sftpListing is one folder as it was last read.
@@ -295,6 +297,9 @@ func (state *State) sftpEditor(hit ui.ID) *text.Editor {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.files == nil {
 		return nil
+	}
+	if hit == hitSFTPPath && state.sftpPathInput && session.files.dialog == sftpDialogNone && session.files.editPath == "" && (session.files.local || !session.files.busy) {
+		return session.files.active().pathInput()
 	}
 	if hit == hitSFTPEditor && session.files.editPath != "" && session.files.dialog == sftpDialogNone {
 		return &session.files.editEditor
@@ -997,6 +1002,15 @@ func (state *State) pumpSFTP(session *Session) {
 				continue
 			}
 			view.busy = false
+			if result.Operation == sftpclient.OperationList && view.pathRequest != "" && result.Path == view.pathRequest {
+				view.pathRequest = ""
+				if result.Err != nil && !errors.Is(result.Err, sftpclient.ErrCanceled) {
+					state.showSFTPPathErrorAt(view, result.Path, result.Err)
+					view.errorText = ""
+					view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.active().rows))
+					continue
+				}
+			}
 			if result.Err != nil {
 				view.refreshStatus = ""
 				if errors.Is(result.Err, sftpclient.ErrCanceled) {
@@ -1182,6 +1196,9 @@ func (state *State) fitSFTP(size ui.Size) {
 }
 
 func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if result, handled := state.sftpPathKey(event); handled {
+		return result, true
+	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if ok && session.files != nil && state.modal == modalNone && event.Target == hitSFTPEditor && session.files.editPath != "" && session.files.dialog == sftpDialogNone {
 		// Up, Down, Home, End and the page keys move by the rows the editor wrapped

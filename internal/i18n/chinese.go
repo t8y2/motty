@@ -20,6 +20,7 @@ var ChineseMessages = Messages{
 		ConfirmTitle: "有未保存的更改", ConfirmClose: "保存后关闭，还是放弃这些更改？", ConfirmReload: "重新载入将丢失未保存的更改。", SaveClose: "保存并关闭", Discard: "放弃更改", Cancel: "取消",
 		Local: "本机", Remote: "服务器", ReadOnly: "图片预览 · 只读", EncodingChanged: "切换编码会重新解释原文件，请先保存或放弃当前更改。",
 	},
+
 	Transfers: TransferCenterMessages{
 		Title: "传输中心", Description: "所有连接的上传、下载与传输记录", Close: "关闭传输中心",
 		Empty: "还没有传输任务", EmptyFiltered: "暂无此类传输任务",
@@ -1099,6 +1100,16 @@ var chineseTools = ToolsMessages{
 
 	CatFiles:                        "文件",
 	FilesParallel:                   "并行传输数",
+	FilesPathStyle:                  "路径栏显示方式",
+	FilesPathDescription:            "选择面包屑或输入框。使用输入框时，修改路径后按回车进入目录。",
+	FilesPathBreadcrumbs:            "面包屑",
+	FilesPathInput:                  "输入框",
+	FilesPathLabel:                  "目录路径",
+	FilesPathPlaceholder:            "输入目录路径后按回车",
+	FilesPathRequired:               "请输入目录路径",
+	FilesPathErrorTitle:             "无法打开目录",
+	FilesPathNotFoundFmt:            "路径不存在：%s",
+	FilesPathFailedFmt:              "无法进入路径“%s”：%s",
 	FilesKeepTimes:                  "保留修改时间",
 	FilesKeepTimesDescription:       "传输后的文件沿用原文件的修改时间。权限始终保留。",
 	FilesFollow:                     "跟随终端所在目录",

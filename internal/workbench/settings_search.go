@@ -156,6 +156,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
 
+	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
 	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesKeepTimes, tools.FilesKeepTimesDescription)
 	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)

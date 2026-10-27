@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -242,5 +244,31 @@ func TestSFTPWindowSortedTransfersUseVisibleFolderAtEveryScale(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSFTPWindowPathUsesUpstreamValidationAndOwnNotices(t *testing.T) {
+	state, w, remote, host, _ := dualSFTPFixture(t, 1)
+	w.view.worker.Close()
+	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return pathErrorRemote{remote, os.ErrNotExist}, nil }, w.window.Invalidate)
+	w.view.remember("/home/test/missing", []sftpclient.Entry{{Name: "stale.txt"}})
+	editor := w.view.sftpFolder.pathInput()
+	*editor = *text.NewEditor("missing")
+	editor.SetMarkedText("目录", text.Range{Start: 0, End: 2})
+	w.key(ui.KeyEvent{Target: sftpWindowPath[1], Key: ui.KeyEnter})
+	if w.view.busy || w.view.pathRequest != "" {
+		t.Fatal("IME confirmation submitted a directory")
+	}
+	for attempt := range 2 {
+		_ = attempt
+		*editor = *text.NewEditor("missing")
+		w.key(ui.KeyEvent{Target: sftpWindowPath[1], Key: ui.KeyEnter})
+		if !w.view.busy {
+			t.Fatal("manual navigation trusted a stale cached directory")
+		}
+		dualWait(t, state, w, host.windows[0].view, func() bool { return !w.view.busy })
+	}
+	if w.view.path != "/home/test" || editor.String() != "missing" || len(w.notices.items) != 1 || len(state.fileNotices.items) != 0 || !strings.Contains(w.notices.items[0].detail, "/home/test/missing") {
+		t.Fatal("native path failure lost its draft, origin or target path")
 	}
 }

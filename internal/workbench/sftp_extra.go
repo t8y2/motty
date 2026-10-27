@@ -38,6 +38,8 @@ var (
 	hitSettingsParallel4       = tree.ID(sftpHits, "settings-parallel4")
 	hitSettingsKeepTimesToggle = tree.ID(sftpHits, "settings-keep-times")
 	hitSettingsFollowToggle    = tree.ID(sftpHits, "settings-follow")
+	hitSettingsPathBreadcrumbs = tree.ID(sftpHits, "settings-path-breadcrumbs")
+	hitSettingsPathInput       = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup     = tree.ID(sftpHits, "settings-follow-setup")
 )
 
@@ -375,9 +377,21 @@ func (state *State) settingsParallelOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsPathOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsPathBreadcrumbs, Label: state.messages.Tools.FilesPathBreadcrumbs},
+		{ID: hitSettingsPathInput, Label: state.messages.Tools.FilesPathInput},
+	}
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
 	parallel := state.settingsParallelOptions()
+	pathOptions := state.settingsPathOptions()
+	selectedPath := hitSettingsPathBreadcrumbs
+	if state.sftpPathInput {
+		selectedPath = hitSettingsPathInput
+	}
 	selectedParallel := hitSettingsParallel2
 	switch state.sftpParallel {
 	case 1:
@@ -387,6 +401,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	}
 	page.groups(func() {
 		page.group("", func() {
+			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
 			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
@@ -399,6 +414,12 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id ui.ID) bool {
 	switch id {
+	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
+		input := id == hitSettingsPathInput
+		if state.sftpPathInput != input {
+			state.sftpPathInput = input
+			state.save()
+		}
 	case hitSettingsParallel1, hitSettingsParallel2, hitSettingsParallel4:
 		count := map[ui.ID]int{hitSettingsParallel1: 1, hitSettingsParallel2: 2, hitSettingsParallel4: 4}[id]
 		if state.sftpParallel != count {
@@ -567,6 +588,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.sftpKeepTimesOff = saved.SFTPKeepTimes == "off"
 	state.sftpFollowOff = saved.SFTPFollow == "off"
+	state.sftpPathInput = saved.SFTPPathInput
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)

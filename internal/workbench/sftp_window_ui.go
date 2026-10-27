@@ -241,7 +241,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	if !local {
 		w.ui.bookmarkAnchor = address.Rect()
 	}
-	value := w.paths[side].String()
+	value := folder.pathInput().String()
 	components.PaintInput(canvas, theme, address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
 	rowsBounds := list.Rect()
 	canvas.RoundedBorder(rowsBounds, 6, 1, theme.Border, theme.Background)
