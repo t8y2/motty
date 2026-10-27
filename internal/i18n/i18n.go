@@ -288,6 +288,8 @@ type Messages struct {
 	FieldPort                   string
 	FieldTags                   string
 	FieldTagsPlaceholder        string
+	HostTagsEmpty               string
+	HostTagsCreatePrefix        string
 	FieldIcon                   string
 	FieldColor                  string
 	FieldColorCustom            string

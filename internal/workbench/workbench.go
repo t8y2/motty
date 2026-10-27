@@ -913,6 +913,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.knownHosts.search
 		}
 	case modalNewHost:
+		if hit == hitDialogTags {
+			return &state.hostTagPicker().control.Query
+		}
 		if isDialogField(hit) {
 			return state.editor.field(fieldForDialogHit(hit))
 		}
@@ -1459,6 +1462,9 @@ func (state *State) reconnect(session *Session) {
 // clickHostDialog handles the New Host dialog. Clicks on its fields only move
 // focus, which the runtime already did; clicks anywhere else are swallowed.
 func (state *State) clickHostDialog(id ui.ID) {
+	if state.clickHostTags(id) {
+		return
+	}
 	switch id {
 	case hitDialogDismiss, hitDialogClose, hitDialogCancel:
 		state.editor.password = text.Editor{}
@@ -1692,6 +1698,11 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
+	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
+		if result := state.editor.tagPicker.control.Pointer(event); result.Handled {
+			return result
+		}
+	}
 	if result, handled := state.terminalFindPointer(event); handled {
 		return result
 	}
@@ -1760,6 +1771,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result, handled := state.hostTagsKey(event); handled {
+		return result
+	}
 	if result, handled := state.transferCenterKey(event); handled {
 		return result
 	}

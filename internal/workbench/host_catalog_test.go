@@ -62,7 +62,11 @@ func TestHostTagsAndCompactIconEditPersistAndFilter(t *testing.T) {
 	state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	clickHostAction(state, hitEditHost)
 	state.editor.tags = text.Editor{}
-	typeInto(state, hitDialogTags, "prod, critical, PROD")
+	for _, tag := range []string{"prod", "critical", "PROD"} {
+		typeInto(state, hitDialogTags, tag)
+		state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+	}
+	state.Click(hitHostTagsDismiss)
 	state.Click(hitDialogIcon)
 	state.Click(hitDialogIconItemList.At(int(hostIconTerminal)))
 	state.Click(hitDialogSubmit)

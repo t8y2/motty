@@ -44,7 +44,7 @@ func formEditingDriver(t *testing.T, state *State) *app.Driver {
 func focusFormField(t *testing.T, driver *app.Driver, id ui.ID) {
 	t.Helper()
 	for _, hit := range driver.Snapshot().Hits {
-		if hit.ID != id || hit.IsLabel || hit.Role != ui.RoleTextField {
+		if hit.ID != id || hit.IsLabel || (hit.Role != ui.RoleTextField && hit.Role != ui.RoleCombobox) {
 			continue
 		}
 		if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
@@ -111,6 +111,11 @@ func TestWindowsHostFormsUseFrameworkEditing(t *testing.T) {
 				formChord(t, driver, ui.ModifierControl, 'z')
 				if editor.String() != "前中文主机后" {
 					t.Fatal("cut was not undoable")
+				}
+				if id == hitDialogTags {
+					if err := driver.Key(ui.KeyEscape, 0); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 		})
