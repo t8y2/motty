@@ -33,6 +33,7 @@ var (
 	hitDocumentDiscard         = tree.ID(documentHits, "discard")
 	hitDocumentSaveClose       = tree.ID(documentHits, "save-close")
 	hitDocumentLocation        = tree.ID(documentHits, "location")
+	hitDocumentStatus          = tree.ID(documentHits, "status")
 )
 
 type fileDocumentUI struct {
@@ -66,47 +67,30 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	var content, encoding flex.Box
 	f := d.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		f.Row().Height(36).Gap(8).Items(flex.Center).Children(func() {
-			f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().Grow(1)
+		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
+			HitWith(hitDocumentLocation, d.name, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+		if d.problem != "" {
+			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
+		}
+		content = f.Slot().Grow(1).MinHeight(64)
+		f.Row().Height(32).Gap(8).Items(flex.Center).Children(func() {
+			if d.image == nil {
+				encoding = f.Slot().Width(min(220, size.Width*.4)).Height(32)
+			}
+			status := d.footerStatus()
+			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+				HitWith(hitDocumentStatus, status, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: status})
+			if d.image != nil {
+				f.Button(hitDocumentFit, m.Fit).Small().Outline()
+				f.Button(hitDocumentActual, m.Actual).Small().Outline()
+				f.Button(hitDocumentZoomOut, "−").Small().Outline()
+				f.Button(hitDocumentZoomIn, "+").Small().Outline()
+			}
 			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy)
 			if d.image == nil {
 				f.Button(hitDocumentSave, m.Save).Small().Disabled(d.busy || !d.ready || !d.dirty())
 			}
 		})
-		f.Text(d.source+" · "+d.location).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).
-			HitWith(hitDocumentLocation, d.location, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.location})
-		if d.image == nil {
-			encoding = f.Slot().FillWidth().Height(32)
-		} else {
-			f.Row().Height(32).Gap(8).Items(flex.Center).Children(func() {
-				f.Button(hitDocumentFit, m.Fit).Small().Outline()
-				f.Button(hitDocumentActual, m.Actual).Small().Outline()
-				f.Button(hitDocumentZoomOut, "−").Small().Outline()
-				f.Button(hitDocumentZoomIn, "+").Small().Outline()
-			})
-		}
-		if d.problem != "" {
-			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		content = f.Slot().Grow(1).MinHeight(64)
-		status := d.status
-		if d.dirty() && !d.busy {
-			status = m.Dirty
-		}
-		if d.ready && d.image == nil {
-			ending := "LF"
-			if d.format.LineEnding == "\r\n" {
-				ending = "CRLF"
-			}
-			if d.format.LineEnding == "\r" {
-				ending = "CR"
-			}
-			status = d.format.Encoding + " · " + ending + " · " + status
-		}
-		if d.image != nil {
-			status = fmt.Sprintf("%s · %d × %d · %s", strings.ToUpper(d.image.Format), d.image.Width, d.image.Height, m.ReadOnly)
-		}
-		f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22)
 	})
 	f.End()
 	if d.image != nil {
@@ -137,6 +121,34 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	d.notices.paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	d.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+}
+
+func (d *fileDocument) footerStatus() string {
+	m := d.owner.messages.FileWindow
+	if d.image != nil {
+		return fmt.Sprintf("%s · %d × %d · %s", strings.ToUpper(d.image.Format), d.image.Width, d.image.Height, m.ReadOnly)
+	}
+	status := d.status
+	if status == m.Ready {
+		status = ""
+	}
+	if d.dirty() && !d.busy {
+		status = m.Dirty
+	}
+	if !d.ready {
+		return status
+	}
+	ending := "LF"
+	if d.format.LineEnding == "\r\n" {
+		ending = "CRLF"
+	}
+	if d.format.LineEnding == "\r" {
+		ending = "CR"
+	}
+	if status == "" {
+		return ending
+	}
+	return ending + " · " + status
 }
 
 func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
