@@ -4,11 +4,12 @@ package i18n
 
 var EnglishMessages = Messages{
 	SFTPWindow: SFTPWindowMessages{
-		ConnectingFmt:  "Connecting to %s for standalone SFTP…",
+		ConnectingFmt: "Connecting to %s…",
+		Authenticate:  "Authenticate in main window", AuthenticationHint: "Confirm the host key or complete authentication in the main window.",
 		DropUploadHint: "Drop here to upload", DropDownloadHint: "Drop here to download",
 		QueueRejectedFmt: "%d items could not be queued. Try again later.",
 		SelectedFmt:      "%d selected", CopyPath: "Copy full path",
-		Open: "Standalone SFTP", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
+		Open: "File transfer", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
 		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to",
 		CloseTitle: "Tasks are still active", CloseDescription: "Closing stops unfinished transfers, archive extraction and external editor synchronization in this window.", CloseTransfers: "Stop tasks and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
 	},

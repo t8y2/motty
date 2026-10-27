@@ -890,6 +890,7 @@ func (state *State) showNextPrompt() {
 			continue
 		case autofillNeedsUnlock:
 			state.openVaultUnlock(session, nil)
+			state.raiseSFTPAuthentication(session)
 			return
 		}
 		state.modalSession = session.ID
@@ -915,6 +916,7 @@ func (state *State) showNextPrompt() {
 			}
 			state.keyPassphraseDescription = fmt.Sprintf(state.messages.KeyPassphraseDescriptionFmt, filepath.Base(session.identity))
 		}
+		state.raiseSFTPAuthentication(session)
 		return
 	}
 	if state.clipboardRequest.pending {

@@ -86,12 +86,20 @@ func (w *sftpWindow) show() {
 	if w.ownsConnection && w.session.relay != nil {
 		w.session.relay.set(func() { window.Invalidate(); state.options.Invalidate() })
 	}
+	w.startBrowser()
+	window.Invalidate()
+}
+
+func (w *sftpWindow) startBrowser() {
+	if w.closed || w.window == nil || w.view.worker != nil || !w.connected() {
+		return
+	}
+	state, window := w.owner, w.window
 	connection, mode := w.session.conn, w.session.host.Transfer
 	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, func() { window.Invalidate(); state.options.Invalidate() })
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
-	w.wake()
 	window.Invalidate()
 }
 
@@ -104,7 +112,14 @@ func (w *sftpWindow) connected() bool {
 }
 
 func (w *sftpWindow) wake() {
-	if w.closed || w.view.worker == nil {
+	if w.closed {
+		return
+	}
+	if w.ownsConnection {
+		w.owner.pumpSFTPConnections()
+		w.owner.showNextPrompt()
+	}
+	if w.view.worker == nil {
 		return
 	}
 	w.owner.pumpSFTP(&w.session)
@@ -175,6 +190,9 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
+	if w.owner.modalSession == w.session.ID {
+		w.owner.closeModal()
+	}
 	w.deferredListings = [2]func(){}
 	w.view.localSeq++
 	w.view.remoteSeq++

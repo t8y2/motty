@@ -3,6 +3,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,8 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	})
 	var dialed sshconn.Config
 	dials := 0
+	raised := 0
+	state.options.Raise = func() { raised++ }
 	state.options.Dial = func(c sshconn.Config) Connection { dialed = c; dials++; return conn }
 	sessions := len(state.sessions)
 	state.activeSessionID, state.activeSection = 0, sectionHosts
@@ -44,8 +47,11 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	}
 	state.Click(hitHostMenuSFTP)
 	state.Wake()
-	if state.modal != modalHostKey || len(state.sessions) != sessions || len(host.windows) != 1 {
-		t.Fatal("standalone authentication created a terminal/window too early")
+	if state.modal != modalHostKey || len(state.sessions) != sessions || len(host.windows) != 2 {
+		t.Fatal("standalone authentication must show progress without a terminal")
+	}
+	if raised != 1 || len(state.fileNotices.items) != 0 {
+		t.Fatal("authentication must raise the main prompt without a loading toast")
 	}
 	if kind, _ := state.hostLight(target); kind != lightBusy {
 		t.Fatal("standalone handshake missing from host status")
@@ -125,6 +131,97 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	conn.mu.Unlock()
 	if canceled != 1 {
 		t.Fatal("standalone connection not released with its last document", canceled)
+	}
+}
+
+func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *testing.T) {
+	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			state, original, _, host, _ := dualSFTPFixture(t, scale)
+			target := original.session.host
+			target.ID += 1000
+			conn := &fakeConn{}
+			conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnecting })
+			state.options.Dial = func(sshconn.Config) Connection { return conn }
+			state.openHostSFTPWindow(target)
+			var w *sftpWindow
+			for _, candidate := range state.sftpWindows {
+				if candidate.session.HostID == target.ID {
+					w = candidate
+				}
+			}
+			if w == nil || w.window == nil || w.view.worker != nil || len(host.windows) != 2 || len(state.fileNotices.items) != 0 {
+				t.Fatal("handshake needs its own loading window, not a toast or browser")
+			}
+			for _, reduced := range []bool{false, true} {
+				var canvas ui.Canvas
+				canvas.SetReduceMotion(reduced)
+				canvas.BeginFrame()
+				w.paint(&canvas, ui.Size{Width: 640, Height: 400})
+				canvas.EndFrame()
+				if _, animated := canvas.NextFrame(); animated == reduced {
+					t.Fatal("connection animation did not respect reduced motion")
+				}
+				if _, ok := hitByID(&canvas, hitSFTPWindowConnectCancel); !ok {
+					t.Fatal("loading window cannot cancel its handshake")
+				}
+			}
+			conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
+			state.Wake()
+			if state.modal != modalPassword || state.modalSession != w.session.ID {
+				t.Fatal("loading window lost its authentication prompt")
+			}
+			w.click(hitSFTPWindowConnectCancel)
+			conn.mu.Lock()
+			canceled := conn.canceled
+			conn.mu.Unlock()
+			if !w.closed || canceled != 1 || state.modal != modalNone || state.sftpWindows[w.session.ID] != nil {
+				t.Fatal("closing loading left authentication or its connection alive")
+			}
+		})
+	}
+}
+
+func TestSFTPWindowFailedHandshakeRetriesInsideSameWindow(t *testing.T) {
+	state, original, remote, host, _ := dualSFTPFixture(t, 1.25)
+	target := original.session.host
+	target.ID += 1000
+	first, second := &fakeConn{}, &fakeConn{sftp: remote}
+	first.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnecting })
+	second.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnected })
+	dials := 0
+	state.options.Dial = func(sshconn.Config) Connection {
+		dials++
+		if dials == 1 {
+			return first
+		}
+		return second
+	}
+	state.openHostSFTPWindow(target)
+	var w *sftpWindow
+	for _, candidate := range state.sftpWindows {
+		if candidate.session.HostID == target.ID {
+			w = candidate
+		}
+	}
+	window := w.window
+	first.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = errors.New("connection refused") })
+	state.Wake()
+	var canvas ui.Canvas
+	w.paint(&canvas, ui.Size{Width: 640, Height: 400})
+	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok || w.closed || len(state.fileNotices.items) != 0 {
+		t.Fatal("failed handshake needs inline failure and retry")
+	}
+	w.click(hitSFTPWindowConnectRetry)
+	dualWait(t, state, w, host.windows[1].view, func() bool { return w.view.worker != nil && !w.view.busy && len(w.view.rows) == 2 })
+	if w.window != window || dials != 2 || len(host.windows) != 2 || w.session.term != nil {
+		t.Fatal("retry replaced the native window or created a terminal")
+	}
+	first.mu.Lock()
+	canceled := first.canceled
+	first.mu.Unlock()
+	if canceled != 1 {
+		t.Fatal("failed handshake was not released")
 	}
 }
 

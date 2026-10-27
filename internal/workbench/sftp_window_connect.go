@@ -1,8 +1,7 @@
 package workbench
 
 import (
-	"fmt"
-	"github.com/vivaui/viva/components"
+	"errors"
 	"motty/internal/sshconn"
 )
 
@@ -23,22 +22,53 @@ func (state *State) openHostSFTPWindow(host Host) {
 	source := Session{ID: state.nextSessionID, HostID: host.ID, Title: host.Label, Address: state.sessionAddress(host), host: host, phase: sshconn.PhaseConnecting}
 	state.nextSessionID++
 	w := state.newSFTPWindow(&source)
-	w.session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
-	config, valid := state.sshConfigFor(&w.session, host)
-	if !valid {
-		state.fileNotices.show(state.messages.SFTPWindow.Title, state.status, components.ToastError)
-		w.onClosed()
+	w.ownsConnection = true
+	w.show()
+	w.connect()
+}
+
+// Keep connection progress and errors in the transfer window. A retry replaces
+// only its initial handshake; a live browser/document never changes connection.
+func (w *sftpWindow) connect() {
+	if w.closed || w.view.worker != nil {
 		return
 	}
-	w.ownsConnection = true
+	state, s := w.owner, &w.session
+	if s.conn != nil {
+		s.conn.Cancel()
+		s.conn = nil
+	}
+	if state.modalSession == s.ID {
+		state.closeModal()
+	}
+	s.phase, s.version, s.answered, s.otpSent = sshconn.PhaseConnecting, 0, 0, false
+	s.attempt, s.questions, s.role = 0, nil, sshconn.EndpointTarget
+	s.err, s.hostKey, s.identity = nil, sshconn.HostKeyInfo{}, ""
+	s.pendingSecretName, s.pendingSecretValue = "", ""
+	s.endpoint = sshconn.Endpoint{Host: s.host.Address, Port: s.host.Port, User: state.login(s.host)}
+	config, valid := state.sshConfigFor(s, s.host)
+	if !valid {
+		s.phase, s.err = sshconn.PhaseFailed, errors.New(state.status)
+		w.window.Invalidate()
+		return
+	}
 	if state.shareConnections == shareConnectionsOn {
-		w.session.conn, _ = state.shareFrom(&w.session, host)
+		s.conn, _ = state.shareFrom(s, s.host)
 	}
-	if w.session.conn == nil {
-		w.session.conn = state.options.Dial(config)
+	if s.conn == nil {
+		s.conn = state.options.Dial(config)
 	}
-	state.fileNotices.show(state.messages.SFTPWindow.Title, fmt.Sprintf(state.messages.SFTPWindow.ConnectingFmt, host.Label), components.ToastInfo)
+	if s.relay != nil {
+		s.relay.set(func() { w.window.Invalidate(); state.options.Invalidate() })
+	}
 	state.pumpSFTPConnections()
+	w.window.Invalidate()
+}
+
+func (state *State) raiseSFTPAuthentication(session *Session) {
+	if w := state.sftpWindows[session.ID]; w != nil && w.ownsConnection && !w.closed && state.options.Raise != nil {
+		state.options.Raise()
+	}
 }
 
 func (state *State) pumpSFTPConnections() {
@@ -65,14 +95,7 @@ func (state *State) pumpSFTPConnections() {
 		}
 		if s.phase == sshconn.PhaseConnected {
 			state.rememberSecret(s)
-			if w.window == nil {
-				w.show()
-			}
-		} else if w.window == nil && (s.phase == sshconn.PhaseFailed || s.phase == sshconn.PhaseClosed) {
-			if status.Err != nil {
-				state.fileNotices.show(state.messages.SFTPWindow.Title, fmt.Sprintf(state.messages.SFTPErrorFmt, status.Err), components.ToastError)
-			}
-			w.onClosed()
+			w.startBrowser()
 		}
 		w.view.invalidateDetached()
 	}

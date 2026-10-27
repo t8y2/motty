@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 )
 
 type sftpWindowDrag struct {
@@ -79,6 +80,9 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 }
 
 func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
+	if w.view.worker == nil {
+		return ui.EventResult{}
+	}
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
 		return ui.EventResult{}
@@ -242,6 +246,19 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 
 func (w *sftpWindow) click(id ui.ID) {
 	defer w.window.Invalidate()
+	if w.view.worker == nil {
+		switch id {
+		case hitSFTPWindowConnectCancel:
+			w.window.Close()
+		case hitSFTPWindowConnectRetry:
+			if w.session.failed() || w.session.phase == sshconn.PhaseClosed {
+				w.connect()
+			}
+		case hitSFTPWindowAuthenticate:
+			w.owner.raiseSFTPAuthentication(&w.session)
+		}
+		return
+	}
 	if w.notices.click(id) {
 		return
 	}
@@ -426,6 +443,13 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	if w.view.worker == nil {
+		if event.Key == ui.KeyEscape && !event.Repeat {
+			w.window.RequestClose()
+			return handled
+		}
+		return ui.EventResult{}
+	}
 	if event.Key == ui.KeyEscape {
 		if w.closeConfirm {
 			w.click(hitSFTPWindowCloseCancel)
@@ -557,6 +581,9 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 
 func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 	if event.Release || event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 {
+		return ui.EventResult{}
+	}
+	if w.view.worker == nil && strings.ToLower(event.Text) != "w" {
 		return ui.EventResult{}
 	}
 	for _, id := range sftpWindowPath {

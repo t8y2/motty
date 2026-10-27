@@ -35,6 +35,9 @@ var (
 	hitSFTPWindowMenuDismiss     = tree.ID(sftpWindowHits, "menu-dismiss")
 	hitSFTPWindowMenuCopy        = tree.ID(sftpWindowHits, "menu-copy")
 	hitSFTPWindowQueueBar        = tree.ID(sftpWindowHits, "queue-scroll")
+	hitSFTPWindowConnectCancel   = tree.ID(sftpWindowHits, "connect-cancel")
+	hitSFTPWindowConnectRetry    = tree.ID(sftpWindowHits, "connect-retry")
+	hitSFTPWindowAuthenticate    = tree.ID(sftpWindowHits, "authenticate")
 	sftpWindowQueueRows          = tree.Sub(sftpWindowHits, tree.Name("queue-rows"))
 )
 
@@ -79,6 +82,10 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	w.ui.size = size
 	theme, m := w.owner.Theme(), w.owner.messages
 	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	if w.view.worker == nil {
+		w.paintConnecting(canvas, size)
+		return
+	}
 	var body, queue flex.Box
 	f := w.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {

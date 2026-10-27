@@ -25,7 +25,7 @@ type barTool struct {
 	slot     flex.Box
 }
 
-// maxBarTools is how many tools the bar can hold: Files, export log, export
+// maxBarTools is how many tools the bar can hold: transfer, Files, export log, export
 // recording, record, the resource monitor, close, the two splits and broadcast.
 const maxBarTools = 10
 
@@ -57,7 +57,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	tools := toolList[:0]
 	if !inactive && !finding {
 		if session.host.isSSH() && !session.isLocal() {
-			tools = append(tools, barTool{id: hitSFTPDetach, icon: iconExternal, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
+			tools = append(tools, barTool{id: hitSFTPDetach, icon: iconTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
 		}
 		filesStyle := iconButtonQuiet
 		if context, ok := state.deck.Context(state.deck.ActiveWorkspace()); ok && context.Open {

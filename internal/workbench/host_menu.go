@@ -97,7 +97,7 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitHostMenuConnect, Label: messages.Connect, Icon: icon(iconPlug), Disabled: several})
 	if host, ok := state.hostByID(state.hostMenu.host); ok && host.isSSH() {
-		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconExternal), Disabled: several || state.options.OpenContentWindow == nil})
+		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconTransfer), Disabled: several || state.options.OpenContentWindow == nil})
 	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
