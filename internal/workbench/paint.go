@@ -1450,16 +1450,6 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	m, theme := state.messages, state.Theme()
 	networkHost := state.editor.protocol != protocolSerial
 	sshHost := state.editor.protocol == protocolSSH
-	proxyHeight := float32(0)
-	proxyRowHeight := float32(hostFormRowHeight)
-	if networkHost {
-		proxyHeight = hostFormRowHeight
-		if !sshHost {
-			// A compact full-width row fits the short host dialog where sharing
-			// the icon row used to clip both values.
-			proxyHeight, proxyRowHeight = 48, 48
-		}
-	}
 	title, submit := m.DialogTitle, m.AddHost
 	switch state.hostDialogMode {
 	case hostDialogEdit:
@@ -1473,7 +1463,8 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		DismissID:      hitDialogDismiss,
 		CloseID:        hitDialogClose,
 		InitialFocusID: hitDialogLabel,
-		ContentSize:    ui.Size{Width: 680, Height: state.hostDialogHeight() + proxyHeight},
+		ContentSize:    ui.Size{Width: 680},
+		FitBody:        true, BodyHeight: state.hostFormHeight(),
 	})
 	layout := dialog.Begin(title, "")
 
@@ -1482,7 +1473,26 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
 	var vncRows flex.Box
 	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, advanced flex.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
+	form := &state.editor.form
+	form.count = 0
+	if form.lastError != state.dialogError {
+		form.lastError = state.dialogError
+		if state.dialogError != "" {
+			form.offset = state.hostFormHeight()
+		}
+	}
+	area := components.BeginScrollArea(canvas, theme, layout.Body, ui.Size{Height: state.hostFormHeight()}).Offset(0, form.offset).
+		Viewport(hitHostFormViewport, title).VerticalScrollbar(hitHostFormScrollbar, title, "")
+	geometry := area.BeginContent()
+	if geometry.Viewport != form.geometry.Viewport {
+		form.lastFocus = ui.ID{}
+	}
+	form.geometry, form.offset, form.clipped = geometry, geometry.OffsetY, true
+	body := geometry.Content
+	if geometry.MaxOffsetY > 0 {
+		body.Width -= 12
+	}
+	f := state.chrome.dialog.Begin(canvas, state.Theme(), body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
 		f.Row().Height(rowHeight).Gap(16).Children(func() {
@@ -1503,7 +1513,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		if networkHost {
 			// The proxy is its own row: sharing the icon row clipped both the
 			// icon value and the proxy summary on VNC, RDP and Telnet.
-			proxy = f.Slot().Height(proxyRowHeight)
+			proxy = f.Slot().Height(rowHeight)
 		}
 		if ssh {
 			advanced = f.Slot().Height(state.advancedSectionHeight())
@@ -1535,11 +1545,15 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAdvancedSection(canvas, advanced.Rect())
 	}
 
+	area.EndContent()
+	form.clipped = false
 	state.paintHostColorPicker(canvas)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitDialogCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitDialogSubmit, Label: submit},
 	)
+	form.addStop(hitDialogCancel, layout.Footer, false)
+	form.addStop(hitDialogSubmit, layout.Footer, false)
 	dialog.End()
 }
 
@@ -1689,7 +1703,10 @@ func hostIconChoices() []hostIcon {
 // paintHostIconChoice paints the list of icons a host can have.
 func (state *State) paintHostIconChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	m, editor, theme := state.messages, &state.editor, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).LabelGap(hostLabelGap).Paint(m.FieldIcon, "", "")
+	content := components.BeginField(canvas, theme, bounds).Paint(m.FieldIcon, "", "")
+	state.rememberHostControl(hitDialogIcon, content)
+	portal := state.beginHostFormPopup(canvas, state.editor.iconOpen)
+	defer state.endHostFormPopup(canvas, portal)
 	choices := hostIconChoices()
 	window := state.windowRect()
 	rows := min(len(choices), hostIconListRows)
@@ -1744,7 +1761,8 @@ func (state *State) paintSecureDialogField(canvas *ui.Canvas, id ui.ID, field ho
 
 func (state *State) paintDialogFieldWithSecurity(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect, secure bool) {
 	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).For(id).LabelGap(hostLabelGap).Paint(title, "", "")
+	content := components.BeginField(canvas, theme, bounds).For(id).Paint(title, "", "")
+	state.revealHostField(canvas, id, content)
 	value := state.editor.field(field).String()
 	focused := canvas.Focused() == id
 	components.PaintInput(canvas, theme, content, components.InputSnapshot{

@@ -267,6 +267,8 @@ func TestOTPFieldKeepsItsWidthWhateverButtonsItHas(t *testing.T) {
 		state.Click(hitDialogAdvanced)
 		state.editor.otpChecked = checked
 		canvas, _ := paintedTexts(state)
+		state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+		canvas, _ = paintedTexts(state)
 		// The field's label shares its identity, so take the input: the taller one.
 		var field ui.Hit
 		for _, hit := range canvas.Hits() {

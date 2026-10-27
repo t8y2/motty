@@ -27,6 +27,7 @@ type hostEditor struct {
 	icon        hostIcon
 	color       text.Editor
 	colorPicker hostColorPicker
+	form        hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -195,6 +196,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 }
 
 func (editor *hostEditor) load(host Host) {
+	editor.form = hostFormScroll{}
 	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
 	editor.color.Insert(host.Color)
@@ -285,6 +287,7 @@ func (editor *hostEditor) host(id uint32) Host {
 
 // reset clears every field back to defaults for a fresh dialog session.
 func (editor *hostEditor) reset() {
+	editor.form = hostFormScroll{}
 	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
 	editor.label = text.Editor{}

@@ -1710,6 +1710,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
+	if result := state.hostFormPointer(event); result.Handled {
+		return result
+	}
 	if result := state.hostPickerPointer(event); result.Handled {
 		return result
 	}
@@ -1780,6 +1783,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result := state.hostPickerKey(event); result.Handled {
+		return result
+	}
+	if result := state.hostFormKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.transferCenterKey(event); handled {

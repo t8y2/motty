@@ -251,6 +251,7 @@ func (state *State) declareDialogCheckbox(f *flex.Frame, label string, above, be
 // beside it its label, so pressing them toggles it.
 func (state *State) paintDialogCheckbox(canvas *ui.Canvas, id ui.ID, label string, checked bool, row flex.Box) {
 	rect := row.Rect()
+	state.rememberHostControl(id, rect)
 	side := components.CheckboxExtent(state.Theme())
 	components.BeginCheckbox(canvas, state.Theme(), id, ui.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
 	// The checkbox's own hit reaches 12px past its box; the label starts there.

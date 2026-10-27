@@ -53,13 +53,14 @@ var (
 // paintTransferChoice draws the file protocol choice of the host dialog.
 func (state *State) paintTransferChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	m := state.messages.Tools
-	content := components.BeginField(canvas, state.Theme(), bounds).LabelGap(hostLabelGap).Paint(m.TransferField, "", "")
+	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.TransferField, "", "")
 	options := [...]components.SegmentOption{
 		{ID: hitDialogTransferAuto, Label: m.TransferAuto},
 		{ID: hitDialogTransferSFTP, Label: "SFTP"},
 		{ID: hitDialogTransferSCP, Label: "SCP"},
 	}
 	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[state.editor.transfer].ID).Paint()
+	state.rememberHostControl(options[state.editor.transfer].ID, content)
 }
 
 // clickTransferChoice handles a click on the choice and reports whether it was one.
