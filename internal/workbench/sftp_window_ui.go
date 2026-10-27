@@ -377,6 +377,7 @@ func (w *sftpWindow) paintMenu(canvas *ui.Canvas) {
 	}
 	theme := w.owner.contextMenuTheme()
 	width, height := rows.size(canvas, theme)
+	width = min(width, 480)
 	menu := components.BeginContextMenu(canvas, theme, ui.Rect{X: w.ui.menuAt.X, Y: w.ui.menuAt.Y, Width: width, Height: height}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowMenuDismiss, DismissID: hitSFTPWindowMenuDismiss, Viewport: ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.menuScroll, RowHeight: contextMenuRow})
 	rows.paint(&menu, nil)
 	menu.End()

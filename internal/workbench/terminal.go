@@ -363,7 +363,7 @@ func (state *State) openShell(session *Session) {
 		return
 	}
 	cols, rows := t.screen.Size()
-	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session)}
+	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
 	if session.host.ForwardX11 && session.host.isSSH() {
 		environ := x11fwd.CurrentEnviron()
 		config.X11 = &environ
@@ -430,7 +430,7 @@ func (t *terminal) abandonShell() {
 // shellOpened is what becomes of a session once its shell is, or is not, open.
 func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t := session.term
-	if err != nil && session.shared {
+	if err != nil && session.shared && session.containerCommand == "" {
 		// A server limits how many shells one connection may carry. Where the
 		// borrowed connection is full, connect separately instead of failing.
 		t.say(sgrWarn, fmt.Sprintf(state.messages.ConnShareRefusedFmt, err))

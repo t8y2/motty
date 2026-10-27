@@ -306,21 +306,55 @@ func splitFractionBounds(bounds FractionBounds, axis layoutcore.Axis, ratio floa
 
 func (state *State) savedWorkspaceDeck() layoutcore.DeckDTO {
 	dto := state.deck.DTO()
+	persistedIDs := make(map[uint32]layoutcore.SessionID, len(state.sessions))
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.containerCommand == "" {
+			persistedIDs[session.ID] = layoutcore.SessionID(len(persistedIDs) + 1)
+		}
+	}
+	retained := dto.Workspaces[:0]
 	for workspaceIndex := range dto.Workspaces {
-		workspace := &dto.Workspaces[workspaceIndex]
+		workspace := dto.Workspaces[workspaceIndex]
+		hadTransient := false
+		var firstPersistent layoutcore.PaneID
 		for paneIndex := range workspace.Panes {
 			pane := &workspace.Panes[paneIndex]
 			if pane.SessionID == 0 {
 				continue
 			}
-			persisted := layoutcore.SessionID(0)
-			for sessionIndex := range state.sessions {
-				if state.sessions[sessionIndex].ID == uint32(pane.SessionID) {
-					persisted = layoutcore.SessionID(sessionIndex + 1)
-					break
-				}
+			persisted := persistedIDs[uint32(pane.SessionID)]
+			if persisted == 0 {
+				hadTransient = true
+			} else if firstPersistent == 0 {
+				firstPersistent = pane.ID
 			}
 			pane.SessionID = persisted
+		}
+		if hadTransient && firstPersistent == 0 {
+			continue
+		}
+		if hadTransient {
+			for _, pane := range workspace.Panes {
+				if pane.ID == workspace.ActivePane && pane.SessionID == 0 {
+					workspace.ActivePane = firstPersistent
+				}
+			}
+		}
+		retained = append(retained, workspace)
+	}
+	dto.Workspaces = retained
+	activePresent := false
+	for _, workspace := range dto.Workspaces {
+		if workspace.ID == dto.ActiveWorkspace {
+			activePresent = true
+			break
+		}
+	}
+	if !activePresent {
+		dto.ActiveWorkspace = 0
+		if len(dto.Workspaces) > 0 {
+			dto.ActiveWorkspace = dto.Workspaces[0].ID
 		}
 	}
 	return dto

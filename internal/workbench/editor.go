@@ -25,6 +25,7 @@ type hostEditor struct {
 	group    text.Editor
 	tags     text.Editor
 	icon     hostIcon
+	color    text.Editor
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -80,6 +81,7 @@ const (
 	fieldGroup
 	fieldPort
 	fieldTags
+	fieldColor
 	fieldAlgorithms
 	fieldOTP
 	fieldCount
@@ -100,6 +102,8 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 		return &editor.group
 	case fieldTags:
 		return &editor.tags
+	case fieldColor:
+		return &editor.color
 	case fieldAlgorithms:
 		return &editor.algorithms
 	case fieldOTP:
@@ -173,6 +177,9 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	if _, ok := parseHostTags(editor.value(fieldTags)); !ok {
 		return messages.ErrHostTagsInvalid
 	}
+	if _, ok := normalizeHostColor(editor.value(fieldColor)); !ok {
+		return messages.ErrHostColorInvalid
+	}
 	candidate := editor.host(0)
 	for _, host := range hosts {
 		if host.ID != ignoreID && sameEndpoint(host, candidate) {
@@ -183,6 +190,8 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 }
 
 func (editor *hostEditor) load(host Host) {
+	editor.color = text.Editor{}
+	editor.color.Insert(host.Color)
 	editor.label = text.Editor{}
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
@@ -222,7 +231,9 @@ func (editor *hostEditor) load(host Host) {
 // host builds the host the form currently describes.
 func (editor *hostEditor) host(id uint32) Host {
 	tags, _ := parseHostTags(editor.value(fieldTags))
+	color, _ := normalizeHostColor(editor.value(fieldColor))
 	host := Host{
+		Color:    color,
 		ID:       id,
 		Label:    editor.value(fieldLabel),
 		Group:    editor.value(fieldGroup),
@@ -262,6 +273,7 @@ func (editor *hostEditor) host(id uint32) Host {
 
 // reset clears every field back to defaults for a fresh dialog session.
 func (editor *hostEditor) reset() {
+	editor.color = text.Editor{}
 	editor.label = text.Editor{}
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}

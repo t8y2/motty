@@ -6,9 +6,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
+	"motty/internal/sshconn"
 )
 
 const processFixture = `    1 root      0.1  0.2    10-02:03:04 /sbin/init
@@ -44,6 +46,8 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte("sh: 1: docker: not found"), err
 		}
 		return []byte(containerFixture), nil
+	case strings.HasPrefix(command, "docker inspect --format"):
+		return []byte("0f1e2d3c4b5a" + strings.Repeat("0", 52) + "\n"), nil
 	case strings.HasPrefix(command, "docker images"):
 		return []byte(imageFixture), nil
 	case strings.HasPrefix(command, "docker volume ls"):
@@ -187,6 +191,133 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 	}
 }
 
+func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	original := world.connectFirst(t, state)
+	source, _ := state.sessionByIDPointer(state.activeSessionID)
+	source.term.live = true
+	server := &remoteServer{failures: map[string]error{}}
+	original.runCommand = server.run
+	state.openRemoteTools(source)
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	state.Click(hitRemoteRowList.At(0)) // running web
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	button, painted := hitByID(&canvas, hitRemoteShell)
+	if !painted || button.Disabled {
+		t.Fatalf("container Shell action missing or disabled: %+v, painted=%v", button, painted)
+	}
+	state.Click(hitRemoteShell)
+	waitFor(t, state, func() bool { return len(state.sessions) == 2 && state.modal == modalNone })
+	if len(world.conns) != 1 || len(world.shared) != 1 ||
+		len(original.shells) != 1 || len(world.shared[0].configs) != 1 ||
+		world.shared[0].configs[0].Command != "docker exec -it 0f1e2d3c4b5a"+strings.Repeat("0", 52)+" sh" ||
+		server.ran("docker exec 0f1e2d3c4b5a"+strings.Repeat("0", 52)+" sh -c :") != 1 {
+		t.Fatalf("dials=%d shares=%d originalShells=%d childConfigs=%+v probes=%q", len(world.conns), len(world.shared), len(original.shells), world.shared[0].configs, server.commands)
+	}
+}
+
+func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
+	state, server, _ := openRemoteToolsDialog(t)
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading })
+	state.Click(hitRemoteRowList.At(1)) // exited job
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	button, painted := hitByID(&canvas, hitRemoteShell)
+	if !painted || !button.Disabled {
+		t.Fatalf("stopped container offered Shell: button=%+v painted=%v", button, painted)
+	}
+	state.Click(hitRemoteShell)
+	if server.ran("docker exec") != 0 || len(state.sessions) != 1 || state.modal != modalRemoteTools {
+		t.Fatalf("stopped container opened a Shell: probes=%q tabs=%d modal=%d", server.commands, len(state.sessions), state.modal)
+	}
+}
+
+func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
+	state, server, _ := openRemoteToolsDialog(t)
+	source, _ := state.remoteSession()
+	source.host.System = sshconn.SystemWindows
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading })
+	state.Click(hitRemoteRowList.At(0))
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	button, painted := hitByID(&canvas, hitRemoteShell)
+	if !painted || !button.Disabled {
+		t.Fatalf("Windows SSH host offered Shell: button=%+v painted=%v", button, painted)
+	}
+	state.Click(hitRemoteShell)
+	if server.ran("docker inspect") != 0 || server.ran("docker exec") != 0 || len(state.sessions) != 1 {
+		t.Fatalf("Windows host probed a POSIX container Shell: commands=%q", server.commands)
+	}
+}
+
+func TestRemoteToolsContainerShellFailureDoesNotCreateATab(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	original := world.connectFirst(t, state)
+	source, _ := state.sessionByIDPointer(state.activeSessionID)
+	source.term.live = true
+	server := &remoteServer{failures: map[string]error{"docker exec": errors.New("exit status 1")}}
+	original.runCommand = server.run
+	state.openRemoteTools(source)
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	state.Click(hitRemoteRowList.At(0))
+	state.Click(hitRemoteShell)
+	waitFor(t, state, func() bool { return !state.remote.loading && state.remote.failed })
+	if len(state.sessions) != 1 || len(world.shared) != 0 || state.modal != modalRemoteTools {
+		t.Fatalf("failed probe opened tab: sessions=%d shares=%d modal=%d", len(state.sessions), len(world.shared), state.modal)
+	}
+}
+
+func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
+	world, options := newSharingWorld(t)
+	notified := make(chan struct{}, 2)
+	options.Invalidate = func() {
+		select {
+		case notified <- struct{}{}:
+		default:
+		}
+	}
+	state := newTestState(t, options)
+	original := world.connectFirst(t, state)
+	source, _ := state.sessionByIDPointer(state.activeSessionID)
+	source.term.live = true
+	server := &remoteServer{failures: map[string]error{}}
+	started, release := make(chan struct{}), make(chan struct{})
+	original.runCommand = func(ctx context.Context, command string, limit int) ([]byte, error) {
+		if strings.HasPrefix(command, "docker exec") {
+			close(started)
+			<-release
+		}
+		return server.run(ctx, command, limit)
+	}
+	state.openRemoteTools(source)
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	state.Click(hitRemoteRowList.At(0))
+	state.Click(hitRemoteShell)
+	<-started
+	state.Click(hitRemoteClose)
+	for len(notified) > 0 {
+		<-notified
+	}
+	close(release)
+	select {
+	case <-notified:
+		state.Wake()
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe result was never delivered")
+	}
+	if state.modal != modalNone || len(state.sessions) != 1 || len(world.shared) != 0 {
+		t.Fatalf("closed dialog's stale probe opened a tab: modal=%d tabs=%d shares=%d", state.modal, len(state.sessions), len(world.shared))
+	}
+}
+
 func TestRemoteToolsExplainWhyThereIsNothingToShow(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["docker ps"] = errors.New("exit status 127")
@@ -233,6 +364,60 @@ func TestClosingRemoteToolsWhileALoadIsOnItsWayIgnoresTheAnswer(t *testing.T) {
 	}
 	if len(state.remote.rows) != 0 || state.modal != modalNone {
 		t.Fatalf("rows %d, modal %d", len(state.remote.rows), state.modal)
+	}
+}
+
+func TestRemoteToolsReadFromOldHostCannotReplaceNewHostRows(t *testing.T) {
+	world, options := newSharingWorld(t)
+	notified := make(chan struct{}, 16)
+	options.Invalidate = func() {
+		select {
+		case notified <- struct{}{}:
+		default:
+		}
+	}
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	a := &state.sessions[0]
+	a.term.live = true
+	aID := a.ID
+	hostB := a.host
+	hostB.ID, hostB.Label, hostB.Address = 0, "Host B", "host-b.example.test"
+	b := state.newHostSession(hostB)
+	a, _ = state.sessionByIDPointer(aID)
+	world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	b.term.live = true
+	startA, releaseA := make(chan struct{}), make(chan struct{})
+	world.conns[0].runCommand = func(_ context.Context, _ string, _ int) ([]byte, error) {
+		close(startA)
+		<-releaseA
+		return []byte(processFixture), nil
+	}
+	world.conns[1].runCommand = func(_ context.Context, _ string, _ int) ([]byte, error) {
+		return []byte(" 9090 bob 9.0 3.0 00:01:00 b-service\n"), nil
+	}
+	state.activeSessionID = a.ID
+	state.openRemoteTools(a)
+	<-startA
+	state.Click(hitRemoteClose)
+	state.activeSessionID = b.ID
+	state.openRemoteTools(b)
+	waitFor(t, state, func() bool {
+		return !state.remote.loading && len(state.remote.procs) == 1 && state.remote.procs[0].PID == 9090
+	})
+	for len(notified) > 0 {
+		<-notified
+	}
+	close(releaseA)
+	select {
+	case <-notified:
+		state.Wake()
+	case <-time.After(2 * time.Second):
+		t.Fatal("old host result never returned")
+	}
+	if state.remote.session != b.ID || len(state.remote.procs) != 1 || state.remote.procs[0].PID != 9090 {
+		t.Fatalf("old host replaced B: source=%d rows=%+v", state.remote.session, state.remote.procs)
 	}
 }
 

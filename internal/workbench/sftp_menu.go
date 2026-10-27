@@ -119,6 +119,7 @@ func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	rows := state.sftpMenuRows(session, view)
 	width, height := rows.size(canvas, state.contextMenuTheme())
+	width = min(width, 480)
 	bounds := state.popupAt(canvas, viewport, state.sftpMenu.at, width, height, 6)
 	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSFTPMenuDismiss), RowHeight: contextMenuRow,
@@ -143,7 +144,8 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	case view.localOnly:
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
 	case local:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer, Icon: icon(iconUpload)})
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
+			Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
 	default:
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
 		if view.lfolder.path != "" {

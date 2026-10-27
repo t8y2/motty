@@ -75,6 +75,7 @@ var (
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
+	hitDialogColor             = tree.ID(shellHits, "dialog-color")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
 	hitHostKeyTrust            = tree.ID(shellHits, "host-key-trust")
 	hitHostKeyOnce             = tree.ID(shellHits, "host-key-once")
@@ -1440,12 +1441,15 @@ func (state *State) closeWorkspace(id layoutcore.WorkspaceID) {
 
 // canReconnect reports whether a tab has nothing live left to talk to.
 func (state *State) canReconnect(session *Session) bool {
-	return session.restored || session.term != nil && session.term.shell == nil &&
-		(session.term.ended || session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed)
+	return session.containerCommand == "" && (session.restored || session.term != nil && session.term.shell == nil &&
+		(session.term.ended || session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed))
 }
 
 // reconnect dials a tab's host again in the same tab.
 func (state *State) reconnect(session *Session) {
+	if session.containerCommand != "" {
+		return
+	}
 	state.startConnection(session, session.host)
 	state.status = state.messages.StatusOpened + session.Title
 }
@@ -1686,7 +1690,7 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
 func isDialogField(id ui.ID) bool {
 	switch id {
-	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags:
+	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags, hitDialogColor:
 		return true
 	}
 	return false
@@ -1707,6 +1711,8 @@ func fieldForDialogHit(id ui.ID) hostField {
 		return fieldGroup
 	case hitDialogTags:
 		return fieldTags
+	case hitDialogColor:
+		return fieldColor
 	default:
 		return fieldPort
 	}
@@ -1890,7 +1896,7 @@ func (state *State) openHostSession(host Host) *Session {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		// A saved host owns its tab; a typed target is reused by its address.
-		if session.HostID != host.ID || host.ID == 0 && session.Address != address {
+		if session.containerCommand != "" || session.HostID != host.ID || host.ID == 0 && session.Address != address {
 			continue
 		}
 		state.activeSessionID = session.ID
@@ -1915,6 +1921,10 @@ func (state *State) newHostSession(host Host) *Session {
 }
 
 func (state *State) createHostSession(host Host, address string) *Session {
+	return state.createHostSessionWithConnection(host, address, nil, "", nil)
+}
+
+func (state *State) createHostSessionWithConnection(host Host, address string, conn Connection, command string, relay *notifyRelay) *Session {
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
@@ -1926,11 +1936,16 @@ func (state *State) createHostSession(host Host, address string) *Session {
 		}
 	}
 	state.sessions = append(state.sessions, Session{
-		ID:       state.nextSessionID,
-		HostID:   host.ID,
-		Title:    host.Label,
-		Address:  address,
-		paneSlot: state.claimPaneSlot(),
+		ID:               state.nextSessionID,
+		HostID:           host.ID,
+		Title:            host.Label,
+		Address:          address,
+		paneSlot:         state.claimPaneSlot(),
+		conn:             conn,
+		shared:           conn != nil,
+		host:             host,
+		relay:            relay,
+		containerCommand: command,
 	})
 	session := &state.sessions[len(state.sessions)-1]
 	if err := state.deck.Bind(workspaceID, paneID, layoutcore.SessionID(session.ID)); err != nil {
@@ -1941,7 +1956,13 @@ func (state *State) createHostSession(host Host, address string) *Session {
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title
-	state.startConnection(session, host)
+	if conn == nil {
+		state.startConnection(session, host)
+	} else {
+		state.finishStartingConnection(session, false)
+		state.apply(session, conn.Status())
+		state.pump(session)
+	}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 	state.rebuildTabOptions()

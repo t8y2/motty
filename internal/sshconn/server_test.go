@@ -608,6 +608,9 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 					_ = channel.Close()
 					return
 				}
+				server.mu.Lock()
+				server.lastShell = shell
+				server.mu.Unlock()
 				go server.command(payload.Command, channel)
 			}
 		default:

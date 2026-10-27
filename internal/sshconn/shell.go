@@ -28,6 +28,8 @@ type ShellConfig struct {
 	Cols, Rows int
 	// Term is the TERM value. Empty means xterm-256color.
 	Term string
+	// Command starts in this PTY instead of the remote login shell when nonempty.
+	Command string
 	// Notify is called after output arrives and when the shell ends. It may be
 	// called from any goroutine and must not block; the owner then calls Drain
 	// on its own thread.
@@ -108,10 +110,16 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 		session.Close()
 		return nil, err
 	}
-	if err := session.Shell(); err != nil {
+	var startErr error
+	if config.Command == "" {
+		startErr = session.Shell()
+	} else {
+		startErr = session.Start(config.Command)
+	}
+	if startErr != nil {
 		shell.releaseX11()
 		session.Close()
-		return nil, err
+		return nil, startErr
 	}
 	go shell.sendLoop(stdin)
 	go func() {

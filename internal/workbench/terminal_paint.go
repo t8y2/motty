@@ -43,6 +43,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	barHeight := state.terminalInfoBarHeight(session.ID)
 	geometry := terminalLayoutWithInfoBar(size, state.cellWidth, state.cellHeight, barHeight, state.padding())
 	inactive := state.paneIsInactive(session.ID)
+	barBackground, barBorder := state.terminalBarColors(session, inactive)
 	inSplit := state.paneInSplit(session.ID)
 	finding := !inactive && session.term.find.open
 
@@ -106,7 +107,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	// than the terminal below, so the three read as separate strips.
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		f.Stack().Height(barHeight).Shrink(0).Background(pal.workspace).Children(func() {
+		f.Stack().Height(barHeight).Shrink(0).Background(barBackground).Children(func() {
 			switch {
 			case inactive:
 				spinner = state.declareInactiveBar(f, size.Width, title, status, session)
@@ -147,7 +148,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 					})
 				})
 			}
-			f.Row().FillWidth().Height(1).Self(flex.End).Background(pal.line)
+			f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
 		})
 		f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
 	})
@@ -167,7 +168,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	default:
 		for index := range tools {
 			tool := &tools[index]
-			state.paintIconButton(canvas, tool.id, tool.icon, tool.slot.Rect(), tool.hint, tool.disabled, tool.style, pal.workspace)
+			state.paintTintedIconButton(canvas, tool.id, tool.icon, tool.slot.Rect(), tool.hint, tool.disabled, tool.style, barBackground, terminalToolAccent(tool.id))
 		}
 		spot := light.Rect()
 		if session.busy {
@@ -178,7 +179,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 			canvas.RequestFrameIn(spinnerStep)
 		} else {
 			kind, _ := state.sessionLight(session)
-			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, pal.workspace)
+			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, barBackground)
 		}
 		if session.stats != nil {
 			slot := statsSlot.Rect()

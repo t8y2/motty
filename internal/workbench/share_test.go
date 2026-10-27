@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
 )
 
 // lender is a fake connection that can lend itself, as the real one does.
@@ -98,6 +99,147 @@ func TestANewTabOnAConnectedHostSharesToo(t *testing.T) {
 	}
 	if len(state.sessions) != 2 || !state.sessions[1].shared {
 		t.Fatalf("sessions = %+v", state.sessions)
+	}
+}
+
+func TestContainerTabSharesOnlyItsSourceAndOpensIndependentPTY(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	original := world.connectFirst(t, state)
+	source, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("no active source session")
+	}
+	source.term.live = true
+	const command = "docker exec -it 0f1e2d3c4b5a /bin/sh"
+	if err := state.openContainerTab(source.ID, "web", command); err != nil {
+		t.Fatal(err)
+	}
+	if len(world.conns) != 1 || len(world.shared) != 1 || len(state.sessions) != 2 {
+		t.Fatalf("dials=%d shares=%d tabs=%d", len(world.conns), len(world.shared), len(state.sessions))
+	}
+	newTab := &state.sessions[1]
+	if !newTab.shared || newTab.ID == source.ID || state.activeSessionID != newTab.ID || newTab.term == source.term ||
+		len(world.shared[0].configs) != 1 || world.shared[0].configs[0].Command != command || len(original.configs) != 1 || original.configs[0].Command != "" {
+		t.Fatalf("container tab=%+v shared configs=%+v original configs=%+v", newTab, world.shared[0].configs, original.configs)
+	}
+	if newTab.Title != "Production · web" || len(state.deck.Workspaces(nil)) != 2 || state.tabOptions[1].Label != newTab.Title {
+		t.Fatalf("container tab has no distinct target label: title=%q tabs=%+v", newTab.Title, state.tabOptions)
+	}
+	if state.canReconnect(newTab) {
+		t.Fatal("command tab must not silently redial its source as a normal host")
+	}
+}
+
+func TestContainerTabDoesNotDialAgainWhenSharingIsRefused(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	source := state.activeSessionID
+	state.sessions[0].term.live = true
+	world.refuse = true
+	if err := state.openContainerTab(source, "web", "docker exec -it 0f1e2d3c4b5a /bin/sh"); err == nil {
+		t.Fatal("a refused share silently connected again")
+	}
+	if len(world.conns) != 1 || len(world.shared) != 0 || len(state.sessions) != 1 || state.activeSessionID != source {
+		t.Fatalf("dials=%d shares=%d tabs=%d active=%d", len(world.conns), len(world.shared), len(state.sessions), state.activeSessionID)
+	}
+}
+
+func TestContainerTabDoesNotReconnectAsAnOrdinarySSHHost(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.sessions[0].term.live = true
+	if err := state.openContainerTab(state.activeSessionID, "web", "docker exec -it 0f1e2d3c4b5a /bin/sh"); err != nil {
+		t.Fatal(err)
+	}
+	tab := &state.sessions[1]
+	state.connectionReconnect = reconnectForever
+	state.updateReconnect(tab, sshconn.Status{Phase: sshconn.PhaseClosed, Err: sshconn.ErrDisconnected})
+	if tab.reconnectPending || state.reconnectWaiters != 0 || len(world.conns) != 1 {
+		t.Fatalf("container tab scheduled another login: pending=%v waiters=%d dials=%d", tab.reconnectPending, state.reconnectWaiters, len(world.conns))
+	}
+}
+
+func TestContainerTabIsNotSavedOrRestoredAsAnOrdinaryHost(t *testing.T) {
+	world, options := newSharingWorld(t)
+	first := newTestState(t, options)
+	world.connectFirst(t, first)
+	source := first.activeSessionID
+	first.sessions[0].term.live = true
+	if err := first.openContainerTab(source, "web", "docker exec -it 0f1e2d3c4b5a sh"); err != nil {
+		t.Fatal(err)
+	}
+	saved := first.snapshot()
+	if len(saved.Sessions) != 1 || saved.Deck == nil || len(saved.Deck.Workspaces) != 1 {
+		t.Fatalf("command tab persisted: sessions=%d workspaces=%+v", len(saved.Sessions), saved.Deck)
+	}
+	second := newTestState(t, options)
+	if len(second.sessions) != 1 || second.sessions[0].ID == 0 || second.sessions[0].containerCommand != "" ||
+		len(second.deck.Workspaces(nil)) != 1 || second.activeSessionID != second.sessions[0].ID {
+		t.Fatalf("restored a command tab as an ordinary host: sessions=%+v workspaces=%+v", second.sessions, second.deck.Workspaces(nil))
+	}
+}
+
+func TestLoneContainerTabRestoresNeitherHostNorEmptyWorkspace(t *testing.T) {
+	world, options := newSharingWorld(t)
+	first := newTestState(t, options)
+	world.connectFirst(t, first)
+	source := first.activeSessionID
+	first.sessions[0].term.live = true
+	if err := first.openContainerTab(source, "web", "docker exec -it 0f1e2d3c4b5a sh"); err != nil {
+		t.Fatal(err)
+	}
+	workspace, _, ok := first.deck.PaneForSession(layoutcore.SessionID(source))
+	if !ok {
+		t.Fatal("source has no workspace")
+	}
+	first.closeWorkspace(workspace)
+	saved := first.snapshot()
+	if len(saved.Sessions) != 0 || saved.Deck == nil || len(saved.Deck.Workspaces) != 0 || saved.Deck.ActiveWorkspace != 0 {
+		t.Fatalf("a command-only workspace persisted: sessions=%+v deck=%+v", saved.Sessions, saved.Deck)
+	}
+	restored := newTestState(t, options)
+	if len(restored.sessions) != 0 || len(restored.deck.Workspaces(nil)) != 0 {
+		t.Fatalf("command-only workspace restored an empty or ordinary host tab: %+v", restored.sessions)
+	}
+}
+
+func TestEndedContainerTabCannotInterceptOpeningItsOriginalHost(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	sourceID, host := state.activeSessionID, state.sessions[0].host
+	state.sessions[0].term.live = true
+	if err := state.openContainerTab(sourceID, "web", "docker exec -it 0f1e2d3c4b5a sh"); err != nil {
+		t.Fatal(err)
+	}
+	workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(sourceID))
+	if !ok {
+		t.Fatal("source tab lost its workspace")
+	}
+	state.closeWorkspace(workspace)
+	if len(state.sessions) != 1 || state.sessions[0].containerCommand == "" {
+		t.Fatalf("command tab did not remain after closing source: %+v", state.sessions)
+	}
+	opened := state.openHostSession(host)
+	if opened == nil || opened.containerCommand != "" || opened.ID == state.sessions[0].ID || len(state.sessions) != 2 {
+		t.Fatalf("ordinary host reused command tab: opened=%+v dials=%d tabs=%d", opened, len(world.conns), len(state.sessions))
+	}
+}
+
+func TestContainerTabDoesNotAssumePOSIXShellOnWindowsSSHHost(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.sessions[0].term.live = true
+	state.sessions[0].host.System = sshconn.SystemWindows
+	if err := state.openContainerTab(state.activeSessionID, "web", "docker exec -it 0f1e2d3c4b5a sh"); err == nil {
+		t.Fatal("Windows SSH host accepted an unverified POSIX command tab")
+	}
+	if len(state.sessions) != 1 || len(world.shared) != 0 {
+		t.Fatalf("Windows host opened an unsupported tab: tabs=%d shares=%d", len(state.sessions), len(world.shared))
 	}
 }
 

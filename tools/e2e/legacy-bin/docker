@@ -1,0 +1,33 @@
+#!/bin/sh
+case "$1 $2" in
+  'ps -a')
+    case "$*" in
+      *'.State'*) echo 'Template parsing error: executing at <.State>: can'"'"'t evaluate field State in type *formatter.containerContext' >&2; exit 1 ;;
+      *) printf '%s\n' '0f1e2d3c4b5a|web|nginx:1.27|Up 2 hours (healthy)' 'a1b2c3d4e5f6|old-job|alpine:3.19|Exited (0) 3 days ago'; exit 0 ;;
+    esac ;;
+  'images --format')
+    case "$*" in
+      *'.CreatedSince'*) echo 'Template parsing error: at <.CreatedSince>: can'"'"'t evaluate field CreatedSince' >&2; exit 1 ;;
+      *) echo 'd4c45f66efc5|debian:bookworm-slim|74.9MB'; exit 0 ;;
+    esac ;;
+  'volume ls')
+    case "$*" in
+      *'.Scope'*) echo 'Template parsing error: at <.Scope>: can'"'"'t evaluate field Scope' >&2; exit 1 ;;
+      *) echo 'pgdata|local'; exit 0 ;;
+    esac ;;
+  'network ls')
+    case "$*" in
+      *'.Scope'*) echo 'Template parsing error: at <.Scope>: can'"'"'t evaluate field Scope' >&2; exit 1 ;;
+      *) echo '4cb549b7e5e0|app_default|bridge'; exit 0 ;;
+    esac ;;
+  'compose ls')
+    echo 'unknown flag: --format' >&2; exit 1 ;;
+  'inspect --format')
+    printf '%s\n' '0f1e2d3c4b5a0000000000000000000000000000000000000000000000000000'; exit 0 ;;
+  'exec -it')
+    echo 'fixture-container-shell-ready'; exit 0 ;;
+  exec\ *)
+    exit 0 ;;
+esac
+echo "unexpected fake docker command: $*" >&2
+exit 125

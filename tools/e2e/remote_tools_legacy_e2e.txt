@@ -1,0 +1,44 @@
+# The existing remote-tools dialog against a loopback-only SSH fixture whose
+# Docker and ps binaries model an older CLI. Never points at a saved host.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   E2E_ALLOW_EXEC=1 PATH="$PWD/tools/e2e/legacy-bin:$PATH" /tmp/e2esshd 2222
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en MOTTY_DATA_DIR="$(mktemp -d)" python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/remote_tools_legacy_e2e.txt
+#
+# The fixture runs the container command once and exits, so this tests opening
+# an independent tab, not a real long-lived container's interactive input.
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+click "Command Palette"
+type processes
+waitfor "Processes & containers" 2000
+key enter
+waitfor "Remote tools" 3000
+click "Containers"
+waitfor "web" 8000
+click "Images"
+waitfor "debian:bookworm-slim" 8000
+click "Volumes"
+waitfor "pgdata" 8000
+click "Networks"
+waitfor "app_default" 8000
+click "Compose"
+waitfor "cannot list projects" 8000
+click "Processes"
+waitfor "nginx: worker" 8000
+click "Containers"
+waitfor "web" 8000
+click "web"
+click "Open Shell"
+waitfor "fixture-container-shell-ready" 8000
+settle 800
+layout

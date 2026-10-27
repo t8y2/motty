@@ -411,6 +411,7 @@ type ToolsMessages struct {
 	RemoteConfirmDownFmt            string
 	RemoteDown                      string
 	RemoteErrNoCompose              string
+	RemoteErrComposeListUnsupported string
 	RemoteReniceLower               string
 	RemoteReniceNormal              string
 	RemoteReniceHigher              string
@@ -448,6 +449,10 @@ type ToolsMessages struct {
 	RemoteStop                      string
 	RemoteRestart                   string
 	RemoteLogs                      string
+	RemoteEnterShell                string
+	RemoteErrNoShell                string
+	RemoteShellRequiresRunning      string
+	RemoteShellUnsupportedHost      string
 	RemoteRemove                    string
 	RemotePull                      string
 	RemotePullTitle                 string

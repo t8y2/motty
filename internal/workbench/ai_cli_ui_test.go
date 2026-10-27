@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -63,11 +62,7 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 		t.Fatal(err)
 	}
 	clickID(hitAISetFormName)
-	selectAll := "ctrl+a"
-	if runtime.GOOS == "darwin" {
-		selectAll = "cmd+a"
-	}
-	if err := view.Keys(selectAll); err != nil {
+	if err := view.Keys("cmd+a"); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Type("Codex CLI"); err != nil {
