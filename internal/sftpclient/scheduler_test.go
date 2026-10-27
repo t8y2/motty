@@ -2,6 +2,7 @@ package sftpclient
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -254,5 +255,58 @@ func TestTheSpeedIsMeasuredOverAWindowAndSmoothed(t *testing.T) {
 	waitResult(t, worker)
 	if got := snapshotOf(worker, id).BytesPerSecond; got != 0 {
 		t.Fatalf("a finished transfer still has a speed of %d", got)
+	}
+}
+
+func TestCanceledQueuedTaskCanRetryOrBeForgottenImmediately(t *testing.T) {
+	remote := newGateRemote(1, "a", "b")
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer func() { worker.Close(); <-worker.Done() }()
+	worker.SetParallel(1)
+	active, _ := worker.QueueDownload("/a", filepath.Join(t.TempDir(), "a"), false, ExistingFail)
+	queued, _ := worker.QueueDownload("/b", filepath.Join(t.TempDir(), "b"), false, ExistingFail)
+	if snapshotOf(worker, queued).State != TransferQueued {
+		t.Fatal("second task did not queue")
+	}
+	if !worker.CancelTransfer(queued) || !snapshotOf(worker, queued).Retryable {
+		t.Fatal("queued cancellation was not settled")
+	}
+	if !worker.Retry(queued, ExistingFail) {
+		t.Fatal("queued canceled task could not retry")
+	}
+	if !worker.CancelTransfer(queued) || !worker.ForgetTransfer(queued) {
+		t.Fatal("queued canceled task could not be removed")
+	}
+	if snapshotOf(worker, active).State != TransferRunning {
+		t.Fatal("canceling queued work affected the active task")
+	}
+}
+
+func TestFullQueueDoesNotForgetACancelUntilItsCopySettles(t *testing.T) {
+	remote := newGateRemote(1, "a", "b")
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer func() { worker.Close(); <-worker.Done() }()
+	dir := t.TempDir()
+	first, _ := worker.QueueDownload("/a", filepath.Join(dir, "a"), false, ExistingFail)
+	worker.QueueDownload("/b", filepath.Join(dir, "b"), false, ExistingFail)
+	for index := 2; index < maxQueuedRequests; index++ {
+		if _, ok := worker.QueueDownload("/a", filepath.Join(dir, fmt.Sprint(index)), false, ExistingFail); !ok {
+			t.Fatal("queue filled early")
+		}
+	}
+	waitFor(t, "both copies blocked in reads", func() bool { return remote.reads.Load() >= 2 })
+	worker.CancelTransfer(first)
+	if _, ok := worker.QueueDownload("/a", filepath.Join(dir, "extra"), false, ExistingFail); ok {
+		t.Fatal("evicted a cancellation whose copy is still active")
+	}
+	if !worker.stopped(worker.snapshot(), first) {
+		t.Fatal("eviction forgot the cancellation signal")
+	}
+	remote.release("a", 1)
+	if result := waitResult(t, worker); result.TransferID != first || !errors.Is(result.Err, ErrCanceled) {
+		t.Fatalf("result=%+v", result)
+	}
+	if _, ok := worker.QueueDownload("/a", filepath.Join(dir, "extra"), false, ExistingFail); !ok {
+		t.Fatal("settled history did not release capacity")
 	}
 }

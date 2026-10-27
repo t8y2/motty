@@ -30,7 +30,6 @@ var (
 	hitSFTPBookmarkDismiss = tree.ID(sftpHits, "sftp-bookmark-dismiss")
 	hitSFTPExtract         = tree.ID(sftpHits, "sftp-extract")
 	hitSFTPDialogField2    = tree.ID(sftpHits, "sftp-dialog-field2")
-	hitSFTPDialogSkip      = tree.ID(sftpHits, "sftp-dialog-skip")
 )
 
 var (
@@ -45,7 +44,6 @@ var (
 var (
 	hitSFTPBookmarkItemList   = tree.Sub(sftpHits, tree.Name("sftp-bookmark-item")) // + index of a bookmark of the host
 	hitSFTPBookmarkRemoveList = tree.Sub(sftpHits, tree.Name("sftp-bookmark-remove"))
-	hitSFTPTransferPauseList  = tree.Sub(sftpHits, tree.Name("sftp-transfer-pause")) // + row of the transfer queue
 )
 
 const (
@@ -135,27 +133,10 @@ func (state *State) clickSFTPExtra(session *Session, view *sftpView, id ui.ID) b
 		}
 	case id == hitSFTPExtract && !view.busy:
 		state.openSFTPExtractDialog(view)
-	case id.Scope() == hitSFTPTransferPauseList:
-		state.togglePauseSFTPTransfer(view, item(id))
 	default:
 		return false
 	}
 	return true
-}
-
-// togglePauseSFTPTransfer pauses a running or queued transfer, or lets a paused
-// one go on.
-func (state *State) togglePauseSFTPTransfer(view *sftpView, index int) {
-	if index < 0 || index >= len(view.transferRows) {
-		return
-	}
-	snapshot := view.transferRows[index].snapshot
-	if snapshot.State == sftpclient.TransferPaused {
-		view.worker.Resume(snapshot.ID)
-	} else {
-		view.worker.Pause(snapshot.ID)
-	}
-	state.refreshSFTPTransfers(view)
 }
 
 // ---- symbolic links ----
@@ -164,7 +145,6 @@ func (state *State) openSFTPLinkDialog(view *sftpView) {
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogError = ""
-	view.dialogTransferID = 0
 	if entry, ok := state.selectedSFTPEntry(view); ok {
 		view.dialogEditor2.Insert(entry.Name) // a link to what is selected is the usual wish
 	}

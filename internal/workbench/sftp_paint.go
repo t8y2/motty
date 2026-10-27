@@ -56,8 +56,8 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	pal, messages := state.pal, state.messages
 	folder, local := view.active(), view.local
 
-	// What the page shows decides its parts. The selection bar and the transfer
-	// queue are as tall as what they hold; the list takes what they leave.
+	// What the page shows decides its parts. The selection bar and the file
+	// actions are as tall as what they hold; the list takes what they leave.
 	selectedCount, selected := selectedSFTP(view)
 	one := selectedCount == 1
 	starred := !local && state.bookmarked(session, path.Clean(view.path))
@@ -83,8 +83,6 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	var buttons [20]sftpIconButton
 	buttonCount := 0
 	var crumbs, popupTop, listSlot, spinnerSlot flex.Box
-	var queueBars [4]flex.Box
-	queueFirst := max(0, len(view.transferRows)-len(queueBars))
 
 	f := state.filesLayout.Begin(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
 	// icon declares an icon button where it goes; it is painted after End.
@@ -185,44 +183,6 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 			})
 		}
 
-		if len(view.transferRows) > 0 {
-			f.Column().Shrink(0).MarginSides(0, 0, 6, 0).Children(func() {
-				f.Text(messages.SFTPTransferQueue).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).MarginSides(5, 0, 1, 0)
-				f.Column().Gap(4).Children(func() {
-					for index := queueFirst; index < len(view.transferRows); index++ {
-						row := &view.transferRows[index]
-						// The progress is a line along the bottom edge, over the row.
-						f.Stack().Height(38).Shrink(0).Background(pal.surface).Children(func() {
-							f.Row().Gap(6).Items(flex.Center).PadX(10).Children(func() {
-								f.Column().Grow(1).Children(func() {
-									f.Text(row.title).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(16)
-									f.Text(row.status).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
-								})
-								switch row.snapshot.State {
-								case sftpclient.TransferQueued, sftpclient.TransferRunning, sftpclient.TransferPaused:
-									label := messages.Tools.TransferPause
-									if row.snapshot.State == sftpclient.TransferPaused {
-										label = messages.Tools.TransferResume
-									}
-									f.Button(hitSFTPTransferPauseList.At(index), label).Small().Ghost()
-									f.Button(hitSFTPTransferCancelList.At(index), messages.SFTPCancelTransfer).Small().Outline().Width(90)
-								case sftpclient.TransferFailed, sftpclient.TransferCanceled:
-									if row.snapshot.Retryable {
-										f.Button(hitSFTPTransferRetryList.At(index), messages.SFTPRetryTransfer).Small().Outline().Width(80)
-									}
-								}
-							})
-							if row.snapshot.BytesTotal > 0 {
-								f.Column().Justify(flex.End).Children(func() {
-									queueBars[index-queueFirst] = f.Slot().Height(2)
-								})
-							}
-						})
-					}
-				})
-			})
-		}
-
 		// What is happening.
 		f.Row().Height(28).Shrink(0).Gap(8).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			if view.busy {
@@ -239,14 +199,6 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	state.paintSFTPIconButtons(canvas, buttons[:buttonCount])
 	state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
 	state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
-	for index := queueFirst; index < len(view.transferRows); index++ {
-		row := &view.transferRows[index]
-		if row.snapshot.BytesTotal > 0 {
-			bar := queueBars[index-queueFirst].Rect()
-			fraction := min(float32(1), float32(row.snapshot.BytesDone)/float32(row.snapshot.BytesTotal))
-			canvas.Fill(ui.Rect{X: bar.X, Y: bar.Y, Width: bar.Width * fraction, Height: bar.Height}, pal.accent)
-		}
-	}
 	if view.bookmarksOpen && !local {
 		state.paintSFTPBookmarkPopup(canvas, popupTop.Rect().Y, size, session, view)
 	}
@@ -523,11 +475,6 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 		description = fmt.Sprintf(messages.Tools.ExtractDescriptionFmt, view.dialogEntry.Name)
 		fieldLabel = messages.Tools.ExtractFolder
 		submitLabel = messages.Tools.ExtractConfirm
-	case sftpDialogOverwrite:
-		title = messages.SFTPOverwriteTitle
-		description = fmt.Sprintf(messages.SFTPOverwriteDescriptionFmt, view.dialogError)
-		submitLabel = messages.SFTPOverwriteConfirm
-		initialFocus = hitSFTPDialogCancel
 	case sftpDialogDiscardEdit:
 		title = messages.SFTPEditDiscardTitle
 		description = messages.SFTPEditDiscardDescription
@@ -613,17 +560,9 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 			})
 		}
 	}
-	if view.dialog == sftpDialogOverwrite {
-		dialog.Actions(layout,
-			components.ButtonAction{ID: hitSFTPDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-			components.ButtonAction{ID: hitSFTPDialogSkip, Label: messages.Tools.SkipExisting, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitSFTPDialogSubmit, Label: submitLabel, Variant: submitVariant},
-		)
-	} else {
-		dialog.Actions(layout,
-			components.ButtonAction{ID: hitSFTPDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-			components.ButtonAction{ID: hitSFTPDialogSubmit, Label: submitLabel, Variant: submitVariant},
-		)
-	}
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitSFTPDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: submitLabel, Variant: submitVariant},
+	)
 	dialog.End()
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -35,12 +34,6 @@ type sftpRow struct {
 	mono     bool     // the glyph has no colors of its own and is tinted
 }
 
-type sftpTransferRow struct {
-	snapshot sftpclient.TransferSnapshot
-	title    string
-	status   string
-}
-
 type sftpDialogKind uint8
 
 const (
@@ -49,7 +42,6 @@ const (
 	sftpDialogRename
 	sftpDialogDelete
 	sftpDialogChmod
-	sftpDialogOverwrite
 	sftpDialogDiscardEdit
 	sftpDialogReloadEdit
 	sftpDialogRemoteChanged
@@ -72,7 +64,9 @@ type sftpFolder struct {
 
 type sftpView struct {
 	detached *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
-	worker   *sftpclient.Worker
+	worker                          *sftpclient.Worker
+	transferScan                    uint64
+	transferServer, transferAddress string
 	// sftpFolder is the server's folder; lfolder is this computer's, shown
 	// instead of it while local is set.
 	sftpFolder
@@ -101,9 +95,7 @@ type sftpView struct {
 	cancelExtract         context.CancelFunc
 	dialogEntry           sftpclient.Entry
 	dialogError           string
-	dialogTransferID      uint64
 	transfers             []sftpclient.TransferSnapshot
-	transferRows          []sftpTransferRow
 	refreshAfterTransfers bool
 	editPath              string
 	editName              string
@@ -159,6 +151,7 @@ func (state *State) openSFTP(session *Session) {
 	}
 	connection, transfer := session.conn, session.host.Transfer
 	view := &sftpView{busy: true, operation: sftpclient.OperationList, status: state.messages.SFTPLoading}
+	view.transferServer, view.transferAddress = session.Title, session.Address
 	view.selected, view.lfolder.selected = -1, -1
 	view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, transfer) }, state.notifyFor(session))
 	state.configureSFTPWorker(view)
@@ -178,6 +171,8 @@ func (state *State) closeSFTP(session *Session) {
 	}
 	if session.files.worker != nil {
 		session.files.worker.Close()
+		state.refreshSFTPTransfers(session.files)
+		state.archiveTransfers(session.files)
 	}
 	session.files = nil
 }
@@ -202,7 +197,7 @@ func (state *State) clickSFTP(id ui.ID) {
 		return
 	}
 	if id == hitSFTPClose {
-		state.closeSFTP(session)
+		state.releaseIdleSFTP(session)
 		context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 		context.Open = false
 		_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
@@ -276,12 +271,6 @@ func (state *State) clickSFTP(id ui.ID) {
 		if index < len(view.crumbs) {
 			state.openSFTPDirectory(view, view.crumbs[index].path)
 		}
-	case id.Scope() == hitSFTPTransferRetryList:
-		state.retrySFTPTransfer(view, item(id))
-	case id.Scope() == hitSFTPTransferCancelList:
-		index := item(id)
-		view.worker.CancelTransfer(view.transferRows[index].snapshot.ID)
-		view.status = state.messages.SFTPCanceling
 	case id.Scope() == hitSFTPEntryList && !view.busy:
 		index := view.first + item(id)
 		if index < len(view.rows) {
@@ -312,7 +301,7 @@ func (state *State) sftpEditor(hit ui.ID) *text.Editor {
 	if hit == hitSFTPDialogField2 && session.files.dialog == sftpDialogSymlink {
 		return &session.files.dialogEditor2
 	}
-	if hit != hitSFTPDialogField || session.files.dialog == sftpDialogNone || session.files.dialog == sftpDialogDelete || session.files.dialog == sftpDialogOverwrite || session.files.dialog == sftpDialogDiscardEdit || session.files.dialog == sftpDialogReloadEdit || session.files.dialog == sftpDialogRemoteChanged {
+	if hit != hitSFTPDialogField || session.files.dialog == sftpDialogNone || session.files.dialog == sftpDialogDelete || session.files.dialog == sftpDialogDiscardEdit || session.files.dialog == sftpDialogReloadEdit || session.files.dialog == sftpDialogRemoteChanged {
 		return nil
 	}
 	return &session.files.dialogEditor
@@ -753,6 +742,7 @@ func (state *State) queueSFTPDownload(view *sftpView, entry sftpclient.Entry, lo
 	}
 	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
 	view.errorText = ""
+	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
 	state.refreshSFTPTransfers(view)
 }
 
@@ -793,19 +783,19 @@ func (state *State) queueSFTPUploadTo(view *sftpView, localPath string, recursiv
 	}
 	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, name)
 	view.errorText = ""
+	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
 	state.refreshSFTPTransfers(view)
 }
 
 func (state *State) refreshSFTPTransfers(view *sftpView) {
 	view.transfers = view.worker.Transfers(view.transfers)
-	view.transferRows = prepareSFTPTransferRows(view.transferRows, view.transfers, state.messages)
+	state.syncTransfers(view)
 }
 
 func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEditor = text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogError = ""
-	view.dialogTransferID = 0
 	if dialog != sftpDialogCreateDirectory {
 		entry, ok := state.selectedSFTPEntry(view)
 		if !ok {
@@ -823,25 +813,11 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialog = dialog
 }
 
-func (state *State) retrySFTPTransfer(view *sftpView, index int) {
-	if index < 0 || index >= len(view.transferRows) {
-		return
-	}
-	transfer := view.transferRows[index].snapshot
-	if !transfer.Retryable {
-		return
-	}
-	view.dialog = sftpDialogOverwrite
-	view.dialogTransferID = transfer.ID
-	view.dialogError = transfer.Destination
-}
-
 func (state *State) closeSFTPDialog(view *sftpView) {
 	view.dialog = sftpDialogNone
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogError = ""
-	view.dialogTransferID = 0
 }
 
 func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
@@ -850,16 +826,6 @@ func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
 		state.closeSFTPDialog(view)
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)
-	case hitSFTPDialogSkip:
-		if view.dialog == sftpDialogOverwrite {
-			if !view.worker.Retry(view.dialogTransferID, sftpclient.ExistingSkip) {
-				view.dialogError = state.messages.SFTPUnavailable
-				return
-			}
-			state.closeSFTPDialog(view)
-			view.status = state.messages.SFTPLoading
-			view.errorText = ""
-		}
 	}
 }
 
@@ -881,15 +847,6 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		return
 	}
 	switch view.dialog {
-	case sftpDialogOverwrite:
-		if !view.worker.Retry(view.dialogTransferID, sftpclient.ExistingResume) {
-			view.dialogError = state.messages.SFTPUnavailable
-			return
-		}
-		state.closeSFTPDialog(view)
-		view.status = state.messages.SFTPLoading
-		view.errorText = ""
-		return
 	case sftpDialogSymlink:
 		state.submitSFTPLink(view)
 		return
@@ -1000,19 +957,17 @@ func (state *State) pumpSFTP(session *Session) {
 				if result.Err != nil {
 					if errors.Is(result.Err, sftpclient.ErrCanceled) {
 						view.status = state.messages.SFTPCanceled
-					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) && view.dialog == sftpDialogNone {
-						view.dialog = sftpDialogOverwrite
-						view.dialogTransferID = result.TransferID
-						view.dialogError = transferDestination(view.transfers, result.TransferID)
+					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
+						state.transfers.open = true
 					} else {
 						view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
 					}
 				} else if result.Operation == sftpclient.OperationUpload {
 					view.refreshAfterTransfers = true
-					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, result.Bytes, result.Path)
+					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 				} else {
-					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, result.Bytes, result.LocalPath)
+					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
 				}
 				state.refreshSFTPTransfers(view)
 				continue
@@ -1056,10 +1011,10 @@ func (state *State) pumpSFTP(session *Session) {
 				}
 				state.showSFTPListing(view, result.Path, result.Entries)
 			case sftpclient.OperationDownload:
-				view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, result.Bytes, result.LocalPath)
+				view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
 			case sftpclient.OperationUpload:
 				view.forgetListings()
-				view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, result.Bytes, result.Path)
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 				state.listSFTP(view, view.path)
 			case sftpclient.OperationCreateDirectory:
 				view.forgetListings()
@@ -1111,15 +1066,6 @@ func (state *State) pumpSFTP(session *Session) {
 	}
 }
 
-func transferDestination(transfers []sftpclient.TransferSnapshot, id uint64) string {
-	for index := range transfers {
-		if transfers[index].ID == id {
-			return transfers[index].Destination
-		}
-	}
-	return ""
-}
-
 func sftpTransfersActive(transfers []sftpclient.TransferSnapshot) bool {
 	for index := range transfers {
 		if state := transfers[index].State; state == sftpclient.TransferQueued || state == sftpclient.TransferRunning || state == sftpclient.TransferPaused {
@@ -1127,39 +1073,6 @@ func sftpTransfersActive(transfers []sftpclient.TransferSnapshot) bool {
 		}
 	}
 	return false
-}
-
-func prepareSFTPTransferRows(rows []sftpTransferRow, transfers []sftpclient.TransferSnapshot, messages i18n.Messages) []sftpTransferRow {
-	if cap(rows) < len(transfers) {
-		rows = make([]sftpTransferRow, len(transfers))
-	} else {
-		rows = rows[:len(transfers)]
-	}
-	for index := range transfers {
-		transfer := transfers[index]
-		title := filepath.Base(transfer.Source)
-		if transfer.Operation == sftpclient.OperationDownload {
-			title = path.Base(transfer.Source)
-		}
-		status := fmt.Sprintf(messages.SFTPQueuedFmt, title)
-		switch transfer.State {
-		case sftpclient.TransferRunning:
-			status = fmt.Sprintf(messages.SFTPProgressFmt, transfer.BytesDone, transfer.BytesTotal, transfer.FilesDone, transfer.FilesTotal)
-			if transfer.BytesPerSecond > 0 {
-				status += " · " + fmt.Sprintf(messages.Tools.TransferSpeedFmt, formatBytes(transfer.BytesPerSecond))
-			}
-		case sftpclient.TransferPaused:
-			status = fmt.Sprintf(messages.Tools.TransferPausedFmt, formatBytes(transfer.BytesDone), formatBytes(transfer.BytesTotal))
-		case sftpclient.TransferCompleted:
-			status = fmt.Sprintf(messages.SFTPTransferDoneFmt, transfer.BytesDone)
-		case sftpclient.TransferFailed:
-			status = fmt.Sprintf(messages.SFTPTransferFailedFmt, transfer.Error)
-		case sftpclient.TransferCanceled:
-			status = messages.SFTPCanceled
-		}
-		rows[index] = sftpTransferRow{snapshot: transfer, title: title, status: status}
-	}
-	return rows
 }
 
 func prepareSFTPRows(rows []sftpRow, entries []sftpclient.Entry) []sftpRow {
@@ -1286,7 +1199,7 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			view.bookmarksOpen = false
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
-		state.closeSFTP(session)
+		state.clickSFTP(hitSFTPClose)
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	case ui.KeyEnter:
 		if event.Target.Scope() == hitSFTPEntryList {
