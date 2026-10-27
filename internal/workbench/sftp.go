@@ -202,6 +202,10 @@ func (state *State) clickSFTP(id ui.ID) {
 		state.save()
 		return
 	}
+	if id == hitSFTPPanelSide {
+		state.toggleSFTPPanelSide()
+		return
+	}
 	view := session.files
 	if view == nil {
 		return

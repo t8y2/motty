@@ -523,6 +523,8 @@ type State struct {
 	sftpKeepTimesOff  bool
 	sftpFollowOff     bool
 	sftpPathInput     bool
+	sftpPanelAutoOpen bool
+	sftpPanelSide     layoutcore.ContextSide
 	sftpBookmarks     []sftpBookmark
 	transferLeftover  []byte
 	secrets           secretsUI
@@ -1977,6 +1979,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 		return nil
 	}
 	state.nextSessionID++
+	state.initializeSFTPPanel(workspaceID, false)
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title

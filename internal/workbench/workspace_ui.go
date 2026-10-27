@@ -28,10 +28,10 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	bounds := state.baseWorkspacePixelBounds(size)
 	context, ok := state.deck.Context(workspaceID)
 	if ok && context.Open && size.Width >= contextDrawerAt {
-		// The files panel sits on the left, so the panes start after it and its
-		// one-pixel divider.
 		panel := state.contextPanelExtent(bounds, context.Width) + 1
-		bounds.X += panel
+		if context.Side == layoutcore.ContextLeft {
+			bounds.X += panel
+		}
 		bounds.Width = max(0, bounds.Width-panel)
 	}
 	// The assistant's panel sits on the right, so the panes end before it.
@@ -269,9 +269,13 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 		defer state.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, session.files)
 	}
 	if size.Width < contextDrawerAt {
+		side := components.DrawerLeft
+		if context.Side == layoutcore.ContextRight {
+			side = components.DrawerRight
+		}
 		drawer := components.BeginDrawer(canvas, state.Theme(), state.baseWorkspacePixelBounds(size), components.DrawerOptions{
 			Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPClose, CloseID: hitSFTPClose,
-			Side: components.DrawerLeft, ContentExtent: min(context.Width, size.Width*0.82),
+			Side: side, ContentExtent: min(context.Width, size.Width*0.82),
 			InitialFocusID: hitSFTPClose,
 		})
 		description := ""
@@ -283,15 +287,12 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 		drawer.End()
 		return
 	}
-	base := state.baseWorkspacePixelBounds(size)
-	panelWidth := state.contextPanelExtent(base, context.Width)
-	maximumPanel := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
-	minimumPanel := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	resizable := components.BeginResizable(canvas, state.Theme(), hitContextDivider, base, panelWidth/max(base.Width-1, 1)).
-		Limits(minimumPanel/max(base.Width-1, 1), maximumPanel/max(base.Width-1, 1)).
-		HandleSize(paneDividerHitWidth)
+	resizable := state.sftpPanelResizable(canvas, size, context)
 	layout := resizable.Paint(state.messages.SFTPFiles)
 	panel := layout.First
+	if context.Side == layoutcore.ContextRight {
+		panel = layout.Second
+	}
 	state.paintContextSFTP(canvas, panel, session)
 }
 
@@ -322,13 +323,14 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 	// The message sits a little above the middle of the panel.
 	middle := bounds.Height * 0.38
 
-	var closeButton, sessionTitle, openButton flex.Box
+	var closeButton, sideButton, sessionTitle, openButton flex.Box
 	buttonWidth := min(max(size.Width-2*sftpPad, 0), 160)
 	f := state.filesLayout.Begin(canvas, state.Theme(), bounds)
 	f.Stack().Fill().Background(pal.workspace).Children(func() {
 		f.Column().Fill().PadX(sftpPad).Children(func() {
 			f.Row().Height(infoBarHeight).Shrink(0).Gap(8).Items(flex.Center).Children(func() {
 				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				sideButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 				closeButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 			})
 			if session != nil {
@@ -348,6 +350,8 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 	f.End()
 
 	state.paintIconButton(canvas, hitSFTPClose, iconClose, closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, pal.workspace)
+	moveIcon, moveHint := state.sftpPanelMoveAction()
+	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, sideButton.Rect(), moveHint, false, iconButtonQuiet, pal.workspace)
 	if session != nil {
 		titleBounds := sessionTitle.Rect()
 		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, ui.WeightRegular, titleBounds.Width), titleBounds, ui.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
@@ -464,12 +468,12 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true}
 	}
 	base := state.baseWorkspacePixelBounds(event.Viewport)
-	maximumPanel := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
-	minimumPanel := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	resizable := components.BeginResizable(nil, state.Theme(), ui.ID{}, base, 0.5).
-		Limits(minimumPanel/max(base.Width-1, 1), maximumPanel/max(base.Width-1, 1)).
-		HandleSize(paneDividerHitWidth)
+	base.Width -= state.aiReserve(workspaceID, event.Viewport)
+	resizable := state.sftpPanelResizable(nil, event.Viewport, context)
 	ratio := resizable.FractionAt(event.X)
+	if context.Side == layoutcore.ContextRight {
+		ratio = 1 - ratio
+	}
 	width := (base.Width - 1) * ratio
 	if width == context.Width {
 		return ui.EventResult{Handled: true}

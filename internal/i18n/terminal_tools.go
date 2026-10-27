@@ -201,6 +201,12 @@ type ToolsMessages struct {
 
 	// The file panel.
 	CatFiles                        string
+	FilesPanelAutoOpen              string
+	FilesPanelAutoOpenDescription   string
+	FilesPanelPosition              string
+	FilesPanelPositionDescription   string
+	FilesPanelLeft, FilesPanelRight string
+	FilesMoveLeft, FilesMoveRight   string
 	FilesParallel                   string
 	FilesPathInput                  string
 	FilesPathStyle                  string

@@ -16,6 +16,7 @@ import (
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 // What the file panel does beyond listing, moving and editing: links, bookmarks,
@@ -41,6 +42,9 @@ var (
 	hitSettingsPathBreadcrumbs = tree.ID(sftpHits, "settings-path-breadcrumbs")
 	hitSettingsPathInput       = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup     = tree.ID(sftpHits, "settings-follow-setup")
+	hitSettingsPanelAutoOpen   = tree.ID(sftpHits, "settings-panel-auto-open")
+	hitSettingsPanelLeft       = tree.ID(sftpHits, "settings-panel-left")
+	hitSettingsPanelRight      = tree.ID(sftpHits, "settings-panel-right")
 )
 
 var (
@@ -375,8 +379,20 @@ func (state *State) settingsPathOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsSFTPPanelPositionOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsPanelLeft, Label: state.messages.Tools.FilesPanelLeft},
+		{ID: hitSettingsPanelRight, Label: state.messages.Tools.FilesPanelRight},
+	}
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
+	position := state.settingsSFTPPanelPositionOptions()
+	selectedPosition := hitSettingsPanelLeft
+	if state.sftpPanelSide == layoutcore.ContextRight {
+		selectedPosition = hitSettingsPanelRight
+	}
 	parallel := state.settingsParallelOptions()
 	pathOptions := state.settingsPathOptions()
 	selectedPath := hitSettingsPathBreadcrumbs
@@ -392,6 +408,8 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	}
 	page.groups(func() {
 		page.group("", func() {
+			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
+			page.row(m.FilesPanelPosition, m.FilesPanelPositionDescription, position[:], selectedPosition)
 			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
@@ -405,6 +423,18 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id ui.ID) bool {
 	switch id {
+	case hitSettingsPanelAutoOpen:
+		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
+		state.save()
+	case hitSettingsPanelLeft, hitSettingsPanelRight:
+		side := layoutcore.ContextLeft
+		if id == hitSettingsPanelRight {
+			side = layoutcore.ContextRight
+		}
+		if state.sftpPanelSide != side {
+			state.sftpPanelSide = side
+			state.save()
+		}
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		input := id == hitSettingsPathInput
 		if state.sftpPathInput != input {
@@ -575,6 +605,11 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpKeepTimesOff = saved.SFTPKeepTimes == "off"
 	state.sftpFollowOff = saved.SFTPFollow == "off"
 	state.sftpPathInput = saved.SFTPPathInput
+	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.sftpPanelSide = layoutcore.ContextLeft
+	if saved.SFTPPanelSide == "right" {
+		state.sftpPanelSide = layoutcore.ContextRight
+	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)

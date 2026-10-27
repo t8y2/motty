@@ -109,6 +109,8 @@ var syncedSettings = map[string]bool{
 	"sftp_keep_times":              true,
 	"sftp_follow":                  true,
 	"sftp_path_input":              true,
+	"sftp_panel_auto_open":         true,
+	"sftp_panel_side":              true,
 	"command_history":              true,
 	"command_suggest_off":          true,
 }

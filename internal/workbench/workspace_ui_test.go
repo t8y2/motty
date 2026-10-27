@@ -432,7 +432,7 @@ func TestContextDividerPersistsWidthAndRestoresTerminalFocus(t *testing.T) {
 	restored := New(state.options)
 	t.Cleanup(restored.Close)
 	restoredContext, ok := restored.deck.Context(restored.deck.ActiveWorkspace())
-	if !ok || !restoredContext.Open || restoredContext.Kind != layoutcore.ContextSFTP || restoredContext.Width != context.Width {
+	if !ok || restoredContext.Open != state.sftpPanelAutoOpen || restoredContext.Kind != layoutcore.ContextSFTP || restoredContext.Width != context.Width {
 		t.Fatalf("restored context = %+v, %v; want %+v", restoredContext, ok, context)
 	}
 }
