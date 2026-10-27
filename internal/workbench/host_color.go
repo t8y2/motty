@@ -54,16 +54,15 @@ func (state *State) paintHostColorChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	labels := [...]string{m.ColorNone, m.ColorGreen, m.ColorYellow, m.ColorOrange, m.ColorRed, m.ColorBlue, m.ColorPurple}
 	palette := bounds
 	palette.Width = 246
-	content := components.BeginField(canvas, state.Theme(), palette).Paint(m.FieldColor, "", "")
+	content := components.BeginField(canvas, state.Theme(), palette).LabelGap(hostLabelGap).Paint(m.FieldColor, "", "")
 	selected := state.editor.value(fieldColor)
 	for index, color := range hostColors {
 		swatch := ui.Rect{X: content.X + float32(index)*35, Y: content.Y, Width: 32, Height: 32}
 		components.BeginColorSwatch(canvas, state.Theme(), hitHostColors.At(index), swatch, hostAccent(color)).Label(labels[index]).Selected(strings.EqualFold(selected, color)).Paint()
 	}
-	custom := bounds
-	custom.X += 258
-	custom.Width -= 258
-	state.paintDialogField(canvas, hitDialogColor, fieldColor, m.FieldColorCustom, "#3B82F6", custom)
+	p := &state.editor.colorPicker
+	p.trigger = ui.Rect{X: content.X + float32(len(hostColors))*35, Y: content.Y, Width: 32, Height: 32}
+	components.BeginColorPicker(canvas, state.Theme(), p.trigger, state.hostPickerOptions(canvas)).PaintTrigger()
 }
 
 // Color stays on the header, never on the terminal cells or status light.

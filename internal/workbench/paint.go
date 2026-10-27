@@ -1487,7 +1487,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
 		f.Row().Height(rowHeight).Gap(16).Children(func() {
 			label = f.Slot().Grow(1)
-			colorField = f.Slot().Width(394).Shrink(0)
+			colorField = f.Slot().Width(277).Shrink(0)
 		})
 		endpoint = f.Slot().Height(float32(state.hostEndpointRows()) * rowHeight)
 		f.Row().Height(rowHeight).Gap(8).Children(func() {
@@ -1535,6 +1535,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAdvancedSection(canvas, advanced.Rect())
 	}
 
+	state.paintHostColorPicker(canvas)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitDialogCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitDialogSubmit, Label: submit},
@@ -1688,7 +1689,7 @@ func hostIconChoices() []hostIcon {
 // paintHostIconChoice paints the list of icons a host can have.
 func (state *State) paintHostIconChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	m, editor, theme := state.messages, &state.editor, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FieldIcon, "", "")
+	content := components.BeginField(canvas, theme, bounds).LabelGap(hostLabelGap).Paint(m.FieldIcon, "", "")
 	choices := hostIconChoices()
 	window := state.windowRect()
 	rows := min(len(choices), hostIconListRows)
@@ -1733,17 +1734,17 @@ func (state *State) paintHostIconChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 }
 
-func (state *State) paintDialogField(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect) {
-	state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, false)
+func (state *State) paintDialogField(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect) ui.Rect {
+	return state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, false)
 }
 
 func (state *State) paintSecureDialogField(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect) {
 	state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, true)
 }
 
-func (state *State) paintDialogFieldWithSecurity(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect, secure bool) {
+func (state *State) paintDialogFieldWithSecurity(canvas *ui.Canvas, id ui.ID, field hostField, title, placeholder string, bounds ui.Rect, secure bool) ui.Rect {
 	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).For(id).Paint(title, "", "")
+	content := components.BeginField(canvas, theme, bounds).For(id).LabelGap(hostLabelGap).Paint(title, "", "")
 	value := state.editor.field(field).String()
 	focused := canvas.Focused() == id
 	components.PaintInput(canvas, theme, content, components.InputSnapshot{
@@ -1755,6 +1756,7 @@ func (state *State) paintDialogFieldWithSecurity(canvas *ui.Canvas, id ui.ID, fi
 		Focused:         focused,
 		PlatformEditing: focused && value != "",
 	})
+	return content
 }
 
 // paintHostKeyDialog asks whether to trust a server's key. The safe choice,

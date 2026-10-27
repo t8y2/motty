@@ -562,7 +562,7 @@ func (state *State) hostProxyDescription() string {
 
 func (state *State) paintHostProxyRow(canvas *ui.Canvas, bounds ui.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.HostProxyRow, "", "")
+	content := components.BeginField(canvas, theme, bounds).LabelGap(hostLabelGap).Paint(m.HostProxyRow, "", "")
 	button := components.BeginButton(canvas, theme, hitHostProxyConfigure, ui.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
 	var action flex.Box
 	f := state.partLayout.Begin(canvas, theme, content)

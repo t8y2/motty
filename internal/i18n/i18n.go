@@ -291,6 +291,12 @@ type Messages struct {
 	FieldIcon                   string
 	FieldColor                  string
 	FieldColorCustom            string
+	ColorPickerChoose           string
+	ColorPickerSV               string
+	ColorPickerHue              string
+	ColorPickerClear            string
+	ColorPickerApply            string
+	ColorPickerInvalid          string
 	ColorNone                   string
 	ColorGreen                  string
 	ColorYellow                 string

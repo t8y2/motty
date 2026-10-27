@@ -129,7 +129,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, tools.FieldDevice, tools.FieldDevicePlaceholder, address.Rect())
 		state.paintPortsTrigger(canvas, picker.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, tools.FieldLine, tools.FieldLinePlaceholder, second.Rect())
-		content := components.BeginField(canvas, state.Theme(), third.Rect()).Paint(tools.FieldFlow, "", "")
+		content := components.BeginField(canvas, state.Theme(), third.Rect()).LabelGap(hostLabelGap).Paint(tools.FieldFlow, "", "")
 		options := [...]components.SegmentOption{
 			{ID: hitDialogFlowNone, Label: tools.FlowNone},
 			{ID: hitDialogFlowHardware, Label: tools.FlowHardware},
@@ -184,7 +184,7 @@ func (state *State) hostPasswordHint() string {
 // the machine's serial ports and puts the chosen one in the device field.
 func (state *State) paintPortsTrigger(canvas *ui.Canvas, bounds ui.Rect) {
 	m, editor := state.messages.Tools, &state.editor
-	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.PortsPicker, "", "")
+	content := components.BeginField(canvas, state.Theme(), bounds).LabelGap(hostLabelGap).Paint(m.PortsPicker, "", "")
 	count := min(len(editor.ports), maxListedPorts)
 	popupWidth := max(content.Width, 340)
 	selectControl := components.BeginSelect(canvas, state.Theme(), content, components.SelectOptions{
@@ -297,13 +297,16 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 // hostFormRowHeight is the height of one labelled row of the host dialog.
 const hostFormRowHeight = 58
 
+// Keep a little more air between a label and its input, local to host forms.
+const hostLabelGap = 6
+
 // hostPortWidth is the width of the port field: the label and five digits fit,
 // and the address keeps the rest of the row.
 const hostPortWidth = 84
 
 // hostDialogBaseHeight is the content height of the host dialog for its base
 // form, whose endpoint block takes two rows, before the protocol's own rows.
-const hostDialogBaseHeight = 472
+const hostDialogBaseHeight = 482
 
 // hostEndpointRows is how many labelled rows the endpoint block of the form
 // takes: the address with the port and, under it, the credentials. A serial
@@ -423,7 +426,7 @@ func (state *State) paintAlgorithmRows(canvas *ui.Canvas, x, y, width, rowHeight
 	})
 	f.End()
 
-	content := components.BeginField(canvas, state.Theme(), algo.Rect()).Paint(m.AlgoField, "", "")
+	content := components.BeginField(canvas, state.Theme(), algo.Rect()).LabelGap(hostLabelGap).Paint(m.AlgoField, "", "")
 	options := [...]components.SegmentOption{
 		{ID: hitDialogAlgoDefault, Label: m.AlgoDefault},
 		{ID: hitDialogAlgoCompatible, Label: m.AlgoCompatible},
