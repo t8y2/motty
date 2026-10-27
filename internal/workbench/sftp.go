@@ -55,6 +55,7 @@ const (
 	sftpDialogRemoteChanged
 	sftpDialogSymlink
 	sftpDialogExtract
+	sftpDialogCompress
 )
 
 // sftpFolder is a folder on show: where it is, its rows and the user's place in
@@ -97,6 +98,9 @@ type sftpView struct {
 	dropRow               int  // the folder row they are over, or -1
 	details               sftpDetails
 	extracting            bool
+	archiveSequence       uint64
+	archiveDirectory      string
+	archiveResults        chan archiveResult
 	cancelExtract         context.CancelFunc
 	dialogEntry           sftpclient.Entry
 	dialogError           string
@@ -876,6 +880,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 	case sftpDialogExtract:
 		state.submitSFTPExtract(view)
 		return
+	case sftpDialogCompress:
+		state.submitSFTPCompress(view)
+		return
 	case sftpDialogCreateDirectory:
 		if view.local {
 			state.submitLocalDirectory(view, value)
@@ -942,6 +949,14 @@ func (state *State) pumpSFTP(session *Session) {
 		return
 	}
 	view := session.files
+	state.pumpSFTPArchive(session, view)
+	defer func() {
+		// A list or transfer reply must not unlock the panel while an archive
+		// command is still using its captured source and destination.
+		if view.extracting {
+			view.busy = true
+		}
+	}()
 	if view.worker == nil {
 		return
 	}
@@ -1247,6 +1262,13 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		case ui.KeyEnter:
 			if event.Target == hitSFTPDialogField || event.Target == hitSFTPDialogField2 || event.Target == hitSFTPDialogSubmit {
+				if view.dialog == sftpDialogCompress || view.dialog == sftpDialogExtract {
+					if editor := state.sftpEditor(event.Target); editor != nil {
+						if _, composing := editor.Composition(); composing {
+							return ui.EventResult{Handled: true}, true
+						}
+					}
+				}
 				state.submitSFTPDialog(view)
 				return ui.EventResult{Handled: true, Repaint: true}, true
 			}

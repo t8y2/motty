@@ -233,6 +233,20 @@ type ToolsMessages struct {
 	ExtractRunningFmt               string
 	ExtractDoneFmt                  string
 	ExtractFailedFmt                string
+	ExtractFailedTitle              string
+	Compress                        string
+	CompressTitle                   string
+	CompressDescriptionFmt          string
+	CompressName                    string
+	CompressConfirm                 string
+	CompressErrorName               string
+	CompressRunningFmt              string
+	CompressDoneFmt                 string
+	CompressFailedTitle             string
+	CompressFailedFmt               string
+	ArchiveToolMissingFmt           string
+	ArchiveDestinationExistsFmt     string
+	ArchiveCanceledFmt              string
 	TransferPause                   string
 	TransferResume                  string
 	TransferPausedFmt               string

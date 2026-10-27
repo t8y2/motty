@@ -522,6 +522,11 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 		description = fmt.Sprintf(messages.Tools.ExtractDescriptionFmt, view.dialogEntry.Name)
 		fieldLabel = messages.Tools.ExtractFolder
 		submitLabel = messages.Tools.ExtractConfirm
+	case sftpDialogCompress:
+		title = messages.Tools.CompressTitle
+		description = fmt.Sprintf(messages.Tools.CompressDescriptionFmt, view.dialogEntry.Name)
+		fieldLabel = messages.Tools.CompressName
+		submitLabel = messages.Tools.CompressConfirm
 	case sftpDialogOverwrite:
 		title = messages.SFTPOverwriteTitle
 		description = fmt.Sprintf(messages.SFTPOverwriteDescriptionFmt, view.dialogError)
