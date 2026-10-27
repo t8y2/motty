@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -327,5 +328,50 @@ func TestAFailedUpdateIsRememberedOnceAndTheOldProgramIsStarted(t *testing.T) {
 	}
 	if reason := TakeFailure(dir); reason != "" {
 		t.Fatalf("the failure came back: %q", reason)
+	}
+}
+
+func TestAHelperThatDiesAtOnceIsReportedAndOneThatIsReadyIsNot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the helpers here are shell scripts")
+	}
+	launch := func(script string) error {
+		dir := t.TempDir()
+		exe := filepath.Join(dir, "bin", "motty")
+		if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		install := Install{Kind: KindLinuxPrefix, Exe: exe, Root: dir}
+		return (&Updater{Dir: filepath.Join(dir, "updates")}).Launch(Staged{Install: install, Path: dir})
+	}
+	if err := launch("exit 3"); err == nil || !strings.Contains(err.Error(), "exit status 3") {
+		t.Fatalf("a helper that exited at once was accepted: %v", err)
+	}
+	if err := launch("echo ready; sleep 1"); err != nil {
+		t.Fatalf("a helper that waits was refused: %v", err)
+	}
+}
+
+func TestTheMacHelperIsACopyOfTheWholeBundle(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("bundles are copied with ditto")
+	}
+	root := fakeApp(t, t.TempDir(), "Motty.app", "program")
+	if err := os.WriteFile(filepath.Join(root, "Contents", "Info.plist"), []byte("plist"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	install := Install{Kind: KindMacApp, Root: root, Exe: filepath.Join(root, "Contents", "MacOS", "motty")}
+	helper, err := stageHelper(install, filepath.Join(t.TempDir(), "helper"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(helper); string(data) != "program" || filepath.Base(helper) != "motty" {
+		t.Fatalf("helper %s holds %q", helper, data)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(helper), "..", "Info.plist")); err != nil {
+		t.Fatalf("the helper was taken out of its bundle: %v", err)
 	}
 }

@@ -205,6 +205,15 @@ replaced by the app: the dialog says to update it with the package manager or to
 the new installer, and a portable copy is sent to the release page. No update path
 asks for administrator rights.
 
+The replacement is made by a helper that outlives the app, so it never touches a
+file the running app holds. On macOS the helper is a copy of the whole bundle,
+not of the executable: a Developer ID signature covers the bundle's `Info.plist`,
+and the executable on its own no longer verifies, so the system kills it as it
+starts (exit 137, `amfid` logs `Code=-420`) and nothing is replaced. The app
+watches the helper for a moment after starting it and, if it dies at once, shows
+the failure instead of quitting. A development build signed with `--identifier`
+alone does not bind the `Info.plist`, so it cannot show this failure.
+
 ## The package matrix
 
 Every release carries the packages below for every platform and architecture:

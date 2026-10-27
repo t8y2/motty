@@ -1,15 +1,16 @@
 package selfupdate
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
+	"time"
 
 	"motty/internal/update"
 	"motty/internal/updatesign"
@@ -196,21 +197,24 @@ func findInstallScript(root string) (string, error) {
 	return "", errors.New("selfupdate: the package holds no install.sh")
 }
 
+// Ready is the line the helper prints once it has read its job and is waiting
+// for the program to quit.
+const Ready = "ready"
+
+// helperStartTimeout is how long Launch waits for the helper to say Ready. A
+// helper that starts does so at once; this only ends a wait on one that hangs.
+const helperStartTimeout = 10 * time.Second
+
 // Launch starts the helper that will replace the program once this process has
 // quit and start the new version. The caller must quit right after it returns
 // nil; the helper waits for that. The helper runs from a copy of the program, so
-// it holds no file of the installation that is being replaced.
+// it holds no file of the installation that is being replaced. Launch returns
+// only once the helper has started: one the system refuses to run, or that
+// cannot read its job, is an error and the caller keeps running.
 func (updater *Updater) Launch(staged Staged) error {
 	exe := staged.Install.Exe
-	helperDir := filepath.Join(updater.Dir, "helper")
-	if err := os.MkdirAll(helperDir, 0o700); err != nil {
-		return err
-	}
-	helper := filepath.Join(helperDir, "motty-update")
-	if runtime.GOOS == "windows" {
-		helper += ".exe"
-	}
-	if err := copyExecutable(exe, helper); err != nil {
+	helper, err := stageHelper(staged.Install, filepath.Join(updater.Dir, "helper"))
+	if err != nil {
 		return fmt.Errorf("selfupdate: preparing the installer: %w", err)
 	}
 	job := Job{
@@ -219,25 +223,31 @@ func (updater *Updater) Launch(staged Staged) error {
 	}
 	cmd := exec.Command(helper, job.Arguments()...)
 	detach(cmd)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	return cmd.Process.Release()
-}
-
-func copyExecutable(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
+	started := make(chan error, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		if strings.TrimSpace(line) == Ready {
+			started <- nil
+			return
+		}
+		err := cmd.Wait()
+		if err == nil {
+			err = errors.New("it exited")
+		}
+		started <- fmt.Errorf("selfupdate: the installer stopped as it started (%w); the system may have refused to run it", err)
+	}()
+	select {
+	case err := <-started:
 		return err
+	case <-time.After(helperStartTimeout):
+		cmd.Process.Kill()
+		return errors.New("selfupdate: the installer did not start")
 	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o700)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(out, in)
-	if closeErr := out.Close(); err == nil {
-		err = closeErr
-	}
-	return err
 }

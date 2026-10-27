@@ -20,6 +20,7 @@ func runApplyUpdate(args []string) int {
 		fmt.Fprintln(os.Stderr, "motty apply-update:", err)
 		return 2
 	}
+	fmt.Println(selfupdate.Ready)
 	if err := job.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "motty apply-update:", err)
 		return 1
