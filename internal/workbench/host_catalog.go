@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	hostCatalogSchemaVersion = 2
+	hostCatalogSchemaVersion = 3
 	maxHostTags              = 12
 	maxHostTagRunes          = 32
 )

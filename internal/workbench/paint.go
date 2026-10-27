@@ -1462,7 +1462,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		DismissID:      hitDialogDismiss,
 		CloseID:        hitDialogClose,
 		InitialFocusID: hitDialogLabel,
-		ContentSize:    ui.Size{Width: 460, Height: state.hostDialogHeight() + proxyHeight},
+		ContentSize:    ui.Size{Width: 680, Height: state.hostDialogHeight() + proxyHeight},
 	})
 	layout := dialog.Begin(title, "")
 
@@ -1470,11 +1470,14 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	ssh := sshHost
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
 	var vncRows flex.Box
-	var protocol, label, endpoint, group, tags, iconField, transfer, proxy, advanced flex.Box
+	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, advanced flex.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
-		label = f.Slot().Height(rowHeight)
+		f.Row().Height(rowHeight).Gap(16).Children(func() {
+			label = f.Slot().Grow(1)
+			colorField = f.Slot().Width(394).Shrink(0)
+		})
 		endpoint = f.Slot().Height(float32(state.hostEndpointRows()) * rowHeight)
 		f.Row().Height(rowHeight).Gap(8).Children(func() {
 			group = f.Slot().Grow(1)
@@ -1509,6 +1512,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	state.paintDialogField(canvas, hitDialogGroup, fieldGroup, m.FieldGroup, m.FieldGroupPlaceholder, group.Rect())
 	state.paintDialogField(canvas, hitDialogTags, fieldTags, m.FieldTags, m.FieldTagsPlaceholder, tags.Rect())
 	state.paintHostIconChoice(canvas, iconField.Rect())
+	state.paintHostColorChoice(canvas, colorField.Rect())
 	if networkHost {
 		state.paintHostProxyRow(canvas, proxy.Rect())
 	}

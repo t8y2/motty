@@ -274,6 +274,16 @@ type Messages struct {
 	FieldTags                   string
 	FieldTagsPlaceholder        string
 	FieldIcon                   string
+	FieldColor                  string
+	FieldColorCustom            string
+	ColorNone                   string
+	ColorGreen                  string
+	ColorYellow                 string
+	ColorOrange                 string
+	ColorRed                    string
+	ColorBlue                   string
+	ColorPurple                 string
+	ErrHostColorInvalid         string
 	IconAuto                    string
 	IconServer                  string
 	IconTerminal                string

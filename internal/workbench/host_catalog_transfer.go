@@ -77,7 +77,7 @@ func (state *State) exportedHosts() []Host {
 func savedHostFromHost(host Host) savedHost {
 	return savedHost{
 		ID: host.CatalogID, Label: host.Label, Group: host.Group,
-		Tags: splitHostTags(host), Icon: host.Icon.String(),
+		Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
 		Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(),
 		savedTransport: host.transport(),
 	}
@@ -181,11 +181,13 @@ func (state *State) hostFromCatalogEntry(entry savedHost) (Host, bool) {
 		return Host{}, false
 	}
 	icon, iconOK := parseHostIcon(entry.Icon)
+	color, colorOK := normalizeHostColor(entry.Color)
 	tags, tagsOK := normalizeHostTags(entry.Tags)
-	if !iconOK || !tagsOK {
+	if !iconOK || !tagsOK || !colorOK {
 		return Host{}, false
 	}
 	host.CatalogID, host.Label, host.Group, host.Icon = entry.ID, entry.Label, strings.TrimSpace(entry.Group), icon
+	host.Color = color
 	host.Address, host.User, host.Port, host.System = entry.Address, entry.User, entry.Port, sshconn.ParseRemoteSystem(entry.System)
 	host.normalizeEndpoint()
 	setHostTags(&host, tags)

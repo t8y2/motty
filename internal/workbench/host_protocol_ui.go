@@ -228,6 +228,7 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 	case id == hitDialogNoHistory:
 		editor.noHistory = !editor.noHistory
 	case state.clickTransferChoice(id):
+	case state.clickHostColor(id):
 	case id == hitDialogOTPRemove:
 		if !editor.otpChecked {
 			state.checkEditedHostOTP()

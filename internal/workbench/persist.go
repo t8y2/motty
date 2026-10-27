@@ -110,6 +110,7 @@ type savedShortcut struct {
 }
 
 type savedHost struct {
+	Color   string   `json:"color,omitempty"`
 	ID      string   `json:"id"`
 	Label   string   `json:"label"`
 	Group   string   `json:"group,omitempty"`
@@ -371,7 +372,7 @@ func (state *State) snapshot() savedState {
 	}
 	for _, host := range state.hosts {
 		saved.Hosts = append(saved.Hosts, savedHost{
-			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(),
+			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
 			Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(),
 			savedTransport: host.transport(),
 		})
@@ -609,6 +610,7 @@ func (state *State) restoreShared(saved savedState) {
 			continue
 		}
 		host.Icon, _ = parseHostIcon(entry.Icon)
+		host.Color, _ = normalizeHostColor(entry.Color)
 		if tags, ok := normalizeHostTags(entry.Tags); ok {
 			setHostTags(&host, tags)
 		}

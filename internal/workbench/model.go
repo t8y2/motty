@@ -16,6 +16,7 @@ type Host struct {
 	Group     string
 	Tags      string
 	Icon      hostIcon
+	Color     string // optional #RRGGBB connection accent
 	Address   string
 	User      string
 	Port      uint16
