@@ -807,12 +807,16 @@ func TestSFTPOverwriteRequiresConfirmationThenResumes(t *testing.T) {
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return view.dialog == sftpDialogOverwrite && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferFailed
+		return state.transfers.open && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferFailed
 	})
 	if content, err := os.ReadFile(target); err != nil || string(content) != "do not replace yet" {
 		t.Fatalf("destination changed before confirmation: %q, %v", content, err)
 	}
-	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPClose)
+	if session.files != view {
+		t.Fatal("closing the browser detached a retryable transfer")
+	}
+	state.Click(hitTransfersReplace.At(state.transfers.entries[0].id))
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return view.dialog == sftpDialogNone && view.transfers[0].State == sftpclient.TransferCompleted
 	})
@@ -1036,50 +1040,9 @@ func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	}
 }
 
-func TestSFTPTransferQueueSteadyPaintDoesNotAllocate(t *testing.T) {
-	state, session, _, _ := openTestSFTP(t)
-	session.files.transferRows = []sftpTransferRow{{
-		snapshot: sftpclient.TransferSnapshot{
-			ID: 1, Operation: sftpclient.OperationDownload, State: sftpclient.TransferRunning,
-			BytesDone: 32 * 1024, BytesTotal: 64 * 1024, FilesTotal: 1,
-		},
-		title: "large.bin", status: "32768 / 65536 bytes · 0 / 1 files",
-	}}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
-	state.Paint(&canvas, size)
-	allocations := testing.AllocsPerRun(100, func() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	})
-	if allocations != 0 {
-		t.Fatalf("SFTP transfer-queue steady paint allocations = %v", allocations)
-	}
-}
-
 func BenchmarkPaintSFTPPage(b *testing.B) {
 	state, session, _, _ := openTestSFTP(b)
 	clickSFTPRow(b, state, session.files, "notes.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
-	state.Paint(&canvas, size)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}
-}
-
-func BenchmarkPaintSFTPTransferQueue(b *testing.B) {
-	state, session, _, _ := openTestSFTP(b)
-	session.files.transferRows = []sftpTransferRow{{
-		snapshot: sftpclient.TransferSnapshot{
-			ID: 1, Operation: sftpclient.OperationDownload, State: sftpclient.TransferRunning,
-			BytesDone: 32 * 1024, BytesTotal: 64 * 1024, FilesTotal: 1,
-		},
-		title: "large.bin", status: "32768 / 65536 bytes · 0 / 1 files",
-	}}
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)

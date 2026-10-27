@@ -130,7 +130,7 @@ func terminalOptionModeFromString(value string) terminalOptionMode {
 
 func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-		state.closeSFTP(session)
+		state.releaseIdleSFTP(session)
 	}
 	state.activeSection = sectionSettings
 	state.settingsScroll = 0
@@ -193,6 +193,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	}
 	state.language = language
 	state.messages = i18n.For(language)
+	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
 	state.refreshHostSelection()
 	state.refreshHostGroups()
