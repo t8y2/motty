@@ -78,11 +78,11 @@ func (state *State) sessionLight(session *Session) (lightKind, ui.Color) {
 // when no connection has been made to it.
 func (state *State) hostLight(host Host) (lightKind, ui.Color) {
 	best, bestColor := lightIdle, state.pal.faint
-	for index := range state.sessions {
-		if state.sessions[index].HostID != host.ID {
+	for session := range state.connectionSessions() {
+		if session.HostID != host.ID {
 			continue
 		}
-		kind, color := state.sessionLight(&state.sessions[index])
+		kind, color := state.sessionLight(session)
 		switch kind {
 		case lightOn:
 			return kind, color

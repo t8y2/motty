@@ -428,7 +428,7 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 // applySFTPSettings gives every open file panel the current transfer settings.
 func (state *State) applySFTPSettings() {
 	for _, window := range state.sftpWindows {
-		if window.view.worker != nil {
+		if !window.closed && window.view.worker != nil {
 			state.configureSFTPWorker(window.view)
 		}
 	}

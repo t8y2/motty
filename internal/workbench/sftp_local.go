@@ -205,6 +205,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	folder.rows = listing.rows
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	folder.selected, folder.first = -1, 0
+	folder.anchor = 0
 	view.sortedDetached(true)
 	view.errorText = ""
 	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(folder.rows))

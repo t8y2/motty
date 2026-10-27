@@ -4,10 +4,11 @@ package i18n
 
 var ChineseMessages = Messages{
 	SFTPWindow: SFTPWindowMessages{
+		ConnectingFmt:  "正在连接 %s 的独立 SFTP…",
 		DropUploadHint: "拖动到此处上传", DropDownloadHint: "拖动到此处下载",
 		QueueRejectedFmt: "有 %d 个项目未能加入传输队列，请稍后重试。",
 		SelectedFmt:      "已选择 %d 项", CopyPath: "复制完整路径",
-		Open: "在独立窗口中打开", Title: "文件传输", Local: "本机", Remote: "服务器", Path: "目录路径", Name: "名称", Size: "大小", Modified: "修改时间",
+		Open: "独立 SFTP", Title: "文件传输", Local: "本机", Remote: "服务器", Path: "目录路径", Name: "名称", Size: "大小", Modified: "修改时间",
 		Upload: "上传 →", Download: "← 下载", DragHint: "拖动文件或文件夹到另一侧，即可复制传输", DropUpload: "上传到", DropDownload: "下载到",
 		CloseTitle: "仍有任务正在进行", CloseDescription: "关闭此窗口会停止尚未完成的传输、解压和外部编辑同步。", CloseTransfers: "停止任务并关闭", Disconnected: "原连接已断开，请重新连接后重新打开文件传输窗口。",
 	},

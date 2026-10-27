@@ -17,26 +17,28 @@ import (
 // connection it was opened from. It never consults the active workbench tab.
 // Closing it releases only its SFTP channels, not the shared SSH connection.
 type sftpWindow struct {
-	owner                   *State
-	session                 Session
-	window                  *app.ContentWindow
-	view                    *sftpView
-	closed, closeConfirm    bool
-	allowClose, afterClosed func()
-	activeLocal             bool
-	localRefresh            bool
-	pendingLocal            string
-	phase                   sshconn.Phase
-	language                i18n.Language
-	pal                     *palette
-	paths                   [2]text.Editor
-	shownPaths              [2]string
-	input                   app.TextInput
-	notices                 fileNotices
-	ui                      sftpWindowUI
-	drag                    sftpWindowDrag
-	deferredListings        [2]func()
-	externalConflict        uint32
+	owner                       *State
+	session                     Session
+	window                      *app.ContentWindow
+	view                        *sftpView
+	closed, closeConfirm        bool
+	allowClose, afterClosed     func()
+	activeLocal                 bool
+	localRefresh                bool
+	pendingLocal                string
+	phase                       sshconn.Phase
+	language                    i18n.Language
+	pal                         *palette
+	paths                       [2]text.Editor
+	shownPaths                  [2]string
+	input                       app.TextInput
+	notices                     fileNotices
+	ui                          sftpWindowUI
+	drag                        sftpWindowDrag
+	deferredListings            [2]func()
+	externalConflict            uint32
+	ownsConnection              bool
+	initialLocal, initialRemote string
 }
 
 func (state *State) openSFTPWindow(source *Session) {
@@ -44,37 +46,53 @@ func (state *State) openSFTPWindow(source *Session) {
 		return
 	}
 	if existing := state.sftpWindows[source.ID]; existing != nil && !existing.closed {
-		existing.window.Show()
+		if existing.window != nil {
+			existing.window.Show()
+		}
 		return
 	}
+	w := state.newSFTPWindow(source)
+	w.show()
+}
+
+func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
 	w.view = &sftpView{detached: w, busy: true, status: state.messages.SFTPLoading, operation: sftpclient.OperationList}
 	w.view.transferServer, w.view.transferAddress = source.Title, source.Address
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
 	w.ui.fraction = .5
-	window, err := state.options.OpenContentWindow(w.config(), nil)
-	if err != nil {
-		state.fileNotices.show(state.messages.SFTPWindow.Title, err.Error(), components.ToastError)
-		return
+	w.initialLocal = localStart()
+	if source.files != nil {
+		w.initialRemote = source.files.path
+		if source.files.lfolder.path != "" {
+			w.initialLocal = source.files.lfolder.path
+		}
 	}
-	w.window = window
 	if state.sftpWindows == nil {
 		state.sftpWindows = make(map[uint32]*sftpWindow)
 	}
 	state.sftpWindows[source.ID] = w
-	connection, mode := source.conn, source.host.Transfer
+	return w
+}
+
+func (w *sftpWindow) show() {
+	state := w.owner
+	window, err := state.options.OpenContentWindow(w.config(), nil)
+	if err != nil {
+		state.fileNotices.show(state.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+		w.onClosed()
+		return
+	}
+	w.window = window
+	if w.ownsConnection && w.session.relay != nil {
+		w.session.relay.set(func() { window.Invalidate(); state.options.Invalidate() })
+	}
+	connection, mode := w.session.conn, w.session.host.Transfer
 	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, func() { window.Invalidate(); state.options.Invalidate() })
 	state.configureSFTPWorker(w.view)
-	remoteDir, localDir := "", localStart()
-	if source.files != nil {
-		remoteDir = source.files.path
-		if source.files.lfolder.path != "" {
-			localDir = source.files.lfolder.path
-		}
-	}
-	state.listLocal(w.view, localDir)
-	state.listSFTP(w.view, remoteDir)
+	state.listLocal(w.view, w.initialLocal)
+	state.listSFTP(w.view, w.initialRemote)
 	w.wake()
 	window.Invalidate()
 }
@@ -121,6 +139,9 @@ func (view *sftpView) invalidateDetached() {
 
 func (state *State) syncSFTPWindows() {
 	for _, w := range state.sftpWindows {
+		if w.closed || w.window == nil {
+			continue
+		}
 		phase := w.session.conn.Status().Phase
 		if w.phase != phase || w.language != state.language || w.pal != state.pal {
 			w.phase, w.language, w.pal = phase, state.language, state.pal
@@ -132,7 +153,12 @@ func (state *State) syncSFTPWindows() {
 func (state *State) closeSFTPWindows() {
 	for _, w := range state.sftpWindows {
 		w.afterClosed = nil
-		w.window.Close()
+		if w.window != nil {
+			w.window.Close()
+		} else {
+			w.onClosed()
+		}
+		w.releaseConnection()
 	}
 	state.sftpWindows = nil
 }
@@ -170,9 +196,7 @@ func (w *sftpWindow) onClosed() {
 	w.view.rows = nil
 	w.view.lfolder.rows = nil
 	w.view.forgetListings()
-	if w.owner.sftpWindows[w.session.ID] == w {
-		delete(w.owner.sftpWindows, w.session.ID)
-	}
+	w.releaseConnection()
 	if w.afterClosed != nil {
 		next := w.afterClosed
 		w.afterClosed = nil

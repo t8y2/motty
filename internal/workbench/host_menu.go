@@ -12,6 +12,7 @@ var hostMenuHits = tree.Feature("host-menu")
 var (
 	hitHostMenuDismiss = tree.ID(hostMenuHits, "host-menu-dismiss")
 	hitHostMenuConnect = tree.ID(hostMenuHits, "host-menu-connect")
+	hitHostMenuSFTP    = tree.ID(hostMenuHits, "host-menu-sftp")
 	hitHostMenuEdit    = tree.ID(hostMenuHits, "host-menu-edit")
 	hitHostMenuCopy    = tree.ID(hostMenuHits, "host-menu-copy")
 	hitHostMenuMove    = tree.ID(hostMenuHits, "host-menu-move")
@@ -95,6 +96,9 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitHostMenuConnect, Label: messages.Connect, Icon: icon(iconPlug), Disabled: several})
+	if host, ok := state.hostByID(state.hostMenu.host); ok && host.isSSH() {
+		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconExternal), Disabled: several || state.options.OpenContentWindow == nil})
+	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy), Disabled: several})
@@ -126,6 +130,8 @@ func (state *State) clickHostMenu(id ui.ID) bool {
 	case hitHostMenuConnect:
 		state.selectedHostID = host.ID
 		state.newHostSession(host)
+	case hitHostMenuSFTP:
+		state.openHostSFTPWindow(host)
 	case hitHostMenuEdit:
 		state.openEditHostID(host.ID)
 	case hitHostMenuCopy:

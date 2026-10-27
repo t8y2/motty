@@ -321,21 +321,25 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 			}
 			var canvas ui.Canvas
 			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-			var entry, close ui.Rect
+			var entry, files ui.Rect
+			source, _ := state.sessionByIDPointer(w.session.ID)
 			for _, hit := range canvas.Hits() {
-				local, ok := tree.Local(contextMount, hit.ID)
+				if local, ok := tree.Local(contextMount, hit.ID); ok && local == hitSFTPDetach {
+					t.Fatal("standalone entry still lives in side panel")
+				}
+				local, ok := tree.Local(paneMount(source), hit.ID)
 				if !ok {
-					continue
+					local = hit.ID
 				}
 				if local == hitSFTPDetach {
 					entry = hit.Bounds
 				}
-				if local == hitSFTPClose {
-					close = hit.Bounds
+				if local == hitSFTPOpen {
+					files = hit.Bounds
 				}
 			}
-			if entry.Width == 0 || close.Width == 0 || entry.Y != close.Y || entry.X+entry.Width > close.X {
-				t.Fatal("independent-window entry is not left of the close button", entry, close)
+			if entry.Width == 0 || files.Width == 0 || entry.Y != files.Y || entry.X < files.X+files.Width {
+				t.Fatal("independent-window entry is not at the right end of the terminal tools", entry, files)
 			}
 			if dir := os.Getenv("MOTTY_SFTP_WINDOW_SCREENSHOT_DIR"); dir != "" {
 				os.MkdirAll(dir, 0700)

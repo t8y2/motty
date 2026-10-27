@@ -111,7 +111,6 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 					icon(sftpHeaderButton, hitSFTPPaneToggle, paneIcon, paneHint, false, iconButtonQuiet)
 				}
 				icon(sftpHeaderButton, hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPDetach, iconExternal, messages.SFTPWindow.Open, view.localOnly || state.options.OpenContentWindow == nil, iconButtonQuiet)
 				icon(sftpHeaderButton, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 			})
 		})

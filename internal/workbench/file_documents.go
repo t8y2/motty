@@ -166,6 +166,7 @@ func decodeFileEvent(document *fileDocument, data []byte, err error) fileDocumen
 }
 
 func (state *State) pumpFileWindows() {
+	defer state.releaseClosedSFTPConnections()
 	m := &state.fileWindows
 	m.mu.Lock()
 	events := m.events
@@ -435,6 +436,9 @@ func (d *fileDocument) onClosed() {
 	}
 	if d.owner.fileWindows.documents[d.cacheKey] == d {
 		delete(d.owner.fileWindows.documents, d.cacheKey)
+	}
+	if d.origin != nil {
+		d.origin.releaseConnection()
 	}
 	if d.afterClosed != nil {
 		next := d.afterClosed

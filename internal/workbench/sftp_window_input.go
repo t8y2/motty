@@ -156,6 +156,10 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	}
 	if w.drag.armed || w.drag.active {
 		w.drag.at = ui.Point{X: event.X, Y: event.Y}
+		if (event.Kind == ui.PointerDown || event.Kind == ui.PointerUp) && event.Button != ui.PointerButtonPrimary {
+			w.cancelDrag()
+			return handled
+		}
 		switch event.Kind {
 		case ui.PointerMove:
 			if !w.drag.active && math.Hypot(float64(event.X-w.drag.start.X), float64(event.Y-w.drag.start.Y)) >= 6 {

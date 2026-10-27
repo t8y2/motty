@@ -583,6 +583,7 @@ func (state *State) Wake() {
 		state.updateStarted = true
 		state.scheduleUpdateCheck(state.update.firstDelay)
 	}
+	state.pumpSFTPConnections()
 	state.showNextPrompt()
 	state.drainAI()
 	state.syncSFTPWindows()
@@ -874,8 +875,7 @@ func (state *State) showNextPrompt() {
 	if state.modal != modalNone {
 		return
 	}
-	for index := range state.sessions {
-		session := &state.sessions[index]
+	for session := range state.connectionSessions() {
 		key := promptKey(session.phase, session.attempt, session.identity, session.endpoint, session.role)
 		if session.conn == nil || key == 0 || key == session.answered {
 			continue
@@ -962,6 +962,9 @@ func (state *State) promptSession() *Session {
 		if state.sessions[index].ID == state.modalSession {
 			return &state.sessions[index]
 		}
+	}
+	if w := state.sftpWindows[state.modalSession]; w != nil && w.ownsConnection && !w.closed {
+		return &w.session
 	}
 	return nil
 }

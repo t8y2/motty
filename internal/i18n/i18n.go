@@ -30,7 +30,7 @@ func (language Language) String() string {
 type Messages struct {
 	FileWindow FileWindowMessages
 	SFTPWindow SFTPWindowMessages
-	Transfers TransferCenterMessages
+	Transfers  TransferCenterMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages

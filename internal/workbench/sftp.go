@@ -605,12 +605,14 @@ func (state *State) applySFTPListing(view *sftpView, remotePath string, rows []s
 		return
 	}
 	view.remoteSeq++ // a shown listing invalidates an older one still being prepared
+	view.busy = false
 	view.path = remotePath
 	view.rows = rows
-	view.sortedDetached(false)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	view.selected = -1
 	view.first = 0
+	view.anchor = 0
+	view.sortedDetached(false)
 	view.errorText = ""
 	if view.refreshStatus != "" {
 		view.status = view.refreshStatus
@@ -659,15 +661,32 @@ func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
 	if view.deferDraggedListing(false, func() { state.updateSFTPRows(view, entries) }) {
 		return
 	}
-	var selected []string
+	cursor, anchor := "", ""
+	if view.selected >= 0 && view.selected < len(view.rows) {
+		cursor = view.rows[view.selected].entry.Name
+	}
+	if view.anchor >= 0 && view.anchor < len(view.rows) {
+		anchor = view.rows[view.anchor].entry.Name
+	}
+	var selected map[string]struct{}
 	for index := range view.rows {
 		if view.rows[index].selected {
-			selected = append(selected, view.rows[index].entry.Name)
+			if selected == nil {
+				selected = make(map[string]struct{})
+			}
+			selected[view.rows[index].entry.Name] = struct{}{}
 		}
 	}
 	view.rows = prepareSFTPRows(view.rows, entries)
+	view.selected, view.anchor = -1, 0
 	for index := range view.rows {
-		if slices.Contains(selected, view.rows[index].entry.Name) {
+		if view.rows[index].entry.Name == cursor {
+			view.selected = index
+		}
+		if view.rows[index].entry.Name == anchor {
+			view.anchor = index
+		}
+		if _, ok := selected[view.rows[index].entry.Name]; ok {
 			view.rows[index].selected = true
 			view.rows[index].cells[0] = sftpSelectionCell(true)
 		}
@@ -996,6 +1015,7 @@ func (state *State) pumpSFTP(session *Session) {
 				view.remoteSeq++
 				view.preparingPath, view.followUpPath, view.followUpEntries = "", "", nil
 				if len(result.Entries) > sftpPrepInlineEntries {
+					view.busy = true // navigation completes only when its prepared rows are published
 					seq, entries := view.remoteSeq, result.Entries
 					view.preparingPath = result.Path
 					view.status = state.messages.SFTPLoading
