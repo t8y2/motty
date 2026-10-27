@@ -258,7 +258,7 @@ func (state *State) selectedArchive(session *Session, view *sftpView) (sftpclien
 }
 
 func (state *State) openSFTPExtractDialog(view *sftpView) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	if !ok {
 		return
 	}
@@ -275,7 +275,7 @@ func (state *State) openSFTPExtractDialog(view *sftpView) {
 }
 
 func (state *State) submitSFTPExtract(view *sftpView) bool {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	m := state.messages.Tools
 	if !ok || session.conn == nil {
 		return false
@@ -411,6 +411,11 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 
 // applySFTPSettings gives every open file panel the current transfer settings.
 func (state *State) applySFTPSettings() {
+	for _, window := range state.sftpWindows {
+		if !window.closed && window.view.worker != nil {
+			state.configureSFTPWorker(window.view)
+		}
+	}
 	for index := range state.sessions {
 		if view := state.sessions[index].files; view != nil && view.worker != nil {
 			state.configureSFTPWorker(view)

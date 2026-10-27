@@ -90,7 +90,7 @@ func (state *State) canCompressSFTP(session *Session, view *sftpView) bool {
 }
 
 func (state *State) openSFTPCompressDialog(view *sftpView) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	if !ok || !state.canCompressSFTP(session, view) {
 		return
 	}
@@ -103,7 +103,7 @@ func (state *State) openSFTPCompressDialog(view *sftpView) {
 }
 
 func (state *State) submitSFTPCompress(view *sftpView) bool {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	session, ok := state.sftpSession(view)
 	if !ok || session.conn == nil {
 		return false
 	}
@@ -132,9 +132,14 @@ func (state *State) startSFTPArchive(session *Session, view *sftpView, directory
 	}
 	view.archiveSequence++
 	sequence, connection := view.archiveSequence, session.conn
-	// Results travel with the file panel, including when its tab changes
-	// windows. The worker only signals the session's existing wake-up relay.
 	results, notify := make(chan archiveResult, 1), state.notifyFor(session)
+	if view.detached != nil && view.detached.window != nil {
+		window := view.detached.window
+		notify = func() {
+			window.Invalidate()
+			state.options.Invalidate()
+		}
+	}
 	view.archiveResults = results
 	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 	view.cancelExtract = cancel
@@ -147,8 +152,8 @@ func (state *State) startSFTPArchive(session *Session, view *sftpView, directory
 }
 
 func (state *State) finishSFTPArchive(sessionID uint32, view *sftpView, sequence uint64, directory, source, target string, compress bool, output []byte, err error) {
-	session, ok := state.sessionByIDPointer(sessionID)
-	if !ok || session.files != view || !view.extracting || view.archiveSequence != sequence {
+	session, ok := state.sftpSession(view)
+	if !ok || session.ID != sessionID || session.files != view || !view.extracting || view.archiveSequence != sequence {
 		return
 	}
 	m := state.messages.Tools
@@ -161,7 +166,7 @@ func (state *State) finishSFTPArchive(sessionID uint32, view *sftpView, sequence
 			title, format = m.CompressFailedTitle, m.CompressFailedFmt
 		}
 		if errors.Is(err, context.Canceled) {
-			state.fileNotices.show(state.messages.SFTPCanceled, fmt.Sprintf(m.ArchiveCanceledFmt, path.Join(directory, source)), components.ToastInfo)
+			state.fileOpenNotice(view.detached, state.messages.SFTPCanceled, fmt.Sprintf(m.ArchiveCanceledFmt, path.Join(directory, source)), components.ToastInfo)
 			return
 		}
 		reason := strings.TrimSpace(string(output))
@@ -175,7 +180,7 @@ func (state *State) finishSFTPArchive(sessionID uint32, view *sftpView, sequence
 		case reason == "":
 			reason = err.Error()
 		}
-		state.fileNotices.showPathReason(title, format, path.Join(directory, source), firstLines(reason, 3), components.ToastError)
+		state.fileOpenPathReason(view.detached, title, format, path.Join(directory, source), firstLines(reason, 3), components.ToastError)
 		return
 	}
 	view.forgetListings()

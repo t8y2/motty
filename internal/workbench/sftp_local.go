@@ -195,14 +195,23 @@ func scanLocalListing(dir string, items []os.DirEntry) localListing {
 // applyLocalListing puts a finished local listing on screen. seq must still be
 // the view's current one.
 func (state *State) applyLocalListing(view *sftpView, listing localListing, seq uint64) {
+	defer view.invalidateDetached()
 	if seq != view.localSeq {
 		return
+	}
+	if view.deferDraggedListing(true, func() { state.applyLocalListing(view, listing, seq) }) {
+		return
+	}
+	if view.detached != nil {
+		view.detached.pendingLocal = ""
 	}
 	folder := &view.lfolder
 	folder.path = listing.dir
 	folder.rows = listing.rows
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	folder.selected, folder.first = -1, 0
+	folder.anchor = 0
+	view.sortedDetached(true)
 	view.errorText = ""
 	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(folder.rows))
 }
