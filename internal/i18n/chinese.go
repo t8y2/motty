@@ -1176,6 +1176,7 @@ var chineseTools = ToolsMessages{
 	XYStart:                         "开始",
 	XYSaveTitle:                     "将接收的文件保存为",
 	DropUploadingFmt:                "正在把拖入的 %d 项上传到 %s",
+	DropUploadHint:                  "拖动到此处上传",
 	LaunchTitle:                     "打开连接",
 	LaunchDescriptionFmt:            "通过 %[1]s 连接到 %[2]s?",
 	LaunchWarning:                   "其他程序请求了这次连接。仅在你预期它时才连接。",

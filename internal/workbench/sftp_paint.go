@@ -275,8 +275,7 @@ func (state *State) paintSFTPList(canvas *ui.Canvas, size ui.Size, list ui.Rect,
 		if row := view.dropRow; row >= first && row < end {
 			target = boxes[row-first].Rect()
 		}
-		// RoundedBorder paints an opaque inner fill, so the tint is mixed in advance.
-		canvas.RoundedBorder(target, 8, 1.5, pal.accent, withAlpha(pal.accent, 0.16).Over(pal.workspace))
+		state.paintSFTPDropOverlay(canvas, target)
 	}
 	if scrolls {
 		track := track.Rect()

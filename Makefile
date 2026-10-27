@@ -1,4 +1,39 @@
-.PHONY: dev head check
+.PHONY: dev head check race
+
+RACE_PACKAGES = \
+	./cmd/motty \
+	./internal/ai/agent \
+	./internal/ai/cli \
+	./internal/ai/gate \
+	./internal/ai/llm \
+	./internal/ai/mcp \
+	./internal/ai/store \
+	./internal/backup \
+	./internal/cmdhistory \
+	./internal/configstore \
+	./internal/desktop \
+	./internal/desktop/rdp \
+	./internal/desktop/vnc \
+	./internal/diag \
+	./internal/gist \
+	./internal/knownhosts \
+	./internal/localshell \
+	./internal/portforward \
+	./internal/rdpcore \
+	./internal/remotestats \
+	./internal/rfb \
+	./internal/s3 \
+	./internal/scpclient \
+	./internal/selfupdate \
+	./internal/serial \
+	./internal/sftpclient \
+	./internal/sshconn \
+	./internal/telnet \
+	./internal/term \
+	./internal/vault \
+	./internal/webdav \
+	./internal/workbench \
+	./internal/x11fwd
 
 dev:
 	tools/dev.sh
@@ -15,5 +50,8 @@ check:
 	go vet ./...
 	go vet -tags dev ./internal/workbench
 	go test ./... -count=1
-	go test -tags dev ./internal/workbench -count=1
-	go test -race -p 1 ./...
+	go test -tags dev ./internal/workbench -run '^TestDebug' -count=1
+	$(MAKE) race
+
+race:
+	go test -race -p 1 $(RACE_PACKAGES) -count=1

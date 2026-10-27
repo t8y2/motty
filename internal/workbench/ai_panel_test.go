@@ -269,8 +269,8 @@ func TestWithoutAModelThePanelOffersSetupAndSettingsOpens(t *testing.T) {
 		t.Fatal("Send is enabled without a model")
 	}
 	state.Click(hitAISetup)
-	if state.activeSection != sectionSettings {
-		t.Fatalf("section = %d, want settings", state.activeSection)
+	if state.activeSection != sectionSettings || state.settingsCategory != settingsAssistant {
+		t.Fatalf("section = %d, category = %d; want settings and settingsAssistant", state.activeSection, state.settingsCategory)
 	}
 	// The panel waits where it was.
 	if !state.ai.open {

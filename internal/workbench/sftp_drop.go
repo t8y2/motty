@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"runtime"
@@ -9,6 +10,66 @@ import (
 
 	"github.com/vivaui/viva/ui"
 )
+
+// paintSFTPDropOverlay is presentation only: it declares no hits, so the file
+// row under the pointer remains the target of the eventual system drop.
+func (state *State) paintSFTPDropOverlay(canvas *ui.Canvas, bounds ui.Rect) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	canvas.PushLayer(popupLayer)
+	defer canvas.PopLayer()
+	canvas.Clip(bounds)
+	defer canvas.Unclip()
+
+	gray := ui.RGB(128, 128, 128)
+	// Quiet the list below the hint without turning the drop area into a solid
+	// slab. Both surfaces and the icon stay neutral in either theme.
+	canvas.Fill(bounds, withAlpha(state.pal.workspace, 0.92))
+	canvas.Fill(bounds, withAlpha(gray, 0.08))
+	const stroke, dash, gap = float32(1.5), float32(8), float32(6)
+	// End both edges with a complete dash so the four square corners meet.
+	dashes := func(length float32, paint func(float32, float32)) {
+		count := max(int(math.Round(float64((length+gap)/(dash+gap)))), 1)
+		part := min(dash, length)
+		step := float32(0)
+		if count > 1 {
+			step = (length - part) / float32(count-1)
+		}
+		for index := 0; index < count; index++ {
+			paint(float32(index)*step, part)
+		}
+	}
+	dashes(bounds.Width, func(offset, length float32) {
+		canvas.Fill(ui.Rect{X: bounds.X + offset, Y: bounds.Y, Width: length, Height: stroke}, gray)
+		canvas.Fill(ui.Rect{X: bounds.X + offset, Y: bounds.Y + bounds.Height - stroke, Width: length, Height: stroke}, gray)
+	})
+	dashes(bounds.Height, func(offset, length float32) {
+		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
+		canvas.Fill(ui.Rect{X: bounds.X + bounds.Width - stroke, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
+	})
+
+	label := state.messages.Tools.DropUploadHint
+	textStyle := ui.TextStyle{Size: 15, Weight: ui.WeightMedium, Color: state.pal.text}
+	icon := ui.Rect{Width: 36, Height: 36}
+	text := ui.Rect{X: bounds.X + 12, Width: max(bounds.Width-24, 0), Height: 22}
+	if bounds.Height < 100 {
+		// A folder row has room for a single centered icon-and-label line.
+		textStyle.Size = 13
+		icon.Width, icon.Height = 16, 16
+		width := min(canvas.TextWidthWeight(label, textStyle.Size, textStyle.Weight), max(bounds.Width-44, 0))
+		icon.X = bounds.X + (bounds.Width-icon.Width-8-width)/2
+		icon.Y = bounds.Y + (bounds.Height-icon.Height)/2
+		text = ui.Rect{X: icon.X + icon.Width + 8, Y: bounds.Y + (bounds.Height-20)/2, Width: width, Height: 20}
+	} else {
+		const groupHeight = float32(72)
+		icon.X = bounds.X + (bounds.Width-icon.Width)/2
+		icon.Y = bounds.Y + (bounds.Height-groupHeight)/2
+		text.Y = icon.Y + icon.Height + 14
+	}
+	paintIcon(canvas, iconUpload, icon, state.pal.muted)
+	canvas.LabelCenter(label, text, textStyle)
+}
 
 // Files dragged in from the system. Over the file panel they are uploaded: onto a
 // folder row into that folder, anywhere else on the panel into the folder on

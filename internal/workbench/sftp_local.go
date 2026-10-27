@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -91,7 +92,10 @@ func (state *State) listLocal(view *sftpView, dir string) error {
 	// so even the directory enumeration leaves the window thread. os.File keeps
 	// the read position across that goroutine.
 	first, readErr := file.ReadDir(localListingInlineEntries + 1)
-	if readErr != nil && len(first) == 0 {
+	// ReadDir reports io.EOF when a directory has no more entries. That is a
+	// successful empty listing when the first read returns no rows, not a
+	// filesystem failure.
+	if readErr != nil && len(first) == 0 && !errors.Is(readErr, io.EOF) {
 		file.Close()
 		view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, readErr)
 		if folder.path == "" {

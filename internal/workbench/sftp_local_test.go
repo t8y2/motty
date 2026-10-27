@@ -84,6 +84,27 @@ func TestLocalPaneBrowsesIntoFoldersAndUp(t *testing.T) {
 	}
 }
 
+func TestLocalPaneShowsAnEmptyFolderWithoutAnEOFError(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "powerlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	view := openLocalPane(t, state, session, dir)
+	clickSFTPLocalRow(t, state, view, "powerlog")
+	state.Click(hitSFTPOpenEntry)
+
+	if view.lfolder.path != filepath.Join(dir, "powerlog") || len(view.lfolder.rows) != 0 {
+		t.Fatalf("empty listing = path %q rows %d", view.lfolder.path, len(view.lfolder.rows))
+	}
+	if view.errorText != "" {
+		t.Fatalf("empty folder error = %q", view.errorText)
+	}
+	if want := fmt.Sprintf(state.messages.SFTPItemsFmt, 0); view.status != want {
+		t.Fatalf("empty folder status = %q, want %q", view.status, want)
+	}
+}
+
 func clickSFTPLocalRow(t *testing.T, state *State, view *sftpView, name string) {
 	t.Helper()
 	for index := range view.lfolder.rows {
