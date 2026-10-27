@@ -54,6 +54,7 @@ func (state *State) openRemoteToolsWindow(session *Session) {
 	window, err := state.options.OpenContentWindow(app.Config{
 		Title: state.messages.Tools.RemoteTitle + " · " + session.Title + " · " + session.Address,
 		Icon:  AppIcon(), Width: 1100, Height: 780, Tree: &tree,
+		WindowMode: app.WindowTitled,
 		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnClosed: w.dispose,
 		OnScroll: func(ui.ScrollEvent) ui.EventResult { return ui.EventResult{Handled: true} },
