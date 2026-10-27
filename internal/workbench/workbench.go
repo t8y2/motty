@@ -521,6 +521,7 @@ type State struct {
 	sftpParallel      int
 	sftpKeepTimesOff  bool
 	sftpFollowOff     bool
+	sftpPathInput     bool
 	sftpBookmarks     []sftpBookmark
 	transferLeftover  []byte
 	secrets           secretsUI
