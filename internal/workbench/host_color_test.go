@@ -86,7 +86,7 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 		t.Fatalf("custom color trigger missing or clipped: %+v", hit)
 	}
 	for _, hit := range canvas.Hits() {
-		if hit.ID == hitDialogColor && hit.Role == ui.RoleTextField {
+		if hit.Label == state.messages.FieldColorCustom && hit.Role == ui.RoleTextField {
 			t.Fatal("HEX input should only appear inside the picker")
 		}
 	}

@@ -75,7 +75,6 @@ var (
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
-	hitDialogColor             = tree.ID(shellHits, "dialog-color")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
 	hitHostKeyTrust            = tree.ID(shellHits, "host-key-trust")
 	hitHostKeyOnce             = tree.ID(shellHits, "host-key-once")
@@ -1735,7 +1734,7 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
 func isDialogField(id ui.ID) bool {
 	switch id {
-	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags, hitDialogColor:
+	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogGroup, hitDialogPort, hitDialogTags:
 		return true
 	}
 	return false
@@ -1756,8 +1755,6 @@ func fieldForDialogHit(id ui.ID) hostField {
 		return fieldGroup
 	case hitDialogTags:
 		return fieldTags
-	case hitDialogColor:
-		return fieldColor
 	default:
 		return fieldPort
 	}
