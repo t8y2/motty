@@ -243,6 +243,17 @@ func TestSFTPWindowQuitWhileAuthenticationPendingReleasesConnection(t *testing.T
 	}
 }
 
+func TestSFTPWindowClosingBorrowedBrowserPreservesTerminalAuthentication(t *testing.T) {
+	state, w, _, _, _ := dualSFTPFixture(t, 1.25)
+	state.modal, state.modalSession = modalPassword, w.session.ID
+	state.passwordFields = []text.Editor{*text.NewEditor("unfinished password")}
+	w.window.Close()
+	if !w.closed || state.modal != modalPassword || state.modalSession != w.session.ID ||
+		len(state.passwordFields) != 1 || state.passwordFields[0].String() != "unfinished password" {
+		t.Fatal("closing a borrowed file browser dismissed the terminal authentication")
+	}
+}
+
 func TestSFTPWindowAsyncRemoteNavigationBlocksOldDirectoryTransfers(t *testing.T) {
 	state, w, remote, host, dir := dualSFTPFixture(t, 1)
 	remote.mu.Lock()

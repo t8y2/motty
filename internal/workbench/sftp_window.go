@@ -190,7 +190,7 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
-	if w.owner.modalSession == w.session.ID {
+	if w.ownsConnection && w.owner.modalSession == w.session.ID {
 		w.owner.closeModal()
 	}
 	w.deferredListings = [2]func(){}

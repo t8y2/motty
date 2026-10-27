@@ -20,8 +20,6 @@ func (w *sftpWindow) paintConnecting(canvas *ui.Canvas, size ui.Size) {
 	icon, tint := uint8(iconTransfer), pal.accent
 	if waiting {
 		detail = m.SFTPWindow.AuthenticationHint
-	} else if s.phase == sshconn.PhaseAuthenticating {
-		detail = m.ConnDetailAgent
 	}
 	if failed {
 		title, icon, tint = m.HostStateFailed, iconAlert, pal.danger
@@ -34,8 +32,8 @@ func (w *sftpWindow) paintConnecting(canvas *ui.Canvas, size ui.Size) {
 	f.Column().Fill().Center().Pad(20).Children(func() {
 		f.Column().Width(min(480, max(size.Width-40, 0))).Gap(12).Items(flex.Center).Children(func() {
 			badge = f.Slot().Size(72, 72)
-			f.Text(title).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).FillWidth().Ellipsis().LineHeight(26)
-			f.Text(detail).FontSize(metrics.FontSizeS).Color(pal.muted).FillWidth().Ellipsis().LineHeight(22)
+			f.Text(title).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).FillWidth().Ellipsis().TextCenter().LineHeight(26)
+			f.Text(detail).FontSize(metrics.FontSizeS).Color(pal.muted).FillWidth().Ellipsis().TextCenter().LineHeight(22)
 			f.Row().Gap(8).MarginSides(12, 0, 0, 0).Children(func() {
 				f.Button(hitSFTPWindowConnectCancel, m.ConnClose).Outline()
 				if failed {
