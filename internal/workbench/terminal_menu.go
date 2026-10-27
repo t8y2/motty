@@ -323,7 +323,7 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 	case hitTerminalMenuAsk:
 		state.aiAskAboutSelection(session)
 	case hitTerminalMenuExplain:
-		state.aiExplainOutput()
+		state.aiExplainOutput(session)
 	case hitTerminalMenuTransfer:
 		state.openXYSetup(session)
 	case hitTerminalMenuTools:

@@ -876,17 +876,17 @@ func TestAnApprovalOpensTheClosedPanelAndTheTerminalsFollow(t *testing.T) {
 	}
 }
 
-func TestOtherSectionsShowADotWhileAQuestionWaits(t *testing.T) {
+func TestOtherSectionsKeepAssistantVisibleWhileAQuestionWaits(t *testing.T) {
 	state, _ := panelState(t, nil)
 	approvalFixture(state, risk.Medium, false)
 	state.activeSection = sectionHosts
 	canvas, _ := paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIInput); ok {
-		t.Fatal("the panel is shown over the host list")
+	if _, ok := hitByID(canvas, hitAIInput); !ok {
+		t.Fatal("the panel disappeared on the host list")
 	}
 	state.Click(hitAIToggle)
-	if state.activeSection != sectionTerminal || !state.ai.open {
-		t.Fatalf("the button did not bring the panel up: section=%d", state.activeSection)
+	if state.activeSection != sectionHosts || state.ai.open {
+		t.Fatalf("the button did not close the panel in place: section=%d", state.activeSection)
 	}
 }
 

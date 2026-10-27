@@ -55,11 +55,12 @@ type Backend interface {
 
 // Request is what the user is asked to approve.
 type Request struct {
-	Tool       string
-	Kind       tools.Kind
-	Session    string
-	Summary    string // the command, or "write /path (N bytes)"
-	Assessment risk.Assessment
+	Tool         string
+	Kind         tools.Kind
+	Session      string
+	SessionLabel string // immutable target name/address for the approval UI
+	Summary      string // the command, or "write /path (N bytes)"
+	Assessment   risk.Assessment
 	// NeedsText is set for a critical action: the user must type Confirm to go on.
 	NeedsText bool
 	Confirm   string
@@ -88,6 +89,22 @@ type Gate struct {
 	Policy   risk.Policy
 	Mode     Mode
 	Approver Approver // nil means nothing that needs approval can run
+	// Target limits an in-app run to its selected connection. Nil retains the
+	// external MCP contract; a non-nil target with no ID permits no session tools.
+	Target *SessionInfo
+}
+
+func (g Gate) targetSession(session string) (string, error) {
+	if g.Target == nil {
+		return session, nil
+	}
+	if g.Target.ID == "" {
+		return "", errors.New("no target connection selected; choose a connection before using session tools")
+	}
+	if session != "" && session != g.Target.ID {
+		return "", errors.New("session is outside this request's locked target; select that connection and send a new request")
+	}
+	return g.Target.ID, nil
 }
 
 // ConfirmWord is what a user types to approve a critical action.
@@ -122,10 +139,23 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		if g.Target != nil {
+			filtered := make([]SessionInfo, 0, 1)
+			for _, session := range sessions {
+				if session.ID == g.Target.ID {
+					session.Active = true
+					filtered = append(filtered, session)
+				}
+			}
+			sessions = filtered
+		}
 		return Result{Text: formatSessions(sessions)}
 	case tools.NameTerminalRead:
 		args, err := tools.DecodeTerminalRead(raw)
 		if err != nil {
+			return failure(err)
+		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
 		text, err := g.Backend.ReadTerminal(ctx, args)
@@ -138,6 +168,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
+			return failure(err)
+		}
 		entries, err := g.Backend.ListDir(ctx, args)
 		if err != nil {
 			return failure(err)
@@ -146,6 +179,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 	case tools.NameSFTPRead:
 		args, err := tools.DecodeSFTPRead(raw)
 		if err != nil {
+			return failure(err)
+		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
 		// Reading a private key or shadow file is a read, but not a harmless one.
@@ -167,6 +203,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
+			return failure(err)
+		}
 		assessment := risk.Classify(args.Command)
 		if denied := g.ask(ctx, name, tools.Exec, args.Session, args.Command, assessment); denied != nil {
 			return *denied
@@ -181,10 +220,18 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		for _, session := range args.Sessions {
+			if _, err := g.targetSession(session); err != nil {
+				return failure(err)
+			}
+		}
 		return g.execMany(ctx, name, args)
 	case tools.NameSFTPWrite:
 		args, err := tools.DecodeSFTPWrite(raw)
 		if err != nil {
+			return failure(err)
+		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
 		assessment := risk.Classify("tee " + shellQuote(args.Path))
@@ -206,6 +253,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 	case tools.NameSFTPRemove:
 		args, err := tools.DecodeSFTPRemove(raw)
 		if err != nil {
+			return failure(err)
+		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
 		assessment := risk.Classify("rm -- " + shellQuote(args.Path))
@@ -324,6 +374,9 @@ func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, su
 		return &Result{Text: "needs the user's approval, which cannot be asked here", IsError: true, Denied: true}
 	}
 	request := Request{Tool: tool, Kind: kind, Session: session, Summary: summary, Assessment: assessment}
+	if g.Target != nil && g.Target.ID == session {
+		request.SessionLabel = g.Target.Title + " · " + g.Target.Address
+	}
 	if decision == risk.DecisionConfirmText {
 		request.NeedsText, request.Confirm = true, ConfirmWord
 	}

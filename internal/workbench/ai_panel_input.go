@@ -43,6 +43,7 @@ type aiBody struct {
 	summary, confirm, decline, approve flex.Box
 	mentions                           [maxMentionSuggestions]flex.Box
 	box                                flex.Box
+	target                             flex.Box
 }
 
 // aiPrepareBottom measures what the declaration of the bottom needs to know
@@ -100,6 +101,7 @@ func (state *State) declareAIBottom(f *flex.Frame, body *aiBody, boxHeight float
 				})
 			}
 		})
+		body.target = f.Slot().Height(32).MarginSides(aiComposerMargin, aiComposerMargin, 0, aiComposerMargin)
 		body.box = f.Slot().Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin)
 	})
 }
@@ -157,6 +159,9 @@ func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
 			}
 		})
 		body.summary = f.Slot().Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0)
+		if request.SessionLabel != "" {
+			f.Wrap(m.Target+": "+request.SessionLabel).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
+		}
 		if len(assessment.Reasons) > 0 {
 			f.Column().MarginSides(0, 0, 4, 0).Children(func() {
 				for index, reason := range assessment.Reasons {
@@ -210,6 +215,7 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	theme := state.Theme()
+	panel.targetBounds = body.target.Rect()
 
 	if len(ai.approvals) > 0 {
 		approval := ai.approvals[0]

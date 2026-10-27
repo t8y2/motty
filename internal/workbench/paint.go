@@ -99,6 +99,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = ui.Rect{}
+	state.ai.panel.targetBounds = ui.Rect{}
 	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
 		state.ai.cfg.mcpSelectOpen = false
 	}
@@ -175,6 +176,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	viewport := state.windowRect()
 	state.beginMenus()
+	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintTransferCenter(canvas)
 	// The gallery's select is painted here, outside the workspace's clip and

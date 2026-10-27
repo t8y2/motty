@@ -47,12 +47,13 @@ const (
 // aiItem is one row: a message, a model's reasoning, a tool call with its
 // outcome, or a notice.
 type aiItem struct {
-	kind   aiItemKind
-	text   string
-	call   llm.ToolCall
-	status aiToolStatus
-	result string
-	risk   risk.Level
+	targetLabel string // connection snapshot; never inferred from the current tab
+	kind        aiItemKind
+	text        string
+	call        llm.ToolCall
+	status      aiToolStatus
+	result      string
+	risk        risk.Level
 }
 
 // aiApproval is a question to the user from a tool call that needs a yes.
@@ -71,6 +72,7 @@ type aiAnswer struct {
 
 // aiRun is one request to the model in flight.
 type aiRun struct {
+	target     gate.SessionInfo
 	cancel     context.CancelFunc
 	providerID string
 	// open is the item that streamed text is appended to, or -1.
@@ -106,9 +108,11 @@ func defaultAISettings() aiSettings {
 // aiState is everything the assistant keeps in a window. It costs nothing until
 // the panel is first opened: no database, no goroutine, no request.
 type aiState struct {
-	inbox   *aiInbox
-	drained []func(*State)
-	backend *aiBackend
+	target    gate.SessionInfo
+	targetSet bool // false only while a new conversation follows the visible terminal
+	inbox     *aiInbox
+	drained   []func(*State)
+	backend   *aiBackend
 
 	open bool
 	mode agent.Mode
@@ -516,7 +520,7 @@ func (state *State) aiContext() string {
 	if lines <= 0 {
 		return ""
 	}
-	session, err := state.aiSession("")
+	session, err := state.aiTargetSession()
 	if err != nil || session.term == nil {
 		return ""
 	}
@@ -532,15 +536,14 @@ func (state *State) aiContext() string {
 
 func (state *State) aiSessionSummary() string {
 	var b strings.Builder
+	target := state.aiTarget()
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		if session.term == nil {
+		if session.term == nil || sessionHandle(session.ID) != target.ID {
 			continue
 		}
 		fmt.Fprintf(&b, "session %s: %s (%s)", sessionHandle(session.ID), session.Title, session.Address)
-		if session.ID == state.activeSessionID {
-			b.WriteString(" [active]")
-		}
+		b.WriteString(" [locked target]")
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -549,10 +552,10 @@ func (state *State) aiSessionSummary() string {
 // aiNoSessionNote tells the model there is no terminal while none is open; the
 // prompt above it speaks of the user's visible terminal.
 func (state *State) aiNoSessionNote() string {
-	if _, err := state.aiSession(""); err == nil {
+	if _, err := state.aiTargetSession(); err == nil {
 		return ""
 	}
-	return "\n\nNo terminal session is open right now, so there is no screen to read and no command can be run. Answer from general knowledge, and say so if the user asks for something that needs a host."
+	return "\n\nNo target connection is selected. No session tools are available. Answer from general knowledge or explicitly attached context. Ask the user to select a target connection for operations."
 }
 
 // setAIMode changes Ask/Agent and remembers the choice in the AI database.
@@ -599,9 +602,16 @@ func (state *State) aiSend() {
 		ai.notice = err.Error()
 		return
 	}
+	target := state.aiTarget()
+	backend, err := state.aiTargetBackend(target)
+	if err != nil {
+		ai.notice = state.messages.AIPanel.TargetUnavailable
+		return
+	}
+	ai.target, ai.targetSet = target, true
 	provider, ready := state.aiKeyedProvider(provider, state.aiSend)
 	if !ready {
-		return // the question stays in the box until the vault is open
+		return // keep both the question and target while the vault is unlocked
 	}
 	ai.notice = ""
 	ai.needLogin = ""
@@ -612,7 +622,7 @@ func (state *State) aiSend() {
 	ai.input = text.Editor{}
 	if !retry {
 		state.dropEscalationApprovals()
-		ai.items = append(ai.items, aiItem{kind: aiUser, text: question})
+		ai.items = append(ai.items, aiItem{kind: aiUser, text: question, targetLabel: state.aiTargetLabel(target)})
 	}
 	ai.scroll.ScrollToEnd()
 
@@ -621,7 +631,7 @@ func (state *State) aiSend() {
 	if !retry && ai.mode == agent.ModeAsk {
 		if context := state.aiContext(); context != "" {
 			sent += context
-			if session, err := state.aiSession(""); err == nil {
+			if session, err := state.aiTargetSession(); err == nil {
 				attached = session.ID
 			}
 		}
@@ -641,11 +651,18 @@ func (state *State) aiSend() {
 		StepTimeout:       15 * time.Minute, // includes the time a person takes to answer
 		RedactToolResults: ai.settings.redact,
 	}
+	config.Gate.Target = &target
+	config.Gate.Backend = backend
+	config.System += "\n\nThis request is restricted to the locked target connection above. Omitted session arguments resolve to that fixed target, never to a newly selected tab. @mentions attach reference text only; they do not authorize tools on those connections. To operate another connection the user must choose it in the target selector and send a new request."
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID}
+	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID, target: target}
 	ai.run = run
+	if backend.boundDone != nil {
+		go state.aiWatchTarget(ctx, run, backend.boundDone)
+	}
 	history := append([]llm.Message(nil), ai.history...)
 	go func() {
+		defer backend.closeAll()
 		messages, err := agent.Run(ctx, config, history, sent, func(event agent.Event) {
 			state.aiPost(func(s *State) { s.aiEvent(run, event) })
 		})
@@ -698,7 +715,7 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		appendText(aiReasoning, event.Text)
 	case agent.EventToolStart:
 		run.open = -1
-		item := aiItem{kind: aiTool, call: event.Call, status: aiToolRunning}
+		item := aiItem{kind: aiTool, call: event.Call, status: aiToolRunning, targetLabel: state.aiTargetLabel(run.target)}
 		if event.Call.Name == "terminal_exec" || event.Call.Name == "terminal_exec_many" {
 			var args struct {
 				Command string `json:"command"`
@@ -735,6 +752,7 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 			summary = state.messages.AIPanel.EscalationSummary
 		}
 		request := gate.Request{Tool: tools.NameRequestAgentMode, Kind: tools.Read, Summary: summary}
+		request.Session, request.SessionLabel = run.target.ID, state.aiTargetLabel(run.target)
 		if reason != "" {
 			request.Assessment.Reasons = []string{reason}
 		}
@@ -811,10 +829,10 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 		}
 	}
 	ai.history = append(ai.history, messages...)
-	state.aiPersist(messages)
+	state.aiPersist(messages, run.target)
 }
 
-func (state *State) aiPersist(messages []llm.Message) {
+func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo) {
 	ai := &state.ai
 	if !ai.settings.keepHistory || ai.store == nil || len(messages) == 0 {
 		return
@@ -824,11 +842,7 @@ func (state *State) aiPersist(messages []llm.Message) {
 		if r := []rune(title); len(r) > 40 {
 			title = string(r[:40])
 		}
-		session, _ := state.aiSession("")
-		label := ""
-		if session != nil {
-			label = session.Title
-		}
+		label := target.Title
 		conversation, err := ai.store.CreateConversation(strings.TrimSpace(title), label)
 		if err != nil {
 			return
@@ -836,14 +850,22 @@ func (state *State) aiPersist(messages []llm.Message) {
 		ai.conv = conversation.ID
 	}
 	for _, message := range messages {
-		_, _ = ai.store.AppendMessage(ai.conv, toStored(message))
+		stored := toStored(message)
+		if message.Role == llm.RoleUser || len(message.ToolCalls) > 0 {
+			var metadata storedTools
+			_ = json.Unmarshal(stored.ToolJSON, &metadata)
+			metadata.TargetLabel = state.aiTargetLabel(target)
+			stored.ToolJSON, _ = json.Marshal(metadata)
+		}
+		_, _ = ai.store.AppendMessage(ai.conv, stored)
 	}
 }
 
 // storedTools is how tool calls and results travel through a StoredMessage.
 type storedTools struct {
-	Calls  []llm.ToolCall `json:"calls,omitempty"`
-	CallID string         `json:"call_id,omitempty"`
+	TargetLabel string         `json:"target_label,omitempty"`
+	Calls       []llm.ToolCall `json:"calls,omitempty"`
+	CallID      string         `json:"call_id,omitempty"`
 }
 
 func toStored(message llm.Message) store.StoredMessage {
@@ -871,6 +893,8 @@ func (state *State) aiNewConversation() {
 	if ai.run != nil {
 		return
 	}
+	ai.target, ai.targetSet = gate.SessionInfo{}, false
+	ai.panel.targetOpen = false
 	ai.items, ai.history, ai.conv, ai.notice = nil, nil, 0, ""
 	ai.approvals = nil
 	ai.retry = false
@@ -892,21 +916,30 @@ func (state *State) aiOpenConversation(id int64) {
 		return
 	}
 	ai.items, ai.history, ai.conv = nil, nil, id
+	// Persisted terminal IDs are not identities across application restarts.
+	// Reopening history requires an explicit target choice before any operation.
+	ai.target, ai.targetSet = gate.SessionInfo{}, true
+	ai.panel.targetOpen = false
+	ai.notice = ""
+	ai.retry, ai.answerOnly = false, false
+	state.dropEscalationApprovals()
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 	for _, row := range stored {
+		var metadata storedTools
+		_ = json.Unmarshal(row.ToolJSON, &metadata)
 		message := fromStored(row)
 		ai.history = append(ai.history, message)
 		switch message.Role {
 		case llm.RoleUser:
-			ai.items = append(ai.items, aiItem{kind: aiUser, text: stripContext(message.Text)})
+			ai.items = append(ai.items, aiItem{kind: aiUser, text: stripContext(message.Text), targetLabel: metadata.TargetLabel})
 		case llm.RoleAssistant:
 			if message.Text != "" {
 				ai.items = append(ai.items, aiItem{kind: aiAssistant, text: message.Text})
 			}
 			for _, call := range message.ToolCalls {
-				ai.items = append(ai.items, aiItem{kind: aiTool, call: call, status: aiToolDone})
+				ai.items = append(ai.items, aiItem{kind: aiTool, call: call, status: aiToolDone, targetLabel: metadata.TargetLabel})
 			}
 		case llm.RoleTool:
 			for index := len(ai.items) - 1; index >= 0; index-- {

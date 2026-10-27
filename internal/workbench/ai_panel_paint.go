@@ -36,6 +36,7 @@ const (
 // anything goes: the row is declared with flex at the position the sum of the
 // heights above it gives.
 type aiRowView struct {
+	targetLabel string
 	// What the layout was built from.
 	valid    bool
 	built    bool // expanded when built
@@ -71,6 +72,7 @@ type aiRowView struct {
 
 func (v *aiRowView) current(item *aiItem, width, cell float32, title string) bool {
 	return v.valid && v.kind == item.kind && v.status == item.status && v.width == width && v.cell == cell &&
+		v.targetLabel == item.targetLabel &&
 		v.built == v.expanded && v.title == title &&
 		v.textData == unsafe.StringData(item.text) && v.textLen == len(item.text) &&
 		v.resData == unsafe.StringData(item.result) && v.resLen == len(item.result) &&
@@ -290,7 +292,8 @@ func (state *State) aiBuild(canvas *ui.Canvas, view *aiRowView, item *aiItem, wi
 		view.expanded = false
 	}
 	*view = aiRowView{
-		valid: true, built: view.expanded, kind: item.kind, status: item.status, width: width, cell: cell, title: title,
+		targetLabel: item.targetLabel,
+		valid:       true, built: view.expanded, kind: item.kind, status: item.status, width: width, cell: cell, title: title,
 		textData: unsafe.StringData(item.text), textLen: len(item.text),
 		resData: unsafe.StringData(item.result), resLen: len(item.result),
 		argData: unsafe.StringData(item.call.Arguments), argLen: len(item.call.Arguments),
@@ -301,6 +304,9 @@ func (state *State) aiBuild(canvas *ui.Canvas, view *aiRowView, item *aiItem, wi
 		inner := max(width*0.9-2*aiUserPadX, 40)
 		count := state.aiWrap(canvas, view, item.text, aiBodySize, inner)
 		view.height = 2*aiUserPadY + float32(count)*aiBodyLine
+		if item.targetLabel != "" {
+			view.height += aiSmallLine
+		}
 	case aiAssistant:
 		view.doc.Parse(item.text)
 		view.height = view.md.Layout(canvas, components.MarkdownStyle{
@@ -331,6 +337,9 @@ func (state *State) aiLayoutTool(view *aiRowView, item *aiItem, width, cell, cel
 	view.excerpt = aiExcerpt(item.result)
 	cols := max(int((width-2*aiToolPad-12)/cell), 8)
 	height := 2*aiToolPadY + aiToolHeader
+	if item.targetLabel != "" {
+		height += aiSmallLine
+	}
 	if view.detail != "" {
 		view.lines, _ = aiMonoWrap(view.lines, view.detail, cols, aiMaxDetail)
 		view.commandLines = len(view.lines)
@@ -616,7 +625,7 @@ func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
 // is one to look at, and about getting one when there is not.
 func (state *State) aiEmptyTexts() (title, hint string, examples [aiExamples]string) {
 	m := state.messages.AIPanel
-	if _, err := state.aiSession(""); err != nil {
+	if _, err := state.aiTargetSession(); err != nil {
 		return m.IdleTitle, m.IdleHint, [aiExamples]string{m.IdleExample1, m.IdleExample2, m.IdleExample3}
 	}
 	return m.EmptyTitle, m.EmptyHint, [aiExamples]string{m.Example1, m.Example2, m.Example3}
@@ -878,6 +887,9 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 	case aiUser:
 		row.Items(flex.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
+				if item.targetLabel != "" {
+					f.Text(m.Target + ": " + item.targetLabel).FontSize(aiSmallSize).LineHeight(aiSmallLine).Color(pal.muted).Ellipsis()
+				}
 				aiTextLines(f, view.lines, aiBodySize, aiBodyLine, pal.text)
 			})
 		})
@@ -935,6 +947,9 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 		}
 		statusText, statusColor := state.aiStatusText(item.status)
 		row.Border(1, border).PadSides(aiToolPadY-1, aiToolPad-1, aiToolPadY-1, aiToolPad-1).Background(pal.surface).Radius(radius.control).Children(func() {
+			if item.targetLabel != "" {
+				f.Text(m.Target + ": " + item.targetLabel).FontSize(aiSmallSize).LineHeight(aiSmallLine).Color(pal.muted).Ellipsis()
+			}
 			// The name and the risk at the left, the status at the right.
 			f.Row().Height(aiToolHeader).Items(flex.Center).Children(func() {
 				f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)

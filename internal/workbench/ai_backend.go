@@ -25,6 +25,11 @@ const (
 // talk to the server from the calling goroutine.
 type aiBackend struct {
 	state *State
+	// A request owns its backend and connection lifetime. Reconnecting the same
+	// tab must not resume an old request or reuse its SFTP client.
+	boundID       string
+	boundTerminal *terminal
+	boundDone     <-chan struct{}
 
 	mu   sync.Mutex
 	sftp map[uint32]sftpclient.Remote // one per session, opened when first needed
@@ -52,7 +57,7 @@ func (b *aiBackend) Sessions(ctx context.Context) ([]gate.SessionInfo, error) {
 
 func (b *aiBackend) ReadTerminal(ctx context.Context, args tools.TerminalReadArgs) (string, error) {
 	return aiCall(b.state, ctx, func() (string, error) {
-		session, err := b.state.aiSession(args.Session)
+		session, err := b.session(args.Session)
 		if err != nil {
 			return "", err
 		}
@@ -83,7 +88,12 @@ func lastLines(text string, n int) string {
 }
 
 func (b *aiBackend) Exec(ctx context.Context, args tools.TerminalExecArgs) (gate.ExecResult, error) {
-	exec, err := aiCall(b.state, ctx, func() (*aiExec, error) { return b.state.beginExec(args) })
+	exec, err := aiCall(b.state, ctx, func() (*aiExec, error) {
+		if _, err := b.session(args.Session); err != nil {
+			return nil, err
+		}
+		return b.state.beginExec(args)
+	})
 	if err != nil {
 		return gate.ExecResult{}, err
 	}
@@ -98,7 +108,7 @@ func (b *aiBackend) remote(ctx context.Context, handle string) (sftpclient.Remot
 		transfer transferMode
 	}
 	t, err := aiCall(b.state, ctx, func() (target, error) {
-		session, err := b.state.aiSession(handle)
+		session, err := b.session(handle)
 		if err != nil {
 			return target{}, err
 		}

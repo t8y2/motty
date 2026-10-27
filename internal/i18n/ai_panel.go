@@ -2,7 +2,14 @@ package i18n
 
 // AIPanelMessages are the texts of the assistant panel.
 type AIPanelMessages struct {
-	Title string
+	Target             string
+	TargetNone         string
+	TargetConnected    string
+	TargetDisconnected string
+	TargetUnavailable  string
+	TargetLocked       string
+	TargetHint         string
+	Title              string
 	// ToggleTip names the window-bar button; Toggle is the shortcut and command
 	// palette entry.
 	ToggleTip string
