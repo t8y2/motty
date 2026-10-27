@@ -237,10 +237,12 @@ func encodeTextDocument(value string, utf8BOM bool) ([]byte, error) {
 }
 
 func openEditTemporary(client transferRemote, remotePath string) (TransferFile, string, error) {
-	base := path.Base(remotePath)
+	// Do not append to the source basename: it may already use NAME_MAX bytes.
+	// Keep the temporary sibling short while separating simultaneous targets.
+	identity := sha256.Sum256([]byte(remotePath))
 	directory := path.Dir(remotePath)
 	for attempt := 0; attempt < 16; attempt++ {
-		target := path.Join(directory, fmt.Sprintf(".motty.%s.edit-%02x.part", base, attempt))
+		target := path.Join(directory, fmt.Sprintf(".motty.edit-%x-%02x.part", identity[:8], attempt))
 		file, err := client.OpenTransferFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if err == nil {
 			return file, target, nil
