@@ -328,3 +328,19 @@ func TestSFTPWindowDropOverlayKeepsTargetsAndShowsDirection(t *testing.T) {
 		}
 	}
 }
+
+func TestSFTPWindowGlobalHistoryRemovalRepaintsNativeQueue(t *testing.T) {
+	state, w, _, host, dir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	w.queueEntries(true, []sftpclient.Entry{{Name: "中文上传.yml"}}, dir, w.view.path)
+	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
+	if w.ui.queueBounds.Width == 0 {
+		t.Fatal("queue not visible")
+	}
+	index := state.transfers.byTask[transferKey{w.view, w.view.transfers[0].ID}]
+	state.removeTransfer(index)
+	view.Driver().Pump()
+	if w.queueCount() != 0 || w.ui.queueBounds.Width != 0 {
+		t.Fatal("global removal left a stale native queue")
+	}
+}

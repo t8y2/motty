@@ -316,6 +316,9 @@ func (state *State) removeTransfer(index int) {
 	if transferActive(entry.snapshot) {
 		return
 	}
+	if entry.owner != nil {
+		entry.owner.invalidateDetached()
+	}
 	if entry.owner != nil && !entry.owner.worker.ForgetTransfer(entry.snapshot.ID) {
 		entry.removed = true
 	} else {
