@@ -225,6 +225,45 @@ func TestSFTPWindowFailedHandshakeRetriesInsideSameWindow(t *testing.T) {
 	}
 }
 
+func TestSFTPWindowInvalidRouteStaysFailedAndRetryable(t *testing.T) {
+	state, original, _, host, _ := dualSFTPFixture(t, 1.25)
+	target := original.session.host
+	target.ID += 1000
+	state.hosts = append(state.hosts, target)
+	state.proxies = append(state.proxies, proxyRecord{TargetID: target.ID, JumpID: target.ID + 1})
+	sessions := len(state.sessions)
+	dials := 0
+	state.options.Dial = func(sshconn.Config) Connection {
+		dials++
+		return &fakeConn{}
+	}
+
+	state.openHostSFTPWindow(target)
+	var w *sftpWindow
+	for _, candidate := range state.sftpWindows {
+		if candidate.session.HostID == target.ID {
+			w = candidate
+		}
+	}
+	if w == nil || w.window == nil {
+		t.Fatal("invalid route did not open its failure window")
+	}
+	state.Wake()
+	if w.session.phase != sshconn.PhaseFailed || w.phase != sshconn.PhaseFailed || w.session.conn != nil {
+		t.Fatalf("invalid route state = session %v, window %v, conn %v", w.session.phase, w.phase, w.session.conn)
+	}
+	var canvas ui.Canvas
+	w.paint(&canvas, ui.Size{Width: 640, Height: 400})
+	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok {
+		t.Fatal("invalid route failure cannot be retried")
+	}
+	w.click(hitSFTPWindowConnectRetry)
+	state.Wake()
+	if w.session.phase != sshconn.PhaseFailed || w.closed || len(host.windows) != 2 || dials != 0 || len(state.sessions) != sessions || w.session.term != nil {
+		t.Fatalf("retry changed invalid route window: phase=%v closed=%t windows=%d dials=%d sessions=%d terminal=%v", w.session.phase, w.closed, len(host.windows), dials, len(state.sessions), w.session.term)
+	}
+}
+
 func TestSFTPWindowQuitWhileAuthenticationPendingReleasesConnection(t *testing.T) {
 	state, original, _, _, _ := dualSFTPFixture(t, 1)
 	target := original.session.host

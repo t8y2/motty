@@ -153,7 +153,10 @@ func (state *State) syncSFTPWindows() {
 		if w.closed || w.window == nil {
 			continue
 		}
-		phase := w.session.conn.Status().Phase
+		phase := w.session.phase
+		if w.session.conn != nil {
+			phase = w.session.conn.Status().Phase
+		}
 		if w.phase != phase || w.language != state.language || w.pal != state.pal {
 			w.phase, w.language, w.pal = phase, state.language, state.pal
 			w.window.Invalidate()
