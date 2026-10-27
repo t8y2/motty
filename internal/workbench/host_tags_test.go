@@ -73,3 +73,25 @@ func TestHostTagSelectCommitsPendingQueryAndKeepsValidation(t *testing.T) {
 		t.Fatal("selection limit bypassed on save")
 	}
 }
+
+func TestHostTagPasteWithCommasSplitsIntoTags(t *testing.T) {
+	for _, enter := range []bool{false, true} {
+		state := newTestState(t, freshOptions(t))
+		state.Click(hitAddHost)
+		state.editor.label.Insert("imported")
+		state.editor.address.Insert("192.0.2.43")
+		p := state.hostTagPicker()
+		p.control.Query.Insert("生产, 归档 ,")
+		if enter {
+			state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+			if state.modal != modalNewHost || !slices.Equal(p.control.Values(), []string{"生产", "归档"}) {
+				t.Fatalf("Enter did not split a pasted list: %v %v", p.control.Values(), state.dialogError)
+			}
+			continue
+		}
+		state.Click(hitDialogSubmit)
+		if state.modal != modalNone || len(state.hosts) != 1 || state.hosts[0].Tags != "生产, 归档" {
+			t.Fatalf("save did not split a pasted list: %q %v", state.hosts[0].Tags, state.dialogError)
+		}
+	}
+}

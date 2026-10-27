@@ -35,8 +35,8 @@ func (state *State) hostTagPicker() *hostTagPicker {
 	p := &state.editor.tagPicker
 	value := state.editor.value(fieldTags)
 	if !p.ready {
-		p.control.AllowCreate, p.control.FoldValues, p.control.Limit = true, true, maxHostTags
-		p.control.ValidateCreate = validHostTag
+		p.control.AllowCreate, p.control.MatchCaseInsensitive, p.control.Limit = true, true, maxHostTags
+		p.control.SetValidateCreate(validHostTag)
 		options := []components.MultiSelectOption{{Value: "开发"}, {Value: "测试"}, {Value: "生产"}}
 		for _, host := range state.hosts {
 			tags, _ := parseHostTags(host.Tags)
@@ -71,6 +71,24 @@ func (state *State) syncHostTags() {
 	}
 }
 
+// pendingHostTags splits a query that lists several tags, so text copied from
+// an old comma-separated field, a README or a shell command still saves as
+// tags. Empty entries, as a trailing comma leaves, are ignored.
+func pendingHostTags(query string) ([]string, bool) {
+	var tags []string
+	for _, part := range strings.Split(query, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !validHostTag(part) {
+			return nil, false
+		}
+		tags = append(tags, part)
+	}
+	return tags, true
+}
+
 // Saving a host also commits a valid query that has not yet been confirmed.
 func (state *State) commitHostTagQuery() bool {
 	p := state.hostTagPicker()
@@ -78,12 +96,13 @@ func (state *State) commitHostTagQuery() bool {
 	if query == "" {
 		return true
 	}
-	if !validHostTag(query) {
+	pending, ok := pendingHostTags(query)
+	if !ok {
 		state.dialogError = state.messages.ErrHostTagsInvalid
 		return false
 	}
 	values := append([]string(nil), p.control.Values()...)
-	values = append(values, query)
+	values = append(values, pending...)
 	tags, ok := normalizeHostTags(values)
 	if !ok {
 		state.dialogError = state.messages.ErrHostTagsInvalid
@@ -126,9 +145,17 @@ func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	}
 	if event.Key == ui.KeyEnter && !event.Release && !event.Repeat && event.Modifiers == 0 {
 		if _, composing := p.control.Query.Composition(); !composing {
-			if query := strings.TrimSpace(p.control.Query.String()); query != "" && !validHostTag(query) {
-				state.dialogError = state.messages.ErrHostTagsInvalid
-				return ui.EventResult{Handled: true, Repaint: true}, true
+			if query := strings.TrimSpace(p.control.Query.String()); query != "" {
+				if _, ok := pendingHostTags(query); !ok {
+					state.dialogError = state.messages.ErrHostTagsInvalid
+					return ui.EventResult{Handled: true, Repaint: true}, true
+				}
+				// A comma-separated query is several tags, and the component's
+				// create row is disabled for it, so commit the list here.
+				if strings.Contains(query, ",") {
+					state.commitHostTagQuery()
+					return ui.EventResult{Handled: true, Repaint: true}, true
+				}
 			}
 		}
 	}
@@ -139,7 +166,7 @@ func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 
 func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
 	p := state.hostTagPicker()
-	input := components.BeginField(canvas, state.Theme(), bounds).Paint(state.messages.FieldTags, "", "")
+	input := components.BeginField(canvas, state.Theme(), bounds).For(hitDialogTags).Paint(state.messages.FieldTags, "", "")
 	query := strings.TrimSpace(p.control.Query.String())
 	layout := components.PaintMultiSelect(canvas, state.Theme(), input, &p.control, components.MultiSelectOptions{
 		InputID: hitDialogTags, TriggerID: hitHostTagsTrigger, DismissID: hitHostTagsDismiss, Scope: hostTagsScope, ScrollID: hitHostTagsScroll,
