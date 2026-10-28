@@ -83,10 +83,13 @@ func TestAssistantRunsALowRiskCommandInTheVisibleTerminalAndAnswers(t *testing.T
 	if !painted {
 		t.Fatal("the AI gutter mark was not painted")
 	}
-	// The conversation is shown and saved.
+	// The conversation is shown and saved. The target separator is a
+	// presentation row, not part of the conversation.
 	var kinds []aiItemKind
 	for _, item := range state.ai.items {
-		kinds = append(kinds, item.kind)
+		if item.kind != aiTargetChange {
+			kinds = append(kinds, item.kind)
+		}
 	}
 	if len(kinds) < 3 || kinds[0] != aiUser || kinds[len(kinds)-1] != aiAssistant {
 		t.Fatalf("items = %+v", state.ai.items)
