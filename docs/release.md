@@ -11,7 +11,8 @@ commit, and the workflow checks the artifacts before anything goes public.
 #    docs/releases/<version>.md, commit and push
 # 2. tag exactly v<version> and push the tag
 git tag v0.1.3 && git push origin v0.1.3
-# 3. when the workflow is green the release is published and the mirror serves it
+# 3. when the workflow is green the packages are on the mirror, the release is
+#    public and the update feed names it
 ```
 
 `tools/release.sh` refuses a tag that is not `v` plus the version in `viva.toml`,
@@ -26,7 +27,14 @@ and the draft job refuses a tag whose commit has no notes file.
 | macOS | macOS 15 (arm64) | `.dmg` and `.zip` for arm64 and amd64; signed, notarized and stapled |
 | Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
 | Checksums | Ubuntu | signs every package of the release, writes `SIGNATURES` and `SHA256SUMS`, and verifies the whole release |
-| Publish | Ubuntu | publishes the verified draft, which triggers the mirror |
+| Publish | Ubuntu | copies the packages to the mirror, publishes the verified draft, then flips `latest.json` |
+
+The *Publish* job runs in that order on purpose: the bytes go to the mirror while
+the release is still a draft, the release page goes public only once they are
+confirmed there, and `latest.json` — the file an installed copy updates from —
+changes last. Nothing public ever names a file the mirror does not hold, and a
+release that fails at any step before the last leaves the update feed on the
+previous version.
 
 The two build jobs run at the same time and upload to the same draft. Re-running
 a failed job replaces its files. The *Checksums* job is the only one that sees
@@ -55,8 +63,11 @@ and, when a change touches windows, input or updates, a headless run are still
 what keeps a release worth publishing.
 
 If a job fails, the draft stays and nothing is published. Fix the cause, delete
-the draft and the tag, and tag again; once *Publish* has run the release is
-public and a fix is a new patch version, not an edit.
+the draft and the tag, and tag again; once the *Publish* job has published the
+release a fix is a new patch version, not an edit. The one step with a different
+recovery is *Announce*: if the copy and the publish went through but `latest.json`
+did not, the release is public on the previous feed — run *Actions → Mirror
+release → Run workflow* with the tag to finish it without touching the release.
 
 ## The release notes
 
@@ -171,17 +182,28 @@ the version on GitHub reads the same as in the app and in the changelog.
 
 ## The Cloudflare mirror
 
-Publishing the draft — the *Publish* job does it, and
-`gh release edit v0.1.2 --draft=false` does the same by hand — triggers
-`.github/workflows/mirror.yml`, which copies every asset to the `motty` R2 bucket
-on Cloudflare. The bucket answers on `https://dl.motty.page`; the GitHub release
-stays the source of record and the copy is only a faster path to the same bytes.
+The *Publish* job is what puts a release on the `motty` R2 bucket on Cloudflare,
+in three steps: `--copy` uploads every asset while the release is still a draft,
+then the draft is published, then `--announce` writes `latest.json`. Splitting it
+that way is what keeps the public release page, the website's download links and
+the update feed from ever pointing at a file the mirror does not hold yet, and it
+keeps the feed — the one thing installed copies act on — as the last thing that
+changes. `--announce` also refuses unless the copied bytes are on the mirror: the
+versioned URL has to answer with the size the file has locally.
+
+The bucket answers on `https://dl.motty.page`; the GitHub release stays the source
+of record and the copy is only a faster path to the same bytes. `.github/workflows/mirror.yml`
+is the repair path, not the trigger: *Actions → Mirror release → Run workflow*
+with the tag does the copy and the announce again for a release that is already
+public.
 
 `tools/mirror-release.sh TAG` does the work and can be run locally:
 
 ```sh
-tools/mirror-release.sh v0.1.2              # downloads the release with gh, then uploads
-tools/mirror-release.sh v0.1.2 --dir build/release-0.1.2   # upload what is already there
+tools/mirror-release.sh v0.1.2                          # copy and announce (repair)
+tools/mirror-release.sh v0.1.2 --copy                   # copy only, feed untouched
+tools/mirror-release.sh v0.1.2 --announce               # feed only, refuses a missing copy
+tools/mirror-release.sh v0.1.2 --dir build/release-0.1.2   # work on what is already there
 ```
 
 Object layout:
@@ -202,12 +224,12 @@ rebuild per version; `latest.json` is what a script should read. The page also
 lists only what `latest.json` holds, so adding or dropping a package format with
 a release shows up on the next site build without editing the page. The uploader
 runs `sha256sum -c SHA256SUMS` first and refuses to mirror a release whose files
-do not match it.
+do not match it; `--announce` in turn refuses while any package is missing from
+the bucket, so the feed cannot name bytes that were never uploaded.
 
-The workflow needs `CLOUDFLARE_API_TOKEN` with *Workers R2 Storage: Edit* (the
+The mirror steps need `CLOUDFLARE_API_TOKEN` with *Workers R2 Storage: Edit* (the
 Pages token from docs/website.md covers the site only) and `CLOUDFLARE_ACCOUNT_ID`
-(the same value the website workflow uses). Re-run a mirror from *Actions →
-Mirror release → Run workflow* with the tag.
+(the same value the website workflow uses).
 
 ## In-app updates
 

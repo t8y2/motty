@@ -9,9 +9,10 @@
 # The tag is the approval: *Checksums* refuses the release unless it is exactly
 # the twelve assets, its SHA256SUMS matches the files, every signature verifies
 # against the key compiled into the app, and the notes name the Viva frame that
-# was built. *Publish* then publishes that verified draft, which triggers the
-# mirror every installed copy updates from; it refuses to run without the
-# mirror's secrets, because a release nobody can download is not a release.
+# was built. *Publish* then copies the packages to the mirror, publishes that
+# verified draft, and flips the update feed last, so nothing public ever points
+# at bytes the mirror does not hold; it refuses to run without the mirror's
+# secrets, because a release nobody can download is not a release.
 #
 # The framework is vivaui/viva main as it stands when the release starts: one job
 # resolves the commit, every build job checks out that same commit, and the commit
@@ -228,11 +229,25 @@ jobs:
     needs: checksums
     runs-on: ubuntu-latest
     steps:
-      # Publishing is the point of no return: the app's update feed starts
-      # announcing this version. It happens only after the checksums job has
-      # verified the release, and only when the mirror is configured, because
-      # the mirror is what an installed copy updates from.
-      - name: Publish the verified release
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Fetch the verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir "$dir"
+
+      # The bytes reach the mirror before anything is public, so the release
+      # page, the website's download links and the update feed never point at
+      # files that are not there yet. Still a draft: only --copy runs here.
+      # Without the mirror's secrets the release stops here, because the mirror
+      # is what an installed copy updates from.
+      - name: Copy the packages to the mirror
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -242,4 +257,20 @@ jobs:
             echo "::error::publishing needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID: the mirror is the update feed"
             exit 1
           fi
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          tools/mirror-release.sh "$GITHUB_REF_NAME" --copy --dir "$RUNNER_TEMP/release"
+
+      - name: Publish the verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+      # The update feed flips last, and only after the copy above confirmed the
+      # packages are on the mirror: this is the moment installed copies start
+      # updating. A failure here leaves the release public but the feed on the
+      # previous version; run Mirror release with the tag to finish it.
+      - name: Announce the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: tools/mirror-release.sh "$GITHUB_REF_NAME" --announce --dir "$RUNNER_TEMP/release"

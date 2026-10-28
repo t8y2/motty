@@ -1,12 +1,15 @@
-# Mirrors a published release to Cloudflare R2, served from https://dl.motty.page.
-# Publishing the draft release is the trigger; the GitHub release stays the source
-# of record and this workflow only copies its assets. Layout and rerun notes:
-# docs/release.md.
+# Re-mirrors a release to Cloudflare R2, served from https://dl.motty.page.
+# The release workflow copies, publishes and announces every release itself, so
+# this is the repair path: run it with the tag when the copy or the feed has to
+# be redone (it does both). The GitHub release stays the source of record; this
+# workflow only copies its assets. Layout and rerun notes: docs/release.md.
+#
+# It no longer subscribes to `release: published`: a release made with the
+# workflow token does not trigger workflows, and a second mirror racing the
+# release workflow's own announce would only make that ordering ambiguous.
 name: Mirror release
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -17,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mirror-${{ github.event.release.tag_name || inputs.tag }}
+  group: mirror-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -34,5 +37,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: tools/mirror-release.sh "$TAG"

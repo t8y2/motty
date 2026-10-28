@@ -21,6 +21,59 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '0.1.4',
+    date: '2026-10-28',
+    sections: [
+      {
+        title: { en: 'New', zh: '新功能' },
+        items: [
+          {
+            en: '`motty mcp-serve` is an MCP server over stdio: an agent starts it itself, with no port and no token, and it ends with that agent. It reaches only the hosts you opened to agents under a host’s Advanced settings.',
+            zh: '`motty mcp-serve` 是走 stdio 的 MCP 服务：agent 自己启动它，不用端口也不用 token，agent 退出它就结束；它只访问你在主机「高级」里开放给 agent 的主机。',
+          },
+          {
+            en: 'Agents are read only by default; the Commands mode also allows commands rated low risk. Anything that needs approval is refused, host keys are never trusted by the server itself, and passwords come from the saved passwords.',
+            zh: 'agent 默认只读，「命令」档额外放行低风险命令；需要确认的操作一律拒绝，服务不会自行信任主机密钥，密码取自已保存的密码。',
+          },
+          {
+            en: 'Every call is listed under Settings > MCP for 30 days, without its output; the server refuses to start when it cannot open that log. Settings > MCP also carries copy-ready entries for the supported clients.',
+            zh: '每次调用都会列在设置 > MCP，保留 30 天且不含输出，日志打不开时服务拒绝启动；设置 > MCP 里还有可直接复制的客户端配置片段。',
+          },
+          {
+            en: 'A GitHub button in the window bar opens the project page. The language button is gone; the language still lives in Settings.',
+            zh: '窗口栏新增 GitHub 按钮，点开是项目主页；语言按钮去掉，语言仍在设置里选。',
+          },
+        ],
+      },
+      {
+        title: { en: 'Improved', zh: '改进' },
+        items: [
+          {
+            en: 'Advanced host settings are grouped under Session and AI agents, name and color share a row, the agent switch explains itself in a help tooltip, and the proxy summary is a bordered box like the other inputs.',
+            zh: '主机高级设置按「会话」和「AI agent」分组，名称和颜色排在同一行，agent 开关带帮助提示，代理摘要改成和其他输入一致的有边框盒子。',
+          },
+          {
+            en: 'iTerm2, kitty and sixel images decode in the background, so a large image no longer stalls a frame; the placement is reserved while decoding, and erases, resizes and kitty deletes still see it.',
+            zh: 'iTerm2、kitty、sixel 图片改到后台解码，大图不再卡住一帧；解码期间位置已经占好，擦除、缩放和 kitty 删除照常生效。',
+          },
+          {
+            en: 'Hovering a terminal link scans only the soft-wrapped group under the pointer instead of the whole scrollback, and saving one host re-encodes only that host’s record.',
+            zh: '悬停终端链接只扫描指针所在的那一组软换行，不再整屏回扫；保存一台主机只重新编码那条记录，主机很多时也快。',
+          },
+        ],
+      },
+      {
+        title: { en: 'Fixed', zh: '修复' },
+        items: [
+          {
+            en: 'The MCP group in Settings no longer collides with the cards around it, and its title and descriptions say what the user cares about.',
+            zh: '设置里的 MCP 分组不再和周围的卡片挤在一起，标题和说明改成用户关心的说法。',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.1.3',
     date: '2026-10-27',
     sections: [
