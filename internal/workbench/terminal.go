@@ -921,6 +921,9 @@ func (state *State) copySelection(session *Session) ui.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
+	if state.modal == modalToolbarSettings {
+		return state.toolbarSettingsScroll(event)
+	}
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		p := &state.editor.tagPicker
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}

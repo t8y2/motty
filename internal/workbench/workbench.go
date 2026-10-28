@@ -553,6 +553,8 @@ type State struct {
 	// settingsCategory is the category of settings shown.
 	settingsCategory settingsCategory
 	settings         settingsUI
+	toolbars         toolbarPreferences
+	toolbarEditor    toolbarSettingsUI
 
 	// area: settings
 	settingsPage flex.View // the whole settings workspace
@@ -1135,6 +1137,9 @@ func (state *State) Click(id ui.ID) {
 	case modalRemoteTools:
 		state.clickRemoteTools(id)
 		return
+	case modalToolbarSettings:
+		state.clickToolbarSettings(id)
+		return
 	case modalVaultForget:
 		state.clickVaultForget(id)
 		return
@@ -1308,7 +1313,7 @@ func (state *State) Click(id ui.ID) {
 		state.openShortcutCapture(shortcutAction(uint32(item(id))) + 1)
 	case tree.Within(id.Scope(), proxiesHits):
 		state.clickProxies(id)
-	case tree.Within(id.Scope(), settingsHits):
+	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):
 		state.clickForwards(id)
@@ -1619,6 +1624,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarSettingsPointer(event); result.Handled {
+		return result
+	}
 	if result, handled := state.transferCenterPointer(event); handled {
 		return result
 	}
@@ -1811,6 +1819,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result := state.toolbarSettingsKey(event); result.Handled {
+		return result
+	}
 	if result := state.remoteRefreshKey(event); result.Handled {
 		return result
 	}

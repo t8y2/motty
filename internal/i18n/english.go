@@ -1747,3 +1747,10 @@ var englishAbout = AboutMessages{
 	Join:               "Join",
 	Open:               "Open",
 }
+
+var englishToolbars = ToolbarMessages{
+	Window: "Window toolbar", Terminal: "Terminal toolbar", SFTP: "SFTP toolbar",
+	Description: "Customize which shortcuts are shown and their order.", Customize: "Customize", Hint: "Drag a handle to reorder, or focus it and use the arrow keys. Changes apply immediately.", EnabledFmt: "%d / %d enabled",
+	EnableAll: "Enable all", DisableAll: "Disable all", Reset: "Restore defaults", Close: "Done",
+	DragFmt: "Reorder %s", LocalRemote: "Switch local / remote files", PanelSide: "Move panel left / right",
+}

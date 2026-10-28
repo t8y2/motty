@@ -36,7 +36,8 @@ type Messages struct {
 	AIPanel    AIPanelMessages
 	AISettings AISettingsMessages
 	// Tools holds the terminal tools' texts; see terminal_tools.go.
-	Tools ToolsMessages
+	Tools    ToolsMessages
+	Toolbars ToolbarMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
 	Autofill AutofillMessages
 	// History holds the command history's texts; see history.go.
@@ -755,6 +756,7 @@ func For(language Language) Messages {
 	case Chinese:
 		messages := ChineseMessages
 		messages.AIPanel, messages.AISettings, messages.Tools = chineseAIPanel, chineseAISettings, chineseTools
+		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
 		messages.History = chineseHistory
 		messages.SSHSync = chineseSSHSync
@@ -764,6 +766,7 @@ func For(language Language) Messages {
 	default:
 		messages := EnglishMessages
 		messages.AIPanel, messages.AISettings, messages.Tools = englishAIPanel, englishAISettings, englishTools
+		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
 		messages.History = englishHistory
 		messages.SSHSync = englishSSHSync

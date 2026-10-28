@@ -128,6 +128,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
 	}
+	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
+		row(settingsGeneral, label, m.Toolbars.Description)
+	}
 	row(settingsGeneral, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
 	row(settingsGeneral, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)

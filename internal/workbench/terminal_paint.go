@@ -93,6 +93,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	}
 
 	status, dot := state.sessionStatus(session)
+	tools = state.orderToolbarTools(toolbarTerminal, tools, true)
 	title := session.Title
 	if title == "" {
 		title = session.Address

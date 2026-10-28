@@ -217,6 +217,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
+	for group, hit := range hitToolbarSettingsOpen {
+		if id == hit {
+			state.openToolbarSettings(toolbarGroup(group))
+			return true
+		}
+	}
 	changed := false
 	switch id {
 	case hitSettingsLanguageEnglish:

@@ -1747,3 +1747,10 @@ var chineseAbout = AboutMessages{
 	Join:               "加入",
 	Open:               "打开",
 }
+
+var chineseToolbars = ToolbarMessages{
+	Window: "窗口工具栏", Terminal: "终端工具栏", SFTP: "SFTP 工具栏",
+	Description: "自定义图标入口的显示和顺序。", Customize: "自定义", Hint: "拖动左侧手柄调整顺序，也可聚焦手柄后使用方向键。修改即时生效。", EnabledFmt: "已开启 %d / %d 项",
+	EnableAll: "全部开启", DisableAll: "全部关闭", Reset: "恢复默认", Close: "完成",
+	DragFmt: "调整 %s 的顺序", LocalRemote: "切换本机 / 服务器", PanelSide: "切换面板左右位置",
+}

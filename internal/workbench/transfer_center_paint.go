@@ -8,7 +8,13 @@ import (
 )
 
 func (state *State) paintTransferBadge(canvas *ui.Canvas) {
+	if !state.toolbarVisible(toolbarWindow, hitTransferCenter) {
+		return
+	}
 	center, box := &state.transfers, state.chrome.bar.transfers.Rect()
+	if box.Width <= 0 {
+		return
+	}
 	if center.open {
 		canvas.Rounded(ui.Rect{X: box.X, Y: box.Y + box.Height - 2, Width: box.Width, Height: 2}, 1, state.pal.accent)
 	}
@@ -29,7 +35,11 @@ func (state *State) paintTransferCenter(canvas *ui.Canvas) {
 	}
 	m, pal := state.messages.Transfers, state.pal
 	viewport := state.windowRect()
-	popover := components.BeginPopover(canvas, state.Theme(), viewport, state.chrome.bar.transfers.Rect(), components.PopoverOptions{
+	anchor := ui.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
+	if state.toolbarVisible(toolbarWindow, hitTransferCenter) {
+		anchor = state.chrome.bar.transfers.Rect()
+	}
+	popover := components.BeginPopover(canvas, state.Theme(), viewport, anchor, components.PopoverOptions{
 		Layer: dialogLayer, Scope: hitTransfersScope, DismissID: hitTransfersDismiss,
 		AnchorDismiss: true,
 		Side:          components.PopoverBottom, Align: components.PopoverAlignEnd, SideOffset: 8,

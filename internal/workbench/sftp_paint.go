@@ -81,6 +81,27 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	}
 
 	var buttons [20]sftpIconButton
+	var headerList [8]barTool
+	headerTools := headerList[:0]
+	addHeader := func(id ui.ID, glyph uint8, hint string, disabled bool) {
+		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled})
+	}
+	if local {
+		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, false)
+	} else {
+		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
+		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
+		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.busy)
+		addHeader(hitSFTPNewLink, iconLink, messages.Tools.TipNewLink, view.busy)
+	}
+	if !view.localOnly {
+		addHeader(hitSFTPPaneToggle, paneIcon, paneHint, false)
+	}
+	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local)
+	moveIcon, moveHint := state.sftpPanelMoveAction()
+	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
+	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
+	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
 	buttonCount := 0
 	var crumbs, popupTop, listSlot, spinnerSlot flex.Box
 
@@ -96,24 +117,10 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 		// nothing the tab does not already; the room goes to the list.
 		f.Row().Height(infoBarHeight).Shrink(0).Items(flex.Center).Children(func() {
 			f.Text(title).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
-			f.Row().Gap(4).Shrink(0).MarginSides(0, 10, 0, 0).Children(func() {
-				if local {
-					icon(sftpHeaderButton, hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, false, iconButtonQuiet)
-					return
-				}
-				icon(sftpHeaderButton, hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.busy, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPNewLink, iconLink, messages.Tools.TipNewLink, view.busy, iconButtonQuiet)
-			})
 			f.Row().Gap(4).Shrink(0).Children(func() {
-				if !view.localOnly {
-					icon(sftpHeaderButton, hitSFTPPaneToggle, paneIcon, paneHint, false, iconButtonQuiet)
+				for _, tool := range headerTools {
+					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, iconButtonQuiet)
 				}
-				icon(sftpHeaderButton, hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local, iconButtonQuiet)
-				moveIcon, moveHint := state.sftpPanelMoveAction()
-				icon(sftpHeaderButton, hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 			})
 		})
 

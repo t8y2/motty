@@ -46,7 +46,9 @@ import (
 // by the ai.db schema, not by stateFileVersion: that constant is written but
 // never checked, and a build that cannot open a newer ai.db omits the mirror
 // until the next build rebuilds it from the database.
-const configFormat = 4
+// Version 5 preserves device-local toolbar layouts: an older full snapshot
+// writer would otherwise discard the visibility and ordering preferences.
+const configFormat = 5
 
 const (
 	kindSetting = "setting"

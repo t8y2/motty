@@ -365,6 +365,7 @@ const (
 	modalHistory
 	modalUpdate
 	modalUpdateProgress
+	modalToolbarSettings
 )
 
 // tone colors a session's headline.
@@ -936,6 +937,9 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalToolbarSettings {
+		state.toolbarEditor.list.Cancel()
+	}
 	if state.modal == modalRemoteClipboard {
 		state.clipboardRequest = remoteClipboardRequest{}
 	}
