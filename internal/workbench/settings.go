@@ -3,7 +3,6 @@ package workbench
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -176,12 +175,8 @@ func (state *State) chooseLanguage(language i18n.Language) bool {
 // that has one, and English when none does.
 func (state *State) systemLanguage() i18n.Language {
 	for _, tag := range state.options.PreferredLanguages() {
-		primary, _, _ := strings.Cut(strings.ToLower(tag), "-")
-		switch primary {
-		case "zh":
-			return i18n.Chinese
-		case "en":
-			return i18n.English
+		if language, supported := i18n.Match(tag); supported {
+			return language
 		}
 	}
 	return i18n.English
@@ -217,12 +212,11 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
+	if state.clickLanguagePicker(id) {
+		return true
+	}
 	changed := false
 	switch id {
-	case hitSettingsLanguageEnglish:
-		changed = state.chooseLanguage(i18n.English)
-	case hitSettingsLanguageChinese:
-		changed = state.chooseLanguage(i18n.Chinese)
 	case hitSettingsAppearanceSystem:
 		changed = state.chooseAppearanceMode(appearanceFollowSystem)
 	case hitSettingsAppearanceDark:
@@ -335,13 +329,6 @@ func (state *State) setTerminalScrollback(value int) bool {
 	return true
 }
 
-func (state *State) settingsLanguageOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
-		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
-	}
-}
-
 func (state *State) settingsAppearanceOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsAppearanceSystem, Label: state.messages.SettingsAppearanceSystem},
@@ -428,6 +415,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return ui.EventResult{}, false
 	}
+	if result, handled := state.languagePickerKey(event); handled {
+		return result, true
+	}
 	var next ui.ID
 	var handled bool
 	switch event.Target {
@@ -436,9 +426,6 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		options := state.settingsPathOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
-		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
 		options := state.settingsAppearanceOptions()

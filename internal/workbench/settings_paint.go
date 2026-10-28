@@ -22,17 +22,18 @@ const (
 type settingsControlKind uint8
 
 const (
-	controlSegments   settingsControlKind = iota // a segmented choice
-	controlSwitch                                // a two-state switch
-	controlButtons                               // buttons against the right edge of the slot
-	controlButton                                // one small button filling the slot
-	controlHit                                   // the slot is a pointer target
-	controlSearch                                // the search box
-	controlModelInput                            // the assistant's model-name field
-	controlSwatches                              // a strip of round color dots
-	controlLabel                                 // the words of a row, which label the control beside them
-	controlMCPSelect                             // client configuration select
-	controlLogo                                  // the product wordmark in a slot
+	controlSegments       settingsControlKind = iota // a segmented choice
+	controlSwitch                                    // a two-state switch
+	controlButtons                                   // buttons against the right edge of the slot
+	controlButton                                    // one small button filling the slot
+	controlHit                                       // the slot is a pointer target
+	controlSearch                                    // the search box
+	controlModelInput                                // the assistant's model-name field
+	controlSwatches                                  // a strip of round color dots
+	controlLabel                                     // the words of a row, which label the control beside them
+	controlMCPSelect                                 // client configuration select
+	controlLogo                                      // the product wordmark in a slot
+	controlLanguageSelect                            // the application language select
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -158,6 +159,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			components.BeginSegmentedControl(canvas, theme, rect, state.settings.options[control.first:control.first+control.count], control.selected).Paint()
 		case controlMCPSelect:
 			state.ai.cfg.mcpSelectBounds = rect
+		case controlLanguageSelect:
+			state.languagePicker.bounds = rect
 		case controlSwitch:
 			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
 		case controlButtons:
@@ -214,11 +217,6 @@ func (state *State) paintSettingsCategory(page *settingsPage) {
 
 func (state *State) paintGeneralSettings(page *settingsPage) {
 	messages := state.messages
-	language := state.settingsLanguageOptions()
-	selectedLanguage := hitSettingsLanguageEnglish
-	if state.language.String() == "zh-CN" {
-		selectedLanguage = hitSettingsLanguageChinese
-	}
 	appearance := state.settingsAppearanceOptions()
 	selectedAppearance := hitSettingsAppearanceSystem
 	switch state.appearanceMode {
@@ -229,7 +227,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	}
 	page.groups(func() {
 		page.group("", func() {
-			page.row(messages.SettingsLanguage, "", language[:], selectedLanguage)
+			page.add(settingsControl{kind: controlLanguageSelect, slot: page.rowFrameFor(messages.SettingsLanguage, "", 240)})
 			page.row(messages.SettingsAppearance, "", appearance[:], selectedAppearance)
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)

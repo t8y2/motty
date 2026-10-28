@@ -11,7 +11,8 @@ import (
 // A language that forgot a string would paint blank labels. Reflection is fine
 // here: it runs in tests, never on a paint path.
 func TestEveryLanguageFillsEveryMessage(t *testing.T) {
-	for _, language := range []Language{English, Chinese} {
+	for _, locale := range Supported() {
+		language := locale.Language
 		checkFilled(t, reflect.ValueOf(For(language)), language.String())
 	}
 }

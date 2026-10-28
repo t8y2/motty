@@ -2,9 +2,9 @@
 // plain data: the state carries one Messages value and every paint reads
 // from it, so switching languages is one assignment plus a repaint.
 //
-// The catalogs live one per language (english.go, chinese.go); the message
-// structs stay with the area they describe (terminal_tools.go, ai_panel.go,
-// and so on), so adding a string touches its struct and both catalogs.
+// English and Simplified Chinese live in Go source; the additional complete
+// catalogs are bundled JSON files in locales/. The message structs stay with
+// the area they describe (terminal_tools.go, ai_panel.go, and so on).
 package i18n
 
 // Language selects one catalog entry.
@@ -13,16 +13,24 @@ type Language uint8
 const (
 	English Language = iota
 	Chinese
+	Azerbaijani
+	Spanish
+	Indonesian
+	Italian
+	Japanese
+	Korean
+	BrazilianPortuguese
+	Polish
+	Russian
+	Thai
+	Turkish
+	TraditionalChinese
+	LanguageCount
 )
 
 // String returns the BCP-ish tag for persistence or debugging.
 func (language Language) String() string {
-	switch language {
-	case Chinese:
-		return "zh-CN"
-	default:
-		return "en"
-	}
+	return language.Info().Tag
 }
 
 // Messages is the complete set of user-visible workbench strings. Adding a
@@ -751,6 +759,9 @@ type Messages struct {
 // Chinese catalog.
 // For returns the catalog for one language.
 func For(language Language) Messages {
+	if language > Chinese && language < LanguageCount {
+		return translatedCatalog(language)
+	}
 	switch language {
 	case Chinese:
 		messages := ChineseMessages

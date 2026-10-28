@@ -1,0 +1,58 @@
+{
+  "renderer": "Chromium 156.0.8078.48 (playwright-core@1.56.1)",
+  "width": 128,
+  "files": {
+    "az.svg": {
+      "svg": "0e341483fbb63a1a6f6f15b6375feaf4782226e5c3736b355f34cad878160dbc",
+      "png": "235fba8101f1b76df26f76d4c8fcdb9833b54bd396f21ff0061dd88255604393"
+    },
+    "br.svg": {
+      "svg": "9c1593b22317fdd1a2f778e3c9550ef72c6f1b1bb33b7c35f255c727da9bbce4",
+      "png": "7c4be4cabc5e936f807613b8b741a894c8ace9dde93e6350329a6a092433a366"
+    },
+    "cn.svg": {
+      "svg": "25d19da98eb4e4432dc3ca62bb029141d197d04d94c96a4160f3c7dfbe6af577",
+      "png": "599f29c5105ff9a42b94357604eaa2f4266a57cc398e622b55f8dcac9686b8ac"
+    },
+    "es.svg": {
+      "svg": "d37f54eda66065acad575bebd04a85c974493e5c0bc0f05ab5b0a1c1b2cce7a7",
+      "png": "c7fd5132b194a3f2cf8b8bdae939329a82aeac05931b11e8ba7fd67872d4b4a8"
+    },
+    "id.svg": {
+      "svg": "8bb5c17b65df59c16f9e609e7f606abdb63acf3fdbf04ede7a05552d1db59190",
+      "png": "88e73f8b95f2dd3e50e7fd4757217e7a5733831836ffd4b5fbe383f5b584ce19"
+    },
+    "it.svg": {
+      "svg": "f242a38036ad87c9fbc7db1b901bbc273da0c10812f783485862bce3fa547a97",
+      "png": "003915c7dabcf5c6b4ec6a2b4ef88544b1ca2bd13fef8890c4892a713252b6db"
+    },
+    "jp.svg": {
+      "svg": "ade9d4144877f577263d1220f257fa9c8929720700568a82c0eb936bd01fb0a7",
+      "png": "4c69a7325135f4102a477a6435be5460411cab466938c4b48d0e016ad9cfd918"
+    },
+    "kr.svg": {
+      "svg": "927d19e6e98a0f5d6342ba997d33d802ca83e898c5e7b3ec82798692fa84178d",
+      "png": "5ea8452db0a61ae7a6cf7a657a9a44565b19adfa909fd0ce134ed8cfefe35e94"
+    },
+    "pl.svg": {
+      "svg": "33d6dd75847888a634ecb2987df48a28747389756628c33242cb35347aea7a06",
+      "png": "1712b746106232946a236d8536271362c695fba98cbfa33795423d647cbf9587"
+    },
+    "ru.svg": {
+      "svg": "a2133cff2b389e4a2fd082b13650236ab84bf12af03a3659cdaa10d97341499c",
+      "png": "e1c5996ce793c02de7c971b950bf62723d0d068411c5b48a06d99a3d3fb5ea03"
+    },
+    "th.svg": {
+      "svg": "be6062629a7e65b3a3a7c572a2a4beadbcaaf8d101007673d4a02e167cb0d9ba",
+      "png": "7c3ce5cab8278cbb9d6b9d2251eae65505dc2f216de4660cc64e18ce2b14ef63"
+    },
+    "tr.svg": {
+      "svg": "c7d64cc27e99509e285d4e3fb71dbc76ee3c51cd32d72e6c2347ef1ae843e5f1",
+      "png": "72f3440fe6e884bb3bbdb4df11010b74e1420e948b1fa231978bbfbe6a8563d5"
+    },
+    "us.svg": {
+      "svg": "eb8f6fec109a1d935232edb6e74000faa6d7aaa3791def50c9b9c9eb46e6b9aa",
+      "png": "bd2dd2594856a04fc3f180c56cc26735dbd5efb7201998a73cbaaf9a995fb7cc"
+    }
+  }
+}

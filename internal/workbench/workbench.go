@@ -493,6 +493,7 @@ type State struct {
 	status              string
 	language            i18n.Language
 	languageChosen      bool // the user picked it; until then it follows the system
+	languagePicker      languagePickerUI
 	messages            i18n.Messages
 	modal               modalKind
 	modalSession        uint32

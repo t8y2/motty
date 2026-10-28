@@ -14,25 +14,25 @@ const (
 	lockupHeight = 36
 )
 
-// lockupBitmap decodes one embedded lockup picture to the premultiplied BGRA the
+// embeddedBitmap decodes one embedded picture to the premultiplied BGRA the
 // canvas draws. The pictures are fixed and embedded, so a bad one is a build error.
-func lockupBitmap(data []byte, id uint64) func() ui.Bitmap {
+func embeddedBitmap(data []byte, id uint64) func() ui.Bitmap {
 	return sync.OnceValue(func() ui.Bitmap {
 		picture, err := png.Decode(bytes.NewReader(data))
 		if err != nil {
-			panic("workbench: the embedded logo is not a PNG: " + err.Error())
+			panic("workbench: an embedded picture is not a PNG: " + err.Error())
 		}
 		pix, width, height, err := scaleToBGRA(picture, 1<<14)
 		if err != nil {
-			panic("workbench: the embedded logo is unusable: " + err.Error())
+			panic("workbench: an embedded picture is unusable: " + err.Error())
 		}
 		return ui.Bitmap{Pix: pix, Width: width, Height: height, Stride: width * 4, ID: id}
 	})
 }
 
 var (
-	lockupDark  = lockupBitmap(assets.LockupDark, 1<<61|1)
-	lockupLight = lockupBitmap(assets.LockupLight, 1<<61|2)
+	lockupDark  = embeddedBitmap(assets.LockupDark, 1<<61|1)
+	lockupLight = embeddedBitmap(assets.LockupLight, 1<<61|2)
 )
 
 // paintLockup draws the logo with the name beside it into the slot the sidebar

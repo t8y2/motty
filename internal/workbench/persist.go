@@ -533,12 +533,9 @@ func (state *State) restoreLocal(saved savedState) {
 	// A saved language is the user's choice. Without one (a first run, or a state
 	// from before the choice was told apart) the system's language decides, and
 	// stays undecided so a change of system language is followed.
-	switch saved.Language {
-	case i18n.Chinese.String():
-		state.language, state.languageChosen = i18n.Chinese, true
-	case i18n.English.String():
-		state.language, state.languageChosen = i18n.English, true
-	default:
+	if language, supported := i18n.Parse(saved.Language); supported {
+		state.language, state.languageChosen = language, true
+	} else {
 		state.language, state.languageChosen = state.systemLanguage(), false
 	}
 	state.messages = i18n.For(state.language)

@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // selectTypeahead is the typed prefix of one closed select trigger. The owner
@@ -58,6 +59,13 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseTarget, true
+	case state.activeSection == sectionSettings && state.settingsCategory == settingsGeneral && state.modal == modalNone && target == hitSettingsLanguageSelect && !state.languagePicker.open:
+		items := make([]components.MenuTypeaheadItem, 0, len(i18n.Supported()))
+		for _, locale := range i18n.Supported() {
+			items = append(items, components.MenuTypeaheadItem{ID: languageOptionID(locale.Language), Label: locale.Label})
+		}
+		return items, state.clickSettings, true
+
 	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetMCPSelect && !state.ai.cfg.mcpSelectOpen:
 		options := aiMCPClientOptions()
 		items := make([]components.MenuTypeaheadItem, 0, len(options))

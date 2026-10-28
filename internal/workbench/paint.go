@@ -100,6 +100,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = ui.Rect{}
 	state.ai.panel.targetBounds = ui.Rect{}
+	state.languagePicker.bounds = ui.Rect{}
+	if state.activeSection != sectionSettings || state.settingsCategory != settingsGeneral || state.modal != modalNone || state.settingsSearching() {
+		state.languagePicker.open = false
+	}
 	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
 		state.ai.cfg.mcpSelectOpen = false
 	}
@@ -177,6 +181,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	viewport := state.windowRect()
 	state.beginMenus()
 	state.paintAITargetSelect(canvas)
+	state.paintLanguagePicker(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintTransferCenter(canvas)
 	// The gallery's select is painted here, outside the workspace's clip and

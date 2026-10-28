@@ -22,7 +22,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			texts    []string
 			hits     []ui.ID
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight}},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance}, []ui.ID{hitSettingsLanguageSelect, hitSettingsAppearanceDark, hitSettingsAppearanceLight}},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
@@ -201,10 +201,11 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 
-	result := state.Key(ui.KeyEvent{Target: hitSettingsLanguageEnglish, Key: ui.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsLanguageChinese || state.language != i18n.Chinese {
+	result := state.Key(ui.KeyEvent{Target: hitSettingsLanguageSelect, Key: ui.KeyDown})
+	if !result.Handled || result.Focus != hitSettingsLanguageEnglish || !state.languagePicker.open || state.language != i18n.English {
 		t.Fatalf("language result=%+v language=%v", result, state.language)
 	}
+	state.Click(hitSettingsLanguageDismiss)
 	result = state.Key(ui.KeyEvent{Target: hitSettingsOptionText, Key: ui.KeyRight})
 	if !result.Handled || result.Focus != hitSettingsOptionMeta || state.terminalOption != terminalOptionMeta {
 		t.Fatalf("option result=%+v option=%v", result, state.terminalOption)

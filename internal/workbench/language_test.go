@@ -18,7 +18,12 @@ func TestFirstRunFollowsTheSystemLanguage(t *testing.T) {
 		want      i18n.Language
 	}{
 		{"simplified Chinese", []string{"zh-Hans-CN", "en-US"}, i18n.Chinese},
-		{"traditional Chinese uses the Chinese catalog", []string{"zh-TW"}, i18n.Chinese},
+		{"traditional Chinese", []string{"zh-TW"}, i18n.TraditionalChinese},
+		{"traditional Chinese script", []string{"zh-Hant-HK"}, i18n.TraditionalChinese},
+		{"Japanese", []string{"ja-JP"}, i18n.Japanese},
+		{"Korean", []string{"ko-KR"}, i18n.Korean},
+		{"Portuguese", []string{"pt-PT"}, i18n.BrazilianPortuguese},
+		{"Thai", []string{"th-TH"}, i18n.Thai},
 		{"English first", []string{"en-GB", "zh-CN"}, i18n.English},
 		{"the first language with a catalog wins", []string{"fr-FR", "zh-CN"}, i18n.Chinese},
 		{"none with a catalog", []string{"fr-FR", "de-DE"}, i18n.English},

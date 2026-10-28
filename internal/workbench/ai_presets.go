@@ -43,7 +43,7 @@ var aiPresets = [...]aiPreset{
 const aiPresetCustom = len(aiPresets) - 1
 
 func (preset aiPreset) address(language i18n.Language) string {
-	if language == i18n.Chinese && preset.urlZH != "" {
+	if (language == i18n.Chinese || language == i18n.TraditionalChinese) && preset.urlZH != "" {
 		return preset.urlZH
 	}
 	return preset.url
