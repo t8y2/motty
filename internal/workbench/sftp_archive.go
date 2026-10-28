@@ -160,7 +160,7 @@ func (state *State) finishSFTPArchive(sessionID uint32, view *sftpView, sequence
 	view.extracting, view.busy, view.cancelExtract = false, false, nil
 	view.errorText = ""
 	if err != nil {
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.active().rows))
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.active().rows))
 		title, format := m.ExtractFailedTitle, m.ExtractFailedFmt
 		if compress {
 			title, format = m.CompressFailedTitle, m.CompressFailedFmt

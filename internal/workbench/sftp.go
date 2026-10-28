@@ -288,7 +288,7 @@ func (state *State) clickSFTP(id ui.ID) {
 			view.selected = index
 			view.rows[index].selected = !view.rows[index].selected
 			view.rows[index].cells[0] = sftpSelectionCell(view.rows[index].selected)
-			view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+			view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 			if row := view.rows[index]; row.selected && row.entry.IsDir() {
 				// The first click of a double-click: start reading the folder
 				// now, so the second finds the work done or under way.
@@ -340,6 +340,15 @@ func (view *sftpView) active() *sftpFolder {
 		return &view.lfolder
 	}
 	return &view.sftpFolder
+}
+
+// Detached windows show each folder's count beneath its own pane. Leave their
+// shared status available for operation feedback and the idle drag hint.
+func (view *sftpView) setItemCountStatus(format string, count int) {
+	view.status = ""
+	if view.detached == nil {
+		view.status = fmt.Sprintf(format, count)
+	}
 }
 
 // selectRow applies a press on a row the way a file list does: a plain press
@@ -631,9 +640,9 @@ func (state *State) applySFTPListing(view *sftpView, remotePath string, rows []s
 		view.status = view.refreshStatus
 		view.refreshStatus = ""
 	} else if view.approximate {
-		view.status = fmt.Sprintf(state.messages.SCPItemsFmt, len(view.rows))
+		view.setItemCountStatus(state.messages.SCPItemsFmt, len(view.rows))
 	} else {
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.rows))
 	}
 }
 
@@ -706,7 +715,7 @@ func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
 	}
 	view.first = min(view.first, max(0, len(view.rows)-max(view.visibleRows, 1)))
 	view.sortedDetached(false)
-	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
+	view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.rows))
 }
 
 func sameSFTPListing(rows []sftpRow, entries []sftpclient.Entry) bool {
@@ -1026,7 +1035,7 @@ func (state *State) pumpSFTP(session *Session) {
 				if result.Err != nil && !errors.Is(result.Err, sftpclient.ErrCanceled) {
 					state.showSFTPPathErrorAt(view, result.Path, result.Err)
 					view.errorText = ""
-					view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.active().rows))
+					view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.active().rows))
 					continue
 				}
 			}
@@ -1309,7 +1318,7 @@ func (state *State) sftpRowPointer(event ui.PointerEvent) (ui.EventResult, bool)
 		// A press, not yet half of a double click. Handling it here keeps the
 		// runtime from also sending a click that would toggle the row again.
 		folder.selectRow(index, event.Modifiers)
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 		if row := folder.rows[index]; row.selected && row.entry.IsDir() && !view.local && selectedSFTPCount(view) == 1 {
 			// The first click of a double-click: start reading the folder now, so
 			// the second finds the work done or under way.

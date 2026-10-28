@@ -244,14 +244,17 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	})
 	f.End()
 	w.owner.paintSFTPIconButtons(canvas, buttons[:buttonCount])
-	w.ui.list[side] = list.Rect()
 	if !local {
 		w.ui.bookmarkAnchor = address.Rect()
 	}
 	value := folder.pathInput().String()
 	components.PaintInput(canvas, theme, address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
-	rowsBounds := list.Rect()
-	canvas.RoundedBorder(rowsBounds, 6, 1, theme.Border, theme.Background)
+	frameBounds := list.Rect()
+	canvas.RoundedBorder(frameBounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .4), theme.Background)
+	// Keep scrolling rows and scrollbars inside the frame, so neither can
+	// paint over its top or bottom edge.
+	rowsBounds := frameBounds.Inset(ui.All(2))
+	w.ui.list[side] = rowsBounds
 	folder.visibleRows = max(1, int(rowsBounds.Height/sftpRowHeight))
 	area := components.BeginScrollArea(canvas, theme, rowsBounds, ui.Size{Width: rowsBounds.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).Offset(0, w.ui.offset[side]).Viewport(sftpWindowList[side], m.SFTPFiles).VerticalScrollbar(sftpWindowBar[side], m.SFTPFiles, "")
 	geometry := area.BeginContent()
@@ -259,7 +262,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	w.ui.offset[side] = geometry.OffsetY
 	folder.first = int(geometry.OffsetY / sftpRowHeight)
 	last := min(len(folder.rows), folder.first+int(math.Ceil(float64(rowsBounds.Height/sftpRowHeight)))+1)
-	r := w.ui.rows[side].Begin(canvas, theme, ui.Rect{X: rowsBounds.X + 2, Y: rowsBounds.Y - float32(math.Mod(float64(geometry.OffsetY), float64(sftpRowHeight))), Width: max(rowsBounds.Width-14, 0), Height: float32(last-folder.first) * sftpRowHeight})
+	r := w.ui.rows[side].Begin(canvas, theme, ui.Rect{X: rowsBounds.X, Y: rowsBounds.Y - float32(math.Mod(float64(geometry.OffsetY), float64(sftpRowHeight))), Width: max(rowsBounds.Width-10, 0), Height: float32(last-folder.first) * sftpRowHeight})
 	r.Column().FillWidth().Children(func() {
 		for index := folder.first; index < last; index++ {
 			w.paintRow(r, &folder.rows[index], sftpWindowRows[side].At(index), bounds.Width)

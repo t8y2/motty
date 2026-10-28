@@ -62,7 +62,7 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 	view.bookmarksOpen = false
 	view.errorText = ""
 	if !view.local {
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.rows))
 		return
 	}
 	dir := view.lfolder.path
@@ -213,7 +213,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	folder.anchor = 0
 	view.sortedDetached(true)
 	view.errorText = ""
-	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(folder.rows))
+	view.setItemCountStatus(state.messages.SFTPItemsFmt, len(folder.rows))
 }
 
 // prepareLocalCrumbs splits a local path into the links of a breadcrumb.
@@ -269,7 +269,7 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 			folder.selected = index
 			folder.rows[index].selected = !folder.rows[index].selected
 			folder.rows[index].cells[0] = sftpSelectionCell(folder.rows[index].selected)
-			view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+			view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 		}
 	default:
 		return false

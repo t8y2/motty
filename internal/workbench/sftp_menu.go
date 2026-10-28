@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"fmt"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
@@ -96,7 +94,7 @@ func (state *State) sftpMenuPointer(event ui.PointerEvent) (ui.EventResult, bool
 	}
 	if !folder.rows[index].selected {
 		folder.selectRow(index, 0)
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: state.terminalMenu.pointer}
 	return ui.EventResult{Handled: true, Repaint: true}, true
