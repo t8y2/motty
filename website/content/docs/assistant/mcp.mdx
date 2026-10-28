@@ -13,6 +13,18 @@ In **Settings > MCP**, turn on **Allow external agents (MCP)**. The page
 then shows the endpoint and the access token, with a button to copy the client
 configuration. Resetting the token disconnects every client.
 
+HTTP and the independent service each have their own client selection, preview
+and copy button. Their client choices are saved separately. HTTP configuration
+contains an endpoint and token; the independent configuration contains a program
+to start and its `mcp-serve` argument.
+The exported independent configuration also passes `--data-dir` so the child
+uses the same authorized hosts and access settings as the current window.
+
+<Callout type="warn">
+  Anyone who has the HTTP token can use the access level chosen for the HTTP
+  service. Keep it out of shared configuration.
+</Callout>
+
 ### Access level
 
 | Level | What a client can do |
@@ -68,16 +80,12 @@ host that syncs in from another device starts closed.
 
 | | |
 | --- | --- |
-| Tools | `list_sessions` (the hosts you opened), `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`. No screen to read, and no writing or removing files. |
+| Tools | Depending on the access level: `list_sessions` (authorized saved hosts), `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`. Allow all also offers `sftp_write` and `sftp_remove`. There is no terminal screen to read. |
 | Commands | Run through an SSH exec channel: no terminal, and nothing carries over from one call to the next. |
 | Read only | The default. **Commands** lets agents run commands rated low risk. Anything that would need your approval is refused, because nobody is there to ask. |
+| Allow all | Saved and selected only after risk confirmation. Runs commands of any risk level and writes or deletes files on authorized hosts without approval. Configured separately from HTTP; applies the next time the client starts the service. |
 | Sign in | From what Motty saved: keys, ssh-agent, and passwords or key passphrases in the saved passwords. A master password locks those out; use a key. A server that asks for a one-time code cannot be used. |
 | Host keys | Only keys Motty already trusts. An unknown or changed key is refused; connect to the host once from the window. The agent never trusts a key. |
 | Activity | Settings > MCP lists the latest calls (host, tool, command or path, and how it ended) for 30 days. Output is never kept. |
 
 If the audit log cannot be opened, nothing is served.
-
-<Callout type="warn">
-  Anyone who has the token can use the access level you chose. Keep it out of
-  shared configuration.
-</Callout>

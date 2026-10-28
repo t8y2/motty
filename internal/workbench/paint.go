@@ -103,9 +103,11 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = ui.Rect{}
+	state.ai.cfg.agentSelectBounds = ui.Rect{}
 	state.ai.panel.targetBounds = ui.Rect{}
 	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
 		state.ai.cfg.mcpSelectOpen = false
+		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
 	// The terminal layout follows the window and the font; remember what it

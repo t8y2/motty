@@ -12,6 +12,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 )
@@ -21,20 +22,25 @@ import (
 // client configuration that starts it, and what they did.
 
 var (
-	hitAISetAgentObserve = tree.ID(aiSettingsHits, "ai-set-agent-observe")
-	hitAISetAgentRun     = tree.ID(aiSettingsHits, "ai-set-agent-run")
-	hitAISetAgentCopy    = tree.ID(aiSettingsHits, "ai-set-agent-copy")
-	hitAISetAgentClear   = tree.ID(aiSettingsHits, "ai-set-agent-clear")
+	hitAISetAgentObserve       = tree.ID(aiSettingsHits, "ai-set-agent-observe")
+	hitAISetAgentRun           = tree.ID(aiSettingsHits, "ai-set-agent-run")
+	hitAISetAgentAllowAll      = tree.ID(aiSettingsHits, "ai-set-agent-allow-all")
+	hitAISetAgentCopy          = tree.ID(aiSettingsHits, "ai-set-agent-copy")
+	hitAISetAgentClear         = tree.ID(aiSettingsHits, "ai-set-agent-clear")
+	hitAISetAgentSelect        = tree.ID(aiSettingsHits, "ai-set-agent-select")
+	hitAISetAgentSelectDismiss = tree.ID(aiSettingsHits, "ai-set-agent-select-dismiss")
+	hitAISetAgentClients       = tree.Sub(aiSettingsHits, tree.Name("ai-set-agent-client"))
 )
 
 // agentAuditShown is how many of the latest calls the page lists.
 const agentAuditShown = 5
 
-func (state *State) aiAgentModeOptions() [2]components.SegmentOption {
+func (state *State) aiAgentModeOptions() [3]components.SegmentOption {
 	m := state.messages.AISettings
 	return [...]components.SegmentOption{
 		{ID: hitAISetAgentObserve, Label: m.AgentModeObserve},
 		{ID: hitAISetAgentRun, Label: m.AgentModeRun},
+		{ID: hitAISetAgentAllowAll, Label: m.MCPModeAllowAll},
 	}
 }
 
@@ -45,13 +51,27 @@ func (state *State) aiAgentClick(id ui.ID) bool {
 		state.aiPut(agentModeSetting, AgentModeReadOnly)
 	case hitAISetAgentRun:
 		state.aiPut(agentModeSetting, AgentModeCommands)
+	case hitAISetAgentAllowAll:
+		if state.ai.settings.agentMode != gate.ModeAllowAll {
+			state.ai.cfg.dialog = aiDialogAgentAllowAll
+		}
 	case hitAISetAgentCopy:
-		state.aiCopyText(hitAISetAgentCopy, aiAgentConfig(state.ai.cfg.mcpClient, state.agentExecutable()))
+		state.aiCopyText(hitAISetAgentCopy, state.aiAgentPreview())
+	case hitAISetAgentSelect:
+		state.ai.cfg.agentSelectOpen = !state.ai.cfg.agentSelectOpen
+		state.ai.cfg.mcpSelectOpen = false
+	case hitAISetAgentSelectDismiss:
+		state.ai.cfg.agentSelectOpen = false
 	case hitAISetAgentClear:
 		if db, err := state.aiStore(); err == nil && db.ClearAudit() == nil {
 			state.aiWrote()
 		}
 	default:
+		if index, ok := id.In(hitAISetAgentClients); ok && index >= 0 && index < int(aiMCPClientCount) {
+			state.aiChooseMCPClient(aiMCPClient(index), true)
+			state.ai.cfg.agentSelectOpen = false
+			return true
+		}
 		return false
 	}
 	return true
@@ -138,8 +158,11 @@ func (state *State) agentAuditLines() []string {
 func (state *State) paintAIAgents(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
 	selected := hitAISetAgentObserve
-	if state.ai.settings.agentRun {
+	switch state.ai.settings.agentMode {
+	case gate.ModeAsk:
 		selected = hitAISetAgentRun
+	case gate.ModeAllowAll:
+		selected = hitAISetAgentAllowAll
 	}
 	modes := state.aiAgentModeOptions()
 	hosts := state.agentHostsText()
@@ -149,12 +172,21 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		activity = m.AgentActivityDesc
 	}
 	page.group(m.AgentsTitle, func() {
+		page.f.Column().Pad(18).Children(func() {
+			page.f.Wrap(m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
+		})
 		page.mcpFrame(m.AgentMode, m.AgentModeDesc, pal.muted, func() {
-			page.segmentSlot(min(float32(220), page.width*0.34), modes[:], selected)
+			width := min(components.SegmentedControlWidth(page.f.Canvas(), state.Theme(), modes[:]), max(0, page.width-36))
+			page.segmentSlot(width, modes[:], selected)
 		})
 		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {})
-		page.mcpFrame(m.AgentConfig, m.AgentConfigDesc, pal.muted, func() {
-			page.mcpCopyButton(hitAISetAgentCopy, m.MCPCopy, false)
+		page.separator()
+		state.paintMCPConfigBlock(page, aiMCPConfigView{
+			title: m.AgentConfig, description: m.AgentConfigDesc,
+			client: state.ai.cfg.agentClient, selectKind: controlAgentSelect,
+			copyID: hitAISetAgentCopy, ready: true,
+			preview: state.aiAgentPreview(),
+			lines:   &state.ai.cfg.agentPreviewLines,
 		})
 		page.mcpFrame(m.AgentActivity, activity, pal.muted, func() {
 			page.button(hitAISetAgentClear, m.AgentActivityClear, aiButtonOutline, len(entries) == 0)
@@ -170,6 +202,21 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			}
 		})
 	})
+}
+
+// Paths are resolved when settings opens; painting only reuses the program and
+// the rendered configuration until the client choice changes.
+func (state *State) aiAgentPreview() string {
+	cfg := &state.ai.cfg
+	if cfg.agentPreviewConfig == "" || cfg.agentPreviewClient != cfg.agentClient {
+		program := cfg.agentProgram
+		if program == "" {
+			program = "motty"
+		}
+		cfg.agentPreviewClient = cfg.agentClient
+		cfg.agentPreviewConfig = aiAgentConfigForDataDir(cfg.agentClient, program, cfg.agentDataDir)
+	}
+	return cfg.agentPreviewConfig
 }
 
 // agentAuditLine is one call of the activity list: when, which host, which tool,
@@ -210,20 +257,33 @@ func (state *State) aiCopyText(target ui.ID, value string) {
 // follow each client's own way of naming a program to start; clients whose
 // stdio form is not documented get the common mcpServers entry.
 func aiAgentConfig(client aiMCPClient, executable string) string {
+	return aiAgentConfigForDataDir(client, executable, "")
+}
+
+func aiAgentConfigForDataDir(client aiMCPClient, executable, dataDir string) string {
 	const name = "motty-hosts"
 	args := []string{"mcp-serve"}
+	if dataDir != "" {
+		args = append(args, "--data-dir", dataDir)
+	}
+	words := []string{shellWord(executable)}
+	for _, argument := range args {
+		words = append(words, shellWord(argument))
+	}
+	commandLine := strings.Join(words, " ")
+	arguments, _ := json.Marshal(args)
 	switch client {
 	case aiMCPClaude:
-		return "claude mcp add " + name + " -- " + shellWord(executable) + " mcp-serve"
+		return "claude mcp add " + name + " -- " + commandLine
 	case aiMCPCodeBuddy:
-		return "codebuddy mcp add --scope local -- " + name + " " + shellWord(executable) + " mcp-serve"
+		return "codebuddy mcp add --scope local -- " + name + " " + commandLine
 	case aiMCPCodex:
 		// JSON string escaping is also valid for TOML basic strings.
 		command, _ := json.Marshal(executable)
-		return fmt.Sprintf("[mcp_servers.%s]\ncommand = %s\nargs = [\"mcp-serve\"]", name, command)
+		return fmt.Sprintf("[mcp_servers.%s]\ncommand = %s\nargs = %s", name, command, arguments)
 	case aiMCPDeepSeek:
 		command, _ := json.Marshal(executable)
-		return fmt.Sprintf("- insert:\n    - id: mcp-%s\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: %s\n        transport: stdio\n        command: %s\n        args: [\"mcp-serve\"]", name, name, command)
+		return fmt.Sprintf("- insert:\n    - id: mcp-%s\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: %s\n        transport: stdio\n        command: %s\n        args: %s", name, name, command, arguments)
 	}
 	server := map[string]any{"command": executable, "args": args}
 	root := "mcpServers"

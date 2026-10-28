@@ -242,7 +242,7 @@ func TestEscalationToolIsAskOnlyAndDecodes(t *testing.T) {
 func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 	names := func(commands bool) []string {
 		var names []string
-		for _, spec := range Headless(commands) {
+		for _, spec := range Headless(commands, false) {
 			names = append(names, spec.Name)
 			if len(spec.Description) == 0 || len(spec.Description) > 400 {
 				t.Errorf("%s: description length %d", spec.Name, len(spec.Description))
@@ -272,5 +272,27 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 	}
 	if _, ok := Lookup(NameTerminalRead); !ok {
 		t.Fatal("the full catalog must keep terminal_read")
+	}
+}
+
+func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
+	full := Headless(true, true)
+	if len(full) != len(All())-1 {
+		t.Fatal("full access did not expose every tool that works without a terminal")
+	}
+	var writes int
+	for _, spec := range full {
+		if spec.Name == NameTerminalRead {
+			t.Fatal("full access invented a visible terminal")
+		}
+		if spec.Kind == Write {
+			writes++
+			if strings.Contains(spec.Description, "must approve") || !json.Valid(spec.Schema) {
+				t.Fatalf("invalid full-access file tool: %+v", spec)
+			}
+		}
+	}
+	if writes != 2 {
+		t.Fatal("write and remove were not both offered")
 	}
 }

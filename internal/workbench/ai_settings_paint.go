@@ -416,7 +416,10 @@ func (state *State) paintAIMCP(page *settingsPage) {
 	if state.ai.cfg.tokenReset {
 		description, color = m.MCPResetDone, pal.success
 	}
-	page.group("", func() {
+	page.group(m.MCPHTTPTitle, func() {
+		page.f.Column().Pad(18).Children(func() {
+			page.f.Wrap(m.MCPHTTPDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
+		})
 		page.aiFrameFor(hitAISetMCPEnabled, settingsRowHeight, m.MCPEnable, m.MCPEnableDesc, pal.muted, func() {
 			page.switchSlot(hitAISetMCPEnabled, settings.mcpEnabled, false, m.MCPEnable)
 		})
@@ -444,9 +447,9 @@ func (state *State) paintAIMCP(page *settingsPage) {
 				page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
 			})
 		})
+		state.paintAIMCPConfig(page, endpoint, ready)
 	})
 	state.paintAIAgents(page)
-	state.paintAIMCPConfig(page, endpoint, ready)
 }
 
 // paintAIDialogs paints the section's open dialog above everything else.
@@ -469,6 +472,13 @@ func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
 	case aiDialogMCPAllowAll:
 		m := state.messages.AISettings
 		body := m.MCPAllowAllBody
+		if state.ai.cfg.notice != "" {
+			body += "\n\n" + state.ai.cfg.notice
+		}
+		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
+	case aiDialogAgentAllowAll:
+		m := state.messages.AISettings
+		body := m.AgentAllowAllBody
 		if state.ai.cfg.notice != "" {
 			body += "\n\n" + state.ai.cfg.notice
 		}

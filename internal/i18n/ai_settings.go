@@ -166,42 +166,44 @@ type AISettingsMessages struct {
 	ClearConfirm     string
 
 	// External access.
-	MCPEnable        string
-	MCPEnableDesc    string
-	MCPMode          string
-	MCPModeDesc      string
-	MCPModeObserve   string
-	MCPModeAsk       string
-	MCPEndpoint      string
-	MCPNotRunning    string
-	MCPOff           string
-	MCPCommand       string
-	MCPCopy          string
-	MCPCopied        string
-	MCPCopyFailed    string
-	MCPToken         string
-	MCPTokenDesc     string
-	MCPReset         string
-	MCPResetDone     string
-	MCPConfig        string
-	MCPConfigDesc    string
-	MCPCopyURL       string
-	MCPCopyToken     string
-	MCPClaudeHint    string
-	MCPCursorHint    string
-	MCPCodexHint     string
-	MCPCherryHint    string
-	MCPCodeBuddyHint string
-	MCPDeepSeekHint  string
-	MCPOpenCodeHint  string
-	MCPQoderHint     string
-	MCPTraeHint      string
-	MCPVSCodeHint    string
-	MCPWindsurfHint  string
-	MCPWorkBuddyHint string
-	MCPZCodeHint     string
-	MCPClientLabel   string
-	MCPPreviewHint   string
+	MCPEnable          string
+	MCPHTTPTitle       string
+	MCPHTTPDescription string
+	MCPEnableDesc      string
+	MCPMode            string
+	MCPModeDesc        string
+	MCPModeObserve     string
+	MCPModeAsk         string
+	MCPEndpoint        string
+	MCPNotRunning      string
+	MCPOff             string
+	MCPCommand         string
+	MCPCopy            string
+	MCPCopied          string
+	MCPCopyFailed      string
+	MCPToken           string
+	MCPTokenDesc       string
+	MCPReset           string
+	MCPResetDone       string
+	MCPConfig          string
+	MCPConfigDesc      string
+	MCPCopyURL         string
+	MCPCopyToken       string
+	MCPClaudeHint      string
+	MCPCursorHint      string
+	MCPCodexHint       string
+	MCPCherryHint      string
+	MCPCodeBuddyHint   string
+	MCPDeepSeekHint    string
+	MCPOpenCodeHint    string
+	MCPQoderHint       string
+	MCPTraeHint        string
+	MCPVSCodeHint      string
+	MCPWindsurfHint    string
+	MCPWorkBuddyHint   string
+	MCPZCodeHint       string
+	MCPClientLabel     string
+	MCPPreviewHint     string
 
 	MCPModeAllowAll    string
 	MCPAllowAllTitle   string
@@ -210,6 +212,8 @@ type AISettingsMessages struct {
 
 	// Agents that work without the window (motty mcp-serve).
 	AgentsTitle         string
+	AgentsDescription   string
+	AgentAllowAllBody   string
 	AgentMode           string
 	AgentModeDesc       string
 	AgentModeObserve    string

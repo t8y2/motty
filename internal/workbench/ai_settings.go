@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -121,6 +122,7 @@ const (
 	aiDialogCLILogin
 	aiDialogImport
 	aiDialogMCPAllowAll
+	aiDialogAgentAllowAll
 )
 
 // aiCopyState is what the "copy client configuration" button last did.
@@ -165,21 +167,29 @@ type aiSettingsUI struct {
 	page       int    // page of that provider's models
 	modelInput text.Editor
 
-	fetch           *aiFetch
-	fetched         bool // a fetch ended: with fetchCount models, or fetchErr
-	fetchCount      int
-	fetchErr        string
-	modelErr        string
-	notice          string // why the last change could not be stored
-	clearedDone     bool
-	copied          aiCopyState
-	copyTarget      ui.ID
-	mcpClient       aiMCPClient
-	mcpSelectOpen   bool
-	mcpSelectBounds ui.Rect
-	mcpPreviewLines []string
-	tokenReset      bool
-	loadPosted      bool // the first load was queued from a paint
+	fetch              *aiFetch
+	fetched            bool // a fetch ended: with fetchCount models, or fetchErr
+	fetchCount         int
+	fetchErr           string
+	modelErr           string
+	notice             string // why the last change could not be stored
+	clearedDone        bool
+	copied             aiCopyState
+	copyTarget         ui.ID
+	mcpClient          aiMCPClient
+	mcpSelectOpen      bool
+	mcpSelectBounds    ui.Rect
+	mcpPreviewLines    []string
+	agentClient        aiMCPClient
+	agentSelectOpen    bool
+	agentSelectBounds  ui.Rect
+	agentPreviewLines  []string
+	agentProgram       string
+	agentDataDir       string
+	agentPreviewClient aiMCPClient
+	agentPreviewConfig string
+	tokenReset         bool
+	loadPosted         bool // the first load was queued from a paint
 
 	// The provider import dialog. The candidates carry credentials until the
 	// dialog closes or the import ends; only key presence is ever painted.
@@ -199,6 +209,11 @@ func (state *State) aiSettingsVisible() bool {
 // painting never touches the disk.
 func (state *State) aiSettingsOpened() {
 	_, _ = state.aiStore()
+	if state.ai.cfg.agentProgram == "" {
+		state.ai.cfg.agentProgram = state.agentExecutable()
+		state.ai.cfg.agentDataDir = filepath.Dir(state.options.KnownHostsPath)
+		state.ai.cfg.agentPreviewConfig = ""
+	}
 }
 
 func (state *State) aiSettingsClick(id ui.ID) bool {
@@ -307,11 +322,12 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		state.aiCopyMCP(id, state.ai.mcpToken)
 	case id.Scope() == hitAISetMCPClients:
 		if index, ok := id.In(hitAISetMCPClients); ok && index >= 0 && index < int(aiMCPClientCount) {
-			cfg.mcpClient = aiMCPClient(index)
+			state.aiChooseMCPClient(aiMCPClient(index), false)
 			cfg.mcpSelectOpen = false
 		}
 	case id == hitAISetMCPSelect:
 		cfg.mcpSelectOpen = !cfg.mcpSelectOpen
+		cfg.agentSelectOpen = false
 	case id == hitAISetMCPSelectDismiss:
 		cfg.mcpSelectOpen = false
 	case id == hitAISetMCPReset:
@@ -404,6 +420,15 @@ func (state *State) aiDialogClick(id ui.ID) {
 				state.aiCloseDialog()
 			}
 		}
+	case aiDialogAgentAllowAll:
+		switch id {
+		case hitAISetConfirmCancel:
+			state.aiCloseDialog()
+		case hitAISetConfirmAction:
+			if state.aiPut(agentModeSetting, AgentModeAllowAll) {
+				state.aiCloseDialog()
+			}
+		}
 	case aiDialogImport:
 		state.aiImportDialogClick(id)
 	}
@@ -485,7 +510,7 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	cfg := &state.ai.cfg
-	if cfg.dialog == aiDialogMCPAllowAll {
+	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
 		return ui.EventResult{}, false // the alert's focus trap owns its keys
 	}
 	if event.Key == ui.KeyEnter && !event.Repeat {
@@ -501,7 +526,13 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	var options []components.SegmentOption
 	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
 		cfg.mcpSelectOpen = true
+		cfg.agentSelectOpen = false
 		return ui.EventResult{Focus: aiMCPClientID(cfg.mcpClient), FocusVisible: true, Handled: true, Repaint: true}, true
+	}
+	if event.Target == hitAISetAgentSelect && cfg.dialog == aiDialogNone && !cfg.agentSelectOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+		cfg.agentSelectOpen = true
+		cfg.mcpSelectOpen = false
+		return ui.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	var kind [2]components.SegmentOption
 	var auth [2]components.SegmentOption
@@ -509,7 +540,7 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	var steps [3]components.SegmentOption
 	var lines [4]components.SegmentOption
 	var modes [3]components.SegmentOption
-	var agents [2]components.SegmentOption
+	var agents [3]components.SegmentOption
 	switch event.Target {
 	case hitAISetFormKindOpenAI, hitAISetFormKindClaude:
 		kind = state.aiKindOptions()
@@ -529,7 +560,7 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitAISetMCPObserve, hitAISetMCPAsk, hitAISetMCPAllowAll:
 		modes = state.aiMCPModeOptions()
 		options = modes[:]
-	case hitAISetAgentObserve, hitAISetAgentRun:
+	case hitAISetAgentObserve, hitAISetAgentRun, hitAISetAgentAllowAll:
 		agents = state.aiAgentModeOptions()
 		options = agents[:]
 	default:
@@ -540,7 +571,7 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, true
 	}
 	state.Click(next)
-	if cfg.dialog == aiDialogMCPAllowAll {
+	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
 		return ui.EventResult{Focus: hitAISetConfirmCancel, FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true

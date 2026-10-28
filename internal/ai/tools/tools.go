@@ -229,10 +229,9 @@ func Targeted() []Spec {
 // There is no screen to read, so terminal_read is absent. A command runs through
 // an SSH exec channel, with no terminal and no shell state kept between calls,
 // and the user does not watch it run; the command tools are offered only when
-// commands is true. Writing and removing files always need the user's approval,
-// which such a server cannot ask for, so they are never offered. The slice is a
-// copy.
-func Headless(commands bool) []Spec {
+// commands is true. File writes are offered only when writeFiles is true, for
+// the separately confirmed full-access mode. The slice is a copy.
+func Headless(commands, writeFiles bool) []Spec {
 	const (
 		sessionHint = "Session id from list_sessions. Defaults to the active session."
 		hostHint    = "Host id from list_sessions. May be left out when only one host is available."
@@ -241,7 +240,7 @@ func Headless(commands bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Kind == Write, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -253,6 +252,10 @@ func Headless(commands bool) []Spec {
 			spec.Description = "Run one shell command on a saved host over a fresh SSH exec channel and return its combined output and exit status. There is no terminal: nothing interactive works, and the working directory and environment do not carry over to the next call. The user does not watch it run. It must finish within the timeout."
 		case NameTerminalExecMany:
 			spec.Description = "Run the same shell command on several saved hosts at once and return each host's combined output and exit status, labelled by host. There is no terminal and no state carries over. Use it to check or change the same thing across hosts; use terminal_exec for one host. It must finish within the timeout on every host."
+		case NameSFTPWrite:
+			spec.Description = "Write UTF-8 text to a file on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Set overwrite only when replacing existing content is intended."
+		case NameSFTPRemove:
+			spec.Description = "Delete one remote file or empty directory on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Deletion cannot be undone."
 		}
 		out = append(out, spec)
 	}

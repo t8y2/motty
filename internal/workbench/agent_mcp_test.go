@@ -637,6 +637,66 @@ func TestServeAgentMCPServesNoHostThatWasNotOpened(t *testing.T) {
 	}
 }
 
+func TestServeAgentMCPFullAccessRunsCommandsAndChangesFilesOnlyOnAuthorizedHosts(t *testing.T) {
+	world := newAgentWorld(t)
+	saveAgentState(t, world, true)
+	setMode := func(value string) {
+		t.Helper()
+		db, err := store.Open(world.options.AIDatabasePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if err := db.SetSetting(agentModeSetting, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMode(AgentModeAllowAll)
+	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+	write := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sftp_write","arguments":{"session":"host_web","path":"allow-all-test.txt","content":"test content"}}}`
+	remove := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"sftp_remove","arguments":{"session":"host_web","path":"allow-all-test.txt"}}}`
+	// The fixture SSH server records this command; it never executes a shell.
+	run := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"terminal_exec","arguments":{"session":"host_web","command":"rm -rf /tmp/motty-test-only"}}}`
+	replies := serveAgent(t, world.options, list, write, run)
+	if !strings.Contains(replies[1], "sftp_write") || !strings.Contains(replies[1], "sftp_remove") || strings.Contains(replies[1], "terminal_read") {
+		t.Fatalf("wrong full-access tool catalog: %s", replies[1])
+	}
+	if strings.Contains(replies[2], `"isError":true`) || strings.Contains(replies[4], `"isError":true`) {
+		t.Fatalf("full access refused a tool: write=%s command=%s", replies[2], replies[4])
+	}
+	path := filepath.Join(world.server.root, "allow-all-test.txt")
+	if content, err := os.ReadFile(path); err != nil || string(content) != "test content" {
+		t.Fatalf("SFTP did not write the file: %q %v", content, err)
+	}
+	if commands := world.server.ran(); len(commands) != 1 || commands[0] != "rm -rf /tmp/motty-test-only" {
+		t.Fatalf("the command did not reach SSH: %v", commands)
+	}
+	replies = serveAgent(t, world.options, remove)
+	if strings.Contains(replies[3], `"isError":true`) {
+		t.Fatalf("remove was refused: %s", replies[3])
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SFTP did not remove the file: %v", err)
+	}
+	setMode(AgentModeCommands)
+	replies = serveAgent(t, world.options, list, write, run)
+	if strings.Contains(replies[1], "sftp_write") || !strings.Contains(replies[2], "unknown tool") || !strings.Contains(replies[4], `"isError":true`) {
+		t.Fatalf("revoking full access did not restore restrictions: %+v", replies)
+	}
+	if len(world.server.ran()) != 1 {
+		t.Fatal("a command requiring approval ran after full access was revoked")
+	}
+	setMode(AgentModeAllowAll)
+	saveAgentState(t, world, false)
+	replies = serveAgent(t, world.options, write)
+	if !strings.Contains(replies[2], `"isError":true`) {
+		t.Fatal("full access bypassed host authorization")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a disallowed host was modified")
+	}
+}
+
 func TestServeAgentMCPRefusesWhatItCannotReadOrRecord(t *testing.T) {
 	world := newAgentWorld(t)
 	var out strings.Builder

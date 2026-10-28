@@ -283,7 +283,7 @@ func TestMCPClientSelectShortWindow(t *testing.T) {
 		return &canvas
 	}
 	paint()
-	state.settingsScroll = 10000
+	state.settings.jump = state.messages.AISettings.MCPConfig
 	paint()
 	state.Click(hitAISetMCPSelect)
 	canvas := paint()
@@ -335,12 +335,13 @@ func TestMCPConfigurationLayout(t *testing.T) {
 			for _, tab := range aiMCPClientOptions() {
 				state.Click(tab.ID)
 				var canvas ui.Canvas
-				state.Paint(&canvas, ui.Size{Width: width, Height: 2600})
+				// Both transport sections may be tall when narrow code blocks wrap.
+				state.Paint(&canvas, ui.Size{Width: width, Height: 6000})
 				var copyToken, reset ui.Hit
-				for _, id := range []ui.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset} {
+				for _, id := range []ui.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset, hitAISetAgentSelect, hitAISetAgentCopy, hitAISetAgentAllowAll} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width || hit.Bounds.Width <= 0 {
-						t.Fatalf("width %v: control outside window: %+v", width, hit)
+						t.Fatalf("width %v: %s outside window: %+v", width, tree.Text(id), hit)
 					}
 					if id == hitAISetMCPCopyToken {
 						copyToken = hit

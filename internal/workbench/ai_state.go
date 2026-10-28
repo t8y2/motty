@@ -97,15 +97,14 @@ type aiSettings struct {
 	// External access (MCP): whether it is enabled and the shared access level.
 	mcpEnabled bool
 	mcpMode    gate.Mode
-	// agentRun is whether the server that works without the window may run
-	// commands (agent_mcp.go), not only read.
-	agentRun bool
+	// agentMode is the independent access level of the stdio server.
+	agentMode gate.Mode
 	// defaultProvider and defaultModel are the model new questions go to.
 	defaultProvider, defaultModel string
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -275,7 +274,9 @@ func (state *State) reloadAI() {
 	read("ai.history", func(v string) { ai.settings.keepHistory = v != "off" })
 	read("ai.mcp.enabled", func(v string) { ai.settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { ai.settings.mcpMode = mcpModeFromSetting(v) })
-	read(agentModeSetting, func(v string) { ai.settings.agentRun = v == AgentModeCommands })
+	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
+	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
+	read(agentModeSetting, func(v string) { ai.settings.agentMode = mcpModeFromSetting(v) })
 	ai.agentAudit, _ = ai.store.Audit(agentAuditShown)
 	ai.agentSummary.lines = nil
 	read("ai.mode", func(v string) {

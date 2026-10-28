@@ -29,6 +29,56 @@ const (
 
 func aiMCPClientID(client aiMCPClient) ui.ID { return hitAISetMCPClients.At(int(client)) }
 
+func aiAgentClientID(client aiMCPClient) ui.ID { return hitAISetAgentClients.At(int(client)) }
+
+const (
+	aiMCPClientSetting = "ai.mcp.client"
+	aiAgentClientSetting = "ai.mcp.stdio.client"
+)
+
+var aiMCPClientKeys = [...]string{"claude", "cursor", "codebuddy", "zcode", "trae", "vscode", "windsurf", "codex", "deepseek", "opencode", "cherry", "qoder", "workbuddy"}
+
+func aiMCPClientFromKey(key string) aiMCPClient {
+	for index, value := range aiMCPClientKeys {
+		if key == value {
+			return aiMCPClient(index)
+		}
+	}
+	return aiMCPClaude
+}
+
+// Export preferences do not reconfigure either MCP service or its access level.
+func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
+	if client >= aiMCPClientCount {
+		return
+	}
+	key := aiMCPClientSetting
+	if agent {
+		key = aiAgentClientSetting
+	}
+	db, err := state.aiStore()
+	if err == nil {
+		err = db.SetSetting(key, aiMCPClientKeys[client])
+	}
+	if err != nil {
+		state.ai.cfg.notice = state.aiScrub(err.Error(), "")
+		return
+	}
+	if agent {
+		state.ai.cfg.agentClient = client
+	} else {
+		state.ai.cfg.mcpClient = client
+	}
+}
+
+func aiAgentClientOptions() [aiMCPClientCount]components.SelectItem {
+	options := aiMCPClientOptions()
+	for index := range options {
+		options[index].ID = aiAgentClientID(aiMCPClient(index))
+	}
+	return options
+}
+
 func aiMCPClientOptions() [aiMCPClientCount]components.SelectItem {
 	names := [...]string{"Claude Code", "Cursor", "CodeBuddy Code CLI", "ZCode", "TRAE", "VS Code", "Windsurf", "Codex", "DeepSeek Harness", "OpenCode", "Cherry Studio", "Qoder", "WorkBuddy"}
 	var options [aiMCPClientCount]components.SelectItem

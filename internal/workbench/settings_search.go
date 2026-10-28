@@ -187,10 +187,12 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	group(settingsAssistant, ai.BehaviourTitle, ai.ClearHistory, ai.ClearHistoryDesc)
 
 	row(settingsMCP, ai.MCPEnable, ai.MCPEnableDesc)
+	group(settingsMCP, ai.MCPHTTPTitle, ai.MCPHTTPTitle, ai.MCPHTTPDescription)
 	row(settingsMCP, ai.MCPMode, ai.MCPModeDesc)
 	row(settingsMCP, ai.MCPEndpoint, "")
 	row(settingsMCP, ai.MCPToken, ai.MCPTokenDesc)
 	row(settingsMCP, ai.AgentMode, ai.AgentModeDesc)
+	group(settingsMCP, ai.AgentsTitle, ai.AgentsTitle, ai.AgentsDescription)
 	row(settingsMCP, ai.AgentHosts, ai.AgentHostsNoneDesc)
 	row(settingsMCP, ai.AgentConfig, "")
 	row(settingsMCP, ai.AgentActivity, ai.AgentActivityNone)

@@ -40,6 +40,8 @@ const (
 	AgentModeCommands = "ask"
 	// AgentModeReadOnly is the value that allows only reading.
 	AgentModeReadOnly = "observe"
+	// AgentModeAllowAll allows all headless tools after explicit UI consent.
+	AgentModeAllowAll = "allow-all"
 
 	agentIdleDefault   = 2 * time.Minute
 	agentDialLimit     = 60 * time.Second
@@ -111,31 +113,31 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	defer log.Close()
 	_, _ = log.PruneAudit(time.Now().Add(-agentAuditRetained))
 
-	commands := false
-	if value, _, _ := log.Setting(agentModeSetting); value == AgentModeCommands {
-		commands = true
-	}
+	value, _, _ := log.Setting(agentModeSetting)
+	mode := mcpModeFromSetting(value)
 	backend := newAgentBackend(catalog, options)
+	backend.allowWrites = mode == gate.ModeAllowAll
 	defer backend.Close()
 	if len(backend.hosts) == 0 {
 		fmt.Fprintln(options.Log, "motty mcp-serve: no host is open to agents; turn it on in the host's settings in Motty")
 	}
-	mode := gate.ModeObserve
-	if commands {
-		mode = gate.ModeAsk
-	}
-	// Nothing can approve a call here, so what the policy would ask about is
-	// refused. Only commands it rates low run, and only if the user allowed them.
+	// Only the separately confirmed full-access mode skips approvals. In other
+	// modes nothing can approve a call, so policy requests remain refusals.
 	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode}
+	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_sessions first to get a host id. " +
+		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. "
+	if mode == gate.ModeAllowAll {
+		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval."
+	} else {
+		instructions += "Nobody can approve anything here, so a call that would need approval is refused."
+	}
 	return mcp.ServeStdio(ctx, in, out, mcp.Config{
-		Tools:       tools.Headless(commands),
-		Dispatch:    backend.audited(agentGate, log),
-		ServerName:  "motty",
-		Version:     "1",
-		CallTimeout: agentCallTimeout,
-		Instructions: "Tools to work on the saved hosts the user opened to you in Motty. Call list_sessions first to get a host id. " +
-			"A host connects when you first use it. Commands run without a terminal and keep no state between calls. " +
-			"Nobody can approve anything here, so a call that would need approval is refused.",
+		Tools:        tools.Headless(mode != gate.ModeObserve, mode == gate.ModeAllowAll),
+		Dispatch:     backend.audited(agentGate, log),
+		ServerName:   "motty",
+		Version:      "1",
+		CallTimeout:  agentCallTimeout,
+		Instructions: instructions,
 	})
 }
 
@@ -166,9 +168,10 @@ type agentBackend struct {
 	hosts   []Host
 	options AgentOptions
 
-	mu      sync.Mutex
-	entries map[string]*agentEntry
-	closed  bool
+	mu          sync.Mutex
+	entries     map[string]*agentEntry
+	closed      bool
+	allowWrites bool // immutable after startup, before requests are accepted
 }
 
 var _ gate.Backend = (*agentBackend)(nil)
@@ -424,12 +427,47 @@ func (b *agentBackend) ReadFile(ctx context.Context, args tools.SFTPReadArgs) (s
 	return text, truncated, nil
 }
 
-// WriteFile and Remove are not offered: they always need an approval, and this
-// server has nobody to ask.
-func (b *agentBackend) WriteFile(context.Context, tools.SFTPWriteArgs) error {
-	return errAgentNotOffered
+func (b *agentBackend) WriteFile(ctx context.Context, args tools.SFTPWriteArgs) error {
+	if !b.allowWrites {
+		return errAgentNotOffered
+	}
+	entry, err := b.acquire(ctx, args.Session)
+	if err != nil {
+		return err
+	}
+	defer entry.release()
+	remote, err := entry.files()
+	if err != nil {
+		return err
+	}
+	if err := sftpclient.WriteFile(remote, args.Path, []byte(args.Content), args.Overwrite); err != nil {
+		if !errors.Is(err, sftpclient.ErrExists) {
+			entry.dropFiles()
+		}
+		return err
+	}
+	return nil
 }
-func (b *agentBackend) Remove(context.Context, tools.SFTPRemoveArgs) error { return errAgentNotOffered }
+
+func (b *agentBackend) Remove(ctx context.Context, args tools.SFTPRemoveArgs) error {
+	if !b.allowWrites {
+		return errAgentNotOffered
+	}
+	entry, err := b.acquire(ctx, args.Session)
+	if err != nil {
+		return err
+	}
+	defer entry.release()
+	remote, err := entry.files()
+	if err != nil {
+		return err
+	}
+	if err := sftpclient.Delete(remote, args.Path); err != nil {
+		entry.dropFiles()
+		return err
+	}
+	return nil
+}
 
 // dial connects to a host and answers every question the connection asks from
 // the vault. It never asks a person: an unknown host key, a password that is not

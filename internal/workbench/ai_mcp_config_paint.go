@@ -9,13 +9,16 @@ import (
 
 // Paint after the workspace clip and inside the menu pass, as other selects do.
 func (state *State) paintMCPClientSelect(canvas *ui.Canvas) {
-	cfg, m := &state.ai.cfg, state.messages.AISettings
-	bounds := cfg.mcpSelectBounds
+	cfg := &state.ai.cfg
+	state.paintMCPExportSelect(canvas, cfg.mcpSelectBounds, &cfg.mcpSelectOpen, cfg.mcpClient, hitAISetMCPSelect, hitAISetMCPSelectDismiss, aiMCPClientOptions())
+	state.paintMCPExportSelect(canvas, cfg.agentSelectBounds, &cfg.agentSelectOpen, cfg.agentClient, hitAISetAgentSelect, hitAISetAgentSelectDismiss, aiAgentClientOptions())
+}
+
+func (state *State) paintMCPExportSelect(canvas *ui.Canvas, bounds ui.Rect, open *bool, client aiMCPClient, trigger, dismiss ui.ID, options [aiMCPClientCount]components.SelectItem) {
 	if bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
-		cfg.mcpSelectOpen = false
+		*open = false
 		return
 	}
-	options := aiMCPClientOptions()
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(options)*32), max(above, below))
@@ -23,18 +26,23 @@ func (state *State) paintMCPClientSelect(canvas *ui.Canvas) {
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
+	opening := *open && state.popups.owner != dismiss
+	scroll := state.selectScroll(*open, dismiss)
+	if opening {
+		scroll.Offset = max(0, min(float32(client)*32, float32(len(options)*32)+8-height))
+		canvas.SetInitialFocus(options[client].ID)
+	}
 	selectControl := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitAISetMCPSelect, Label: m.MCPClientLabel, Value: options[cfg.mcpClient].Label,
-		Open: cfg.mcpSelectOpen, Content: content, Layer: popupLayer,
-		DismissID: hitAISetMCPSelectDismiss, Viewport: state.windowRect(),
-		Scroll: state.selectScroll(cfg.mcpSelectOpen, hitAISetMCPSelectDismiss),
+		TriggerID: trigger, Label: state.messages.AISettings.MCPClientLabel, Value: options[client].Label,
+		Open: *open, Content: content, Layer: popupLayer,
+		Scope: dismiss, DismissID: dismiss, Viewport: state.windowRect(), Scroll: scroll,
 	})
 	defer selectControl.End()
-	if cfg.mcpSelectOpen {
+	if *open {
 		state.menuPlaced(selectControl.ContentBounds())
 	}
 	for index, option := range options {
-		option.Selected = index == int(cfg.mcpClient)
+		option.Selected = index == int(client)
 		selectControl.AddItem(option)
 	}
 }
@@ -42,13 +50,23 @@ func (state *State) paintMCPClientSelect(canvas *ui.Canvas) {
 // Keep explanations and actions readable when the settings navigation leaves
 // too little room for a two-column row.
 func (page *settingsPage) mcpFrame(label, description string, color ui.Color, control func()) {
-	if page.width >= 500 {
-		page.aiFrame(settingsRowHeight, label, description, color, control)
-		return
-	}
 	page.separator()
 	f := page.f
-	f.Column().Pad(18).Gap(10).Children(func() {
+	if page.width >= 500 {
+		row := f.Row().FillWidth().MinHeight(settingsRowHeight).Pad(18).Gap(24).Items(flex.Center)
+		page.matchAnchor(label, row, 0)
+		row.Children(func() {
+			f.Column().Grow(1).Gap(2).Children(func() {
+				f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.text)
+				f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
+			})
+			f.Row().Shrink(0).Children(control)
+		})
+		return
+	}
+	column := f.Column().Pad(18).Gap(10)
+	page.matchAnchor(label, column, 0)
+	column.Children(func() {
 		f.Column().Gap(2).Children(func() {
 			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.text)
 			f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
@@ -90,7 +108,7 @@ func aiMCPPreviewFormat(client aiMCPClient, m i18n.AISettingsMessages) string {
 }
 
 func (state *State) paintAIMCPConfig(page *settingsPage, endpoint string, ready bool) {
-	f, pal, m, cfg := page.f, state.pal, state.messages.AISettings, &state.ai.cfg
+	m, cfg := state.messages.AISettings, &state.ai.cfg
 	hint := m.MCPClaudeHint
 	switch cfg.mcpClient {
 	case aiMCPCursor:
@@ -122,34 +140,58 @@ func (state *State) paintAIMCPConfig(page *settingsPage, endpoint string, ready 
 	if ready {
 		preview = aiMCPConfig(cfg.mcpClient, state.aiMCPURL(), "********")
 	}
-	page.group(m.MCPConfig, func() {
-		f.Column().Pad(18).Gap(14).Children(func() {
-			f.Wrap(m.MCPConfigDesc).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
-			page.add(settingsControl{kind: controlMCPSelect, slot: f.Slot().FillWidth().Height(36)})
-			f.Wrap(hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
-			f.Column().Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
-				// The header names what the block holds, so the room the copy
-				// button takes says something instead of staying blank.
-				f.Row().PadSides(10, 14, 10, 14).Items(flex.Center).Children(func() {
-					f.Text(aiMCPPreviewFormat(cfg.mcpClient, m)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted)
-					f.Spacer()
-					page.mcpCopyButton(hitAISetMCPCopy, m.MCPCopy, !ready)
-				})
-				f.Column().MarginSides(0, 14, 14, 14).Children(func() {
-					if !ready {
-						f.Wrap(preview).FontSize(12).LineHeight(19).Color(pal.muted)
-						return
-					}
-					// Wrap by monospace cells, preserving JSON indentation and newlines.
-					cell, _ := f.Canvas().MonoCellSize(12, 0)
-					cols := max(1, int((page.width-36-28-2)/max(cell, 1)))
-					cfg.mcpPreviewLines, _ = aiMonoWrap(cfg.mcpPreviewLines[:0], preview, cols, len(preview)+1)
-					for _, line := range cfg.mcpPreviewLines {
-						f.Text(line).Mono().FontSize(12).LineHeight(19).Color(pal.text)
-					}
-				})
+	page.separator()
+	state.paintMCPConfigBlock(page, aiMCPConfigView{
+		title: m.MCPConfig, description: m.MCPConfigDesc, hint: hint, footer: m.MCPPreviewHint,
+		client: cfg.mcpClient, selectKind: controlMCPSelect, copyID: hitAISetMCPCopy,
+		ready: ready, preview: preview, lines: &cfg.mcpPreviewLines,
+	})
+}
+
+type aiMCPConfigView struct {
+	title, description, hint, footer, preview string
+	client                                    aiMCPClient
+	selectKind                                settingsControlKind
+	copyID                                    ui.ID
+	ready                                     bool
+	lines                                     *[]string
+}
+
+func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView) {
+	f, pal, m := page.f, state.pal, state.messages.AISettings
+	column := f.Column().Pad(18).Gap(14)
+	page.matchAnchor(view.title, column, 0)
+	column.Children(func() {
+		f.Text(view.title).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text)
+		f.Wrap(view.description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		page.add(settingsControl{kind: view.selectKind, slot: f.Slot().FillWidth().Height(36)})
+		if view.hint != "" {
+			f.Wrap(view.hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		}
+		f.Column().Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
+			// The header names what the block holds, so the room the copy
+			// button takes says something instead of staying blank.
+			f.Row().PadSides(10, 14, 10, 14).Items(flex.Center).Children(func() {
+				f.Text(aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted)
+				f.Spacer()
+				page.mcpCopyButton(view.copyID, m.MCPCopy, !view.ready)
 			})
-			f.Wrap(m.MCPPreviewHint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+			f.Column().MarginSides(0, 14, 14, 14).Children(func() {
+				if !view.ready {
+					f.Wrap(view.preview).FontSize(12).LineHeight(19).Color(pal.muted)
+					return
+				}
+				// Wrap by monospace cells, preserving JSON indentation and newlines.
+				cell, _ := f.Canvas().MonoCellSize(12, 0)
+				cols := max(1, int((page.width-36-28-2)/max(cell, 1)))
+				*view.lines, _ = aiMonoWrap((*view.lines)[:0], view.preview, cols, len(view.preview)+1)
+				for _, line := range *view.lines {
+					f.Text(line).Mono().FontSize(12).LineHeight(19).Color(pal.text)
+				}
+			})
 		})
+		if view.footer != "" {
+			f.Wrap(view.footer).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		}
 	})
 }

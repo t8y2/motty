@@ -65,6 +65,13 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
 		}
 		return items, state.aiSettingsClick, true
+	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetAgentSelect && !state.ai.cfg.agentSelectOpen:
+		options := aiAgentClientOptions()
+		items := make([]components.MenuTypeaheadItem, 0, len(options))
+		for _, option := range options {
+			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
+		}
+		return items, state.aiSettingsClick, true
 
 	case state.modal == modalNewForward && target == hitForwardDialogHost && !state.forwardEditor.hostOpen:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.hosts))

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
 )
 
@@ -86,19 +87,19 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 		t.Fatalf("the empty group says %v", texts)
 	}
 	state.Click(hitAISetAgentRun)
-	if settingValue(t, db, agentModeSetting) != AgentModeCommands || !state.ai.settings.agentRun {
+	if settingValue(t, db, agentModeSetting) != AgentModeCommands || state.ai.settings.agentMode != gate.ModeAsk {
 		t.Fatal("running commands was not stored")
 	}
 	state.Click(hitAISetAgentObserve)
-	if settingValue(t, db, agentModeSetting) != AgentModeReadOnly || state.ai.settings.agentRun {
+	if settingValue(t, db, agentModeSetting) != AgentModeReadOnly || state.ai.settings.agentMode != gate.ModeObserve {
 		t.Fatal("read only was not stored")
 	}
 
 	state.Click(hitAISetAgentCopy)
-	if got := world.clip[len(world.clip)-1]; got != "claude mcp add motty-hosts -- /opt/motty/motty mcp-serve" {
+	if got := world.clip[len(world.clip)-1]; !strings.HasPrefix(got, "claude mcp add motty-hosts -- /opt/motty/motty mcp-serve --data-dir ") {
 		t.Fatalf("copied %q", got)
 	}
-	state.ai.cfg.mcpClient = aiMCPCodex
+	state.Click(aiAgentClientID(aiMCPCodex))
 	state.Click(hitAISetAgentCopy)
 	if got := world.clip[len(world.clip)-1]; !strings.HasPrefix(got, "[mcp_servers.motty-hosts]") {
 		t.Fatalf("the chosen client was not used: %q", got)
@@ -129,6 +130,25 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 	}
 	if _, texts = world.paint(); contains(texts, m.AgentActivityNone) == false {
 		t.Fatalf("the cleared page says %v", texts)
+	}
+}
+
+func TestAgentConfigurationKeepsTheCurrentDataDirectoryForEveryClient(t *testing.T) {
+	const executable = "/Applications/Motty.app/Contents/MacOS/motty"
+	const directory = "/home/test/profile with spaces"
+	for index, option := range aiMCPClientOptions() {
+		t.Run(option.Label, func(t *testing.T) {
+			config := aiAgentConfigForDataDir(aiMCPClient(index), executable, directory)
+			if !strings.Contains(config, "--data-dir") || !strings.Contains(config, directory) {
+				t.Fatalf("the service would read another profile: %s", config)
+			}
+			if strings.HasPrefix(config, "{") && !json.Valid([]byte(config)) {
+				t.Fatalf("invalid configuration: %s", config)
+			}
+			if aiMCPClient(index) == aiMCPClaude && !strings.Contains(config, shellWord(directory)) {
+				t.Fatal("the CLI profile path is not quoted")
+			}
+		})
 	}
 }
 
