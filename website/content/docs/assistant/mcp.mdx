@@ -41,6 +41,12 @@ for new calls immediately.
 
 ## Tools
 
+Full access keeps a red risk warning visible even while HTTP is disabled: the
+saved level also applies when it is enabled again. Open windows synchronize the
+shared HTTP access level. Full access explicitly skips cross-connection approval,
+but preserves hard policy blocks and never expands the available sessions or
+authorized saved hosts.
+
 | Tool | Does |
 | --- | --- |
 | `list_sessions` | List open sessions. |
@@ -89,3 +95,7 @@ host that syncs in from another device starts closed.
 | Activity | Settings > MCP lists the latest calls (host, tool, command or path, and how it ended) for 30 days. Output is never kept. |
 
 If the audit log cannot be opened, nothing is served.
+
+The independent service also keeps a full-access warning visible. Restart it
+through the client after changing access: a running child retains the level it
+started with. HTTP changes apply immediately to new calls.

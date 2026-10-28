@@ -209,24 +209,26 @@ type AISettingsMessages struct {
 	MCPAllowAllTitle   string
 	MCPAllowAllBody    string
 	MCPAllowAllConfirm string
+	MCPAllowAllWarning string
 
 	// Agents that work without the window (motty mcp-serve).
-	AgentsTitle         string
-	AgentsDescription   string
-	AgentAllowAllBody   string
-	AgentMode           string
-	AgentModeDesc       string
-	AgentModeObserve    string
-	AgentModeRun        string
-	AgentHosts          string
-	AgentHostsNoneDesc  string
-	AgentConfig         string
-	AgentConfigDesc     string
-	AgentActivity       string
-	AgentActivityNone   string
-	AgentActivityDesc   string
-	AgentActivityClear  string
-	AgentOutcomeOK      string
-	AgentOutcomeFailed  string
-	AgentOutcomeRefused string
+	AgentsTitle          string
+	AgentsDescription    string
+	AgentAllowAllBody    string
+	AgentAllowAllWarning string
+	AgentMode            string
+	AgentModeDesc        string
+	AgentModeObserve     string
+	AgentModeRun         string
+	AgentHosts           string
+	AgentHostsNoneDesc   string
+	AgentConfig          string
+	AgentConfigDesc      string
+	AgentActivity        string
+	AgentActivityNone    string
+	AgentActivityDesc    string
+	AgentActivityClear   string
+	AgentOutcomeOK       string
+	AgentOutcomeFailed   string
+	AgentOutcomeRefused  string
 }

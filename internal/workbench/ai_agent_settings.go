@@ -179,6 +179,9 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			width := min(components.SegmentedControlWidth(page.f.Canvas(), state.Theme(), modes[:]), max(0, page.width-36))
 			page.segmentSlot(width, modes[:], selected)
 		})
+		if state.ai.settings.agentMode == gate.ModeAllowAll {
+			page.mcpAccessWarning(m.AgentAllowAllWarning)
+		}
 		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {})
 		page.separator()
 		state.paintMCPConfigBlock(page, aiMCPConfigView{

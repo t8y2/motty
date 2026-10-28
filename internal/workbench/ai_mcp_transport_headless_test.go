@@ -35,6 +35,7 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				defer view.Close()
 				click := func(id ui.ID) {
 					t.Helper()
+					view.Rest()
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == id && !hit.Block && !hit.IsLabel {
 							if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
@@ -102,5 +103,47 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMCPConsentSaveErrorsAreForgottenAfterNativeEscape(t *testing.T) {
+	for _, allow := range []ui.ID{hitAISetMCPAllowAll, hitAISetAgentAllowAll} {
+		t.Run(tree.Text(allow), func(t *testing.T) {
+			world := newSettingsWorld(t, newLister())
+			state := world.state
+			state.selectSettingsCategory(settingsMCP)
+			state.Click(allow)
+			view, err := headless.Open(app.Config{Title: "MCP save failure", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnResize: state.Resize}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := world.db(t).Close(); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, hit := range view.Snapshot().Hits {
+				if hit.ID == hitAISetConfirmAction && !hit.IsLabel {
+					if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+						t.Fatal(err)
+					}
+					found = true
+					break
+				}
+			}
+			if !found || state.ai.cfg.notice == "" {
+				t.Fatal("save failure was not shown")
+			}
+			if err := view.Keys("esc"); err != nil {
+				t.Fatal(err)
+			}
+			if state.ai.cfg.dialog != aiDialogNone {
+				t.Fatal("Escape did not cancel the failed save")
+			}
+			state.Click(allow)
+			if state.ai.cfg.notice != "" || state.ai.cfg.dialog == aiDialogNone {
+				t.Fatal("a reopened confirmation retained a canceled save error")
+			}
+		})
 	}
 }

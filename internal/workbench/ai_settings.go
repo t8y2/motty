@@ -474,6 +474,7 @@ func (state *State) aiImportDialogClick(id ui.ID) {
 func (state *State) aiCloseDialog() {
 	cfg := &state.ai.cfg
 	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey, cfg.presetOpen = aiDialogNone, "", "", "", false, false
+	cfg.notice = ""
 	cfg.name, cfg.baseURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle = text.Editor{}, ""
 	// The import candidates hold credentials in memory; closing the dialog is

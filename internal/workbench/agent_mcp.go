@@ -33,8 +33,8 @@ import (
 // person anything, and ends with its client.
 
 const (
-	// agentModeSetting is the ai.db setting that lets the stdio server run
-	// commands ("ask"); anything else keeps it read-only.
+	// agentModeSetting is the stdio access level in ai.db: observe, ask, or
+	// allow-all. Unknown values remain read-only.
 	agentModeSetting = "ai.mcp.stdio.mode"
 	// AgentModeCommands is the value of that setting that allows commands.
 	AgentModeCommands = "ask"

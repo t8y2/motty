@@ -430,6 +430,9 @@ func (state *State) paintAIMCP(page *settingsPage) {
 			}
 			page.segmentSlot(width, modes[:], selected)
 		})
+		if settings.mcpMode == gate.ModeAllowAll {
+			page.mcpAccessWarning(m.MCPAllowAllWarning)
+		}
 		page.mcpFrame(m.MCPEndpoint, endpoint, pal.muted, func() {
 			page.mcpCopyButton(hitAISetMCPCopyURL, m.MCPCopyURL, !ready)
 		})
@@ -450,6 +453,12 @@ func (state *State) paintAIMCP(page *settingsPage) {
 		state.paintAIMCPConfig(page, endpoint, ready)
 	})
 	state.paintAIAgents(page)
+}
+
+func (page *settingsPage) mcpAccessWarning(message string) {
+	page.f.Column().PadSides(0, 18, 12, 18).Children(func() {
+		page.f.Wrap(message).FontSize(metrics.FontSizeS).LineHeight(18).Color(page.state.pal.danger)
+	})
 }
 
 // paintAIDialogs paints the section's open dialog above everything else.

@@ -25,7 +25,7 @@ func runMCPServe(args []string) int {
 		return 2
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintln(os.Stderr, "usage: motty mcp-serve")
+		fmt.Fprintln(os.Stderr, "usage: motty mcp-serve [--data-dir directory]")
 		return 2
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

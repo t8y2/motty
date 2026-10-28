@@ -1,8 +1,11 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
+	"unicode"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 )
 
@@ -102,5 +105,125 @@ func TestMCPAllowAllSaveFailureDoesNotSelectIt(t *testing.T) {
 	state.Click(hitAISetConfirmAction)
 	if state.ai.settings.mcpMode != gate.ModeAsk || state.ai.cfg.dialog != aiDialogMCPAllowAll || state.ai.cfg.notice == "" || world.changed != before {
 		t.Fatal("failed storage committed or dismissed the permission change")
+	}
+}
+
+func TestMCPConsentForgetsSaveErrorsWhenCanceled(t *testing.T) {
+	for _, agent := range []bool{false, true} {
+		world := newSettingsWorld(t, newLister())
+		state := world.state
+		state.selectSettingsCategory(settingsMCP)
+		allow := hitAISetMCPAllowAll
+		if agent {
+			allow = hitAISetAgentAllowAll
+		}
+		state.Click(allow)
+		if err := world.db(t).Close(); err != nil {
+			t.Fatal(err)
+		}
+		state.Click(hitAISetConfirmAction)
+		if state.ai.cfg.notice == "" {
+			t.Fatal("the failed save did not report its error")
+		}
+		state.Click(hitAISetConfirmCancel)
+		state.Click(allow)
+		if state.ai.cfg.dialog == aiDialogNone || state.ai.cfg.notice != "" {
+			t.Fatal("the new confirmation retained the canceled save error")
+		}
+	}
+}
+
+func TestMCPPermissionsFollowTheSharedHubAcrossOpenWindows(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	a, b := world.state, world.open(t)
+	a.selectSettingsCategory(settingsMCP)
+	b.selectSettingsCategory(settingsMCP)
+	hub := NewAIHub(world.options.AIStorePath)
+	t.Cleanup(hub.Close)
+	hub.Add(a, nil)
+	hub.Add(b, nil)
+	reconfigure := func() {
+		t.Helper()
+		if err := hub.Reconfigure(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.options.AISettingsChanged, b.options.AISettingsChanged = reconfigure, reconfigure
+	check := func(enabled bool, http, agent gate.Mode) {
+		t.Helper()
+		a.Wake()
+		b.Wake()
+		for _, state := range []*State{a, b} {
+			if state.ai.settings.mcpEnabled != enabled || state.ai.settings.mcpMode != http || state.ai.settings.agentMode != agent {
+				t.Fatalf("stale window: enabled=%t HTTP=%v stdio=%v", state.ai.settings.mcpEnabled, state.ai.settings.mcpMode, state.ai.settings.agentMode)
+			}
+		}
+		if enabled && hub.gate().Mode != http {
+			t.Fatal("the published permission differs from the running service")
+		}
+	}
+	a.Click(hitAISetMCPAsk)
+	a.Click(hitAISetMCPEnabled)
+	check(true, gate.ModeAsk, gate.ModeObserve)
+	a.Click(hitAISetMCPAllowAll)
+	a.Click(hitAISetConfirmAction)
+	check(true, gate.ModeAllowAll, gate.ModeObserve)
+	// The other window can immediately revoke access; subsequent unrelated
+	// settings changes must not write an earlier access level back.
+	b.Click(hitAISetMCPObserve)
+	check(true, gate.ModeObserve, gate.ModeObserve)
+	a.Click(hitAISetAgentAllowAll)
+	a.Click(hitAISetConfirmAction)
+	check(true, gate.ModeObserve, gate.ModeAllowAll)
+	b.Click(hitAISetMCPEnabled)
+	check(false, gate.ModeObserve, gate.ModeAllowAll)
+	a.Click(hitAISetMCPAllowAll)
+	a.Click(hitAISetConfirmAction)
+	check(false, gate.ModeAllowAll, gate.ModeAllowAll)
+	b.Click(hitAISetAgentObserve)
+	check(false, gate.ModeAllowAll, gate.ModeObserve)
+	b.Click(hitAISetMCPEnabled)
+	check(true, gate.ModeAllowAll, gate.ModeObserve)
+	c := world.open(t)
+	hub.Add(c, nil)
+	c.Wake()
+	if c.ai.settings.mcpMode != gate.ModeAllowAll || c.aiMCPURL() != hub.Address() {
+		t.Fatal("a newly added window did not inherit the current service")
+	}
+}
+
+func TestMCPFullAccessWarningsStayVisibleWhileHTTPIsOffAndAfterRestart(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	state.selectSettingsCategory(settingsMCP)
+	state.Click(hitAISetMCPAllowAll)
+	state.Click(hitAISetConfirmAction)
+	state.Click(hitAISetAgentAllowAll)
+	state.Click(hitAISetConfirmAction)
+	state = world.open(t)
+	state.selectSettingsCategory(settingsMCP)
+	if state.ai.settings.mcpEnabled {
+		t.Fatal("the test should leave HTTP disabled")
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1100, Height: 6000})
+	var rendered strings.Builder
+	for _, text := range canvas.Texts() {
+		if text.Style.Color == state.pal.danger {
+			rendered.WriteString(text.Value)
+		}
+	}
+	withoutSpace := func(value string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, value)
+	}
+	for _, warning := range []string{state.messages.AISettings.MCPAllowAllWarning, state.messages.AISettings.AgentAllowAllWarning} {
+		if !strings.Contains(withoutSpace(rendered.String()), withoutSpace(warning)) {
+			t.Fatalf("full access has no persistent risk warning: %s", warning)
+		}
 	}
 }

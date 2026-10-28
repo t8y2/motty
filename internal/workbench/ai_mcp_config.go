@@ -32,7 +32,7 @@ func aiMCPClientID(client aiMCPClient) ui.ID { return hitAISetMCPClients.At(int(
 func aiAgentClientID(client aiMCPClient) ui.ID { return hitAISetAgentClients.At(int(client)) }
 
 const (
-	aiMCPClientSetting = "ai.mcp.client"
+	aiMCPClientSetting   = "ai.mcp.client"
 	aiAgentClientSetting = "ai.mcp.stdio.client"
 )
 

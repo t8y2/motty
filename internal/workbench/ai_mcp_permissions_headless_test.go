@@ -31,6 +31,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 				defer view.Close()
 				click := func(id ui.ID) {
 					t.Helper()
+					view.Rest()
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == id && !hit.Block && !hit.IsLabel {
 							if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {

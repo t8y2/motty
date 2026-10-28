@@ -81,7 +81,8 @@ const (
 	// ModeAuto skips questions up to the policy's level like ModeAsk but also
 	// runs medium actions; high and critical still ask.
 	ModeAuto
-	// ModeAllowAll skips risk approvals, including critical actions. Callers
+	// ModeAllowAll skips approvals, including cross-connection approvals, but
+	// preserves explicit policy blocks. Callers
 	// must obtain explicit consent before enabling this mode.
 	ModeAllowAll
 )
@@ -390,14 +391,16 @@ func (g Gate) execMany(ctx context.Context, name string, args tools.TerminalExec
 // ask applies the policy and, when needed, the user's answer. It returns nil
 // when the action may proceed and the result to send back otherwise.
 func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, summary string, assessment risk.Assessment, otherSessions ...string) *Result {
-	if g.Mode == ModeAllowAll {
-		return nil
-	}
 	policy := g.Policy
 	if g.Mode == ModeAuto && policy.AutoUpTo < risk.Medium {
 		policy.AutoUpTo = risk.Medium
 	}
 	decision := policy.Decide(assessment)
+	// Full access explicitly authorizes all reachable connections without an
+	// approval, including references; it never overrides a hard policy block.
+	if g.Mode == ModeAllowAll && decision != risk.DecisionBlock {
+		return nil
+	}
 	if g.Target != nil && decision == risk.DecisionAuto {
 		crossTarget := session != g.Target.ID
 		for _, id := range otherSessions {

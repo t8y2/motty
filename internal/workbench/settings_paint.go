@@ -22,18 +22,18 @@ const (
 type settingsControlKind uint8
 
 const (
-	controlSegments       settingsControlKind = iota // a segmented choice
-	controlSwitch                                    // a two-state switch
-	controlButtons                                   // buttons against the right edge of the slot
-	controlButton                                    // one small button filling the slot
-	controlHit                                       // the slot is a pointer target
-	controlSearch                                    // the search box
-	controlModelInput                                // the assistant's model-name field
-	controlSwatches                                  // a strip of round color dots
-	controlLabel                                     // the words of a row, which label the control beside them
-	controlMCPSelect                                 // client configuration select
-	controlLogo                                      // the product wordmark in a slot
-	controlAgentSelect                               // independent stdio client configuration
+	controlSegments    settingsControlKind = iota // a segmented choice
+	controlSwitch                                 // a two-state switch
+	controlButtons                                // buttons against the right edge of the slot
+	controlButton                                 // one small button filling the slot
+	controlHit                                    // the slot is a pointer target
+	controlSearch                                 // the search box
+	controlModelInput                             // the assistant's model-name field
+	controlSwatches                               // a strip of round color dots
+	controlLabel                                  // the words of a row, which label the control beside them
+	controlMCPSelect                              // client configuration select
+	controlLogo                                   // the product wordmark in a slot
+	controlAgentSelect                            // independent stdio client configuration
 )
 
 // settingsControl is one control of the page, recorded while the page is
