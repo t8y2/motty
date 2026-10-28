@@ -410,6 +410,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
+	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
 	session.role = sshconn.EndpointTarget
 	session.jumpPath = ""
@@ -488,11 +489,13 @@ func (state *State) connectionEnv(notify func()) connectEnv {
 // needs no new handshake and no new password. It returns nil when there is no
 // such connection, or when the server will not lend it.
 func (state *State) shareFrom(session *Session, host Host) (Connection, *Session) {
-	login := state.login(host)
+	address := state.sessionAddress(host)
 	for index := range state.sessions {
 		other := &state.sessions[index]
-		if other.ID == session.ID || other.conn == nil || other.host.Address != host.Address || other.host.Port != host.Port ||
-			state.login(other.host) != login || other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute {
+		// The saved host may have been edited since this transport was opened.
+		// Compare its dialed account/address, not the next connection's settings.
+		if other.ID == session.ID || other.conn == nil || other.Address != address ||
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute {
 			continue
 		}
 		lender, ok := other.conn.(sharer)

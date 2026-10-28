@@ -362,7 +362,9 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 		if previous.Label != updated.Label {
 			state.renameSession(session, updated.Label)
 		}
-		session.Address = state.sessionAddress(updated)
+		if session.conn == nil {
+			session.Address = state.sessionAddress(updated)
+		}
 	}
 	for index := range state.forwards {
 		forward := &state.forwards[index]

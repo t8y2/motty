@@ -518,8 +518,8 @@ func (state *State) aiAnswerAfterDecline() {
 	state.aiSend()
 }
 
-// aiContext is the recent text of the session the user is looking at, sent with
-// a question in Ask mode so the model sees what they see.
+// aiContext attaches the locked default session's recent text in Ask mode.
+// A different visible tab does not change the source of this context.
 func (state *State) aiContext() string {
 	lines := state.ai.settings.contextLines
 	if lines <= 0 {
@@ -943,7 +943,8 @@ func (state *State) aiOpenConversation(id int64) {
 	}
 	ai.items, ai.history, ai.conv = nil, nil, id
 	// Persisted terminal IDs are not identities across application restarts.
-	// Reopening history requires an explicit target choice before any operation.
+	// History restores neither a live default nor reference authorization. A new
+	// request must select its default or explicitly name its reference sessions.
 	ai.target, ai.targetSet = gate.SessionInfo{}, true
 	ai.panel.targetOpen = false
 	ai.notice = ""

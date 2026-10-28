@@ -76,7 +76,7 @@ type Session struct {
 	ID       uint32
 	HostID   uint32
 	Title    string
-	Address  string
+	Address  string // dialed address; changes to a saved host take effect on reconnect
 	paneSlot uint8
 
 	host     Host // what was dialed, to dial again
