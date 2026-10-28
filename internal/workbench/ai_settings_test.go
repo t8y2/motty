@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
@@ -674,7 +675,7 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
 	}
-	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false}
+	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false, mcpMode: gate.ModeObserve}
 	if state.ai.settings != want {
 		t.Fatalf("settings = %+v, want %+v", state.ai.settings, want)
 	}
@@ -698,7 +699,7 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	again.Click(hitAISetContext0)
 	again.Click(hitAISetRedact)
 	again.Click(hitAISetHistory)
-	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true}); got != want {
+	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true, mcpMode: gate.ModeObserve}); got != want {
 		t.Fatalf("settings = %+v, want %+v", got, want)
 	}
 }
@@ -770,7 +771,7 @@ func TestAIExternalAccessSettingsPersistAndCopy(t *testing.T) {
 	if settingValue(t, db, "ai.mcp.enabled") != "on" || settingValue(t, db, "ai.mcp.mode") != "ask" {
 		t.Fatal("the MCP choices are not stored")
 	}
-	if !state.ai.settings.mcpEnabled || !state.ai.settings.mcpAsk || world.changed != 2 {
+	if !state.ai.settings.mcpEnabled || state.ai.settings.mcpMode != gate.ModeAsk || world.changed != 2 {
 		t.Fatalf("settings=%+v changed=%d", state.ai.settings, world.changed)
 	}
 	_, texts = world.paint()
@@ -820,11 +821,11 @@ func TestAIExternalAccessSettingsPersistAndCopy(t *testing.T) {
 		t.Fatalf("token=%q changed=%d", settingValue(t, db, "ai.mcp.token"), world.changed)
 	}
 	state.Click(hitAISetMCPObserve)
-	if settingValue(t, db, "ai.mcp.mode") != "observe" || state.ai.settings.mcpAsk {
+	if settingValue(t, db, "ai.mcp.mode") != "observe" || state.ai.settings.mcpMode != gate.ModeObserve {
 		t.Fatal("observe was not stored")
 	}
 	state.Close()
-	if again := world.open(t); !again.ai.settings.mcpEnabled || again.ai.settings.mcpAsk {
+	if again := world.open(t); !again.ai.settings.mcpEnabled || again.ai.settings.mcpMode != gate.ModeObserve {
 		t.Fatalf("a new window has %+v", again.ai.settings)
 	}
 }

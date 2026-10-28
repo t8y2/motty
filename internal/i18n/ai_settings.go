@@ -203,6 +203,11 @@ type AISettingsMessages struct {
 	MCPClientLabel   string
 	MCPPreviewHint   string
 
+	MCPModeAllowAll    string
+	MCPAllowAllTitle   string
+	MCPAllowAllBody    string
+	MCPAllowAllConfirm string
+
 	// Agents that work without the window (motty mcp-serve).
 	AgentsTitle         string
 	AgentMode           string

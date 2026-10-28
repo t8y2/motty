@@ -70,7 +70,7 @@ type Request struct {
 // until answered or ctx ends. confirmText is what they typed when NeedsText.
 type Approver func(ctx context.Context, request Request) (approved bool, confirmText string, err error)
 
-// Mode limits what a caller may do, independent of risk.
+// Mode selects the caller's capabilities and risk-approval behavior.
 type Mode uint8
 
 const (
@@ -81,6 +81,9 @@ const (
 	// ModeAuto skips questions up to the policy's level like ModeAsk but also
 	// runs medium actions; high and critical still ask.
 	ModeAuto
+	// ModeAllowAll skips risk approvals, including critical actions. Callers
+	// must obtain explicit consent before enabling this mode.
+	ModeAllowAll
 )
 
 // Gate decides and runs tool calls.
@@ -387,6 +390,9 @@ func (g Gate) execMany(ctx context.Context, name string, args tools.TerminalExec
 // ask applies the policy and, when needed, the user's answer. It returns nil
 // when the action may proceed and the result to send back otherwise.
 func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, summary string, assessment risk.Assessment, otherSessions ...string) *Result {
+	if g.Mode == ModeAllowAll {
+		return nil
+	}
 	policy := g.Policy
 	if g.Mode == ModeAuto && policy.AutoUpTo < risk.Medium {
 		policy.AutoUpTo = risk.Medium

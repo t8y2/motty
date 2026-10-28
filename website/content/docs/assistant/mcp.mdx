@@ -9,7 +9,7 @@ It is **off by default**, listens on loopback only, and requires a bearer token.
 
 ## Enable it
 
-In **Settings > AI assistant**, turn on **Allow external agents (MCP)**. The page
+In **Settings > MCP**, turn on **Allow external agents (MCP)**. The page
 then shows the endpoint and the access token, with a button to copy the client
 configuration. Resetting the token disconnects every client.
 
@@ -18,7 +18,14 @@ configuration. Resetting the token disconnects every client.
 | Level | What a client can do |
 | --- | --- |
 | Observe | Read only. |
-| Ask | Also run commands, each one approved in Motty first. |
+| Ask | Low-risk actions run automatically. Others need approval in Motty's AI panel; critical actions require typed confirmation. |
+| Allow all | Run commands and read, change or delete files, including critical operations, without per-call approval. |
+
+Choosing **Allow all** opens a risk confirmation. The option is saved and selected
+only after confirmation; Cancel or Escape keeps the previous access level. It
+applies to every client connected to the local MCP service and every session they
+can access. Switching back to **Observe** or **Ask** restores that mode's limits
+for new calls immediately.
 
 ## Tools
 
