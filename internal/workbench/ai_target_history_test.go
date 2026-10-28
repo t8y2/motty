@@ -33,15 +33,15 @@ func TestAITargetChangeSeparatorsAndHistory(t *testing.T) {
 	state.aiChooseTarget(hitAITargets.At(int(second)))
 	state.aiChooseTarget(hitAITargets.At(int(first)))
 	send(first)
-	if len(targetChanges(state)) != 0 {
-		t.Fatal("same target or temporary choices added separators")
+	if changes := targetChanges(state); len(changes) != 1 || changes[0] != state.sessions[0].Title {
+		t.Fatal("missing first-target separator or repeated separators for the same target")
 	}
 	send(second)
 	send(second)
 	state.ai.open = true
 	_, texts := paintAt(state, panelWide)
 	changes := targetChanges(state)
-	if len(changes) != 1 || changes[0] != state.sessions[1].Title {
+	if len(changes) != 2 || changes[1] != state.sessions[1].Title {
 		t.Fatalf("boundaries = %q", changes)
 	}
 	label := fmt.Sprintf(state.messages.AIPanel.TargetSwitchedFmt, state.sessions[1].Title)
@@ -56,15 +56,15 @@ func TestAITargetChangeSeparatorsAndHistory(t *testing.T) {
 	// Simulate a later window lifetime with the same numeric session handles.
 	state.ai.targetNamespace = "next-window"
 	send(second)
-	if len(targetChanges(state)) != 2 {
+	if len(targetChanges(state)) != 3 {
 		t.Fatal("a new terminal lifetime was treated as the persisted target")
 	}
 	state.aiOpenConversation(conversation)
-	if len(targetChanges(state)) != 2 {
+	if len(targetChanges(state)) != 3 {
 		t.Fatal("reopening history lost a connection lifetime boundary")
 	}
 	send(0)
-	if got := targetChanges(state); len(got) != 3 || got[2] != state.messages.AIPanel.TargetNone {
+	if got := targetChanges(state); len(got) != 4 || got[3] != state.messages.AIPanel.TargetNone {
 		t.Fatalf("general-question boundary = %q", got)
 	}
 }

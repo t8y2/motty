@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 )
 
@@ -172,6 +173,72 @@ func (state *State) mentionSuggestions(dst []mentionName) ([]mentionName, text.R
 		}
 	}
 	return dst, span
+}
+
+// Refresh before handling a key as native editing can precede the next paint.
+func (state *State) aiSyncMentions() {
+	panel, input := &state.ai.panel, &state.ai.input
+	value, selection := input.String(), input.Selection()
+	changed := panel.mentionText != value || panel.mentionSelection != selection
+	var selected uint32
+	if changed {
+		panel.mentionText, panel.mentionSelection = value, selection
+		panel.mentionDismissed = false
+	} else if panel.mentionIndex >= 0 && panel.mentionIndex < len(panel.mentions) {
+		selected = panel.mentions[panel.mentionIndex].session
+	}
+	panel.mentionIndex = 0
+	if _, composing := input.Composition(); composing || panel.mentionDismissed {
+		panel.mentions = panel.mentions[:0]
+		return
+	}
+	panel.mentions, _ = state.mentionSuggestions(panel.mentionBuf[:0])
+	for index, name := range panel.mentions {
+		if name.session == selected {
+			panel.mentionIndex = index
+			break
+		}
+	}
+}
+
+func (state *State) aiAcceptSelectedMention() bool {
+	state.aiSyncMentions()
+	panel := &state.ai.panel
+	if len(panel.mentions) == 0 || panel.modelMenu || panel.targetOpen {
+		return false
+	}
+	state.acceptMention(panel.mentions[panel.mentionIndex].name)
+	return true
+}
+
+func (state *State) aiMentionKey(event ui.KeyEvent) bool {
+	if event.Target != hitAIInput && event.Target.Scope() != hitAIMentions || event.Modifiers != 0 {
+		return false
+	}
+	state.aiSyncMentions()
+	panel := &state.ai.panel
+	if len(panel.mentions) == 0 || panel.modelMenu || panel.targetOpen {
+		return false
+	}
+	if index, ok := event.Target.In(hitAIMentions); ok && index < len(panel.mentions) {
+		panel.mentionIndex = index
+	}
+	switch event.Key {
+	case ui.KeyDown:
+		panel.mentionIndex = (panel.mentionIndex + 1) % len(panel.mentions)
+	case ui.KeyUp:
+		panel.mentionIndex = (panel.mentionIndex + len(panel.mentions) - 1) % len(panel.mentions)
+	case ui.KeyEnter, ui.KeyTab:
+		if !event.Repeat {
+			state.acceptMention(panel.mentions[panel.mentionIndex].name)
+		}
+	case ui.KeyEscape:
+		panel.mentionDismissed = true
+		panel.mentions = panel.mentions[:0]
+	default:
+		return false
+	}
+	return true
 }
 
 // acceptMention puts a suggested name in place of what was typed after the @.

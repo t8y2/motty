@@ -56,7 +56,7 @@ func (state *State) aiPrepareBottom(canvas *ui.Canvas, width float32) (boxHeight
 	lineHeight := theme.Metrics.FontSizeM + 7
 	boxWidth := width + 2*aiPad - 2*aiComposerMargin
 	rows := max(panel.inputLayout.RowCount(canvas, theme, ai.input.String(), boxWidth, false), 2) // two rows to begin with
-	panel.mentions, _ = state.mentionSuggestions(panel.mentionBuf[:0])
+	state.aiSyncMentions()
 	if len(ai.approvals) > 0 {
 		state.aiLayoutApprovalSummary(canvas, ai.approvals[0], width)
 	}
@@ -255,13 +255,13 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	for index, name := range panel.mentions {
 		id := hitAIMentions.At(index)
 		background := ui.Color{}
-		if canvas.Hovered() == id || canvas.FocusVisible() == id {
+		if panel.mentionIndex == index || canvas.FocusVisible() == id {
 			background = pal.surfaceHot
 		}
 		label := "@" + name.title
 		row := state.aiFlex.mention.Begin(canvas, theme, body.mentions[index].Rect())
 		row.Row().Fill().PadX(8).Gap(10).Items(flex.Center).Background(background).Radius(radius.item).
-			HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: name.detail}).Children(func() {
+			HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {
 			row.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(18).Ellipsis().Grow(1)
 			row.Text(name.detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MaxWidth(120).Ellipsis()
 		})

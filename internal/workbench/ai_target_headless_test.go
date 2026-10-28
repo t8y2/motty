@@ -10,10 +10,10 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/i18n"
+	"motty/internal/sshconn"
 )
 
 func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
@@ -25,6 +25,8 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				state.setAppearance(appearanceLight)
 				state.renameSession(&state.sessions[0], "local-ubuntu")
 				state.renameSession(&state.sessions[1], "local-ubuntu")
+				state.sessions[0].host.System = sshconn.SystemUbuntu
+				state.sessions[1].host.System = sshconn.SystemLinux
 				state.rebuildTabOptions()
 				state.aiChooseTarget(hitAITargets.At(int(state.sessions[1].ID)))
 				state.ai.mode, state.ai.open = agent.ModeAgent, true
@@ -89,13 +91,34 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				if mention.Label != "@"+state.sessions[1].Title {
 					t.Fatalf("mention differs from tab: %q", mention.Label)
 				}
-				click(mention.ID)
+				caretBefore := state.ai.input.Selection()
+				must(view.Keys("Down"))
 				must(view.Rest())
+				if !find(mention.ID).Selected || state.ai.input.Selection() != caretBefore {
+					t.Fatal("Down did not highlight the second suggestion without moving the caret")
+				}
+				if dir := os.Getenv("MOTTY_AI_TARGET_SCREENSHOTS"); dir != "" && size == panelWide && scale == 1.25 {
+					must(view.Screenshot(filepath.Join(dir, "ai-mention-keyboard.png")))
+				}
+				must(view.Keys("Enter"))
+				must(view.Rest())
+				if state.ai.run != nil || state.ai.input.String() == "" || view.Snapshot().Focused != hitAIInput {
+					t.Fatal("Enter sent the question instead of accepting the mention")
+				}
 				ids := findMentions(state.ai.input.String(), state.mentionNames(nil))
 				if len(ids) != 1 || ids[0] != state.sessions[1].ID || state.aiTarget().ID != sessionHandle(state.sessions[0].ID) {
 					t.Fatal("reference resolved incorrectly or changed the target")
 				}
-				state.ai.input = *text.NewEditor("中文输入候选位置")
+				must(view.Driver().SelectText(0, state.ai.input.RuneCount()))
+				must(view.Type("@"))
+				must(view.Rest())
+				click(hitAIMentions.At(0))
+				must(view.Rest())
+				if state.ai.input.String() != "@"+mentionSlug(state.sessions[0].Title)+" " || view.Snapshot().Focused != hitAIInput {
+					t.Fatal("mouse acceptance did not restore the editor focus")
+				}
+				must(view.Driver().SelectText(0, state.ai.input.RuneCount()))
+				must(view.Type("中文输入候选位置"))
 				must(view.Rest())
 				editor = find(hitAIInput)
 				caret, ok := editor.Placement.CaretBounds()

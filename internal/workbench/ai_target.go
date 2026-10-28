@@ -80,19 +80,21 @@ func (state *State) aiConversationTargetLabel(target gate.SessionInfo) string {
 	return target.Title
 }
 
-// A separator belongs to the first question sent to a different target, not
+// A separator belongs to the first question sent to a target, not
 // to every bubble or to temporary choices made before sending. User-message
 // metadata reconstructs these boundaries when history is opened again.
 func (state *State) aiAppendQuestion(question, key, label string) {
+	changed := key != ""
 	for index := len(state.ai.items) - 1; index >= 0; index-- {
 		previous := &state.ai.items[index]
 		if previous.kind != aiUser {
 			continue
 		}
-		if previous.targetLabel != "" && label != "" && (previous.targetKey != key || previous.targetLabel != label) {
-			state.ai.items = append(state.ai.items, aiItem{kind: aiTargetChange, text: label})
-		}
+		changed = previous.targetKey != key || previous.targetLabel != label
 		break
+	}
+	if changed && label != "" {
+		state.ai.items = append(state.ai.items, aiItem{kind: aiTargetChange, text: label})
 	}
 	state.ai.items = append(state.ai.items, aiItem{kind: aiUser, text: question, targetKey: key, targetLabel: label})
 }
@@ -151,7 +153,7 @@ func (state *State) aiTargetOptions() []components.SelectItem {
 		}
 		options = append(options, components.SelectItem{ID: hitAITargets.At(int(session.ID)),
 			Label: info.Title, Hint: state.aiTargetLabel(info) + " · " + status, Disabled: !info.Ready,
-			Icon: lucideIcons[iconTerminal]})
+			Icon: state.hostIconArt(session.host.Icon, session.host.System, session.host.isDesktop())})
 	}
 	return options
 }
@@ -207,9 +209,13 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	}
 	target := state.aiTarget()
 	value, hint := m.TargetChoose, m.TargetHint
+	icon := lucideIcons[iconTerminal]
 	if target.ID != "" {
 		status := m.TargetConnected
 		session, err := state.aiTargetSession()
+		if err == nil {
+			icon = state.hostIconArt(session.host.Icon, session.host.System, session.host.isDesktop())
+		}
 		if err != nil || !aiSessionInfo(session).Ready {
 			status = m.TargetDisconnected
 		} else if state.ai.run != nil {
@@ -245,9 +251,11 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		canvas.PushLayer(dialogLayer)
 		defer canvas.PopLayer()
 	}
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
+	theme := state.Theme()
+	theme.Input = withAlpha(state.pal.muted, 0.5)
+	control := components.BeginSelect(canvas, theme, bounds, components.SelectOptions{
 		TriggerID: hitAITarget, Label: m.Target, Value: value, Hint: hint, Open: panel.targetOpen,
-		Size: components.SelectSizeSmall, Icon: lucideIcons[iconTerminal],
+		Size: components.SelectSizeSmall, Icon: icon,
 		Disabled: state.ai.run != nil, Content: content, Layer: layer,
 		DismissID: hitAITargetDismiss, Scope: hitAITarget, Viewport: state.windowRect(), Scroll: state.selectScroll(panel.targetOpen, hitAITargetDismiss),
 	})

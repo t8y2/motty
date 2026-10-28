@@ -230,8 +230,12 @@ type aiPanel struct {
 	approvalLay    aiApprovalLayout
 
 	// mentions is what the @ before the caret can name, from the last layout.
-	mentionBuf [maxMentionSuggestions]mentionName
-	mentions   []mentionName
+	mentionBuf       [maxMentionSuggestions]mentionName
+	mentions         []mentionName
+	mentionIndex     int
+	mentionText      string
+	mentionSelection text.Range
+	mentionDismissed bool
 
 	// Strings made from the state once, not every paint.
 	modelName, modelID, modelText string
@@ -645,7 +649,13 @@ func (state *State) aiPanelPointer(event ui.PointerEvent) (ui.EventResult, bool)
 			}
 		}
 	}
-	if event.Kind == ui.PointerUp && event.Target.Scope() == hitAIExamples && event.Button == ui.PointerButtonPrimary {
+	if event.Kind == ui.PointerMove {
+		if index, ok := event.Target.In(hitAIMentions); ok && index < len(panel.mentions) && panel.mentionIndex != index {
+			panel.mentionIndex = index
+			return ui.EventResult{Repaint: true}, true
+		}
+	}
+	if event.Kind == ui.PointerUp && (event.Target.Scope() == hitAIExamples || event.Target.Scope() == hitAIMentions) && event.Button == ui.PointerButtonPrimary {
 		// The click that follows fills the prompt in; the box takes the focus so the
 		// user can edit it or press Enter.
 		return ui.EventResult{Focus: hitAIInput, Repaint: true}, true
@@ -776,6 +786,14 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 	}
 	if event.Target == hitAIInput {
+		if _, composing := ai.input.Composition(); composing {
+			return ui.EventResult{}, false
+		}
+	}
+	if state.aiMentionKey(event) {
+		return ui.EventResult{Handled: true, Repaint: true, Focus: hitAIInput}, true
+	}
+	if event.Target == hitAIInput {
 		// Up, Down, Home, End and the page keys move by the rows the box wrapped to.
 		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
 			value := ai.input.String()
@@ -809,12 +827,6 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		if event.Target == hitAIInput {
 			// Back to the terminal the panel is about.
 			return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
-		}
-	case ui.KeyTab:
-		// Tab takes the first session the @ before the caret could name.
-		if event.Target == hitAIInput && !event.Repeat && event.Modifiers == 0 && len(panel.mentions) > 0 {
-			state.acceptMention(panel.mentions[0].name)
-			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
 	case ui.KeyEnter:
 		switch event.Target {
@@ -910,8 +922,8 @@ func (state *State) aiPanelEditor(hit ui.ID) *text.Editor {
 
 // AIPanelInput resolves the native editor of the assistant's message box. It
 // edits the same text.Editor the panel paints, but takes Enter itself: Enter
-// (app.TextInsertNewline) sends the message instead of putting a line break in
-// it, while Shift+Enter (app.TextInsertLineBreak) still inserts one.
+// accepts the highlighted @ suggestion, or sends the message when no suggestion
+// is open. Shift+Enter (app.TextInsertLineBreak) still inserts a line break.
 func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 	if context.ID != hitAIInput || state.ai.panel.rect.Width <= 0 {
 		return nil
@@ -930,11 +942,18 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 	ai := &state.ai
 	_, composing := ai.input.Composition()
-	if event.Kind == app.TextCommandEvent && event.Command == app.TextInsertNewline && !composing {
-		state.aiPanelEnter()
-		result := app.TextStateOf(&ai.input)
-		result.Redraw = true // the conversation changed, not only the editor
-		return result
+	if event.Kind == app.TextCommandEvent && !composing && (event.Command == app.TextInsertNewline || event.Command == app.TextInsertTab) {
+		if state.aiAcceptSelectedMention() {
+			result := app.TextStateOf(&ai.input)
+			result.Redraw = true
+			return result
+		}
+		if event.Command == app.TextInsertNewline {
+			state.aiPanelEnter()
+			result := app.TextStateOf(&ai.input)
+			result.Redraw = true // the conversation changed, not only the editor
+			return result
+		}
 	}
 	event.Apply(&ai.input)
 	return app.TextStateOf(&ai.input)

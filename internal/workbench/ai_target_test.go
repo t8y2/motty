@@ -70,7 +70,10 @@ func TestAITargetLocksDuringRequestAndSurvivesTabSwitch(t *testing.T) {
 		t.Fatalf("read wrong terminal: %q", output)
 	}
 	conversation := state.ai.conv
-	label := state.ai.items[0].targetLabel
+	if state.ai.items[0].kind != aiTargetChange || state.ai.items[1].kind != aiUser {
+		t.Fatal("first target has no separator before its question")
+	}
+	label := state.ai.items[1].targetLabel
 	state.aiNewConversation()
 	if state.aiTarget().ID != sessionHandle(second) {
 		t.Fatal("new conversation did not default to visible connection")
@@ -79,7 +82,7 @@ func TestAITargetLocksDuringRequestAndSurvivesTabSwitch(t *testing.T) {
 	if state.aiTarget().ID != "" || !state.ai.targetSet {
 		t.Fatal("history silently reused a connection ID")
 	}
-	if state.ai.items[0].targetLabel != label {
+	if state.ai.items[1].targetLabel != label {
 		t.Fatal("history lost original target label")
 	}
 }
