@@ -539,7 +539,7 @@ func (state *State) aiContext() string {
 	return fmt.Sprintf("\n\n[Terminal of %s (%s), last lines:]\n%s", session.Title, session.Address, text)
 }
 
-func (state *State) aiSessionSummary() string {
+func (state *State) aiSessionSummary(references ...gate.SessionInfo) string {
 	var b strings.Builder
 	target := state.aiTarget()
 	for index := range state.sessions {
@@ -548,17 +548,27 @@ func (state *State) aiSessionSummary() string {
 			continue
 		}
 		fmt.Fprintf(&b, "session %s: %s (%s)", sessionHandle(session.ID), session.Title, session.Address)
-		b.WriteString(" [locked target]")
+		fmt.Fprintf(&b, " [locked default; ready=%t]", aiSessionInfo(session).Ready)
 		b.WriteByte('\n')
+	}
+	for _, reference := range references {
+		if reference.ID == target.ID {
+			continue
+		}
+		fmt.Fprintf(&b, "session %s: %s (%s) [explicit @%s reference; ready=%t]\n",
+			reference.ID, reference.Title, reference.Address, mentionSlug(reference.Title), reference.Ready)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // aiNoSessionNote tells the model there is no terminal while none is open; the
 // prompt above it speaks of the user's visible terminal.
-func (state *State) aiNoSessionNote() string {
-	if _, err := state.aiTargetSession(); err == nil {
+func (state *State) aiNoSessionNote(references ...gate.SessionInfo) string {
+	if session, err := state.aiTargetSession(); err == nil && aiSessionInfo(session).Ready {
 		return ""
+	}
+	if len(references) > 0 {
+		return "\n\nNo ready default connection is selected. Explicit @references listed above may still be used by their exact session IDs when the user asks for operations on them. Never fall back to the active tab."
 	}
 	return "\n\nNo target connection is selected. No session tools are available. Answer from general knowledge or explicitly attached context. Ask the user to select a target connection for operations."
 }
@@ -608,7 +618,8 @@ func (state *State) aiSend() {
 		return
 	}
 	target := state.aiTarget()
-	backend, err := state.aiTargetBackend(target)
+	references := state.aiRequestReferences(question)
+	backend, err := state.aiTargetBackend(target, references...)
 	if err != nil {
 		ai.notice = state.messages.AIPanel.TargetUnavailable
 		return
@@ -654,7 +665,7 @@ func (state *State) aiSend() {
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
 		Model:             model,
-		System:            agent.DefaultSystem(state.aiSessionSummary()) + state.aiNoSessionNote(),
+		System:            agent.DefaultSystem(state.aiSessionSummary(references...)) + state.aiNoSessionNote(references...),
 		Mode:              ai.mode,
 		UserInHistory:     retry,
 		NoTools:           answerOnly,
@@ -664,13 +675,14 @@ func (state *State) aiSend() {
 		RedactToolResults: ai.settings.redact,
 	}
 	config.Gate.Target = &target
+	config.Gate.References = references
 	config.Gate.Backend = backend
-	config.System += "\n\nThis request is restricted to the locked target connection above. Omitted session arguments resolve to that fixed target, never to a newly selected tab. @mentions attach reference text only; they do not authorize tools on those connections. To operate another connection the user must choose it in the target selector and send a new request."
+	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID, target: target, targetKey: targetKey}
 	ai.run = run
-	if backend.boundDone != nil {
-		go state.aiWatchTarget(ctx, run, backend.boundDone)
+	if backend.defaultDone != nil && len(backend.bindings) == 1 {
+		go state.aiWatchTarget(ctx, run, backend.defaultDone)
 	}
 	history := append([]llm.Message(nil), ai.history...)
 	go func() {

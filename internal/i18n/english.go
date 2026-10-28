@@ -718,7 +718,7 @@ var englishAIPanel = AIPanelMessages{
 	TargetNone:         "No connection (general questions)",
 	TargetConnected:    "Connected",
 	TargetLocked:       "Locked for this request",
-	TargetHint:         "Sending locks the target independently of the active tab. @mentions attach reference text only. Select another connection here before operating on it.",
+	TargetHint:         "The primary connection stays the default when switching tabs. Use @ to reference or explicitly request operations on another session; cross-connection commands and file changes show the actual target for approval.",
 	TargetDisconnected: "Disconnected",
 	TargetUnavailable:  "The target connection is disconnected or closed. Reconnect or select another target before sending; the host will not change automatically.",
 	ModeAgent:          "Agent",

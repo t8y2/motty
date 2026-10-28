@@ -718,7 +718,7 @@ var chineseAIPanel = AIPanelMessages{
 	TargetNone:         "未选择连接（普通问答）",
 	TargetConnected:    "已连接",
 	TargetLocked:       "本轮锁定",
-	TargetHint:         "发送后固定目标，切换标签页不会改变它。@其他会话仅引用内容；操作其他连接请在这里选择后发送。",
+	TargetHint:         "主连接是固定的默认目标，切换标签页不会改变它。@可引用其他会话，也可明确指定在其中操作；跨连接执行命令或修改文件时，会显示实际目标供审批。",
 	TargetDisconnected: "已断开",
 	TargetUnavailable:  "目标连接已断开或关闭。请重新连接或选择其他目标后发送；不会自动切换主机。",
 	ModeAgent:          "代理",

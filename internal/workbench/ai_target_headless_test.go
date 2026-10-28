@@ -82,9 +82,9 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				click(option.ID)
 				must(view.Rest())
 				click(hitAIInput)
-				must(view.Type("你好\n测试 @"))
+				must(view.Type("你好\n测试@"))
 				must(view.Rest())
-				if state.ai.input.String() != "你好\n测试 @" {
+				if state.ai.input.String() != "你好\n测试@" {
 					t.Fatalf("native input = %q", state.ai.input.String())
 				}
 				mention := find(hitAIMentions.At(1))

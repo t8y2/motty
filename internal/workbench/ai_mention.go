@@ -52,6 +52,12 @@ func mentionRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-' || r == ':'
 }
 
+// Chinese prose can directly precede @. Keep ASCII e-mail-like words out of
+// the parsed references; choosing a suggestion after one inserts a separator.
+func mentionEmailPrefix(r rune) bool {
+	return r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("._-+", r))
+}
+
 // mentionNames is the name of every session a message can mention.
 func (state *State) mentionNames(dst []mentionName) []mentionName {
 	for index := range state.sessions {
@@ -73,7 +79,7 @@ func findMentions(message string, names []mentionName) []uint32 {
 	var found []uint32
 	runes := []rune(message)
 	for at := 0; at < len(runes); at++ {
-		if runes[at] != '@' || at > 0 && mentionRune(runes[at-1]) {
+		if runes[at] != '@' || at > 0 && mentionEmailPrefix(runes[at-1]) {
 			continue // an e-mail address is not a mention
 		}
 		end := at + 1
@@ -143,7 +149,7 @@ func (state *State) mentionQuery() (partial string, span text.Range, ok bool) {
 	for start > 0 && mentionRune(runes[start-1]) {
 		start--
 	}
-	if start == 0 || runes[start-1] != '@' || start >= 2 && mentionRune(runes[start-2]) {
+	if start == 0 || runes[start-1] != '@' {
 		return "", text.Range{}, false
 	}
 	return string(runes[start:caret]), text.Range{Start: start - 1, End: caret}, true
@@ -248,6 +254,10 @@ func (state *State) acceptMention(name string) {
 		return
 	}
 	input := &state.ai.input
+	prefix := ""
+	if runes := []rune(input.String()); span.Start > 0 && mentionEmailPrefix(runes[span.Start-1]) {
+		prefix = " "
+	}
 	input.SetSelection(span)
-	input.Insert("@" + name + " ")
+	input.Insert(prefix + "@" + name + " ")
 }

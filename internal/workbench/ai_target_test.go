@@ -110,7 +110,7 @@ func TestAITargetHomeAndSelectionDoNotNavigate(t *testing.T) {
 	}
 }
 
-func TestAITargetReferencesDoNotExpandToolScope(t *testing.T) {
+func TestAIReferencesDoNotChangeTheDefaultTarget(t *testing.T) {
 	state := targetTestWorld(t, quietModel{"ok"})
 	first, second := &state.sessions[0], &state.sessions[1]
 	second.term.write([]byte("REFERENCE_B_ONLY"))

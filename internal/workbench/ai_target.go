@@ -99,43 +99,86 @@ func (state *State) aiAppendQuestion(question, key, label string) {
 	state.ai.items = append(state.ai.items, aiItem{kind: aiUser, text: question, targetKey: key, targetLabel: label})
 }
 
-func (state *State) aiTargetBackend(target gate.SessionInfo) (*aiBackend, error) {
-	backend := &aiBackend{state: state}
-	if target.ID == "" {
-		return backend, nil
+func (state *State) aiRequestReferences(question string) []gate.SessionInfo {
+	var scratch [8]mentionName
+	ids := findMentions(question, state.mentionNames(scratch[:0]))
+	var references []gate.SessionInfo
+	for _, id := range ids {
+		if session, ok := state.sessionByIDPointer(id); ok && session.term != nil {
+			references = append(references, aiSessionInfo(session))
+		}
 	}
-	session, err := state.aiSession(target.ID)
-	if err != nil {
-		return nil, err
+	return references
+}
+
+func (state *State) aiTargetBackend(target gate.SessionInfo, references ...gate.SessionInfo) (*aiBackend, error) {
+	backend := &aiBackend{state: state, scoped: true, defaultID: target.ID}
+	bind := func(info gate.SessionInfo) error {
+		session, err := state.aiSession(info.ID)
+		if err != nil {
+			return err
+		}
+		if !aiSessionInfo(session).Ready {
+			return errNoShell
+		}
+		binding := aiSessionBinding{info: info, terminal: session.term, done: session.term.shell.Done()}
+		select {
+		case <-binding.done:
+			return errNoShell
+		default:
+		}
+		backend.bindings = append(backend.bindings, binding)
+		if info.ID == target.ID {
+			backend.defaultDone = binding.done
+		}
+		_, err = backend.session(info.ID)
+		return err
 	}
-	if !aiSessionInfo(session).Ready {
-		return nil, errNoShell
+	var defaultErr error
+	if target.ID != "" {
+		defaultErr = bind(target)
 	}
-	backend.boundID, backend.boundTerminal, backend.boundDone = target.ID, session.term, session.term.shell.Done()
-	if _, err := backend.session(target.ID); err != nil {
-		return nil, err
+	for _, reference := range references {
+		if reference.ID == "" || reference.ID == target.ID {
+			continue
+		}
+		// A disconnected reference can still supply its text snapshot, but a
+		// later reconnect must never add a fresh transport to this request.
+		_ = bind(reference)
+	}
+	if defaultErr != nil && len(backend.bindings) == 0 {
+		return nil, defaultErr
 	}
 	return backend, nil
 }
 
 // Runs on the window thread immediately before resolving a real operation.
 func (backend *aiBackend) session(handle string) (*Session, error) {
-	if backend.boundID != "" && handle != backend.boundID {
-		return nil, errNoSession
+	if !backend.scoped {
+		return backend.state.aiSession(handle)
 	}
-	session, err := backend.state.aiSession(handle)
-	if err != nil || backend.boundID == "" {
-		return session, err
+	if handle == "" {
+		handle = backend.defaultID
 	}
-	if session.term != backend.boundTerminal || !aiSessionInfo(session).Ready || session.term.shell.Done() != backend.boundDone {
-		return nil, errors.New("target connection changed or disconnected; send a new request after reconnecting")
+	for _, binding := range backend.bindings {
+		if binding.info.ID != handle {
+			continue
+		}
+		session, err := backend.state.aiSession(handle)
+		if err != nil {
+			return nil, err
+		}
+		if session.term != binding.terminal || !aiSessionInfo(session).Ready || session.term.shell.Done() != binding.done {
+			return nil, errors.New("target connection changed or disconnected; send a new request after reconnecting")
+		}
+		select {
+		case <-binding.done:
+			return nil, errors.New("target connection ended; send a new request after reconnecting")
+		default:
+			return session, nil
+		}
 	}
-	select {
-	case <-backend.boundDone:
-		return nil, errors.New("target connection ended; send a new request after reconnecting")
-	default:
-		return session, nil
-	}
+	return nil, errNoSession
 }
 
 func (state *State) aiTargetOptions() []components.SelectItem {

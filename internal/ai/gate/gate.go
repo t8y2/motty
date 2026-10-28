@@ -89,20 +89,30 @@ type Gate struct {
 	Policy   risk.Policy
 	Mode     Mode
 	Approver Approver // nil means nothing that needs approval can run
-	// Target limits an in-app run to its selected connection. Nil retains the
-	// external MCP contract; a non-nil target with no ID permits no session tools.
-	Target *SessionInfo
+	// Target is an in-app request's immutable default. References contains only
+	// sessions explicitly mentioned in this question. Nil Target retains the
+	// external MCP contract; references never change the default.
+	Target     *SessionInfo
+	References []SessionInfo
 }
 
 func (g Gate) targetSession(session string) (string, error) {
 	if g.Target == nil {
 		return session, nil
 	}
-	if g.Target.ID == "" {
-		return "", errors.New("no target connection selected; choose a connection before using session tools")
+	if session != "" {
+		if session == g.Target.ID {
+			return session, nil
+		}
+		for _, reference := range g.References {
+			if reference.ID == session {
+				return session, nil
+			}
+		}
+		return "", errors.New("session is outside this request's locked target and explicit @references; mention that session in a new request")
 	}
-	if session != "" && session != g.Target.ID {
-		return "", errors.New("session is outside this request's locked target; select that connection and send a new request")
+	if g.Target.ID == "" {
+		return "", errors.New("no default target selected; specify a session explicitly mentioned in this question or choose a default connection")
 	}
 	return g.Target.ID, nil
 }
@@ -140,10 +150,10 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			return failure(err)
 		}
 		if g.Target != nil {
-			filtered := make([]SessionInfo, 0, 1)
+			filtered := make([]SessionInfo, 0, 1+len(g.References))
 			for _, session := range sessions {
-				if session.ID == g.Target.ID {
-					session.Active = true
+				if _, err := g.targetSession(session.ID); err == nil {
+					session.Active = session.ID == g.Target.ID
 					filtered = append(filtered, session)
 				}
 			}
@@ -316,8 +326,26 @@ func (g Gate) execMany(ctx context.Context, name string, args tools.TerminalExec
 		}
 	}
 	summary := fmt.Sprintf("on %d sessions (%s): %s", len(args.Sessions), strings.Join(targets, ", "), args.Command)
-	if denied := g.ask(ctx, name, tools.Exec, args.Sessions[0], summary, assessment); denied != nil {
+	if denied := g.ask(ctx, name, tools.Exec, args.Sessions[0], summary, assessment, args.Sessions[1:]...); denied != nil {
 		return *denied
+	}
+	if g.Target != nil {
+		// Approval can remain open while a tab closes or reconnects. A scoped
+		// backend reports readiness for the bound lifetimes, not replacement
+		// shells. Check the whole batch again before starting any command.
+		current, err := g.Backend.Sessions(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		for _, id := range args.Sessions {
+			ready := false
+			for _, session := range current {
+				ready = ready || session.ID == id && session.Ready
+			}
+			if !ready {
+				return Result{Text: "nothing was run: target " + id + " changed or disconnected while awaiting approval", IsError: true}
+			}
+		}
 	}
 
 	type outcome struct {
@@ -358,12 +386,23 @@ func (g Gate) execMany(ctx context.Context, name string, args tools.TerminalExec
 
 // ask applies the policy and, when needed, the user's answer. It returns nil
 // when the action may proceed and the result to send back otherwise.
-func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, summary string, assessment risk.Assessment) *Result {
+func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, summary string, assessment risk.Assessment, otherSessions ...string) *Result {
 	policy := g.Policy
 	if g.Mode == ModeAuto && policy.AutoUpTo < risk.Medium {
 		policy.AutoUpTo = risk.Medium
 	}
 	decision := policy.Decide(assessment)
+	if g.Target != nil && decision == risk.DecisionAuto {
+		crossTarget := session != g.Target.ID
+		for _, id := range otherSessions {
+			crossTarget = crossTarget || id != g.Target.ID
+		}
+		// A reference alone is not permission to execute or modify that host.
+		// Use the existing approval even for low-risk cross-connection commands.
+		if crossTarget {
+			decision = risk.DecisionAsk
+		}
+	}
 	switch decision {
 	case risk.DecisionAuto:
 		return nil
@@ -374,8 +413,12 @@ func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, su
 		return &Result{Text: "needs the user's approval, which cannot be asked here", IsError: true, Denied: true}
 	}
 	request := Request{Tool: tool, Kind: kind, Session: session, Summary: summary, Assessment: assessment}
-	if g.Target != nil && g.Target.ID == session {
-		request.SessionLabel = g.Target.Title + " · " + g.Target.Address
+	if g.Target != nil {
+		labels := []string{g.sessionLabel(session)}
+		for _, id := range otherSessions {
+			labels = append(labels, g.sessionLabel(id))
+		}
+		request.SessionLabel = strings.Join(labels, "; ")
 	}
 	if decision == risk.DecisionConfirmText {
 		request.NeedsText, request.Confirm = true, ConfirmWord
@@ -390,6 +433,27 @@ func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, su
 		return &Result{Text: "the confirmation text did not match; action not run", IsError: true, Denied: true}
 	}
 	return nil
+}
+
+func (g Gate) sessionLabel(id string) string {
+	var info SessionInfo
+	if g.Target != nil && id == g.Target.ID {
+		info = *g.Target
+	} else {
+		for _, reference := range g.References {
+			if reference.ID == id {
+				info = reference
+				break
+			}
+		}
+	}
+	if info.Title == "" {
+		return id
+	}
+	if info.Address == "" {
+		return info.Title
+	}
+	return info.Title + " · " + info.Address
 }
 
 func failure(err error) Result { return Result{Text: err.Error(), IsError: true} }
