@@ -84,6 +84,21 @@ func (state *State) toolbarVisible(group toolbarGroup, id ui.ID) bool {
 	return false
 }
 
+// windowBarButtons counts the window entries the bar shows. The bar lays its
+// tabs out around them, so changing one reshapes the room the tabs get.
+func (state *State) windowBarButtons() int {
+	count := 0
+	for _, entry := range state.toolbars.entries(toolbarWindow) {
+		if !entry.Enabled {
+			continue
+		}
+		if _, ok := toolbarSpecFor(toolbarWindow, entry.Key); ok {
+			count++
+		}
+	}
+	return count
+}
+
 func normalizeToolbar(group toolbarGroup, entries []toolbarEntry) []toolbarEntry {
 	if entries == nil {
 		return nil

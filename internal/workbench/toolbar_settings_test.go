@@ -195,3 +195,45 @@ func TestToolbarSettingsPaintReusesItsLabelsAndRows(t *testing.T) {
 		}
 	}
 }
+
+// Hiding and showing window entries changes how much room the tabs get, so the
+// geometry cached for the old button count must not outlive the change.
+func TestWindowToolbarChangesRelayoutTheTabStrip(t *testing.T) {
+	state, _ := manyTabs(t, 30)
+	size := ui.Size{Width: 1200, Height: 800}
+	var canvas ui.Canvas
+	paint := func() {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}
+	// Hide every window entry, then paint so the bar caches the room it has with
+	// no trailing buttons.
+	state.openToolbarSettings(toolbarWindow)
+	state.clickToolbarSettings(hitToolbarDisableAll)
+	state.closeModal()
+	paint()
+
+	// Show them again without resizing: the tabs and the new-tab button must give
+	// the room back instead of keeping the cached, wider area.
+	state.openToolbarSettings(toolbarWindow)
+	state.clickToolbarSettings(hitToolbarEnableAll)
+	state.closeModal()
+	paint()
+
+	first, ok := hitByID(&canvas, hitTransferCenter)
+	if !ok {
+		t.Fatal("the first window entry is not painted after enabling it")
+	}
+	plus, ok := hitByID(&canvas, hitNewTab)
+	if !ok {
+		t.Fatal("the new-tab button is not painted")
+	}
+	if plus.Bounds.X+plus.Bounds.Width > first.Bounds.X {
+		t.Fatalf("the new-tab button %+v runs under the enabled buttons from %+v", plus.Bounds, first.Bounds)
+	}
+	for _, tab := range state.workspaceTabs {
+		if hit, ok := hitByID(&canvas, hitTabList.At(int(tab.ID))); ok && hit.Bounds.X+hit.Bounds.Width > first.Bounds.X {
+			t.Fatalf("tab %d (%+v) runs under the enabled buttons from %+v", tab.ID, hit.Bounds, first.Bounds)
+		}
+	}
+}

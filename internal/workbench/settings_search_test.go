@@ -143,8 +143,8 @@ func TestEveryEntryOfTheSearchIndexPointsAtSomethingThePageDraws(t *testing.T) {
 	state.Click(hitSettings)
 	var entries []settingsEntry
 	state.eachSettingsEntry(func(entry settingsEntry) { entries = append(entries, entry) })
-	if len(entries) > maxSettingsEntries {
-		t.Fatalf("%d entries exceed the index", len(entries))
+	if len(entries)*4 > maxSettingsEntries*3 {
+		t.Fatalf("%d entries fill more than three quarters of the %d-slot index; raise it before the rest spills out", len(entries), maxSettingsEntries)
 	}
 	size := ui.Size{Width: 1400, Height: 3400}
 	for _, entry := range entries {

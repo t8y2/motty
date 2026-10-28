@@ -129,12 +129,9 @@ func (state *State) moveToolbarEntry(move components.ReorderMove) {
 		copy(entries[move.To+1:move.From+1], entries[move.To:move.From])
 	}
 	entries[move.To] = entry
-	top, bottom := float32(move.To)*48, float32(move.To)*48+44
-	if top < editor.scroll {
-		editor.scroll = top
-	} else if bottom > editor.scroll+editor.geometry.Viewport.Height {
-		editor.scroll = bottom - editor.geometry.Viewport.Height
-	}
+	// Keep the row the move landed on in view. The list knows the row geometry
+	// and the viewport it was painted in, so the caller keeps no stride here.
+	editor.scroll = max(editor.scroll+editor.list.RevealScroll(move.To), 0)
 	state.save()
 }
 

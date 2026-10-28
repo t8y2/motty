@@ -315,11 +315,12 @@ type barTab struct {
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
 // room they and the new-tab button share (area), the row they clip to, and how
-// wide each is. It depends only on the window's width and the number of tabs, so
-// it is kept until one changes.
+// wide each is. It depends on the window's width, the number of tabs and the
+// window entries the user shows, so it is kept until one of them changes.
 type barGeometry struct {
 	width             float32
 	tabCount          int
+	barButtons        int
 	leading, trailing float32
 	valid             bool
 	area, row         ui.Rect
@@ -332,8 +333,10 @@ type barGeometry struct {
 func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
 	leading, trailing := app.TitlebarInsets()
+	buttons := state.windowBarButtons()
 	geometry := &chrome.geometry
 	if geometry.valid && geometry.width == width && geometry.tabCount == len(state.workspaceTabs) &&
+		geometry.barButtons == buttons &&
 		geometry.leading == leading && geometry.trailing == trailing {
 		return *geometry
 	}
@@ -343,7 +346,7 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 	})
 	f.End()
 	*geometry = barGeometry{
-		width: width, tabCount: len(state.workspaceTabs), leading: leading, trailing: trailing, valid: true,
+		width: width, tabCount: len(state.workspaceTabs), barButtons: buttons, leading: leading, trailing: trailing, valid: true,
 		area: chrome.probeArea.Rect(), row: chrome.probeRow.Rect(), tabWidth: barTabMax,
 	}
 	if len(chrome.probeBar.tabs) > 0 {
