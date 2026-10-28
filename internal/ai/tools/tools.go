@@ -200,6 +200,28 @@ var specs = []Spec{
 // All returns every tool in a stable order. The slice is a copy.
 func All() []Spec { return append([]Spec(nil), specs...) }
 
+// Targeted describes the in-app request's locked default rather than the
+// currently visible tab. Its schemas are copied so external MCP catalogs keep
+// their active-session contract.
+func Targeted() []Spec {
+	const activeHint = "Session id from list_sessions. Defaults to the active session."
+	const targetHint = "Session id from list_sessions. If omitted, uses this request's locked primary session. Always specify the id when operating on an explicitly @referenced session."
+	out := make([]Spec, len(specs))
+	for index, spec := range specs {
+		if schema := string(spec.Schema); strings.Contains(schema, activeHint) {
+			spec.Schema = json.RawMessage(strings.ReplaceAll(schema, activeHint, targetHint))
+		}
+		switch spec.Name {
+		case NameListSessions:
+			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id."
+		case NameTerminalExec:
+			spec.Description = "Run one non-interactive shell command in the addressed terminal session and return its output and exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
+		}
+		out[index] = spec
+	}
+	return out
+}
+
 // Headless returns the catalog of a server that has no terminal windows to act
 // in: it works on saved hosts over their own connections. The tools and their
 // arguments are the same, so the same decoders and the same gate serve them;
@@ -247,7 +269,8 @@ func Lookup(name string) (Spec, bool) {
 	return Spec{}, false
 }
 
-// Argument structs. Session "" means the active session.
+// Argument structs. Session "" selects the caller's default: the active session
+// for external MCP, or the locked primary of an in-app request.
 
 type ListSessionsArgs struct{}
 

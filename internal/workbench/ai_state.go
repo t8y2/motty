@@ -675,6 +675,9 @@ func (state *State) aiSend() {
 		RedactToolResults: ai.settings.redact,
 	}
 	config.Gate.Target = &target
+	if ai.mode == agent.ModeAgent {
+		config.Tools = tools.Targeted()
+	}
 	config.Gate.References = references
 	config.Gate.Backend = backend
 	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."

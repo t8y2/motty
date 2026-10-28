@@ -24,6 +24,15 @@ func TestAIExplicitReferenceExecutesOnBWhileDefaultStaysA(t *testing.T) {
 	state.aiChooseTarget(hitAITargets.At(int(first.ID)))
 	ask(state, "请在@"+mentionSlug(second.Title)+" 执行 hostname", agent.ModeAgent)
 	pumpUntil(t, state, "actual B approval", func() bool { return len(state.ai.approvals) == 1 })
+	foundDefaultHint := false
+	for _, spec := range model.requests[0].Tools {
+		if spec.Name == "terminal_exec" {
+			foundDefaultHint = strings.Contains(string(spec.Schema), "locked primary session") && !strings.Contains(string(spec.Schema), "Defaults to the active session")
+		}
+	}
+	if !foundDefaultHint {
+		t.Fatal("the model received active-tab instructions instead of the locked default")
+	}
 	request := state.ai.approvals[0].request
 	if request.Session != sessionHandle(second.ID) || request.SessionLabel != second.Title+" · "+second.Address {
 		t.Fatalf("incorrect cross-session approval: %+v", request)
