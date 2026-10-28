@@ -229,6 +229,9 @@ func (state *State) clickRemoteTools(id ui.ID) {
 		return
 	case id == hitRemoteRefresh:
 		if !view.loading {
+			// An explicit refresh rechecks Docker as well, so an answer from
+			// before the installation does not outlive it.
+			view.noDocker = false
 			state.refreshRemoteTools()
 		}
 	case id == hitRemotePrevious:

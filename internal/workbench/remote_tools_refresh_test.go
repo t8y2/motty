@@ -385,3 +385,28 @@ func remoteCanvasHasText(canvas *ui.Canvas, text string) bool {
 	}
 	return false
 }
+
+// Refreshing from another tab must forget a stale "Docker is missing" answer,
+// so the next Docker tab probes again instead of reusing the empty state.
+func TestRemoteDockerRefreshFromAnotherTabProbesAgain(t *testing.T) {
+	state, server, _ := openRemoteToolsDialog(t)
+	server.mu.Lock()
+	server.failures["docker ps"] = errors.New("exit status 127")
+	server.mu.Unlock()
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && state.remote.noDocker })
+
+	state.Click(hitRemoteTabProcesses)
+	waitFor(t, state, func() bool { return !state.remote.loading })
+	server.mu.Lock()
+	delete(server.failures, "docker ps")
+	server.mu.Unlock()
+	state.Click(hitRemoteRefresh)
+	waitFor(t, state, func() bool { return !state.remote.loading })
+
+	state.Click(hitRemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	if state.remote.noDocker {
+		t.Fatal("installed Docker was still reported missing")
+	}
+}
