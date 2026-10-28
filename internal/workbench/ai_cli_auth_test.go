@@ -67,6 +67,13 @@ func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 	if string(shell.input) != "code\r" {
 		t.Fatal("interactive input not delivered")
 	}
+	space := nativeSpaceKey()
+	space.Target = hitAICLILoginTerminal
+	s.aiSettingsKey(space)
+	input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: " "})
+	if got := string(shell.input); got != "code\r " {
+		t.Fatalf("login Space was delivered twice: %q", got)
+	}
 	s.aiStopCLILogin()
 	if !shell.closed || s.ai.login != nil {
 		t.Fatal("login not closed")

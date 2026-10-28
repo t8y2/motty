@@ -274,11 +274,12 @@ func (s *State) aiStopCLILogin() {
 func (s *State) aiCLILoginKey(event ui.KeyEvent) ui.EventResult {
 	login := s.ai.login
 	if login != nil && event.Target == hitAICLILoginTerminal && login.term.shell != nil && !login.finished {
+		login.term.spaceTextPending = false
 		if event.Modifiers&ui.ModifierMeta != 0 {
 			return ui.EventResult{}
 		}
 		input := term.EncodeKeyEvent(event, login.term.screen.KeyboardFlags(), login.term.screen.Modes().AppCursorKeys)
-		login.term.shell.Write(input)
+		login.term.noteSpaceKey(event, login.term.shell.Write(input))
 	}
 	return ui.EventResult{Handled: true, Repaint: true}
 }
@@ -297,6 +298,9 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	t.input.OnEvent = func(e app.TextEvent) (app.TextState, error) {
 		if s.ai.login != login || t.shell == nil || login.finished {
 			return app.TextState{}, nil
+		}
+		if t.duplicateSpaceText(e) {
+			return t.preedit, nil
 		}
 		switch e.Kind {
 		case app.TextInsert, app.TextPaste:

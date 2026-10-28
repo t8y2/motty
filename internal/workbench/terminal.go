@@ -76,7 +76,9 @@ type terminal struct {
 	// preedit is the input-method composition, shown at the cursor.
 	preedit app.TextState
 	input   app.TextInput // reused, so resolving the text input allocates nothing
-	cache   rowCache
+	// spaceTextPending pairs a native Windows Space key with its WM_CHAR.
+	spaceTextPending bool
+	cache            rowCache
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
@@ -789,6 +791,9 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		return app.TextState{}
 	}
 	t := session.term
+	if t.duplicateSpaceText(event) {
+		return t.preedit
+	}
 	redraw := false
 	switch event.Kind {
 	case app.TextInsert:
@@ -834,6 +839,7 @@ func displayCells(value string) int {
 // drive the tabs; everything else becomes the bytes a program expects.
 func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventResult {
 	t := session.term
+	t.spaceTextPending = false
 	handled := ui.EventResult{Handled: true}
 	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
 		return state.commandChord(session, event)
@@ -876,7 +882,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	if len(bytes) > 0 {
 		scrolled := t.screen.ViewOffset() > 0
 		predictionChanged := t.prediction.reset()
-		state.typed(session, bytes)
+		t.noteSpaceKey(event, state.typed(session, bytes))
 		handled.Repaint = scrolled || predictionChanged
 	}
 	return handled
