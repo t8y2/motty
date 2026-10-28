@@ -5,7 +5,6 @@ import (
 
 	"motty/internal/remotetools"
 	"motty/internal/sshconn"
-	layoutcore "motty/internal/workspace"
 )
 
 // openContainerTab borrows the selected tab's authenticated SSH transport, never
@@ -38,13 +37,10 @@ func (state *State) openContainerTab(sourceID uint32, name, command string) erro
 		return errors.New("unable to create a new terminal tab")
 	}
 	if remotetools.ValidName(name) {
-		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(created.ID))
 		label := title + " · " + name
-		if ok && state.deck.Rename(workspace, label) == nil {
-			created.Title = label
-			state.rebuildTabOptions()
-			state.save()
-		}
+		state.renameSession(created, label)
+		state.rebuildTabOptions()
+		state.save()
 	}
 	return nil
 }

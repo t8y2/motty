@@ -2006,12 +2006,13 @@ func (state *State) createHostSession(host Host, address string) *Session {
 }
 
 func (state *State) createHostSessionWithConnection(host Host, address string, conn Connection, command string, relay *notifyRelay) *Session {
+	title := state.uniqueSessionTitle(host.Label, 0)
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
 	if pane, ok := state.deck.Pane(workspaceID, paneID); !ok || pane.SessionID != 0 {
 		var err error
-		workspaceID, paneID, err = state.deck.Create(host.Label)
+		workspaceID, paneID, err = state.deck.Create(title)
 		if err != nil {
 			return nil
 		}
@@ -2019,7 +2020,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	state.sessions = append(state.sessions, Session{
 		ID:               state.nextSessionID,
 		HostID:           host.ID,
-		Title:            host.Label,
+		Title:            title,
 		Address:          address,
 		paneSlot:         state.claimPaneSlot(),
 		conn:             conn,

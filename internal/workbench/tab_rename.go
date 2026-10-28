@@ -43,6 +43,12 @@ func (state *State) clickTabRenameDialog(id ui.ID) {
 		state.modal = modalNone
 		state.dialogError = ""
 		if state.deck.Rename(state.tabRename.workspace, name) == nil {
+			panes := state.deck.Panes(state.tabRename.workspace, nil)
+			if len(panes) == 1 {
+				if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
+					state.renameSession(session, name)
+				}
+			}
 			state.rebuildTabOptions()
 			state.save()
 		}

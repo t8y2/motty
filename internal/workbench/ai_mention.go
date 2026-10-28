@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -13,7 +12,8 @@ import (
 // An @name in a message to the assistant brings that session's recent terminal
 // text along with the question, so the assistant need not be told to go and read
 // it and the user decides which hosts it sees. The name is the tab's title with
-// spaces made into dashes; two tabs of the same title are told apart by a number.
+// spaces made into dashes. Duplicate titles are numbered when tabs are created,
+// so the menu and the tab strip never invent different names for a session.
 
 const (
 	maxMentionSuggestions = 5
@@ -26,8 +26,9 @@ const (
 
 type mentionName struct {
 	name    string
+	title   string // exactly the visible terminal/tab title
 	session uint32
-	detail  string // the tab's title and address, to tell sessions apart in the list
+	detail  string // address shown beside the tab's title
 }
 
 // mentionSlug is a title written as one word.
@@ -43,7 +44,7 @@ func mentionSlug(title string) string {
 			dash = true
 		}
 	}
-	return strings.TrimRight(b.String(), "-")
+	return strings.TrimRight(b.String(), ".:-")
 }
 
 func mentionRune(r rune) bool {
@@ -52,7 +53,6 @@ func mentionRune(r rune) bool {
 
 // mentionNames is the name of every session a message can mention.
 func (state *State) mentionNames(dst []mentionName) []mentionName {
-	seen := map[string]int{}
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if session.term == nil {
@@ -62,12 +62,7 @@ func (state *State) mentionNames(dst []mentionName) []mentionName {
 		if name == "" {
 			name = "session-" + sessionHandle(session.ID)
 		}
-		key := strings.ToLower(name)
-		seen[key]++
-		if seen[key] > 1 {
-			name += "-" + strconv.Itoa(seen[key])
-		}
-		dst = append(dst, mentionName{name: name, session: session.ID, detail: session.Title + " · " + session.Address})
+		dst = append(dst, mentionName{name: name, title: session.Title, session: session.ID, detail: session.Address})
 	}
 	return dst
 }

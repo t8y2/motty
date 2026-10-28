@@ -211,6 +211,7 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 				session.HostID = host.ID
 			}
 		}
+		session.Title = state.uniqueSessionTitle(session.Title, 0)
 		state.sessions = append(state.sessions, session)
 		moved := &state.sessions[len(state.sessions)-1]
 		moved.paneSlot = state.claimPaneSlot()
@@ -248,6 +249,11 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 			return false
 		}
 		id = dockInto
+	}
+	for _, sessionID := range added {
+		if moved, ok := state.sessionByIDPointer(sessionID); ok {
+			state.renameSession(moved, moved.Title)
+		}
 	}
 	state.adoptTransfers(payload.transfers)
 	state.syncActiveSession()

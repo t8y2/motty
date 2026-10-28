@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
@@ -39,6 +40,11 @@ func aiSessionInfo(session *Session) gate.SessionInfo {
 // A home/settings page never silently falls back to a background connection.
 func (state *State) aiTarget() gate.SessionInfo {
 	if state.ai.targetSet {
+		if state.ai.target.ID != "" {
+			if session, err := state.aiSession(state.ai.target.ID); err == nil {
+				return aiSessionInfo(session)
+			}
+		}
 		return state.ai.target
 	}
 	if state.activeSection == sectionTerminal {
@@ -65,6 +71,30 @@ func (state *State) aiTargetLabel(target gate.SessionInfo) string {
 		return target.Title
 	}
 	return target.Title + " · " + target.Address
+}
+
+func (state *State) aiConversationTargetLabel(target gate.SessionInfo) string {
+	if target.ID == "" {
+		return state.messages.AIPanel.TargetNone
+	}
+	return target.Title
+}
+
+// A separator belongs to the first question sent to a different target, not
+// to every bubble or to temporary choices made before sending. User-message
+// metadata reconstructs these boundaries when history is opened again.
+func (state *State) aiAppendQuestion(question, key, label string) {
+	for index := len(state.ai.items) - 1; index >= 0; index-- {
+		previous := &state.ai.items[index]
+		if previous.kind != aiUser {
+			continue
+		}
+		if previous.targetLabel != "" && label != "" && (previous.targetKey != key || previous.targetLabel != label) {
+			state.ai.items = append(state.ai.items, aiItem{kind: aiTargetChange, text: label})
+		}
+		break
+	}
+	state.ai.items = append(state.ai.items, aiItem{kind: aiUser, text: question, targetKey: key, targetLabel: label})
 }
 
 func (state *State) aiTargetBackend(target gate.SessionInfo) (*aiBackend, error) {
@@ -120,7 +150,8 @@ func (state *State) aiTargetOptions() []components.SelectItem {
 			status = m.TargetDisconnected
 		}
 		options = append(options, components.SelectItem{ID: hitAITargets.At(int(session.ID)),
-			Label: state.aiTargetLabel(info) + " · " + status, Disabled: !info.Ready})
+			Label: info.Title, Hint: state.aiTargetLabel(info) + " · " + status, Disabled: !info.Ready,
+			Icon: lucideIcons[iconTerminal]})
 	}
 	return options
 }
@@ -145,6 +176,25 @@ func (state *State) aiChooseTarget(id ui.ID) bool {
 	return true
 }
 
+// Keep the numeric disambiguator visible even when a long tab title is elided.
+func (panel *aiPanel) targetCaption(canvas *ui.Canvas, title string, size, width float32) string {
+	if panel.targetTitle == title && panel.targetWidth == width && panel.targetFontSize == size {
+		return panel.targetValue
+	}
+	original, value := title, title
+	if canvas.TextWidthWeight(title, size, ui.WeightRegular) > width {
+		suffix := ""
+		if at := strings.LastIndexByte(title, '-'); at >= 0 {
+			if number, err := strconv.Atoi(title[at+1:]); err == nil && number >= 2 {
+				suffix, title = title[at:], title[:at]
+			}
+		}
+		value = elide(canvas, title, size, ui.WeightRegular, max(width-canvas.TextWidthWeight(suffix, size, ui.WeightRegular), 0)) + suffix
+	}
+	panel.targetTitle, panel.targetWidth, panel.targetFontSize, panel.targetValue = original, width, size, value
+	return value
+}
+
 func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	panel, m := &state.ai.panel, state.messages.AIPanel
 	bounds := panel.targetBounds
@@ -156,7 +206,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		panel.targetOpen = false
 	}
 	target := state.aiTarget()
-	value := m.Target + ": " + state.aiTargetLabel(target)
+	value, hint := m.TargetChoose, m.TargetHint
 	if target.ID != "" {
 		status := m.TargetConnected
 		session, err := state.aiTargetSession()
@@ -165,8 +215,14 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		} else if state.ai.run != nil {
 			status = m.TargetLocked
 		}
-		value = m.Target + ": " + target.Title + " · " + status
+		value = target.Title
+		hint = state.aiTargetLabel(target) + " · " + status + ". " + m.TargetHint
 	}
+	const targetChromeWidth = float32(66) // select text insets, leading icon and chevron
+	size := state.Theme().Metrics.FontSizeM
+	bounds.Width = min(bounds.Width, max(108, canvas.TextWidthWeight(value, size, ui.WeightRegular)+targetChromeWidth))
+	value = panel.targetCaption(canvas, value, size, bounds.Width-targetChromeWidth)
+	panel.targetBounds = bounds
 	var options []components.SelectItem
 	if panel.targetOpen {
 		options = state.aiTargetOptions()
@@ -174,7 +230,8 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(options)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(320, state.viewport.Width-16), Height: height}
+	content.X = min(max(content.X, 8), state.viewport.Width-8-content.Width)
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
@@ -189,7 +246,8 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		defer canvas.PopLayer()
 	}
 	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitAITarget, Label: m.Target, Value: value, Hint: m.TargetHint, Open: panel.targetOpen,
+		TriggerID: hitAITarget, Label: m.Target, Value: value, Hint: hint, Open: panel.targetOpen,
+		Size: components.SelectSizeSmall, Icon: lucideIcons[iconTerminal],
 		Disabled: state.ai.run != nil, Content: content, Layer: layer,
 		DismissID: hitAITargetDismiss, Scope: hitAITarget, Viewport: state.windowRect(), Scroll: state.selectScroll(panel.targetOpen, hitAITargetDismiss),
 	})

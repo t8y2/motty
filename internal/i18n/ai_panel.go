@@ -3,6 +3,8 @@ package i18n
 // AIPanelMessages are the texts of the assistant panel.
 type AIPanelMessages struct {
 	Target             string
+	TargetChoose       string
+	TargetSwitchedFmt  string
 	TargetNone         string
 	TargetConnected    string
 	TargetDisconnected string

@@ -198,8 +198,9 @@ func TestAITargetSelectLayoutAndKeyboard(t *testing.T) {
 		canvas, _ := paintAt(state, size)
 		trigger := panelHit(t, canvas, hitAITarget)
 		input := panelHit(t, canvas, hitAIInput)
-		if trigger.Role != ui.RoleCombobox || trigger.Bounds.Y+trigger.Bounds.Height > input.Bounds.Y {
-			t.Fatal("target selector overlaps composer")
+		if trigger.Role != ui.RoleCombobox || !pointInRect(trigger.Bounds.X, trigger.Bounds.Y, input.Bounds) ||
+			trigger.Bounds.Y+trigger.Bounds.Height > input.TextBounds.Y || trigger.Bounds.Width > 200 {
+			t.Fatal("target selector is not compact or overlaps the editor text")
 		}
 		state.Key(ui.KeyEvent{Target: hitAITarget, Key: ui.KeyDown})
 		canvas, _ = paintAt(state, size)

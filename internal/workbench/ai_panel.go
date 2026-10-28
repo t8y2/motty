@@ -152,9 +152,11 @@ func (panel *aiPanel) aiTextSelectionText() (string, bool) {
 // the geometry of the last paint and small view state. It is all derived or
 // cosmetic; nothing here is saved.
 type aiPanel struct {
-	targetOpen   bool
-	targetBounds ui.Rect
-	rows         []aiRowView
+	targetOpen                  bool
+	targetBounds                ui.Rect
+	targetTitle, targetValue    string
+	targetWidth, targetFontSize float32
+	rows                        []aiRowView
 
 	// history shows the saved conversations in place of the messages.
 	history      bool

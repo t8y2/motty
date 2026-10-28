@@ -708,8 +708,12 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		if !ok {
 			continue
 		}
+		title := entry.Label
+		if title == "" {
+			title = host.Label
+		}
 		state.sessions = append(state.sessions, Session{
-			ID: state.nextSessionID, HostID: host.ID, Title: host.Label,
+			ID: state.nextSessionID, HostID: host.ID, Title: state.uniqueSessionTitle(title, 0),
 			Address: state.sessionAddress(host),
 			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})

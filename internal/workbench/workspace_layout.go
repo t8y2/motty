@@ -385,6 +385,12 @@ func (state *State) restoreWorkspaceDeck(saved *layoutcore.DeckDTO, sourceSessio
 		if deck, err := layoutcore.RestoreDeck(dto); err == nil {
 			state.deck = deck
 			for _, workspace := range state.deck.Workspaces(nil) {
+				panes := state.deck.Panes(workspace.ID, nil)
+				if len(panes) == 1 {
+					if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
+						state.renameSession(session, workspace.Title)
+					}
+				}
 				state.initializeSFTPPanel(workspace.ID, true)
 			}
 			state.syncActiveSession()

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 	"unsafe"
@@ -304,9 +305,9 @@ func (state *State) aiBuild(canvas *ui.Canvas, view *aiRowView, item *aiItem, wi
 		inner := max(width*0.9-2*aiUserPadX, 40)
 		count := state.aiWrap(canvas, view, item.text, aiBodySize, inner)
 		view.height = 2*aiUserPadY + float32(count)*aiBodyLine
-		if item.targetLabel != "" {
-			view.height += aiSmallLine
-		}
+	case aiTargetChange:
+		view.detail = fmt.Sprintf(state.messages.AIPanel.TargetSwitchedFmt, item.text)
+		view.height = 30
 	case aiAssistant:
 		view.doc.Parse(item.text)
 		view.height = view.md.Layout(canvas, components.MarkdownStyle{
@@ -337,9 +338,6 @@ func (state *State) aiLayoutTool(view *aiRowView, item *aiItem, width, cell, cel
 	view.excerpt = aiExcerpt(item.result)
 	cols := max(int((width-2*aiToolPad-12)/cell), 8)
 	height := 2*aiToolPadY + aiToolHeader
-	if item.targetLabel != "" {
-		height += aiSmallLine
-	}
 	if view.detail != "" {
 		view.lines, _ = aiMonoWrap(view.lines, view.detail, cols, aiMaxDetail)
 		view.commandLines = len(view.lines)
@@ -887,10 +885,15 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 	case aiUser:
 		row.Items(flex.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
-				if item.targetLabel != "" {
-					f.Text(m.Target + ": " + item.targetLabel).FontSize(aiSmallSize).LineHeight(aiSmallLine).Color(pal.muted).Ellipsis()
-				}
 				aiTextLines(f, view.lines, aiBodySize, aiBodyLine, pal.text)
+			})
+		})
+	case aiTargetChange:
+		row.Height(view.height).Items(flex.Center).Children(func() {
+			f.Row().Fill().Gap(10).Items(flex.Center).Children(func() {
+				f.Column().Grow(1).Height(1).Background(pal.line)
+				f.Text(view.detail).FontSize(aiSmallSize).Color(pal.faint).LineHeight(aiSmallLine).MaxWidth(max(view.width-48, 0)).Ellipsis()
+				f.Column().Grow(1).Height(1).Background(pal.line)
 			})
 		})
 	case aiAssistant:
@@ -947,9 +950,6 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 		}
 		statusText, statusColor := state.aiStatusText(item.status)
 		row.Border(1, border).PadSides(aiToolPadY-1, aiToolPad-1, aiToolPadY-1, aiToolPad-1).Background(pal.surface).Radius(radius.control).Children(func() {
-			if item.targetLabel != "" {
-				f.Text(m.Target + ": " + item.targetLabel).FontSize(aiSmallSize).LineHeight(aiSmallLine).Color(pal.muted).Ellipsis()
-			}
 			// The name and the risk at the left, the status at the right.
 			f.Row().Height(aiToolHeader).Items(flex.Center).Children(func() {
 				f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)

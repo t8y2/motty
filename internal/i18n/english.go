@@ -713,6 +713,8 @@ var englishAIPanel = AIPanelMessages{
 
 	ModeAsk:            "Ask",
 	Target:             "Target connection",
+	TargetChoose:       "Choose connection",
+	TargetSwitchedFmt:  "Switched to %s",
 	TargetNone:         "No connection (general questions)",
 	TargetConnected:    "Connected",
 	TargetLocked:       "Locked for this request",
@@ -731,7 +733,7 @@ var englishAIPanel = AIPanelMessages{
 	ResizeComposer: "Resize the message box",
 
 	InputLabel:          "Message to the assistant",
-	InputPlaceholder:    "Ask anything (Enter to send)",
+	InputPlaceholder:    "Ask your question, I'll help you analyze it... Type @ to add available context",
 	InputPlaceholderAsk: "Ask mode answers only; switch to Agent to run commands.",
 	Send:                "Send",
 	Stop:                "Stop",

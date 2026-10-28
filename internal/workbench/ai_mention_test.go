@@ -129,7 +129,7 @@ func TestTwoTabsWithTheSameTitleGetDistinctNames(t *testing.T) {
 	var state State
 	state.sessions = []Session{
 		{ID: 1, Title: "Prod DB", Address: "a", term: &terminal{}},
-		{ID: 2, Title: "Prod DB", Address: "b", term: &terminal{}},
+		{ID: 2, Title: "Prod DB-2", Address: "b", term: &terminal{}},
 		{ID: 3, Title: "日本 サーバ", Address: "c", term: &terminal{}},
 	}
 	names := state.mentionNames(nil)

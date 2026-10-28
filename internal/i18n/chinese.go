@@ -713,6 +713,8 @@ var chineseAIPanel = AIPanelMessages{
 
 	ModeAsk:            "问答",
 	Target:             "目标连接",
+	TargetChoose:       "选择连接",
+	TargetSwitchedFmt:  "已切换至 %s",
 	TargetNone:         "未选择连接（普通问答）",
 	TargetConnected:    "已连接",
 	TargetLocked:       "本轮锁定",
@@ -731,7 +733,7 @@ var chineseAIPanel = AIPanelMessages{
 	ResizeComposer: "调整输入框高度",
 
 	InputLabel:          "发给助手的消息",
-	InputPlaceholder:    "随便问点什么(回车发送)",
+	InputPlaceholder:    "输入你的问题，我来帮你分析... 输入@可添加可用对象作为上下文",
 	InputPlaceholderAsk: "问答模式只回答问题；要执行命令请切换到代理模式。",
 	Send:                "发送",
 	Stop:                "停止",
