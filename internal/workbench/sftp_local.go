@@ -111,7 +111,7 @@ func (state *State) listLocal(view *sftpView, dir string) error {
 		return nil
 	}
 	view.errorText = ""
-	view.status = state.messages.SFTPLoading
+	view.startListingStatus(state.messages.SFTPLoading)
 	go func() {
 		defer file.Close()
 		items := first

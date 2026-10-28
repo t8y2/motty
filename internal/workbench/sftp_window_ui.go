@@ -214,7 +214,12 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 		list = f.Slot().Grow(1)
 		selection := w.selection(local)
 		count := selection.count
-		status := fmt.Sprintf(m.SFTPItemsFmt, len(folder.rows))
+		// An `ls`-derived listing counts approximately, so it says so.
+		format := m.SFTPItemsFmt
+		if !local && w.view.approximate {
+			format = m.SCPItemsFmt
+		}
+		status := fmt.Sprintf(format, len(folder.rows))
 		if count > 0 {
 			status += " · " + fmt.Sprintf(m.SFTPWindow.SelectedFmt, count)
 		}

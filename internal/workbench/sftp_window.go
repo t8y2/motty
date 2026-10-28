@@ -55,7 +55,8 @@ func (state *State) openSFTPWindow(source *Session) {
 
 func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
-	w.view = &sftpView{detached: w, busy: true, status: state.messages.SFTPLoading, operation: sftpclient.OperationList}
+	w.view = &sftpView{detached: w, busy: true, operation: sftpclient.OperationList}
+	w.view.startListingStatus(state.messages.SFTPLoading)
 	w.view.transferServer, w.view.transferAddress = source.Title, source.Address
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}

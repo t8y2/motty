@@ -73,18 +73,21 @@ type sftpView struct {
 	// sftpFolder is the server's folder; lfolder is this computer's, shown
 	// instead of it while local is set.
 	sftpFolder
-	lfolder               sftpFolder
-	local                 bool
-	localOnly             bool   // a local terminal's panel: no server, no worker, no other side to switch to
-	localSeq              uint64 // the latest local listing; an older answer is dropped
-	remoteSeq             uint64 // the latest remote listing prepared; older work is dropped
-	preparingPath         string // the large listing whose rows are being prepared
-	followUpPath          string // a follow-up that arrived before those rows were ready
-	followUpEntries       []sftpclient.Entry
-	busy                  bool
-	approximate           bool // the listing came from `ls` over SCP
-	operation             sftpclient.Operation
-	status                string
+	lfolder         sftpFolder
+	local           bool
+	localOnly       bool   // a local terminal's panel: no server, no worker, no other side to switch to
+	localSeq        uint64 // the latest local listing; an older answer is dropped
+	remoteSeq       uint64 // the latest remote listing prepared; older work is dropped
+	preparingPath   string // the large listing whose rows are being prepared
+	followUpPath    string // a follow-up that arrived before those rows were ready
+	followUpEntries []sftpclient.Entry
+	busy            bool
+	approximate     bool // the listing came from `ls` over SCP
+	operation       sftpclient.Operation
+	status          string
+	// listingStatus is the listing message status still holds, so a completed
+	// listing can retire it without dropping the feedback that replaced it.
+	listingStatus         string
 	errorText             string
 	refreshStatus         string
 	dialog                sftpDialogKind
@@ -157,7 +160,8 @@ func (state *State) openSFTP(session *Session) {
 		return
 	}
 	connection, transfer := session.conn, session.host.Transfer
-	view := &sftpView{busy: true, operation: sftpclient.OperationList, status: state.messages.SFTPLoading}
+	view := &sftpView{busy: true, operation: sftpclient.OperationList}
+	view.startListingStatus(state.messages.SFTPLoading)
 	view.transferServer, view.transferAddress = session.Title, session.Address
 	view.selected, view.lfolder.selected = -1, -1
 	view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, transfer) }, state.notifyFor(session))
@@ -342,13 +346,25 @@ func (view *sftpView) active() *sftpFolder {
 	return &view.sftpFolder
 }
 
-// Detached windows show each folder's count beneath its own pane. Leave their
-// shared status available for operation feedback and the idle drag hint.
+// startListingStatus shows a listing message and remembers it, so the listing
+// that replaces it can tell its own message from feedback written meanwhile.
+func (view *sftpView) startListingStatus(message string) {
+	view.status, view.listingStatus = message, message
+}
+
+// setItemCountStatus reports a folder's count in the embedded panel's status
+// line. A detached window shows counts beneath each pane instead, so its shared
+// line carries operation feedback and, when idle, the drag hint: a listing only
+// retires the message it started with.
 func (view *sftpView) setItemCountStatus(format string, count int) {
-	view.status = ""
 	if view.detached == nil {
 		view.status = fmt.Sprintf(format, count)
+		return
 	}
+	if view.listingStatus != "" && view.status == view.listingStatus {
+		view.status = ""
+	}
+	view.listingStatus = ""
 }
 
 // selectRow applies a press on a row the way a file list does: a plain press
@@ -582,7 +598,7 @@ func (state *State) openSFTPDirectory(view *sftpView, remotePath string) {
 	}
 	if _, inFlight := view.prefetching[key]; inFlight {
 		view.busy, view.operation, view.waiting = true, sftpclient.OperationList, key
-		view.status = state.messages.SFTPLoading
+		view.startListingStatus(state.messages.SFTPLoading)
 		view.errorText = ""
 		return
 	}
@@ -735,7 +751,7 @@ func (state *State) listSFTP(view *sftpView, remotePath string) {
 	if view.worker.List(remotePath) {
 		view.busy = true
 		view.operation = sftpclient.OperationList
-		view.status = state.messages.SFTPLoading
+		view.startListingStatus(state.messages.SFTPLoading)
 		view.errorText = ""
 	}
 }
@@ -1060,7 +1076,7 @@ func (state *State) pumpSFTP(session *Session) {
 					view.busy = true // navigation completes only when its prepared rows are published
 					seq, entries := view.remoteSeq, result.Entries
 					view.preparingPath = result.Path
-					view.status = state.messages.SFTPLoading
+					view.startListingStatus(state.messages.SFTPLoading)
 					go func() {
 						rows := prepareSFTPRows(nil, entries)
 						state.aiPost(func(*State) {
