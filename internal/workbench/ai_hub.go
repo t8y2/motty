@@ -128,10 +128,7 @@ func (hub *AIHub) readSettings() (enabled bool, mode gate.Mode, token string, po
 		return value
 	}
 	enabled = read("ai.mcp.enabled") == "on"
-	mode = gate.ModeObserve
-	if read("ai.mcp.mode") == "ask" {
-		mode = gate.ModeAsk
-	}
+	mode = mcpModeFromSetting(read("ai.mcp.mode"))
 	port, _ = strconv.Atoi(read("ai.mcp.port"))
 	token = read("ai.mcp.token")
 	if enabled && len(token) < mcp.MinTokenLen {
@@ -141,6 +138,17 @@ func (hub *AIHub) readSettings() (enabled bool, mode gate.Mode, token string, po
 		}
 	}
 	return enabled, mode, token, port, nil
+}
+
+func mcpModeFromSetting(value string) gate.Mode {
+	switch value {
+	case "ask":
+		return gate.ModeAsk
+	case "allow-all":
+		return gate.ModeAllowAll
+	default:
+		return gate.ModeObserve
+	}
 }
 
 func (hub *AIHub) start(token string, mode gate.Mode, port int) error {

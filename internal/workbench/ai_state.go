@@ -88,10 +88,9 @@ type aiSettings struct {
 	contextLines int
 	redact       bool
 	keepHistory  bool
-	// External access (MCP): whether it is allowed, and whether the agents
-	// behind it may also run commands (after the user approves each one).
+	// External access (MCP): whether it is enabled and the shared access level.
 	mcpEnabled bool
-	mcpAsk     bool
+	mcpMode    gate.Mode
 	// agentRun is whether the server that works without the window may run
 	// commands (agent_mcp.go), not only read.
 	agentRun bool
@@ -100,7 +99,7 @@ type aiSettings struct {
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -266,7 +265,7 @@ func (state *State) reloadAI() {
 	read("ai.redact", func(v string) { ai.settings.redact = v != "off" })
 	read("ai.history", func(v string) { ai.settings.keepHistory = v != "off" })
 	read("ai.mcp.enabled", func(v string) { ai.settings.mcpEnabled = v == "on" })
-	read("ai.mcp.mode", func(v string) { ai.settings.mcpAsk = v == "ask" })
+	read("ai.mcp.mode", func(v string) { ai.settings.mcpMode = mcpModeFromSetting(v) })
 	read(agentModeSetting, func(v string) { ai.settings.agentRun = v == AgentModeCommands })
 	ai.agentAudit, _ = ai.store.Audit(agentAuditShown)
 	ai.agentSummary.lines = nil

@@ -448,6 +448,14 @@ func TestGateIsAskedPerRequest(t *testing.T) {
 	if c := call(t, ts.URL, tools.NameTerminalExec, `{"command":"ls"}`); !c.IsError {
 		t.Fatalf("%+v", c)
 	}
+	mode.Store(int32(gate.ModeAllowAll))
+	if c := call(t, ts.URL, tools.NameTerminalExec, `{"command":"rm -rf /"}`); c.IsError || b.execs.Load() != 2 {
+		t.Fatalf("allow-all did not reach the fake backend: %+v", c)
+	}
+	mode.Store(int32(gate.ModeAsk))
+	if c := call(t, ts.URL, tools.NameTerminalExec, `{"command":"rm -rf /"}`); !c.IsError || b.execs.Load() != 2 {
+		t.Fatalf("returning to ask left full access enabled: %+v", c)
+	}
 }
 
 func TestNoBackendIsAToolError(t *testing.T) {
