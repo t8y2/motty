@@ -462,6 +462,9 @@ type ToolsMessages struct {
 	RemoteConfirmRemoveNetworkFmt   string
 	RemoteSortCPU                   string
 	RemoteSortMemory                string
+	RemoteSortAction                string
+	RemoteSortAscending             string
+	RemoteSortDescending            string
 	RemoteColPID                    string
 	RemoteColUser                   string
 	RemoteColCPU                    string
@@ -474,6 +477,12 @@ type ToolsMessages struct {
 	RemoteColStatus                 string
 	RemoteColID                     string
 	RemoteRefresh                   string
+	RemoteAutoRefresh               string
+	RemoteAutoStart                 string
+	RemoteAutoStop                  string
+	RemoteRefreshIntervalFmt        string
+	RemoteDockerMissing             string
+	RemoteDockerMissingHint         string
 	RemoteTerminate                 string
 	RemoteForceKill                 string
 	RemoteStart                     string

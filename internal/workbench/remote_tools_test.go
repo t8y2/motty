@@ -118,8 +118,12 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	}
 	state.Click(hitRemoteSortMemory)
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	if server.ran("LC_ALL=C ps") != 2 || !strings.Contains(server.commands[1], "-k4,4nr") || state.remote.rows[0].cells[0] != "3000" {
+	if server.ran("LC_ALL=C ps") != 2 || !strings.Contains(server.commands[1], "-k4,4nr") || state.remote.rows[0].cells[0] != "1" {
 		t.Fatalf("after sorting by memory: %q, first %q", server.commands, state.remote.rows[0].cells[0])
+	}
+	state.Click(hitRemoteSortMemory)
+	if state.remote.rows[0].key != "3000" || server.ran("LC_ALL=C ps") != 2 {
+		t.Fatal("descending should reorder the loaded snapshot without another command")
 	}
 }
 

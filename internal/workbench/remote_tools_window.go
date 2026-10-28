@@ -3,7 +3,6 @@ package workbench
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/vivaui/viva/app"
@@ -57,7 +56,12 @@ func (state *State) openRemoteToolsWindow(session *Session) {
 		WindowMode: app.WindowTitled,
 		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnClosed: w.dispose,
-		OnScroll: func(ui.ScrollEvent) ui.EventResult { return ui.EventResult{Handled: true} },
+		OnScroll: func(event ui.ScrollEvent) ui.EventResult {
+			if w.ui.remote.auto.open {
+				return ui.EventResult{Handled: true, Repaint: w.ui.remote.auto.scroll.Wheel(event)}
+			}
+			return ui.EventResult{Handled: true}
+		},
 		TextInput: func(c app.TextInputContext) *app.TextInput {
 			if w.ui.modal != modalForm || c.ID.Scope() != hitFormFieldList {
 				return nil
@@ -126,6 +130,7 @@ func (w *remoteToolsWindow) dispose() {
 		return
 	}
 	w.closed, w.ui.closed = true, true
+	w.ui.remote.auto.enabled, w.ui.remote.auto.open = false, false
 	w.ui.remote.serial++
 	w.cancel()
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
@@ -255,6 +260,9 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 }
 
 func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
+	if result := w.ui.remoteRefreshKey(event); result.Handled {
+		return result
+	}
 	if event.Key == ui.KeyEscape && !event.Repeat {
 		if w.ui.modal == modalForm {
 			w.ui.clickForm(hitFormCancel)
@@ -282,11 +290,6 @@ func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 		w.click(next)
 		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
 	}
-	sorts := [...]components.SegmentOption{{ID: hitRemoteSortCPU}, {ID: hitRemoteSortMemory}}
-	if next, handled := components.SegmentedControlKeyDown(event.Target, sorts[:], components.DirectionLTR, event.Key); handled {
-		w.click(next)
-		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
-	}
 	return ui.EventResult{}
 }
 
@@ -301,12 +304,10 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	w.ui.language, w.ui.messages = w.owner.language, w.owner.messages
 	w.ui.appearance, w.ui.pal, w.ui.theme = w.owner.appearance, w.owner.pal, w.owner.theme
 	w.ui.viewport = size
-	theme, m := w.ui.Theme(), w.ui.messages.Tools
+	theme := w.ui.Theme()
 	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	const pad, buttonHeight, buttonGap = float32(16), float32(32), float32(8)
 	width := max(size.Width-pad*2, 0)
-	canvas.Label(m.RemoteTitle+" · "+w.session.Title, ui.Rect{X: pad, Y: pad, Width: width, Height: 28}, ui.TextStyle{Size: 18, Weight: ui.WeightSemibold, Color: theme.Foreground})
-	canvas.Label(w.session.Address+" · "+fmt.Sprintf(m.RemoteDescriptionFmt, w.session.Title), ui.Rect{X: pad, Y: 48, Width: width, Height: 22}, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
 	actions, count := w.ui.remoteToolActions()
 	var boxes [8]ui.Rect
 	x, y := float32(0), float32(0)
@@ -318,11 +319,11 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		boxes[i] = ui.Rect{X: pad + x, Y: y, Width: buttonWidth, Height: buttonHeight}
 		x += buttonWidth + buttonGap
 	}
-	footerTop := max(84, size.Height-pad-y-buttonHeight)
-	body := ui.Rect{X: pad, Y: 84, Width: width, Height: max(footerTop-96, 0)}
-	toolbar := float32(34)
-	if width < 800 && w.ui.remote.tab == remoteProcesses {
-		toolbar += 42
+	footerTop := max(pad, size.Height-pad-y-buttonHeight)
+	body := ui.Rect{X: pad, Y: pad, Width: width, Height: max(footerTop-pad-12, 0)}
+	toolbar := remoteToolbarHeight
+	if width < 800 {
+		toolbar += remoteToolbarHeight + 8
 	}
 	pageSize := max(1, int((body.Height-toolbar-48-components.TableHeaderHeight(theme))/components.TableRowHeight(theme)))
 	if pageSize != w.pageSize {
@@ -350,6 +351,7 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 			button.Outline(actions[i].Label)
 		}
 	}
+	w.ui.paintRemoteRefreshMenu(canvas)
 	if w.ui.modal == modalForm {
 		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	}

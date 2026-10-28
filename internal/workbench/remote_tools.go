@@ -16,9 +16,8 @@ import (
 )
 
 // Remote tools: the server's processes and Docker containers in one dialog.
-// Opening it, switching tab and pressing Refresh each run one fixed command over
-// the session's connection; nothing is polled. Signals and container actions
-// ask first when they destroy something.
+// Opening it, switching tab and refreshing run fixed commands over the captured
+// connection. Polling is opt-in. Destructive actions always ask first.
 
 // remoteToolsHits is the place of the controls this file paints.
 var remoteToolsHits = tree.Feature("remote-tools")
@@ -47,6 +46,9 @@ var (
 	hitRemotePull          = tree.ID(remoteToolsHits, "remote-pull")
 	hitRemoteCreate        = tree.ID(remoteToolsHits, "remote-create")
 	hitRemoteRefresh       = tree.ID(remoteToolsHits, "remote-refresh")
+	hitRemoteAutoRefresh   = tree.ID(remoteToolsHits, "remote-auto-refresh")
+	hitRemoteAutoToggle    = tree.ID(remoteToolsHits, "remote-auto-toggle")
+	hitRemoteAutoDismiss   = tree.ID(remoteToolsHits, "remote-auto-dismiss")
 	hitRemoteClose         = tree.ID(remoteToolsHits, "remote-close")
 	hitRemoteDismiss       = tree.ID(remoteToolsHits, "remote-dismiss")
 	hitRemotePrevious      = tree.ID(remoteToolsHits, "remote-previous")
@@ -55,6 +57,9 @@ var (
 
 // hitRemoteRowList starts the row ids: one per entry, up to the list limits.
 var hitRemoteRowList = tree.Sub(remoteToolsHits, tree.Name("remote-row"))
+var hitRemoteIntervals = tree.Sub(remoteToolsHits, tree.Name("remote-refresh-interval"))
+var hitRemoteSortColumns = tree.Sub(remoteToolsHits, tree.Name("remote-sort-column"))
+var remoteAutoScope = tree.ID(remoteToolsHits, "remote-refresh-menu")
 var (
 	hitTerminalMenuTools = tree.ID(remoteToolsHits, "terminal-menu-tools")
 	// hitRemoteToolsOpen is the command palette's entry for the dialog.
@@ -62,9 +67,10 @@ var (
 )
 
 const (
-	remoteRowsPerPage = 12
-	remoteMaxRows     = 200
-	remoteTimeout     = 20 * time.Second
+	remoteRowsPerPage   = 12
+	remoteMaxRows       = 200
+	remoteTimeout       = 20 * time.Second
+	remoteToolbarHeight = float32(34)
 )
 
 // clickRemoteToolsOpen opens the dialog for the active session.
@@ -113,14 +119,18 @@ type remoteRow struct {
 	cells [6]string
 	// key identifies the entry across refreshes: the process number or the
 	// container's ID.
-	key string
+	key         string
+	orderNumber float64
+	orderText   string
+	orderValid  bool
 }
 
 type remoteToolsView struct {
-	session uint32
-	title   string
-	tab     remoteTab
-	sort    remotetools.SortKey
+	session  uint32
+	title    string
+	tab      remoteTab
+	sort     remotetools.SortKey
+	ordering [6]components.TableSortState
 
 	procs      []remotetools.Process
 	containers []remotetools.Container
@@ -131,7 +141,9 @@ type remoteToolsView struct {
 	page       int
 	pageText   string
 
-	loading bool
+	loading  bool
+	noDocker bool
+	auto     remoteAutoRefresh
 	// serial identifies the request whose answer may be applied; an answer to an
 	// older one is dropped.
 	serial uint32
@@ -178,8 +190,22 @@ func (state *State) clickRemoteTools(id ui.ID) {
 	m := state.messages.Tools
 	switch {
 	case id == hitRemoteClose || id == hitRemoteDismiss:
+		view.auto.enabled, view.auto.open = false, false
 		view.serial++
 		state.closeModal()
+	case id == hitRemoteAutoRefresh:
+		view.auto.open = !view.auto.open
+	case id == hitRemoteAutoDismiss:
+		view.auto.open = false
+	case id == hitRemoteAutoToggle:
+		view.auto.enabled = !view.auto.enabled
+		view.auto.restart()
+	case id.Scope() == hitRemoteIntervals:
+		if index := item(id); index >= 0 && index < len(remoteRefreshIntervals) {
+			view.auto.interval = remoteRefreshIntervals[index]
+			view.auto.enabled = true
+			view.auto.restart()
+		}
 	case id == hitRemoteTabProcesses || id == hitRemoteTabContainers || id == hitRemoteTabImages || id == hitRemoteTabVolumes || id == hitRemoteTabNetworks || id == hitRemoteTabCompose:
 		var tab remoteTab
 		for candidate, hit := range remoteTabHits {
@@ -189,19 +215,22 @@ func (state *State) clickRemoteTools(id ui.ID) {
 		}
 		if tab != view.tab {
 			view.tab, view.selected, view.page = tab, "", 0
-			state.refreshRemoteTools()
+			view.rows, view.pageText = nil, ""
+			if view.noDocker && tab != remoteProcesses {
+				// Docker availability belongs to the connection, not its tab.
+				// Keep the empty state until an explicit or timed refresh rechecks it.
+				view.serial++
+				view.loading, view.failed, view.status = false, true, m.RemoteErrNoDocker
+			} else {
+				state.refreshRemoteTools()
+			}
 		}
-	case id == hitRemoteSortCPU || id == hitRemoteSortMemory:
-		key := remotetools.SortCPU
-		if id == hitRemoteSortMemory {
-			key = remotetools.SortMemory
-		}
-		if key != view.sort {
-			view.sort, view.page = key, 0
-			state.refreshRemoteTools()
-		}
+	case state.clickRemoteTableSort(id):
+		return
 	case id == hitRemoteRefresh:
-		state.refreshRemoteTools()
+		if !view.loading {
+			state.refreshRemoteTools()
+		}
 	case id == hitRemotePrevious:
 		if view.page > 0 {
 			view.page--
@@ -506,6 +535,9 @@ func (state *State) refreshRemoteTools() {
 				return
 			}
 			view.loading = false
+			if tab != remoteProcesses {
+				view.noDocker = errors.Is(err, remotetools.ErrNoDocker)
+			}
 			if err != nil {
 				view.failed, view.status = true, state.remoteErrorText(err)
 				view.procs, view.containers, view.compose, view.resources = nil, nil, nil, nil
@@ -667,6 +699,7 @@ func (state *State) rebuildRemoteRows() {
 			}})
 		}
 	}
+	state.sortRemoteRows()
 	if view.page*state.remotePageSize() >= len(view.rows) {
 		view.page = 0
 	}
@@ -674,8 +707,7 @@ func (state *State) rebuildRemoteRows() {
 }
 
 func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
-	view := &state.remote
+	theme := state.Theme()
 	_, ok := state.remoteSession()
 	if !ok {
 		state.closeModal()
@@ -687,10 +719,11 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 		DismissID: hitRemoteDismiss, CloseID: hitRemoteClose, InitialFocusID: hitRemoteRefresh,
 		ContentSize: ui.Size{Width: 940}, FitBody: true, BodyHeight: 52 + tableHeight + 34,
 	})
-	layout := dialog.Begin(m.RemoteTitle, fmt.Sprintf(m.RemoteDescriptionFmt, view.title))
+	layout := dialog.Begin("", "")
 	state.paintRemoteToolsBody(canvas, layout.Body)
 	actions, count := state.remoteToolActions()
 	dialog.Actions(layout, actions[:count]...)
+	state.paintRemoteRefreshMenu(canvas)
 	dialog.End()
 }
 
@@ -708,39 +741,36 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		{ID: hitRemoteTabCompose, Label: m.RemoteTabCompose},
 	}
 	selectedTab := remoteTabHits[view.tab]
-	sorts := [...]components.SegmentOption{
-		{ID: hitRemoteSortCPU, Label: m.RemoteSortCPU},
-		{ID: hitRemoteSortMemory, Label: m.RemoteSortMemory},
-	}
-	selectedSort := hitRemoteSortCPU
-	if view.sort == remotetools.SortMemory {
-		selectedSort = hitRemoteSortMemory
-	}
-
-	// The tabs and the sort order on one line, the table under them, then the
-	// status with the pages.
+	// Tabs and refresh controls share the toolbar; sorting belongs to the table.
 	pages := (len(view.rows) + pageSize - 1) / pageSize
 	status := view.status
+	missingDocker := view.noDocker && view.tab != remoteProcesses
+	if view.loading && len(view.rows) == 0 && !missingDocker {
+		status = ""
+	}
+	if missingDocker && !view.loading {
+		status = ""
+	}
 	color := pal.muted
 	if view.failed {
 		color = pal.danger
 	}
-	var tabsSlot, sortSlot, tableSlot, pagesSlot flex.Box
+	var tabsSlot, refreshSlot, tableSlot, pagesSlot flex.Box
 	f := state.partLayout.Begin(canvas, theme, bounds)
-	stacked := state.remoteWindow != nil && bounds.Width < 800 && view.tab == remoteProcesses
+	stacked := bounds.Width < 800
 	f.Column().Fill().Children(func() {
-		f.Row().Height(34).Shrink(0).Gap(12).Children(func() {
+		f.Row().Height(remoteToolbarHeight).Shrink(0).Gap(12).Children(func() {
 			// In a window too narrow for both they share the line instead of overlapping.
 			tabsSlot = f.Slot().Width(600).Shrink(1)
 			f.Spacer()
-			if view.tab == remoteProcesses && !stacked {
-				sortSlot = f.Slot().Width(240).Shrink(1)
+			if !stacked {
+				refreshSlot = f.Slot().Width(174).Shrink(0)
 			}
 		})
 		if stacked {
-			f.Row().Height(34).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
+			f.Row().Height(remoteToolbarHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
 				f.Spacer()
-				sortSlot = f.Slot().Width(240).Height(34)
+				refreshSlot = f.Slot().Width(174).Height(remoteToolbarHeight)
 			})
 		}
 		tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(12, 0, 0, 0)
@@ -754,8 +784,14 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	f.End()
 
 	components.BeginSegmentedControl(canvas, theme, tabsSlot.Rect(), tabs[:], selectedTab).Paint()
-	if view.tab == remoteProcesses {
-		components.BeginSegmentedControl(canvas, theme, sortSlot.Rect(), sorts[:], selectedSort).Paint()
+	state.paintRemoteRefresh(canvas, refreshSlot.Rect())
+	if missingDocker {
+		state.paintRemoteDockerEmpty(canvas, tableSlot.Rect())
+		return
+	}
+	if view.loading && len(view.rows) == 0 {
+		state.paintRemoteToolsLoading(canvas, tableSlot.Rect())
+		return
 	}
 
 	var columns []components.TableColumn
@@ -785,7 +821,20 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		view.columns = [6]string{m.RemoteColName, m.RemoteColImage, m.RemoteColState, m.RemoteColStatus, m.RemoteColID}
 		headings = view.columns[:5]
 	}
-	components.FitTableHeadings(canvas, theme, columns, headings)
+	var headerCells [6]components.TableHeader
+	order := view.tableSort()
+	for i, heading := range headings {
+		headerCells[i] = components.TableHeader{ID: remoteTableHeaderID(view.tab, i), Label: heading, Disabled: view.loading, FocusableWhenDisabled: true, Description: m.RemoteSortAction}
+		if order.Direction != components.TableSortNone && order.Column == i {
+			headerCells[i].Sort = order.Direction
+			if order.Direction == components.TableSortAscending {
+				headerCells[i].Description = m.RemoteSortAscending
+			} else {
+				headerCells[i].Description = m.RemoteSortDescending
+			}
+		}
+	}
+	components.FitSortableTableHeadings(canvas, theme, columns, headerCells[:len(headings)])
 	if state.remoteWindow != nil {
 		// Keep the last column visible as a native window is narrowed; fixed
 		// desktop widths otherwise consume all space before reaching it.
@@ -801,7 +850,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		}
 	}
 	table := components.BeginTable(canvas, theme, tableSlot.Rect(), columns)
-	table.Header(headings)
+	table.SortableHeader(headerCells[:len(headings)])
 	start := view.page * pageSize
 	end := min(start+pageSize, len(view.rows))
 	for index := start; index < end; index++ {
@@ -828,7 +877,6 @@ func (state *State) remoteToolActions() (actions [8]components.ButtonAction, cou
 		count++
 	}
 	add(components.ButtonAction{ID: hitRemoteClose, Label: m.RemoteClose, Variant: components.ButtonSecondary})
-	add(components.ButtonAction{ID: hitRemoteRefresh, Label: m.RemoteRefresh, Variant: components.ButtonOutline})
 	if view.tab == remoteProcesses {
 		add(components.ButtonAction{ID: hitRemoteTerminate, Label: m.RemoteTerminate, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteKill, Label: m.RemoteForceKill, Variant: components.ButtonDestructive})
@@ -855,6 +903,9 @@ func (state *State) remoteToolActions() (actions [8]components.ButtonAction, cou
 		container, selected := state.selectedContainer()
 		add(components.ButtonAction{ID: hitRemoteShell, Label: m.RemoteEnterShell, Variant: components.ButtonOutline, Disabled: !selected || !container.Running() || view.loading || !connected || source.host.System == sshconn.SystemWindows})
 		add(components.ButtonAction{ID: hitRemoteRemove, Label: m.RemoteRemove, Variant: components.ButtonDestructive})
+	}
+	for i := 1; i < count; i++ {
+		actions[i].Disabled = actions[i].Disabled || view.loading || !connected || view.noDocker && view.tab != remoteProcesses
 	}
 	return actions, count
 }

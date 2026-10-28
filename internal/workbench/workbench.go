@@ -1806,6 +1806,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result := state.remoteRefreshKey(event); result.Handled {
+		return result
+	}
 	if result, handled := state.hostTagsKey(event); handled {
 		return result
 	}
