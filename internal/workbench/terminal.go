@@ -255,6 +255,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetImageWake(state.options.Invalidate)
 	state.attachHistory(session)
 	state.stampTerminal(session.term)
+	state.reportTerminalColors(session.term)
 	sessionID := session.ID
 	session.term.screen.SetSyncHold(func(on bool) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {

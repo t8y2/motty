@@ -112,6 +112,7 @@ func (s *State) aiStartCLILogin(id string, device bool) {
 	s.aiCloseDialog()
 	ctx, cancel := context.WithCancel(context.Background())
 	login := &aiCLILogin{provider: p, term: newTerminalWithScrollback(90, 16, 200), cancel: cancel}
+	s.reportTerminalColors(login.term)
 	login.term.screen.SetImageWake(func() {
 		if s.options.Invalidate != nil {
 			s.options.Invalidate()

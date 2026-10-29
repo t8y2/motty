@@ -187,6 +187,28 @@ func (state *State) rebuildTerminalLook() {
 	state.termEpoch++
 	look.epoch = state.termEpoch
 	state.termPal = look
+	for index := range state.sessions {
+		state.reportTerminalColors(state.sessions[index].term)
+	}
+	if login := state.ai.login; login != nil {
+		state.reportTerminalColors(login.term)
+	}
+}
+
+// reportTerminalColors tells a terminal the colors it is drawn with, which is
+// what it answers a program that asks for them (OSC 10 and 11). Programs such as
+// Codex or Helix pick a light or a dark theme from that answer.
+func (state *State) reportTerminalColors(t *terminal) {
+	if t == nil {
+		return
+	}
+	t.screen.SetDefaultColors(rgb8(state.termPal.termFG), rgb8(state.termPal.terminal))
+}
+
+// rgb8 is the 8-bit channels of an opaque color, the inverse of ui.RGB.
+func rgb8(c ui.Color) [3]uint8 {
+	channel := func(v float32) uint8 { return uint8(min(max(v, 0), 1)*255 + 0.5) }
+	return [3]uint8{channel(c.Red), channel(c.Green), channel(c.Blue)}
 }
 
 func luminance(c [3]uint8) float32 {
