@@ -197,8 +197,9 @@ func (state *State) TerminalFindInput(context app.TextInputContext) *app.TextInp
 	find.input.Editor = nil
 	find.input.State = app.TextStateOf(&find.editor)
 	if find.input.OnEvent == nil {
+		sessionID := session.ID
 		find.input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
-			return state.terminalFindText(session.ID, event), nil
+			return state.terminalFindText(sessionID, event), nil
 		}
 	}
 	return &find.input

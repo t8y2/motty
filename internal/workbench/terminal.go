@@ -898,8 +898,11 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	// terminal asks for key releases.
 	t.input.KeyReleases = t.screen.KeyboardFlags() != 0 || t.screen.Modes().Win32Input
 	if t.input.OnEvent == nil {
+		// Closing or moving a tab shifts the session slice. Keep the identity,
+		// not a pointer to a slot that may be cleared or hold another session.
+		sessionID := session.ID
 		t.input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
-			return state.terminalText(session.ID, event), nil
+			return state.terminalText(sessionID, event), nil
 		}
 	}
 	return &t.input
