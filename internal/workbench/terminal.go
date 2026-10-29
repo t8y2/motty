@@ -998,14 +998,15 @@ func displayCells(value string) int {
 }
 
 // terminalKey handles a raw key for the terminal of session. Command chords
-// drive the tabs; everything else becomes the bytes a program expects.
+// drive the tabs, except the line edits; everything else becomes the bytes a
+// program expects.
 func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventResult {
 	t := session.term
 	handled := ui.EventResult{Handled: true}
 	if t.preedit.Composing && event.Key == ui.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
+	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() && !term.IsCommandLineEdit(event.Key, event.Modifiers) {
 		return state.commandChord(session, event)
 	}
 	if event.Modifiers == ui.ModifierControl|ui.ModifierShift && event.Text == "c" {

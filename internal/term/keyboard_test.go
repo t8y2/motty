@@ -85,6 +85,18 @@ func TestEncodeKeyEventFollowsKittyProtocol(t *testing.T) {
 		{"shift modifier key", ui.KeyEvent{Key: ui.KeyShiftLeft, Modifiers: ui.ModifierShift}, 8, "\x1b[57441;2u"},
 		{"meta modifier key", ui.KeyEvent{Key: ui.KeyMetaLeft, Modifiers: ui.ModifierMeta}, 8, "\x1b[57444;9u"},
 		{"command chord stays local", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "x"}, 8, ""},
+		{"legacy command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 0, "\x01"},
+		{"legacy command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 0, ""},
+		{"kitty command left is control a", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 1, "\x1b[97;5u"},
+		{"kitty command right is control e", ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierMeta}, 1 | 4, "\x1b[101;5u"},
+		{"kitty command backspace is control u", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta, Repeat: true}, 1 | 2, "\x1b[117;5:2u"},
+		{"kitty command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 1 | 2, ""},
+		{"kitty command shift left stays local", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 1, ""},
+		{"all keys command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8, "\x1b[97;5u"},
+		{"all keys command backspace", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta}, 8, "\x1b[117;5u"},
+		{"all keys command left press", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8 | 2, "\x1b[97;5:1u"},
+		{"all keys command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 8 | 2, "\x1b[97;5:3u"},
+		{"all keys command shift left stays local", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 8, ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

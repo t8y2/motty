@@ -80,6 +80,12 @@ func (t *Terminal) kittyPop(count int) {
 // flags; with no flags it is exactly EncodeKey.
 func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte {
 	flags &= kittySupportedFlags
+	// A line edit is the Control chord it stands for, so the program gets what
+	// that chord sends in its keyboard mode: a control character, or the kitty
+	// escape code of a program that reports every key.
+	if letter, ok := commandLineEdit(event.Key, event.Modifiers); ok {
+		event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
+	}
 	if flags == 0 {
 		if event.Release {
 			return nil
