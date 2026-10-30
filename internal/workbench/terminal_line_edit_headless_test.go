@@ -8,14 +8,16 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/ui"
 )
 
 // Command+Left, Command+Right and Command+Backspace used to be swallowed as
 // application chords, so a Mac user could not jump to either end of the command
-// line or clear it. They now reach the program as the Control chords they stand
-// for (Ctrl+A, Ctrl+E, Ctrl+U), in whichever keyboard mode the program is in,
-// full-screen programs included. The chords that drive tabs and copying stay
-// local.
+// line or clear it. On macOS they now reach the program as the Control chords
+// they stand for (Ctrl+A, Ctrl+E, Ctrl+U), in whichever keyboard mode the
+// program is in, full-screen programs included. Elsewhere Meta is the Super or
+// Windows key and the chords stay local, as do the chords that drive tabs and
+// copying.
 func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 	const alternateScreen = "\x1b[?1049h"
 	legacy := [3]string{"\x01", "\x05", "\x15"}
@@ -59,13 +61,17 @@ func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 			if err := session.ClickLabel(fmt.Sprintf(state.messages.LabelTerminalFmt, state.sessions[0].Address)); err != nil {
 				t.Fatal(err)
 			}
+			want := test.want
+			if defaultShortcutModifier() != ui.ModifierMeta {
+				want = [3]string{} // no Command key: the chords stay local
+			}
 			for i, chord := range []string{"cmd+left", "cmd+right", "cmd+backspace"} {
 				shell.input = nil
 				if err := session.Keys(chord); err != nil {
 					t.Fatalf("%s: %v", chord, err)
 				}
-				if got := string(shell.input); got != test.want[i] {
-					t.Errorf("%s sent %q, want %q", chord, got, test.want[i])
+				if got := string(shell.input); got != want[i] {
+					t.Errorf("%s sent %q, want %q", chord, got, want[i])
 				}
 			}
 			// Further modifiers and other keys are not line edits: nothing is sent.

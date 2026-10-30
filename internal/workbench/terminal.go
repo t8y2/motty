@@ -997,16 +997,27 @@ func displayCells(value string) int {
 	return cells
 }
 
+// commandLineEditChord reports whether key with modifiers is the Command line
+// edit that reaches the program. Only macOS has a Command key; on Windows and
+// Linux Meta is the Super or Windows key, whose chords stay with the
+// application as they always did.
+func commandLineEditChord(key ui.Key, modifiers ui.Modifiers) bool {
+	if defaultShortcutModifier() != ui.ModifierMeta {
+		return false
+	}
+	return term.IsCommandLineEdit(key, modifiers)
+}
+
 // terminalKey handles a raw key for the terminal of session. Command chords
-// drive the tabs, except the line edits; everything else becomes the bytes a
-// program expects.
+// drive the tabs, except on macOS, where the line edits go to the program;
+// everything else becomes the bytes a program expects.
 func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventResult {
 	t := session.term
 	handled := ui.EventResult{Handled: true}
 	if t.preedit.Composing && event.Key == ui.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() && !term.IsCommandLineEdit(event.Key, event.Modifiers) {
+	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() && !commandLineEditChord(event.Key, event.Modifiers) {
 		return state.commandChord(session, event)
 	}
 	if event.Modifiers == ui.ModifierControl|ui.ModifierShift && event.Text == "c" {
