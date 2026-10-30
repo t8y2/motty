@@ -236,34 +236,37 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 		canvas.RoundedBorder(card, radius.surface, 1.5, pal.accent, ui.Color{})
 	}
 
-	// The avatar and the two lines of text, with the check box at the corner. The
-	// connection's state is a light on the avatar's corner; its words and the
-	// address are in the list view, and a card says the name and who.
+	// The avatar and the two lines of text share the card's vertical center with
+	// the checkbox. The connection's state is a light on the avatar's corner.
 	_, dot := state.hostStatus(host)
 	kind, _ := state.hostLight(host)
-	// The tags go on the second line after the user, as many whole pills as fit the
-	// room left of the check box.
+	// Keep the account and destination together, then show as many whole tag
+	// pills as fit before the checkbox's full interaction region.
 	subtitle := state.hostSubtitle(host)
-	textWidth := card.Width - 14 - 12 - 36 - 12*2 - components.CheckboxExtent(state.Theme())
+	if host.target != "" {
+		subtitle += " · " + host.target
+	}
+	checkWidth, _ := components.CheckboxHitExtent(state.Theme())
+	textWidth := max(card.Width-14-12-36-12*2-checkWidth, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
-	subtitleWidth := canvas.TextWidth(subtitle, 11)
+	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth)
 	if room := textWidth - subtitleWidth - 8; room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
 	var avatar, light flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), card)
-	f.Row().Fill().PadSides(11, 12, 0, 14).Gap(12).Children(func() {
-		f.Stack().Size(36, 36).MarginSides(3, 0, 0, 0).Shrink(0).Children(func() {
+	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(flex.Center).Children(func() {
+		f.Stack().Size(36, 36).Shrink(0).Children(func() {
 			avatar = f.Slot()
 			if kind != lightIdle {
 				light = f.Slot().Size(14, 14).Self(flex.End).MarginSides(0, -5, -5, 0)
 			}
 		})
-		f.Column().Grow(1).Children(func() {
-			f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22)
+		f.Column().Grow(1).Basis(0).Children(func() {
+			f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
 			f.Row().Gap(8).Items(flex.Center).MarginSides(1, 0, 0, 0).Children(func() {
-				f.Text(subtitle).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Width(subtitleWidth + 1).Shrink(0)
+				f.Text(subtitle).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Width(subtitleWidth).Shrink(0).Ellipsis()
 				if tagCount > 0 {
 					f.Row().Gap(5).Shrink(0).Items(flex.Center).Children(func() {
 						for _, tag := range tagList[:tagCount] {
@@ -275,7 +278,7 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 				}
 			})
 		})
-		f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label).MarginSides(1, 0, 0, 0)
+		f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label)
 	})
 	f.End()
 	state.paintHostCatalogIcon(canvas, host, avatar.Rect(), badgeBackground)
