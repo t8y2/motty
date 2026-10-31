@@ -568,6 +568,7 @@ type State struct {
 	sftpColumns            sftpColumnPreferences
 	sftpFilesSettings      sftpFilesSettingsCache
 	sftpDownloadDirectory  string
+	defaultEditor          ExternalEditor // hands remote folders to this computer's editor
 	monitorRect            ui.Rect
 	monitorMenu            bool
 	monitorMenuRect        ui.Rect

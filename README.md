@@ -102,6 +102,11 @@ A native editor opens UTF-8 files up to 1 MiB, hashes the remote file before and
 after staging, and preserves permissions. Servers without SFTP can use the
 built-in SCP fallback.
 
+The panel's more menu can hand the folder it shows to VS Code or Zed through the
+editor's own URL scheme, so the session keeps the SSH config's route, user and
+port. Pick the editor under **Settings > Files**; until one is picked the menu
+item stays hidden.
+
 The attached file panel can follow the SSH terminal's folder automatically for
 Bash and Zsh. **Settings > Files** also offers a separate, default-off switch for
 the terminal to follow file navigation at a ready, empty prompt. See

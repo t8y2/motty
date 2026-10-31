@@ -87,6 +87,10 @@ func (w *sftpWindow) clickFilterControl(id ui.ID) bool {
 			w.activeLocal, w.view.local = local, local
 			folder.filterOpen = !folder.filterOpen
 			return true
+		case sftpWindowHeaderEditor[side]:
+			w.activeLocal, w.view.local = local, local
+			w.owner.openSFTPInEditor(w.view)
+			return true
 		case sftpWindowHidden[side], sftpWindowHeaderHidden[side]:
 			w.activeLocal, w.view.local = local, local
 			folder.showHidden = !folder.showHidden
@@ -131,6 +135,9 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
 	anchor := w.ui.headerAnchor[side]
 	count := 6 + len(folder.history.recent)
+	if label, _ := w.owner.sftpEditorItem(w.view, folder); label != "" {
+		count++
+	}
 	if !local {
 		count++
 	}
@@ -147,6 +154,9 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
 		hiddenIcon, hiddenLabel = iconEye, m.Tools.FilesHideHidden
 	}
 	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderHidden[side], Label: hiddenLabel, Icon: lucideIcons[hiddenIcon], Selected: folder.showHidden})
+	if label, disabled := w.owner.sftpEditorItem(w.view, folder); label != "" {
+		menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderEditor[side], Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
+	}
 	busy := w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected())
 	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {

@@ -61,7 +61,9 @@ import (
 // Version 11 preserves the device-local session-log capture switch: the field
 // lives in the local state object, and an older build's first (full) save would
 // rewrite that object from its typed struct and silently turn capture back on.
-const configFormat = 11
+// Version 12 preserves the device-local default editor for the same reason: an
+// older build's full save would drop the choice and the menu item with it.
+const configFormat = 12
 
 const (
 	kindSetting             = "setting"

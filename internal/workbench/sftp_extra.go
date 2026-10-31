@@ -49,6 +49,9 @@ var (
 	hitSettingsConfigureColumns     = tree.ID(sftpHits, "settings-configure-columns")
 	hitSettingsDownloadDirectory    = tree.ID(sftpHits, "settings-download-directory")
 	hitSettingsDownloadAsk          = tree.ID(sftpHits, "settings-download-ask")
+	hitSettingsEditorNone           = tree.ID(sftpHits, "settings-editor-none")
+	hitSettingsEditorVSCode         = tree.ID(sftpHits, "settings-editor-vscode")
+	hitSettingsEditorZed            = tree.ID(sftpHits, "settings-editor-zed")
 )
 
 var (
@@ -296,6 +299,35 @@ func (state *State) settingsSFTPPanelPositionOptions() [2]components.SegmentOpti
 	}
 }
 
+func (state *State) settingsEditorOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsEditorNone, Label: m.FilesEditorNone},
+		{ID: hitSettingsEditorVSCode, Label: m.FilesEditorVSCode},
+		{ID: hitSettingsEditorZed, Label: m.FilesEditorZed},
+	}
+}
+
+// settingsEditorHits is the segment each editor highlights. A saved value that is
+// not in it is one this build does not know: nothing is then highlighted, so the
+// row cannot claim an editor that will not be used.
+var settingsEditorHits = map[ExternalEditor]ui.ID{
+	editorNone:   hitSettingsEditorNone,
+	editorVSCode: hitSettingsEditorVSCode,
+	editorZed:    hitSettingsEditorZed,
+}
+
+func (state *State) settingsEditorSelected() ui.ID {
+	return settingsEditorHits[state.defaultEditor]
+}
+
+func (state *State) settingsEditorDescription() string {
+	if _, known := settingsEditorHits[state.defaultEditor]; known {
+		return state.messages.Tools.FilesEditorDescription
+	}
+	return fmt.Sprintf(state.messages.Tools.FilesEditorUnknownFmt, state.defaultEditor)
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
 	position := state.settingsSFTPPanelPositionOptions()
@@ -317,6 +349,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 		selectedParallel = hitSettingsParallel4
 	}
 	downloadDescription, downloadActions := state.sftpFilesDownloadSetting()
+	editors := state.settingsEditorOptions()
 	page.groups(func() {
 		page.group("", func() {
 			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
@@ -326,6 +359,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
 				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
 			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
+			page.row(m.FilesEditor, state.settingsEditorDescription(), editors[:], state.settingsEditorSelected())
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
 			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
 			page.toggleRow(m.FilesTerminalFollow, m.FilesTerminalFollowDescription, state.sftpTerminalFollow, hitSettingsTerminalFollowToggle)
@@ -386,6 +420,13 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 		state.sftpDownloadDirectory = ""
 		state.status = state.messages.Tools.FilesDownloadAskSaved
 		state.save()
+	case hitSettingsEditorNone, hitSettingsEditorVSCode, hitSettingsEditorZed:
+		for editor, hit := range settingsEditorHits {
+			if hit == id && state.defaultEditor != editor {
+				state.defaultEditor = editor
+				state.save()
+			}
+		}
 	case hitSettingsKeepTimesToggle:
 		state.sftpKeepTimesOff = !state.sftpKeepTimesOff
 		state.applySFTPSettings()

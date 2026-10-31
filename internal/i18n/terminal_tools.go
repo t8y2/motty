@@ -294,6 +294,16 @@ type ToolsMessages struct {
 	FilesFollowSetupDescription     string
 	FilesFollowSetupCopy            string
 	FilesFollowSetupCopied          string
+	FilesEditor                     string
+	FilesEditorDescription          string
+	FilesEditorNone                 string
+	FilesEditorVSCode               string
+	FilesEditorZed                  string
+	FilesEditorUnknownFmt           string
+	FilesEditorOpenFmt              string
+	FilesEditorOpenFailedTitleFmt   string
+	FilesEditorOpenFailedFmt        string
+	FilesEditorPortFmt              string
 	TipNewLink                      string
 	LinkTitle                       string
 	LinkName                        string

@@ -13,6 +13,7 @@ var sameInEveryLanguage = map[string]bool{
 	"FieldDevicePlaceholder": true, "FieldLinePlaceholder": true, "FlowHardware": true, "FlowSoftware": true,
 	"AlgoCustomPlaceholder": true, "RemoteColPID": true, "RemoteColCPU": true, "RemoteColID": true, "RemoteTabCompose": true,
 	"CatMCP": true, "SyncConfigure": true, "SyncConfigureS3": true, "SyncConfigureGist": true,
+	"FilesEditorVSCode": true, "FilesEditorZed": true,
 }
 
 // The terminal tools' texts sit in a nested struct that the catalog-wide test
