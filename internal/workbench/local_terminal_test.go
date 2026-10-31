@@ -3,12 +3,14 @@ package workbench
 import (
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 )
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
@@ -68,6 +70,28 @@ func TestLocalTerminalRunsAShellOnThisComputerWithoutDialing(t *testing.T) {
 	}
 	session.term.send([]byte("echo local-$((20+22))\n"))
 	localShellOutput(t, state, session, "local-42")
+}
+
+func TestLocalTerminalNetworkProxyEnvironment(t *testing.T) {
+	direct := newLocalConn("", networkProxyDirect)
+	direct.lookupSystemProxy = func() systemproxy.Settings {
+		t.Fatal("direct mode read the system proxy")
+		return systemproxy.Settings{}
+	}
+	if got, want := direct.shellConfig(sshconn.ShellConfig{}, "windows").Env, systemproxy.Environment(systemproxy.Settings{}); !slices.Equal(got, want) {
+		t.Fatalf("direct environment = %q, want %q", got, want)
+	}
+
+	system := newLocalConn("", networkProxySystem)
+	called := false
+	proxy := systemproxy.Settings{HTTP: "http://127.0.0.1:10808", HTTPS: "http://127.0.0.1:10808", Bypass: "localhost"}
+	system.lookupSystemProxy = func() systemproxy.Settings {
+		called = true
+		return proxy
+	}
+	if got, want := system.shellConfig(sshconn.ShellConfig{}, "windows").Env, systemproxy.Environment(proxy); !called || !slices.Equal(got, want) {
+		t.Fatalf("system environment = %q, want %q; lookup called = %v", got, want, called)
+	}
 }
 
 func TestLocalTerminalOffersNoRemoteOnlyTools(t *testing.T) {

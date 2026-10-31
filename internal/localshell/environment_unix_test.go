@@ -4,7 +4,9 @@ package localshell
 
 import (
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestShellLocaleFillsOnlyAnEnvironmentThatNamesNoLocale(t *testing.T) {
@@ -25,4 +27,26 @@ func TestShellLocaleFillsOnlyAnEnvironmentThatNamesNoLocale(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShellEnvironmentOverridesInheritedValue(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://inherited:8080")
+	shell, err := Start(Config{Shell: "/bin/sh", Args: []string{"-c", `printf 'proxy=%s' "$HTTP_PROXY"`}, Env: []string{"HTTP_PROXY="}, Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shell.Close()
+	var output []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		output = shell.Drain(output)
+		if strings.Contains(string(output), "proxy=") {
+			if strings.TrimSpace(string(output)) != "proxy=" {
+				t.Fatalf("output = %q", output)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("no proxy output: %q", output)
 }

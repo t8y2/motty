@@ -95,11 +95,12 @@ func TestWSLStartDirectoryIsOnlyAWayTheDistributionCanReach(t *testing.T) {
 }
 
 func TestSharedEnvironmentKeepsWhatTheUserShares(t *testing.T) {
-	if got := wslShared(""); got != "TERM:COLORTERM:"+WSLDirectoryVariable {
+	shared := strings.Join(wslEnvironmentVariables, ":")
+	if got := wslShared(""); got != shared {
 		t.Fatalf("empty WSLENV became %q", got)
 	}
 	got := wslShared("GOPATH/l:term/u::")
-	if got != "GOPATH/l:term/u:COLORTERM:"+WSLDirectoryVariable {
+	if got != "GOPATH/l:term/u:"+strings.Join(wslEnvironmentVariables[1:], ":") {
 		t.Fatalf("WSLENV became %q", got)
 	}
 }
@@ -118,7 +119,7 @@ func TestWSLLaunchGivesWslExeOnlyArgumentsItCannotMisread(t *testing.T) {
 	if strings.ContainsAny(line, "\"\\\n\r\t") {
 		t.Fatalf("the command line has a character wsl.exe may re-split: %q", line)
 	}
-	if !slices.Contains(env, WSLDirectoryVariable+"=/home/me/my project") || !slices.Contains(env, "WSLENV=KEEP/p:TERM:COLORTERM:"+WSLDirectoryVariable) {
+	if !slices.Contains(env, WSLDirectoryVariable+"=/home/me/my project") || !slices.Contains(env, "WSLENV=KEEP/p:"+strings.Join(wslEnvironmentVariables, ":")) {
 		t.Fatalf("env = %q", env)
 	}
 }
@@ -141,7 +142,7 @@ func TestWSLCommandLineDecodesToTheScriptWithItsShellStateRestored(t *testing.T)
 
 func TestWSLLaunchWithoutAScriptStartsTheDistributionsOwnShell(t *testing.T) {
 	_, args, env := wslLaunch("wsl.exe", Config{Dir: `C:\Users\me`}, "Debian", "")
-	if !slices.Equal(args, []string{"-d", "Debian", "--cd", `C:\Users\me`}) || len(env) != 0 {
+	if !slices.Equal(args, []string{"-d", "Debian", "--cd", `C:\Users\me`}) || !slices.Contains(env, "WSLENV="+strings.Join(wslEnvironmentVariables, ":")) {
 		t.Fatalf("args = %q, env = %q", args, env)
 	}
 	_, args, _ = wslLaunch("wsl.exe", Config{Dir: `\\server\share`}, "Debian", "")

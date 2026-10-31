@@ -189,6 +189,8 @@ var (
 	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
 	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
 	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -535,6 +537,7 @@ type State struct {
 	options             Options
 	appearance          appearance
 	appearanceMode      appearanceMode
+	networkProxy        networkProxyMode
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	localShell          string // executable on this computer; empty uses the platform default
