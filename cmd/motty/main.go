@@ -70,6 +70,21 @@ func main() {
 	// Only the copy that owns the data directory writes its files.
 	startLogging()
 	defer stopLogging()
+	// The first run unpacks the bundled community schemes into the data folder
+	// for the user to keep or trim; a directory that already holds schemes is
+	// left alone. The current location is empty for a copy in the usual place,
+	// which is then the default one.
+	seedDir := datadir.Current().Dir
+	if seedDir == "" {
+		if dir, err := defaultDataDir(); err == nil {
+			seedDir = dir
+		}
+	}
+	if seeded, err := workbench.SeedSchemesDir(seedDir); err != nil {
+		log.Printf("motty: unpacking the community color schemes: %v", err)
+	} else if seeded > 0 {
+		log.Printf("motty: unpacked %d community color schemes", seeded)
+	}
 	if len(args) > 0 {
 		windows.launch(args)
 	}

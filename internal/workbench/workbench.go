@@ -635,7 +635,16 @@ type State struct {
 	// terminalSchemes is the terminal color scheme of each look, indexed by
 	// appearance: the terminal follows the window between light and dark.
 	terminalSchemes [2]string
-	terminalPad     terminalPad
+	// dirSchemes are the schemes the data folder's schemes directory adds to
+	// the built-ins, sorted by name, and dirSchemeIndex finds one by id.
+	dirSchemes     []colorScheme
+	dirSchemeIndex map[string]int
+	// schemeFilter is the text of the schemes section's search box.
+	schemeFilter text.Editor
+	// schemesExpandedDark and schemesExpandedLight say a group of the schemes
+	// section shows all its cards instead of the first few. View state, not kept.
+	schemesExpandedDark, schemesExpandedLight bool
+	terminalPad                               terminalPad
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter
@@ -841,6 +850,10 @@ func New(options Options) *State {
 	state.recompileHighlights()
 	state.initKnownHosts()
 	state.initSecrets()
+	// The schemes directory is read before the saved state: its scheme ids
+	// name the directory's files too.
+
+	state.loadDirSchemes()
 
 	state.starting = true
 	state.configDefaults = defaultsOf(state.snapshot())
@@ -1012,6 +1025,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 		if hit == hitSettingsSearch && state.activeSection == sectionSettings {
 			return &state.settings.search
+		}
+		if hit == hitSchemeSearch && state.activeSection == sectionSettings {
+			return &state.schemeFilter
 		}
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search

@@ -82,10 +82,16 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		state.toggleBroadcast()
 	case id.Scope() == hitSettingsSchemeList:
 		index := item(id)
-		schemeID, _, _ := state.schemeAt(index)
-		if state.setTerminalScheme(schemeID) {
-			state.save()
+		if index < schemeCount+len(state.dirSchemes) {
+			schemeID, _, _ := state.schemeAt(index)
+			if state.setTerminalScheme(schemeID) {
+				state.save()
+			}
 		}
+	case id == hitSchemeShowAllDark:
+		state.schemesExpandedDark = !state.schemesExpandedDark
+	case id == hitSchemeShowAllLight:
+		state.schemesExpandedLight = !state.schemesExpandedLight
 	case id == hitSettingsHighlightToggle:
 		if state.setBuiltinHighlight(state.highlighting.builtinOff) {
 			state.save()
