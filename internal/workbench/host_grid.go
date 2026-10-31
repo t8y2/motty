@@ -240,12 +240,10 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	// the checkbox. The connection's state is a light on the avatar's corner.
 	_, dot := state.hostStatus(host)
 	kind, _ := state.hostLight(host)
-	// Keep the account and destination together, then show as many whole tag
-	// pills as fit before the checkbox's full interaction region.
-	subtitle := state.hostSubtitle(host)
-	if host.target != "" {
-		subtitle += " · " + host.target
-	}
+	// Keep the account and the destination on one line, each named once, then
+	// show as many whole tag pills as fit before the checkbox's full interaction
+	// region.
+	subtitle := state.hostCardConnection(host)
 	checkWidth, _ := components.CheckboxHitExtent(state.Theme())
 	textWidth := max(card.Width-14-12-36-12*2-checkWidth, 0)
 	tagCount := 0
@@ -287,4 +285,25 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 		canvas.Rounded(corner, corner.Width/2, background)
 		paintLight(canvas, corner.X+corner.Width/2, corner.Y+corner.Height/2, kind, dot, background)
 	}
+}
+
+// hostCardConnection is the card's second line: the account and the destination,
+// each named once. A desktop target already spells its protocol, and a VNC host
+// reached over SSH already carries its account, so those take the target as it
+// is; a serial line has no account at all and its target holds the device and
+// its settings. Only a bare destination, an SSH or telnet address, takes the
+// login in front of it.
+func (state *State) hostCardConnection(host Host) string {
+	switch {
+	case host.target == "":
+		return state.hostSubtitle(host)
+	case host.Protocol == protocolSerial, host.Protocol == protocolVNC:
+		return host.target
+	case host.Protocol == protocolRDP:
+		if host.User == "" {
+			return host.target
+		}
+		return host.User + " · " + host.target
+	}
+	return state.hostSubtitle(host) + " · " + host.target
 }
