@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -31,7 +32,17 @@ func startBackend(config Config) (backend, error) {
 		}
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
-	cmd.Env = append(cmd.Env, config.Env...)
+	for _, entry := range config.Env {
+		key, _, _ := strings.Cut(entry, "=")
+		filtered := cmd.Env[:0]
+		for _, inherited := range cmd.Env {
+			name, _, _ := strings.Cut(inherited, "=")
+			if name != key {
+				filtered = append(filtered, inherited)
+			}
+		}
+		cmd.Env = append(filtered, entry)
+	}
 	cmd.Env = withUTF8Locale(cmd.Env)
 	size := &pty.Winsize{Cols: uint16(max(config.Cols, 1)), Rows: uint16(max(config.Rows, 1))}
 	master, err := pty.StartWithSize(cmd, size)

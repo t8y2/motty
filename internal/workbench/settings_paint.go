@@ -364,6 +364,11 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 	case restoreConnectAll:
 		selectedRestore = hitSettingsRestoreAll
 	}
+	selectedNetworkProxy := hitSettingsNetworkDirect
+	if state.networkProxy == networkProxySystem {
+		selectedNetworkProxy = hitSettingsNetworkSystem
+	}
+	networkProxy := state.settingsNetworkProxyOptions()
 	page.groups(func() {
 		page.group("", func() {
 			page.row(messages.SettingsConnectionTimeout, messages.SettingsConnectionTimeoutDescription, timeout[:], selectedTimeout)
@@ -372,6 +377,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			page.toggleRow(messages.SettingsShare, messages.SettingsShareDescription, state.shareConnections != shareConnectionsOff, hitSettingsShareToggle)
 			page.row(messages.SettingsRestore, messages.SettingsRestoreDescription, restore[:], selectedRestore)
 			state.paintSSHAgentRow(page)
+			page.row(messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, networkProxy[:], selectedNetworkProxy)
 			state.paintOutboundProxyRow(page)
 		})
 		state.paintSSHSyncSettings(page)

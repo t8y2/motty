@@ -170,7 +170,11 @@ func wslStartDirectory(dir, distro string) string {
 
 // wslEnvironmentVariables are the variables WSL is told to carry into the
 // distribution, besides the ones the user already shares.
-var wslEnvironmentVariables = []string{"TERM", "COLORTERM", WSLDirectoryVariable}
+var wslEnvironmentVariables = []string{
+	"TERM", "COLORTERM", WSLDirectoryVariable,
+	"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+	"http_proxy", "https_proxy", "all_proxy", "no_proxy",
+}
 
 // wslShared is WSLENV with the variables a Motty shell needs added, keeping
 // whatever the user already shares and its translation flags.
@@ -210,25 +214,25 @@ func wslCommandLine(script string) string {
 // exe: its arguments, and the environment to add to the process's own.
 func wslLaunch(exe string, config Config, distro, inheritedWSLENV string) (program string, args, env []string) {
 	args = []string{"-d", distro}
+	env = append(env, "WSLENV="+wslShared(inheritedWSLENV))
 	cd := wslStartDirectory(config.Dir, distro)
 	switch {
 	case len(config.Args) > 0:
 		// An explicit command runs as given, without the integration.
 		args = append(args, "--cd", "~", "-e")
 		args = append(args, config.Args...)
-		return exe, args, nil
+		return exe, args, env
 	case config.WSLScript == "":
 		// No script: the distribution's own login shell, started where asked
 		// when that is a place wsl.exe takes as a Windows or a Linux path.
 		if cd == "" {
 			cd = "~"
 		}
-		return exe, append(args, "--cd", cd), nil
+		return exe, append(args, "--cd", cd), env
 	}
 	args = append(args, "--cd", "~", "-e", "/bin/sh", "-c", wslCommandLine(config.WSLScript), "sh")
 	if cd != "" {
 		env = append(env, WSLDirectoryVariable+"="+cd)
 	}
-	env = append(env, "WSLENV="+wslShared(inheritedWSLENV))
 	return exe, args, env
 }

@@ -466,7 +466,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		if shell == "" {
 			shell = state.localShell
 		}
-		conn := newLocalConn(shell)
+		conn := newLocalConn(shell, state.networkProxy)
 		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
 		session.conn = conn
 		state.finishStartingConnection(session, automatic)

@@ -29,9 +29,9 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			}, []ui.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
 				hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
 			{settingsConnection, []string{
-				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect,
+				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
 			}, []ui.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
-				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll}},
+				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect}},
 		} {
 			state.selectSettingsCategory(category.category)
 			// Tall enough for the whole category; a short window scrolls instead.
@@ -106,8 +106,14 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
 	state.Click(hitSettings)
+	if state.networkProxy != networkProxyDirect {
+		t.Fatalf("default network proxy = %v", state.networkProxy)
+	}
 	state.Click(hitSettingsLanguageChinese)
 	state.Click(hitSettingsAppearanceLight)
+	state.selectSettingsCategory(settingsConnection)
+	state.Click(hitSettingsNetworkSystem)
+	state.selectSettingsCategory(settingsTerminal)
 	state.Click(hitSettingsOptionMeta)
 	for range 4 {
 		state.Click(hitSettingsFontSizeUp)
@@ -124,6 +130,9 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	}
 	if state.appearance != appearanceLight || state.Theme().Background != lightPalette.workspace {
 		t.Fatalf("appearance=%v theme=%+v", state.appearance, state.Theme())
+	}
+	if state.networkProxy != networkProxySystem {
+		t.Fatalf("network proxy = %v", state.networkProxy)
 	}
 	if state.terminalOption != terminalOptionMeta {
 		t.Fatalf("terminal option=%v", state.terminalOption)
@@ -148,6 +157,9 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	first.Click(hitSettings)
 	first.Click(hitSettingsLanguageChinese)
 	first.Click(hitSettingsAppearanceLight)
+	first.selectSettingsCategory(settingsConnection)
+	first.Click(hitSettingsNetworkSystem)
+	first.selectSettingsCategory(settingsTerminal)
 	first.Click(hitSettingsOptionMeta)
 	first.Click(hitSettingsFontSizeUp)
 	first.Click(hitSettingsFontSizeUp)
@@ -163,13 +175,13 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	if err != nil || report.outcome != loadOK {
 		t.Fatalf("load saved settings: outcome=%d err=%v", report.outcome, err)
 	}
-	if saved.TerminalOption != "meta" || saved.TerminalFontSize != 15 || saved.TerminalFontFace != "classic" || saved.TerminalScrollback != 10000 || saved.ConnectionTimeoutSeconds != 5 || saved.ConnectionKeepAliveSeconds != 30 || saved.ConnectionReconnect != "three" || saved.TerminalClipboard != "block" || saved.Workspace != "settings" {
+	if saved.NetworkProxy != "system" || saved.TerminalOption != "meta" || saved.TerminalFontSize != 15 || saved.TerminalFontFace != "classic" || saved.TerminalScrollback != 10000 || saved.ConnectionTimeoutSeconds != 5 || saved.ConnectionKeepAliveSeconds != 30 || saved.ConnectionReconnect != "three" || saved.TerminalClipboard != "block" || saved.Workspace != "settings" {
 		t.Fatalf("saved settings=%+v", saved)
 	}
 
 	second := newTestState(t, options)
 	if second.activeSection != sectionSettings || second.language != i18n.Chinese ||
-		second.appearance != appearanceLight || second.terminalOption != terminalOptionMeta || second.terminalFontSize != 15 || second.terminalFontFace != ui.MonoClassic || second.terminalScrollback != 10000 || second.connectionTimeout != 5*time.Second || second.connectionKeepAlive != 30*time.Second || second.connectionReconnect != reconnectThree || second.terminalClipboard != terminalClipboardBlock {
+		second.appearance != appearanceLight || second.networkProxy != networkProxySystem || second.terminalOption != terminalOptionMeta || second.terminalFontSize != 15 || second.terminalFontFace != ui.MonoClassic || second.terminalScrollback != 10000 || second.connectionTimeout != 5*time.Second || second.connectionKeepAlive != 30*time.Second || second.connectionReconnect != reconnectThree || second.terminalClipboard != terminalClipboardBlock {
 		t.Fatalf("restored section=%d language=%v appearance=%v option=%v size=%v face=%v scrollback=%d timeout=%v keepalive=%v", second.activeSection, second.language, second.appearance, second.terminalOption, second.terminalFontSize, second.terminalFontFace, second.terminalScrollback, second.connectionTimeout, second.connectionKeepAlive)
 	}
 }
@@ -213,6 +225,7 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		from, to ui.ID
 		check    func() bool
 	}{
+		{hitSettingsNetworkSystem, hitSettingsNetworkDirect, func() bool { return state.networkProxy == networkProxyDirect }},
 		{hitSettingsPadNormal, hitSettingsPadRoomy, func() bool { return state.terminalPad == padRoomy }},
 		{hitSettingsScrollback5000, hitSettingsScrollback10000, func() bool { return state.terminalScrollback == 10000 }},
 		{hitSettingsTimeout10, hitSettingsTimeout30, func() bool { return state.connectionTimeout == 30*time.Second }},

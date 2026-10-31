@@ -14,6 +14,7 @@ import (
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 )
 
 // errLocalOnly is what the remote-only capabilities say to a local terminal.
@@ -27,14 +28,19 @@ const localHostID = ^uint32(0)
 // credentials to ask for, and a shell on this machine instead of a remote one.
 // Everything that needs a server (files, forwarding, commands) refuses.
 type localConn struct {
-	mu     sync.Mutex
-	status sshconn.Status
-	dir    string
-	shell  string
+	mu                sync.Mutex
+	status            sshconn.Status
+	dir               string
+	shell             string
+	networkProxy      networkProxyMode
+	lookupSystemProxy func() systemproxy.Settings
 }
 
-func newLocalConn(shell string) *localConn {
-	return &localConn{status: sshconn.Status{Version: 1, Phase: sshconn.PhaseConnected, Method: "local"}, shell: shell}
+func newLocalConn(shell string, networkProxy networkProxyMode) *localConn {
+	return &localConn{
+		status: sshconn.Status{Version: 1, Phase: sshconn.PhaseConnected, Method: "local"}, shell: shell,
+		networkProxy: networkProxy, lookupSystemProxy: systemproxy.Lookup,
+	}
 }
 
 func (conn *localConn) Status() sshconn.Status {
@@ -59,6 +65,11 @@ func (conn *localConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 // reporting the shell supports there.
 func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) localshell.Config {
 	shell := localshell.Config{Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows, Dir: conn.dir, Notify: config.Notify}
+	proxy := systemproxy.Settings{}
+	if conn.networkProxy == networkProxySystem && conn.lookupSystemProxy != nil {
+		proxy = conn.lookupSystemProxy()
+	}
+	shell.Env = systemproxy.Environment(proxy)
 	if config.IntegrateShell && goos == "windows" {
 		shell.DirectoryToken = config.IntegrationToken
 		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
