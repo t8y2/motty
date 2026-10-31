@@ -32,8 +32,19 @@ var (
 	hitDocumentCancel          = tree.ID(documentHits, "cancel")
 	hitDocumentDiscard         = tree.ID(documentHits, "discard")
 	hitDocumentSaveClose       = tree.ID(documentHits, "save-close")
+	hitDocumentSaveMenu        = tree.ID(documentHits, "save-menu")
+	hitDocumentSaveMenuDismiss = tree.ID(documentHits, "save-menu-dismiss")
+	hitDocumentCompare         = tree.ID(documentHits, "compare")
+	hitDocumentSaveDirect      = tree.ID(documentHits, "save-direct")
+	hitDocumentReturnToEdit    = tree.ID(documentHits, "return-to-edit")
+	hitDocumentCompareRetry    = tree.ID(documentHits, "compare-retry")
+	hitDocumentConfirmUpload   = tree.ID(documentHits, "confirm-upload")
+	hitDocumentUploadConfirm   = tree.ID(documentHits, "upload-confirm")
 	hitDocumentLocation        = tree.ID(documentHits, "location")
 	hitDocumentStatus          = tree.ID(documentHits, "status")
+	hitDocumentDiffScroll      = tree.ID(documentHits, "diff-scroll-v")
+	hitDocumentDiffScrollX     = tree.ID(documentHits, "diff-scroll-h")
+	hitDocumentDiffViewport    = tree.ID(documentHits, "diff-viewport")
 )
 
 type fileDocumentUI struct {
@@ -41,10 +52,14 @@ type fileDocumentUI struct {
 	highlighter                               func(string, string, []components.CodeEditorRun) []components.CodeEditorRun
 	frame                                     flex.View
 	code                                      components.CodeEditor
+	diff                                      components.CodeDiff
 	input                                     app.TextInput
 	editorBounds, encodingBounds, imageBounds ui.Rect
 	size                                      ui.Size
 	menu                                      components.MenuScroll
+	saveMenu                                  components.MenuScroll
+	saveMenuOpen                              bool
+	saveAnchor                                ui.Rect
 	zoom                                      float32
 	scale                                     float32
 	pan                                       ui.Point
@@ -64,7 +79,7 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
 	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	var content, encoding flex.Box
+	var content, encoding, save flex.Box
 	f := d.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {
 		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
@@ -88,11 +103,20 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 			}
 			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy)
 			if d.image == nil {
-				f.Button(hitDocumentSave, m.Save).Small().Disabled(d.busy || !d.ready || !d.dirty())
+				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
+				if d.local {
+					f.Button(hitDocumentSave, m.Save).Small().Disabled(disabled)
+				} else {
+					save = f.Slot().Width(112).Height(32)
+				}
 			}
 		})
 	})
 	f.End()
+	d.ui.saveAnchor = ui.Rect{}
+	if d.image == nil && !d.local {
+		d.ui.saveAnchor = save.Rect()
+	}
 	if d.image != nil {
 		d.ui.imageBounds = content.Rect()
 		d.ui.imageGeometry = components.PaintImageView(canvas, theme, content.Rect(), components.ImageViewOptions{
@@ -116,11 +140,85 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 		d.ui.code.Paint(canvas, theme, content.Rect(), snapshot)
 		d.paintEncoding(canvas)
 	}
+	if d.image == nil && !d.local {
+		d.paintDocumentSave(canvas)
+		d.paintSaveMenu(canvas)
+	}
 	if d.confirm != "" {
 		d.paintConfirmation(canvas)
 	}
 	d.notices.paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	d.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+}
+
+func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
+	canvas.SetTree(&tree)
+	if id, ok := canvas.ClickTarget(); ok {
+		canvas.AfterPaint(func() { d.clickComparison(id) })
+	}
+	uiState := &d.comparison.ui
+	uiState.size = size
+	uiState.scale = canvas.PixelScale()
+	if uiState.highlighter == nil {
+		uiState.highlighter = d.highlight
+	}
+	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	var content flex.Box
+	f := uiState.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
+	f.Column().Fill().Pad(12).Gap(8).Children(func() {
+		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
+			HitWith(hitDocumentLocation, d.name, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+		if d.problem != "" {
+			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
+		}
+		f.Row().Height(28).Gap(10).Items(flex.Center).Children(func() {
+			f.Text(m.ServerVersion).Grow(1).FontSize(theme.Metrics.FontSizeS).Weight(ui.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+			f.Text(fmt.Sprintf(m.CompareAddedRemoved, d.comparison.result.Stats.Added, d.comparison.result.Stats.Removed)).
+				FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
+			f.Text(m.LocalVersion).Grow(1).TextEnd().FontSize(theme.Metrics.FontSizeS).Weight(ui.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+		})
+		if d.comparison.result.Stats.Coarse {
+			f.Text(m.CompareCoarse).FontSize(theme.Metrics.FontSizeS).Color(d.owner.pal.warning).Ellipsis()
+		}
+		content = f.Slot().Grow(1).MinHeight(64)
+		f.Row().Height(32).Gap(8).Items(flex.Center).Children(func() {
+			status := d.comparisonStatus()
+			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+				HitWith(hitDocumentStatus, status, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: status})
+			if d.comparison.conflict {
+				f.Button(hitDocumentCompareRetry, m.CompareRetry).Small().Outline().Disabled(d.busy)
+			}
+			f.Button(hitDocumentReturnToEdit, m.ReturnToEdit).Small().Outline().Disabled(d.busy || d.comparison.saving)
+			f.Button(hitDocumentConfirmUpload, m.Save).Small().Disabled(!d.canUploadComparison())
+		})
+	})
+	f.End()
+
+	uiState.editorBounds = content.Rect()
+	value := d.editor.String()
+	selection := d.editor.Selection()
+	focused := canvas.Focused() == hitDocumentInput
+	snapshot := components.CodeDiffSnapshot{
+		Result: d.comparison.result, ID: hitDocumentInput, Label: m.DiffLabel,
+		Value: value, Language: documentLanguage(d.name), Highlight: uiState.highlighter,
+		AddedColor: theme.Success, RemovedColor: theme.Danger,
+		Disabled: d.busy || d.comparison.loading || d.comparison.confirm, Focused: focused,
+		ShowCaret:      selection.Start == selection.End,
+		Caret:          aiByteOffset(value, d.editor.Caret()),
+		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
+		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
+		ViewportID: hitDocumentDiffViewport,
+	}
+	if marked, ok := d.editor.Composition(); ok {
+		snapshot.CompositionStart = aiByteOffset(value, marked.Start)
+		snapshot.CompositionEnd = aiByteOffset(value, marked.End)
+	}
+	uiState.diff.Paint(canvas, theme, content.Rect(), snapshot)
+	if d.comparison.confirm {
+		d.paintComparisonConfirmation(canvas)
+	}
+	uiState.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 }
 
 func (d *fileDocument) footerStatus() string {
@@ -149,6 +247,71 @@ func (d *fileDocument) footerStatus() string {
 		return ending
 	}
 	return ending + " · " + status
+}
+
+func (d *fileDocument) comparisonStatus() string {
+	m := d.owner.messages.FileWindow
+	switch {
+	case d.comparison.saving:
+		return m.SavingChanges
+	case d.comparison.loading:
+		return m.Comparing
+	case d.comparison.conflict:
+		return m.CompareConflict
+	case d.comparison.oversized:
+		return m.CompareLimit
+	case d.comparison.pending:
+		return m.CompareUpdating
+	case d.comparison.result.Stats.Added+d.comparison.result.Stats.Removed == 0:
+		return m.CompareEqual
+	default:
+		return m.CompareReady
+	}
+}
+
+func (d *fileDocument) paintDocumentSave(canvas *ui.Canvas) {
+	area := d.ui.saveAnchor
+	if area.Width < 64 || area.Height <= 0 {
+		return
+	}
+	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
+	components.BeginSplitButton(canvas, theme, area, components.SplitButtonOptions{
+		PrimaryID: hitDocumentSave, MenuID: hitDocumentSaveMenu,
+		Label: m.Save, MenuLabel: m.SaveOptions, MenuHint: m.CompareSave,
+		Icon: lucideIcons[iconChevronDown], Variant: components.ButtonDefault,
+		Size: components.ButtonSizeSmall, TriggerWidth: 32,
+		Open: d.ui.saveMenuOpen, Disabled: disabled,
+	}).Paint()
+	d.ui.saveAnchor = area
+}
+
+func (d *fileDocument) paintSaveMenu(canvas *ui.Canvas) {
+	if !d.ui.saveMenuOpen || d.ui.saveAnchor.Width <= 0 {
+		return
+	}
+	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	width := float32(184)
+	height := float32(40)
+	anchor := d.ui.saveAnchor
+	viewport := ui.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}
+	bounds, side := components.PlaceOverlay(anchor, ui.Size{Width: width, Height: height}, viewport, components.OverlayPlacement{
+		Side: components.OverlayBottom, Align: components.OverlayAlignEnd, SideOffset: 4, Margin: 8,
+	})
+	menu := components.BeginDropdownMenu(canvas, theme, bounds, components.DropdownMenuOptions{
+		Layer: popupLayer, Scope: hitDocumentSaveMenuDismiss, DismissID: hitDocumentSaveMenuDismiss,
+		ID: hitDocumentSaveMenu, Side: side, Viewport: viewport, Scroll: &d.ui.saveMenu,
+	})
+	menu.AddItem(components.DropdownMenuItem{ID: hitDocumentCompare, Label: m.CompareSave, Icon: lucideIcons[iconColumns2]})
+	menu.End()
+}
+
+func (d *fileDocument) paintComparisonConfirmation(canvas *ui.Canvas) {
+	m, theme := d.owner.messages.FileWindow, d.owner.Theme()
+	viewport := ui.Rect{Width: d.comparison.ui.size.Width, Height: d.comparison.ui.size.Height}
+	components.BeginAlertDialog(canvas, theme, viewport, components.AlertDialogOptions{
+		Layer: dialogLayer, Scope: dialogScope, ActionID: hitDocumentUploadConfirm, CancelID: hitDocumentCancel, InitialFocusID: hitDocumentCancel,
+	}).Paint(m.SaveConfirmFinalTitle, m.SaveConfirmFinalDescription, m.Save, m.Cancel)
 }
 
 func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
@@ -186,6 +349,16 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 		components.BeginAlertDialog(canvas, theme, viewport, components.AlertDialogOptions{Layer: dialogLayer, Scope: dialogScope, ActionID: hitDocumentDiscard, CancelID: hitDocumentCancel, ActionVariant: components.ButtonDestructive, InitialFocusID: hitDocumentCancel}).Paint(m.ConfirmTitle, m.ConfirmReload, m.Discard, m.Cancel)
 		return
 	}
+	if d.confirm == "save" {
+		dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: ui.Size{Width: 500}, FitBody: true}).WithoutCloseButton()
+		layout := dialog.Begin(m.SaveConfirmTitle, m.SaveConfirmDescription)
+		dialog.Actions(layout,
+			components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitDocumentSaveDirect, Label: m.SaveDirect},
+		)
+		dialog.End()
+		return
+	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: ui.Size{Width: 460}, FitBody: true}).WithoutCloseButton()
 	layout := dialog.Begin(m.ConfirmTitle, m.ConfirmClose)
 	dialog.Actions(layout,
@@ -199,15 +372,31 @@ func (d *fileDocument) click(id ui.ID) {
 	if d.notices.click(id) {
 		return
 	}
+	if d.ui.saveMenuOpen {
+		switch id {
+		case hitDocumentSaveMenuDismiss:
+			d.ui.saveMenuOpen = false
+		case hitDocumentCompare:
+			d.ui.saveMenuOpen = false
+			d.beginComparison()
+		}
+		return
+	}
 	if d.confirm != "" {
 		switch id {
 		case hitDocumentCancel:
 			d.confirm = ""
+			d.confirmCloseAfter = false
 			d.allowClose = nil
 			d.afterClosed = nil
 			d.closeAfter = false
 		case hitDocumentSaveClose:
-			d.save(true)
+			d.saveDirect(true)
+		case hitDocumentSaveDirect:
+			closeAfter := d.confirmCloseAfter
+			d.confirm = ""
+			d.confirmCloseAfter = false
+			d.saveDirect(closeAfter)
 		case hitDocumentDiscard:
 			if d.confirm == "reload" {
 				d.reload()
@@ -219,7 +408,13 @@ func (d *fileDocument) click(id ui.ID) {
 	}
 	switch {
 	case id == hitDocumentSave:
-		d.save(false)
+		d.requestSave(false)
+	case id == hitDocumentSaveMenu:
+		if !d.busy && d.ready && d.dirty() && !d.comparison.active {
+			d.ui.saveMenuOpen = !d.ui.saveMenuOpen
+			d.ui.saveMenu = components.MenuScroll{}
+			d.encodingOpen = false
+		}
 	case id == hitDocumentReload:
 		if d.dirty() {
 			d.confirm = "reload"
@@ -256,6 +451,60 @@ func (d *fileDocument) click(id ui.ID) {
 	}
 }
 
+func (d *fileDocument) clickComparison(id ui.ID) {
+	if d.comparison.confirm {
+		switch id {
+		case hitDocumentCancel:
+			d.comparison.confirm = false
+			d.comparison.ui.tooltip = components.HoverTooltip{}
+		case hitDocumentUploadConfirm:
+			d.uploadComparison()
+		}
+		return
+	}
+	switch id {
+	case hitDocumentReturnToEdit:
+		d.cancelComparison()
+	case hitDocumentCompareRetry:
+		d.refreshComparison()
+	case hitDocumentConfirmUpload:
+		d.confirmComparisonUpload()
+	}
+}
+
+func (d *fileDocument) refreshComparison() {
+	if d.busy || !d.comparison.active || d.worker == nil {
+		return
+	}
+	if !fileDiffWithinLimit(d.editor.String()) {
+		d.comparison.oversized = true
+		d.problem = d.owner.messages.FileWindow.CompareLimit
+		d.notices.show(d.name, d.problem, components.ToastWarning)
+		d.invalidateWindows()
+		return
+	}
+	c := &d.comparison
+	c.loading = true
+	c.pending = false
+	c.conflict = false
+	c.oversized = false
+	c.saving = false
+	c.confirm = false
+	c.generation++
+	d.busy = true
+	d.problem = ""
+	d.status = d.owner.messages.FileWindow.Comparing
+	if !d.worker.ReadDocument(d.location) {
+		d.busy = false
+		c.loading = false
+		c.conflict = true
+		d.status = d.owner.messages.SFTPUnavailable
+		d.problem = d.status
+		d.notices.show(d.name, d.problem, components.ToastError)
+	}
+	d.invalidateWindows()
+}
+
 func (d *fileDocument) zoom(factor float32) {
 	zoom := d.ui.zoom
 	if zoom == 0 {
@@ -272,21 +521,48 @@ func (view *fileDocumentUI) pixelScale() float32 {
 }
 
 func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
-	if context.ID != hitDocumentInput || !d.ready || d.busy || d.confirm != "" {
+	if context.ID != hitDocumentInput || !d.ready || d.busy || d.confirm != "" || d.comparison.confirm {
 		return nil
 	}
 	d.ui.input.Editor = nil
 	d.ui.input.State = app.TextStateOf(&d.editor)
 	d.ui.input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
 		if d.ready && !d.busy && d.confirm == "" {
+			before := d.editor.String()
 			if event.Kind == app.TextInsert || event.Kind == app.TextPaste {
 				event.Text = strings.ReplaceAll(strings.ReplaceAll(event.Text, "\r\n", "\n"), "\r", "\n")
 			}
 			event.Apply(&d.editor)
+			if d.comparison.active && d.editor.String() != before {
+				d.scheduleDiff()
+			}
 		}
 		return app.TextStateOf(&d.editor), nil
 	}
 	return &d.ui.input
+}
+
+func (d *fileDocument) comparisonTextInput(context app.TextInputContext) *app.TextInput {
+	if context.ID != hitDocumentInput || !d.comparison.active || !d.ready || d.busy || d.comparison.confirm {
+		return nil
+	}
+	input := &d.comparison.ui.input
+	input.Editor = nil
+	input.State = app.TextStateOf(&d.editor)
+	input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
+		if d.comparison.active && d.ready && !d.busy && !d.comparison.confirm {
+			before := d.editor.String()
+			if event.Kind == app.TextInsert || event.Kind == app.TextPaste {
+				event.Text = strings.ReplaceAll(strings.ReplaceAll(event.Text, "\r\n", "\n"), "\r", "\n")
+			}
+			event.Apply(&d.editor)
+			if d.editor.String() != before {
+				d.scheduleDiff()
+			}
+		}
+		return app.TextStateOf(&d.editor), nil
+	}
+	return input
 }
 
 func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
@@ -300,6 +576,23 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 			return handled
 		}
 		return ui.EventResult{}
+	}
+	if d.ui.saveMenuOpen {
+		if event.Key == ui.KeyEscape {
+			d.ui.saveMenuOpen = false
+			handled.Focus = hitDocumentSaveMenu
+			return handled
+		}
+		if event.Key == ui.KeyTab {
+			d.ui.saveMenuOpen = false
+			handled.ContinueTraversal = true
+			return handled
+		}
+		if id, ok := d.ui.saveMenu.Navigate(event.Key, event.Target, true); ok {
+			handled.Focus = id
+			handled.FocusVisible = true
+			return handled
+		}
 	}
 	if d.encodingOpen {
 		if event.Key == ui.KeyEscape {
@@ -333,6 +626,35 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 	return ui.EventResult{}
 }
 
+func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
+	if event.Release || !d.comparison.active {
+		return ui.EventResult{}
+	}
+	handled := ui.EventResult{Handled: true, Repaint: true}
+	if d.comparison.confirm {
+		if event.Key == ui.KeyEscape {
+			d.comparison.confirm = false
+			return handled
+		}
+		return ui.EventResult{}
+	}
+	if event.Target == hitDocumentInput {
+		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
+			value := d.editor.String()
+			offset := d.comparison.ui.diff.Move(value, aiByteOffset(value, d.editor.Caret()), movement)
+			d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
+			d.comparison.ui.diff.RevealCaret(value, offset)
+			return handled
+		}
+	}
+	if event.Target == hitDocumentDiffViewport || event.Target == hitDocumentDiffScroll || event.Target == hitDocumentDiffScrollX {
+		if result, ok := d.comparison.ui.diff.ScrollForKey(event.Key, event.Modifiers&ui.ModifierShift != 0); ok {
+			return result
+		}
+	}
+	return ui.EventResult{}
+}
+
 func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release {
 		return ui.EventResult{}
@@ -340,7 +662,7 @@ func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 	switch strings.ToLower(event.Text) {
 	case "s":
 		if d.confirm == "" {
-			d.save(false)
+			d.requestSave(false)
 		}
 		return ui.EventResult{Handled: true, Repaint: true}
 	case "w":
@@ -350,12 +672,35 @@ func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 	return ui.EventResult{}
 }
 
+func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
+	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release || !d.comparison.active {
+		return ui.EventResult{}
+	}
+	switch strings.ToLower(event.Text) {
+	case "s":
+		if !d.comparison.confirm {
+			d.confirmComparisonUpload()
+		}
+	case "w":
+		if d.comparison.window != nil {
+			d.comparison.window.RequestClose()
+		}
+	default:
+		return ui.EventResult{}
+	}
+	return ui.EventResult{Handled: true, Repaint: true}
+}
+
 func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
 	if d.confirm != "" {
 		return ui.EventResult{Handled: true}
 	}
 	if d.encodingOpen {
 		d.ui.menu.Wheel(event)
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.ui.saveMenuOpen {
+		d.ui.saveMenu.Wheel(event)
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if d.image != nil {
@@ -385,6 +730,20 @@ func (d *fileDocument) pointer(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	return d.ui.code.Pointer(event)
+}
+
+func (d *fileDocument) comparisonScroll(event ui.ScrollEvent) ui.EventResult {
+	if !d.comparison.active || d.comparison.confirm {
+		return ui.EventResult{Handled: true}
+	}
+	return d.comparison.ui.diff.Scroll(event)
+}
+
+func (d *fileDocument) comparisonPointer(event ui.PointerEvent) ui.EventResult {
+	if !d.comparison.active || d.comparison.confirm {
+		return ui.EventResult{}
+	}
+	return d.comparison.ui.diff.Pointer(event)
 }
 
 func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]ui.Color {

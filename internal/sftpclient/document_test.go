@@ -109,3 +109,43 @@ func TestWorkerDocumentReadLimitAndCancellation(t *testing.T) {
 		t.Fatal("canceled read succeeded", result.Err)
 	}
 }
+
+func TestWorkerReadsCurrentDocumentForComparisonWithoutAdvancingRevision(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	location := filepath.Join(root, "document")
+	original := []byte("before\n")
+	if err := os.WriteFile(location, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened := requireQueuedResult(t, worker.OpenDocument("document"), worker, OperationOpenDocument)
+	if opened.Err != nil || !bytes.Equal(opened.Data, original) {
+		t.Fatalf("open: %q, %v", opened.Data, opened.Err)
+	}
+	current := []byte("changed on the server\n")
+	if err := os.WriteFile(location, current, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read := requireQueuedResult(t, worker.ReadDocument("document"), worker, OperationReadDocument)
+	if read.Err != nil || !bytes.Equal(read.Data, current) {
+		t.Fatalf("comparison read: %q, %v", read.Data, read.Err)
+	}
+	// Reading for comparison must not make the original revision appear current.
+	saved := requireQueuedResult(t, worker.SaveDocument("document", []byte("local\n"), Revision(sha256.Sum256(original))), worker, OperationSaveDocument)
+	if !errors.Is(saved.Err, ErrRemoteChanged) {
+		t.Fatalf("comparison read advanced the editor revision: %v", saved.Err)
+	}
+}
+
+func TestWorkerReadDocumentUsesTheEditorSizeLimit(t *testing.T) {
+	remote := &fakeRemote{
+		closed: make(chan struct{}),
+		files:  map[string][]byte{"large": bytes.Repeat([]byte{'a'}, MaxEditFileBytes+1)},
+		chunk:  32768,
+	}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+	result := requireQueuedResult(t, worker.ReadDocument("large"), worker, OperationReadDocument)
+	if !errors.Is(result.Err, ErrEditFileTooLarge) {
+		t.Fatalf("comparison read escaped the editor size limit: %v", result.Err)
+	}
+}

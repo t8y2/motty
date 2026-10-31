@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -25,13 +26,39 @@ type fileWindowManager struct {
 	documents map[string]*fileDocument // UI thread only
 }
 type fileDocumentEvent struct {
-	document           *fileDocument
-	data               []byte
-	image              *filecontent.Image
-	decoded            filecontent.Text
-	err                error
-	saved, reinterpret bool
+	document                     *fileDocument
+	data                         []byte
+	image                        *filecontent.Image
+	decoded                      filecontent.Text
+	diff                         components.CodeDiffResult
+	diffRight                    string
+	diffGeneration               uint64
+	err                          error
+	saved, reinterpret, compared bool
+	diffTick, diffReady          bool
 }
+
+type fileComparison struct {
+	active, loading, pending  bool
+	conflict, saving, confirm bool
+	oversized                 bool
+	baseline                  string
+	revision                  sftpclient.Revision
+	result                    components.CodeDiffResult
+	computedValue             string
+	computedSet               bool
+	generation                uint64
+	timer                     *time.Timer
+	window                    *app.ContentWindow
+	ui                        fileDocumentUI
+}
+
+const (
+	fileDiffDebounce = 250 * time.Millisecond
+	fileDiffMaxBytes = 512 << 10
+	fileDiffMaxLines = 20_000
+)
+
 type fileDocument struct {
 	owner                            *State
 	cacheKey, location, name, source string
@@ -50,10 +77,12 @@ type fileDocument struct {
 	confirm                          string
 	allowClose, afterClosed          func()
 	closeAfter                       bool
+	confirmCloseAfter                bool
 	notices                          fileNotices
 	origin                           *sftpWindow
 	view                             *sftpView
 	ui                               fileDocumentUI
+	comparison                       fileComparison
 }
 
 func (state *State) postFileEvent(event fileDocumentEvent) {
@@ -135,6 +164,9 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 			if result.Operation == sftpclient.OperationSaveDocument {
 				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, saved: true})
 			}
+			if result.Operation == sftpclient.OperationReadDocument {
+				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, compared: true})
+			}
 		}
 	}()
 	if !d.worker.OpenDocument(location) {
@@ -178,11 +210,9 @@ func (state *State) pumpFileWindows() {
 		if state.closed || d.closed {
 			continue
 		}
-		if event.saved || event.reinterpret {
+		if event.saved || event.reinterpret || event.compared || event.diffTick || event.diffReady {
 			d.apply(event)
-			if d.window != nil {
-				d.window.Invalidate()
-			}
+			d.invalidateWindows()
 			continue
 		}
 		// Reload keeps an explicitly selected BOM-less encoding. A server-side
@@ -200,7 +230,7 @@ func (state *State) pumpFileWindows() {
 				d.afterClosed = nil
 				d.problem = state.fileProblem(event.err)
 				d.notices.show(d.name, d.problem, components.ToastError)
-				d.window.Invalidate()
+				d.invalidateWindows()
 				continue
 			}
 			state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, d.name+": "+state.fileProblem(event.err), components.ToastWarning)
@@ -226,7 +256,7 @@ func (state *State) pumpFileWindows() {
 			}
 			d.window = window
 		} else {
-			d.window.Invalidate()
+			d.invalidateWindows()
 		}
 		if d.closeAfter {
 			d.closeAfter = false
@@ -285,8 +315,49 @@ func (d *fileDocument) dirty() bool {
 	return d.image == nil && d.ready && d.editor.String() != d.original
 }
 
-func (d *fileDocument) save(closeAfter bool) {
+func (d *fileDocument) requestSave(closeAfter bool) {
 	if d.busy || !d.ready || d.image != nil {
+		return
+	}
+	d.encodingOpen = false
+	d.ui.saveMenuOpen = false
+	if d.comparison.active {
+		if closeAfter {
+			d.closeAfter = true
+		}
+		if d.comparison.window != nil {
+			d.comparison.window.Show()
+		}
+		return
+	}
+	if !d.dirty() {
+		if closeAfter {
+			d.closeAllowed()
+		}
+		return
+	}
+	if d.local {
+		d.saveDirect(closeAfter)
+		return
+	}
+	d.confirm = "save"
+	d.confirmCloseAfter = closeAfter
+	if d.window != nil {
+		d.window.Invalidate()
+	}
+}
+
+func (d *fileDocument) saveDirect(closeAfter bool) {
+	if d.busy || !d.ready || d.image != nil {
+		return
+	}
+	if d.comparison.active {
+		if closeAfter {
+			d.closeAfter = true
+		}
+		if d.comparison.window != nil {
+			d.comparison.window.Show()
+		}
 		return
 	}
 	d.encodingOpen = false
@@ -312,6 +383,7 @@ func (d *fileDocument) save(closeAfter bool) {
 	d.status = d.owner.messages.FileWindow.Saving
 	d.problem = ""
 	d.confirm = ""
+	d.confirmCloseAfter = false
 	if d.local {
 		revision, location := d.revision, d.location
 		go func() {
@@ -328,12 +400,33 @@ func (d *fileDocument) save(closeAfter bool) {
 }
 
 func (d *fileDocument) apply(event fileDocumentEvent) {
+	if event.compared {
+		d.applyComparisonRead(event)
+		return
+	}
+	if event.diffTick {
+		d.startDiff(event.diffGeneration)
+		return
+	}
+	if event.diffReady {
+		d.finishDiff(event)
+		return
+	}
 	d.busy = false
 	if event.err != nil {
 		d.closeAfter = false
 		d.afterClosed = nil
 		d.problem = d.owner.fileProblem(event.err)
 		d.notices.show(d.name, d.problem, components.ToastError)
+		if d.comparison.saving && errors.Is(event.err, sftpclient.ErrRemoteChanged) {
+			d.comparison.saving = false
+			d.comparison.conflict = true
+			d.status = d.owner.messages.FileWindow.CompareConflict
+			d.problem = d.status
+		} else if d.comparison.saving {
+			d.comparison.saving = false
+			d.status = d.owner.messages.FileWindow.CompareReady
+		}
 		return
 	}
 	if event.reinterpret {
@@ -354,6 +447,7 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 	d.status = d.owner.messages.FileWindow.Saved
 	d.problem = ""
 	d.notices.show(d.name, d.status, components.ToastSuccess)
+	d.stopComparison()
 	if !d.local {
 		d.owner.refreshSFTPAfterRemoteSave(d.view, d.location)
 	}
@@ -412,6 +506,7 @@ func (d *fileDocument) requestClose(allow func()) {
 	}
 	if d.dirty() {
 		d.confirm = "close"
+		d.confirmCloseAfter = false
 		d.allowClose = allow
 		if d.window != nil {
 			d.window.Invalidate()
@@ -435,6 +530,7 @@ func (d *fileDocument) onClosed() {
 		return
 	}
 	d.closed = true
+	d.stopComparison()
 	if d.worker != nil {
 		d.worker.Close()
 	}
@@ -451,6 +547,375 @@ func (d *fileDocument) onClosed() {
 	}
 }
 
+func (d *fileDocument) beginComparison() {
+	if d.comparison.active {
+		if d.comparison.window != nil {
+			d.comparison.window.Show()
+		}
+		return
+	}
+	if d.busy || !d.ready || d.image != nil || d.local {
+		return
+	}
+	if !fileDiffWithinLimit(d.editor.String()) {
+		d.rejectComparisonLimit()
+		return
+	}
+	if d.worker == nil {
+		return
+	}
+	d.encodingOpen = false
+	d.ui.saveMenuOpen = false
+	d.stopComparison()
+	d.comparison.ui = fileDocumentUI{}
+	d.comparison.loading = true
+	d.comparison.pending = false
+	d.comparison.conflict = false
+	d.comparison.saving = false
+	d.comparison.confirm = false
+	d.comparison.generation++
+	d.busy = true
+	d.problem = ""
+	d.status = d.owner.messages.FileWindow.Comparing
+	if !d.worker.ReadDocument(d.location) {
+		d.busy = false
+		d.comparison.loading = false
+		d.status = d.owner.messages.SFTPUnavailable
+		d.problem = d.status
+		d.notices.show(d.name, d.problem, components.ToastError)
+		d.invalidateWindows()
+		d.resumePendingClose()
+	}
+}
+
+func (d *fileDocument) applyComparisonRead(event fileDocumentEvent) {
+	d.busy = false
+	c := &d.comparison
+	c.loading = false
+	if c.generation == 0 {
+		return
+	}
+	if event.err != nil {
+		d.problem = d.owner.fileProblem(event.err)
+		d.notices.show(d.name, d.problem, components.ToastError)
+		if c.active {
+			c.conflict = true
+			d.status = d.owner.messages.FileWindow.CompareConflict
+		} else {
+			d.status = d.owner.messages.FileWindow.Ready
+		}
+		d.invalidateWindows()
+		d.resumePendingClose()
+		return
+	}
+	decoded, err := filecontent.Decode(event.data, "")
+	if d.format.Encoding != "" && !decoded.Format.BOM && (err == nil || errors.Is(err, filecontent.ErrChooseEncoding)) {
+		decoded, err = filecontent.Decode(event.data, d.format.Encoding)
+		if errors.Is(err, filecontent.ErrEncoding) {
+			err = filecontent.ErrChooseEncoding
+		}
+	}
+	if err != nil {
+		d.problem = d.owner.fileProblem(err)
+		d.notices.show(d.name, d.problem, components.ToastError)
+		if c.active {
+			c.conflict = true
+			d.status = d.owner.messages.FileWindow.CompareConflict
+		} else {
+			d.status = d.owner.messages.FileWindow.Ready
+		}
+		d.invalidateWindows()
+		d.resumePendingClose()
+		return
+	}
+	if !fileDiffWithinLimit(decoded.Value) {
+		d.rejectComparisonLimit()
+		d.resumePendingClose()
+		return
+	}
+	c.active = true
+	c.pending = true
+	c.conflict = false
+	c.oversized = false
+	c.baseline = decoded.Value
+	c.revision = sftpclient.Revision(sha256.Sum256(event.data))
+	c.result = components.CodeDiffResult{Left: strings.Split(c.baseline, "\n")}
+	c.computedValue = ""
+	c.computedSet = false
+	d.problem = ""
+	d.status = d.owner.messages.FileWindow.Comparing
+	if err := d.openComparisonWindow(); err != nil {
+		d.resetComparison()
+		d.status = d.owner.messages.FileWindow.Ready
+		d.problem = err.Error()
+		d.notices.show(d.name, d.problem, components.ToastError)
+		d.invalidateWindows()
+		d.resumePendingClose()
+		return
+	}
+	d.scheduleDiff()
+	d.invalidateWindows()
+	d.resumePendingClose()
+}
+
+func fileDiffWithinLimit(value string) bool {
+	lines := strings.Count(value, "\n")
+	if lines == 0 || !strings.HasSuffix(value, "\n") {
+		lines++
+	}
+	return len(value) <= fileDiffMaxBytes && lines <= fileDiffMaxLines
+}
+
+func (d *fileDocument) rejectComparisonLimit() {
+	d.status = d.owner.messages.FileWindow.Ready
+	d.problem = d.owner.messages.FileWindow.CompareLimit
+	d.notices.show(d.name, d.problem, components.ToastWarning)
+	d.invalidateWindows()
+}
+
+func (d *fileDocument) openComparisonWindow() error {
+	if d.comparison.window != nil {
+		d.comparison.window.Show()
+		return nil
+	}
+	window, err := d.owner.options.OpenContentWindow(d.comparisonConfig(), nil)
+	if err != nil {
+		return err
+	}
+	d.comparison.window = window
+	return nil
+}
+
+func (d *fileDocument) comparisonConfig() app.Config {
+	return app.Config{
+		Title: fmt.Sprintf(d.owner.messages.FileWindow.CompareWindowTitle, d.name),
+		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(),
+		Paint: d.paintComparison, TextInput: d.comparisonTextInput, OnPointer: d.comparisonPointer,
+		OnKey: d.comparisonKey, OnShortcut: d.comparisonShortcut, OnScroll: d.comparisonScroll,
+		OnCloseRequest: d.requestComparisonClose, OnClosed: d.onComparisonClosed,
+	}
+}
+
+func (d *fileDocument) requestComparisonClose(allow func()) {
+	if d.comparison.confirm {
+		d.comparison.confirm = false
+		d.comparison.ui.tooltip = components.HoverTooltip{}
+		d.invalidateWindows()
+		return
+	}
+	if d.busy || d.comparison.saving {
+		return
+	}
+	d.resetComparison()
+	d.status = d.owner.messages.FileWindow.Ready
+	d.problem = ""
+	d.closeAfter = false
+	d.allowClose = nil
+	d.invalidateWindows()
+	allow()
+}
+
+func (d *fileDocument) onComparisonClosed() {
+	if d.comparison.window == nil {
+		return
+	}
+	d.resetComparison()
+	d.closeAfter = false
+	d.allowClose = nil
+	d.invalidateWindows()
+}
+
+func (d *fileDocument) invalidateWindows() {
+	if d.window != nil {
+		d.window.Invalidate()
+	}
+	if d.comparison.window != nil {
+		d.comparison.window.Invalidate()
+	}
+}
+
+func (d *fileDocument) scheduleDiff() {
+	c := &d.comparison
+	if !c.active || c.loading || c.conflict {
+		return
+	}
+	value := d.editor.String()
+	if !fileDiffWithinLimit(value) {
+		if c.timer != nil {
+			c.timer.Stop()
+			c.timer = nil
+		}
+		c.generation++
+		c.pending = false
+		if !c.oversized {
+			d.problem = d.owner.messages.FileWindow.CompareLimit
+			d.notices.show(d.name, d.problem, components.ToastWarning)
+		}
+		c.oversized = true
+		d.invalidateWindows()
+		return
+	}
+	if c.oversized {
+		c.oversized = false
+		if d.problem == d.owner.messages.FileWindow.CompareLimit {
+			d.problem = ""
+		}
+	}
+	if c.computedSet && value == c.computedValue {
+		if c.timer != nil {
+			c.timer.Stop()
+			c.timer = nil
+		}
+		c.generation++
+		c.pending = false
+		d.invalidateWindows()
+		return
+	}
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.generation++
+	generation := c.generation
+	c.pending = true
+	c.timer = time.AfterFunc(fileDiffDebounce, func() {
+		d.owner.postFileEvent(fileDocumentEvent{document: d, diffTick: true, diffGeneration: generation})
+	})
+	d.invalidateWindows()
+}
+
+func (d *fileDocument) startDiff(generation uint64) {
+	c := &d.comparison
+	if !c.active || c.loading || c.conflict || generation != c.generation {
+		return
+	}
+	c.timer = nil
+	left, right := c.baseline, d.editor.String()
+	if !fileDiffWithinLimit(right) {
+		c.oversized = true
+		c.pending = false
+		d.invalidateWindows()
+		return
+	}
+	go func() {
+		result := components.DiffCodeLines(left, right)
+		d.owner.postFileEvent(fileDocumentEvent{
+			document: d, diff: result, diffRight: right, diffReady: true, diffGeneration: generation,
+		})
+	}()
+}
+
+func (d *fileDocument) finishDiff(event fileDocumentEvent) {
+	c := &d.comparison
+	if !c.active || c.loading || c.conflict || event.diffGeneration != c.generation {
+		return
+	}
+	c.result = event.diff
+	c.computedValue = event.diffRight
+	c.computedSet = true
+	c.pending = false
+	c.timer = nil
+	d.status = d.owner.messages.FileWindow.CompareReady
+	d.invalidateWindows()
+}
+
+func (d *fileDocument) stopComparison() {
+	window := d.comparison.window
+	d.resetComparison()
+	if window != nil {
+		window.Close()
+	}
+}
+
+func (d *fileDocument) resetComparison() {
+	c := &d.comparison
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	c.generation++
+	c.active = false
+	c.loading = false
+	c.pending = false
+	c.conflict = false
+	c.saving = false
+	c.confirm = false
+	c.oversized = false
+	c.baseline = ""
+	c.revision = sftpclient.Revision{}
+	c.result = components.CodeDiffResult{}
+	c.computedValue = ""
+	c.computedSet = false
+	c.window = nil
+}
+
+func (d *fileDocument) resumePendingClose() {
+	if !d.closeAfter || d.busy || d.comparison.saving {
+		return
+	}
+	d.closeAfter = false
+	allow := d.allowClose
+	d.allowClose = nil
+	if allow == nil && d.window != nil {
+		allow = d.window.Close
+	}
+	if allow != nil {
+		d.requestClose(allow)
+	}
+}
+
+func (d *fileDocument) cancelComparison() {
+	if d.busy || d.comparison.confirm {
+		return
+	}
+	d.stopComparison()
+	d.problem = ""
+	d.status = d.owner.messages.FileWindow.Ready
+	d.closeAfter = false
+	d.allowClose = nil
+}
+
+func (d *fileDocument) confirmComparisonUpload() {
+	if !d.canUploadComparison() {
+		return
+	}
+	d.comparison.confirm = true
+	d.invalidateWindows()
+}
+
+func (d *fileDocument) canUploadComparison() bool {
+	c := d.comparison
+	return c.active && !c.loading && !c.pending && !c.conflict && !c.oversized && !c.saving &&
+		c.result.Stats.Added+c.result.Stats.Removed > 0
+}
+
+func (d *fileDocument) uploadComparison() {
+	if d.busy || !d.canUploadComparison() {
+		return
+	}
+	data, err := filecontent.Encode(d.editor.String(), d.format)
+	if err != nil {
+		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.format.Encoding)
+		if !errors.Is(err, filecontent.ErrEncoding) {
+			d.problem = d.owner.fileProblem(err)
+		}
+		d.notices.show(d.name, d.problem, components.ToastError)
+		return
+	}
+	d.comparison.confirm = false
+	d.pending = d.editor.String()
+	d.busy = true
+	d.comparison.saving = true
+	d.status = d.owner.messages.FileWindow.Uploading
+	d.problem = ""
+	if !d.worker.SaveDocument(d.location, data, d.comparison.revision) {
+		d.busy = false
+		d.comparison.saving = false
+		d.problem = d.owner.messages.SFTPUnavailable
+		d.notices.show(d.name, d.problem, components.ToastError)
+	}
+	d.invalidateWindows()
+}
+
 func (state *State) closeFileWindows() {
 	m := &state.fileWindows
 	m.mu.Lock()
@@ -459,6 +924,7 @@ func (state *State) closeFileWindows() {
 	m.mu.Unlock()
 	for _, d := range m.documents {
 		d.afterClosed = nil
+		d.stopComparison()
 		if d.worker != nil {
 			d.worker.Close()
 		}

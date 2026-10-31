@@ -38,6 +38,16 @@ var EnglishMessages = Messages{
 		CannotOpen: "Cannot preview file", Unsupported: "This file format cannot be previewed", TooLarge: "Preview limit: 16 MiB for images, 1 MiB for text", TooMany: "Close a preview window before opening more files (limit: 8)", ImageTooLarge: "The image exceeds the 16 megapixel preview limit",
 		ConfirmTitle: "Unsaved changes", ConfirmClose: "Save before closing, or discard the changes?", ConfirmReload: "Reloading will discard the unsaved changes.", SaveClose: "Save and close", Discard: "Discard", Cancel: "Cancel",
 		Local: "Local", Remote: "Server", ReadOnly: "Image preview · read only", EncodingChanged: "Encoding changes reinterpret the original bytes; save or discard edits first.",
+		ReturnToEdit: "Return to editor", CompareRetry: "Compare again",
+		SaveOptions: "More save options", CompareSave: "Compare and save", CompareWindowTitle: "Compare and save — %s",
+		ServerVersion: "Current server version", LocalVersion: "Local edits", DiffLabel: "Compare the server and local text",
+		CompareAddedRemoved: "+%d  −%d", CompareCoarse: "This large file was compared in coarse blocks.",
+		CompareLimit: "This text exceeds the compare limit (512 KiB or 20,000 lines). It remains available for viewing and editing, but cannot be compared.",
+		Comparing:    "Reading the current server version…", CompareUpdating: "Updating differences…", CompareReady: "Differences are current",
+		CompareEqual: "No changes to save", CompareConflict: "The server changed; compare again before saving", Uploading: "Saving local edits…", SavingChanges: "Saving local edits…",
+		SaveConfirmTitle: "Save these changes?", SaveConfirmDescription: "The local edits will replace the current server file.",
+		SaveDirect:            "Save directly",
+		SaveConfirmFinalTitle: "Save these changes?", SaveConfirmFinalDescription: "The server file will be replaced with the local edits shown in the right pane.",
 	},
 
 	TerminalInput: TerminalInputMessages{

@@ -38,6 +38,16 @@ var ChineseMessages = Messages{
 		CannotOpen: "无法预览文件", Unsupported: "此文件格式暂不支持预览", TooLarge: "预览上限：图片 16 MiB，文本 1 MiB", TooMany: "请先关闭部分预览窗口（最多 8 个）", ImageTooLarge: "图片超过 1600 万像素，暂不支持预览",
 		ConfirmTitle: "有未保存的更改", ConfirmClose: "保存后关闭，还是放弃这些更改？", ConfirmReload: "重新载入将丢失未保存的更改。", SaveClose: "保存并关闭", Discard: "放弃更改", Cancel: "取消",
 		Local: "本机", Remote: "服务器", ReadOnly: "图片预览 · 只读", EncodingChanged: "切换编码会重新解释原文件，请先保存或放弃当前更改。",
+		ReturnToEdit: "返回编辑", CompareRetry: "重新对比",
+		SaveOptions: "更多保存方式", CompareSave: "对比保存", CompareWindowTitle: "对比保存 - %s",
+		ServerVersion: "服务器当前版本", LocalVersion: "本地编辑版本", DiffLabel: "服务器与本地文本比对",
+		CompareAddedRemoved: "+%d  −%d", CompareCoarse: "文件较大，已按区块完成差异比对。",
+		CompareLimit: "文本超过对比上限（512 KiB 或 20,000 行），仍可查看和编辑，但无法进入文本对比。",
+		Comparing:    "正在读取服务器当前版本…", CompareUpdating: "正在更新差异…", CompareReady: "差异已更新",
+		CompareEqual: "内容一致，没有需要保存的更改", CompareConflict: "服务器版本已变化，请重新对比后再保存", Uploading: "正在保存本地编辑…", SavingChanges: "正在保存本地编辑…",
+		SaveConfirmTitle: "确认保存？", SaveConfirmDescription: "本地编辑将覆盖服务器上的当前文件。",
+		SaveDirect:            "直接保存",
+		SaveConfirmFinalTitle: "确认保存？", SaveConfirmFinalDescription: "服务器文件将被右侧所示的本地编辑版本替换。",
 	},
 
 	TerminalInput: TerminalInputMessages{

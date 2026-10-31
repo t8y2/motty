@@ -258,6 +258,12 @@ func (pal *palette) theme() ui.Theme {
 	theme.Hover = pal.surfaceSoft
 	theme.Primary = pal.accent
 	theme.PrimaryForeground = pal.onAccent
+	theme.Selection = ui.RGB(pal.ansi[4][0], pal.ansi[4][1], pal.ansi[4][2])
+	theme.Selection.Alpha = 0.30
+	if !pal.dark {
+		theme.Selection.Alpha = 0.22
+	}
+	theme.SelectionForeground = pal.text
 	theme.Secondary = pal.surfaceHot
 	theme.SecondaryForeground = pal.text
 	theme.Accent = pal.surfaceHot

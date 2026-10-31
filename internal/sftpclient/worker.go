@@ -63,6 +63,7 @@ const (
 	OperationSymlink
 	OperationOpenDocument
 	OperationSaveDocument
+	OperationReadDocument
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -429,6 +430,13 @@ func (worker *Worker) OpenText(remotePath string) bool {
 // OpenDocument reads bounded raw bytes without treating an image as UTF-8.
 func (worker *Worker) OpenDocument(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath})
+}
+
+// ReadDocument reads the current bounded text bytes for comparison without
+// replacing the editor's revision or content. The caller remains responsible
+// for decoding and for presenting the result.
+func (worker *Worker) ReadDocument(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationReadDocument, remote: remotePath})
 }
 
 // SaveDocument replaces a revision-checked document without reinterpreting its
@@ -982,6 +990,8 @@ func (worker *Worker) execute(next request) Result {
 		result.Document, result.Err = worker.saveText(client, next.remote, next.text, next.revision, next.utf8BOM, generation)
 	case OperationOpenDocument:
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxPreviewFileBytes)
+	case OperationReadDocument:
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxEditFileBytes)
 	case OperationSaveDocument:
 		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, generation)
 		if result.Err == nil {
