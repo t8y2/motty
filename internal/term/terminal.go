@@ -196,6 +196,7 @@ type Terminal struct {
 	lastRune rune // for REP
 	nextID   uint64
 	version  uint64
+	reflow   reflow
 
 	parser
 }
@@ -511,7 +512,6 @@ func (t *Terminal) recycle(l *line) *line {
 	}
 	l.marks = l.marks[:0]
 	l.hyperlinks = nil
-	l.clipped = nil
 	l.wrapped = false
 	l.at = 0
 	t.nextID++
@@ -528,7 +528,6 @@ func (t *Terminal) pushHistory(l *line) {
 	if t.histMax == 0 {
 		return
 	}
-	l = l.unclipped()
 	used := len(l.cells)
 	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
 		used--
@@ -549,7 +548,6 @@ func (t *Terminal) pushHistory(l *line) {
 		dst.cells = make([]Cell, used)
 	}
 	dst.cells = dst.cells[:used]
-	dst.clipped = nil
 	copy(dst.cells, l.cells[:used])
 	dst.marks = append(dst.marks[:0], l.marks...)
 	if used > 0 && l.hyperlinks != nil {
@@ -588,7 +586,7 @@ func (t *Terminal) popHistory() *line {
 		links := append([]uint32(nil), (*h.hyperlinks)...)
 		l.hyperlinks = &links
 	}
-	t.fitMainCols(l)
+	t.fitCols(l)
 	t.view = min(t.view, t.histCount)
 	return l
 }
@@ -652,10 +650,11 @@ func (t *Terminal) rotate(top, bottom, n int, up, toHistory bool) {
 	t.version++
 }
 
-// Resize changes the grid size without reflow. Untouched main-screen rows keep
-// clipped content for a later widening; the alternate screen truncates or pads.
-// Shrinking pushes the lines above the cursor into the history, growing pulls
-// them back, so a shell that redraws its prompt keeps its place.
+// Resize changes the grid size. A new width reflows the main screen and its
+// history (see reflowMain); the alternate screen, which its program redraws,
+// truncates or pads. Shrinking pushes the lines above the cursor into the
+// history, growing pulls them back, so a shell that redraws its prompt keeps
+// its place.
 func (t *Terminal) Resize(cols, rows int) {
 	cols = clampInt(cols, 1, maxCols)
 	rows = clampInt(rows, 1, maxRows)
@@ -665,6 +664,9 @@ func (t *Terminal) Resize(cols, rows int) {
 	oldCols := t.cols
 	t.cols = cols
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
+	if cols != oldCols {
+		t.reflowMain()
+	}
 
 	cursor := &t.cy
 	if t.onAlt {
@@ -687,11 +689,7 @@ func (t *Terminal) Resize(cols, rows int) {
 // column count). cursorY, when set, is the cursor row to keep on screen.
 func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory bool) {
 	for _, l := range s.lines {
-		if useHistory {
-			t.fitMainCols(l)
-		} else {
-			t.fitCols(l)
-		}
+		t.fitCols(l)
 	}
 	switch {
 	case rows < len(s.lines):
