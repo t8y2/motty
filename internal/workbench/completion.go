@@ -243,6 +243,12 @@ func (state *State) adoptCompletion() {
 	if state.history.on && !state.historyClearing() {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.historyAvailable(session) && !session.host.NoHistory {
 			state.completionHistory(session)
+			// The merged history of every host feeds the inline suggestion's
+			// fallback, so it is requested here beside the host's own: a frame
+			// only reads what has landed (#219).
+			if !state.history.inlineOff {
+				state.suggestionHistory("")
+			}
 		}
 	}
 }

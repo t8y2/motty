@@ -165,50 +165,99 @@ func TestNoSuggestionIsOfferedWhileBroadcasting(t *testing.T) {
 	}
 }
 
+// awaitHistory repaints until the background reader has landed the cache for
+// key, as a window's wake-ups do, and fails when it never comes. Asking for
+// the ghost itself never starts a read, so the test waits the way a window
+// learns of one.
+func (h *historyWorld) awaitHistory(t *testing.T, key string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		h.state.Wake()
+		if _, ok := h.state.history.ghost[key]; ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the history of %q was never read", key)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // A command this host has never run, but the user ran on another host, is
 // suggested once the host's own history has no match: the same machines often
-// share one job (#219).
+// share one job (#219). The merged cache is not injected: the background read
+// the window requests fills it, and the frame only reads what landed.
 func TestACommandFromAnotherHostIsSuggestedWhenThisHostHasNoMatch(t *testing.T) {
 	h := ghostWorld(t, "docker compose up -d")
 	store := h.state.historyStore()
 	if err := store.Record("other-host", "systemctl restart nginx", time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	merged, err := store.List("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.state.history.ghost[""] = merged
 	h.prompt("deploy@prod:~$ ")
 	// The host's own history still speaks first.
 	h.type_("docker co")
 	if rest, ok := h.ghost(); !ok || rest != "mpose up -d" {
 		t.Fatalf("suggestion = %q, %v; want the host's own command", rest, ok)
 	}
-	// With no match of its own, what another host knows is offered.
+	// With no match of its own, what another host knows is offered once the
+	// repaint has adopted the read.
 	h.type_("\b\b\b\b\b\b\b\b\b")
+	h.awaitHistory(t, "")
 	h.type_("systemctl re")
 	if rest, ok := h.ghost(); !ok || rest != "start nginx" {
 		t.Fatalf("suggestion = %q, %v; want the command another host knows", rest, ok)
 	}
 }
 
-// A host that keeps no history draws no suggestion from anyone else's either.
+// A host that keeps no history draws no suggestion from anyone else's either,
+// and never asks for the merged read.
 func TestAHostThatKeepsNoHistoryGetsNoSuggestionFromOtherHosts(t *testing.T) {
 	h := ghostWorld(t, "docker compose up -d")
 	store := h.state.historyStore()
 	if err := store.Record("other-host", "systemctl restart nginx", time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	merged, err := store.List("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.state.history.ghost[""] = merged
 	h.state.sessions[0].host.NoHistory = true
+	h.state.forgetCompletionHistory()
+	delete(h.state.completion.historyPending, "")
 	h.prompt("deploy@prod:~$ ")
 	h.type_("systemctl re")
 	if rest, ok := h.ghost(); ok {
 		t.Fatalf("a no-history host was suggested %q", rest)
+	}
+	if h.state.completion.historyPending[""] {
+		t.Fatal("a host that keeps no history asked for the merged history")
+	}
+}
+
+// A command just remembered joins the merged cache at its front as well, so a
+// second host of the same job suggests it before any reload.
+func TestACommandJustRunJoinsTheMergedCacheToo(t *testing.T) {
+	h := ghostWorld(t, "ls")
+	h.awaitHistory(t, "")
+	h.state.history.ghost[""] = make([]cmdhistory.Entry, 0)
+	h.prompt("$ ")
+	h.type_("systemctl status nginx")
+	h.type_("\r")
+	for _, key := range []string{historyKey(&h.state.sessions[0]), ""} {
+		entries := h.state.history.ghost[key]
+		if len(entries) == 0 || entries[0].Command != "systemctl status nginx" {
+			t.Fatalf("the cache of %q starts with %v, want the command just run", key, entries)
+		}
+	}
+}
+
+// Reading the ghost with no merged cache is a pure read: a frame must not open
+// the history or start a worker, so only a wake-up may ask for it.
+func TestAskingForTheGhostNeverStartsAHistoryRead(t *testing.T) {
+	h := ghostWorld(t, "docker compose up -d")
+	h.prompt("$ ")
+	h.type_("systemctl re")
+	delete(h.state.history.ghost, "")
+	delete(h.state.completion.historyPending, "")
+	h.state.commandGhost(&h.state.sessions[0])
+	if h.state.completion.historyPending[""] {
+		t.Fatal("reading the ghost started a history read")
 	}
 }

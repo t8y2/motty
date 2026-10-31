@@ -33,15 +33,18 @@ func (state *State) commandGhostEntries(session *Session) []cmdhistory.Entry {
 	return state.history.ghost[historyKey(session)]
 }
 
-// everyGhostEntries is the candidates merged across every host, read in the
-// background under the empty key. A host whose own history has no match for
-// the line still suggests what the user typed elsewhere: the same machines
-// often share one job (#219).
-func (state *State) everyGhostEntries(session *Session) []cmdhistory.Entry {
-	if session == nil || state.historyClearing() || !state.history.on || !state.historyAvailable(session) || session.host.NoHistory {
+// everyGhostEntries is the candidates merged across every host, prepared in
+// the background under the empty key (adoptCompletion asks for it beside the
+// host's own). A host whose own history has no match for the line still
+// suggests what the user typed elsewhere: the same machines often share one
+// job (#219). The merged list holds this host's lines too, so a fallback hit
+// may come from this host while its own cache is still loading; painting only
+// reads what has landed and never starts that loading.
+func (state *State) everyGhostEntries() []cmdhistory.Entry {
+	if state.historyClearing() {
 		return nil
 	}
-	return state.suggestionHistory("")
+	return state.history.ghost[""]
 }
 
 // noteGhostCommand puts a command just remembered at the front of the cache,
@@ -99,7 +102,7 @@ func (state *State) commandGhost(session *Session) (string, bool) {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
 			return rest, true
 		}
-		if rest, ok := cmdhistory.Suggest(state.everyGhostEntries(session), line); ok {
+		if rest, ok := cmdhistory.Suggest(state.everyGhostEntries(), line); ok {
 			return rest, true
 		}
 	}
