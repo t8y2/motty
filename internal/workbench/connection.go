@@ -404,6 +404,7 @@ const (
 	modalToolbarSettings
 	modalSFTPColumns
 	modalTerminalInput
+	modalDeleteRule
 )
 
 // tone colors a session's headline.
@@ -628,6 +629,7 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.runLoginCommand(session)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
 		state.fitTerminal(session)
@@ -1031,6 +1033,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalAutofillConfirm {
 		state.autofillRules.ask = autofillAsk{}
+	}
+	if state.modal == modalDeleteRule {
+		state.ruleDelete = ruleDelete{}
 	}
 	state.modal = modalNone
 	state.modalSession = 0

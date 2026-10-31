@@ -487,6 +487,7 @@ type State struct {
 	tabsClose          tabsClose
 	hostDialogMode     hostDialogMode
 	hostDialogID       uint32
+	ruleDelete         ruleDelete
 	hostTest           hostTest
 	hostDialogText     string
 	identityCountText  string
@@ -1038,6 +1039,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitDialogAlgorithms && state.editor.protocol == protocolSSH && state.editor.algoMode == algoCustom {
 			return &state.editor.algorithms
 		}
+		if hit == hitDialogLoginCommand && state.editor.protocol == protocolSSH {
+			return &state.editor.loginCommand
+		}
 		if hit == hitDialogOTP && state.editor.protocol == protocolSSH {
 			return &state.editor.otp
 		}
@@ -1236,6 +1240,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
+		return
+	case modalDeleteRule:
+		state.clickDeleteRuleDialog(id)
 		return
 	case modalSnippet:
 		state.clickSnippetDialog(id)
