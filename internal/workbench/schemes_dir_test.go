@@ -330,16 +330,8 @@ func TestTheSchemeSearchFiltersAndGroupsTheCards(t *testing.T) {
 	}
 
 	matches := state.schemesMatching("solar")
-	cardOf := func(id string) int {
-		for index := 0; index < schemeCount; index++ {
-			if cardID, _, _ := state.schemeAt(index); cardID == id {
-				return index
-			}
-		}
-		return -1
-	}
-	want := []int{cardOf("solarized-dark"), cardOf("solarized-light"), base} // the built-ins, then the directory's
-	if slices.Contains(want, -1) || !slices.Equal(matches, want) {
+	want := []int{item(schemeCard(t, "solarized-dark")), item(schemeCard(t, "solarized-light")), base} // the built-ins, then the directory's
+	if !slices.Equal(matches, want) {
 		t.Errorf("matches = %v, want %v", matches, want)
 	}
 	if matches := state.schemesMatching("no such scheme"); len(matches) != 0 {
