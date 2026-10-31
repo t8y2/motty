@@ -273,6 +273,7 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	}
 
 	state.Click(hitHighlightDeleteList.At(0))
+	state.Click(hitRuleDeleteConfirm)
 	if len(state.highlighting.rules) != 0 {
 		t.Fatalf("rules after delete = %v", state.highlighting.rules)
 	}

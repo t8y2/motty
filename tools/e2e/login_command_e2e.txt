@@ -1,0 +1,33 @@
+# End to end: a host's "Command after login" is typed into its shell once the
+# shell is ready, with Motty's shell integration reporting the prompt. Against the
+# loopback SSH fixture started with E2E_ALLOW_EXEC=1 (the integration shim needs it):
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && E2E_ALLOW_EXEC=1 /tmp/e2esshd 2292 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/login_command_e2e.txt
+#
+# What to look for: LOGIN_RAN_3 is on screen. The command was typed as
+# LOGIN_RAN_$((1+2)), so only a shell that ran it prints the 3.
+
+click "New Host"
+click "Advanced"
+click 539 165
+type Login test
+click 647 234
+type 127.0.0.1
+click 958 234
+select 0 2
+type 2292
+click 486 305
+type tester
+click 889 305
+type secret
+click 693 703
+type echo LOGIN_RAN_$((1+2))
+click "Add Host"
+dblclick 700 171
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "LOGIN_RAN_3" 10000
+shot /tmp/login-command.png
+layout

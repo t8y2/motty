@@ -113,6 +113,11 @@ type terminal struct {
 	sync    *terminalSync
 	syncBuf terminalSync
 	syncAt  time.Duration
+	// login is the command this shell still has to be given after login; see
+	// login_command.go. integrated says the shell was started with Motty's
+	// prompt reporting, which will announce when it is ready.
+	login      loginCommand
+	integrated bool
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
 	// autofill is what the autofill rules need to know of this terminal.
@@ -536,6 +541,7 @@ func (state *State) openShell(session *Session) {
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow))
 	config.IntegrationToken = t.folderToken
+	t.integrated = config.IntegrateShell
 	if session.host.ForwardX11 && session.host.isSSH() {
 		environ := x11fwd.CurrentEnviron()
 		config.X11 = &environ
@@ -651,6 +657,9 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t.screen.SetReply(func(reply []byte) {
 		t.sendProtocol(reply)
 	})
+	if session.host.isSSH() && session.containerCommand == "" && session.host.LoginCommand != "" {
+		t.login.arm(session.host.LoginCommand)
+	}
 	state.describe(session)
 }
 
@@ -718,6 +727,7 @@ func (state *State) pump(session *Session) {
 		if state.autofillRules.armed {
 			t.autofill.Output(state.now())
 		}
+		t.login.output(state.now())
 		state.goLive(session)
 	}
 	if state.autofillRules.armed {

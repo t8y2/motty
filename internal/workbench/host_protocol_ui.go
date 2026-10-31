@@ -32,6 +32,7 @@ var (
 	hitDialogAlgoCompatible  = tree.ID(hostProtocolUiHits, "dialog-algo-compatible")
 	hitDialogAlgoCustom      = tree.ID(hostProtocolUiHits, "dialog-algo-custom")
 	hitDialogAlgorithms      = tree.ID(hostProtocolUiHits, "dialog-algorithms")
+	hitDialogLoginCommand    = tree.ID(hostProtocolUiHits, "dialog-login-command")
 	hitDialogAdvanced        = tree.ID(hostProtocolUiHits, "dialog-advanced")
 	hitDialogForwardX11      = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
 	hitDialogAgentForward    = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
@@ -404,7 +405,7 @@ func (state *State) advancedSectionHeight() float32 {
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
-	return advancedHeaderHeight + rows*hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+	return advancedHeaderHeight + rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
 }
 
 // hostDialogExtra is the height the protocol-specific rows add to the host dialog.
@@ -459,8 +460,8 @@ func (state *State) paintAlgorithmRows(canvas *ui.Canvas, x, y, width, rowHeight
 		rows++
 	}
 	const removeWidth, scanWidth, pasteWidth = 84, 132, 96
-	var algo, custom, otp, scan, paste, remove, x11, agentFwd, noHistory, agentAccess, agentHelp flex.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: y, Width: width, Height: rows*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight})
+	var algo, custom, login, otp, scan, paste, remove, x11, agentFwd, noHistory, agentAccess, agentHelp flex.Box
+	f := state.partLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight})
 	heading := func(title string) {
 		f.Column().Height(groupHeadingHeight).Children(func() {
 			f.Column().Height(1).MarginSides(12, 0, 0, 0).Background(withAlpha(pal.line, 0.7))
@@ -472,6 +473,7 @@ func (state *State) paintAlgorithmRows(canvas *ui.Canvas, x, y, width, rowHeight
 		if editor.algoMode == algoCustom {
 			custom = f.Slot().Height(rowHeight)
 		}
+		login = f.Slot().Height(rowHeight)
 		f.Row().Height(otpFieldHeight).Gap(8).Children(func() {
 			otp = f.Slot().Grow(1)
 		})
@@ -500,6 +502,7 @@ func (state *State) paintAlgorithmRows(canvas *ui.Canvas, x, y, width, rowHeight
 	if editor.algoMode == algoCustom {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, custom.Rect())
 	}
+	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, login.Rect())
 	var removeRect ui.Rect
 	if editor.otpSaved {
 		removeRect = remove.Rect()

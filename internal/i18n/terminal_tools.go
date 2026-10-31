@@ -693,6 +693,9 @@ type ToolsMessages struct {
 	AlgoCustomField                 string
 	AlgoCustomPlaceholder           string
 	ErrAlgoRequired                 string
+	LoginCommandField               string
+	LoginCommandPlaceholder         string
+	ErrLoginCommand                 string
 	ErrAlgoUnknownFmt               string
 	AlgoWeakFmt                     string
 	AlgoNegotiatedFmt               string
