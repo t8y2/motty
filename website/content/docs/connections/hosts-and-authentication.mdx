@@ -35,6 +35,25 @@ machine.
 TOTP and HOTP seeds can be stored in the vault and filled automatically when a
 server asks for a code.
 
+### Testing a connection
+
+The host form has a **Test Connection** button. It dials the host as typed
+without saving it. An unknown host key is never trusted by a test, and nothing
+is sent to such a server; a login that needs more than the form holds, such as a
+one-time code, ends as "not verified" instead of failing.
+
+## After login
+
+A host's **Command after login** (under Advanced) is typed into each new shell
+once it is ready for input, as if you had typed it, for example `cd /srv/app`
+or `sudo -i`. It is one line, and it stays out of the command history.
+
+To switch to root, use `sudo -i` as that command and add an autofill rule for
+the password prompt: **Settings > Terminal > Autofill rules** has a **sudo
+preset** (answers with the host's saved password) and a **su preset** (answers
+with a fixed text kept in the vault, such as root's password). A rule starts
+off, and asks once per session before it first sends anything.
+
 ## Organising hosts
 
 Hosts can be grouped, tagged and searched.

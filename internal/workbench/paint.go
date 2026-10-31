@@ -274,6 +274,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintAutofillDialog(canvas, viewport)
 	case modalAutofillConfirm:
 		state.paintAutofillConfirm(canvas, viewport)
+	case modalDeleteRule:
+		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalSnippet:
 		state.paintSnippetDialog(canvas, viewport)
 	case modalImportSessions:
@@ -326,6 +328,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.endMenus()
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
+	state.requestLoginCommandFrames(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})

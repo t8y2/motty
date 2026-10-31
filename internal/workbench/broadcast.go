@@ -133,6 +133,10 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		state.modal = modalImportSessions
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
+	case id == hitSettingsAutofillSudo:
+		state.openAutofillSudoPreset()
+	case id == hitSettingsAutofillSu:
+		state.openAutofillSuPreset()
 	case id.Scope() == hitAutofillToggleList:
 		state.toggleAutofillRule(item(id))
 	case id.Scope() == hitAutofillEditList:
@@ -140,13 +144,13 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 			state.openAutofillDialog(state.autofillRules.rules[index])
 		}
 	case id.Scope() == hitAutofillDeleteList:
-		state.deleteAutofillRule(item(id))
+		state.askDeleteAutofillRule(item(id))
 	case id == hitSettingsHighlightAdd:
 		state.openHighlightDialog()
 	case id == hitSettingsHighlightImport:
 		state.importHighlightRules()
 	case id.Scope() == hitHighlightDeleteList:
-		state.deleteHighlightRule(item(id))
+		state.askDeleteHighlightRule(item(id))
 	case id.Scope() == hitSnippetSendList:
 		state.sendSnippet(item(id))
 	default:
