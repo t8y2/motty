@@ -198,7 +198,7 @@ func TestDisplayReplacesAContinuationPromptEcho(t *testing.T) {
 	tp.SetEcho(sent)
 	tp.SetDisplay("echo hi\necho there")
 	display, done := tp.Feed([]byte(echo + "hi\r\nthere\r\n\r\n" + marker(0) + "\r\n"))
-	if !done || string(display) != "echo hi\necho there\r\nhi\r\nthere\r\n" {
+	if !done || string(display) != "echo hi\r\necho there\r\nhi\r\nthere\r\n" {
 		t.Fatalf("display = %q, done %v", display, done)
 	}
 }

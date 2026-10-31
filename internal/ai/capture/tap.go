@@ -171,8 +171,10 @@ func (t *Tap) display(b []byte) {
 			if len(command) == 0 {
 				command = []byte(":")
 			}
-			t.out = append(t.out, command...)
-			if !bytes.HasSuffix(command, []byte{'\n'}) {
+			// A bare line feed keeps the column, so every line of a multi-line
+			// command would start where the one above it ended.
+			for line := range bytes.SplitSeq(command, []byte{'\n'}) {
+				t.out = append(t.out, line...)
 				t.out = append(t.out, '\r', '\n')
 			}
 			t.out = append(t.out, t.hidden[t.echoScan:]...)
