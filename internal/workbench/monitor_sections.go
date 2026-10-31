@@ -28,6 +28,11 @@ func monitorRight(c *ui.Canvas, text string, b ui.Rect, size float32, color ui.C
 	c.LabelAligned(elide(c, text, size, weight, b.Width), b, ui.TextStyle{Size: size, Color: color, Weight: weight}, ui.AlignRight)
 }
 
+func monitorRowVisible(viewport ui.Rect, y, height float32) bool {
+	return viewport.Width > 0 && viewport.Height > 0 &&
+		y < viewport.Y+viewport.Height && y+height > viewport.Y
+}
+
 func monitorDiskCount(p *monitorView) int {
 	if p.disksCollapsed {
 		return 0
@@ -147,6 +152,7 @@ func (s *State) monitorMore(c *ui.Canvas, id ui.ID, label string, b ui.Rect) {
 
 func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b ui.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
+	viewport := s.monitorScrollArea(p).Geometry().Viewport
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorCores, ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, p.coresTitle, icons.Cpu, colors.cpu, !p.coresCollapsed)
 	if p.coresCollapsed {
@@ -165,6 +171,9 @@ func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b ui.Rect) {
 	half := (w - 12) / 2
 	for i, core := range p.cores[:count] {
 		left, top := x+float32(i%2)*(half+12), y+float32(i/2)*34
+		if !monitorRowVisible(viewport, top, 25) {
+			continue
+		}
 		monitorLabel(c, core.label, ui.Rect{X: left, Y: top, Width: half * .57, Height: 16}, 10, colors.muted, ui.WeightRegular)
 		monitorRight(c, core.percent, ui.Rect{X: left + half*.57, Y: top, Width: half * .43, Height: 16}, 10, colors.text, ui.WeightMedium)
 		theme := s.Theme()
@@ -177,12 +186,16 @@ func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b ui.Rect) {
 		if p.coresMore {
 			text = m.Collapse
 		}
-		s.monitorMore(c, hitMonitorCoresMore, text, ui.Rect{X: x, Y: y + float32((count+1)/2)*34, Width: w, Height: 24})
+		moreY := y + float32((count+1)/2)*34
+		if monitorRowVisible(viewport, moreY, 24) {
+			s.monitorMore(c, hitMonitorCoresMore, text, ui.Rect{X: x, Y: moreY, Width: w, Height: 24})
+		}
 	}
 }
 
 func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b ui.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
+	viewport := s.monitorScrollArea(p).Geometry().Viewport
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorDisksCollapse, ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, m.DiskSection, icons.HardDrive, colors.disk, !p.disksCollapsed)
 	if p.disksCollapsed {
@@ -199,20 +212,22 @@ func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b ui.Rect) {
 		if p.page != 1 && !p.disksOpen && (d.virtual || shown >= 3) {
 			continue
 		}
-		monitorLabel(c, d.path, ui.Rect{X: x, Y: y, Width: w * .36, Height: 18}, 11, colors.text, ui.WeightMedium)
-		monitorRight(c, d.capacity, ui.Rect{X: x + w*.36, Y: y, Width: w * .64, Height: 18}, 10, colors.muted, ui.WeightRegular)
-		tint := colors.cpu
-		if d.value >= 70 {
-			tint = colors.disk
+		if monitorRowVisible(viewport, y, 30) {
+			monitorLabel(c, d.path, ui.Rect{X: x, Y: y, Width: w * .36, Height: 18}, 11, colors.text, ui.WeightMedium)
+			monitorRight(c, d.capacity, ui.Rect{X: x + w*.36, Y: y, Width: w * .64, Height: 18}, 10, colors.muted, ui.WeightRegular)
+			tint := colors.cpu
+			if d.value >= 70 {
+				tint = colors.disk
+			}
+			if d.value >= 95 {
+				tint = s.pal.danger
+			}
+			theme := s.Theme()
+			theme.Primary = tint
+			theme.Muted = colors.track
+			components.Progress(c, theme, ui.Rect{X: x, Y: y + 24, Width: w - 30, Height: 5}, float32(d.value/100))
+			monitorRight(c, d.percent, ui.Rect{X: x + w - 28, Y: y + 17, Width: 28, Height: 18}, 10, colors.muted, ui.WeightMedium)
 		}
-		if d.value >= 95 {
-			tint = s.pal.danger
-		}
-		theme := s.Theme()
-		theme.Primary = tint
-		theme.Muted = colors.track
-		components.Progress(c, theme, ui.Rect{X: x, Y: y + 24, Width: w - 30, Height: 5}, float32(d.value/100))
-		monitorRight(c, d.percent, ui.Rect{X: x + w - 28, Y: y + 17, Width: 28, Height: 18}, 10, colors.muted, ui.WeightMedium)
 		y += 43
 		shown++
 	}
@@ -221,7 +236,9 @@ func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b ui.Rect) {
 		if p.disksOpen {
 			text = m.Collapse
 		}
-		s.monitorMore(c, hitMonitorDisks, text, ui.Rect{X: x, Y: y, Width: w, Height: 24})
+		if monitorRowVisible(viewport, y, 24) {
+			s.monitorMore(c, hitMonitorDisks, text, ui.Rect{X: x, Y: y, Width: w, Height: 24})
+		}
 	}
 }
 
@@ -287,15 +304,20 @@ func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b ui.Rect
 		s.paintMonitorNetworkTile(c, p, ui.Rect{X: x, Y: y, Width: w, Height: 142}, true)
 		y += 142 + monitorGap
 		h := float32(32 + max(1, len(p.networks))*34 + 8)
+		viewport := s.monitorScrollArea(p).Geometry().Viewport
 		c.RoundedBorder(ui.Rect{X: x, Y: y, Width: w, Height: h}, 10, 1, colors.border, colors.surface)
 		monitorLabel(c, m.NetworkSection, ui.Rect{X: x + 10, Y: y, Width: w - 20, Height: 32}, 12, colors.text, ui.WeightSemibold)
 		y += 32
 		if len(p.networks) == 0 {
-			monitorLabel(c, p.networkText, ui.Rect{X: x + 10, Y: y, Width: w - 20, Height: 34}, 11, colors.muted, ui.WeightRegular)
+			if monitorRowVisible(viewport, y, 34) {
+				monitorLabel(c, p.networkText, ui.Rect{X: x + 10, Y: y, Width: w - 20, Height: 34}, 11, colors.muted, ui.WeightRegular)
+			}
 		}
 		for _, n := range p.networks {
-			monitorLabel(c, n.name, ui.Rect{X: x + 10, Y: y, Width: w*.45 - 10, Height: 34}, 10, colors.muted, ui.WeightRegular)
-			monitorRight(c, n.rates, ui.Rect{X: x + w*.45, Y: y, Width: w*.55 - 10, Height: 34}, 10, colors.text, ui.WeightRegular)
+			if monitorRowVisible(viewport, y, 34) {
+				monitorLabel(c, n.name, ui.Rect{X: x + 10, Y: y, Width: w*.45 - 10, Height: 34}, 10, colors.muted, ui.WeightRegular)
+				monitorRight(c, n.rates, ui.Rect{X: x + w*.45, Y: y, Width: w*.55 - 10, Height: 34}, 10, colors.text, ui.WeightRegular)
+			}
 			y += 34
 		}
 	}
