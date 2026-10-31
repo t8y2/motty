@@ -668,10 +668,10 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalBellOff = saved.TerminalBellOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {
-		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = migrateTerminalScheme(saved.TerminalScheme)
+		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = state.migrateTerminalScheme(saved.TerminalScheme)
 	} else {
-		state.terminalSchemes[appearanceDark] = normalizeSchemeID(saved.TerminalSchemeDark)
-		state.terminalSchemes[appearanceLight] = normalizeSchemeID(saved.TerminalSchemeLight)
+		state.terminalSchemes[appearanceDark] = state.normalizeSchemeID(saved.TerminalSchemeDark)
+		state.terminalSchemes[appearanceLight] = state.normalizeSchemeID(saved.TerminalSchemeLight)
 	}
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)

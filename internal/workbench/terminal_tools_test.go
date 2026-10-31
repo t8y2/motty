@@ -167,7 +167,7 @@ func TestEachLookKeepsItsOwnTerminalScheme(t *testing.T) {
 	if state.termPal.terminal == darkTerminal || state.termPal.terminal != state.pal.terminal {
 		t.Errorf("the terminal stayed %v in a light window", state.termPal.terminal)
 	}
-	state.Click(hitSettingsSchemeList.At(schemeCount - 1)) // One Light
+	state.Click(schemeCard(t, "one-light"))
 
 	state.Click(hitTheme)
 	if state.activeScheme() != "dracula" || state.termPal.terminal != darkTerminal {

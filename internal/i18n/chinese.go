@@ -1139,11 +1139,18 @@ var chineseAISettings = AISettingsMessages{
 	MCPResetDone:         "令牌已重置",
 }
 var chineseTools = ToolsMessages{
-	SchemeGroup:       "终端配色",
-	SchemeDescription: "终端的背景、文字和十六种命名颜色。深色和浅色外观各记住一套，切换外观时终端自动换用。",
-	SchemeDefault:     "默认",
-	SchemeLookDark:    "正在设置：深色外观",
-	SchemeLookLight:   "正在设置：浅色外观",
+	SchemeGroup:             "终端配色",
+	SchemeDescription:       "终端的背景、文字和十六种命名颜色。深色和浅色外观各记住一套，切换外观时终端自动换用。",
+	SchemeDefault:           "默认",
+	SchemeLookDark:          "正在设置：深色外观",
+	SchemeLookLight:         "正在设置：浅色外观",
+	SchemeDark:              "深色",
+	SchemeLight:             "浅色",
+	SchemeSearchPlaceholder: "搜索配色方案",
+	SchemeNoMatches:         "没有匹配的配色方案。",
+	SchemeDirHintFmt:        "配色文件保存在 %s，放入 X resources 配色文件即可加入列表。",
+	SchemeShowAllFmt:        "显示全部 %d 个配色",
+	SchemeShowFewer:         "收起",
 
 	HighlightGroup:              "关键字高亮",
 	HighlightBuiltin:            "常见词",

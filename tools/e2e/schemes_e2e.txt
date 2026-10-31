@@ -1,0 +1,38 @@
+# End to end: the schemes directory joins the built-ins, long groups show their
+# first twenty cards with a control that spreads the rest, the search box
+# filters the cards, and choosing a community scheme wears it. The bundled
+# collection is seeded into the fresh data folder on this first run, so the
+# section opens with 168 dark and 23 light schemes.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/schemes_e2e.txt
+#
+# The first shot shows the folded section: twenty cards per group and a "Show
+# all" under each. The second shows the spread light group with its "Show
+# fewer"; the third the three Rose Pine matches; the last the check on the
+# chosen card.
+
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+scroll 800 450 0 1900
+settle 400
+waitfor "Search color schemes" 4000
+shot /tmp/schemes-section.png
+click "Show all 23"
+settle 500
+waitfor "Show fewer" 4000
+shot /tmp/schemes-expanded.png
+click "Show fewer"
+settle 500
+scroll 800 450 0 -700
+settle 400
+click "Search color schemes"
+type Rose Pine
+settle 500
+shot /tmp/schemes-filtered.png
+click "Rose Pine Moon"
+settle 700
+shot /tmp/schemes-chosen.png
+texts

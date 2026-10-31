@@ -1,6 +1,10 @@
 package workbench
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
 )
@@ -138,22 +142,28 @@ var colorSchemes = [...]colorScheme{
 	},
 }
 
-// schemeCount is how many choices Settings offers, Default included.
+// schemeCount is how many built-in choices Settings offers, Default included.
+// The schemes directory adds its own after these.
 const schemeCount = len(colorSchemes) + 1
 
-func schemeByID(id string) (*colorScheme, bool) {
+// schemeByID finds a scheme among the built-ins and the schemes directory's.
+func (state *State) schemeByID(id string) (*colorScheme, bool) {
 	for index := range colorSchemes {
 		if colorSchemes[index].id == id {
 			return &colorSchemes[index], true
 		}
 	}
+	if index, ok := state.dirSchemeIndex[id]; ok {
+		return &state.dirSchemes[index], true
+	}
 	return nil, false
 }
 
 // normalizeSchemeID keeps a saved choice that still exists and falls back to
-// Default for one a later or earlier release does not know.
-func normalizeSchemeID(id string) string {
-	if _, ok := schemeByID(id); ok {
+// Default for one a later or earlier release does not know, or whose file is
+// gone from the schemes directory.
+func (state *State) normalizeSchemeID(id string) string {
+	if _, ok := state.schemeByID(id); ok {
 		return id
 	}
 	return defaultSchemeID
@@ -168,9 +178,9 @@ func (state *State) activeScheme() string {
 // sat in the terminal whatever the window looked like, so it goes to the look
 // its own background suits and the other look keeps Default: nothing changes
 // on screen until the user switches.
-func migrateTerminalScheme(id string) (dark, light string) {
+func (state *State) migrateTerminalScheme(id string) (dark, light string) {
 	dark, light = defaultSchemeID, defaultSchemeID
-	scheme, ok := schemeByID(id)
+	scheme, ok := state.schemeByID(id)
 	switch {
 	case !ok:
 	case luminance(scheme.background) < 0.5:
@@ -187,7 +197,7 @@ func migrateTerminalScheme(id string) (dark, light string) {
 func (state *State) rebuildTerminalLook() {
 	look := *state.pal
 	look.termFG = look.text
-	if scheme, ok := schemeByID(state.activeScheme()); ok {
+	if scheme, ok := state.schemeByID(state.activeScheme()); ok {
 		look.dark = luminance(scheme.background) < 0.5
 		look.terminal = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
 		look.termFG = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
@@ -227,7 +237,7 @@ func luminance(c [3]uint8) float32 {
 }
 
 func (state *State) setTerminalScheme(id string) bool {
-	id = normalizeSchemeID(id)
+	id = state.normalizeSchemeID(id)
 	if state.activeScheme() == id {
 		return false
 	}
@@ -238,9 +248,15 @@ func (state *State) setTerminalScheme(id string) bool {
 
 // Scheme cards in Settings.
 const (
-	schemeCardHeight = float32(54)
-	schemeCardGap    = float32(10)
-	schemeColumns    = 4
+	schemeCardHeight   = float32(54)
+	schemeCardGap      = float32(10)
+	schemeColumns      = 4
+	schemeSearchHeight = float32(38)
+	schemeShowAll      = float32(40)
+
+	// schemeGroupPreview is how many cards a group shows before the control
+	// that spreads the rest.
+	schemeGroupPreview = 20
 
 	// swatchSize and swatchPitch are the dots that show a scheme's four colors, and
 	// the distance from one to the next.
@@ -251,25 +267,41 @@ const (
 // schemeHits is the place of the controls this file paints.
 var schemeHits = tree.Feature("scheme")
 
-// hitSettingsSchemeList starts the ids of the scheme cards: Default is the base
-// itself, the others follow in colorSchemes order.
-var hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+var (
+	// hitSettingsSchemeList starts the ids of the scheme cards: Default is the
+	// base itself, the others follow in colorSchemes order and then in the
+	// schemes directory's.
+	hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+	hitSchemeSearch       = tree.ID(schemeHits, "scheme-search")
+	hitSchemeShowAllDark  = tree.ID(schemeHits, "scheme-show-dark")
+	hitSchemeShowAllLight = tree.ID(schemeHits, "scheme-show-light")
+)
 
 func schemeHit(index int) ui.ID { return hitSettingsSchemeList.At(index) }
 
-// schemeAt is the id and name of the card at index, Default first.
+// schemeAt is the id and name of the card at index, Default first, then the
+// built-ins in colorSchemes order, then the schemes directory's.
 func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
 	if index == 0 {
 		return defaultSchemeID, state.messages.Tools.SchemeDefault, nil
 	}
-	scheme = &colorSchemes[index-1]
-	return scheme.id, scheme.name, scheme
+	index--
+	if index < len(colorSchemes) {
+		scheme = &colorSchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
+	if dir := index - len(colorSchemes); dir < len(state.dirSchemes) {
+		scheme = &state.dirSchemes[dir]
+		return scheme.id, scheme.name, scheme
+	}
+	return "", "", nil
 }
 
-// paintSchemeSettings is the card grid that picks the terminal's colors.
+// paintSchemeSettings is the card grid that picks the terminal's colors: the
+// built-ins, then the schemes directory's, grouped by the depth of their
+// background and found through the search box.
 func (state *State) paintSchemeSettings(page *settingsPage) {
 	m, f, pal := state.messages.Tools, page.f, state.pal
-	rows := (schemeCount + schemeColumns - 1) / schemeColumns
 	page.group(m.SchemeGroup, func() {
 		page.rows++
 		f.Column().PadSides(14, 18, 22, 18).Children(func() {
@@ -279,18 +311,122 @@ func (state *State) paintSchemeSettings(page *settingsPage) {
 				look = m.SchemeLookLight
 			}
 			f.Text(look).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
-			for row := 0; row < rows; row++ {
-				f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
-					for column := 0; column < schemeColumns; column++ {
-						if index := row*schemeColumns + column; index < schemeCount {
-							state.declareScheme(page, index)
-						} else {
-							f.Spacer().Basis(0) // an incomplete last row keeps its cards the width of the others
-						}
-					}
-				})
+			page.add(settingsControl{kind: controlSchemeSearch, slot: f.Slot().Height(schemeSearchHeight).FillWidth().MarginSides(0, 0, 8, 0).Shrink(0)})
+			f.Text(fmt.Sprintf(m.SchemeDirHintFmt, state.schemesDir())).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 8, 0)
+			filter := strings.ToLower(strings.TrimSpace(state.schemeFilter.String()))
+			if filter == "" {
+				var builtins []int
+				for index := 0; index < schemeCount; index++ {
+					builtins = append(builtins, index)
+				}
+				state.paintSchemeCards(page, builtins)
+				dark, light := state.dirSchemeIndices()
+				state.paintSchemeGroup(page, m.SchemeDark, dark, state.schemesExpandedDark, hitSchemeShowAllDark)
+				state.paintSchemeGroup(page, m.SchemeLight, light, state.schemesExpandedLight, hitSchemeShowAllLight)
+				return
+			}
+			matches := state.schemesMatching(filter)
+			if len(matches) == 0 {
+				f.Text(m.SchemeNoMatches).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
+				return
+			}
+			state.paintSchemeCards(page, matches)
+		})
+	})
+}
+
+// paintSchemeGroup titles a group of scheme cards and lays them out; an empty
+// group is left out, and a long one shows its first cards with a control that
+// spreads or folds the rest.
+func (state *State) paintSchemeGroup(page *settingsPage, title string, indices []int, expanded bool, toggle ui.ID) {
+	if len(indices) == 0 {
+		return
+	}
+	m, f, pal := state.messages.Tools, page.f, state.pal
+	f.Text(title).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+	shown := indices
+	if !expanded && len(indices) > schemeGroupPreview {
+		shown = indices[:schemeGroupPreview]
+	}
+	state.paintSchemeCards(page, shown)
+	if len(indices) <= schemeGroupPreview {
+		return
+	}
+	label := m.SchemeShowFewer
+	if !expanded {
+		label = fmt.Sprintf(m.SchemeShowAllFmt, len(indices))
+	}
+	f.Row().Height(schemeShowAll).Justify(flex.Center).Items(flex.Center).Children(func() {
+		page.button(toggle, label, aiButtonOutline, false)
+	})
+}
+
+// paintSchemeCards lays cards out four to a row; an incomplete last row keeps
+// its cards the width of the others.
+func (state *State) paintSchemeCards(page *settingsPage, indices []int) {
+	f := page.f
+	for start := 0; start < len(indices); start += schemeColumns {
+		end := min(start+schemeColumns, len(indices))
+		f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+			for _, index := range indices[start:end] {
+				state.declareScheme(page, index)
+			}
+			for pad := end - start; pad < schemeColumns; pad++ {
+				f.Spacer().Basis(0)
 			}
 		})
+	}
+}
+
+// dirSchemeIndices splits the schemes directory's cards into the dark and the
+// light ones by the depth of their background, each named by its place in the
+// card list.
+func (state *State) dirSchemeIndices() (dark, light []int) {
+	base := len(colorSchemes) + 1
+	for index := range state.dirSchemes {
+		if luminance(state.dirSchemes[index].background) < 0.5 {
+			dark = append(dark, base+index)
+		} else {
+			light = append(light, base+index)
+		}
+	}
+	return dark, light
+}
+
+// schemesMatching lists the cards whose name holds every word of the filter.
+func (state *State) schemesMatching(filter string) []int {
+	var matches []int
+	for index := 0; index < schemeCount; index++ {
+		if _, name, _ := state.schemeAt(index); schemeMatches(name, filter) {
+			matches = append(matches, index)
+		}
+	}
+	base := len(colorSchemes) + 1
+	for index := range state.dirSchemes {
+		if schemeMatches(state.dirSchemes[index].name, filter) {
+			matches = append(matches, base+index)
+		}
+	}
+	return matches
+}
+
+func schemeMatches(name, filter string) bool {
+	name = strings.ToLower(name)
+	for _, word := range strings.Fields(filter) {
+		if !strings.Contains(name, word) {
+			return false
+		}
+	}
+	return true
+}
+
+// paintSchemeSearchBox paints the search box above the scheme cards.
+func (state *State) paintSchemeSearchBox(canvas *ui.Canvas, box ui.Rect) {
+	value := state.schemeFilter.String()
+	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
+		ID: hitSchemeSearch, Label: state.messages.Tools.SchemeSearchPlaceholder, Value: value, Placeholder: state.messages.Tools.SchemeSearchPlaceholder,
+		NativeEditing: canvas.Focused() == hitSchemeSearch && value != "",
+		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 }
 

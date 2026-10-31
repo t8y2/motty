@@ -1139,11 +1139,18 @@ var englishAISettings = AISettingsMessages{
 	MCPResetDone:         "Token reset",
 }
 var englishTools = ToolsMessages{
-	SchemeGroup:       "Terminal colors",
-	SchemeDescription: "The terminal's background, text and the sixteen named colors. The dark and light looks each keep their own, and the terminal switches with the window.",
-	SchemeDefault:     "Default",
-	SchemeLookDark:    "Editing: dark look",
-	SchemeLookLight:   "Editing: light look",
+	SchemeGroup:             "Terminal colors",
+	SchemeDescription:       "The terminal's background, text and the sixteen named colors. The dark and light looks each keep their own, and the terminal switches with the window.",
+	SchemeDefault:           "Default",
+	SchemeLookDark:          "Editing: dark look",
+	SchemeLookLight:         "Editing: light look",
+	SchemeDark:              "Dark",
+	SchemeLight:             "Light",
+	SchemeSearchPlaceholder: "Search color schemes",
+	SchemeNoMatches:         "No scheme matches.",
+	SchemeDirHintFmt:        "Schemes live in %s; drop an X resources scheme file there and it joins the list.",
+	SchemeShowAllFmt:        "Show all %d",
+	SchemeShowFewer:         "Show fewer",
 
 	HighlightGroup:              "Keyword highlighting",
 	HighlightBuiltin:            "Common words",

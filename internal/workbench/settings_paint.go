@@ -35,6 +35,7 @@ const (
 	controlLogo                                        // the product wordmark in a slot
 	controlAgentSelect                                 // independent stdio client configuration
 	controlLocalShellSelect                            // detected Windows shells
+	controlSchemeSearch                                // the schemes section's search box
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -181,6 +182,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			canvas.HitLabel(control.id, rect, control.label, control.disabled)
 		case controlSearch:
 			state.paintSettingsSearchBox(canvas, rect)
+		case controlSchemeSearch:
+			state.paintSchemeSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
 		case controlSwatches:

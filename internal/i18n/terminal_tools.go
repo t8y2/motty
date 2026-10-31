@@ -4,11 +4,18 @@ package i18n
 // keyword highlighting, snippets and broadcast input.
 type ToolsMessages struct {
 	// Color schemes.
-	SchemeGroup       string
-	SchemeDescription string
-	SchemeDefault     string
-	SchemeLookDark    string
-	SchemeLookLight   string
+	SchemeGroup             string
+	SchemeDescription       string
+	SchemeDefault           string
+	SchemeLookDark          string
+	SchemeLookLight         string
+	SchemeDark              string
+	SchemeLight             string
+	SchemeSearchPlaceholder string
+	SchemeNoMatches         string
+	SchemeDirHintFmt        string
+	SchemeShowAllFmt        string
+	SchemeShowFewer         string
 
 	// Keyword highlighting.
 	HighlightGroup              string

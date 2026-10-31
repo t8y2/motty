@@ -62,8 +62,11 @@ and restored without reconnecting.
 
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
-record a session explicitly. The terminal has eleven colour schemes, keyword
-highlighting and optional inline command suggestions.
+record a session explicitly. The terminal wears the built-in colour schemes
+plus the community collection that ships with it, and any scheme dropped as an
+X resources file into the data folder's schemes directory; a search finds one
+by name. Keyword highlighting and optional inline command suggestions are there
+too.
 
 ### 🔑 Hosts and authentication
 
