@@ -22,20 +22,33 @@ func (state *State) sftpEditorItem(view *sftpView, folder *sftpFolder) (string, 
 	return fmt.Sprintf(m.FilesEditorOpenFmt, name), disabled
 }
 
-// editorRequestFor copies what the request needs out of the window.
+// editorRequestFor copies what the request needs out of the window, so the
+// background reads nothing of it: the SSH config is read there, not here.
 func (state *State) editorRequestFor(view *sftpView, folder *sftpFolder, session *Session) editorRequest {
+	m := state.messages.Tools
 	request := editorRequest{
 		editor:    state.defaultEditor,
 		directory: folder.path,
-		portFmt:   state.messages.Tools.FilesEditorPortFmt,
+		local:     folder == &view.lfolder,
+		portFmt:   m.FilesEditorPortFmt,
+		jumpFmt:   m.FilesEditorJump,
 	}
-	if folder == &view.lfolder {
+	if request.local {
 		return request
 	}
 	host := session.host
-	request.host = editorHost{address: host.Address, user: state.hostCatalog.login(host), port: host.Port}
-	request.alias = state.sshAlias(host)
+	request.host = editorHost{
+		address: host.Address, user: state.hostCatalog.login(host), systemUser: state.hostCatalog.systemUser,
+		port: host.Port, mottyJump: hasMottyJump(state, host),
+	}
+	request.aliases, request.configPath = state.sshAliases(host), state.sshConfigPath()
 	return request
+}
+
+// hasMottyJump reports whether Motty reaches the host through a jump host.
+func hasMottyJump(state *State, host Host) bool {
+	_, jumped := state.routeJump(host.ID)
+	return jumped
 }
 
 // editorResult is one answer from the background.
@@ -55,7 +68,7 @@ func (state *State) openSFTPInEditor(view *sftpView) {
 		return
 	}
 	request := state.editorRequestFor(view, folder, session)
-	open := state.options.OpenExternalURI
+	open := state.options.OpenSchemeURL
 	results, notify := make(chan editorResult, 1), state.notifyForView(session, view)
 	view.editorResults = results
 	go func() {

@@ -1,14 +1,16 @@
 package workbench
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -49,27 +51,51 @@ func TestExternalEditorURI(t *testing.T) {
 	}
 }
 
-func editorTestRequest(editor ExternalEditor, port uint16, alias string) editorRequest {
+func editorTestRequest(editor ExternalEditor, port uint16) editorRequest {
 	return editorRequest{
-		editor: editor, directory: "/srv/app", portFmt: i18n.For(i18n.English).Tools.FilesEditorPortFmt,
-		host: editorHost{address: "prod.example.com", user: "deploy", port: port}, alias: alias,
+		editor: editor, directory: "/srv/app",
+		portFmt: i18n.For(i18n.English).Tools.FilesEditorPortFmt, jumpFmt: i18n.For(i18n.English).Tools.FilesEditorJump,
+		host: editorHost{address: "prod.example.com", user: "deploy", systemUser: "me", port: port},
 	}
 }
 
+// editorConfig writes an SSH config and points a request at it, looking for the
+// names given.
+func editorConfig(t *testing.T, request editorRequest, config string, aliases ...string) editorRequest {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request.configPath, request.aliases = path, aliases
+	return request
+}
+
 func TestResolveEditorAuthority(t *testing.T) {
-	ipv6 := editorTestRequest(editorZed, 22, "")
+	ipv6 := editorTestRequest(editorZed, 22)
 	ipv6.host.address = "2001:db8::1"
+	jump := editorTestRequest(editorZed, 22)
+	jump.host.mottyJump = true
+	hostile := editorTestRequest(editorZed, 22)
+	hostile.host.user = "a/b"
+	chinese := editorTestRequest(editorZed, 22)
+	chinese.host.user = "\u5f20\u4e09"
+	noAddress := editorTestRequest(editorZed, 22)
+	noAddress.host.address = ""
 	for _, test := range []struct {
 		name    string
 		request editorRequest
 		want    string
 		wantErr bool
 	}{
-		{"a live alias wins", editorTestRequest(editorVSCode, 2222, "prod"), "prod", false},
-		{"a port Zed can carry", editorTestRequest(editorZed, 2222, ""), "deploy@prod.example.com:2222", false},
+		{"a port Zed can carry", editorTestRequest(editorZed, 2222), "deploy@prod.example.com:2222", false},
 		{"an IPv6 endpoint", ipv6, "deploy@[2001:db8::1]", false},
-		{"a folder on this computer", editorRequest{editor: editorVSCode}, "", false},
-		{"a port VS Code cannot carry", editorTestRequest(editorVSCode, 2222, ""), "", true},
+		{"a folder on this computer", editorRequest{editor: editorVSCode, local: true}, "", false},
+		{"a port VS Code cannot carry", editorTestRequest(editorVSCode, 2222), "", true},
+		{"a jump host only Motty keeps", jump, "", true},
+		{"a user that would change the URL", hostile, "", true},
+		{"a user outside ASCII is escaped", chinese, "%E5%BC%A0%E4%B8%89@prod.example.com", false},
+		{"a server with no address", noAddress, "", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := resolveEditorAuthority(test.request)
@@ -80,19 +106,64 @@ func TestResolveEditorAuthority(t *testing.T) {
 	}
 }
 
+// A Host block that shares a name with the saved host is only used when it
+// reaches the same machine, as the same user, on the same port: the editor's ssh
+// would otherwise connect somewhere the file panel is not.
+func TestAnSSHConfigAliasIsUsedOnlyForTheSameHost(t *testing.T) {
+	const direct = "deploy@prod.example.com" // what a host the file does not name gets
+	for _, test := range []struct {
+		name    string
+		config  string
+		aliases []string
+		want    string
+	}{
+		{"the same host", "Host prod\n\tHostName prod.example.com\n\tUser deploy\n", []string{"prod"}, "prod"},
+		{"a host the file names only by its address", "Host prod.example.com\n\tUser deploy\n", []string{"prod.example.com"}, "prod.example.com"},
+		{"the second name is the right one", "Host a\n\tHostName elsewhere\n\tUser deploy\nHost b\n\tHostName prod.example.com\n\tUser deploy\n", []string{"a", "b"}, "b"},
+		{"a name in Chinese", "Host \u751f\u4ea7\n\tHostName prod.example.com\n\tUser deploy\n", []string{"\u751f\u4ea7"}, "%E7%94%9F%E4%BA%A7"},
+		{"the system user is not the saved user", "Host prod\n\tHostName prod.example.com\n", []string{"prod"}, direct},
+		{"another machine", "Host prod\n\tHostName other.example.com\n\tUser deploy\n", []string{"prod"}, direct},
+		{"another user", "Host prod\n\tHostName prod.example.com\n\tUser root\n", []string{"prod"}, direct},
+		{"another port", "Host prod\n\tHostName prod.example.com\n\tUser deploy\n\tPort 2222\n", []string{"prod"}, direct},
+		{"no such block", "Host other\n\tHostName x\n", []string{"prod"}, direct},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := editorConfig(t, editorTestRequest(editorVSCode, 22), test.config, test.aliases...)
+			if got, err := resolveEditorAuthority(request); err != nil || got != test.want {
+				t.Fatalf("resolveEditorAuthority = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
+// chooseEditor picks an editor in the settings select the way a user does.
+func chooseEditor(t *testing.T, state *State, editor ExternalEditor) {
+	t.Helper()
+	state.Click(hitSettingsEditor)
+	if !state.editorMenu.open {
+		t.Fatal("the editor select did not open")
+	}
+	index := slices.Index(state.editorMenu.choices, editor)
+	if index < 0 {
+		t.Fatalf("%q is not offered: %v", editor, state.editorMenu.choices)
+	}
+	state.Click(hitSettingsEditorItems.At(index))
+}
+
 func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
+	state.options.SchemeHandlerAvailable = func(string) (bool, error) { return true, nil }
 	if label, _ := state.sftpEditorItem(view, &view.sftpFolder); label != "" {
 		t.Fatalf("a menu item was offered before an editor was chosen: %q", label)
 	}
 	state.openSettings()
 	state.selectSettingsCategory(settingsFiles)
 	canvas, texts := paintedTexts(state)
-	if !contains(texts, state.messages.Tools.FilesEditor) || !hasHit(canvas, hitSettingsEditorZed) {
+	if !contains(texts, state.messages.Tools.FilesEditor) || !hasHit(canvas, hitSettingsEditor) {
 		t.Fatalf("the editor setting is not shown: %v", texts)
 	}
-	state.Click(hitSettingsEditorZed)
+	chooseEditor(t, state, editorZed)
 	saved, _, err := loadState(state.options.StatePath)
 	if state.defaultEditor != editorZed || err != nil || saved.DefaultEditor != string(editorZed) {
 		t.Fatalf("editor = %q, saved = %q, err = %v", state.defaultEditor, saved.DefaultEditor, err)
@@ -100,19 +171,79 @@ func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
 	if restarted := newTestState(t, state.options); restarted.defaultEditor != editorZed {
 		t.Fatalf("restored editor = %q", restarted.defaultEditor)
 	}
-	state.Click(hitSettingsEditorNone)
-	if state.defaultEditor != editorNone || state.settingsEditorSelected() != hitSettingsEditorNone {
-		t.Fatalf("editor = %q, selected = %d", state.defaultEditor, state.settingsEditorSelected())
+	chooseEditor(t, state, editorNone)
+	if state.defaultEditor != editorNone || state.editorSelected() != 0 {
+		t.Fatalf("editor = %q, selected = %d", state.defaultEditor, state.editorSelected())
 	}
+}
+
+func TestOnlyInstalledEditorsAreOffered(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	known := map[string]error{"vscode": nil, "zed": errors.New("no xdg-mime")}
+	installed := map[string]bool{"vscode": false, "zed": false}
+	state.options.SchemeHandlerAvailable = func(scheme string) (bool, error) { return installed[scheme], known[scheme] }
+
+	// VS Code is not installed; the system cannot say whether Zed is.
+	state.refreshEditors()
+	if want := []ExternalEditor{editorNone, editorZed}; !slices.Equal(state.editorMenu.choices, want) {
+		t.Fatalf("choices = %v, want %v", state.editorMenu.choices, want)
+	}
+	// An editor chosen earlier and since uninstalled stays visible, so the row
+	// does not claim another one.
+	state.defaultEditor = editorVSCode
+	state.refreshEditors()
+	if want := []ExternalEditor{editorNone, editorZed, editorVSCode}; !slices.Equal(state.editorMenu.choices, want) {
+		t.Fatalf("choices = %v, want %v", state.editorMenu.choices, want)
+	}
+	if state.editorInstalled(editorVSCode) || state.editorSelected() != 2 {
+		t.Fatalf("installed = %t, selected = %d", state.editorInstalled(editorVSCode), state.editorSelected())
+	}
+	// A value this build does not know highlights nothing and says so.
 	state.defaultEditor = ExternalEditor("sublime")
-	if selected := state.settingsEditorSelected(); selected != (ui.ID{}) {
-		t.Fatalf("an unknown editor highlighted option %d", selected)
+	state.refreshEditors()
+	if state.editorSelected() != -1 {
+		t.Fatalf("an unknown editor selected choice %d", state.editorSelected())
 	}
 	if description := state.settingsEditorDescription(); !strings.Contains(description, "sublime") {
 		t.Fatalf("description = %q", description)
 	}
-	if label, _ := state.sftpEditorItem(view, &view.sftpFolder); label != "" {
-		t.Fatalf("an unknown editor still offered a menu item: %q", label)
+	if name := state.defaultEditor.name(state.messages.Tools); name != "" {
+		t.Fatalf("an unknown editor has the name %q", name)
+	}
+}
+
+// editorOpened records what the editor was asked to open.
+type editorOpened struct{ scheme, link string }
+
+func recordEditorOpens(state *State) chan editorOpened {
+	opened := make(chan editorOpened, 1)
+	state.options.OpenSchemeURL = func(scheme, link string) error {
+		opened <- editorOpened{scheme, link}
+		return nil
+	}
+	return opened
+}
+
+// writeEditorConfig makes the SSH config name the session's host.
+func writeEditorConfig(t *testing.T, state *State, session *Session, alias string) {
+	t.Helper()
+	host := session.host
+	config := filepath.Join(t.TempDir(), "config")
+	body := fmt.Sprintf("Host %s\n\tHostName %s\n\tUser %s\n\tPort %d\n", alias, host.Address, state.hostCatalog.login(host), port22(host.Port))
+	if err := os.WriteFile(config, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state.options.SSHConfigPath = config
+}
+
+func awaitEditorOpen(t *testing.T, opened chan editorOpened) editorOpened {
+	t.Helper()
+	select {
+	case got := <-opened:
+		return got
+	case <-time.After(5 * time.Second):
+		t.Fatal("the editor was never asked to open the folder")
+		return editorOpened{}
 	}
 }
 
@@ -126,52 +257,47 @@ func TestSFTPEditorItemOpensTheFolderInTheChosenEditor(t *testing.T) {
 		{ID: session.host.CatalogID, Alias: "prod"},
 		{ID: session.host.CatalogID, Alias: "other"},
 	}
-	opened := make(chan string, 1)
-	state.options.OpenExternalURI = func(link string) error {
-		opened <- link
-		return nil
-	}
+	writeEditorConfig(t, state, session, "prod")
+	opened := recordEditorOpens(state)
 	if label, disabled := state.sftpEditorItem(view, view.active()); label != "Open in VS Code" || disabled {
 		t.Fatalf("menu item = %q, disabled = %t", label, disabled)
 	}
 	view.active().headerMenuOpen = true
 	state.Click(hitSFTPHeaderEditor)
-	select {
-	case link := <-opened:
-		if want := "vscode://vscode-remote/ssh-remote+prod/home/test"; link != want {
-			t.Fatalf("link = %q, want %q", link, want)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the editor was never asked to open the folder")
+	if got, want := awaitEditorOpen(t, opened), (editorOpened{"vscode", "vscode://vscode-remote/ssh-remote+prod/home/test"}); got != want {
+		t.Fatalf("opened %+v, want %+v", got, want)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool { return view.editorResults == nil })
 }
 
-func TestSFTPEditorUsesTheAliasTheSSHConfigNames(t *testing.T) {
+func TestSFTPEditorUsesTheAliasTheSSHConfigNamesByLabel(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	state.defaultEditor = editorVSCode
-	config := filepath.Join(t.TempDir(), "config")
-	if err := os.WriteFile(config, []byte("Host "+session.host.Label+"\n\tUser chlo\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	state.options.SSHConfigPath = config
-	opened := make(chan string, 1)
-	state.options.OpenExternalURI = func(link string) error {
-		opened <- link
-		return nil
-	}
+	state.defaultEditor = editorZed
+	writeEditorConfig(t, state, session, session.host.Label)
+	opened := recordEditorOpens(state)
 	view := session.files
 	view.active().headerMenuOpen = true
 	state.Click(hitSFTPHeaderEditor)
-	select {
-	case link := <-opened:
-		if want := "vscode://vscode-remote/ssh-remote+" + session.host.Label + "/home/test"; link != want {
-			t.Fatalf("link = %q, want %q", link, want)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the editor was never asked to open the folder")
+	if got, want := awaitEditorOpen(t, opened), (editorOpened{"zed", "zed://ssh/" + session.host.Label + "/home/test"}); got != want {
+		t.Fatalf("opened %+v, want %+v", got, want)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool { return view.editorResults == nil })
+}
+
+func TestSFTPEditorWontOpenAHostBehindAJumpHostOnlyMottyKnows(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	state.defaultEditor = editorZed
+	state.proxies = []proxyRecord{{ID: 1, TargetID: session.host.ID, JumpID: session.host.ID + 1}}
+	opened := recordEditorOpens(state)
+	view := session.files
+	view.active().headerMenuOpen = true
+	state.Click(hitSFTPHeaderEditor)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return view.editorResults == nil })
+	select {
+	case got := <-opened:
+		t.Fatalf("the editor was asked to open %+v and would connect without the jump host", got)
+	default:
+	}
 }
 
 func TestSFTPEditorOpensTheFolderOnThisComputer(t *testing.T) {
@@ -181,23 +307,14 @@ func TestSFTPEditorOpensTheFolderOnThisComputer(t *testing.T) {
 	dir, want := localEditorFolder()
 	view.local = true
 	view.lfolder.path = dir
-	opened := make(chan string, 1)
-	state.options.OpenExternalURI = func(link string) error {
-		opened <- link
-		return nil
-	}
+	opened := recordEditorOpens(state)
 	if label, disabled := state.sftpEditorItem(view, &view.lfolder); label != "Open in VS Code" || disabled {
 		t.Fatalf("menu item = %q, disabled = %t", label, disabled)
 	}
 	view.active().headerMenuOpen = true
 	state.Click(hitSFTPHeaderEditor)
-	select {
-	case link := <-opened:
-		if link != want {
-			t.Fatalf("link = %q, want %q", link, want)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the editor was never asked to open the local folder")
+	if got := awaitEditorOpen(t, opened); got != (editorOpened{"vscode", want}) {
+		t.Fatalf("opened %+v, want %q", got, want)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool { return view.editorResults == nil })
 }

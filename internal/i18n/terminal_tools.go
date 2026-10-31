@@ -313,6 +313,8 @@ type ToolsMessages struct {
 	FilesEditorOpenFailedTitleFmt   string
 	FilesEditorOpenFailedFmt        string
 	FilesEditorPortFmt              string
+	FilesEditorJump                 string
+	FilesEditorNotFound             string
 	TipNewLink                      string
 	LinkTitle                       string
 	LinkName                        string

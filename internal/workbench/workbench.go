@@ -539,6 +539,7 @@ type State struct {
 	terminalOption      terminalOptionMode
 	localShell          string // executable on this computer; empty uses the platform default
 	localShellMenu      localShellSelect
+	editorMenu          editorSelect
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
 	terminalScrollback  int

@@ -215,9 +215,14 @@ type Options struct {
 	// OpenPath opens a local document with the system's default application. Nil
 	// uses app.OpenPath.
 	OpenPath func(string) error
-	// OpenExternalURI hands a URL to the system, for the folder an editor is
-	// asked to open. Nil uses the platform's own opener.
-	OpenExternalURI func(link string) error
+	// OpenSchemeURL hands a link to the application registered for a custom URL
+	// scheme, for the folder an editor is asked to open. Nil uses
+	// app.OpenSchemeURL.
+	OpenSchemeURL func(scheme, link string) error
+	// SchemeHandlerAvailable reports whether an application is registered for a
+	// custom URL scheme, to list only the editors that are installed. Nil uses
+	// app.SchemeHandlerAvailable.
+	SchemeHandlerAvailable func(scheme string) (bool, error)
 	// FileIcon returns the system's icon for a local file or folder at the given
 	// pixel size, as the file panel shows an application bundle with its own icon.
 	// Nil uses app.FileIcon.
@@ -321,8 +326,11 @@ func (options Options) withDefaults() Options {
 	if options.OpenURL == nil {
 		options.OpenURL = app.OpenURL
 	}
-	if options.OpenExternalURI == nil {
-		options.OpenExternalURI = openExternalURI
+	if options.OpenSchemeURL == nil {
+		options.OpenSchemeURL = app.OpenSchemeURL
+	}
+	if options.SchemeHandlerAvailable == nil {
+		options.SchemeHandlerAvailable = app.SchemeHandlerAvailable
 	}
 	if options.PreferredLanguages == nil {
 		options.PreferredLanguages = app.PreferredLanguages

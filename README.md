@@ -103,9 +103,12 @@ after staging, and preserves permissions. Servers without SFTP can use the
 built-in SCP fallback.
 
 The panel's more menu can hand the folder it shows to VS Code or Zed through the
-editor's own URL scheme, so the session keeps the SSH config's route, user and
-port. Pick the editor under **Settings > Files**; until one is picked the menu
-item stays hidden.
+editor's own URL scheme. Pick the editor under **Settings > Files**, which lists
+the editors installed on this computer; until one is picked the menu item stays
+hidden. A server is opened under the alias your SSH config gives that very host
+(same address, user and port), or as `user@host`; a host reached through a jump
+host that only Motty keeps is refused, because the editor's own ssh would not use
+it.
 
 The attached file panel can follow the SSH terminal's folder automatically for
 Bash and Zsh. **Settings > Files** also offers a separate, default-off switch for

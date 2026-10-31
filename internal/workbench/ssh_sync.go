@@ -177,22 +177,19 @@ func (state *State) sshConfigPath() string {
 	return filepath.Join(home, ".ssh", "config")
 }
 
-// sshAlias is the name the SSH config knows a host by: the link the sync made,
-// or the label the file itself names a Host by, because that is how a host ends
-// up in the file. Empty means the file does not know the host.
-func (state *State) sshAlias(host Host) string {
+// sshAliases are the names the SSH config might know a host by, best first: the
+// link the sync made, then the label the file itself names a Host by, because
+// that is how a host ends up in the file. Whether a name in the file really is
+// this host is for the caller to check.
+func (state *State) sshAliases(host Host) []string {
 	state.sshSyncLoad()
+	var aliases []string
 	for _, link := range state.sshSync.file.Links {
 		if link.ID == host.CatalogID && link.live() {
-			return link.Alias
+			aliases = append(aliases, link.Alias)
 		}
 	}
-	config, err := sshconfig.Load(state.sshConfigPath())
-	if err != nil {
-		return ""
-	}
-	known, _ := config.Host(host.Label)
-	return known.Alias
+	return append(aliases, host.Label)
 }
 
 // sshConfigPathText is sshConfigPath for painting.

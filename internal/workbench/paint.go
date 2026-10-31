@@ -130,6 +130,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.ai.cfg.mcpSelectBounds = ui.Rect{}
 	state.ai.cfg.agentSelectBounds = ui.Rect{}
 	state.localShellMenu.bounds = ui.Rect{}
+	state.editorMenu.bounds = ui.Rect{}
+	if state.activeSection != sectionSettings || state.settingsCategory != settingsFiles || state.settingsSearching() {
+		state.editorMenu.open = false
+	}
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		state.localShellMenu.open = false
 	}
@@ -226,6 +230,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
+	state.paintEditorSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
