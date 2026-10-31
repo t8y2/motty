@@ -11,40 +11,42 @@ type ToolsMessages struct {
 	SchemeLookLight   string
 
 	// Keyword highlighting.
-	HighlightGroup              string
-	HighlightBuiltin            string
-	HighlightBuiltinDescription string
-	HighlightCustom             string
-	HighlightCustomDescription  string
-	HighlightAdd                string
-	HighlightImport             string
-	HighlightImportDescription  string
-	HighlightImportPickerTitle  string
-	HighlightImportNothing      string
-	HighlightImportResultFmt    string
-	HighlightDelete             string
-	HighlightKindText           string
-	HighlightKindRegex          string
-	HighlightKindTextCase       string
-	HighlightKindRegexCase      string
-	HighlightDialogTitle        string
-	HighlightPattern            string
-	HighlightPatternPlaceholder string
-	HighlightRegex              string
-	HighlightCase               string
-	HighlightColor              string
-	HighlightErrorEmpty         string
-	HighlightErrorTooLong       string
-	HighlightErrorEverywhere    string
-	HighlightErrorInvalidFmt    string
-	HighlightErrorTooMany       string
-	HighlightSave               string
-	ColorRed                    string
-	ColorYellow                 string
-	ColorGreen                  string
-	ColorCyan                   string
-	ColorBlue                   string
-	ColorMagenta                string
+	HighlightGroup               string
+	HighlightBuiltin             string
+	HighlightBuiltinDescription  string
+	HighlightCustom              string
+	HighlightCustomDescription   string
+	HighlightAdd                 string
+	HighlightImport              string
+	HighlightImportDescription   string
+	HighlightImportPickerTitle   string
+	HighlightImportNothing       string
+	HighlightImportAllSkippedFmt string
+	HighlightImportTooLarge      string
+	HighlightImportResultFmt     string
+	HighlightDelete              string
+	HighlightKindText            string
+	HighlightKindRegex           string
+	HighlightKindTextCase        string
+	HighlightKindRegexCase       string
+	HighlightDialogTitle         string
+	HighlightPattern             string
+	HighlightPatternPlaceholder  string
+	HighlightRegex               string
+	HighlightCase                string
+	HighlightColor               string
+	HighlightErrorEmpty          string
+	HighlightErrorTooLong        string
+	HighlightErrorEverywhere     string
+	HighlightErrorInvalidFmt     string
+	HighlightErrorTooMany        string
+	HighlightSave                string
+	ColorRed                     string
+	ColorYellow                  string
+	ColorGreen                   string
+	ColorCyan                    string
+	ColorBlue                    string
+	ColorMagenta                 string
 
 	// Snippets.
 	SnippetsTitle             string
@@ -679,8 +681,6 @@ type ToolsMessages struct {
 	AgentAccess                     string
 	AgentAccessNote                 string
 	AdvancedSession                 string
-	InitScriptField                 string
-	InitScriptPlaceholder           string
 	AdvancedAgents                  string
 	AgentForwardUnavailableFmt      string
 	OTPKeep                         string

@@ -19,8 +19,10 @@ import (
 // opening with # are ignored; a line with no color, an unknown color or flag,
 // or a pattern that Validate refuses is skipped, and skipped counts them. The
 // order is the file's: the first rule wins a tie of two that match the same
-// text.
+// text. A leading byte-order mark, which Windows editors write, is dropped
+// rather than joined to the first pattern.
 func ParseRules(text string) (rules []Rule, skipped int) {
+	text = strings.TrimPrefix(text, "\ufeff")
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {

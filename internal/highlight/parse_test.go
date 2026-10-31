@@ -56,3 +56,12 @@ func TestParseRulesReadsColorAndFlagsInAnyCase(t *testing.T) {
 		t.Fatalf("parsed %+v, skipped %d", rules, skipped)
 	}
 }
+
+// A Windows editor writes a byte-order mark before the first line; it belongs
+// to the file, not to the first pattern.
+func TestParseRulesDropsTheByteOrderMark(t *testing.T) {
+	rules, skipped := ParseRules("\ufeffZZTOP | red\n")
+	if skipped != 0 || len(rules) != 1 || rules[0].Pattern != "ZZTOP" || rules[0].Slot != Red {
+		t.Fatalf("parsed %+v, skipped %d; want ZZTOP in red", rules, skipped)
+	}
+}
