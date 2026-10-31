@@ -49,8 +49,16 @@ func (t *Terminal) reflowMain() {
 		*cursor = reflowAnchor{index: t.histCount + t.cy, col: t.cx, cursor: true}
 	}
 	if s.saved.valid {
+		// A saved cursor keeps the row it was set on and is clamped when it is
+		// restored, so a screen that has since shrunk can leave its row past
+		// the buffer. The anchor below is a buffer index, so clamp it the way
+		// restoreCursor will.
 		saved = &anchors[2]
-		*saved = reflowAnchor{index: t.histCount + s.saved.y, col: s.saved.x, cursor: true}
+		*saved = reflowAnchor{
+			index:  t.histCount + min(s.saved.y, len(s.lines)-1),
+			col:    min(s.saved.x, t.cols-1),
+			cursor: true,
+		}
 	}
 
 	r := &t.reflow
@@ -87,14 +95,14 @@ func (t *Terminal) reflowMain() {
 	start := top.index
 	follow, followY := cursor, t.cy
 	if follow == nil {
-		follow, followY = saved, s.saved.y
+		follow, followY = saved, min(s.saved.y, len(s.lines)-1)
 	}
-	if follow != nil {
-		if followY == rows-1 || follow.index-start >= rows {
-			start = follow.index - (rows - 1)
-		}
-		start = max(start, 0)
+	if follow != nil && follow.moved && (followY == rows-1 || follow.index-start >= rows) {
+		start = follow.index - (rows - 1)
 	}
+	// Every anchor followed its character above; this only keeps a start that
+	// no line can hold from slicing past the buffer.
+	start = clampInt(start, 0, max(len(r.lines)-1, 0))
 	end := min(start+rows, len(r.lines))
 	if t.images != nil {
 		for _, l := range r.lines[end:] {

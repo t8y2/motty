@@ -222,3 +222,38 @@ func TestResizeReflowRespectsTheHistoryLimit(t *testing.T) {
 		t.Fatalf("scrollback = %d, want the limit", terminal.Scrollback())
 	}
 }
+
+// A program on the alternate screen leaves the main screen's cursor saved on a
+// row a shorter window no longer has (vim, less and tmux all do). A width
+// change then reflows the main screen, and the saved cursor must be clamped to
+// the buffer instead of indexing past it.
+func TestResizeKeepsASavedCursorInsideAShrunkenScreen(t *testing.T) {
+	terminal := New(10, 40, 20)
+	feed(terminal, "0123456789ABCDEF")
+	feed(terminal, "\x1b[40;1H")
+	feed(terminal, "\x1b[?1049h") // save the cursor on the bottom row, then switch
+	terminal.Resize(10, 3)
+	terminal.Resize(60, 3)
+	checkInvariants(t, terminal)
+	if !terminal.onAlt {
+		t.Fatal("the resize left the alternate screen")
+	}
+	feed(terminal, "\x1b[?1049l")
+	checkInvariants(t, terminal)
+	if terminal.cy > terminal.rows-1 || terminal.cx > terminal.cols-1 {
+		t.Fatalf("restored cursor %d,%d is not on a %dx%d screen", terminal.cx, terminal.cy, terminal.cols, terminal.rows)
+	}
+}
+
+// The same clamp for a DECSC saved cursor on the main screen.
+func TestResizeClampsASavedCursorTheShrunkScreenDoesNotHave(t *testing.T) {
+	terminal := New(20, 40, 20)
+	feed(terminal, "\x1b[40;1H\x1b7")
+	terminal.Resize(20, 3)
+	terminal.Resize(60, 3)
+	feed(terminal, "\x1b8")
+	checkInvariants(t, terminal)
+	if terminal.cy > terminal.rows-1 || terminal.cx > terminal.cols-1 {
+		t.Fatalf("restored cursor %d,%d is not on a %dx%d screen", terminal.cx, terminal.cy, terminal.cols, terminal.rows)
+	}
+}
