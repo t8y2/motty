@@ -218,7 +218,7 @@ func (r *sshReconciler) loadLinks() {
 		link := link
 		r.work = append(r.work, &link)
 		r.byID[link.ID] = &link
-		if !link.Detached && link.Alias != "" {
+		if link.live() {
 			r.owners[lower(link.Alias)] = &link
 		}
 	}
@@ -238,7 +238,7 @@ func (r *sshReconciler) link(id string) *sshSyncLink {
 }
 
 func (r *sshReconciler) live(link *sshSyncLink) bool {
-	return link != nil && !link.Detached && link.Alias != ""
+	return link != nil && link.live()
 }
 
 func fieldsOf(host Host) sshSyncFields {
