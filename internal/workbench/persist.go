@@ -164,6 +164,8 @@ type savedHost struct {
 	User    string   `json:"user,omitempty"`
 	Port    uint16   `json:"port,omitempty"`
 	System  string   `json:"system,omitempty"`
+	// InitScript is an SSH host's command, sent to the shell when it has spoken.
+	InitScript string `json:"init_script,omitempty"`
 	savedTransport
 }
 
@@ -456,7 +458,7 @@ func (state *State) snapshot() savedState {
 	for _, host := range state.hosts {
 		saved.Hosts = append(saved.Hosts, savedHost{
 			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
-			Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(),
+			Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(), InitScript: host.InitScript,
 			savedTransport: host.transport(),
 		})
 	}

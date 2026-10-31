@@ -67,6 +67,7 @@ type terminal struct {
 	skipsTold             int
 	live                  bool             // the shell has spoken, or ended: the screen is the page to show
 	inputSent             bool             // the user, or an autofill answer, wrote to the shell: it did not end on its own
+	initSent              bool             // the host's init script was sent to this shell, once per connection
 	ended                 bool             // the shell finished, or never started
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
@@ -660,11 +661,19 @@ func (session *Session) shellPending() bool {
 }
 
 // goLive marks that a shell has spoken, so the terminal replaces the
-// connection page for good (until the tab connects again).
+// connection page for good (until the tab connects again). The host's init
+// script is typed here, once per connection: the shell's tty holds what
+// arrives before its prompt, so the script runs as if the user had typed it
+// the moment the prompt came up (#169).
 func (state *State) goLive(session *Session) {
 	if t := session.term; !t.live {
 		t.live = true
 		session.finished = state.now()
+	}
+	if script := session.host.InitScript; script != "" && !session.term.initSent &&
+		session.host.isSSH() && session.containerCommand == "" && !session.term.ended {
+		session.term.initSent = true
+		state.typed(session, append([]byte(script), '\r'))
 	}
 }
 

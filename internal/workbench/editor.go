@@ -67,6 +67,8 @@ type hostEditor struct {
 	agentAccess bool
 	// noHistory is the host's "Don't record commands" switch.
 	noHistory bool
+	// initScript is the SSH host's command to run when the shell has spoken.
+	initScript text.Editor
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
 	// connection, or a dedicated proxy. proxyPassword is staged until the outer
 	// host form is saved.
@@ -105,6 +107,7 @@ const (
 	fieldAlgorithms
 	fieldOTP
 	fieldPassphrase
+	fieldInitScript
 	fieldCount
 )
 
@@ -131,6 +134,8 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 		return &editor.otp
 	case fieldPassphrase:
 		return &editor.passphrase
+	case fieldInitScript:
+		return &editor.initScript
 	default:
 		return &editor.port
 	}
@@ -228,6 +233,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.icon, editor.iconOpen = hostIconAuto, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
+	editor.initScript = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity = host.Auth, host.Identity
@@ -235,9 +241,11 @@ func (editor *hostEditor) load(host Host) {
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
 	editor.noHistory = host.NoHistory
+	editor.initScript = text.Editor{}
+	editor.initScript.Insert(host.InitScript)
 	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
 	editor.transfer = host.Transfer
-	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.NoHistory)
+	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.NoHistory || host.InitScript != "")
 	if host.Algo != nil {
 		editor.algorithms.Insert(host.Algo.list)
 	}
@@ -291,6 +299,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
 		host.NoHistory = editor.noHistory
+		host.InitScript = cleanSnippetText(editor.value(fieldInitScript), maxSnippetCommand)
 		host.Transfer = editor.transfer
 		switch editor.algoMode {
 		case algoCompatible:
@@ -324,6 +333,7 @@ func (editor *hostEditor) reset() {
 	editor.icon, editor.system, editor.iconOpen = hostIconAuto, sshconn.SystemUnknown, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
+	editor.initScript = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity = algoDefault, authAutomatic, ""
 	editor.authOpen, editor.identityOpen = false, false

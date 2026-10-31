@@ -341,6 +341,7 @@ func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts
 		host := Host{
 			ID: id, CatalogID: entry.ID, Label: entry.Label, Group: strings.TrimSpace(entry.Group),
 			Address: entry.Address, User: entry.User, Port: entry.Port, System: sshconn.ParseRemoteSystem(entry.System),
+			InitScript: entry.InitScript,
 		}
 		if !host.applyTransport(entry.savedTransport) {
 			if !kept {

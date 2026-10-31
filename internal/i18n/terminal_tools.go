@@ -17,6 +17,11 @@ type ToolsMessages struct {
 	HighlightCustom             string
 	HighlightCustomDescription  string
 	HighlightAdd                string
+	HighlightImport             string
+	HighlightImportDescription  string
+	HighlightImportPickerTitle  string
+	HighlightImportNothing      string
+	HighlightImportResultFmt    string
 	HighlightDelete             string
 	HighlightKindText           string
 	HighlightKindRegex          string
@@ -674,6 +679,8 @@ type ToolsMessages struct {
 	AgentAccess                     string
 	AgentAccessNote                 string
 	AdvancedSession                 string
+	InitScriptField                 string
+	InitScriptPlaceholder           string
 	AdvancedAgents                  string
 	AgentForwardUnavailableFmt      string
 	OTPKeep                         string

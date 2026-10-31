@@ -237,7 +237,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
 		left.Authentication == right.Authentication && left.Identity == right.Identity &&
 		left.ForwardX11 == right.ForwardX11 && left.AgentForward == right.AgentForward &&
-		left.NoHistory == right.NoHistory && left.Transfer == right.Transfer &&
+		left.NoHistory == right.NoHistory && left.InitScript == right.InitScript && left.Transfer == right.Transfer &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console
 }
 

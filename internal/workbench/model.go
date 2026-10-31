@@ -43,6 +43,10 @@ type Host struct {
 	// NoHistory keeps what is typed in this host's terminals out of the command
 	// history, whatever the global switch says.
 	NoHistory bool
+	// InitScript is a command an SSH host's shell is sent as soon as it has
+	// spoken, as if the user typed it. Empty starts with no command. It runs on
+	// every connection, a reconnect included.
+	InitScript string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool

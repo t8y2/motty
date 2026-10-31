@@ -584,6 +584,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 		state.closeCompletionList()
 		t := session.term
 		t.shell, t.ended, t.live, t.inputSent, t.told = nil, false, false, false, toldNothing
+		t.initSent = false
 		t.resetFolderSync()
 		t.rx = t.rx[:0]
 		t.skippedEndpoint, t.skippedRole, t.skipsTold = sshconn.Endpoint{}, sshconn.EndpointTarget, 0
