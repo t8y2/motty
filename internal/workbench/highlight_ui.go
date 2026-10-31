@@ -3,9 +3,11 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp/syntax"
 	"strings"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
@@ -35,6 +37,7 @@ var highlightUiHits = tree.Feature("highlight-ui")
 var (
 	hitSettingsHighlightToggle = tree.ID(highlightUiHits, "settings-highlight")
 	hitSettingsHighlightAdd    = tree.ID(highlightUiHits, "settings-highlight-add")
+	hitSettingsHighlightImport = tree.ID(highlightUiHits, "settings-highlight-import")
 	hitHighlightPattern        = tree.ID(highlightUiHits, "highlight-pattern")
 	hitHighlightRegex          = tree.ID(highlightUiHits, "highlight-regex")
 	hitHighlightCase           = tree.ID(highlightUiHits, "highlight-case")
@@ -152,6 +155,50 @@ func (state *State) deleteHighlightRule(index int) {
 	state.highlighting.rules = append(rules[:index:index], rules[index+1:]...)
 	state.recompileHighlights()
 	state.save()
+}
+
+// importHighlightRules reads the rules of a text file the user picked, in the
+// format highlight.ParseRules documents, and appends the ones that parse to
+// the user's rules. What the file holds beyond the room left under the cap is
+// skipped, and the result says so; the file itself is never kept.
+func (state *State) importHighlightRules() {
+	m := state.messages.Tools
+	paths, err := state.options.OpenFiles(app.OpenFileOptions{
+		Title:   m.HighlightImportPickerTitle,
+		Filters: []app.FileFilter{{Name: "Highlight rules", Pattern: "*.txt;*.csv;*.json"}},
+	})
+	if errors.Is(err, app.ErrCanceled) || err == nil && len(paths) == 0 {
+		return
+	}
+	if err != nil {
+		state.showActionFailure(m.HighlightImportPickerTitle, err, state.messages.ActionFeedback.FilePickerFailed)
+		return
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		state.showFileReadFailure(m.HighlightImportPickerTitle, err, state.messages.ActionFeedback.ImportHostCatalogFailed)
+		return
+	}
+	parsed, skipped := highlight.ParseRules(string(data))
+	if len(parsed) == 0 && skipped == 0 {
+		state.showActionWarning(m.HighlightImportPickerTitle, m.HighlightImportNothing)
+		return
+	}
+	room := maxCustomHighlightRules - len(state.highlighting.rules)
+	imported := min(len(parsed), max(room, 0))
+	skipped += len(parsed) - imported
+	for _, rule := range parsed[:imported] {
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{
+			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Slot: rule.Slot,
+		})
+	}
+	state.recompileHighlights()
+	state.save()
+	if imported == 0 {
+		state.showActionWarning(m.HighlightImportPickerTitle, m.HighlightErrorTooMany)
+		return
+	}
+	state.status = fmt.Sprintf(m.HighlightImportResultFmt, imported, skipped)
 }
 
 // slotName is a color's word in the current language.
@@ -303,6 +350,8 @@ func (state *State) paintHighlightSettings(page *settingsPage) {
 		}
 		page.actionRow(m.HighlightCustom, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightAdd, Label: m.HighlightAdd, Variant: components.ButtonOutline})
+		page.actionRow(m.HighlightImport, m.HighlightImportDescription, false,
+			components.ButtonAction{ID: hitSettingsHighlightImport, Label: m.HighlightImport, Variant: components.ButtonOutline})
 	})
 }
 
