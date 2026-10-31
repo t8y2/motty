@@ -329,7 +329,13 @@ func (state *State) completionHistory(session *Session) []cmdhistory.Entry {
 	if state.history.suggestOff || !state.history.on || state.historyClearing() || !state.historyAvailable(session) || session.host.NoHistory {
 		return nil
 	}
-	key := historyKey(session)
+	return state.suggestionHistory(historyKey(session))
+}
+
+// suggestionHistory is the cached candidates of one history key — a host's
+// own, or the merged history of every host under the empty key. A missing one
+// is read in the background and lands by a later Wake.
+func (state *State) suggestionHistory(key string) []cmdhistory.Entry {
 	if entries, ok := state.history.ghost[key]; ok {
 		return entries
 	}

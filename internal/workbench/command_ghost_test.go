@@ -164,3 +164,51 @@ func TestNoSuggestionIsOfferedWhileBroadcasting(t *testing.T) {
 		t.Fatalf("a broadcasting tab is offered %q", rest)
 	}
 }
+
+// A command this host has never run, but the user ran on another host, is
+// suggested once the host's own history has no match: the same machines often
+// share one job (#219).
+func TestACommandFromAnotherHostIsSuggestedWhenThisHostHasNoMatch(t *testing.T) {
+	h := ghostWorld(t, "docker compose up -d")
+	store := h.state.historyStore()
+	if err := store.Record("other-host", "systemctl restart nginx", time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := store.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.state.history.ghost[""] = merged
+	h.prompt("deploy@prod:~$ ")
+	// The host's own history still speaks first.
+	h.type_("docker co")
+	if rest, ok := h.ghost(); !ok || rest != "mpose up -d" {
+		t.Fatalf("suggestion = %q, %v; want the host's own command", rest, ok)
+	}
+	// With no match of its own, what another host knows is offered.
+	h.type_("\b\b\b\b\b\b\b\b\b")
+	h.type_("systemctl re")
+	if rest, ok := h.ghost(); !ok || rest != "start nginx" {
+		t.Fatalf("suggestion = %q, %v; want the command another host knows", rest, ok)
+	}
+}
+
+// A host that keeps no history draws no suggestion from anyone else's either.
+func TestAHostThatKeepsNoHistoryGetsNoSuggestionFromOtherHosts(t *testing.T) {
+	h := ghostWorld(t, "docker compose up -d")
+	store := h.state.historyStore()
+	if err := store.Record("other-host", "systemctl restart nginx", time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := store.List("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.state.history.ghost[""] = merged
+	h.state.sessions[0].host.NoHistory = true
+	h.prompt("deploy@prod:~$ ")
+	h.type_("systemctl re")
+	if rest, ok := h.ghost(); ok {
+		t.Fatalf("a no-history host was suggested %q", rest)
+	}
+}

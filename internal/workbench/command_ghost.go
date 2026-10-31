@@ -33,8 +33,26 @@ func (state *State) commandGhostEntries(session *Session) []cmdhistory.Entry {
 	return state.history.ghost[historyKey(session)]
 }
 
-// noteGhostCommand puts a command just remembered at the front of the cache.
+// everyGhostEntries is the candidates merged across every host, read in the
+// background under the empty key. A host whose own history has no match for
+// the line still suggests what the user typed elsewhere: the same machines
+// often share one job (#219).
+func (state *State) everyGhostEntries(session *Session) []cmdhistory.Entry {
+	if session == nil || state.historyClearing() || !state.history.on || !state.historyAvailable(session) || session.host.NoHistory {
+		return nil
+	}
+	return state.suggestionHistory("")
+}
+
+// noteGhostCommand puts a command just remembered at the front of the cache,
+// the host's own and the merged one, so the next host of the same job
+// suggests it at once (#219).
 func (state *State) noteGhostCommand(key, command string) {
+	state.noteGhostEntry("", command)
+	state.noteGhostEntry(key, command)
+}
+
+func (state *State) noteGhostEntry(key, command string) {
 	entries, ok := state.history.ghost[key]
 	if !ok {
 		return
@@ -53,8 +71,9 @@ func (state *State) noteGhostCommand(key, command string) {
 
 // commandGhost is the rest of the command the line being typed in the session
 // continues into, when one is to be offered. The host's history comes first;
-// when it has no match, a single catalog candidate is offered instead, so a
-// host with learning off still gets public completions.
+// when it has no match, what the user typed on their other hosts is tried
+// (#219), and a single catalog candidate is offered last, so a host with
+// learning off still gets public completions.
 func (state *State) commandGhost(session *Session) (string, bool) {
 	h := &state.history
 	if h.suggestOff || h.inlineOff || session == nil || session.term == nil || session.term.shell == nil {
@@ -78,6 +97,9 @@ func (state *State) commandGhost(session *Session) (string, bool) {
 	}
 	if h.on && state.historyAvailable(session) && !session.host.NoHistory {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
+			return rest, true
+		}
+		if rest, ok := cmdhistory.Suggest(state.everyGhostEntries(session), line); ok {
 			return rest, true
 		}
 	}
