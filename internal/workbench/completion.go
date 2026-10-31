@@ -243,6 +243,12 @@ func (state *State) adoptCompletion() {
 	if state.history.on && !state.historyClearing() {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.historyAvailable(session) && !session.host.NoHistory {
 			state.completionHistory(session)
+			// The merged history of every host feeds the inline suggestion's
+			// fallback, so it is requested here beside the host's own: a frame
+			// only reads what has landed (#219).
+			if !state.history.inlineOff {
+				state.suggestionHistory("")
+			}
 		}
 	}
 }
@@ -329,7 +335,13 @@ func (state *State) completionHistory(session *Session) []cmdhistory.Entry {
 	if state.history.suggestOff || !state.history.on || state.historyClearing() || !state.historyAvailable(session) || session.host.NoHistory {
 		return nil
 	}
-	key := historyKey(session)
+	return state.suggestionHistory(historyKey(session))
+}
+
+// suggestionHistory is the cached candidates of one history key — a host's
+// own, or the merged history of every host under the empty key. A missing one
+// is read in the background and lands by a later Wake.
+func (state *State) suggestionHistory(key string) []cmdhistory.Entry {
 	if entries, ok := state.history.ghost[key]; ok {
 		return entries
 	}

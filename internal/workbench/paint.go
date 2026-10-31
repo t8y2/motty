@@ -114,6 +114,7 @@ func (state *State) terminalPage() bool {
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	canvas.SetTree(&tree)
+	state.pixelScale = canvas.PixelScale()
 	// Motty keeps one central click handler. The event pass of a click names its
 	// target here; the handler runs once this paint has returned, outside it,
 	// because it may open a native dialog or block. The repaint that follows
@@ -252,6 +253,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintAIRenameDialog(canvas, viewport)
 	case modalCloseTabs:
 		state.paintCloseTabsDialog(canvas, viewport)
+	case modalSessionLink:
+		state.paintSessionLinkDialog(canvas, viewport)
 	case modalHostImportResult:
 		state.paintHostImportResult(canvas, viewport)
 	case modalNewForward:
@@ -274,6 +277,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintAutofillDialog(canvas, viewport)
 	case modalAutofillConfirm:
 		state.paintAutofillConfirm(canvas, viewport)
+	case modalDeleteRule:
+		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalSnippet:
 		state.paintSnippetDialog(canvas, viewport)
 	case modalImportSessions:
@@ -326,6 +331,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.endMenus()
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
+	state.requestLoginCommandFrames(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})

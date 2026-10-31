@@ -52,6 +52,10 @@ type desktopRequest struct {
 	// Ask is called when the server wants a password; see desktop.Options.
 	Ask    func() (string, error)
 	Notify func()
+	// Width, Height and Scale are the desktop the pane asks for, in device
+	// pixels and display scale; see desktop.Options.
+	Width, Height int
+	Scale         float32
 	// Verify decides on the certificate an RDP server presents; see
 	// desktop.Options.VerifyCertificate.
 	Verify func(address string, der []byte) error
@@ -80,6 +84,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 	if host.Protocol == protocolRDP {
 		options.Username, options.Domain = rdpAccount(host.User)
 		options.Console = host.Console
+		options.Width, options.Height, options.Scale = request.Width, request.Height, request.Scale
 		options.VerifyCertificate = request.Verify
 		// The certificate is pinned under the name the user typed, not the
 		// loopback address a tunneled connection dials.
@@ -541,6 +546,8 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 		certs = rdp.NewPins(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
 	}
 	conn := newDesktopConn(host, notify, open, state.connectionTimeout, state.proxyForHost(host), certs)
+	target := state.desktopTargetFor(session)
+	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
 	if !host.tunneled() {
 		conn.startDirect()
 		return conn

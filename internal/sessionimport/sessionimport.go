@@ -1,7 +1,7 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm and Electerm, into the host fields Motty keeps. It
-// reads files the user chose and never executes, resolves or contacts anything
-// in them.
+// Xshell, MobaXterm, WindTerm, Electerm and Netcatty, into the host fields Motty
+// keeps. It reads files the user chose and never executes, resolves or contacts
+// anything in them.
 //
 // Only what a connection needs is taken: a name, a folder, an address, a port
 // and a user. Passwords are never imported, whether a client encrypted them with
@@ -13,6 +13,7 @@ package sessionimport
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -276,6 +277,8 @@ func Parse(client Client, paths []string) (Result, error) {
 			part, err = ParseWindTerm(path)
 		case Electerm:
 			part, err = ParseElecterm(path)
+		case Netcatty:
+			part, err = ParseNetcatty(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -303,6 +306,7 @@ const (
 	MobaXterm
 	WindTerm
 	Electerm
+	Netcatty
 )
 
 // ---- PuTTY ----
@@ -895,4 +899,137 @@ func (tree *electermTree) groupPath(id string) (string, bool) {
 		}
 	}
 	return strings.Join(titles, "/"), cut
+}
+
+// ---- Netcatty ----
+
+// ParseNetcatty reads the hosts file Netcatty exports from its vault: a CSV whose
+// first row names the columns (Groups, Label, Hostname/IP, Protocol, Port,
+// Username, ...). Netcatty keeps its vault encrypted with the system secret
+// store, so this export is the only form another program can read. A group is
+// already a "/" path. Password and Passphrase are written into the file in the
+// clear, and are counted but never imported; ProxyJump, Proxy, tags and notes
+// are not read.
+func ParseNetcatty(path string) (Result, error) {
+	text, err := readFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	reader := csv.NewReader(strings.NewReader(text))
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	header, err := reader.Read()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return Result{}, errors.New("not a Netcatty hosts export: the file is empty")
+		}
+		return Result{}, fmt.Errorf("not a Netcatty hosts export: %v", err)
+	}
+	column := func(names ...string) int {
+		for index, cell := range header {
+			cell = strings.ToLower(strings.TrimSpace(cell))
+			if slices.Contains(names, cell) {
+				return index
+			}
+		}
+		return -1
+	}
+	columns := struct{ group, label, host, protocol, port, user, password, key, passphrase int }{
+		group: column("groups", "group"), label: column("label", "name"),
+		host: column("hostname/ip", "hostname", "host"), protocol: column("protocol"),
+		port: column("port"), user: column("username", "user"), password: column("password"),
+		key: column("keypath"), passphrase: column("passphrase"),
+	}
+	if columns.host < 0 {
+		return Result{}, errors.New("not a Netcatty hosts export: it has no Hostname/IP column")
+	}
+	cell := func(row []string, index int) string {
+		if index < 0 || index >= len(row) {
+			return ""
+		}
+		return row[index]
+	}
+
+	var result Result
+	source := filepath.Base(path)
+	shortened := false
+	for line := 2; ; line++ {
+		row, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			result.warn("%s: line %d: %v", source, line, err)
+			continue
+		}
+		host := strings.TrimSpace(cell(row, columns.host))
+		if host == "" {
+			continue
+		}
+		kind := SSH
+		switch strings.ToLower(strings.TrimSpace(cell(row, columns.protocol))) {
+		case "", "ssh", "ssh2", "ssh-2":
+		case "telnet":
+			kind = Telnet
+		default:
+			result.Skipped++
+			continue
+		}
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+			break
+		}
+		port, _ := strconv.Atoi(strings.TrimSpace(cell(row, columns.port)))
+		user := netcattyText(cell(row, columns.user))
+		if kind == Telnet {
+			user = ""
+		}
+		group, cut := netcattyGroup(netcattyText(cell(row, columns.group)))
+		shortened = shortened || cut
+		before := len(result.Entries)
+		result.add(Entry{
+			Name: netcattyText(cell(row, columns.label)), Group: group, Protocol: kind,
+			Host: strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), Port: port, User: user,
+			Source: fmt.Sprintf("%s: line %d", source, line),
+		})
+		if len(result.Entries) == before {
+			continue
+		}
+		if kind == SSH && strings.TrimSpace(cell(row, columns.key)) != "" {
+			result.Keys++
+		}
+		if cell(row, columns.password) != "" || cell(row, columns.passphrase) != "" {
+			result.PlainSecrets++
+		}
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	return result, nil
+}
+
+// netcattyText undoes the guard Netcatty puts before a text cell that a
+// spreadsheet would read as a formula: a leading "'" before =, +, -, @, tab or
+// carriage return.
+func netcattyText(value string) string {
+	if len(value) > 1 && value[0] == '\'' && strings.ContainsRune("=+-@\t\r", rune(value[1])) {
+		return value[1:]
+	}
+	return value
+}
+
+// netcattyGroup tidies a group path: empty folders go, and a path deeper than
+// maxGroupDepth keeps its innermost folders. It reports whether it cut.
+func netcattyGroup(path string) (string, bool) {
+	var folders []string
+	for _, folder := range strings.Split(path, "/") {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			folders = append(folders, folder)
+		}
+	}
+	cut := len(folders) > maxGroupDepth
+	if cut {
+		folders = folders[len(folders)-maxGroupDepth:]
+	}
+	return strings.Join(folders, "/"), cut
 }

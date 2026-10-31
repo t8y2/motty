@@ -18,14 +18,14 @@ func TestClippedWideHistoryRowMatchesFreshCache(t *testing.T) {
 			screen.Resize(4, 2)
 			var cache rowCache
 			cache.begin()
-			cache.row(screen.Row(0), 4, -1, &darkPalette, false)
+			cache.row(screen.Row(0), 4, -1, cellSpan{}, &darkPalette, false)
 			screen.Write([]byte("\r\nx"))
 			screen.Scroll(1)
 			cache.begin()
-			cached := cache.row(screen.Row(0), 4, -1, &darkPalette, false)
+			cached := cache.row(screen.Row(0), 4, -1, cellSpan{}, &darkPalette, false)
 			var fresh rowCache
 			fresh.begin()
-			rebuilt := fresh.row(screen.Row(0), 4, -1, &darkPalette, false)
+			rebuilt := fresh.row(screen.Row(0), 4, -1, cellSpan{}, &darkPalette, false)
 			if cached.text != rebuilt.text || !reflect.DeepEqual(cached.runs, rebuilt.runs) || !reflect.DeepEqual(cached.spans, rebuilt.spans) {
 				t.Fatalf("cache disagrees with fresh rendering: cached=%+v fresh=%+v", cached, rebuilt)
 			}
@@ -40,7 +40,25 @@ func build(t testing.TB, input string, cursor int) *rowEntry {
 	screen.Write([]byte(input))
 	var cache rowCache
 	cache.begin()
-	return cache.row(screen.Row(0), 40, cursor, &darkPalette, false)
+	return cache.row(screen.Row(0), 40, cursor, cellSpan{}, &darkPalette, false)
+}
+
+// An input method's composition is drawn over the cells it covers, and a
+// rectangle painted there does not hide text already in them: a program that
+// shows placeholder text at its cursor would show through the composition.
+func TestCoveredCellsHoldNoText(t *testing.T) {
+	screen := term.New(40, 3, 10)
+	screen.Write([]byte("Ask Codex"))
+	var cache rowCache
+	cache.begin()
+	entry := cache.row(screen.Row(0), 40, -1, cellSpan{from: 0, to: 2}, &darkPalette, false)
+	if entry.text != "k Codex" || entry.runs[0].Column != 2 {
+		t.Fatalf("text = %q runs = %+v: the covered cells must not be drawn", entry.text, entry.runs)
+	}
+	cache.begin()
+	if again := cache.row(screen.Row(0), 40, -1, cellSpan{}, &darkPalette, false); again.text != "Ask Codex" {
+		t.Fatalf("text = %q: a line is prepared again when the cover goes away", again.text)
+	}
 }
 
 func TestRowsBecomeRunsOnlyForWhatIsVisible(t *testing.T) {
@@ -170,7 +188,7 @@ func TestScrolledLinesAreFoundAgainNotRebuilt(t *testing.T) {
 	paint := func() {
 		cache.begin()
 		for row := 0; row < 10; row++ {
-			cache.row(screen.Row(row), 40, -1, &darkPalette, false)
+			cache.row(screen.Row(row), 40, -1, cellSpan{}, &darkPalette, false)
 		}
 		cache.end(10)
 	}
@@ -204,9 +222,9 @@ func TestChangingThePaletteRebuildsRows(t *testing.T) {
 	screen.Write([]byte("\x1b[32mok"))
 	var cache rowCache
 	cache.begin()
-	dark := cache.row(screen.Row(0), 20, -1, &darkPalette, false).runs[0].Color
+	dark := cache.row(screen.Row(0), 20, -1, cellSpan{}, &darkPalette, false).runs[0].Color
 	cache.begin()
-	light := cache.row(screen.Row(0), 20, -1, &lightPalette, false).runs[0].Color
+	light := cache.row(screen.Row(0), 20, -1, cellSpan{}, &lightPalette, false).runs[0].Color
 	if dark == light {
 		t.Fatal("the same cached row served both palettes")
 	}

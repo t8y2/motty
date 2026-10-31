@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -43,6 +44,10 @@ const (
 	// count as one notch of a wheel.
 	desktopWheelStep = float32(40)
 	desktopMaxScale  = float32(4)
+	// desktopResizeDelay is how long the pane must keep its size before a server
+	// that follows it is asked for a desktop of that size: a window being dragged
+	// would otherwise ask for a new desktop at every step.
+	desktopResizeDelay = 250 * time.Millisecond
 )
 
 type desktopView struct {
@@ -66,10 +71,60 @@ type desktopView struct {
 	sentClip string
 	// width and height are the picture's size as last presented.
 	width, height int
+	// resizer is the session when its server can change the picture's size to
+	// follow the pane, nil for one that cannot (VNC).
+	resizer desktop.Resizer
+	// pixelScale is the device pixels per logical pixel as last painted, and area
+	// where the picture was shown, in the page's coordinates.
+	pixelScale float32
+	area       ui.Rect
+	// asked is the size and scale the server was last given, or had when the
+	// picture first came; pending is a different one the pane has taken, waiting
+	// since pendingSince to be sure it stays (see desktopResizeDelay).
+	asked, pending desktopTarget
+	pendingSince   time.Duration
+	settling       bool
+}
+
+// desktopTarget is the desktop a pane wants of a server that follows it: as
+// many pixels as the pane has, and the scale of the display they are on.
+type desktopTarget struct {
+	width, height int
+	scale         float32
+}
+
+// desktopTargetFor is the desktop that fills area exactly at a display scale.
+// The width is even, as a server's display channel needs it.
+func desktopTargetFor(area ui.Rect, scale float32) desktopTarget {
+	if scale <= 0 {
+		scale = 1
+	}
+	return desktopTarget{
+		width:  int(math.Floor(float64(area.Width)*float64(scale)+1e-3)) &^ 1,
+		height: int(math.Floor(float64(area.Height)*float64(scale) + 1e-3)),
+		scale:  scale,
+	}
 }
 
 func newDesktopView(session desktop.Session, clipboard bool) *desktopView {
-	return &desktopView{session: session, clipboard: clipboard, fit: true, active: true}
+	view := &desktopView{session: session, clipboard: clipboard, fit: true, active: true}
+	view.resizer, _ = session.(desktop.Resizer)
+	return view
+}
+
+// pixelPerfect reports whether the picture is shown pixel for pixel: the server
+// can change its size, so the picture is made the size of the pane and scaling
+// it would only blur it.
+func (view *desktopView) pixelPerfect() bool {
+	return view.resizer != nil && view.resizer.CanResize()
+}
+
+// logicalPerPixel is the logical size of one picture pixel shown pixel for pixel.
+func (view *desktopView) logicalPerPixel() float32 {
+	if view.pixelScale <= 0 {
+		return 1
+	}
+	return 1 / view.pixelScale
 }
 
 func (view *desktopView) close() {
@@ -104,18 +159,27 @@ func desktopLayout(size ui.Size) desktopGeometry {
 	}
 }
 
-// place says where the picture sits in area and at what scale.
+// place says where the picture sits in area and at what scale (logical pixels
+// per picture pixel). A picture shown pixel for pixel starts at the top left of
+// the area, as the window of a remote machine does, and sits on a device pixel.
 func (view *desktopView) place(area ui.Rect) (origin ui.Point, scale float32) {
 	width, height := float32(view.width), float32(view.height)
 	if width <= 0 || height <= 0 || area.Width <= 0 || area.Height <= 0 {
 		return ui.Point{X: area.X, Y: area.Y}, 1
 	}
+	pixelPerfect := view.pixelPerfect()
 	scale = 1
-	if view.fit {
+	switch {
+	case pixelPerfect:
+		scale = view.logicalPerPixel()
+	case view.fit:
 		scale = min(area.Width/width, area.Height/height, desktopMaxScale)
 	}
 	shownWidth, shownHeight := width*scale, height*scale
 	axis := func(start, room, shown, pointer float32) float32 {
+		if pixelPerfect && view.fit {
+			return start
+		}
 		if shown <= room {
 			return start + (room-shown)/2
 		}
@@ -124,10 +188,17 @@ func (view *desktopView) place(area ui.Rect) (origin ui.Point, scale float32) {
 		fraction := min(max((pointer-start)/room, 0), 1)
 		return start - fraction*(shown-room)
 	}
-	return ui.Point{
+	origin = ui.Point{
 		X: axis(area.X, area.Width, shownWidth, view.pointer.X),
 		Y: axis(area.Y, area.Height, shownHeight, view.pointer.Y),
-	}, scale
+	}
+	if pixelPerfect && view.pixelScale > 0 {
+		snap := func(value float32) float32 {
+			return float32(math.Floor(float64(value)*float64(view.pixelScale)+0.5)) / view.pixelScale
+		}
+		origin = ui.Point{X: snap(origin.X), Y: snap(origin.Y)}
+	}
+	return origin, scale
 }
 
 // remote converts a page point to a pixel of the remote picture, clamped to it.
@@ -572,7 +643,10 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	pal, m := state.pal, state.messages
 	view := session.desk
 	view.present()
+	view.pixelScale = canvas.PixelScale()
 	geometry := desktopLayout(size)
+	view.area = geometry.area
+	state.followDesktop(canvas, view)
 	title := session.Title
 	if title == "" {
 		title = session.Address
@@ -659,7 +733,11 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	canvas.Clip(area)
 	if view.width > 0 && view.height > 0 {
 		origin, scale := view.place(area)
-		view.surface.Draw(canvas, ui.Rect{X: origin.X, Y: origin.Y, Width: float32(view.width) * scale, Height: float32(view.height) * scale})
+		if view.pixelPerfect() {
+			view.surface.DrawPixels(canvas, origin)
+		} else {
+			view.surface.Draw(canvas, ui.Rect{X: origin.X, Y: origin.Y, Width: float32(view.width) * scale, Height: float32(view.height) * scale})
+		}
 	}
 	if view.ended {
 		state.paintDesktopEnded(canvas, area, session)
@@ -672,6 +750,47 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	})
 }
 
+// desktopTargetFor is the desktop a session's pane can show pixel for pixel: the
+// picture area of the page it is on, at the display scale last painted.
+func (state *State) desktopTargetFor(session *Session) desktopTarget {
+	size := state.viewport
+	if workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
+		if fraction, _, ok := state.paneFractionBounds(workspaceID, paneID); ok {
+			size = paneVirtualSize(pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction))
+		}
+	}
+	return desktopTargetFor(desktopLayout(size).area, state.pixelScale)
+}
+
+// followDesktop keeps a server that can change its desktop's size the size of
+// the pane. The pane has to hold a size for desktopResizeDelay before the server
+// is asked, and a frame is requested for the end of the wait, so a settled pane
+// costs nothing and a dragged window asks once.
+func (state *State) followDesktop(canvas *ui.Canvas, view *desktopView) {
+	if view.resizer == nil || view.ended || !view.active || !view.fit || view.width <= 0 || !view.resizer.CanResize() {
+		return
+	}
+	if view.asked == (desktopTarget{}) {
+		view.asked = desktopTarget{width: view.width, height: view.height, scale: view.pixelScale}
+	}
+	target := desktopTargetFor(view.area, view.pixelScale)
+	if target.width <= 0 || target.height <= 0 || target == view.asked {
+		view.settling = false
+		return
+	}
+	now := canvas.Now()
+	if !view.settling || target != view.pending {
+		view.pending, view.pendingSince, view.settling = target, now, true
+	}
+	if wait := view.pendingSince + desktopResizeDelay - now; wait > 0 {
+		canvas.RequestFrameIn(wait)
+		return
+	}
+	view.settling = false
+	view.asked = target
+	_ = view.resizer.Resize(target.width, target.height, target.scale)
+}
+
 // desktopStripLeft is the left side of the status line: the remote picture's size
 // and the scale it is shown at, and what protects the connection.
 func (state *State) desktopStripLeft(view *desktopView, session *Session) string {
@@ -679,9 +798,12 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 	var parts []string
 	if view.width > 0 {
 		size := fmt.Sprintf(m.StripSizeFmt, view.width, view.height)
-		_, scale := view.place(desktopLayout(state.viewport).area)
-		if scale != 1 {
-			size += fmt.Sprintf(" · %d%%", int(math.Round(float64(scale)*100)))
+		_, scale := view.place(view.area)
+		if view.pixelPerfect() {
+			scale *= max(view.pixelScale, 1) // a picture drawn pixel for pixel is at 100%
+		}
+		if percent := int(math.Round(float64(scale) * 100)); percent != 100 {
+			size += fmt.Sprintf(" · %d%%", percent)
 		}
 		parts = append(parts, size)
 	}

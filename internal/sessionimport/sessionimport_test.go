@@ -257,6 +257,55 @@ func TestElectermGroupNestingIsBoundedAndKeepsTheInnermostFolders(t *testing.T) 
 	}
 }
 
+func TestNetcattyHostsExportKeepsGroupsAndSkipsWhatItCannotConnect(t *testing.T) {
+	const header = "Groups,Label,Tags,Notes,Hostname/IP,Protocol,Port,Username,Password,KeyPath,Passphrase,Proxy,ProxyJump,LocalShell,SshInputCompatibility\r\n"
+	export := "\uFEFF" + header +
+		"Project/Prod,\"Web, primary\",\"prod,web\",\"two\nlines\",web.example.com,ssh,2222,deploy,hunter2,,,,,,true\r\n" +
+		"Project/Prod,DB,,,10.0.0.5,ssh,22,admin,,~/.ssh/id_ed25519,open sesame,,,,true\r\n" +
+		"/Lab//Nested/,v6,,,[2001:db8::1],ssh,22,root,,,,,,,true\r\n" +
+		",Switch,,,sw.lab,telnet,2323,admin,,,,,,,\r\n" +
+		",Shell,,,localhost,local,22,me,,,,,,/bin/zsh,\r\n" +
+		",'=cmd,,,box.lab,ssh,22,'-dash,,,,,,,true\r\n" +
+		",Bad,,,has space,ssh,22,x,topsecret,,,,,,true\r\n" +
+		",,,,,ssh,22,x,,,,,,,true\r\n"
+	dir := t.TempDir()
+	result, err := Parse(Netcatty, []string{write(t, dir, "hosts_export_2026-10-31.csv", []byte(export))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The local shell is skipped; "has space" is rejected and its password is not
+	// counted; the row with no address is silently ignored.
+	if len(result.Entries) != 5 || result.Skipped != 1 || result.Keys != 1 || result.PlainSecrets != 2 {
+		t.Fatalf("%+v", result)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	if got := byName["Web, primary"]; got.Group != "Project/Prod" || got.Host != "web.example.com" || got.Port != 2222 || got.User != "deploy" {
+		t.Fatalf("web = %+v", got)
+	}
+	if got := byName["DB"]; got.Group != "Project/Prod" || got.Host != "10.0.0.5" || got.User != "admin" {
+		t.Fatalf("db = %+v", got)
+	}
+	if got := byName["v6"]; got.Group != "Lab/Nested" || got.Host != "2001:db8::1" {
+		t.Fatalf("v6 = %+v", got)
+	}
+	if got := byName["Switch"]; got.Protocol != Telnet || got.Port != 2323 || got.User != "" || got.Group != "" {
+		t.Fatalf("telnet = %+v", got)
+	}
+	// Netcatty puts a quote before a cell a spreadsheet would run as a formula.
+	if got := byName["=cmd"]; got.User != "-dash" {
+		t.Fatalf("guarded = %+v", got)
+	}
+
+	for _, notAnExport := range []string{"", "Name,Port\r\nweb,22\r\n"} {
+		if _, err := ParseNetcatty(write(t, dir, "other.csv", []byte(notAnExport))); err == nil {
+			t.Fatalf("%q was accepted as an export", notAnExport)
+		}
+	}
+}
+
 func TestAnEntryWithNoUsableAddressIsWarnedAbout(t *testing.T) {
 	dir := t.TempDir()
 	path := write(t, dir, "s.mxtsessions", []byte("[Bookmarks]\nBad=#109#0%has space%22%u%\nAlso=#109#0%%22%u%\n"))

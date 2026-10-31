@@ -210,7 +210,10 @@ html > body[data-scroll-locked] {
   scroll-margin-top: 112px;
 }
 
-.changelog-markdown h3:first-child {
+/* Every group of notes is wrapped in its own <section>, so each heading is the
+   first child of a section; only the heading that opens the release body sits
+   right under the release head and gives up the space above it. */
+.changelog-markdown > section:first-child > h3 {
   margin-top: 0;
 }
 

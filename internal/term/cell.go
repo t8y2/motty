@@ -79,7 +79,6 @@ type line struct {
 	cells      []Cell
 	marks      []Mark
 	hyperlinks *[]uint32 // nil until this line receives OSC 8 text
-	clipped    *line     // full main-screen row, valid only while version and wrapped match
 	id         uint64
 	at         int64 // unix seconds of the first write; 0 when unrecorded
 	version    uint32

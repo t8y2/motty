@@ -180,6 +180,27 @@ func TestTestAcceptsAMissingFolderAndRefusesBadCredentials(t *testing.T) {
 	}
 }
 
+// A server like Jianguoyun only has the top-level folders its owner made in its
+// own app; MKCOL below /dav/ answers 409 and so does a PUT into the missing one.
+func TestAnUploadIntoATopLevelFolderTheServerWillNotMakeNamesIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/dav/existing/") && r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	_, err := client(t, server, nil).Put(context.Background(), []byte("x"), "")
+	if err == nil || !strings.Contains(err.Error(), `"motty"`) || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("the error does not name the missing folder: %v", err)
+	}
+	existing := client(t, server, func(c *Config) { c.Path = "existing/backup.mottybak" })
+	if _, err := existing.Put(context.Background(), []byte("x"), ""); err != nil {
+		t.Fatalf("a folder that is there: %v", err)
+	}
+}
+
 func TestOnlySecureOrLoopbackAddressesAreAccepted(t *testing.T) {
 	for address, ok := range map[string]bool{
 		"https://dav.example.com/remote.php": true, "http://127.0.0.1:8080/dav": true, "http://localhost/dav": true, "http://[::1]/dav": true,

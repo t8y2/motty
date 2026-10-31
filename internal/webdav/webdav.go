@@ -155,6 +155,9 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		return "", ErrTooLarge
 	}
 	parts := strings.Split(client.config.Path, "/")
+	// refused remembers the first folder the server would neither make nor
+	// report as existing, so a PUT into it can say what is missing.
+	var refused, refusal string
 	for depth := 1; depth < len(parts); depth++ {
 		response, err := client.do(ctx, "MKCOL", client.address(parts[:depth]...), nil, nil)
 		if err != nil {
@@ -162,6 +165,9 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		}
 		response.Body.Close()
 		// 201 made it, 405 is "already there"; anything else surfaces at the PUT.
+		if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusMethodNotAllowed && refused == "" {
+			refused, refusal = strings.Join(parts[:depth], "/"), response.Status
+		}
 	}
 	header := map[string]string{"Content-Type": "application/octet-stream"}
 	if previous != "" {
@@ -177,6 +183,8 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 	switch {
 	case response.StatusCode == http.StatusPreconditionFailed:
 		return "", ErrChanged
+	case response.StatusCode == http.StatusConflict && refused != "":
+		return "", fmt.Errorf("webdav: the folder %q does not exist and the server refused to create it (%s); create it on the server first", refused, refusal)
 	case response.StatusCode < 200 || response.StatusCode > 299:
 		return "", fmt.Errorf("webdav: the server answered %s", response.Status)
 	}

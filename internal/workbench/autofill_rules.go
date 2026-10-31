@@ -31,19 +31,21 @@ const (
 var autofillHits = tree.Feature("autofill-rules")
 
 var (
-	hitSettingsAutofillAdd = tree.ID(autofillHits, "settings-autofill-add")
-	hitAutofillName        = tree.ID(autofillHits, "autofill-name")
-	hitAutofillPattern     = tree.ID(autofillHits, "autofill-pattern")
-	hitAutofillFixed       = tree.ID(autofillHits, "autofill-fixed")
-	hitAutofillScope       = tree.ID(autofillHits, "autofill-scope")
-	hitAutofillPassword    = tree.ID(autofillHits, "autofill-send-password")
-	hitAutofillOTP         = tree.ID(autofillHits, "autofill-send-otp")
-	hitAutofillText        = tree.ID(autofillHits, "autofill-send-text")
-	hitAutofillEnter       = tree.ID(autofillHits, "autofill-enter")
-	hitAutofillSubmit      = tree.ID(autofillHits, "autofill-submit")
-	hitAutofillCancel      = tree.ID(autofillHits, "autofill-cancel")
-	hitAutofillClose       = tree.ID(autofillHits, "autofill-close")
-	hitAutofillDismiss     = tree.ID(autofillHits, "autofill-dismiss")
+	hitSettingsAutofillAdd  = tree.ID(autofillHits, "settings-autofill-add")
+	hitSettingsAutofillSudo = tree.ID(autofillHits, "settings-autofill-sudo")
+	hitSettingsAutofillSu   = tree.ID(autofillHits, "settings-autofill-su")
+	hitAutofillName         = tree.ID(autofillHits, "autofill-name")
+	hitAutofillPattern      = tree.ID(autofillHits, "autofill-pattern")
+	hitAutofillFixed        = tree.ID(autofillHits, "autofill-fixed")
+	hitAutofillScope        = tree.ID(autofillHits, "autofill-scope")
+	hitAutofillPassword     = tree.ID(autofillHits, "autofill-send-password")
+	hitAutofillOTP          = tree.ID(autofillHits, "autofill-send-otp")
+	hitAutofillText         = tree.ID(autofillHits, "autofill-send-text")
+	hitAutofillEnter        = tree.ID(autofillHits, "autofill-enter")
+	hitAutofillSubmit       = tree.ID(autofillHits, "autofill-submit")
+	hitAutofillCancel       = tree.ID(autofillHits, "autofill-cancel")
+	hitAutofillClose        = tree.ID(autofillHits, "autofill-close")
+	hitAutofillDismiss      = tree.ID(autofillHits, "autofill-dismiss")
 
 	hitAutofillAllow        = tree.ID(autofillHits, "autofill-confirm-allow")
 	hitAutofillDeny         = tree.ID(autofillHits, "autofill-confirm-deny")
@@ -275,6 +277,34 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 		form.send, form.enter = rule.Send, rule.Enter
 	}
 	state.modal = modalAutofillRule
+}
+
+// The prompts of the two commands that ask for a password after login. sudo
+// tags its prompt, and the answer is the account's own password. su prints a bare
+// Password: line, and the answer is root's, which is not saved anywhere else, so
+// that preset sends a fixed text. Both are anchored at the start of the line, so
+// a program that only mentions a password is not taken for the prompt.
+const (
+	sudoPromptPattern = `(?i)^\[sudo\][^\n]*(?:password|密码)[^\n]*[:：]\s*$`
+	suPromptPattern   = `(?i)^(?:password|密码|口令)\s*[:：]\s*$`
+)
+
+// openAutofillSudoPreset opens the rule dialog filled in for sudo's prompt.
+func (state *State) openAutofillSudoPreset() {
+	state.openAutofillDialog(nil)
+	form := &state.autofillRules
+	form.name.Insert(state.messages.Autofill.PresetSudoName)
+	form.pattern.Insert(sudoPromptPattern)
+	form.send = autofill.SendPassword
+}
+
+// openAutofillSuPreset opens the rule dialog filled in for su's prompt.
+func (state *State) openAutofillSuPreset() {
+	state.openAutofillDialog(nil)
+	form := &state.autofillRules
+	form.name.Insert(state.messages.Autofill.PresetSuName)
+	form.pattern.Insert(suPromptPattern)
+	form.send = autofill.SendText
 }
 
 func (state *State) clickAutofillDialog(id ui.ID) {
@@ -596,7 +626,10 @@ func (state *State) paintAutofillSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitAutofillEditList.At(index), Label: m.Edit, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitAutofillDeleteList.At(index), Label: m.Delete, Variant: components.ButtonOutline})
 		}
-		page.actionRow(m.Row, m.RowDescription, len(rules) >= autofill.MaxRules,
+		full := len(rules) >= autofill.MaxRules
+		page.actionRow(m.Row, m.RowDescription, full,
+			components.ButtonAction{ID: hitSettingsAutofillSudo, Label: m.PresetSudo, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitSettingsAutofillSu, Label: m.PresetSu, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitSettingsAutofillAdd, Label: m.Add, Variant: components.ButtonOutline})
 	})
 }

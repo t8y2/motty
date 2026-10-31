@@ -400,6 +400,7 @@ const (
 	modalRenameTab
 	modalAIRename
 	modalCloseTabs
+	modalSessionLink
 	modalAutofillRule
 	modalAutofillConfirm
 	modalHistory
@@ -410,6 +411,7 @@ const (
 	modalToolbarSettings
 	modalSFTPColumns
 	modalTerminalInput
+	modalDeleteRule
 )
 
 // tone colors a session's headline.
@@ -456,6 +458,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		state.cancelReconnect(session)
 	}
 	session.established = false
+	session.disconnected = false
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
@@ -634,6 +637,7 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.runLoginCommand(session)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
 		state.fitTerminal(session)
@@ -718,7 +722,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 	}
 
-	if status.Err != nil {
+	if status.Err != nil && !session.disconnected {
 		session.err = status.Err
 		if errors.Is(status.Err, sshconn.ErrHostKeyChanged) && status.EndpointRole != sshconn.EndpointProxyJump {
 			session.stage = stageHostKey // refused while the key was being checked
@@ -759,7 +763,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.stopSessionForwards(session.ID, true)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
-		if status.Err != nil {
+		if status.Err != nil && !session.disconnected {
 			session.tone = toneFail
 			state.status = state.messages.StatusConnectFailed + session.Title
 		} else {
@@ -1037,6 +1041,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalAutofillConfirm {
 		state.autofillRules.ask = autofillAsk{}
+	}
+	if state.modal == modalDeleteRule {
+		state.ruleDelete = ruleDelete{}
 	}
 	state.modal = modalNone
 	state.modalSession = 0

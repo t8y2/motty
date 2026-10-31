@@ -84,10 +84,12 @@ func (keys *hostKeys) algorithms(hostname string) []string {
 }
 
 // algorithmsFor maps a stored key type to the signature algorithms a server
-// uses for it; RSA keys sign with SHA-2 variants nowadays.
+// uses for it. RSA keys sign with the SHA-2 variants nowadays, but a server that
+// predates RFC 8332 can only sign the same key as ssh-rsa; the library offers
+// that last for a new host, so the host stays reachable once its key is saved.
 func algorithmsFor(keyType string) []string {
 	if keyType == ssh.KeyAlgoRSA {
-		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
 	}
 	return []string{keyType}
 }

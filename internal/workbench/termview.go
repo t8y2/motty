@@ -23,15 +23,24 @@ type bgSpan struct {
 	color    ui.Color
 }
 
+// cellSpan is a stretch of cells of one line, to exclusive. The zero value is
+// empty.
+type cellSpan struct {
+	from, to int
+}
+
+func (span cellSpan) holds(column int) bool { return column >= span.from && column < span.to }
+
 // rowEntry is a terminal line prepared for painting: its text, the colored
 // runs of it and the background spans. It stays valid while the line's
-// identity, version, cursor and the palette stay the same, so an unchanged
-// line costs nothing to paint again, and a line that only moved (the screen
-// scrolled) is found again by its ID.
+// identity, version, cursor, covered cells and the palette stay the same, so
+// an unchanged line costs nothing to paint again, and a line that only moved
+// (the screen scrolled) is found again by its ID.
 type rowEntry struct {
 	id      uint64
 	version uint32
 	cursor  int // the column drawn as the cursor block, or -1
+	covered cellSpan
 	epoch   uint32
 	cols    int
 	used    uint32 // paint generation that last used the entry
@@ -76,7 +85,10 @@ func (cache *rowCache) end(visible int) {
 
 // row returns the prepared form of a terminal line, building it when the line
 // is new or changed. cursor is the column to draw as the cursor block, or -1.
-func (cache *rowCache) row(line term.Row, cols, cursor int, pal *palette, inactive bool) *rowEntry {
+// covered is the stretch of cells something else is drawn over, an input
+// method's composition: they are left out, text and background, because a
+// rectangle painted over a cell does not hide the text already in it.
+func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool) *rowEntry {
 	epoch := uint32(pal.epoch) << 3
 	if pal.dark {
 		epoch |= 1
@@ -99,9 +111,9 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, pal *palette, inacti
 		entry.version = ^uint32(0) // never matches: build below
 	}
 	entry.used = cache.generation
-	if entry.version != line.Version || entry.cursor != cursor || entry.epoch != epoch || entry.cols != cols {
-		cache.build(entry, line, cols, cursor, pal, inactive)
-		entry.version, entry.cursor, entry.epoch, entry.cols = line.Version, cursor, epoch, cols
+	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch || entry.cols != cols {
+		cache.build(entry, line, cols, cursor, covered, pal, inactive)
+		entry.version, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, cursor, covered, epoch, cols
 	}
 	return entry
 }
@@ -162,7 +174,7 @@ func (pal *palette) termColor(color term.Color, fallback ui.Color) ui.Color {
 // nothing. Every character that is not plain ASCII is a run of its own, placed
 // at its cell by the renderer, so a wide or fallback-font glyph can never push
 // the text after it off its column.
-func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, pal *palette, inactive bool) {
+func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool) {
 	cache.builds++
 	entry.runs = entry.runs[:0]
 	entry.spans = entry.spans[:0]
@@ -172,6 +184,9 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, p
 
 	if cursor >= 0 && cursor < count && cells[cursor].Attr&term.WideTail != 0 && cursor > 0 {
 		cursor-- // the cursor sits on the head of a wide character
+	}
+	if covered.from > 0 && covered.from < count && cells[covered.from].Attr&term.WideTail != 0 {
+		covered.from-- // the cover starts on the tail of a wide character: take its head too
 	}
 	cursorStyle := cellStyle{fg: pal.terminal, bg: pal.cursor, hasBG: true}
 	cellSlots := cache.markCells(line, count, pal.highlight)
@@ -199,6 +214,10 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, p
 		width := 1
 		if cell.Attr&term.WideHead != 0 {
 			width = 2
+		}
+		if covered.holds(x) {
+			closeSpan()
+			continue
 		}
 		style := resolveCell(cell, pal, inactive)
 		if cellSlots != nil && cellSlots[x] != highlight.None && cell.FG.Kind() == term.DefaultColor && cell.Attr&term.Inverse == 0 {

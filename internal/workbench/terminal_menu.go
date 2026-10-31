@@ -231,9 +231,18 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), TrailingWidth: switchWidth})
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
 	}
-	if state.canReconnect(session) {
+	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)
+	if reconnect || restart || disconnect {
 		rows.separate()
+	}
+	if reconnect {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuReconnect, Label: messages.SessionReconnect, Icon: icon(iconRefresh)})
+	}
+	if restart {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuRestart, Label: messages.MenuReconnect, Icon: icon(iconRefresh)})
+	}
+	if disconnect {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
 
 	width, height := rows.size(canvas, state.contextMenuTheme())
@@ -343,6 +352,10 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 		state.Click(hitRemoteStats)
 	case hitTerminalMenuReconnect:
 		state.reconnect(session)
+	case hitTerminalMenuRestart:
+		state.askSessionLink(session, false)
+	case hitTerminalMenuDisconnect:
+		state.askSessionLink(session, true)
 	}
 	return true
 }

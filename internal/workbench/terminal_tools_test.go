@@ -20,7 +20,7 @@ func buildWith(t testing.TB, input string, rules []highlight.Rule) *rowEntry {
 	look.highlight = highlight.Compile(rules)
 	var cache rowCache
 	cache.begin()
-	return cache.row(screen.Row(0), 40, -1, &look, false)
+	return cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
 }
 
 func TestHighlightColorsTheMatchedWordsAndKeepsEveryOtherCell(t *testing.T) {
@@ -83,7 +83,7 @@ func TestHighlightingNothingCostsNoExtraWork(t *testing.T) {
 	look := darkPalette
 	look.highlight = highlight.Compile(highlight.Builtin())
 	cache.begin()
-	cache.row(screen.Row(0), 40, -1, &look, false)
+	cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
 	if cells := cache.markCells(screen.Row(0), 40, look.highlight); cells != nil {
 		t.Fatalf("a line with no match returned marks: %v", cells)
 	}
@@ -130,10 +130,10 @@ func TestSchemeChangesTheTerminalNotTheWindow(t *testing.T) {
 	screen.Write([]byte("\x1b[31mred\x1b[0m"))
 	var cache rowCache
 	cache.begin()
-	before := cache.row(screen.Row(0), 40, -1, &darkPalette, false).runs[0].Color
+	before := cache.row(screen.Row(0), 40, -1, cellSpan{}, &darkPalette, false).runs[0].Color
 	look := state.termPal
 	cache.begin()
-	after := cache.row(screen.Row(0), 40, -1, &look, false).runs[0].Color
+	after := cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false).runs[0].Color
 	if before == after || after != ui.RGB(0xff, 0x55, 0x55) {
 		t.Errorf("red before %v, after %v", before, after)
 	}
@@ -273,6 +273,7 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	}
 
 	state.Click(hitHighlightDeleteList.At(0))
+	state.Click(hitRuleDeleteConfirm)
 	if len(state.highlighting.rules) != 0 {
 		t.Fatalf("rules after delete = %v", state.highlighting.rules)
 	}
@@ -557,7 +558,7 @@ func BenchmarkPrepareALogLine(b *testing.B) {
 			for b.Loop() {
 				cache.begin()
 				row.Version++ // as if the line had changed
-				cache.row(row, 120, -1, &look, false)
+				cache.row(row, 120, -1, cellSpan{}, &look, false)
 			}
 		})
 	}

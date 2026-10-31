@@ -1,0 +1,74 @@
+# End to end: a program that hangs in a session, and the tab's Disconnect and
+# Reconnect, against the loopback SSH fixture on port 2222
+# (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2222).
+# Chinese labels.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/session_link_e2e.txt
+#
+# A running tab offers 重新连接 and 断开连接 after asking; 断开连接 keeps the tab with
+# its screen, and the tab then offers 连接, which asks for nothing.
+
+click "主机"
+click 462 68
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+# The program that will not stop on Ctrl-C.
+type trap '' INT; echo hung-here; while true; do sleep 1; done
+key enter
+waitfor "hung-here" 4000
+
+rightclick "127.0.0.1:2222"
+settle 300
+shot /tmp/link-menu-live.png
+click "断开连接"
+settle 300
+shot /tmp/link-confirm.png
+click "取消"
+settle 300
+texts "hung-here"
+
+rightclick "127.0.0.1:2222"
+settle 300
+click "断开连接"
+settle 300
+click "断开连接"
+settle 800
+waitfor "连接已关闭" 4000
+shot /tmp/link-disconnected.png
+texts "hung-here"
+
+rightclick "127.0.0.1:2222"
+settle 300
+shot /tmp/link-menu-dead.png
+click "连接"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 500
+shot /tmp/link-reconnected.png
+
+type trap '' INT; echo hung-again; while true; do sleep 1; done
+key enter
+waitfor "hung-again" 4000
+rightclick "127.0.0.1:2222"
+settle 300
+click "重新连接"
+settle 300
+click "重新连接"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 500
+shot /tmp/link-restarted.png
+texts "hung-again"

@@ -17,6 +17,8 @@ var (
 	hitTabMenuCloseRight  = tree.ID(tabMenuHits, "tab-menu-close-right")
 	hitTabMenuDuplicate   = tree.ID(tabMenuHits, "tab-menu-duplicate")
 	hitTabMenuReconnect   = tree.ID(tabMenuHits, "tab-menu-reconnect")
+	hitTabMenuRestart     = tree.ID(tabMenuHits, "tab-menu-restart")
+	hitTabMenuDisconnect  = tree.ID(tabMenuHits, "tab-menu-disconnect")
 	hitTabMenuRename      = tree.ID(tabMenuHits, "tab-menu-rename")
 	hitTabMenuLock        = tree.ID(tabMenuHits, "tab-menu-lock")
 )
@@ -109,6 +111,8 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	messages := state.messages
 	session, hasSession := state.tabMenuSession()
 	reconnect := hasSession && state.canReconnect(session)
+	restart := hasSession && state.canReconnectLive(session)
+	disconnect := hasSession && state.canDisconnect(session)
 	var keys [6]string
 	closeKeys := state.shortcuts.chords[shortcutCloseTab].keys(keys[:0])
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
@@ -124,9 +128,17 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitTabMenuClose, Label: messages.LabelCloseTab, Icon: icon(iconClose), Keys: closeKeys})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseOthers, Label: messages.MenuCloseOtherTabs, Icon: icon(iconCloseOthers), Disabled: len(state.workspaceTabs) < 2})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: messages.MenuCloseTabsToRight, Icon: icon(iconCloseRight), Disabled: index == len(state.workspaceTabs)-1})
-	if reconnect {
+	if reconnect || restart || disconnect {
 		rows.separate()
+	}
+	if reconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuReconnect, Label: messages.SessionReconnect, Icon: icon(iconRefresh)})
+	}
+	if restart {
+		rows.add(components.ContextMenuItem{ID: hitTabMenuRestart, Label: messages.MenuReconnect, Icon: icon(iconRefresh)})
+	}
+	if disconnect {
+		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
 	width, height := rows.size(canvas, state.contextMenuTheme())
 	bounds := state.popupAt(canvas, viewport, state.tabMenu.at, width, height, 6)
@@ -173,6 +185,16 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.activateWorkspace(workspace)
 			state.reconnect(session)
 			state.save()
+		}
+	case hitTabMenuRestart:
+		if session, ok := state.tabMenuSessionFor(workspace); ok && state.canReconnectLive(session) {
+			state.activateWorkspace(workspace)
+			state.askSessionLink(session, false)
+		}
+	case hitTabMenuDisconnect:
+		if session, ok := state.tabMenuSessionFor(workspace); ok && state.canDisconnect(session) {
+			state.activateWorkspace(workspace)
+			state.askSessionLink(session, true)
 		}
 	}
 	return true

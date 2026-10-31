@@ -141,6 +141,50 @@ func TestImportingElectermBookmarksAddsHostsWithTheirNestedGroups(t *testing.T) 
 	}
 }
 
+func TestImportGuideLinkOpensTheDocsAndKeepsTheChooserOpen(t *testing.T) {
+	var opened []string
+	options := freshOptions(t)
+	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportGuide)
+	if len(opened) != 1 || !strings.HasPrefix(opened[0], "https://motty.page/") {
+		t.Fatalf("opened %q", opened)
+	}
+	if state.modal != modalImportSessions {
+		t.Fatalf("modal = %d, want the chooser to stay open", state.modal)
+	}
+}
+
+func TestImportingNetcattyHostsAddsHostsWithTheirGroups(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "hosts_export_2026-10-31.csv")
+	content := "Groups,Label,Tags,Notes,Hostname/IP,Protocol,Port,Username,Password,KeyPath,Passphrase\r\n" +
+		"Lab/Pi,Pi,,,pi.local,ssh,22,me,secret,,\r\n"
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportNetcatty)
+	if len(state.hosts) != 1 {
+		t.Fatalf("hosts %+v", state.hosts)
+	}
+	if host := state.hosts[0]; host.Label != "Pi" || host.Group != "Lab / Pi" || host.Address != "pi.local" || host.User != "me" {
+		t.Fatalf("host = %+v", host)
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "Netcatty") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "clear text") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
 func TestImportingWindTermSessionsAddsHostsWithTheirGroups(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "user.sessions")
 	content := `[{"session.group":"Lab","session.label":"Pi","session.port":22,"session.protocol":"SSH","session.target":"pi.local"}]`

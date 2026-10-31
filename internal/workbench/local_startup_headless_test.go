@@ -65,12 +65,32 @@ func TestLocalTerminalWaitsForRealShellOutput(test *testing.T) {
 	if _, ok := view.Hit(state.messages.ConnShowProgress); ok {
 		test.Fatal("local startup offers remote connection progress")
 	}
+	// Let the window settle into its opening state before counting frames: the
+	// click starts work of its own — the session journal writes its row, the
+	// completion catalog loads — and each result wakes the window once for the
+	// frame that shows it. The new terminal also gets the keyboard, so its
+	// cursor blinks until cursorBlinkSpan after the last thing that happened.
+	// Wait until a whole second passes with no paint at all; from then on a
+	// window left alone must not ask for a single frame until the user does
+	// something.
+	if err := view.Settle(250*time.Millisecond, time.Minute); err != nil {
+		test.Fatal(err)
+	}
+	for settling := time.Duration(0); settling < 3*cursorBlinkSpan; settling += time.Second {
+		before := paints
+		if err := view.Wait(time.Second); err != nil {
+			test.Fatal(err)
+		}
+		if paints == before {
+			break
+		}
+	}
 	before := paints
 	if err := view.Wait(time.Minute); err != nil {
 		test.Fatal(err)
 	}
 	if paints != before {
-		test.Fatal("a silent local shell schedules idle frames")
+		test.Fatalf("a silent local shell schedules idle frames (%d in a minute)", paints-before)
 	}
 	if err := view.Type("probe"); err != nil {
 		test.Fatal(err)

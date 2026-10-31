@@ -11,35 +11,42 @@ type ToolsMessages struct {
 	SchemeLookLight   string
 
 	// Keyword highlighting.
-	HighlightGroup              string
-	HighlightBuiltin            string
-	HighlightBuiltinDescription string
-	HighlightCustom             string
-	HighlightCustomDescription  string
-	HighlightAdd                string
-	HighlightDelete             string
-	HighlightKindText           string
-	HighlightKindRegex          string
-	HighlightKindTextCase       string
-	HighlightKindRegexCase      string
-	HighlightDialogTitle        string
-	HighlightPattern            string
-	HighlightPatternPlaceholder string
-	HighlightRegex              string
-	HighlightCase               string
-	HighlightColor              string
-	HighlightErrorEmpty         string
-	HighlightErrorTooLong       string
-	HighlightErrorEverywhere    string
-	HighlightErrorInvalidFmt    string
-	HighlightErrorTooMany       string
-	HighlightSave               string
-	ColorRed                    string
-	ColorYellow                 string
-	ColorGreen                  string
-	ColorCyan                   string
-	ColorBlue                   string
-	ColorMagenta                string
+	HighlightGroup               string
+	HighlightBuiltin             string
+	HighlightBuiltinDescription  string
+	HighlightCustom              string
+	HighlightCustomDescription   string
+	HighlightAdd                 string
+	HighlightImport              string
+	HighlightImportDescription   string
+	HighlightImportPickerTitle   string
+	HighlightImportNothing       string
+	HighlightImportAllSkippedFmt string
+	HighlightImportTooLarge      string
+	HighlightImportResultFmt     string
+	HighlightDelete              string
+	HighlightKindText            string
+	HighlightKindRegex           string
+	HighlightKindTextCase        string
+	HighlightKindRegexCase       string
+	HighlightDialogTitle         string
+	HighlightPattern             string
+	HighlightPatternPlaceholder  string
+	HighlightRegex               string
+	HighlightCase                string
+	HighlightColor               string
+	HighlightErrorEmpty          string
+	HighlightErrorTooLong        string
+	HighlightErrorEverywhere     string
+	HighlightErrorInvalidFmt     string
+	HighlightErrorTooMany        string
+	HighlightSave                string
+	ColorRed                     string
+	ColorYellow                  string
+	ColorGreen                   string
+	ColorCyan                    string
+	ColorBlue                    string
+	ColorMagenta                 string
 
 	// Snippets.
 	SnippetsTitle             string
@@ -187,6 +194,8 @@ type ToolsMessages struct {
 	ImportSessions            string
 	ImportChooserTitle        string
 	ImportChooserBody         string
+	ImportGuide               string // the link to the docs on exporting from each client
+	ImportGuideURL            string
 	ImportPickerFmt           string // the client's name
 	ImportCanceled            string
 	ImportFailedFmt           string
@@ -703,6 +712,9 @@ type ToolsMessages struct {
 	AlgoCustomField                 string
 	AlgoCustomPlaceholder           string
 	ErrAlgoRequired                 string
+	LoginCommandField               string
+	LoginCommandPlaceholder         string
+	ErrLoginCommand                 string
 	ErrAlgoUnknownFmt               string
 	AlgoWeakFmt                     string
 	AlgoNegotiatedFmt               string

@@ -17,6 +17,14 @@ Record-level sync works through:
 Records carry hybrid logical clocks, and deletions are kept as 90-day tombstones, so
 several computers converge without one overwriting the other.
 
+### Jianguoyun (坚果云) and other WebDAV services
+
+Motty creates the folders above the backup file when it uploads, but some services only
+let their own app create top-level folders. Jianguoyun is one: first make a sync folder
+in its web page or client, then set the file to `that-folder/backup.mottybak`. The
+password is the third-party app password from the Jianguoyun account's security
+settings, not the login password.
+
 ## What stays local
 
 Tabs, window layout, shortcuts, fonts, key paths and cloud credentials are never

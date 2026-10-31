@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -25,11 +26,15 @@ var ErrAuthFailed = errors.New("rdp: the server refused the account or password"
 // ask for one.
 var ErrAuthRequired = errors.New("rdp: a password is required")
 
-// Defaults of the picture a session asks for: the client chooses the size when
-// it connects, and keeps it; the workbench scales it to the pane.
+// Defaults of the picture a session asks for when the caller gives no size:
+// the client chooses the size when it connects. The workbench gives the size of
+// its pane and follows it through Resize; this is only for a caller that does
+// not.
 const (
 	DefaultWidth  = 1600
 	DefaultHeight = 900
+	// minSize is the smallest side the server's display channel accepts.
+	minSize = 200
 	// maxSize bounds what a caller may ask for, and what a server may hand
 	// back: the largest desktop the frame buffer is built for.
 	maxSize = rdpcore.MaxDesktopSize
@@ -87,7 +92,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	if width <= 0 || height <= 0 {
 		width, height = DefaultWidth, DefaultHeight
 	}
-	width, height = min(width, maxSize)&^1, min(height, maxSize)
+	width, height = clampSize(width, height)
 
 	session := &Session{opts: opts, done: make(chan struct{})}
 	session.frame = desktop.NewFrame(opts.Notify)
@@ -106,6 +111,9 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	config.Host, config.Port = host, port
 	config.Username, config.Domain, config.Password = opts.Username, opts.Domain, opts.Password
 	config.Width, config.Height = uint16(width), uint16(height)
+	if percent := scalePercent(opts.Scale); percent != 100 {
+		config.DesktopScaleFactor = percent
+	}
 	config.Clipboard = opts.Clipboard
 	config.ConsoleSession = opts.Console
 	config.GFX = true
@@ -207,6 +215,40 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		session.finish(nil)
 	}()
 	return session, nil
+}
+
+// clampSize holds a requested desktop to what the server's display channel
+// accepts: an even width, and sides between minSize and maxSize.
+func clampSize(width, height int) (int, int) {
+	return min(max(width, minSize), maxSize) &^ 1, min(max(height, minSize), maxSize)
+}
+
+// scaleLevels are the interface scales Windows offers, in percent.
+var scaleLevels = [...]uint32{100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500}
+
+// scalePercent is the Windows scale level nearest to scale (a device pixel per
+// logical pixel), 100 for zero or a scale below it.
+func scalePercent(scale float32) uint32 {
+	wanted := float64(scale) * 100
+	nearest := scaleLevels[0]
+	for _, level := range scaleLevels[1:] {
+		if math.Abs(float64(level)-wanted) < math.Abs(float64(nearest)-wanted) {
+			nearest = level
+		}
+	}
+	return nearest
+}
+
+var _ desktop.Resizer = (*Session)(nil)
+
+// CanResize reports whether the server has opened its display control channel.
+func (session *Session) CanResize() bool { return session.client.CanResize() }
+
+// Resize asks the server for a width x height desktop drawn at scale, keeping
+// the session. The frame follows when the server has made the new desktop.
+func (session *Session) Resize(width, height int, scale float32) error {
+	width, height = clampSize(width, height)
+	return session.client.ResizeDisplay(width, height, scalePercent(scale))
 }
 
 // translate turns the library's authentication failure into this package's.

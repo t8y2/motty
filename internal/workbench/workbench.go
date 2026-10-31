@@ -327,6 +327,8 @@ var (
 	hitTerminalMenuStats       = tree.ID(terminalMenuHits, "terminal-menu-stats")
 	hitLocalTerminal           = tree.ID(terminalMenuHits, "local-terminal")
 	hitTerminalMenuReconnect   = tree.ID(terminalMenuHits, "terminal-menu-reconnect")
+	hitTerminalMenuRestart     = tree.ID(terminalMenuHits, "terminal-menu-restart")
+	hitTerminalMenuDisconnect  = tree.ID(terminalMenuHits, "terminal-menu-disconnect")
 	hitTerminalMenuTransfer    = tree.ID(terminalMenuHits, "terminal-menu-transfer")
 )
 
@@ -485,8 +487,10 @@ type State struct {
 	hostGroupEditor    text.Editor
 	tabRename          tabRename
 	tabsClose          tabsClose
+	sessionLink        sessionLink
 	hostDialogMode     hostDialogMode
 	hostDialogID       uint32
+	ruleDelete         ruleDelete
 	hostTest           hostTest
 	hostDialogText     string
 	identityCountText  string
@@ -700,7 +704,10 @@ type State struct {
 	dev devState
 	// viewport and the terminal cell are the layout inputs of the last paint,
 	// kept so a resize can work out how many rows and columns fit.
-	viewport              ui.Size
+	viewport ui.Size
+	// pixelScale is the device pixels per logical pixel of the display, as the last
+	// paint saw it; zero before the first.
+	pixelScale            float32
 	cellWidth, cellHeight float32
 	paneCanvas            ui.Canvas
 	contextCanvas         ui.Canvas
@@ -1039,6 +1046,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitDialogAlgorithms && state.editor.protocol == protocolSSH && state.editor.algoMode == algoCustom {
 			return &state.editor.algorithms
 		}
+		if hit == hitDialogLoginCommand && state.editor.protocol == protocolSSH {
+			return &state.editor.loginCommand
+		}
 		if hit == hitDialogOTP && state.editor.protocol == protocolSSH {
 			return &state.editor.otp
 		}
@@ -1208,6 +1218,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalCloseTabs:
 		state.clickCloseTabsDialog(id)
 		return
+	case modalSessionLink:
+		state.clickSessionLinkDialog(id)
+		return
 	case modalHostImportResult:
 		state.clickHostImportResult(id)
 		return
@@ -1237,6 +1250,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
+		return
+	case modalDeleteRule:
+		state.clickDeleteRuleDialog(id)
 		return
 	case modalSnippet:
 		state.clickSnippetDialog(id)
@@ -2133,6 +2149,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.closeTabsKey(event); handled {
+		return result
+	}
+	if result, handled := state.sessionLinkKey(event); handled {
 		return result
 	}
 	if result, handled := state.terminalFindKey(event); handled {

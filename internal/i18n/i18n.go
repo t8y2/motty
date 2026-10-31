@@ -418,6 +418,14 @@ type Messages struct {
 	CloseTabsTitleFmt             string
 	CloseTabsDescription          string
 	CloseTabsConfirm              string
+	MenuReconnect                 string
+	MenuDisconnect                string
+	ReconnectTitleFmt             string
+	ReconnectDescription          string
+	ReconnectConfirm              string
+	DisconnectTitleFmt            string
+	DisconnectDescription         string
+	DisconnectConfirm             string
 	RenameTabTitle                string
 	RenameTerminalTitle           string
 	RenameTerminalPlaceholder     string

@@ -58,6 +58,8 @@ type hostEditor struct {
 	identityOpen bool
 	transfer     transferMode
 	algorithms   text.Editor
+	// loginCommand is the line typed into the host's shells after login.
+	loginCommand text.Editor
 	// forwardX11 is the host's "Forward X11" switch.
 	forwardX11 bool
 	// agentForward is the host's "Forward ssh-agent" switch.
@@ -105,6 +107,7 @@ const (
 	fieldAlgorithms
 	fieldOTP
 	fieldPassphrase
+	fieldLoginCommand
 	fieldCount
 )
 
@@ -131,6 +134,8 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 		return &editor.otp
 	case fieldPassphrase:
 		return &editor.passphrase
+	case fieldLoginCommand:
+		return &editor.loginCommand
 	default:
 		return &editor.port
 	}
@@ -197,6 +202,10 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 			return messages.Tools.ErrAlgoRequired
 		}
 	}
+	if editor.protocol == protocolSSH && !validLoginCommand(editor.value(fieldLoginCommand)) {
+		editor.advancedOpen = true
+		return messages.Tools.ErrLoginCommand
+	}
 	if _, ok := parseHostTags(editor.value(fieldTags)); !ok {
 		return messages.ErrHostTagsInvalid
 	}
@@ -228,6 +237,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.icon, editor.iconOpen = hostIconAuto, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
+	editor.loginCommand = text.Editor{}
+	editor.loginCommand.Insert(host.LoginCommand)
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity = host.Auth, host.Identity
@@ -237,7 +248,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.noHistory = host.NoHistory
 	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
 	editor.transfer = host.Transfer
-	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.NoHistory)
+	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.NoHistory || host.LoginCommand != "")
 	if host.Algo != nil {
 		editor.algorithms.Insert(host.Algo.list)
 	}
@@ -291,6 +302,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
 		host.NoHistory = editor.noHistory
+		host.LoginCommand = editor.value(fieldLoginCommand)
 		host.Transfer = editor.transfer
 		switch editor.algoMode {
 		case algoCompatible:
@@ -324,6 +336,7 @@ func (editor *hostEditor) reset() {
 	editor.icon, editor.system, editor.iconOpen = hostIconAuto, sshconn.SystemUnknown, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
+	editor.loginCommand = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity = algoDefault, authAutomatic, ""
 	editor.authOpen, editor.identityOpen = false, false

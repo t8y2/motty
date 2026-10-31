@@ -284,6 +284,14 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		blinkOn = true
 	}
 	block := cursor.Visible && cursor.Style == term.CursorBlock && focused && !composing && !predicting && blinkOn
+	// The input method draws its composition over the cells from the cursor on,
+	// where it replaces whatever the program put there. A program that draws its
+	// own cursor (a prompt with placeholder text) hides the real one, so the
+	// cells are covered whether the cursor shows or not.
+	var covered cellSpan
+	if composing && cursor.Y < rows {
+		covered = cellSpan{from: cursor.X, to: cursor.X + displayCells(t.preedit.Value)}
+	}
 	style := ui.TextStyle{Size: state.terminalFontSize, Color: pal.termFG, MonoFace: state.terminalFontFace}
 	// The strip is empty on the alternate screen, whose program owns the grid.
 	gutterShown := !sensitive && state.terminalGutter != gutterOff && !t.presentedAltScreen() && t.sync == nil
@@ -316,7 +324,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
-		entry := t.cache.row(line, cols, column, pal, inactive)
+		entry := t.cache.row(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
 		y := geometry.top + float32(row)*cellHeight
 		for _, span := range entry.spans {
 			from := snap(geometry.left + float32(span.from)*cellWidth)
@@ -335,7 +343,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		if block && row == cursor.Y {
 			column = cursor.X
 		}
-		entry := t.cache.row(t.presentedRow(row), cols, column, pal, inactive)
+		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
 		y := geometry.top + float32(row)*cellHeight
 		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
 			left := snap(geometry.left + float32(from)*cellWidth)
@@ -392,8 +400,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		case !blinkOn:
 			// the dark half of a blink
 		case composing:
-			// The input method draws over the cursor cell; clear what is under it.
-			canvas.Fill(ui.Rect{X: x, Y: y, Width: float32(1+displayCells(t.preedit.Value)) * cellWidth, Height: cellHeight}, pal.terminal)
+			// The input method draws over these cells, which the rows left empty.
 		case cursor.Style == term.CursorUnderline:
 			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - 2, Width: cellWidth, Height: 2}, cursorColor)
 		case cursor.Style == term.CursorBar:
@@ -405,6 +412,11 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 			canvas.Fill(ui.Rect{X: x, Y: y, Width: 1, Height: cellHeight}, cursorColor)
 			canvas.Fill(ui.Rect{X: x + cellWidth - 1, Y: y, Width: 1, Height: cellHeight}, cursorColor)
 		}
+	}
+	if covered != (cellSpan{}) {
+		x := geometry.left + float32(covered.from)*cellWidth
+		y := geometry.top + float32(cursor.Y)*cellHeight
+		canvas.Fill(ui.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
 	if !sensitive && focused && !composing && !predicting && t.sync == nil {
 		if rest, ok := state.commandGhost(session); ok {
@@ -482,4 +494,12 @@ func visibleRow(visible []uint64, id uint64) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// coveredOn is covered when it is on the row being prepared, else nothing.
+func coveredOn(covered cellSpan, onRow bool) cellSpan {
+	if onRow {
+		return covered
+	}
+	return cellSpan{}
 }

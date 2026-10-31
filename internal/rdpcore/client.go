@@ -187,7 +187,14 @@ type Client struct {
 	egfxHandler *egfx.Handler
 
 	// Display control (MS-RDPEDISP)
-	dispHandler     *disp.Handler
+	dispHandler *disp.Handler
+	// dispReady is set once the server's display control capabilities have
+	// arrived: from then on Resize changes the desktop without reconnecting.
+	dispReady atomic.Bool
+	// displayMu guards the desktop size and scale in opts and the queued resize
+	// against the receive goroutine, which reads and writes them when the server
+	// resets its graphics or reactivates the session.
+	displayMu       sync.Mutex
 	pendingResizeW  uint16               // queued resize width (0 = none)
 	pendingResizeH  uint16               // queued resize height
 	pendingMonitors []disp.MonitorLayout // queued multi-monitor resize (nil = none)
@@ -963,6 +970,9 @@ func (c *Client) mcsConnect() error {
 				if c.dispHandler == nil {
 					return
 				}
+				c.dispReady.Store(true)
+				c.displayMu.Lock()
+				defer c.displayMu.Unlock()
 				if c.pendingMonitors != nil {
 					monitors := c.pendingMonitors
 					c.pendingMonitors = nil
@@ -1039,8 +1049,10 @@ func (c *Client) mcsConnect() error {
 					w, h = min(w, MaxDesktopSize), min(h, MaxDesktopSize)
 				}
 				c.log.LogAttrs(context.Background(), slog.LevelDebug, "EGFX ResetGraphics callback", slog.Int("width", w), slog.Int("height", h), slog.Bool("hasFramebuf", c.framebuf != nil))
+				c.displayMu.Lock()
 				c.opts.Width = uint16(w)
 				c.opts.Height = uint16(h)
+				c.displayMu.Unlock()
 				c.framebufMu.Lock()
 				if c.framebuf != nil {
 					c.framebuf.Resize(w, h)
@@ -2133,6 +2145,7 @@ func (c *Client) resetForReconnect() {
 	c.egfxHandler = nil
 	c.clipHandler = nil
 	c.dispHandler = nil
+	c.dispReady.Store(false)
 	c.vcReassembly = nil
 	c.vcReassemblyTotal = 0
 	c.pendingResizeW = 0
@@ -2489,13 +2502,16 @@ func (c *Client) handleReactivation() {
 	// AFTER finalization, the clear() in Resize wipes everything the server just
 	// drew, and the server won't resend it (it thinks the client already has it).
 	c.orderState = orders.DecoderState{}
+	c.displayMu.Lock()
+	width, height := int(c.opts.Width), int(c.opts.Height)
+	c.displayMu.Unlock()
 	c.framebufMu.Lock()
 	if c.framebuf != nil {
-		c.framebuf.Resize(int(c.opts.Width), int(c.opts.Height))
+		c.framebuf.Resize(width, height)
 	}
 	c.framebufMu.Unlock()
 	if fn := c.loadOnResize(); fn != nil {
-		fn(int(c.opts.Width), int(c.opts.Height))
+		fn(width, height)
 	}
 
 	// Read the new Demand Active from the server
@@ -2511,7 +2527,7 @@ func (c *Client) handleReactivation() {
 		return
 	}
 
-	c.log.LogAttrs(context.Background(), slog.LevelInfo, "reactivation complete", slog.Int("width", int(c.opts.Width)), slog.Int("height", int(c.opts.Height)))
+	c.log.LogAttrs(context.Background(), slog.LevelInfo, "reactivation complete", slog.Int("width", width), slog.Int("height", height))
 }
 
 // sendInputSynchronize sends a TS_INPUT_EVENT with messageType=INPUT_SYNCHRONIZE.
@@ -5141,6 +5157,40 @@ func (c *Client) SendMouseWheel(x, y int, delta int, horizontal bool) error {
 // via MS-RDPEDISP. If the display control channel isn't ready yet, the
 // resize is queued and sent automatically when the channel opens.
 func (c *Client) Resize(width, height int) error {
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	return c.resizeLocked(width, height)
+}
+
+// CanResize reports whether the server has opened its display control channel,
+// so that ResizeDisplay changes the desktop's size at once and keeps the
+// session. A server that has not (Windows before 8, or one that is still
+// starting the channel) would only reconnect.
+func (c *Client) CanResize() bool { return c.dispReady.Load() }
+
+// ErrResizeUnsupported is returned by ResizeDisplay when the server does not
+// support changing the desktop's size in a running session.
+var ErrResizeUnsupported = errors.New("rdp: the server cannot change the desktop size in a running session")
+
+// ResizeDisplay asks the server for a width x height desktop whose interface is
+// drawn at scale percent (one of the Windows scale levels: 100, 125, 150 ...),
+// in the running session. Unlike Resize it never reconnects: it returns
+// ErrResizeUnsupported when CanResize is false.
+func (c *Client) ResizeDisplay(width, height int, scale uint32) error {
+	if c.State() != StateConnected {
+		return ErrNotConnected
+	}
+	if !c.CanResize() {
+		return ErrResizeUnsupported
+	}
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	c.opts.DesktopScaleFactor = scale
+	return c.resizeLocked(width, height)
+}
+
+// resizeLocked is Resize with displayMu held.
+func (c *Client) resizeLocked(width, height int) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}

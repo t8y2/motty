@@ -43,6 +43,9 @@ type Host struct {
 	// NoHistory keeps what is typed in this host's terminals out of the command
 	// history, whatever the global switch says.
 	NoHistory bool
+	// LoginCommand is typed into each new shell of an SSH host once it is ready
+	// for input, as the user would type it. One line, empty for none.
+	LoginCommand string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool
@@ -186,6 +189,7 @@ type Session struct {
 	railStart     time.Duration // when it set out
 
 	established        bool
+	disconnected       bool // the user ended the connection on purpose; the closed status that follows is not a failure
 	reconnectAttempt   int
 	reconnectDue       time.Duration
 	reconnectPending   bool

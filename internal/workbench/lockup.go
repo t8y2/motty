@@ -31,8 +31,8 @@ func lockupBitmap(data []byte, id uint64) func() ui.Bitmap {
 }
 
 var (
-	lockupDark  = lockupBitmap(assets.LockupDark, 1<<61|1)
-	lockupLight = lockupBitmap(assets.LockupLight, 1<<61|2)
+	lockupDark  = lockupBitmap(assets.LockupDark, 1<<60|1)
+	lockupLight = lockupBitmap(assets.LockupLight, 1<<60|2)
 )
 
 // paintLockup draws the logo with the name beside it into the slot the sidebar

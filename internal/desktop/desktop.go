@@ -180,6 +180,20 @@ type Session interface {
 	Close() error
 }
 
+// Resizer is a Session whose server changes the desktop's size while the
+// session runs, so that the picture can be kept the size of the pane and shown
+// pixel for pixel, as a window of the remote machine would be.
+type Resizer interface {
+	Session
+	// CanResize reports whether the server accepts Resize now. A server that
+	// does not (or not yet) leaves the picture the size it was opened at.
+	CanResize() bool
+	// Resize asks for a width x height desktop, in device pixels, whose
+	// interface is drawn at scale (see Options.Scale). The new size arrives
+	// through Present, when the server has made it.
+	Resize(width, height int, scale float32) error
+}
+
 // Options are what a backend needs to connect that is not in its own address.
 type Options struct {
 	// Password is the secret the server asks for, empty if none was saved.
@@ -207,9 +221,15 @@ type Options struct {
 	// Username and Domain are the account a protocol with accounts (RDP) signs
 	// in as; VNC has none.
 	Username, Domain string
-	// Width and Height are the size of the desktop to ask for when the protocol
-	// lets the client choose it (RDP); zero lets the backend choose.
+	// Width and Height are the size, in device pixels, of the desktop to ask for
+	// when the protocol lets the client choose it (RDP); zero lets the backend
+	// choose.
 	Width, Height int
+	// Scale is the device pixels the client shows per logical pixel (1 for a
+	// 100% display, 1.25 for 125%). A backend that can tell the server draws
+	// its interface at that scale (RDP), so that text and controls come out the
+	// size the user's own display makes them; zero is 1.
+	Scale float32
 	// VerifyCertificate is called with the DER certificate a server presents over
 	// TLS (RDP), after the handshake and before any secret is sent. A server's
 	// self-signed certificate cannot be checked against an authority, so the

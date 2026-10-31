@@ -3,9 +3,12 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"regexp/syntax"
 	"strings"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
@@ -35,6 +38,7 @@ var highlightUiHits = tree.Feature("highlight-ui")
 var (
 	hitSettingsHighlightToggle = tree.ID(highlightUiHits, "settings-highlight")
 	hitSettingsHighlightAdd    = tree.ID(highlightUiHits, "settings-highlight-add")
+	hitSettingsHighlightImport = tree.ID(highlightUiHits, "settings-highlight-import")
 	hitHighlightPattern        = tree.ID(highlightUiHits, "highlight-pattern")
 	hitHighlightRegex          = tree.ID(highlightUiHits, "highlight-regex")
 	hitHighlightCase           = tree.ID(highlightUiHits, "highlight-case")
@@ -152,6 +156,87 @@ func (state *State) deleteHighlightRule(index int) {
 	state.highlighting.rules = append(rules[:index:index], rules[index+1:]...)
 	state.recompileHighlights()
 	state.save()
+}
+
+// importHighlightRules reads the rules of a text file the user picked, in the
+// format highlight.ParseRules documents, and appends the ones that parse to
+// the user's rules. What the file holds beyond the room left under the cap is
+// skipped, and the result is reported in a notice, as the warnings are; the
+// file itself is never kept.
+func (state *State) importHighlightRules() {
+	m := state.messages.Tools
+	title := m.HighlightImportPickerTitle
+	paths, err := state.options.OpenFiles(app.OpenFileOptions{
+		Title:   title,
+		Filters: []app.FileFilter{{Name: "Highlight rules", Pattern: "*.txt"}},
+	})
+	if errors.Is(err, app.ErrCanceled) || err == nil && len(paths) == 0 {
+		return
+	}
+	if err != nil {
+		state.showActionFailure(title, err, state.messages.ActionFeedback.FilePickerFailed)
+		return
+	}
+	data, tooLarge, err := readHighlightRules(paths[0])
+	if err != nil {
+		state.showFileReadFailure(title, err, state.messages.ActionFeedback.ReadFailed)
+		return
+	}
+	if tooLarge {
+		state.showActionWarning(title, m.HighlightImportTooLarge)
+		return
+	}
+	parsed, skipped := highlight.ParseRules(string(data))
+	if len(parsed) == 0 {
+		if skipped == 0 {
+			state.showActionWarning(title, m.HighlightImportNothing)
+		} else {
+			state.showActionWarning(title, fmt.Sprintf(m.HighlightImportAllSkippedFmt, skipped))
+		}
+		return
+	}
+	room := max(0, maxCustomHighlightRules-len(state.highlighting.rules))
+	imported := min(len(parsed), room)
+	skipped += len(parsed) - imported
+	if imported == 0 {
+		state.showActionWarning(title, m.HighlightErrorTooMany)
+		return
+	}
+	for _, rule := range parsed[:imported] {
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{
+			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Slot: rule.Slot,
+		})
+	}
+	state.recompileHighlights()
+	state.save()
+	result := fmt.Sprintf(m.HighlightImportResultFmt, imported, skipped)
+	if skipped > 0 {
+		state.showActionWarning(title, result)
+	} else {
+		state.showActionInfo(title, result)
+	}
+}
+
+// maxHighlightImportBytes bounds what an import reads: the file is picked by
+// hand and only its first rules matter, so a mis-picked log is refused rather
+// than read whole on the interface thread.
+const maxHighlightImportBytes = 1 << 20
+
+// readHighlightRules reads at most the bound and says when the file is larger.
+func readHighlightRules(path string) (data []byte, tooLarge bool, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+	data, err = io.ReadAll(io.LimitReader(file, maxHighlightImportBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > maxHighlightImportBytes {
+		return nil, true, nil
+	}
+	return data, false, nil
 }
 
 // slotName is a color's word in the current language.
@@ -303,6 +388,8 @@ func (state *State) paintHighlightSettings(page *settingsPage) {
 		}
 		page.actionRow(m.HighlightCustom, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightAdd, Label: m.HighlightAdd, Variant: components.ButtonOutline})
+		page.actionRow(m.HighlightImport, m.HighlightImportDescription, len(rules) >= maxCustomHighlightRules,
+			components.ButtonAction{ID: hitSettingsHighlightImport, Label: m.HighlightImport, Variant: components.ButtonOutline})
 	})
 }
 

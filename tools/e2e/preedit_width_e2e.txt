@@ -1,0 +1,36 @@
+# End to end: an input method's composition stands where the terminal will draw the text.
+# Against the loopback SSH fixture on port 2222
+# (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2222).
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/preedit_width_e2e.txt
+#
+# width-compose.png and width-commit.png show the same text, first as a composition (underlined)
+# and then committed to the grid. Every character is in the same place in both: wide ones centered
+# in their two cells, with no jump when the text is committed.
+
+click "主机"
+click 462 68
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+type PS1='$ '; clear
+key enter
+settle 500
+type printf 'abcdefghijklmnopqrstuvwxyz0123456789\n'
+key enter
+settle 300
+type echo A
+compose 你好世界ab
+settle 400
+shot /tmp/width-compose.png
+compose
+type 你好世界ab
+settle 400
+shot /tmp/width-commit.png

@@ -13,6 +13,7 @@ entry, the certificate question and the pin store.
 | Part | Owner |
 | --- | --- |
 | Bitmap that changes in place, partial upload of only the changed tiles | Viva: `ui.Surface` (`github.com/vivaui/viva/ui/surface.go`), with the painter staging only bitmaps whose identity or version changed |
+| Showing such a bitmap one pixel to one device pixel at any display scale | Viva: `ui.Surface.DrawPixels` and `ui.Image.DevicePixels`; the painter keeps those images on device pixels instead of rounding them to logical pixels |
 | Pointer with buttons and positions, wheel, raw keys, committed IME text, focus | Viva (already: `RoleTerminal` focus gives raw keys and text events) |
 | RFB wire protocol, decoders, security types | `internal/rfb` (pure Go, no UI, no cgo) |
 | What every desktop backend offers (`Session`, `Frame`, key/button vocabulary) | `internal/desktop` |
@@ -65,6 +66,16 @@ type Session interface {
 
 * Fit-to-window and 100% scaling; at 100% a picture larger than the pane pans
   with the pointer so that the remote pixel under the pointer stays under it.
+* A backend whose server can change its desktop's size while it runs implements
+  `desktop.Resizer` (RDP, once the server has opened its display control
+  channel). The workbench then asks for the pane's pixels and the display's
+  scale when it connects (`desktop.Options.Width/Height/Scale`), draws the
+  picture pixel for pixel (`Surface.DrawPixels`) and, in Fit mode, asks the server
+  for a new size when the pane has held one for 250 ms. Scaling the picture to
+  the pane (what VNC and a server without the channel still get) resamples text
+  that the server rasterized for another size, which is what made RDP text look
+  soft at 125% and 150%. The status line reads 100% for such a picture.
+  Actual size stops the following and keeps the size the server has.
 * Pointer events with left, middle, right, wheel notches, and the held modifiers.
 * Focus capture: while the picture has the focus, none of Motty's shortcuts run
   and the keys go to the remote. `Ctrl+Alt+G` releases the keyboard (the status
