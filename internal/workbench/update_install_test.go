@@ -268,3 +268,80 @@ func TestLongReleaseNotesScrollInsideABoundedArea(t *testing.T) {
 		t.Fatalf("Home did not return to the top: %v", notes.scroll)
 	}
 }
+
+func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	var long strings.Builder
+	for range 50 {
+		long.WriteString("- an entry of the changelog\n")
+	}
+	state.update.notes = updateNotes{text: long.String()}
+	canvas, _ := paintedTexts(state)
+
+	notes := &state.update.notes
+	bar := notes.bar
+	if !notes.scrolls || bar.MaxOffset <= 0 || bar.Thumb.Height <= 0 {
+		t.Fatalf("notes did not produce a draggable scrollbar: %+v", bar)
+	}
+	foundBar := false
+	for _, hit := range canvas.Hits() {
+		if hit.ID == hitUpdateNotesScrollbar && hit.Role == ui.RoleSlider {
+			foundBar = true
+			break
+		}
+	}
+	if !foundBar {
+		t.Fatalf("notes scrollbar did not declare slider semantics: %+v", canvas.Hits())
+	}
+
+	downY := bar.Thumb.Y + bar.Thumb.Height/2
+	down := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: downY,
+		Viewport: state.viewport,
+	})
+	if !down.Handled || !notes.dragging {
+		t.Fatalf("pressing the thumb did not start a drag: %+v, notes %+v", down, notes)
+	}
+
+	travel := bar.Track.Height - bar.Thumb.Height
+	moveY := downY + travel*0.75
+	move := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Captured: true,
+		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: moveY,
+		Viewport: state.viewport,
+	})
+	if !move.Handled || !move.Repaint || notes.scroll < bar.MaxOffset*0.70 || notes.scroll > bar.MaxOffset*0.80 {
+		t.Fatalf("dragging moved notes to %v of %v: %+v", notes.scroll, bar.MaxOffset, move)
+	}
+
+	up := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Captured: true,
+		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: moveY,
+		Viewport: state.viewport,
+	})
+	if !up.Handled || notes.dragging {
+		t.Fatalf("releasing the thumb did not end the drag: %+v, notes %+v", up, notes)
+	}
+
+	state.Key(ui.KeyEvent{Key: ui.KeyHome, Target: hitUpdateNotesScrollbar})
+	if notes.scroll != 0 {
+		t.Fatalf("Home with the scrollbar focused did not return to the top: %v", notes.scroll)
+	}
+}
+
+func TestUpdateNotesDragDoesNotSurviveReopen(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	notes := &state.update.notes
+	notes.dragging = true
+
+	state.closeModal()
+	state.update.offer = true
+	state.showNextPrompt()
+
+	if state.modal != modalUpdate || notes.dragging {
+		t.Fatalf("reopened update dialog retained an old drag: modal %v, notes %+v", state.modal, notes)
+	}
+}

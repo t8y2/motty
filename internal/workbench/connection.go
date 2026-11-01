@@ -1024,6 +1024,7 @@ func (state *State) showNextPrompt() {
 	if state.update.offer {
 		state.update.offer = false
 		state.update.notes.scroll = 0
+		state.update.notes.dragging = false
 		state.modal = modalUpdate
 	}
 }

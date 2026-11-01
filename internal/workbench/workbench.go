@@ -1921,6 +1921,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
+	if result, handled := state.updateDialogPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
 			state.editor.groupPicker.control.Open = false
