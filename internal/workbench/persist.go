@@ -76,6 +76,7 @@ type savedState struct {
 	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
 	SFTPColumns                string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory      string              `json:"sftp_download_directory,omitempty"`
+	DefaultEditor              string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
 	Toolbars                   *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck                string              `json:"update_check,omitempty"`
 	CloseAction                string              `json:"close_action,omitempty"`
@@ -404,6 +405,7 @@ func (state *State) snapshot() savedState {
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
+		DefaultEditor:              string(state.defaultEditor),
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
@@ -608,6 +610,9 @@ func (state *State) restoreLocal(saved savedState) {
 	state.toolbars.restore(saved.Toolbars)
 	state.localShell = saved.LocalShell
 	state.sessionLogsOff = saved.SessionLogsOff
+	// The saved editor is read as it is: a value this build does not know stays
+	// unknown rather than becoming another editor.
+	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))
 	state.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)
 	// A saved language is the user's choice. Without one (a first run, or a state
 	// from before the choice was told apart) the system's language decides, and

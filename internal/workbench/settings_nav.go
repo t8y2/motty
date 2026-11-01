@@ -96,6 +96,9 @@ func (state *State) selectSettingsCategory(category settingsCategory) bool {
 	if localShellSettingVisible() && category == settingsTerminal && !state.localShellMenu.loaded {
 		state.refreshLocalShells()
 	}
+	if category == settingsFiles {
+		state.refreshEditors()
+	}
 	if state.settingsCategory == category {
 		return false
 	}

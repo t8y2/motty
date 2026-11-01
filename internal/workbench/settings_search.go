@@ -187,6 +187,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesColumns, tools.FilesColumnsDescription)
 	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)
+	row(settingsFiles, tools.FilesEditor, tools.FilesEditorDescription)
 	row(settingsFiles, tools.FilesKeepTimes, tools.FilesKeepTimesDescription)
 	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)
 	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)

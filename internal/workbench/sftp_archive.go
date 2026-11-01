@@ -132,14 +132,7 @@ func (state *State) startSFTPArchive(session *Session, view *sftpView, directory
 	}
 	view.archiveSequence++
 	sequence, connection := view.archiveSequence, session.conn
-	results, notify := make(chan archiveResult, 1), state.notifyFor(session)
-	if view.detached != nil && view.detached.window != nil {
-		window := view.detached.window
-		notify = func() {
-			window.Invalidate()
-			state.options.Invalidate()
-		}
-	}
+	results, notify := make(chan archiveResult, 1), state.notifyForView(session, view)
 	view.archiveResults = results
 	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 	view.cancelExtract = cancel

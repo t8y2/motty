@@ -21,6 +21,7 @@ var (
 	hitSFTPHeaderMore        = tree.ID(sftpHits, "sftp-header-more")
 	hitSFTPHeaderFilter      = tree.ID(sftpHits, "sftp-header-filter")
 	hitSFTPHeaderHidden      = tree.ID(sftpHits, "sftp-header-hidden")
+	hitSFTPHeaderEditor      = tree.ID(sftpHits, "sftp-header-editor")
 	hitSFTPHeaderMenuDismiss = tree.ID(sftpHits, "sftp-header-menu-dismiss")
 	hitSFTPCoverage          = tree.ID(sftpHits, "sftp-local-coverage")
 )
@@ -122,7 +123,11 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anc
 		return
 	}
 	const menuWidth = float32(280)
-	menuHeight := float32((8+len(folder.history.recent))*32 + 26)
+	rows := 8 + len(folder.history.recent)
+	if label, _ := state.sftpEditorItem(view, folder); label != "" {
+		rows++
+	}
+	menuHeight := float32(rows*32 + 26)
 	bounds := state.popupBelow(canvas, anchor, menuWidth, menuHeight, flex.End)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPHeaderMenuDismiss,
@@ -142,6 +147,9 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anc
 		ID: hitSFTPHeaderHidden, Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
 		Selected: folder.showHidden,
 	})
+	if label, disabled := state.sftpEditorItem(view, folder); label != "" {
+		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
+	}
 	menu.AddSeparator()
 	for _, entry := range state.sftpColumns.entries {
 		if !entry.Enabled {
