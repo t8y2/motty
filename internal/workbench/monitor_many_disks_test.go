@@ -31,7 +31,7 @@ func dockerDiskFixture(count int) []remotestats.Disk {
 func paintedDockerDisks(canvas *ui.Canvas) int {
 	count := 0
 	for _, text := range canvas.Texts() {
-		if strings.HasPrefix(text.Value, "/var/lib") {
+		if strings.HasPrefix(text.Value, "/var/lib") || text.Value == "/last" {
 			count++
 		}
 	}
@@ -57,12 +57,15 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 	}
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	topVisible := paintedDockerDisks(&canvas)
-	if topVisible >= len(p.disks) {
-		t.Fatalf("visible disk rows at the top = %d, want fewer than %d", topVisible, len(p.disks))
-	}
-
 	area := state.monitorScrollArea(p).Geometry()
+	// Rows are 43 high: a viewport shows at most this many whole or partial ones.
+	most := int(area.Viewport.Height/43) + 2
+	if got := paintedDockerDisks(&canvas); got > most {
+		t.Fatalf("painted disk rows at the top = %d, want at most %d for a %v high viewport", got, most, area.Viewport.Height)
+	}
+	if hasPaintedText(&canvas, "/last") {
+		t.Fatal("the last mount is painted while scrolled to the top")
+	}
 	if area.MaxOffsetX != 0 || area.HorizontalTrack != (ui.Rect{}) || area.HorizontalThumb != (ui.Rect{}) {
 		t.Fatalf("expanded disks added horizontal scrolling: %+v", area)
 	}
@@ -72,17 +75,15 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 	p.scroll = diskSectionTop
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	middleVisible := paintedDockerDisks(&canvas)
-	if middleVisible == 0 || middleVisible >= len(p.disks) {
-		t.Fatalf("visible disk rows after scrolling = %d, want a bounded subset of %d", middleVisible, len(p.disks))
+	if got := paintedDockerDisks(&canvas); got == 0 || got > most {
+		t.Fatalf("painted disk rows after scrolling = %d, want between 1 and %d", got, most)
 	}
 
 	p.scroll = max(p.contentHeight-viewport.Height, 0)
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	bottomVisible := paintedDockerDisks(&canvas)
-	if bottomVisible == 0 || bottomVisible >= len(p.disks) {
-		t.Fatalf("visible disk rows at the bottom = %d, want a bounded subset of %d", bottomVisible, len(p.disks))
+	if got := paintedDockerDisks(&canvas); got == 0 || got > most {
+		t.Fatalf("painted disk rows at the bottom = %d, want between 1 and %d", got, most)
 	}
 	if !hasPaintedText(&canvas, "/last") {
 		t.Fatal("the final Docker mount is not reachable by scrolling")

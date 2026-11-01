@@ -131,7 +131,7 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 	area := components.BeginScrollArea(canvas, state.Theme(), body, ui.Size{Width: body.Width, Height: p.contentHeight}).Offset(0, p.scroll).Viewport(hitMonitorScroll, m.Title).VerticalScrollbar(hitMonitorThumb, m.Title, "")
 	geo := area.BeginContent()
 	p.scroll = geo.OffsetY
-	state.paintMonitorSections(canvas, v, geo.Content)
+	state.paintMonitorSections(canvas, v, geo.Content, geo.Viewport)
 	area.EndContent()
 	footer := m.Updated
 	fc := colors.muted

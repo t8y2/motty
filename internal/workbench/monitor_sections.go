@@ -150,9 +150,8 @@ func (s *State) monitorMore(c *ui.Canvas, id ui.ID, label string, b ui.Rect) {
 	components.BeginButton(c, theme, id, b).XSmall().Ghost(label)
 }
 
-func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b ui.Rect) {
+func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b, viewport ui.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	viewport := s.monitorScrollArea(p).Geometry().Viewport
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorCores, ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, p.coresTitle, icons.Cpu, colors.cpu, !p.coresCollapsed)
 	if p.coresCollapsed {
@@ -193,9 +192,8 @@ func (s *State) paintMonitorCores(c *ui.Canvas, p *monitorView, b ui.Rect) {
 	}
 }
 
-func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b ui.Rect) {
+func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b, viewport ui.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	viewport := s.monitorScrollArea(p).Geometry().Viewport
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorDisksCollapse, ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, m.DiskSection, icons.HardDrive, colors.disk, !p.disksCollapsed)
 	if p.disksCollapsed {
@@ -212,7 +210,7 @@ func (s *State) paintMonitorDisks(c *ui.Canvas, p *monitorView, b ui.Rect) {
 		if p.page != 1 && !p.disksOpen && (d.virtual || shown >= 3) {
 			continue
 		}
-		if monitorRowVisible(viewport, y, 30) {
+		if monitorRowVisible(viewport, y, 36) {
 			monitorLabel(c, d.path, ui.Rect{X: x, Y: y, Width: w * .36, Height: 18}, 11, colors.text, ui.WeightMedium)
 			monitorRight(c, d.capacity, ui.Rect{X: x + w*.36, Y: y, Width: w * .64, Height: 18}, 10, colors.muted, ui.WeightRegular)
 			tint := colors.cpu
@@ -259,7 +257,10 @@ func (s *State) paintMonitorNetworkTile(c *ui.Canvas, p *monitorView, b ui.Rect,
 	s.paintMonitorTrend(c, p, plot, monitorDownload, p.networkText, colors.network)
 }
 
-func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b ui.Rect) {
+// paintMonitorSections paints the stat sections in b, the scrolled content. Rows entirely outside
+// viewport, the part of it that shows, are skipped: a host with hundreds of mounts would
+// otherwise draw every row on every frame.
+func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b, viewport ui.Rect) {
 	p := &v.panel
 	colors, m := s.monitorColors(), s.messages.Monitor
 	x, y, w := b.X+monitorInset, b.Y+8, max(0, b.Width-monitorInset*2)
@@ -275,10 +276,10 @@ func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b ui.Rect
 		s.paintMonitorSummary(c, p, ui.Rect{X: x, Y: y, Width: w, Height: monitorSummaryHeight})
 		y += monitorSummaryHeight + monitorGap
 		h := monitorCoresHeight(p)
-		s.paintMonitorCores(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h})
+		s.paintMonitorCores(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		y += h + monitorGap
 		h = monitorDisksHeight(p)
-		s.paintMonitorDisks(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h})
+		s.paintMonitorDisks(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		y += h + monitorGap
 		s.monitorSection(c, hitMonitorHardware, ui.Rect{X: x, Y: y, Width: w, Height: 28}, m.Hardware, icons.Cpu, colors.muted, p.hardwareOpen)
 		y += 28
@@ -299,12 +300,11 @@ func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b ui.Rect
 	case 1:
 		s.monitorTile(c, p, ui.Rect{X: x, Y: y, Width: w, Height: monitorTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)
 		y += monitorTileHeight + monitorGap
-		s.paintMonitorDisks(c, p, ui.Rect{X: x, Y: y, Width: w, Height: monitorDisksHeight(p)})
+		s.paintMonitorDisks(c, p, ui.Rect{X: x, Y: y, Width: w, Height: monitorDisksHeight(p)}, viewport)
 	case 2:
 		s.paintMonitorNetworkTile(c, p, ui.Rect{X: x, Y: y, Width: w, Height: 142}, true)
 		y += 142 + monitorGap
 		h := float32(32 + max(1, len(p.networks))*34 + 8)
-		viewport := s.monitorScrollArea(p).Geometry().Viewport
 		c.RoundedBorder(ui.Rect{X: x, Y: y, Width: w, Height: h}, 10, 1, colors.border, colors.surface)
 		monitorLabel(c, m.NetworkSection, ui.Rect{X: x + 10, Y: y, Width: w - 20, Height: 32}, 12, colors.text, ui.WeightSemibold)
 		y += 32
