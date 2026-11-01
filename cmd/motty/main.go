@@ -254,11 +254,6 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		}
 		allow()
 	}
-	// The desktop sessions forward the local clipboard; watching it here
-	// means a change reaches them without the pointer moving first. Where
-	// the platform cannot watch, the pointer path in the workbench remains.
-	_ = app.OnClipboardChange(windowGroup.ClipboardChanged)
-
 	state = workbench.New(workbench.Options{
 		Invalidate: invalidate, NewWindow: newWindow,
 		OpenContentWindow: application.OpenContentWindow,
@@ -377,6 +372,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		hub.Add(state, mainWindow.Show)
 		windows.add(state)
+		// The desktop sessions forward the local clipboard; watching it means
+		// a change reaches them without the pointer moving first. It hangs on
+		// the window's messages, so it starts once the window exists; where
+		// the platform cannot watch, the pointer path in the workbench remains.
+		if watchErr := app.OnClipboardChange(windowGroup.ClipboardChanged); watchErr != nil {
+			log.Print("motty: the clipboard cannot be watched: ", watchErr)
+		}
 		if background && status.hasStatusArea() {
 			// Started at login: sit in the status area until the user wants it.
 			mainWindow.Hide()
