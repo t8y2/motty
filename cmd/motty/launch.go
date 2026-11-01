@@ -81,6 +81,18 @@ func canonicalPath(path string) (string, error) {
 	for {
 		resolved, err := filepath.EvalSymlinks(current)
 		if err == nil {
+			// Walking up past a missing tail must stop on a directory: on
+			// Windows a path below a file reports ErrNotExist rather than
+			// ENOTDIR, so without this check a file would anchor a claim.
+			if len(missing) > 0 {
+				info, statErr := os.Stat(resolved)
+				if statErr != nil {
+					return "", statErr
+				}
+				if !info.IsDir() {
+					return "", fmt.Errorf("%s is not a directory", resolved)
+				}
+			}
 			resolved, err = canonicalExistingCase(resolved)
 			if err != nil {
 				return "", err
