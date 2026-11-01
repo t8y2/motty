@@ -254,6 +254,11 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		}
 		allow()
 	}
+	// The desktop sessions forward the local clipboard; watching it here
+	// means a change reaches them without the pointer moving first. Where
+	// the platform cannot watch, the pointer path in the workbench remains.
+	_ = app.OnClipboardChange(windowGroup.ClipboardChanged)
+
 	state = workbench.New(workbench.Options{
 		Invalidate: invalidate, NewWindow: newWindow,
 		OpenContentWindow: application.OpenContentWindow,

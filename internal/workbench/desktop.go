@@ -286,6 +286,16 @@ func (state *State) pumpDesktop(session *Session) {
 	}
 }
 
+// ClipboardChanged reports that the system clipboard's content changed. It
+// may run on any goroutine (the platform's clipboard watcher); the next Wake
+// offers the new content to every desktop session that shares it.
+func (state *State) ClipboardChanged() {
+	state.clipboardDirty.Store(true)
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
 // syncClipboard gives the remote the local clipboard if it changed since the
 // last time, for a host that shares it.
 func (state *State) syncClipboard(view *desktopView) {

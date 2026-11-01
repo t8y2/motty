@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"sync/atomic"
+
 	"context"
 	"fmt"
 	"motty/internal/desktop"
@@ -400,6 +402,10 @@ const (
 // resources.
 type State struct {
 	dashboard dashboardState
+	// clipboardDirty says the system clipboard changed since the desktop
+	// sessions were last offered it. It is set from any goroutine
+	// (ClipboardChanged) and cleared on the window's thread (Wake).
+	clipboardDirty atomic.Bool
 	// hostCatalog is the hosts, jump routes, keys, outbound proxy and timeouts a
 	// connection is resolved from; the headless MCP server builds one too.
 	hostCatalog
