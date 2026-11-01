@@ -137,6 +137,36 @@ jobs:
         working-directory: motty
         run: go test ./internal/completion ./internal/sshconfig -count=1
 
+  # The workbench tests above only run on Linux: they build everywhere, but no
+  # job runs them on Windows, so what a Windows clone sees never reaches CI. This
+  # job runs the whole package the way a Windows developer's git checks the
+  # sources out (core.autocrlf true), which the job above does for the data
+  # files alone. The skipped tests are paint-budget assertions on allocations
+  # and timing that a hosted runner may answer differently from a desktop; the
+  # list shrinks as each is shown stable here. The suite takes about fifteen
+  # minutes, hence the timeout of its own: go test would stop it after ten.
+  windows-workbench:
+    name: Workbench (Windows, autocrlf)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check the sources out the way a Windows developer's git does
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test the workbench
+        working-directory: motty
+        run: go test ./internal/workbench -count=1 -timeout 25m -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget'
+
   # The race detector is the long pole: it runs one package at a time, and it
   # multiplies the memory the tests hold. CI therefore spreads the package list
   # over six jobs (`make race` still runs the whole list for the merge gate),
