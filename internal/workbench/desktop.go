@@ -133,6 +133,15 @@ func (view *desktopView) close() {
 	}
 }
 
+// setSystemKeyCapture hands the host's system chords (Alt+Tab, the Win key and
+// its chords) to a session that can take them, while its picture is the one the
+// user is looking at. Sessions without the ability keep their keys as before.
+func setSystemKeyCapture(session desktop.Session, capture bool) {
+	if taker, ok := session.(desktop.SystemKeyCapture); ok {
+		taker.SetSystemKeyCapture(capture)
+	}
+}
+
 // present brings the picture up to date and reports whether it changed.
 func (view *desktopView) present() bool {
 	changed := view.session.Present(&view.surface)
@@ -235,6 +244,7 @@ func (state *State) openDesktop(session *Session) {
 	session.term.ended = false
 	session.desk.active = state.desktopVisible(session)
 	remote.SetActive(session.desk.active)
+	setSystemKeyCapture(remote, session.desk.active)
 	session.desk.present()
 	state.goLive(session)
 }
@@ -247,6 +257,7 @@ func (state *State) endDesktop(session *Session) {
 	}
 	session.desk.ended = true
 	session.desk.releaseInput()
+	setSystemKeyCapture(session.desk.session, false)
 	session.term.ended = true
 }
 
@@ -273,6 +284,7 @@ func (state *State) pumpDesktop(session *Session) {
 	if visible := state.desktopVisible(session); visible != view.active {
 		view.active = visible
 		view.session.SetActive(visible)
+		setSystemKeyCapture(view.session, visible)
 		if !visible {
 			view.releaseInput()
 		}
