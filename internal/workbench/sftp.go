@@ -258,6 +258,14 @@ func (state *State) clickSFTP(id ui.ID) {
 	}
 	if id == hitSFTPOpen {
 		context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+		if context.Open && context.Kind == layoutcore.ContextSFTP {
+			state.releaseIdleSFTP(session)
+			context.Open = false
+			_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
+			state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
+			state.save()
+			return
+		}
 		context.Kind = layoutcore.ContextSFTP
 		context.Open = true
 		_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
