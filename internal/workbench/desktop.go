@@ -579,12 +579,11 @@ func (state *State) desktopPointer(session *Session, event ui.PointerEvent) ui.E
 		return ui.EventResult{}
 	}
 	geometry := desktopLayout(event.Viewport)
-	panned := false
-	if !view.fit {
-		before := view.pointer
-		view.pointer = ui.Point{X: event.X, Y: event.Y}
-		panned = view.pointer != before
-	}
+	// The pointer's place is kept in every mode: the remote's pointer bitmap
+	// is painted under it, and a pane larger than the picture pans with it.
+	moved := view.pointer != (ui.Point{X: event.X, Y: event.Y})
+	view.pointer = ui.Point{X: event.X, Y: event.Y}
+	panned := moved && !view.fit
 	x, y := view.remote(geometry.area, event.X, event.Y)
 	var button desktop.Buttons
 	switch event.Button {
@@ -603,7 +602,8 @@ func (state *State) desktopPointer(session *Session, event ui.PointerEvent) ui.E
 		view.buttons &^= button
 	}
 	_ = view.session.SendPointer(x, y, view.buttons)
-	return ui.EventResult{Handled: event.Kind != ui.PointerMove, Repaint: panned && view.width > 0}
+	repaint := moved && view.width > 0 && (panned || view.pointerKind == desktop.PointerBitmap)
+	return ui.EventResult{Handled: event.Kind != ui.PointerMove, Repaint: repaint}
 }
 
 // desktopScroll turns scrolling into wheel notches.
