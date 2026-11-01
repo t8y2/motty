@@ -28,7 +28,11 @@ type snippet struct {
 }
 
 const (
-	maxSnippets       = 48
+	// maxSnippets bounds the list a damaged state file could carry, not a
+	// working set: users migrating from other tools arrive with hundreds of
+	// commands (#211), and a list of this size costs the page's table and
+	// the command palette nothing noticeable.
+	maxSnippets       = 512
 	maxSnippetName    = 80
 	maxSnippetCommand = 1000
 )

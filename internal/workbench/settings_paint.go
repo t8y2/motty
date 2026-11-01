@@ -35,6 +35,7 @@ const (
 	controlLogo                                        // the product wordmark in a slot
 	controlAgentSelect                                 // independent stdio client configuration
 	controlLocalShellSelect                            // detected Windows shells
+	controlEditorSelect                                // installed editors
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -165,6 +166,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.ai.cfg.agentSelectBounds = rect
 		case controlLocalShellSelect:
 			state.localShellMenu.bounds = rect
+		case controlEditorSelect:
+			state.editorMenu.bounds = rect
 		case controlSwitch:
 			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
 		case controlButtons:

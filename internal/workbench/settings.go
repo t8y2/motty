@@ -155,6 +155,9 @@ func (state *State) openSettings() {
 	if localShellSettingVisible() && state.settingsCategory == settingsTerminal && !state.localShellMenu.loaded {
 		state.refreshLocalShells()
 	}
+	if state.settingsCategory == settingsFiles {
+		state.refreshEditors()
+	}
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
@@ -246,7 +249,7 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) {
+	if state.clickLocalShell(id) || state.clickEditorSelect(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -507,6 +510,11 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		state.localShellMenu.open = true
 		return ui.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+	}
+	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+		state.refreshEditors()
+		state.editorMenu.open = true
+		return ui.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	var next ui.ID
 	var handled bool

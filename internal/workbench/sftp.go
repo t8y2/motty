@@ -137,6 +137,7 @@ type sftpView struct {
 	archiveSequence       uint64
 	archiveDirectory      string
 	archiveResults        chan archiveResult
+	editorResults         chan editorResult
 	cancelExtract         context.CancelFunc
 	dialogEntry           sftpclient.Entry
 	dialogError           string
@@ -309,6 +310,9 @@ func (state *State) clickSFTP(id ui.ID) {
 		case hitSFTPHeaderFilter:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPFilterToggle)
+		case hitSFTPHeaderEditor:
+			folder.headerMenuOpen = false
+			state.openSFTPInEditor(view)
 		case hitSFTPHeaderHidden:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
@@ -1255,6 +1259,7 @@ func (state *State) pumpSFTP(session *Session) {
 	}
 	view := session.files
 	state.pumpSFTPArchive(session, view)
+	state.pumpSFTPEditor(session, view)
 	defer func() {
 		// A list or transfer reply must not unlock the panel while an archive
 		// command is still using its captured source and destination.

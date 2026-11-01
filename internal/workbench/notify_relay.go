@@ -27,6 +27,16 @@ func newNotifyRelay(first func()) *notifyRelay {
 // set points the relay at a window's Invalidate.
 func (relay *notifyRelay) set(target func()) { relay.target.Store(&target) }
 
+// notifyForView wakes whatever shows the view: the session's relay, which
+// follows it into a detached window, and that window's own paint.
+func (state *State) notifyForView(session *Session, view *sftpView) func() {
+	notify := state.notifyFor(session)
+	return func() {
+		notify()
+		view.invalidateDetached()
+	}
+}
+
 // notifyFor is the wake-up to give a session's goroutines.
 func (state *State) notifyFor(session *Session) func() {
 	if session.relay == nil {

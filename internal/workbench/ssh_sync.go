@@ -65,6 +65,9 @@ type sshSyncLink struct {
 	Base     sshSyncFields `json:"base"`
 }
 
+// live reports whether the file holds this link's alias.
+func (link sshSyncLink) live() bool { return !link.Detached && link.Alias != "" }
+
 // sshSyncFields is what both sides held at the last sync.
 type sshSyncFields struct {
 	Label   string `json:"label"`
@@ -172,6 +175,21 @@ func (state *State) sshConfigPath() string {
 		return filepath.Join(".ssh", "config")
 	}
 	return filepath.Join(home, ".ssh", "config")
+}
+
+// sshAliases are the names the SSH config might know a host by, best first: the
+// link the sync made, then the label the file itself names a Host by, because
+// that is how a host ends up in the file. Whether a name in the file really is
+// this host is for the caller to check.
+func (state *State) sshAliases(host Host) []string {
+	state.sshSyncLoad()
+	var aliases []string
+	for _, link := range state.sshSync.file.Links {
+		if link.ID == host.CatalogID && link.live() {
+			aliases = append(aliases, link.Alias)
+		}
+	}
+	return append(aliases, host.Label)
 }
 
 // sshConfigPathText is sshConfigPath for painting.
