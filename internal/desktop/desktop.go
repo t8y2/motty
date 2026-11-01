@@ -194,6 +194,41 @@ type Resizer interface {
 	Resize(width, height int, scale float32) error
 }
 
+// PointerKind is what a session's remote system last said about its pointer.
+type PointerKind uint8
+
+const (
+	// PointerNone: the session has not named a pointer shape at all.
+	PointerNone PointerKind = iota
+	// PointerHidden: the remote system hides its pointer (full-screen video
+	// and the like); the viewer hides its own and paints nothing.
+	PointerHidden
+	// PointerSystem: the remote asks for the local system's ordinary pointer.
+	PointerSystem
+	// PointerBitmap: the remote paints its pointer with PointerShape's bitmap.
+	PointerBitmap
+)
+
+// PointerShape is a pointer as the remote system paints it: BGRA rows, top
+// down, with the hotspot that names which pixel of it is the pointer's point.
+type PointerShape struct {
+	Width, Height int
+	HotX, HotY    int
+	BGRA          []byte
+}
+
+// PointerSource is a Session whose remote system names its pointer's shape.
+// The workbench paints the bitmap over the picture and takes the local pointer
+// away while it does, the way a native client of that system would.
+type PointerSource interface {
+	Session
+	// PointerShape returns what the remote last said about its pointer, the
+	// shape itself when the kind is PointerBitmap, and a version that changes
+	// whenever the answer does. Callers must not keep the BGRA bytes past the
+	// next call.
+	PointerShape() (PointerKind, PointerShape, int)
+}
+
 // Options are what a backend needs to connect that is not in its own address.
 type Options struct {
 	// Password is the secret the server asks for, empty if none was saved.

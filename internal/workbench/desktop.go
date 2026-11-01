@@ -74,6 +74,15 @@ type desktopView struct {
 	// resizer is the session when its server can change the picture's size to
 	// follow the pane, nil for one that cannot (VNC).
 	resizer desktop.Resizer
+	// pointerSurface holds the pointer bitmap the remote paints;
+	// pointerKind and pointerVersion are what it last said, to skip
+	// repainting an unchanged shape. None of this exists for a session that
+	// names no shape.
+	pointerSurface ui.Surface
+	pointerKind    desktop.PointerKind
+	pointerHotX    int
+	pointerHotY    int
+	pointerVersion int
 	// pixelScale is the device pixels per logical pixel as last painted, and area
 	// where the picture was shown, in the page's coordinates.
 	pixelScale float32
@@ -139,7 +148,33 @@ func (view *desktopView) present() bool {
 	if changed {
 		view.width, view.height = view.surface.Size()
 	}
+	view.presentPointer()
 	return changed
+}
+
+// presentPointer copies the remote's pointer bitmap into the view when it
+// changed, and remembers the kind for the cursor choice.
+func (view *desktopView) presentPointer() {
+	source, ok := view.session.(desktop.PointerSource)
+	if !ok {
+		return
+	}
+	kind, shape, version := source.PointerShape()
+	if version == view.pointerVersion {
+		return
+	}
+	view.pointerVersion = version
+	view.pointerKind = kind
+	view.pointerHotX, view.pointerHotY = shape.HotX, shape.HotY
+	if kind != desktop.PointerBitmap {
+		return
+	}
+	width, height := view.pointerSurface.Size()
+	if width != shape.Width || height != shape.Height {
+		view.pointerSurface.Resize(shape.Width, shape.Height)
+		width, height = shape.Width, shape.Height
+	}
+	view.pointerSurface.Update(0, 0, width, height, shape.BGRA, width*4)
 }
 
 // desktopGeometry is where a remote-desktop page puts things, in the page's own
@@ -771,6 +806,7 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 		} else {
 			view.surface.Draw(canvas, ui.Rect{X: origin.X, Y: origin.Y, Width: float32(view.width) * scale, Height: float32(view.height) * scale})
 		}
+		view.paintRemotePointer(canvas, area, origin, scale)
 	}
 	if view.ended {
 		state.paintDesktopEnded(canvas, area, session)
@@ -778,9 +814,33 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
+	cursor := ui.PointerCursorCrosshair
+	switch view.pointerKind {
+	case desktop.PointerBitmap, desktop.PointerHidden:
+		cursor = ui.PointerCursorHidden // the remote paints its own pointer
+	case desktop.PointerSystem:
+		cursor = ui.PointerCursorDefault
+	}
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, ui.HitOptions{
-		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: ui.PointerCursorCrosshair,
+		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor,
 	})
+}
+
+// paintRemotePointer paints the bitmap the remote named over the picture, at
+// the pointer's position there, the way the remote system paints its own.
+func (view *desktopView) paintRemotePointer(canvas *ui.Canvas, area ui.Rect, origin ui.Point, scale float32) {
+	width, height := view.pointerSurface.Size()
+	if width == 0 || height == 0 || view.pointerKind != desktop.PointerBitmap {
+		return
+	}
+	remoteX, remoteY := view.remote(area, view.pointer.X, view.pointer.Y)
+	left := origin.X + (float32(remoteX)-float32(view.pointerHotX))*scale
+	top := origin.Y + (float32(remoteY)-float32(view.pointerHotY))*scale
+	if view.pixelPerfect() {
+		view.pointerSurface.DrawPixels(canvas, ui.Point{X: left, Y: top})
+		return
+	}
+	view.pointerSurface.Draw(canvas, ui.Rect{X: left, Y: top, Width: float32(width) * scale, Height: float32(height) * scale})
 }
 
 // desktopTargetFor is the desktop a session's pane can show pixel for pixel: the
