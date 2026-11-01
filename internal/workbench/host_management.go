@@ -234,11 +234,7 @@ func (state *State) submitHostDialog() {
 	if !state.commitHostTagQuery() {
 		return
 	}
-	ignoreID := uint32(0)
-	if state.hostDialogMode == hostDialogEdit {
-		ignoreID = state.hostDialogID
-	}
-	if message := state.editor.validate(state.hosts, ignoreID, state.messages); message != "" {
+	if message := state.editor.validate(state.messages); message != "" {
 		state.dialogError = message
 		return
 	}

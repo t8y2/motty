@@ -302,7 +302,7 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	}
 }
 
-func TestCopyHostRequiresAnEditedUniqueDestination(t *testing.T) {
+func TestCopyHostAllowsTheSameDestinationUnderAnotherLabel(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
 	clickHostAction(state, hitCopyHost)
@@ -310,16 +310,14 @@ func TestCopyHostRequiresAnEditedUniqueDestination(t *testing.T) {
 		t.Fatalf("copy dialog mode=%d label=%q", state.hostDialogMode, state.editor.value(fieldLabel))
 	}
 	state.Click(hitDialogSubmit)
-	if state.modal != modalNewHost || state.dialogError != state.messages.ErrAddressTaken || len(state.hosts) != 3 {
-		t.Fatalf("unchanged copy silently saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
+	if state.modal != modalNone || state.dialogError != "" || len(state.hosts) != 4 {
+		t.Fatalf("copy was not saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 	}
-	state.editor.address = text.Editor{}
-	typeInto(state, hitDialogAddress, "prod-copy.example.com")
-	state.Click(hitDialogSubmit)
-	if len(state.hosts) != 4 || state.hosts[3].Label != "Production Copy" || state.hosts[3].Address != "prod-copy.example.com" {
-		t.Fatalf("copy = %+v", state.hosts)
+	original, copied := state.hosts[0], state.hosts[3]
+	if copied.Label != "Production Copy" || !sameEndpoint(original, copied) || copied.ID == original.ID || copied.CatalogID == original.CatalogID {
+		t.Fatalf("original = %+v, copy = %+v", original, copied)
 	}
-	if restarted := newTestState(t, options); len(restarted.hosts) != 4 || restarted.hosts[3].Address != "prod-copy.example.com" {
+	if restarted := newTestState(t, options); len(restarted.hosts) != 4 || !sameEndpoint(restarted.hosts[0], restarted.hosts[3]) || restarted.hosts[3].CatalogID != copied.CatalogID {
 		t.Fatalf("copy was not persisted: %+v", restarted.hosts)
 	}
 }

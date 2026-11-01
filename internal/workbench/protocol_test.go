@@ -208,14 +208,18 @@ func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testin
 	if added.Protocol != protocolTelnet || added.Port != 23 || added.User != "" || added.CatalogID == catalogIDFor(Host{Address: "prod.example.com", Port: 23}) {
 		t.Fatalf("added = %+v", added)
 	}
-	// The same destination again is a duplicate.
+	// The same destination can also be saved under another label.
 	state.Click(hitAddHost)
 	state.Click(hitDialogProtocolTelnet)
 	typeInto(state, hitDialogLabel, "Again")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	state.Click(hitDialogSubmit)
-	if state.modal != modalNewHost || state.dialogError != state.messages.ErrAddressTaken {
-		t.Fatalf("duplicate Telnet host accepted: %q", state.dialogError)
+	if state.modal == modalNewHost {
+		t.Fatalf("dialog stayed open: %q", state.dialogError)
+	}
+	again := state.hosts[len(state.hosts)-1]
+	if again.Label != "Again" || !sameEndpoint(added, again) || again.CatalogID == added.CatalogID {
+		t.Fatalf("second host = %+v", again)
 	}
 }
 

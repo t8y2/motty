@@ -64,26 +64,16 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 		t.Fatalf("empty form submitted: open=%v error=%q", (state.modal == modalNewHost), state.dialogError)
 	}
 
-	// Duplicate address must not submit.
+	// The same destination can be saved under another label.
 	typeInto(state, hitDialogLabel, "Edge")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	typeInto(state, hitDialogUser, "deploy")
 	state.Click(hitDialogSubmit)
-	if !(state.modal == modalNewHost) || state.dialogError != state.messages.ErrAddressTaken {
-		t.Fatalf("duplicate host accepted: error=%q", state.dialogError)
-	}
-
-	// A valid form appends the host and closes.
-	state.editor.address.SetSelection(text.Range{Start: 0, End: len("prod.example.com")})
-	typeInto(state, hitDialogAddress, "edge.example.com")
-	state.editor.user.SetSelection(text.Range{Start: 0, End: len("deploy")})
-	typeInto(state, hitDialogUser, "ops")
-	state.Click(hitDialogSubmit)
 	if (state.modal == modalNewHost) || len(state.hosts) != 4 {
-		t.Fatalf("valid form not submitted: open=%v hosts=%d", (state.modal == modalNewHost), len(state.hosts))
+		t.Fatalf("valid form not submitted: open=%v hosts=%d error=%q", (state.modal == modalNewHost), len(state.hosts), state.dialogError)
 	}
 	added := state.hosts[3]
-	if added.Label != "Edge" || added.Address != "edge.example.com" || added.User != "ops" || added.Port != 22 {
+	if added.Label != "Edge" || added.Address != "prod.example.com" || added.User != "deploy" || added.Port != 22 {
 		t.Fatalf("added host = %+v", added)
 	}
 	if state.selectedHostID != added.ID {
