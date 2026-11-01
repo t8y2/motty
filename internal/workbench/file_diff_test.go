@@ -644,3 +644,20 @@ func TestDocumentComparisonSkipsAReturnToTheComputedText(t *testing.T) {
 		t.Fatal("undoing to the computed text left a queued diff")
 	}
 }
+
+// A reload or a new encoding would replace the editor under the comparison, so the
+// comparison would show a difference that is no longer what an upload sends.
+func TestDocumentComparisonLeavesTheEditorAloneUntilItEnds(t *testing.T) {
+	d := documentFixture(t)
+	d.local = false
+	d.raw = []byte("replacement\n")
+	d.comparison.active = true
+	before := d.editor.String()
+
+	d.reload()
+	d.chooseEncoding("UTF-8")
+	if d.busy || d.editor.String() != before || d.status != d.owner.messages.FileWindow.Ready {
+		t.Fatalf("reload or encoding change acted during a comparison: busy=%v status=%q", d.busy, d.status)
+	}
+	d.stopComparison()
+}

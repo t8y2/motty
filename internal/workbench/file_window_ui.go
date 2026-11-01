@@ -101,7 +101,7 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 				f.Button(hitDocumentZoomOut, "−").Small().Outline()
 				f.Button(hitDocumentZoomIn, "+").Small().Outline()
 			}
-			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy)
+			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
 			if d.image == nil {
 				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
 				if d.local {
@@ -332,7 +332,7 @@ func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
 		scroll = &d.ui.menu
 	}
 	control := components.BeginSelect(canvas, d.owner.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitDocumentEncoding, Label: m.Encoding, Value: m.Encoding + ": " + value, Open: d.encodingOpen, Disabled: d.busy,
+		TriggerID: hitDocumentEncoding, Label: m.Encoding, Value: m.Encoding + ": " + value, Open: d.encodingOpen, Disabled: d.busy || d.comparison.active,
 		Content: content, Layer: popupLayer, Scope: hitDocumentEncoding, DismissID: hitDocumentEncodingDismiss, Viewport: ui.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}, Scroll: scroll,
 	})
 	defer control.End()
@@ -416,13 +416,16 @@ func (d *fileDocument) click(id ui.ID) {
 			d.encodingOpen = false
 		}
 	case id == hitDocumentReload:
+		if d.comparison.active {
+			return
+		}
 		if d.dirty() {
 			d.confirm = "reload"
 		} else {
 			d.reload()
 		}
 	case id == hitDocumentEncoding:
-		if !d.busy {
+		if !d.busy && !d.comparison.active {
 			d.encodingOpen = !d.encodingOpen
 			d.ui.menu = components.MenuScroll{}
 		}
@@ -611,7 +614,7 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 			return handled
 		}
 	}
-	if event.Target == hitDocumentEncoding && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitDocumentEncoding && !d.comparison.active && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
 		d.encodingOpen = true
 		return handled
 	}

@@ -43,14 +43,17 @@ type fileComparison struct {
 	conflict, saving, confirm bool
 	oversized                 bool
 	baseline                  string
-	revision                  sftpclient.Revision
-	result                    components.CodeDiffResult
-	computedValue             string
-	computedSet               bool
-	generation                uint64
-	timer                     *time.Timer
-	window                    *app.ContentWindow
-	ui                        fileDocumentUI
+	// format is how the server's latest copy was encoded, which an upload keeps: the file may
+	// have changed its line endings or BOM since it was opened.
+	format        filecontent.Format
+	revision      sftpclient.Revision
+	result        components.CodeDiffResult
+	computedValue string
+	computedSet   bool
+	generation    uint64
+	timer         *time.Timer
+	window        *app.ContentWindow
+	ui            fileDocumentUI
 }
 
 const (
@@ -456,8 +459,10 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 	}
 }
 
+// A comparison is of the text as the server held it when it was read, so neither a reload nor
+// a new encoding, which would replace the editor under it, is offered while one is open.
 func (d *fileDocument) reload() {
-	if d.busy {
+	if d.busy || d.comparison.active {
 		return
 	}
 	d.encodingOpen = false
@@ -481,7 +486,7 @@ func (d *fileDocument) reload() {
 
 func (d *fileDocument) chooseEncoding(name string) {
 	d.encodingOpen = false
-	if d.busy {
+	if d.busy || d.comparison.active {
 		return
 	}
 	if d.dirty() {
@@ -637,7 +642,7 @@ func (d *fileDocument) applyComparisonRead(event fileDocumentEvent) {
 	c.pending = true
 	c.conflict = false
 	c.oversized = false
-	c.baseline = decoded.Value
+	c.baseline, c.format = decoded.Value, decoded.Format
 	c.revision = sftpclient.Revision(sha256.Sum256(event.data))
 	c.result = components.CodeDiffResult{Left: strings.Split(c.baseline, "\n")}
 	c.computedValue = ""
@@ -840,7 +845,7 @@ func (d *fileDocument) resetComparison() {
 	c.saving = false
 	c.confirm = false
 	c.oversized = false
-	c.baseline = ""
+	c.baseline, c.format = "", filecontent.Format{}
 	c.revision = sftpclient.Revision{}
 	c.result = components.CodeDiffResult{}
 	c.computedValue = ""
@@ -892,9 +897,9 @@ func (d *fileDocument) uploadComparison() {
 	if d.busy || !d.canUploadComparison() {
 		return
 	}
-	data, err := filecontent.Encode(d.editor.String(), d.format)
+	data, err := filecontent.Encode(d.editor.String(), d.comparison.format)
 	if err != nil {
-		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.format.Encoding)
+		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.comparison.format.Encoding)
 		if !errors.Is(err, filecontent.ErrEncoding) {
 			d.problem = d.owner.fileProblem(err)
 		}
