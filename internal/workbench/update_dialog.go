@@ -217,11 +217,10 @@ func (state *State) updateDialogPointer(event ui.PointerEvent) (ui.EventResult, 
 			notes.grab = event.Y - thumb.Y
 		}
 		notes.dragging = true
-		before := notes.scroll
 		notes.scroll = notes.bar.OffsetForThumb(event.Y - notes.grab)
-		return ui.EventResult{Handled: true, Repaint: notes.scroll != before}, true
+		return ui.EventResult{Handled: true, Repaint: true, Focus: event.Target}, true
 	case ui.PointerMove, ui.PointerUp:
-		if !notes.dragging {
+		if !notes.dragging || event.Kind == ui.PointerMove && !event.Captured {
 			return ui.EventResult{}, false
 		}
 		before := notes.scroll
