@@ -64,8 +64,8 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
 		return
 	}
-	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 320}, {Width: 0}}
-	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnRoute, messages.ProxyColumnStatus}
+	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
+	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
 	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
 	table.Header(headings[:])

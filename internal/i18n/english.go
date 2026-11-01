@@ -643,7 +643,7 @@ var EnglishMessages = Messages{
 	ProxySelected:              "Selected route · ",
 	ProxyAdded:                 "Jump route added · ",
 	ProxyStartedStatus:         "Jump route started · ",
-	ProxyStoppedStatus:         "Jump route stopped · ",
+	ProxyStoppedStatus:         "Jump route stopped, new connections go direct · ",
 	ProxyRemoved:               "Jump route removed · ",
 	ProxyDialogTitle:           "New Jump Route",
 	ProxyFieldTarget:           "Target Host",

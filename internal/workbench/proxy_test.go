@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/ui"
-	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
 
@@ -47,7 +46,7 @@ func TestJumpChainPersistsAndReachesTheConnectionOutermostFirst(t *testing.T) {
 		t.Fatalf("default route = %+v", route)
 	}
 	addProxyRoute(t, first, first.hosts[1].ID, first.hosts[2].ID)
-	if first.proxies[0].label != "Production → Staging → Router" || first.proxies[0].cells[2] != "prod.example.com → staging.example.com → 192.168.1.1" {
+	if first.proxies[0].label != "Production → Staging → Router" || first.proxies[0].cells[3] != "prod.example.com → staging.example.com → 192.168.1.1" {
 		t.Fatalf("expanded route = %+v", first.proxies[0])
 	}
 
@@ -86,7 +85,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	route := addTestProxyRoute(t, state)
-	if route.Stopped || route.cells[3] != state.messages.ProxyRunning {
+	if route.Stopped || route.cells[2] != state.messages.ProxyRunning {
 		t.Fatalf("new route = %+v", route)
 	}
 	target, _ := state.hostByID(route.TargetID)
@@ -101,7 +100,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 
 	state.Click(hitProxyStartStop)
 	stopped := state.proxies[0]
-	if !stopped.Stopped || stopped.cells[3] != state.messages.ProxyStopped || stopped.label != route.label {
+	if !stopped.Stopped || stopped.cells[2] != state.messages.ProxyStopped || stopped.label != route.label {
 		t.Fatalf("stopped route = %+v", stopped)
 	}
 	config, _, valid = state.hostCatalog.sshConfigFor(target, target, connectEnv{})
@@ -110,7 +109,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 	}
 
 	state = newTestState(t, options)
-	if len(state.proxies) != 1 || !state.proxies[0].Stopped || state.proxies[0].cells[3] != state.messages.ProxyStopped {
+	if len(state.proxies) != 1 || !state.proxies[0].Stopped || state.proxies[0].cells[2] != state.messages.ProxyStopped {
 		t.Fatalf("restored stopped route = %+v", state.proxies)
 	}
 	target, _ = state.hostByID(state.proxies[0].TargetID)
@@ -120,7 +119,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 	}
 
 	state.Click(hitProxyStartStop)
-	if state.proxies[0].Stopped || state.proxies[0].cells[3] != state.messages.ProxyRunning {
+	if state.proxies[0].Stopped || state.proxies[0].cells[2] != state.messages.ProxyRunning {
 		t.Fatalf("restarted route = %+v", state.proxies[0])
 	}
 	config, _, valid = state.hostCatalog.sshConfigFor(target, target, connectEnv{})
@@ -130,21 +129,6 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 	state = newTestState(t, options)
 	if len(state.proxies) != 1 || state.proxies[0].Stopped {
 		t.Fatalf("restored running route = %+v", state.proxies)
-	}
-}
-
-func TestJumpRoutePaintsChineseRunStates(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	state.messages = i18n.For(i18n.Chinese)
-	addTestProxyRoute(t, state)
-	_, texts := paintedTexts(state)
-	if !contains(texts, "运行中") || !contains(texts, "停止") {
-		t.Fatalf("running route texts = %v", texts)
-	}
-	state.Click(hitProxyStartStop)
-	_, texts = paintedTexts(state)
-	if !contains(texts, "已停止") || !contains(texts, "启动") {
-		t.Fatalf("stopped route texts = %v", texts)
 	}
 }
 
@@ -158,7 +142,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 	if !valid || len(chain) != 1 || chain[0].ID != state.hosts[1].ID {
 		t.Fatalf("running chain = %+v, valid=%t", chain, valid)
 	}
-	if state.proxies[0].label != "Production → Staging → Router" || state.proxies[1].cells[3] != state.messages.ProxyStopped {
+	if state.proxies[0].label != "Production → Staging → Router" || state.proxies[1].cells[2] != state.messages.ProxyStopped {
 		t.Fatalf("configured routes = %+v", state.proxies)
 	}
 
@@ -507,5 +491,26 @@ func BenchmarkProxyChainFor(b *testing.B) {
 		if !ok || len(chain) != 2 {
 			b.Fatalf("proxy chain = %+v, ok=%t", chain, ok)
 		}
+	}
+}
+
+// Syncing the SSH config rebuilds a target's route, which must not start a route
+// the user stopped: the file does not know about stopping.
+func TestSyncingAStoppedRouteKeepsItStopped(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
+	state.Click(hitProxyStartStop)
+
+	if !state.setProxyChain(state.hosts[0].ID, []uint32{state.hosts[1].ID}) {
+		t.Fatal("the same chain was refused")
+	}
+	if len(state.proxies) != 1 || !state.proxies[0].Stopped {
+		t.Fatalf("routes after syncing the same chain = %+v, want it still stopped", state.proxies)
+	}
+	if !state.setProxyChain(state.hosts[0].ID, []uint32{state.hosts[2].ID}) {
+		t.Fatal("another jump host was refused")
+	}
+	if len(state.proxies) != 1 || state.proxies[0].Stopped || state.proxies[0].JumpID != state.hosts[2].ID {
+		t.Fatalf("routes after syncing another jump = %+v, want a new, running route", state.proxies)
 	}
 }

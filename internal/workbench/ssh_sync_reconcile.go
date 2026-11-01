@@ -957,9 +957,17 @@ func (state *State) setProxyChain(target uint32, chain []uint32) bool {
 		edges = append(edges, edge{target: current, jump: jump})
 		current = jump
 	}
+	// A route that is rebuilt as the same edge stays as stopped as it was: the file
+	// does not know about stopping, so syncing it must not start the route again.
+	stopped := make(map[edge]bool)
+	for _, route := range state.proxies {
+		if route.TargetID == target && route.Stopped {
+			stopped[edge{target: route.TargetID, jump: route.JumpID}] = true
+		}
+	}
 	state.proxies = slices.DeleteFunc(state.proxies, func(route proxyRecord) bool { return route.TargetID == target })
 	for _, added := range edges {
-		state.proxies = append(state.proxies, proxyRecord{ID: state.nextProxyID, TargetID: added.target, JumpID: added.jump})
+		state.proxies = append(state.proxies, proxyRecord{ID: state.nextProxyID, TargetID: added.target, JumpID: added.jump, Stopped: stopped[added]})
 		state.nextProxyID++
 	}
 	if _, ok := state.proxyByID(state.selectedProxyID); !ok {

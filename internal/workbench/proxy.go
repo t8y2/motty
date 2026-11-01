@@ -24,9 +24,13 @@ type proxyRecord struct {
 	ID       uint32
 	TargetID uint32
 	JumpID   uint32
-	Stopped  bool
-	label    string
-	cells    [4]string
+	// Stopped keeps the route configured but out of Motty's own connections, which
+	// then go straight to the target. It is not part of what is synced with the
+	// SSH config, which keeps describing the route, and does not touch sessions
+	// that are already open.
+	Stopped bool
+	label   string
+	cells   [4]string
 }
 
 type proxyEditor struct {
@@ -238,7 +242,6 @@ func (state *State) toggleSelectedProxy() {
 			continue
 		}
 		route.Stopped = !route.Stopped
-		state.sshSyncMark()
 		state.refreshProxies()
 		state.status = state.messages.ProxyStartedStatus + route.label
 		if route.Stopped {
@@ -291,7 +294,7 @@ func (state *State) refreshProxy(route *proxyRecord) {
 		status = state.messages.ProxyRunning
 	}
 	route.label = labels.String()
-	route.cells = [4]string{target.Label, jump.Label, targets.String(), status}
+	route.cells = [4]string{target.Label, jump.Label, status, targets.String()}
 }
 
 func (state *State) refreshProxies() {

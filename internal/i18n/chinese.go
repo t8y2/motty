@@ -643,7 +643,7 @@ var ChineseMessages = Messages{
 	ProxySelected:              "已选择路由 · ",
 	ProxyAdded:                 "已添加跳板路由 · ",
 	ProxyStartedStatus:         "已启动跳板路由 · ",
-	ProxyStoppedStatus:         "已停止跳板路由 · ",
+	ProxyStoppedStatus:         "已停止跳板路由，新连接将直连 · ",
 	ProxyRemoved:               "已移除跳板路由 · ",
 	ProxyDialogTitle:           "新建跳板路由",
 	ProxyFieldTarget:           "目标主机",
