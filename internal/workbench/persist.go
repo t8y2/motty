@@ -124,6 +124,9 @@ type savedOutboundProxy struct {
 	Address string `json:"address,omitempty"`
 	User    string `json:"user,omitempty"`
 	Bypass  string `json:"bypass,omitempty"`
+	// Unconfirmed is an imported proxy command not yet saved by the user (see
+	// outboundProxy.unconfirmed).
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
 }
 
 type savedHighlight struct {

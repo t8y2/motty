@@ -540,9 +540,10 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 // hold: the trusted-keys file, the vault, and how to wake this window.
 func (state *State) connectionEnv(notify func()) connectEnv {
 	env := connectEnv{
-		KnownHostsPath: state.options.KnownHostsPath,
-		Notify:         notify,
-		ProxyLocked:    errors.New(state.messages.Tools.ProxyPasswordLocked),
+		KnownHostsPath:          state.options.KnownHostsPath,
+		Notify:                  notify,
+		ProxyLocked:             errors.New(state.messages.Tools.ProxyPasswordLocked),
+		ProxyCommandUnconfirmed: errors.New(state.messages.Tools.ProxyCommandUnconfirmed),
 	}
 	if state.secrets.vault != nil {
 		env.Passwords = state.secrets.vault

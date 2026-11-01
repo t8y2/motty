@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"motty/internal/sshconn"
 )
 
 func newSyncState(t *testing.T, config string) (*State, string) {
@@ -483,3 +485,17 @@ func TestSSHSyncLargeConfigIsFast(t *testing.T) {
 }
 
 func itoa(number int) string { return strconv.Itoa(number) }
+
+func TestSSHSyncBringsAProxyCommandAlongUnconfirmed(t *testing.T) {
+	config := "Host tunnel\n    HostName ssh.example.com\n    ProxyCommand cloudflared access ssh --hostname %h\n"
+	state, path := newSyncState(t, config)
+	enableSync(t, state)
+	tunnel := syncedHost(t, state, "tunnel")
+	if tunnel.Proxy == nil || tunnel.Proxy.kind != sshconn.ProxyCommand ||
+		tunnel.Proxy.address != "cloudflared access ssh --hostname %h" || !tunnel.Proxy.unconfirmed {
+		t.Fatalf("the synced host's proxy = %+v", tunnel.Proxy)
+	}
+	if got := readSyncFile(t, path); got != config {
+		t.Fatalf("the user's block changed:\n%s", got)
+	}
+}

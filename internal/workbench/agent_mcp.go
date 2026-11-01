@@ -489,6 +489,9 @@ func (b *agentBackend) dial(ctx context.Context, host Host) (*sshconn.Conn, erro
 			}
 		},
 		ProxyLocked: errors.New("the saved proxy password is locked; unlock the saved passwords in Motty"),
+		// A proxy command runs a program on this computer; an agent does not
+		// get to start one.
+		ProxyCommandRefused: errors.New("this host connects through a proxy command, which Motty does not run for agents"),
 	}
 	if secrets != nil {
 		env.Passwords = secrets

@@ -90,8 +90,12 @@ Host warning
 	if got := state.hostImportResult.summary; got != "Imported 4 hosts, 1 keys and 2 jump routes; skipped 1 duplicate hosts." {
 		t.Fatalf("summary = %q", got)
 	}
-	if state.hostImportResult.visible == 0 || !strings.Contains(state.hostImportResult.warnings[0], "proxycommand") {
+	if state.hostImportResult.visible == 0 || !strings.Contains(state.hostImportResult.warnings[0], "ProxyCommand") {
 		t.Fatalf("warnings = %+v", state.hostImportResult)
+	}
+	if warning := mustHostLabel(t, state, "warning"); warning.Proxy == nil || warning.Proxy.kind != sshconn.ProxyCommand ||
+		warning.Proxy.address != "nc gateway %h" || !warning.Proxy.unconfirmed {
+		t.Fatalf("the ProxyCommand was imported as %+v", warning.Proxy)
 	}
 	target := mustHostLabel(t, state, "target")
 	inner := mustHostLabel(t, state, "inner")
@@ -125,6 +129,10 @@ Host warning
 	}
 	if !slices.Equal(world.configs[0].ProxyJumps, wantJumps) || !slices.Equal(world.configs[0].AdditionalIdentityFiles, []string{identity}) {
 		t.Fatalf("dial config = %+v", world.configs[0])
+	}
+	if proxy := restarted.proxyForHost(mustHostLabel(t, restarted, "warning")); proxy == nil || proxy.Kind != sshconn.ProxyCommand ||
+		proxy.Command != "nc gateway %h" || proxy.Err == nil {
+		t.Fatalf("the restored ProxyCommand, not yet confirmed, dials with %+v", proxy)
 	}
 }
 

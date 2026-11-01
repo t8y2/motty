@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -795,4 +799,128 @@ func mustJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestAHostCanBeReachedThroughAProxyCommand(t *testing.T) {
+	world, options := proxyWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitAddHost)
+	typeInto(state, hitDialogLabel, "Tunnel")
+	typeInto(state, hitDialogAddress, "ssh.example.com")
+	typeInto(state, hitDialogUser, "ops")
+	state.Click(hitHostProxyConfigure)
+	state.Click(hitProxyKindCommand)
+	typeInto(state, hitOutboundProxyAddress, "cloudflared access ssh --hostname %x")
+	state.Click(hitOutboundProxySubmit)
+	if state.modal != modalOutboundProxy || state.proxyForm.dialogError == "" {
+		t.Fatalf("an unknown token was accepted: modal=%d error=%q", state.modal, state.proxyForm.dialogError)
+	}
+	state.proxyForm.address = *text.NewEditor(`"C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h`)
+	state.Click(hitOutboundProxySubmit)
+	state.Click(hitDialogSubmit)
+	added := state.hosts[len(state.hosts)-1]
+	if state.modal != modalNone || added.Proxy == nil || added.Proxy.kind != sshconn.ProxyCommand || added.Proxy.user != "" {
+		t.Fatalf("saved host proxy = %+v modal=%d error=%q", added.Proxy, state.modal, state.dialogError)
+	}
+
+	restarted := newTestState(t, options)
+	restored := mustHostLabel(t, restarted, "Tunnel")
+	if restored.Proxy == nil || restored.Proxy.kind != sshconn.ProxyCommand || restored.Proxy.address != added.Proxy.address {
+		t.Fatalf("restored host proxy = %+v", restored.Proxy)
+	}
+	restarted.selectedHostID = restored.ID
+	openHost(restarted)
+	if proxy := world.configs[len(world.configs)-1].Proxy; proxy == nil || proxy.Kind != sshconn.ProxyCommand || proxy.Command != added.Proxy.address || proxy.Address != "" {
+		t.Fatalf("dialed through %+v", proxy)
+	}
+}
+
+func TestAProxyCommandIsNeverTheGlobalProxy(t *testing.T) {
+	_, options := proxyWorld(t)
+	state := newTestState(t, options)
+	state.openOutboundProxyDialog()
+	state.Click(hitProxyKindCommand)
+	if state.proxyForm.kind == sshconn.ProxyCommand {
+		t.Fatal("the global proxy dialog took a command")
+	}
+	if decoded := decodeOutboundProxy(&savedOutboundProxy{Kind: "command", Address: "nc %h %p"}); decoded.kind != sshconn.ProxyNone {
+		t.Fatalf("a saved global proxy command was restored as %+v", decoded)
+	}
+	if restoredHostProxy(&savedOutboundProxy{Kind: "command", Address: "nc %h\n%p"}) != nil {
+		t.Fatal("a damaged saved proxy command was restored")
+	}
+}
+
+func TestAnImportedProxyCommandRunsOnlyOnceTheUserSavesIt(t *testing.T) {
+	_, options := proxyWorld(t)
+	state := newTestState(t, options)
+	host := &state.hosts[0]
+	host.Proxy = &outboundProxy{kind: sshconn.ProxyCommand, address: "nc gateway %h %p", unconfirmed: true}
+	if proxy := state.proxyForHost(*host); proxy == nil || proxy.Err == nil || proxy.Err.Error() != state.messages.Tools.ProxyCommandUnconfirmed {
+		t.Fatalf("an unconfirmed command dials with %+v", proxy)
+	}
+	state.openEditHostID(host.ID)
+	if got := state.hostProxyDescription(); got != fmt.Sprintf(state.messages.Tools.HostProxyCommandUnconfirmedFmt, "nc gateway %h %p") {
+		t.Fatalf("the host's proxy row says %q", got)
+	}
+	state.Click(hitHostProxyConfigure)
+	if !state.proxyForm.unconfirmed {
+		t.Fatal("the proxy dialog does not ask to confirm the imported command")
+	}
+	state.Click(hitOutboundProxySubmit)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("saving the host modal=%d error=%q", state.modal, state.dialogError)
+	}
+	if proxy := state.proxyForHost(state.hosts[0]); proxy == nil || proxy.Command != "nc gateway %h %p" || proxy.Err != nil {
+		t.Fatalf("the confirmed command dials with %+v", proxy)
+	}
+	restarted := newTestState(t, options)
+	if proxy := restarted.hosts[0].Proxy; proxy == nil || proxy.kind != sshconn.ProxyCommand || proxy.unconfirmed {
+		t.Fatalf("the confirmed command was restored as %+v", proxy)
+	}
+}
+
+func TestAProxyCommandRunsOnlyWhereTheCallerAllowsIt(t *testing.T) {
+	refused := errors.New("refused")
+	catalog := hostCatalog{}
+	confirmed := Host{Address: "ssh.example.com", Port: 22, Proxy: &outboundProxy{kind: sshconn.ProxyCommand, address: "nc %h %p"}}
+	if proxy := catalog.proxyForHost(confirmed, connectEnv{}); proxy == nil || proxy.Err != nil {
+		t.Fatalf("a confirmed command dials with %+v", proxy)
+	}
+	if proxy := catalog.proxyForHost(confirmed, connectEnv{ProxyCommandRefused: refused}); proxy == nil || proxy.Err != refused {
+		t.Fatalf("an agent's connection would start the command: %+v", proxy)
+	}
+	unconfirmed := confirmed
+	unconfirmed.Proxy = &outboundProxy{kind: sshconn.ProxyCommand, address: "nc %h %p", unconfirmed: true}
+	if proxy := catalog.proxyForHost(unconfirmed, connectEnv{}); proxy == nil || proxy.Err == nil {
+		t.Fatalf("an unconfirmed command runs when the caller gives no message for it: %+v", proxy)
+	}
+}
+
+// A Telnet host signs in as nobody to the proxy command, unless the command is
+// told the account: %r must name the host's own user, as it does for SSH.
+func TestAProxyCommandOfATelnetHostNamesTheHostsUser(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the proxy command here is a Unix program")
+	}
+	directory := t.TempDir()
+	host := Host{Address: "tel.example.com", Port: 23, User: "operator", Protocol: protocolTelnet}
+	proxy := &sshconn.Proxy{Kind: sshconn.ProxyCommand, Command: "touch " + directory + "/%r"}
+	session, err := openStream(context.Background(), streamRequest{Host: host, Timeout: 2 * time.Second, Proxy: proxy, Notify: func() {}})
+	if err == nil {
+		defer session.Close()
+	}
+	// The program carries no connection and only leaves a mark; it runs on its
+	// own, so wait for the mark of the user it was started for.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(directory + "/operator"); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the proxy command was not started for the host's user")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

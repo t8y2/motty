@@ -825,6 +825,12 @@ func (r *sshReconciler) importHost(fileHost sshconfig.Host) {
 		r.warn(r.m.WarnEndpointFmt, fileHost.Alias)
 		return
 	}
+	if fileHost.ProxyCommand != "" {
+		// It comes along once, with the host; the sync does not carry it after.
+		var note string
+		host.Proxy, note = importedProxyCommand(&r.state.messages, fileHost)
+		r.out.notes = append(r.out.notes, note)
+	}
 	host = r.addHost(host)
 	link := r.link(host.CatalogID)
 	link.Alias, link.Detached = fileHost.Alias, false

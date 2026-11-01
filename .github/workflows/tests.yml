@@ -111,6 +111,32 @@ jobs:
         working-directory: motty
         run: go test -short -run 'Test(Windows|Darwin|Docker)' ./internal/remotetools -count=1
 
+  # A Windows checkout converts line endings when core.autocrlf is true, which
+  # is the Git for Windows default. The embedded completion catalog is a
+  # byte-exact format and the ssh_config parser reads Windows paths, so this job
+  # checks out with the conversion on and runs the packages that depend on it.
+  windows-checkout:
+    name: Windows checkout (autocrlf)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Convert line endings on checkout
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test the packages that read checked-out data
+        working-directory: motty
+        run: go test ./internal/completion ./internal/sshconfig -count=1
+
   # The race detector is the long pole: it runs one package at a time, and it
   # multiplies the memory the tests hold. CI therefore spreads the package list
   # over six jobs (`make race` still runs the whole list for the merge gate),

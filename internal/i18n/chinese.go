@@ -278,6 +278,9 @@ var ChineseMessages = Messages{
 	SSHConfigWarningProxyFmt:    "无法安全映射 %s 的 ProxyJump。",
 	SSHConfigWarningMoreFmt:     "另有 %d 条警告",
 
+	SSHConfigProxyCommandFmt:        "已导入 %s 的 ProxyCommand，但它会在本机运行：请在 编辑主机 › 代理转发 中确认后再连接。",
+	SSHConfigWarningProxyCommandFmt: "已跳过 %s 的 ProxyCommand：只能替换 %%h、%%p、%%r 和 %%%%。",
+
 	DialogTitle:                 "新建主机",
 	EditHostTitle:               "编辑主机",
 	CopyHostTitle:               "复制主机",
@@ -1335,6 +1338,14 @@ var chineseTools = ToolsMessages{
 	HostProxyDialogTitle:        "主机代理转发",
 	HostProxyDialogDescription:  "选择这台主机建立第一条网络连接的方式。",
 	HostProxyPasswordNotCarried: "已保存的代理密码未复制，因为密码保险库尚未解锁。",
+
+	ProxyCommand:                   "命令",
+	ProxyCommandField:              "命令（%h 主机，%p 端口，%r 用户）",
+	ProxyErrorCommand:              "请在一行内填写命令。只会替换 %h、%p 和 %r，%% 表示百分号。",
+	HostProxyCommandDescriptionFmt: "本机运行 %s 来承载这台主机的第一条连接。",
+	HostProxyCommandUnconfirmedFmt: "待确认（从 SSH config 导入）：%s",
+	HostProxyCommandConfirm:        "这条命令从 SSH config 导入，会在本机运行。确认无误后保存，之后连接这台主机时才会运行它。",
+	ProxyCommandUnconfirmed:        "这台主机的代理命令从 SSH config 导入，尚未确认：请在 编辑主机 › 代理转发 中检查并保存。",
 
 	SearchPlaceholder: "搜索设置",
 	SearchTitle:       "搜索结果",

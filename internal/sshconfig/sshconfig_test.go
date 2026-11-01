@@ -123,12 +123,11 @@ Host dynamic
 `,
 			wantHosts: []Host{
 				{Alias: "unsafe", HostName: "unsafe"},
-				{Alias: "safe", HostName: "safe.example"},
+				{Alias: "safe", HostName: "safe.example", ProxyCommand: "nc gateway %h"},
 				{Alias: "dynamic"},
 			},
 			wantWarnings: []WarningCode{
 				WarningUnsupportedMatch,
-				WarningDynamicValue,
 				WarningUnsupportedDirective,
 				WarningDynamicValue,
 				WarningDynamicValue,
@@ -163,6 +162,33 @@ Host *
 				WarningDynamicValue,
 				WarningDynamicValue,
 				WarningDynamicValue,
+			},
+		},
+		{
+			name: "proxy command kept as written and competing with proxy jump",
+			config: `
+Host tunnel
+    HostName ssh.example.com
+    ProxyCommand "C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h
+Host equals
+    ProxyCommand=nc -X connect -x 'proxy:3128' %h %p
+Host jump-first
+    ProxyJump gateway
+    ProxyCommand nc %h %p
+Host command-first
+    ProxyCommand nc %h %p
+    ProxyJump gateway
+Host disabled
+    ProxyCommand none
+Host *
+    ProxyCommand fallback %h
+`,
+			wantHosts: []Host{
+				{Alias: "tunnel", HostName: "ssh.example.com", ProxyCommand: `"C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h`},
+				{Alias: "equals", HostName: "equals", ProxyCommand: "nc -X connect -x 'proxy:3128' %h %p"},
+				{Alias: "jump-first", HostName: "jump-first", ProxyJump: []JumpHost{{Host: "gateway"}}},
+				{Alias: "command-first", HostName: "command-first", ProxyCommand: "nc %h %p"},
+				{Alias: "disabled", HostName: "disabled"},
 			},
 		},
 		{

@@ -44,6 +44,12 @@ type connectEnv struct {
 	Passwords passwordReader
 	// ProxyLocked is what a proxy reports when its password is in a locked vault.
 	ProxyLocked error
+	// ProxyCommandUnconfirmed is what a proxy command imported from an SSH
+	// config reports, instead of running, until the user confirms it.
+	ProxyCommandUnconfirmed error
+	// ProxyCommandRefused, when set, is what every proxy command reports
+	// instead of running: an agent's connections start none.
+	ProxyCommandRefused error
 }
 
 // passwordReader looks up a saved secret by name. *vault.Vault is one.
@@ -253,6 +259,19 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	if saved.kind == sshconn.ProxyNone || saved.address == "" {
 		return nil
 	}
+	if saved.kind == sshconn.ProxyCommand {
+		proxy := &sshconn.Proxy{Kind: saved.kind, Command: saved.address, Bypass: splitBypass(saved.bypass)}
+		switch {
+		case env.ProxyCommandRefused != nil:
+			proxy.Err = env.ProxyCommandRefused
+		case saved.unconfirmed:
+			proxy.Err = env.ProxyCommandUnconfirmed
+			if proxy.Err == nil {
+				proxy.Err = errProxyCommandUnconfirmed
+			}
+		}
+		return proxy
+	}
 	proxy := &sshconn.Proxy{Kind: saved.kind, Address: saved.address, Username: saved.user, Bypass: splitBypass(saved.bypass)}
 	if saved.user != "" && env.Passwords != nil {
 		password, found, err := env.Passwords.Get(passwordSecret)
@@ -265,6 +284,11 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	}
 	return proxy
 }
+
+// errProxyCommandUnconfirmed stands in for connectEnv.ProxyCommandUnconfirmed
+// when a caller gives none, so an unconfirmed command never runs for want of a
+// message.
+var errProxyCommandUnconfirmed = errors.New("the proxy command imported from an SSH config is not confirmed yet")
 
 // proxyForHost resolves a host's policy at connection time so inherited hosts
 // observe later changes to the global proxy.
@@ -393,7 +417,8 @@ func decodeOutboundProxy(entry *savedOutboundProxy) outboundProxy {
 		return outboundProxy{}
 	}
 	kind := proxyKindFromString(entry.Kind)
-	if kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
+	// A proxy command is a host's own setting, never the global proxy.
+	if kind == sshconn.ProxyCommand || kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
 		kind = sshconn.ProxyNone
 	}
 	proxy := outboundProxy{kind: kind, bypass: strings.TrimSpace(entry.Bypass)}

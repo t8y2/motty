@@ -252,7 +252,7 @@ func openStream(ctx context.Context, request streamRequest) (Shell, error) {
 		var dialer telnet.Dialer
 		if request.Proxy.Uses(address) {
 			dialer = func(ctx context.Context, address string) (net.Conn, error) {
-				return request.Proxy.Dial(ctx, request.Timeout, address)
+				return request.Proxy.DialAs(ctx, request.Timeout, address, host.User)
 			}
 		}
 		session, err := telnet.Dial(ctx, address, request.Timeout, dialer, telnet.Config{Cols: 80, Rows: 24, Notify: request.Notify})

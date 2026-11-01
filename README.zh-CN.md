@@ -95,7 +95,8 @@ SFTP 支持多选、递归上传/下载、受限传输队列、续传、取消/�
 本地、远程、SOCKS5 和 HTTP CONNECT 规则只监听 loopback，持久保存并显式启动，
 随所属 SSH 标签页一起停止。跳板链的每一跳单独验证主机密钥和认证。全局出站
 SOCKS5/HTTP 代理可以承载第一条连接；每台已保存的网络主机也可以继承全局设置、
-强制直连，或使用自己的 SOCKS5/HTTP 代理。X11 转发先校验每个会话的假 cookie，
+强制直连、使用自己的 SOCKS5/HTTP 代理，或通过 `cloudflared access ssh` 这样的
+代理命令（OpenSSH 的 `ProxyCommand`）连接。X11 转发先校验每个会话的假 cookie，
 再替换为本机 Xauthority 中的真 cookie。
 
 <p align="center">

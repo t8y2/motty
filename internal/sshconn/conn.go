@@ -518,7 +518,7 @@ func (conn *Conn) connect() error {
 			return fmt.Errorf("connect to %s through %s: %w", target.address(), previousEndpoint.address(), err)
 		}
 	} else {
-		socket, err = conn.dialTCP(target.address())
+		socket, err = conn.dialTCP(target)
 		if err != nil {
 			return fmt.Errorf("connect to %s: %w", target.address(), err)
 		}
@@ -560,11 +560,12 @@ func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
 	conn.notify()
 }
 
-// dialTCP opens the first connection of a route: straight to address, or through
-// the outbound proxy when one is set for it.
-func (conn *Conn) dialTCP(address string) (net.Conn, error) {
+// dialTCP opens the first connection of a route: straight to the endpoint, or
+// through the outbound proxy when one is set for it.
+func (conn *Conn) dialTCP(endpoint Endpoint) (net.Conn, error) {
+	address := endpoint.address()
 	if conn.config.Proxy.Uses(address) {
-		return conn.config.Proxy.Dial(conn.ctx, conn.config.DialTimeout, address)
+		return conn.config.Proxy.DialAs(conn.ctx, conn.config.DialTimeout, address, endpoint.User)
 	}
 	dialer := net.Dialer{Timeout: conn.config.DialTimeout}
 	return dialer.DialContext(conn.ctx, "tcp", address)
@@ -572,7 +573,7 @@ func (conn *Conn) dialTCP(address string) (net.Conn, error) {
 
 func (conn *Conn) dialEndpoint(endpoint Endpoint, role EndpointRole, known *hostKeys) (*ssh.Client, error) {
 	conn.beginEndpoint(endpoint, role)
-	socket, err := conn.dialTCP(endpoint.address())
+	socket, err := conn.dialTCP(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", endpoint.address(), err)
 	}
