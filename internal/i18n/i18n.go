@@ -128,6 +128,10 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsNetworkProxy                   string
+	SettingsNetworkProxyDescription        string
+	SettingsNetworkProxySystem             string
+	SettingsNetworkProxyDirect             string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

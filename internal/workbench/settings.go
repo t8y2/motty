@@ -151,6 +151,31 @@ func closeActionFromString(value string) closeAction {
 	return closeToTray
 }
 
+// networkProxyMode is which proxy a local terminal's programs are told to use.
+// Following the system, the default, sets the proxy variables only while the
+// system names a proxy and otherwise leaves the inherited ones alone; direct
+// clears them.
+type networkProxyMode uint8
+
+const (
+	networkProxySystem networkProxyMode = iota
+	networkProxyDirect
+)
+
+func (mode networkProxyMode) String() string {
+	if mode == networkProxyDirect {
+		return "direct"
+	}
+	return "system"
+}
+
+func networkProxyModeFromString(value string) networkProxyMode {
+	if value == networkProxyDirect.String() {
+		return networkProxyDirect
+	}
+	return networkProxySystem
+}
+
 func (state *State) openSettings() {
 	if localShellSettingVisible() && state.settingsCategory == settingsTerminal && !state.localShellMenu.loaded {
 		state.refreshLocalShells()
@@ -270,6 +295,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseAppearanceMode(appearancePinnedDark)
 	case hitSettingsAppearanceLight:
 		changed = state.chooseAppearanceMode(appearancePinnedLight)
+	case hitSettingsNetworkSystem:
+		changed = state.networkProxy != networkProxySystem
+		state.networkProxy = networkProxySystem
+	case hitSettingsNetworkDirect:
+		changed = state.networkProxy != networkProxyDirect
+		state.networkProxy = networkProxyDirect
 	case hitSettingsCloseTray:
 		changed = state.closeAction != closeToTray
 		state.closeAction = closeToTray
@@ -417,6 +448,13 @@ func (state *State) settingsAppearanceOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsNetworkProxyOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsNetworkSystem, Label: state.messages.SettingsNetworkProxySystem},
+		{ID: hitSettingsNetworkDirect, Label: state.messages.SettingsNetworkProxyDirect},
+	}
+}
+
 func (state *State) settingsCloseOptions() [2]components.SegmentOption {
 	m := state.messages.Tools
 	return [...]components.SegmentOption{
@@ -530,6 +568,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
 		options := state.settingsAppearanceOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
+		options := state.settingsNetworkProxyOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsCloseTray, hitSettingsCloseQuit:
 		options := state.settingsCloseOptions()
