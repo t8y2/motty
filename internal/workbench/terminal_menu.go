@@ -152,7 +152,9 @@ func (state *State) showInFiles(session *Session, target string) {
 	if strings.HasSuffix(target, "/") {
 		dir = path.Clean(target)
 	}
-	state.Click(hitSFTPOpen)
+	// Showing a folder only ever opens the panel: a panel that is already up
+	// keeps the view it has, and the navigation below runs on it.
+	state.showFilesPanel(session)
 	view := session.files
 	switch {
 	case view == nil:

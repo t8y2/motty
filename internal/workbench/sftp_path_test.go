@@ -45,7 +45,8 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 		t.Fatal("path input choice was not restored")
 	}
 	state.ActivatePane(session.ID)
-	state.Click(hitSFTPOpen)
+	// The panel was opened before the settings detour; coming back must not
+	// need a second click that would now toggle it shut.
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path != "" })
 	canvas := paint()
 	if hit, ok := hitByID(canvas, contextID(hitSFTPPath)); !ok || hit.Role != ui.RoleTextField || hit.Value != session.files.path {

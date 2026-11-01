@@ -176,3 +176,15 @@ func TestSFTPToolbarButtonTogglesPanel(t *testing.T) {
 		t.Fatal("reopening the panel did not restore session.files")
 	}
 }
+
+// Showing a folder from the terminal menu opens the panel, and a panel that is
+// already up keeps the view the navigation runs on instead of toggling shut.
+func TestShowInFilesKeepsAnOpenPanelOpen(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
+	state.showInFiles(session, "/home/test/docs/guide.md")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+	if context, _ := state.deck.Context(state.deck.ActiveWorkspace()); !context.Open || context.Kind != layoutcore.ContextSFTP {
+		t.Fatalf("showing a folder closed the panel: %+v", context)
+	}
+}
