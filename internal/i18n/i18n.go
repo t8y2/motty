@@ -651,15 +651,22 @@ type Messages struct {
 	ProxyTitle                 string
 	ProxyDescription           string
 	ProxyAdd                   string
+	ProxyStart                 string
+	ProxyStop                  string
 	ProxyRemove                string
 	ProxyColumnTarget          string
 	ProxyColumnJump            string
 	ProxyColumnRoute           string
+	ProxyColumnStatus          string
+	ProxyRunning               string
+	ProxyStopped               string
 	ProxyEmpty                 string
 	ProxyEmptySub              string
 	ProxyCountFmt              string
 	ProxySelected              string
 	ProxyAdded                 string
+	ProxyStartedStatus         string
+	ProxyStoppedStatus         string
 	ProxyRemoved               string
 	ProxyDialogTitle           string
 	ProxyFieldTarget           string

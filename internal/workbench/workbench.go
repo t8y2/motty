@@ -239,6 +239,7 @@ var (
 // Jump-host routing: its page and dialog.
 var (
 	hitProxyAdd              = tree.ID(proxiesHits, "proxy-add")
+	hitProxyStartStop        = tree.ID(proxiesHits, "proxy-start-stop")
 	hitProxyRemove           = tree.ID(proxiesHits, "proxy-remove")
 	hitProxyDialogDismiss    = tree.ID(proxiesHits, "proxy-dialog-dismiss")
 	hitProxyDialogClose      = tree.ID(proxiesHits, "proxy-dialog-close")

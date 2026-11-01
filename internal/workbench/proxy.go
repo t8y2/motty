@@ -24,8 +24,9 @@ type proxyRecord struct {
 	ID       uint32
 	TargetID uint32
 	JumpID   uint32
+	Stopped  bool
 	label    string
-	cells    [3]string
+	cells    [4]string
 }
 
 type proxyEditor struct {
@@ -195,6 +196,8 @@ func (state *State) clickProxies(id ui.ID) {
 	switch {
 	case id == hitProxyAdd:
 		state.openProxyDialog()
+	case id == hitProxyStartStop:
+		state.toggleSelectedProxy()
 	case id == hitProxyRemove:
 		state.removeSelectedProxy()
 	}
@@ -228,6 +231,24 @@ func (state *State) removeSelectedProxy() {
 	}
 }
 
+func (state *State) toggleSelectedProxy() {
+	for index := range state.proxies {
+		route := &state.proxies[index]
+		if route.ID != state.selectedProxyID {
+			continue
+		}
+		route.Stopped = !route.Stopped
+		state.sshSyncMark()
+		state.refreshProxies()
+		state.status = state.messages.ProxyStartedStatus + route.label
+		if route.Stopped {
+			state.status = state.messages.ProxyStoppedStatus + route.label
+		}
+		state.save()
+		return
+	}
+}
+
 func (state *State) proxyByID(id uint32) (proxyRecord, bool) {
 	for _, route := range state.proxies {
 		if route.ID == id {
@@ -246,13 +267,13 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	jump, jumpOK := state.hostByID(route.JumpID)
 	if !targetOK || !jumpOK {
 		route.label = ""
-		route.cells = [3]string{}
+		route.cells = [4]string{}
 		return
 	}
-	chain, valid := state.proxyChainFor(target)
+	chain, valid := state.proxyChain(target, false)
 	if !valid || len(chain) == 0 {
 		route.label = ""
-		route.cells = [3]string{}
+		route.cells = [4]string{}
 		return
 	}
 	var labels strings.Builder
@@ -265,8 +286,12 @@ func (state *State) refreshProxy(route *proxyRecord) {
 		targets.WriteString(" → ")
 		targets.WriteString(hop.target)
 	}
+	status := state.messages.ProxyStopped
+	if !route.Stopped {
+		status = state.messages.ProxyRunning
+	}
 	route.label = labels.String()
-	route.cells = [3]string{target.Label, jump.Label, targets.String()}
+	route.cells = [4]string{target.Label, jump.Label, targets.String(), status}
 }
 
 func (state *State) refreshProxies() {

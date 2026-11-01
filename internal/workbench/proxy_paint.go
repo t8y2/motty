@@ -9,19 +9,27 @@ import (
 func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	pal, messages := state.pal, state.messages
 	canAdd := state.sshHostCount() >= 2
+	selected, hasSelection := state.proxyByID(state.selectedProxyID)
+	actionLabel := messages.ProxyStart
+	actionIcon := uint8(iconPlay)
+	if hasSelection && !selected.Stopped {
+		actionLabel = messages.ProxyStop
+		actionIcon = iconStop
+	}
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// both shows the buttons as their icons, whose tooltips name them.
 	const (
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, actionLabel, false) +
+		gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
 	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.ProxyRemove, 0, iconTrash, condensed)
+	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
-	selected, hasSelection := state.proxyByID(state.selectedProxyID)
 
-	var content, emptyIcon, emptyAdd, remove, add flex.Box
+	var content, emptyIcon, emptyAdd, remove, action, add flex.Box
 	f := state.proxyLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
@@ -30,6 +38,7 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 				f.Paragraph(messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
+			action = f.Slot().Size(actionWidth, toolbarHeight)
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
 		if len(state.proxies) == 0 {
@@ -47,15 +56,16 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	})
 	f.End()
 
-	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, state.selectedProxyID != 0, condensed)
+	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, hasSelection, condensed)
+	state.paintToolbarButton(canvas, hitProxyStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitProxyAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ProxyAdd, addIcon, true, canAdd, condensed)
 
 	if len(state.proxies) == 0 {
 		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
 		return
 	}
-	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 0}}
-	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnRoute}
+	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 320}, {Width: 0}}
+	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnRoute, messages.ProxyColumnStatus}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
 	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
 	table.Header(headings[:])

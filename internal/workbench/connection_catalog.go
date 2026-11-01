@@ -181,13 +181,17 @@ func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
 	return false
 }
 
-// proxyChainFor follows target's jump routes from the immediate jump outward.
-// The boolean is false when the in-memory graph is damaged or cyclic.
+// proxyChainFor follows target's running jump routes from the immediate jump
+// outward. The boolean is false when the in-memory graph is damaged or cyclic.
 func (catalog *hostCatalog) proxyChainFor(target Host) ([]Host, bool) {
+	return catalog.proxyChain(target, true)
+}
+
+func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, bool) {
 	var chain []Host
 	current := target
 	for range len(catalog.proxies) + 1 {
-		jump, routed, valid := catalog.proxyJump(current.ID)
+		jump, routed, valid := catalog.proxyJump(current.ID, runningOnly)
 		if !routed {
 			return chain, true
 		}
@@ -211,10 +215,13 @@ func (catalog *hostCatalog) proxyChainFor(target Host) ([]Host, bool) {
 	return nil, false
 }
 
-func (catalog *hostCatalog) proxyJump(targetID uint32) (Host, bool, bool) {
+func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
 	for _, route := range catalog.proxies {
 		if route.TargetID != targetID {
 			continue
+		}
+		if runningOnly && route.Stopped {
+			return Host{}, false, true
 		}
 		jump, ok := catalog.hostByID(route.JumpID)
 		return jump, true, ok
@@ -228,7 +235,7 @@ func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
 		if current == targetID {
 			return true
 		}
-		jump, routed, valid := catalog.proxyJump(current)
+		jump, routed, valid := catalog.proxyJump(current, false)
 		if !routed {
 			return false
 		}
@@ -373,7 +380,7 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
-		catalog.proxies = append(catalog.proxies, proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID})
+		catalog.proxies = append(catalog.proxies, proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped})
 		next++
 	}
 	return catalog.proxies
