@@ -124,6 +124,13 @@ func (state *State) SetWindow(frame func() (ui.Rect, bool), visible func() bool)
 	state.frame, state.windowVisible = frame, visible
 }
 
+// SetShortcutCapture gives the state the window's way of taking the system's shortcuts (the
+// Windows key and its chords, Alt+Tab, Ctrl+Esc) for itself while it has the keyboard focus. The
+// state asks for them only while a remote desktop holds the keyboard.
+func (state *State) SetShortcutCapture(capture func(bool) error) {
+	state.systemKeys.take = capture
+}
+
 // tabPayload is a tab on its way from one window to another: its panes' layout
 // and the live sessions in them. Nothing in it is closed or copied; the sessions
 // are the ones the user was working in.

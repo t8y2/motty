@@ -488,6 +488,7 @@ type State struct {
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
+	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
 	bg                 backgroundState

@@ -540,6 +540,46 @@ func (state *State) toggleCapture(view *desktopView) {
 	}
 }
 
+// desktopHoldsTheKeyboard reports whether a remote desktop is what the user is typing into: the
+// session in front is a live desktop whose keyboard has not been handed back to Motty, in a
+// window that is showing, with no dialog of Motty's over it.
+func (state *State) desktopHoldsTheKeyboard() bool {
+	if state.activeSection != sectionTerminal || state.modal != modalNone || state.winChrome.minimized ||
+		(state.windowVisible != nil && !state.windowVisible()) {
+		return false
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.desk == nil || session.desk.ended || session.desk.released {
+		return false
+	}
+	return state.desktopVisible(session)
+}
+
+// systemKeyCapture is how the window takes the system's shortcuts (the Windows key and its
+// chords, Alt+Tab, Ctrl+Esc) for itself, nil where it cannot, and what it was last asked.
+type systemKeyCapture struct {
+	take  func(bool) error
+	taken bool
+}
+
+// syncShortcutCapture has the window take the system's shortcuts while a remote desktop holds
+// the keyboard and give them back when it does not, as mstsc does for its own window. Viva keeps
+// them for the window only while it has the focus, and any other window keeps its own. The
+// escape chord that hands the keyboard back hands the shortcuts back with it.
+func (state *State) syncShortcutCapture() {
+	capture := &state.systemKeys
+	if capture.take == nil {
+		return
+	}
+	if want := state.desktopHoldsTheKeyboard(); want != capture.taken {
+		capture.taken = want
+		if err := capture.take(want); err != nil && want {
+			// A platform that cannot take them leaves them with the system, as before.
+			capture.take = nil
+		}
+	}
+}
+
 // desktopShortcut keeps Motty's own shortcuts from running while the keyboard
 // belongs to the remote desktop. Only the escape chord is Motty's then.
 func (state *State) desktopShortcut(view *desktopView, event ui.KeyEvent) ui.EventResult {
