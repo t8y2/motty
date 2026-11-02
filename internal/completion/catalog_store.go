@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -172,6 +173,9 @@ func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client
 			catalog.RootCount(), catalog.NodeCount(), catalog.FlagCount(),
 			current.RootCount(), current.NodeCount(), current.FlagCount())
 	}
+	if err := checkContinuity(catalog, current); err != nil {
+		return nil, 0, ImportStats{}, false, err
+	}
 	if err := installCatalog(ctx, store.path, catalog); err != nil {
 		return nil, 0, ImportStats{}, false, err
 	}
@@ -186,4 +190,59 @@ func coversBaseline(candidate, current *Catalog) bool {
 	return candidate.RootCount()*5 >= current.RootCount()*4 &&
 		candidate.NodeCount()*5 >= current.NodeCount()*4 &&
 		candidate.FlagCount()*5 >= current.FlagCount()*4
+}
+
+const (
+	// continuityMinSubtree is the smallest command tree whose shrinking counts.
+	// A two-command tree that loses one command is a normal upstream change.
+	continuityMinSubtree = 5
+	// continuityMinTolerance is how many commands an update may drop or shrink
+	// before it is refused; the tolerance grows to one percent of the roots.
+	continuityMinTolerance = 2
+	// continuityNamesShown bounds the command names quoted in the error.
+	continuityNamesShown = 5
+)
+
+// checkContinuity refuses a candidate that lost commands the installed catalog
+// has. coversBaseline compares totals, so a bad release that is missing a few
+// dozen source files, spread over the biggest command trees, still passes it.
+// This compares root by root: a root that disappeared, or whose tree shrank by
+// more than a fifth, is a loss no matter how healthy the totals look. Upstream
+// does retire commands now and then, so a handful is tolerated; a stricter rule
+// would make every later update fail until the installed catalog was deleted.
+func checkContinuity(candidate, current *Catalog) error {
+	var dropped, shrunk []string
+	for _, root := range current.Roots() {
+		next := candidate.Root(root.Token)
+		if next == nil {
+			dropped = append(dropped, root.Token)
+			continue
+		}
+		before, after := subtreeSize(root), subtreeSize(next)
+		if before >= continuityMinSubtree && after*5 < before*4 {
+			shrunk = append(shrunk, fmt.Sprintf("%s (%d to %d)", root.Token, before, after))
+		}
+	}
+	tolerance := max(continuityMinTolerance, current.RootCount()/100)
+	if len(dropped)+len(shrunk) <= tolerance {
+		return nil
+	}
+	return fmt.Errorf("the new catalog dropped %d commands (%s) and shrank %d (%s) compared with the installed one",
+		len(dropped), nameSample(dropped), len(shrunk), nameSample(shrunk))
+}
+
+func subtreeSize(root *Node) int {
+	size := 0
+	walk(root, func(*Node) { size++ })
+	return size
+}
+
+func nameSample(names []string) string {
+	if len(names) == 0 {
+		return "none"
+	}
+	if len(names) > continuityNamesShown {
+		return strings.Join(names[:continuityNamesShown], ", ") + ", ..."
+	}
+	return strings.Join(names, ", ")
 }

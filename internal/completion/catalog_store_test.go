@@ -442,3 +442,82 @@ func TestLoadInstalledRejectsOversizedCache(t *testing.T) {
 		t.Fatalf("oversized cache fallback = %v, %d, %v, %v", catalog, generation, note, err)
 	}
 }
+
+// treeRoots builds count roots that each hold size-1 subcommands.
+func treeRoots(t *testing.T, count, size int) []*Node {
+	t.Helper()
+	roots := testRoots(count)
+	for _, root := range roots {
+		for index := 1; index < size; index++ {
+			root.Children = append(root.Children, &Node{Token: fmt.Sprintf("sub%02d", index)})
+		}
+	}
+	return roots
+}
+
+func newTestCatalog(t *testing.T, roots []*Node) *Catalog {
+	t.Helper()
+	catalog, err := NewCatalog(RepositoryName, "v10.0.0", "commit", "MIT", roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
+}
+
+// A release can keep nearly every command in aggregate and still have lost
+// several whole command trees; that must not replace a more complete catalog.
+func TestCheckContinuityRefusesLostAndShrunkCommands(t *testing.T) {
+	current := newTestCatalog(t, treeRoots(t, 200, 10))
+
+	lost := treeRoots(t, 200, 10)[5:]
+	if !coversBaseline(newTestCatalog(t, lost), current) {
+		t.Fatal("the fixture should pass the aggregate check, or it proves nothing")
+	}
+	err := checkContinuity(newTestCatalog(t, lost), current)
+	if err == nil || !strings.Contains(err.Error(), "tool000") {
+		t.Fatalf("a catalog missing five commands was accepted or the error is unreadable: %v", err)
+	}
+
+	shrunk := treeRoots(t, 200, 10)
+	for _, root := range shrunk[:5] {
+		root.Children = root.Children[:3]
+	}
+	err = checkContinuity(newTestCatalog(t, shrunk), current)
+	if err == nil || !strings.Contains(err.Error(), "tool000 (10 to 4)") {
+		t.Fatalf("a catalog with five shrunken command trees was accepted or the error is unreadable: %v", err)
+	}
+}
+
+// Upstream retires or reshapes a command now and then. Refusing that would
+// block every later update until the installed catalog was deleted.
+func TestCheckContinuityAllowsOrdinaryUpstreamChange(t *testing.T) {
+	current := newTestCatalog(t, treeRoots(t, 200, 10))
+	next := treeRoots(t, 200, 10)[1:] // one command retired
+	next[0].Children = next[0].Children[:5]
+	next = append(next, &Node{Token: "brandnew"})
+	if err := checkContinuity(newTestCatalog(t, next), current); err != nil {
+		t.Fatalf("a normal upstream change was refused: %v", err)
+	}
+}
+
+func TestCatalogStoreUpdateRefusesLostCommands(t *testing.T) {
+	store, path := installedStore(t)
+	entries := map[string]string{"carapace-bin-1.9.0/LICENSE": "MIT"}
+	for index := 5; index < 200; index++ { // tool000 to tool004 are gone
+		name := fmt.Sprintf("tool%03d", index)
+		entries["carapace-bin-1.9.0/man/cmd/"+name+"/"+name+".yaml"] = "name: " + name + "\n"
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := storeClientForArchive(t, tarGzipArchive(t, entries), func(*http.Request) string { return "v11.0.0" }, nil)
+	_, _, _, installed, err := store.Update(context.Background(), client)
+	if err == nil || installed || !strings.Contains(err.Error(), "tool000") {
+		t.Fatalf("an update that lost commands was installed or its reason is unreadable: installed=%v err=%v", installed, err)
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil || !bytes.Equal(before, after) {
+		t.Fatalf("a refused update changed the installed file: %v", readErr)
+	}
+}
