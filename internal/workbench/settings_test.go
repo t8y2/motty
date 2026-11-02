@@ -22,7 +22,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			texts    []string
 			hits     []ui.ID
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsTextSize, state.messages.SettingsInterfaceFont}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitSettingsTextSmall, hitSettingsTextLarge, hitInterfaceFontChoose}},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitInterfaceFontChoose}},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,

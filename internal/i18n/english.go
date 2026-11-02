@@ -2048,7 +2048,6 @@ var englishDesktop = DesktopMessages{
 	StripTLS:        "TLS",
 	ViaSSH:          "Connect through SSH (the remote desktop port is reached from the SSH server)",
 	ShareClipboard:  "Share the clipboard with the remote desktop",
-	HideBars:        "Show the picture alone (no bar above, no status line)",
 	ConsoleSession:  "Connect to the console (admin) session",
 	VNCPlaintext:    "VNC is not encrypted: the screen and everything you type cross the network in the clear, and its password protection is weak. Connect through SSH when you can.",
 	TipCapture:      "The keyboard goes to the remote desktop. Click to keep it in Motty (%s)",

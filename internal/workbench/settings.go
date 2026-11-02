@@ -69,58 +69,6 @@ func normalizeConnectionKeepAliveSeconds(value int) int {
 	}
 }
 
-// textScale is the interface text size: the default, or a step each way. It is
-// saved by name, as the appearance mode is.
-type textScale uint8
-
-const (
-	textScaleRegular textScale = iota
-	textScaleSmall
-	textScaleLarge
-)
-
-// factor is the multiplier every interface text size is drawn at.
-func (scale textScale) factor() float32 {
-	switch scale {
-	case textScaleSmall:
-		return textScaleSmallFactor
-	case textScaleLarge:
-		return textScaleLargeFactor
-	}
-	return textScaleRegularFactor
-}
-
-func (scale textScale) String() string {
-	switch scale {
-	case textScaleSmall:
-		return "small"
-	case textScaleLarge:
-		return "large"
-	}
-	return ""
-}
-
-func textScaleFromString(value string) textScale {
-	switch value {
-	case "small":
-		return textScaleSmall
-	case "large":
-		return textScaleLarge
-	}
-	return textScaleRegular
-}
-
-// setTextScale is the user choosing an interface text size: the size tokens are
-// rebuilt at once, and everything that paints follows in the next frame.
-func (state *State) setTextScale(scale textScale) bool {
-	if state.textScale == scale {
-		return false
-	}
-	state.textScale = scale
-	applyTextMetrics(scale.factor())
-	return true
-}
-
 func (state *State) setTerminalFontSize(value float32) bool {
 	value = normalizeTerminalFontSize(value)
 	if state.terminalFontSize == value {
@@ -506,14 +454,6 @@ func (state *State) settingsLanguageOptions() [2]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
 		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
-	}
-}
-
-func (state *State) settingsTextSizeOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsTextSmall, Label: state.messages.SettingsTextSizeSmall},
-		{ID: hitSettingsTextRegular, Label: state.messages.SettingsTextSizeRegular},
-		{ID: hitSettingsTextLarge, Label: state.messages.SettingsTextSizeLarge},
 	}
 }
 

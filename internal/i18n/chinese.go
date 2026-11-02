@@ -2048,7 +2048,6 @@ var chineseDesktop = DesktopMessages{
 	StripTLS:        "TLS",
 	ViaSSH:          "通过 SSH 连接(从 SSH 服务器访问远程桌面端口)",
 	ShareClipboard:  "与远程桌面共享剪贴板",
-	HideBars:        "只显示画面（隐藏顶栏与状态栏）",
 	ConsoleSession:  "连接控制台（管理员）会话",
 	VNCPlaintext:    "VNC 不加密：屏幕内容和你输入的一切都以明文经过网络，其密码保护也很弱。可能的话请通过 SSH 连接。",
 	TipCapture:      "键盘现在交给远程桌面。点击改为留在 Motty（%s）",
