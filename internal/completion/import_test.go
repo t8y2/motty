@@ -325,9 +325,30 @@ func TestImportRejectsChildDecodeLimits(t *testing.T) {
 }
 
 func TestImportRejectsDuplicateSource(t *testing.T) {
-	files := []SourceFile{{Name: "a/a.yaml", Data: []byte("name: a\n")}, {Name: "a/a.yaml", Data: []byte("name: a\ndescription: overwritten\n")}}
-	if _, _, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{}); err == nil {
-		t.Fatal("duplicate source silently replaced a definition")
+	malformed := "name: child\nflags:\n  --all: [bad]\n"
+	valid := "name: child\n"
+	cases := map[string][]SourceFile{
+		"two valid files": {
+			{Name: "a/a.yaml", Data: []byte("name: a\n")},
+			{Name: "a/a.yaml", Data: []byte("name: a\ndescription: overwritten\n")},
+		},
+		"malformed then valid": {
+			{Name: "a/a.yaml", Data: []byte("name: a\n")},
+			{Name: "a/a.child.yaml", Data: []byte(malformed)},
+			{Name: "a/a.child.yaml", Data: []byte(valid)},
+		},
+		"valid then malformed": {
+			{Name: "a/a.yaml", Data: []byte("name: a\n")},
+			{Name: "a/a.child.yaml", Data: []byte(valid)},
+			{Name: "a/a.child.yaml", Data: []byte(malformed)},
+		},
+	}
+	for name, files := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{}); err == nil || !strings.Contains(err.Error(), "duplicate source") {
+				t.Fatalf("duplicate source = %v", err)
+			}
+		})
 	}
 }
 

@@ -120,6 +120,7 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
 
 	byDir := make(map[string]map[string]yamlCommand, 800)
+	seen := make(map[string]struct{}, len(ordered))
 	var dirs []string
 	for _, file := range ordered {
 		dir, base, ok := splitSourceName(file.Name)
@@ -130,14 +131,19 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 		if len(file.Data) > opts.MaxFileBytes {
 			return nil, stats, fmt.Errorf("completion: source %s exceeds the file size limit", file.Name)
 		}
+		// Duplicate detection cannot depend on parse success: a malformed
+		// source must not let a later file claim the same path, so the name is
+		// recorded before the file is parsed.
+		canonical := dir + "/" + base
+		if _, exists := seen[canonical]; exists {
+			return nil, stats, fmt.Errorf("completion: duplicate source %s", file.Name)
+		}
+		seen[canonical] = struct{}{}
 		files := byDir[dir]
 		if files == nil {
 			files = make(map[string]yamlCommand, 8)
 			byDir[dir] = files
 			dirs = append(dirs, dir)
-		}
-		if _, exists := files[base]; exists {
-			return nil, stats, fmt.Errorf("completion: duplicate source %s", file.Name)
 		}
 		command, repaired, err := parseSourceRecovering(file.Data, opts)
 		if err != nil {
