@@ -296,6 +296,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseAppearanceMode(appearancePinnedDark)
 	case hitSettingsAppearanceLight:
 		changed = state.chooseAppearanceMode(appearancePinnedLight)
+	case hitSettingsTabsHorizontal:
+		changed = state.setTabOrientation(tabsHorizontal)
+	case hitSettingsTabsVertical:
+		changed = state.setTabOrientation(tabsVertical)
+	case hitSettingsVerticalTabsAutoHide:
+		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsNetworkSystem:
 		changed = state.networkProxy != networkProxySystem
 		state.networkProxy = networkProxySystem
@@ -587,6 +593,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
 		options := state.settingsAppearanceOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsTabsHorizontal, hitSettingsTabsVertical:
+		options := state.settingsTabOrientationOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
 		options := state.settingsNetworkProxyOptions()

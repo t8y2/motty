@@ -126,6 +126,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.reveal.beginPaint()
 	state.contextRect = ui.Rect{}
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
+	state.verticalTabs.bounds, state.verticalTabs.slot = ui.Rect{}, flex.Box{}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = ui.Rect{}
 	state.ai.cfg.agentSelectBounds = ui.Rect{}
@@ -162,7 +163,12 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if state.activeSection == sectionTerminal {
 		active = state.deck.ActiveWorkspace()
 	}
-	scroll := state.tabStrip.layout(geometry.area, float32(len(state.workspaceTabs))*(geometry.tabWidth+barGap), state.workspaceTabs, geometry.tabWidth+barGap, geometry.tabWidth, active)
+	scroll := float32(0)
+	if state.tabOrientation == tabsHorizontal {
+		scroll = state.tabStrip.layout(geometry.area, float32(len(state.workspaceTabs))*(geometry.tabWidth+barGap), state.workspaceTabs, geometry.tabWidth+barGap, geometry.tabWidth, active)
+	} else if !terminal {
+		state.tabStrip.area = ui.Rect{}
+	}
 	var workspaceSlot flex.Box
 	// The section and assistant are sibling cards, separated by the same margin
 	// the cards keep from the window's right and bottom edges.
@@ -226,6 +232,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		canvas.Unclip()
 		state.paintAIPanel(canvas, size)
 	}
+	state.paintVerticalTabs(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
@@ -377,6 +384,7 @@ type barTab struct {
 	workspace    layoutcore.WorkspaceInfo
 	id, closeID  ui.ID
 	background   ui.Color
+	compact      bool
 }
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
@@ -388,6 +396,7 @@ type barGeometry struct {
 	tabCount          int
 	barButtons        int
 	locked            bool
+	orientation       tabOrientation
 	leading, trailing float32
 	valid             bool
 	area, row         ui.Rect
@@ -408,6 +417,7 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 	geometry := &chrome.geometry
 	if geometry.valid && geometry.width == width && geometry.tabCount == len(state.workspaceTabs) &&
 		geometry.barButtons == buttons &&
+		geometry.orientation == state.tabOrientation &&
 		geometry.locked == locked &&
 		geometry.leading == leading && geometry.trailing == trailing {
 		return *geometry
@@ -419,8 +429,9 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 	f.End()
 	*geometry = barGeometry{
 		width: width, tabCount: len(state.workspaceTabs), barButtons: buttons, leading: leading, trailing: trailing, valid: true,
-		locked: locked,
-		area:   chrome.probeArea.Rect(), row: chrome.probeRow.Rect(), tabWidth: barTabMax,
+		locked:      locked,
+		orientation: state.tabOrientation,
+		area:        chrome.probeArea.Rect(), row: chrome.probeRow.Rect(), tabWidth: barTabMax,
 	}
 	if len(chrome.probeBar.tabs) > 0 {
 		geometry.tabWidth = chrome.probeTabs[0].Rect().Width
@@ -441,7 +452,6 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	if state.appearance == appearanceLight {
 		themeIcon, themeLabel = iconMoon, m.LabelThemeToDark
 	}
-	activeSection := state.activeSection == sectionTerminal
 	bar.tabs = bar.tabs[:0]
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
@@ -457,10 +467,29 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	}
 	row.Children(func() {
 		state.barButton(f, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
+		if state.tabOrientation == tabsVertical {
+			if !probe {
+				label := m.TrayTitle
+				if state.terminalPage() {
+					for _, tab := range state.workspaceTabs {
+						if tab.ID == state.deck.ActiveWorkspace() {
+							label = state.tabLabel(tab)
+						}
+					}
+				}
+				f.Text(label).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1).Basis(0)
+			} else {
+				f.Spacer()
+			}
+		}
 		// The room of the tabs and the new-tab button. The tabs stay as wide as they
 		// like (barTabMax) and shrink together to barTabMin; the new-tab button
 		// follows the last of them, or ends the room when they do not fit.
-		f.Stack().Grow(1).MarginSides(0, barGap, 0, 0).Children(func() {
+		tabRoom := f.Stack().Grow(1).MarginSides(0, barGap, 0, 0)
+		if state.tabOrientation == tabsVertical {
+			tabRoom.Grow(0).Width(barButtonSize)
+		}
+		tabRoom.Children(func() {
 			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
 			f.Row().Fill().Children(func() {
 				tabs := f.Row()
@@ -471,8 +500,10 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 				}
 				tabs.Children(func() {
 					for index := range state.workspaceTabs {
+						if state.tabOrientation == tabsVertical {
+							break
+						}
 						workspace := state.workspaceTabs[index]
-						id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 						var tab flex.Box
 						if probe {
 							minimum := barTabMin
@@ -486,65 +517,11 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
 						}
-						entry := barTab{workspace: workspace, id: id, closeID: closeID}
-						active := activeSection && state.deck.ActiveWorkspace() == workspace.ID
-						hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
-						foreground := pal.muted
-						fill, edge := pal.tab, pal.line
-						switch {
-						case active:
-							fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
-						case hovered:
-							fill, foreground = pal.tabHover, pal.text
-						}
-						if pane, ok := state.deck.Pane(workspace.ID, workspace.ActivePane); ok {
-							if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
-								amount := float32(.08)
-								if active {
-									amount = .18
-								} else if hovered {
-									amount = .12
-								}
-								fill = tintHostSurface(fill, session.host.Color, amount)
-								edge = tintHostSurface(edge, session.host.Color, .35)
-							}
-						}
-						entry.background = fill
 						first := float32(0)
 						if index == 0 {
 							first = -scroll
 						}
-						label := state.tabLabel(workspace)
-						tabOptions := ui.HitOptions{Role: ui.RoleTab, Selected: active}
-						if workspace.Locked {
-							tabOptions.Hint = m.TabLockedHint
-						}
-						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-							PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
-							HitWith(id, label, tabOptions).Children(func() {
-							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
-							f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
-							if workspace.Locked {
-								f.Icon(lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
-							}
-							entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
-							f.Spacer()
-							if !active && !hovered {
-								f.Slot().Size(20, 20)
-								return
-							}
-							var closeFill ui.Color
-							if f.Canvas().Hovered() == closeID {
-								closeFill = pal.line
-								if active {
-									closeFill = pal.tabCloseHot
-								}
-							}
-							f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
-								HitWith(closeID, m.LabelCloseTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
-								f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
-							})
-						})
+						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false)
 						bar.tabs = append(bar.tabs, entry)
 					}
 				})
@@ -585,6 +562,88 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	})
 }
 
+// declareWorkspaceTab shares tab styling and hit identities between both orientations.
+func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool) barTab {
+	m, pal := state.messages, state.pal
+	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
+	entry := barTab{workspace: workspace, id: id, closeID: closeID}
+	active := state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() == workspace.ID
+	hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+	foreground := pal.muted
+	fill, edge := pal.tab, pal.line
+	switch {
+	case active:
+		fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+	case hovered:
+		fill, foreground = pal.tabHover, pal.text
+	}
+	if pane, ok := state.deck.Pane(workspace.ID, workspace.ActivePane); ok {
+		if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
+			amount := float32(.08)
+			if active {
+				amount = .18
+			} else if hovered {
+				amount = .12
+			}
+			fill = tintHostSurface(fill, session.host.Color, amount)
+			edge = tintHostSurface(edge, session.host.Color, .35)
+		}
+	}
+	entry.background = fill
+	label := state.tabLabel(workspace)
+	tabOptions := ui.HitOptions{Role: ui.RoleTab, Selected: active}
+	if workspace.Locked {
+		tabOptions.Hint = m.TabLockedHint
+	} else if vertical {
+		tabOptions.Hint = label
+	}
+	row := f.Row().Size(width, height).Shrink(0)
+	if vertical {
+		row.MarginSides(first, 0, barGap, 0)
+	} else {
+		row.MarginSides(0, barGap, 0, first)
+	}
+	row.
+		PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
+		HitWith(id, label, tabOptions).Children(func() {
+		if compact {
+			f.Spacer()
+			entry.badge = f.Slot().Size(20, 20).Shrink(0)
+			f.Spacer()
+			return
+		}
+		entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+		title := f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+		if vertical {
+			title.Grow(1).Basis(0)
+		}
+		if workspace.Locked {
+			f.Icon(lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
+		}
+		entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
+		if !vertical {
+			f.Spacer()
+		}
+		if !active && !hovered {
+			f.Slot().Size(20, 20)
+			return
+		}
+		var closeFill ui.Color
+		if f.Canvas().Hovered() == closeID {
+			closeFill = pal.line
+			if active {
+				closeFill = pal.tabCloseHot
+			}
+		}
+		f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+			HitWith(closeID, m.LabelCloseTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
+			f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+		})
+	})
+	entry.compact = compact
+	return entry
+}
+
 // barButton declares a square icon button of the window bar. These buttons do not
 // take keyboard focus when pressed, so using one never pulls the keyboard out of a
 // terminal. With probe set it is only the place.
@@ -612,23 +671,7 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 // the layout kept for them.
 func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	bar := &state.chrome.bar
-	canvas.Clip(strip)
-	for index := range bar.tabs {
-		tab := &bar.tabs[index]
-		var session *Session
-		if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
-			session, _ = state.sessionByIDPointer(uint32(pane.SessionID))
-		}
-		if session != nil {
-			fill := tab.background
-			state.paintHostCatalogIcon(canvas, session.host, tab.badge.Rect(), fill)
-			kind, dot := state.sessionLight(session)
-			light := tab.light.Rect()
-			paintLight(canvas, light.X+light.Width/2, light.Y+light.Height/2, kind, dot, fill)
-		}
-		state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
-	}
-	canvas.Unclip()
+	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
 	if state.toolbarVisible(toolbarWindow, hitAIToggle) {
 		state.paintAIBarButton(canvas, state.chrome.bar.assistant.Rect().X)
 	}
@@ -729,10 +772,15 @@ func (state *State) declareNavigation(f *flex.Frame) {
 		for _, item := range items {
 			state.navigationItem(f, item.id, item.icon, item.label, item.active, 4)
 		}
+		if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
+			state.verticalTabs.slot = f.Slot().Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
+		}
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
 		// the component gallery there (see declareDevNavigation).
-		f.Spacer()
+		if state.tabOrientation != tabsVertical || len(state.workspaceTabs) == 0 {
+			f.Spacer()
+		}
 		state.navigationItem(f, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
 		state.openLocalShellPickerOn(f.Canvas(), hitLocalTerminal, false)
 		state.devDeclareNavigation(f)

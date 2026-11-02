@@ -60,6 +60,11 @@ use win32-input-mode. Font ligatures are shaped inside the fixed-pitch grid.
 Tabs can be reordered, split horizontally or vertically, moved between windows
 and restored without reconnecting.
 
+Choose **Settings > General > Tab orientation** for horizontal tabs or a vertical
+list in the left sidebar. In terminal workspaces, keep the vertical list expanded
+or let it collapse to an icon rail that expands on hover without resizing the
+terminal. These layout preferences stay on this device.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword

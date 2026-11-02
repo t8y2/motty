@@ -5,14 +5,15 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-// tabStrip is the scroll state of the window bar's tabs. Idle, it is two floats
-// and an ID; nothing animates and nothing runs on a timer.
+// tabStrip keeps the tab list's scroll offset along its layout axis. Nothing
+// animates and nothing runs on a timer.
 type tabStrip struct {
 	area     ui.Rect // where the tabs are painted, as of the last paint
+	vertical bool
 	origin   float32 // where the first tab starts when not scrolled
 	pitch    float32 // distance from one tab to the next
 	tabWidth float32
-	offset   float32 // how far the tabs are scrolled left
+	offset   float32 // how far the tabs are scrolled along the layout axis
 	max      float32 // the furthest offset; zero when every tab fits
 	revealed layoutcore.WorkspaceID
 }
@@ -21,27 +22,31 @@ type tabStrip struct {
 // scrolled into view when it becomes active, and kept visible across geometry
 // changes. A wheel gesture that moves it out again is not undone on a repaint.
 func (strip *tabStrip) layout(area ui.Rect, content float32, tabs []layoutcore.WorkspaceInfo, pitch, width float32, active layoutcore.WorkspaceID) float32 {
-	strip.max = max(content-barGap-area.Width, 0)
-	geometryChanged := area.Width != strip.area.Width || pitch != strip.pitch || width != strip.tabWidth
+	extent, previousExtent, origin := area.Width, strip.area.Width, area.X
+	if strip.vertical {
+		extent, previousExtent, origin = area.Height, strip.area.Height, area.Y
+	}
+	strip.max = max(content-barGap-extent, 0)
+	geometryChanged := extent != previousExtent || pitch != strip.pitch || width != strip.tabWidth
 	if active != 0 && (active != strip.revealed || geometryChanged) {
 		for index, tab := range tabs {
 			if tab.ID != active {
 				continue
 			}
 			previousStart := float32(index) * strip.pitch
-			previouslyVisible := previousStart >= strip.offset && previousStart+strip.tabWidth <= strip.offset+strip.area.Width
+			previouslyVisible := previousStart >= strip.offset && previousStart+strip.tabWidth <= strip.offset+previousExtent
 			if active == strip.revealed && !previouslyVisible {
 				break // preserve a deliberate scroll away from the active tab
 			}
 			start := float32(index) * pitch
 			if start < strip.offset {
 				strip.offset = start
-			} else if start+width > strip.offset+area.Width {
-				strip.offset = start + width - area.Width
+			} else if start+width > strip.offset+extent {
+				strip.offset = start + width - extent
 			}
 		}
 	}
-	strip.area, strip.origin, strip.pitch, strip.tabWidth = area, area.X, pitch, width
+	strip.area, strip.origin, strip.pitch, strip.tabWidth = area, origin, pitch, width
 	strip.revealed = active
 	strip.offset = min(max(strip.offset, 0), strip.max)
 	return strip.offset
@@ -54,8 +59,15 @@ func (strip *tabStrip) scroll(event ui.ScrollEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	delta := event.DeltaX
-	if delta == 0 {
+	if strip.vertical {
 		delta = event.DeltaY
+	}
+	if delta == 0 {
+		if strip.vertical {
+			delta = event.DeltaX
+		} else {
+			delta = event.DeltaY
+		}
 	}
 	moved := min(max(strip.offset+delta, 0), strip.max)
 	if moved == strip.offset {

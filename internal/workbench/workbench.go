@@ -455,6 +455,8 @@ type State struct {
 	tabOptions         []components.TabOption
 	workspaceTabs      []layoutcore.WorkspaceInfo
 	tabStrip           tabStrip
+	tabOrientation     tabOrientation
+	verticalTabs       verticalTabs
 	tabMenu            tabMenu
 	hostMenu           hostMenu
 	localShellPicker   localShellPicker
@@ -1387,8 +1389,11 @@ func (state *State) click(id ui.ID, feedback bool) {
 		}
 		state.activeSection = sectionHosts
 		state.save()
-	case id == hitNewTab:
+	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
+	case id == hitVerticalTabsPin:
+		state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
+		state.save()
 	case id == hitNewWindow:
 		state.openNewWindow()
 	case id == hitSearch:
@@ -1833,6 +1838,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
+	if state.trackVerticalTabs(event) {
+		defer func() { outcome.Repaint = true }()
+	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}
@@ -2257,10 +2265,14 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if event.Target.Scope() != hitTabList {
 		return ui.EventResult{}
 	}
+	orientation := components.TabsHorizontal
+	if state.tabOrientation == tabsVertical {
+		orientation = components.TabsVertical
+	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
 		state.tabOptions,
-		components.TabsHorizontal,
+		orientation,
 		components.DirectionLTR,
 		event.Key,
 	)

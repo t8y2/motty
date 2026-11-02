@@ -215,9 +215,25 @@ func (state *State) foreignDropAt(screen ui.Point, panes int) tabDrop {
 // tabInsertion is the bar that marks a gap among the tabs, centered on x and as
 // tall as a tab.
 func (state *State) tabInsertion(x float32) ui.Rect {
+	if state.tabStrip.vertical {
+		area := state.tabStrip.area
+		return ui.Rect{X: area.X, Y: x - 1, Width: area.Width, Height: 2}
+	}
 	bar := state.chrome.geometry.row
 	bar.X, bar.Width, bar.Height = x-1, 2, barTabHeight
 	return bar
+}
+
+// tabDropArea is where a drop among the tabs is taken. Across the top the tabs
+// span the width of the strip but any height of the window bar, so a drag that
+// strays a few pixels above or below the row still reorders instead of tearing
+// the tab out; in the sidebar it is the whole sidebar, header and footer included.
+func (state *State) tabDropArea() ui.Rect {
+	if state.tabStrip.vertical {
+		return state.verticalTabs.bounds
+	}
+	area := state.tabStrip.area
+	return ui.Rect{X: area.X, Width: area.Width, Height: windowBarHeight}
 }
 
 // tabDropAt works out where a drop at window point at would land. source is the
@@ -225,9 +241,13 @@ func (state *State) tabInsertion(x float32) ui.Rect {
 // window with panes panes.
 func (state *State) tabDropAt(at ui.Point, source layoutcore.WorkspaceID, panes int) tabDrop {
 	strip := &state.tabStrip
-	if at.Y >= 0 && at.Y < windowBarHeight && at.X >= strip.area.X && at.X <= strip.area.X+strip.area.Width && strip.pitch > 0 {
+	if pointInRect(at.X, at.Y, state.tabDropArea()) && strip.pitch > 0 {
+		positionOnAxis := at.X
+		if strip.vertical {
+			positionOnAxis = at.Y
+		}
 		count := len(state.workspaceTabs)
-		boundary := min(max(int((at.X-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
+		boundary := min(max(int((positionOnAxis-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
 		position := -1
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == source {

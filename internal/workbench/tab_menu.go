@@ -127,7 +127,11 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuClose, Label: messages.LabelCloseTab, Icon: icon(iconClose), Keys: closeKeys})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseOthers, Label: messages.MenuCloseOtherTabs, Icon: icon(iconCloseOthers), Disabled: len(state.workspaceTabs) < 2})
-	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: messages.MenuCloseTabsToRight, Icon: icon(iconCloseRight), Disabled: index == len(state.workspaceTabs)-1})
+	closeFollowing, closeIcon := messages.MenuCloseTabsToRight, uint8(iconCloseRight)
+	if state.tabOrientation == tabsVertical {
+		closeFollowing, closeIcon = messages.MenuCloseTabsBelow, iconChevronDown
+	}
+	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: closeFollowing, Icon: icon(closeIcon), Disabled: index == len(state.workspaceTabs)-1})
 	if reconnect || restart || disconnect {
 		rows.separate()
 	}

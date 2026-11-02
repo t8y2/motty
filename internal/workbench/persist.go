@@ -33,6 +33,8 @@ type savedState struct {
 	Version                    int                 `json:"version"`
 	Language                   string              `json:"language,omitempty"`
 	Theme                      string              `json:"theme,omitempty"`
+	TabOrientation             string              `json:"tab_orientation,omitempty"`
+	VerticalTabsAutoHide       bool                `json:"vertical_tabs_auto_hide,omitempty"`
 	NetworkProxy               string              `json:"network_proxy,omitempty"`
 	TerminalOption             string              `json:"terminalOption,omitempty"`
 	LocalShell                 string              `json:"local_shell,omitempty"`
@@ -371,6 +373,8 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		TabOrientation:             state.tabOrientation.String(),
+		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
@@ -617,6 +621,8 @@ func (state *State) restoreSettings(saved savedState) {
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
+	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
 	state.toolbars.restore(saved.Toolbars)
 	state.localShell = saved.LocalShell

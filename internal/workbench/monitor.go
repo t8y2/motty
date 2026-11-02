@@ -131,7 +131,7 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	if c.Open {
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
 	}
-	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, size.Width-files-minPaneWidth-1)))
+	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(size).Width-files-minPaneWidth-1)))
 }
 func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
 	if !state.monitorShown(workspace) || size.Width < contextDrawerAt {
@@ -143,7 +143,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
 	}
 	width := state.monitorPanelWidth(workspace, size)
-	if size.Width-files-width-1 < minPaneWidth {
+	if state.baseWorkspacePixelBounds(size).Width-files-width-1 < minPaneWidth {
 		return 0
 	}
 	return width + 1
