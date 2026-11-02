@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/localshell"
+	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 )
@@ -114,12 +115,20 @@ func TestLocalTerminalNetworkProxyEnvironment(t *testing.T) {
 	}
 }
 
-func TestLocalTerminalOffersNoRemoteOnlyTools(t *testing.T) {
+func TestLocalTerminalOffersTheMonitorButNoRemoteOnlyTools(t *testing.T) {
 	state, session := openLocal(t)
 	state.Wake()
 	session.term.live = true
-	if _, _, offered := state.remoteStatsToggle(session); offered {
-		t.Fatal("the resource monitor is offered for this computer")
+	if _, _, offered := state.remoteStatsToggle(session); !offered {
+		t.Fatal("the resource monitor is not offered for this computer")
+	}
+	if state.remoteToolsOffered(session) {
+		t.Fatal("the remote tools are offered for this computer")
+	}
+	// The local connection refuses every command, so a local monitor must run
+	// its own and never ask the connection to.
+	if _, ok := monitorRunnerFor(session).(remotestats.Local); !ok {
+		t.Fatalf("a local terminal is monitored through %T", monitorRunnerFor(session))
 	}
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})

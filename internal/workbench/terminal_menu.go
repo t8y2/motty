@@ -231,6 +231,8 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	const switchWidth = float32(32)
 	if _, _, monitor := state.remoteStatsToggle(session); monitor {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), TrailingWidth: switchWidth})
+	}
+	if state.remoteToolsOffered(session) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
 	}
 	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)

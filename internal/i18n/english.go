@@ -220,7 +220,7 @@ var EnglishMessages = Messages{
 	MenuResourceMonitor:                    "Resource Monitor",
 	LocalTerminal:                          "Local Terminal",
 	LocalTerminalTitle:                     "This Computer",
-	TipStatsStart:                          "Show the server's CPU, memory, network and GPU",
+	TipStatsStart:                          "Show the host's CPU, memory, network and GPU",
 	TipStatsStop:                           "Stop the resource monitor",
 	TipStatsRetry:                          "Try the resource monitor again",
 	TipRecordStart:                         "Record this terminal session",
@@ -662,6 +662,14 @@ var EnglishMessages = Messages{
 	ErrProxySameHost:           "The target and jump host must be different",
 	ErrProxyCycle:              "That jump route would create a cycle",
 	ErrProxyTargetTaken:        "This host already has a jump route. Remove the existing route first.",
+	ProxyFieldViaShell:         "Relay through the jump host's shell",
+	ProxyViaShellHelp:          "For a jump host that only gives a shell, such as a bastion where you switch accounts first. Motty opens a terminal on the jump host, types its command after login, then runs the relay command there and carries this host's connection through it. Files, monitoring and port forwarding keep working. Needs the relay program on the jump host, and a switch that asks for no password.",
+	ProxyFieldRelay:            "Relay command (%h host, %p port, %r user)",
+	ProxyRelayPlaceholder:      "nc %h %p",
+	ProxyRelayPreludeFmt:       "First typed in the jump host's shell: %s",
+	ProxyRelayNoPrelude:        "The jump host has no command after login, so the relay starts right away.",
+	ProxyViaShellTag:           "shell relay",
+	ErrProxyRelay:              "Enter the relay command on one line. Only %h, %p and %r are filled in, and %% for a percent sign.",
 	ConnDetailConnectingViaFmt: "%s via %s",
 
 	SFTPFiles:                   "Files",
@@ -748,7 +756,7 @@ var EnglishMessages = Messages{
 	SFTPEditConflictDescription: "The server has a newer version. Keep your local edits, or reload the remote file and discard them.",
 	SFTPEditReloadConfirm:       "Reload Remote",
 
-	StatsMeasuring:   "Measuring server resources…",
+	StatsMeasuring:   "Measuring host resources…",
 	StatsUnsupported: "Resource stats unsupported",
 	StatsUnavailable: "Resource stats unavailable",
 

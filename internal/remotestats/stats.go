@@ -13,8 +13,8 @@ import (
 const maxLineBytes = 16384
 
 var (
-	// ErrUnsupported reports a server without the Linux procfs counters the
-	// sampler requires.
+	// ErrUnsupported reports a host whose system the monitor has no command
+	// for: neither Linux procfs, macOS nor Windows.
 	ErrUnsupported = errors.New("remote stats: unsupported server")
 	// ErrMalformed reports output that does not match the bounded stats protocol.
 	ErrMalformed = errors.New("remote stats: malformed response")

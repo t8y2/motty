@@ -77,8 +77,39 @@ func TestMonitorUsesTheWindowsSamplerWithoutProcfsCommands(t *testing.T) {
 	}
 }
 
+// A Mac server gets its own commands, not the Linux procfs script that would
+// only tell it "unsupported".
+func TestMonitorUsesTheMacOSSamplerForADarwinServer(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	session := state.contextSession()
+	session.host.System = sshconn.SystemDarwin
+	fake.streamCommand = func(ctx context.Context, command string, limit int, line func([]byte) bool) error {
+		if !strings.Contains(command, "# motty-stats-darwin-v1") {
+			t.Errorf("a Mac received %q", command)
+		}
+		return streamReadings(
+			"gop-stats-darwin-v1 1 70.00 1000 2000 16777216 4194304 100 en0\n",
+			"gop-stats-darwin-v1 0 40.60 1000 2000 16777216 4194304 102 en0\n",
+		)(ctx, command, limit, line)
+	}
+	fake.runCommand = func(_ context.Context, command string, _ int) ([]byte, error) {
+		if !strings.Contains(command, "# motty-monitor-details-darwin-v1") {
+			t.Errorf("a Mac received details command %q", command)
+		}
+		return []byte("info\t8\t0.5\t0.4\t0.3\t100\t24.5.0\ndisk\t1000\t400\t600\t40\t0\t/\n"), nil
+	}
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(v *remoteStatsView) bool { return v.state == remoteStatsReady && v.panel.haveDetails })
+	if got := session.stats.text; got != "CPU 41%  RAM 12.0/16.0G  ↓0B/s ↑0B/s" {
+		t.Fatalf("readout = %q", got)
+	}
+	if session.stats.panel.data.CPUCount != 8 || len(session.stats.panel.data.Disks) != 1 {
+		t.Fatalf("details = %+v", session.stats.panel.data)
+	}
+}
+
 func TestMonitorUnsupportedSystemsDoNotRunLinuxScripts(t *testing.T) {
-	for _, system := range []sshconn.RemoteSystem{sshconn.SystemDarwin, sshconn.SystemFreeBSD} {
+	for _, system := range []sshconn.RemoteSystem{sshconn.SystemFreeBSD} {
 		state, _, fake, _ := liveSession(t)
 		session := state.contextSession()
 		session.host.System = system

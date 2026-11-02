@@ -3,7 +3,6 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 	"time"
 )
@@ -86,7 +85,7 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 	y += monitorControlsHeight
 	if v.state >= remoteStatsUnsupported || p.count == 0 {
 		message := state.remoteStatsText(v)
-		unsupportedSystem := s.host.System != sshconn.SystemUnknown && !s.host.System.IsLinux() && s.host.System != sshconn.SystemWindows
+		unsupportedSystem := !monitorSupported(s.host.System)
 		if unsupportedSystem {
 			message = m.UnsupportedPlatform
 		}
