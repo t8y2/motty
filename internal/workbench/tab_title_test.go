@@ -61,6 +61,55 @@ func TestRenamedTabKeepsItsNameWhenTheTerminalReportsATitle(t *testing.T) {
 	}
 }
 
+func TestActivatingPaneRefreshesCachedTabIdentityAndKeepsRenamedTitle(t *testing.T) {
+	state := threeVisiblePaneState(t)
+	state.terminalTabTitle = true
+
+	workspaceID := state.deck.ActiveWorkspace()
+	workspaceIndex, ok := state.workspaceTab(workspaceID)
+	if !ok {
+		t.Fatal("the active workspace is missing from the tab cache")
+	}
+	firstSession := &state.sessions[0]
+	secondSession := &state.sessions[1]
+	_, firstPane, ok := state.deck.PaneForSession(layoutcore.SessionID(firstSession.ID))
+	if !ok {
+		t.Fatal("the first session has no pane")
+	}
+	_, secondPane, ok := state.deck.PaneForSession(layoutcore.SessionID(secondSession.ID))
+	if !ok {
+		t.Fatal("the second session has no pane")
+	}
+
+	firstSession.term.screen.Write([]byte("\x1b]2;first-shell\a"))
+	secondSession.term.screen.Write([]byte("\x1b]2;second-shell\a"))
+	state.rebuildTabOptions()
+
+	state.ActivatePane(firstSession.ID)
+	cached := state.workspaceTabs[workspaceIndex]
+	if cached.ActivePane != firstPane || state.tabSession(cached) != firstSession || state.tabLabel(cached) != "first-shell" {
+		t.Fatalf("after first activation: cached pane=%d session=%p label=%q", cached.ActivePane, state.tabSession(cached), state.tabLabel(cached))
+	}
+
+	state.ActivatePane(secondSession.ID)
+	cached = state.workspaceTabs[workspaceIndex]
+	if cached.ActivePane != secondPane || state.tabSession(cached) != secondSession || state.tabLabel(cached) != "second-shell" {
+		t.Fatalf("after second activation: cached pane=%d session=%p label=%q", cached.ActivePane, state.tabSession(cached), state.tabLabel(cached))
+	}
+
+	state.openTabRename(workspaceID)
+	state.tabRename.editor.Insert("production-main")
+	state.clickTabRenameDialog(hitTabRenameSubmit)
+	state.ActivatePane(firstSession.ID)
+	cached = state.workspaceTabs[workspaceIndex]
+	if !cached.Named || cached.ActivePane != firstPane || state.tabSession(cached) != firstSession {
+		t.Fatalf("after renamed tab activation: named=%t cached pane=%d session=%p", cached.Named, cached.ActivePane, state.tabSession(cached))
+	}
+	if got := state.tabLabel(cached); got != "production-main" {
+		t.Fatalf("renamed tab changed to %q after activating another pane", got)
+	}
+}
+
 func TestTabTitleSettingSurvivesRestart(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)

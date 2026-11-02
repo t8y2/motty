@@ -581,17 +581,15 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	case hovered:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	if pane, ok := state.deck.Pane(workspace.ID, workspace.ActivePane); ok {
-		if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
-			amount := float32(.08)
-			if active {
-				amount = .18
-			} else if hovered {
-				amount = .12
-			}
-			fill = tintHostSurface(fill, session.host.Color, amount)
-			edge = tintHostSurface(edge, session.host.Color, .35)
+	if session := state.tabSession(workspace); session != nil {
+		amount := float32(.08)
+		if active {
+			amount = .18
+		} else if hovered {
+			amount = .12
 		}
+		fill = tintHostSurface(fill, session.host.Color, amount)
+		edge = tintHostSurface(edge, session.host.Color, .35)
 	}
 	entry.background = fill
 	label := state.tabLabel(workspace)
