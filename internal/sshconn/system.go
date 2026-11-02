@@ -44,6 +44,7 @@ const (
 	SystemProxmox
 	SystemOpenWrt
 	SystemDeepin
+	SystemUOS
 	SystemPopOS
 	SystemZorin
 	SystemElementary
@@ -61,7 +62,7 @@ var systemNames = [...]string{
 	SystemFreeBSD: "freebsd", SystemNixOS: "nixos", SystemGentoo: "gentoo", SystemManjaro: "manjaro",
 	SystemSynology: "synology", SystemQNAP: "qnap", SystemFnOS: "fnos", SystemTrueNAS: "truenas",
 	SystemUnraid: "unraid", SystemOpenMediaVault: "openmediavault", SystemProxmox: "proxmox",
-	SystemOpenWrt: "openwrt", SystemDeepin: "deepin", SystemPopOS: "popos", SystemZorin: "zorin",
+	SystemOpenWrt: "openwrt", SystemDeepin: "deepin", SystemUOS: "uos", SystemPopOS: "popos", SystemZorin: "zorin",
 	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
 }
 

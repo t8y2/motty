@@ -4,7 +4,7 @@
 // comes from Skill Icons (https://github.com/tandpfun/skill-icons), MIT. The Linux
 // glyph comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and is
 // split into theme-aware color layers. The Apple glyph comes from Devicon
-// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The QQ, WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
+// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, and the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com). The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The QQ, WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
 // respective trademark policies. SVG sources are compiled at build time with
 // `viva icons`; no SVG parser links into the app.
 // The sftp-* action glyphs were supplied with the SFTP interface design and
@@ -8670,6 +8670,27 @@ var Unraid = ui.Icon{
 		ui.LineTo(14.266, 10.668),
 		ui.LineTo(14.266, 6.406),
 		ui.LineTo(15.436, 6.406),
+		ui.ClosePath(),
+	},
+}
+
+// uos is a compiled vector icon.
+var Uos = ui.Icon{
+	ViewBox: 16.0,
+	Stroke:  2.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(0.0, 0.0),
+		ui.LineTo(3.0, 0.0),
+		ui.LineTo(3.0, 8.0),
+		ui.CubicTo(3.0, 10.7614, 5.23858, 13.0, 8.0, 13.0),
+		ui.CubicTo(10.7614, 13.0, 13.0, 10.7614, 13.0, 8.0),
+		ui.LineTo(13.0, 0.0),
+		ui.LineTo(16.0, 0.0),
+		ui.LineTo(16.0, 8.0),
+		ui.CubicTo(16.0, 12.4183, 12.4183, 16.0, 8.0, 16.0),
+		ui.CubicTo(3.58172, 16.0, 0.0, 12.4183, 0.0, 8.0),
 		ui.ClosePath(),
 	},
 }
