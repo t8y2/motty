@@ -216,6 +216,8 @@ func TestSavingTemporaryWorkspaceRequiresAName(t *testing.T) {
 func TestSavingTemporaryWorkspaceReportsAnUnwritableStoreWithoutChangingState(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
+	previousConfig := state.config
+	t.Cleanup(func() { state.config = previousConfig })
 	workspaceID := launchTemporaryWorkspace(t, state, 0, 1)
 	state.openWorkspaceSave(workspaceID)
 	state.workspaceSave.name = *text.NewEditor("Unwritable")
@@ -255,6 +257,8 @@ func TestSavingTemporaryWorkspaceReportsAnUnwritableStoreWithoutChangingState(t 
 
 func TestFailedWorkspaceSaveKeepsItsOpenSFTPViewAndConnection(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
+	previousConfig := state.config
+	t.Cleanup(func() { state.config = previousConfig })
 	workspaceID := state.deck.ActiveWorkspace()
 	state.temporaryWorkspaceColumns[workspaceID] = 1
 	state.openWorkspaceSave(workspaceID)
