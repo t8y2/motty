@@ -672,11 +672,14 @@ type State struct {
 	agentSetting  agentDescriptionCache
 	form          formDialog
 	formSerial    uint32
-	closeAsked    bool
-	sync          syncState
-	sshSync       sshSyncState
-	remote        remoteToolsView
-	edits         externalEdits
+	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
+	// that started against the old one can tell its result no longer belongs here.
+	syncEpoch  uint32
+	closeAsked bool
+	sync       syncState
+	sshSync    sshSyncState
+	remote     remoteToolsView
+	edits      externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText  string
 	fontSizeShown float32
