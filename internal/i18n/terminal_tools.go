@@ -138,6 +138,7 @@ type ToolsMessages struct {
 	FontPickerEmpty         string
 	FontPickerSample        string
 	FontPickerSampleSymbols string
+	FontPickerConfirm       string
 
 	// The fonts that draw what the terminal's font lacks.
 	FontFallbackRow         string

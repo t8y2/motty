@@ -1308,6 +1308,7 @@ var englishTools = ToolsMessages{
 	FontPickerEmpty:         "No font matches.",
 	FontPickerSample:        "The quick brown fox jumps over the lazy dog",
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
+	FontPickerConfirm:       "Confirm",
 
 	FontFallbackRow:         "Fallback fonts",
 	FontFallbackEmpty:       "Characters the font lacks, such as Chinese, are drawn by the system. Add fonts to choose which, in order.",
