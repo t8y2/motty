@@ -201,6 +201,59 @@ func TestAnUploadIntoATopLevelFolderTheServerWillNotMakeNamesIt(t *testing.T) {
 	}
 }
 
+// Test connection makes the folders but never uploads, and says which folder a
+// server would not make when the folder is really not there.
+func TestPrepareMakesTheFoldersWithoutUploading(t *testing.T) {
+	server, state := newFakeServer(t)
+	c := client(t, server, nil)
+	if err := c.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !state.collections["/dav/motty"] {
+		t.Fatal("Prepare did not make the folder")
+	}
+	if _, _, err := c.Get(context.Background()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Prepare uploaded: %v", err)
+	}
+}
+
+// refusingMKCOL builds a server whose MKCOL always says 409 and whose PROPFIND answers
+// by folder, as Jianguoyun's top level does; propfind is the status for /dav/motty.
+func refusingMKCOL(t *testing.T, propfind int) *Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "MKCOL":
+			w.WriteHeader(http.StatusConflict)
+		case r.Method == "PROPFIND" && r.URL.Path == "/dav/motty":
+			w.WriteHeader(propfind)
+		case r.Method == "PROPFIND":
+			w.WriteHeader(http.StatusMultiStatus)
+		default:
+			w.WriteHeader(http.StatusCreated)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return client(t, server, nil)
+}
+
+func TestPrepareNamesAFolderTheServerWillNotMakeAndDoesNotHave(t *testing.T) {
+	err := refusingMKCOL(t, http.StatusNotFound).Prepare(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `"motty"`) || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("the error does not name the missing folder: %v", err)
+	}
+}
+
+// Prepare must not fail a setup that uploading would accept: a server that
+// answers MKCOL with an error for a folder that is there, or that cannot be asked.
+func TestPrepareDoesNotFailWhereAnUploadWouldGoThrough(t *testing.T) {
+	for name, status := range map[string]int{"folder is there": http.StatusMultiStatus, "cannot be asked": http.StatusNotImplemented, "forbidden": http.StatusForbidden} {
+		if err := refusingMKCOL(t, status).Prepare(context.Background()); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestOnlySecureOrLoopbackAddressesAreAccepted(t *testing.T) {
 	for address, ok := range map[string]bool{
 		"https://dav.example.com/remote.php": true, "http://127.0.0.1:8080/dav": true, "http://localhost/dav": true, "http://[::1]/dav": true,
