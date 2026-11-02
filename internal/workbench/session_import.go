@@ -412,6 +412,12 @@ func (state *State) writeImportedSecrets(changes []vault.Change) string {
 			// than the prompt's own wording, which points at a session.
 			return state.messages.Tools.ImportWarningSecretsLocked
 		}
+		// A vault that could be opened still needs the system's store to keep
+		// its key the first time a secret is written, and that is where the user
+		// may have answered the keychain prompt with Deny.
+		if errors.Is(err, vault.ErrKeystoreDenied) {
+			return state.messages.Tools.ImportWarningSecretsDenied
+		}
 		return fmt.Sprintf(state.messages.Tools.ImportWarningSecretsFmt, state.vaultErrorText(err))
 	}
 	return ""
