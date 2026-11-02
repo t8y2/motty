@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/completion"
@@ -249,6 +251,101 @@ func TestCompletionUpdateWithoutANewVersionStaysUpToDate(t *testing.T) {
 	queueCompletionUpdate(state, completion.ImportStats{})
 	if state.status != state.messages.Completion.UpToDate {
 		t.Fatalf("status = %q, want the up-to-date message", state.status)
+	}
+}
+
+func TestCompletionCatalogStatusShowsProvenance(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	m := state.messages.Completion
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtin := state.completion.catalog
+	repo := fmt.Sprintf(m.CatalogRepoFmt, completion.RepositoryOwner+"/"+completion.RepositoryName, builtin.Commit[:12])
+	if !strings.Contains(status, repo) || !strings.Contains(status, m.CatalogOriginBuiltin) {
+		t.Fatalf("status %q lacks built-in provenance %q", status, repo)
+	}
+	if !strings.Contains(status, builtin.Release) {
+		t.Fatalf("status %q lost the release", status)
+	}
+
+	placeholder, err := completion.NewCatalog(completion.RepositoryName, "v9.9.9", "c", "MIT", []*completion.Node{{Token: "tool"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.completion.catalog = placeholder
+	status, err = state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf(m.CatalogDescriptionFmt, "v9.9.9", 1, 0); status != want {
+		t.Fatalf("placeholder commit status = %q, want %q", status, want)
+	}
+
+	nonhex, err := completion.NewCatalog(completion.RepositoryName, "v9.9.9", strings.Repeat("z", 40), "MIT", []*completion.Node{{Token: "tool"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.completion.catalog = nonhex
+	if status, err = state.completionCatalogStatus(); err != nil || strings.Contains(status, "@") {
+		t.Fatalf("non-hex commit status = %q, %v", status, err)
+	}
+}
+
+func TestCompletionCatalogStatusShowsAuditWarnings(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	catalog, _, err := completion.Import(
+		[]completion.SourceFile{{Name: "a/a.yaml", Data: []byte("name: a\n")}},
+		completion.Metadata{Source: completion.RepositoryName, Release: "v9.9.9", Commit: strings.Repeat("a", 40), License: "MIT"},
+		completion.ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.AuditWarnings() == 0 {
+		t.Fatal("the tiny test catalog should have soft audit warnings")
+	}
+	state.completion.catalog = catalog
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf(state.messages.Completion.AuditWarningsFmt, catalog.AuditWarnings())
+	if !strings.Contains(status, want) {
+		t.Fatalf("status %q lacks %q", status, want)
+	}
+}
+
+func TestCompletionCatalogStatusBoundsErrorText(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	state.completion.updateErr = fmt.Errorf("%s", strings.Repeat("bad\u202etext ", 100_000))
+	status, err := state.completionCatalogStatus()
+	if err == nil {
+		t.Fatal("the error disappeared")
+	}
+	if utf8.RuneCountInString(status) > completionStatusRunes {
+		t.Fatalf("status has %d runes, want at most %d", utf8.RuneCountInString(status), completionStatusRunes)
+	}
+	for _, r := range status {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+			t.Fatalf("status contains invisible character %U", r)
+		}
+	}
+}
+
+func TestCompletionStatusTextBoundsAndSanitizes(t *testing.T) {
+	text := "prefix " + strings.Repeat("y", 1000) + "\u202e\x1b end"
+	got := completionStatusText(text)
+	if utf8.RuneCountInString(got) > completionStatusRunes {
+		t.Fatalf("status text has %d runes, want at most %d", utf8.RuneCountInString(got), completionStatusRunes)
+	}
+	for _, r := range got {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			t.Fatalf("status text contains invisible character %U", r)
+		}
 	}
 }
 

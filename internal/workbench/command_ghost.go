@@ -78,41 +78,50 @@ func (state *State) noteGhostEntry(key, command string) {
 // (#219), and a single catalog candidate is offered last, so a host with
 // learning off still gets public completions.
 func (state *State) commandGhost(session *Session) (string, bool) {
+	rest, _, ok := state.commandGhostSource(session)
+	return rest, ok
+}
+
+// commandGhostSource also reports whether the suggestion came from the
+// catalog. Only that text is revalidated before it is typed; history is the
+// user's own input.
+func (state *State) commandGhostSource(session *Session) (rest string, fromCatalog, ok bool) {
 	h := &state.history
 	if h.suggestOff || h.inlineOff || session == nil || session.term == nil || session.term.shell == nil {
-		return "", false
+		return "", false, false
 	}
 	// Accepting is checked against one terminal's prompt and never typed into
 	// several at once, so a suggestion that could not be accepted is not shown.
 	if state.broadcast != 0 {
-		return "", false
+		return "", false, false
 	}
 	t := session.term
 	if t.suggestionPending != nil || t.preedit.Composing || !t.screen.Cursor().Visible {
-		return "", false
+		return "", false, false
 	}
 	if _, _, _, predicting := t.prediction.overlay(); predicting {
-		return "", false
+		return "", false, false
 	}
 	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	if h.on && state.historyAvailable(session) && !session.host.NoHistory {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
-			return rest, true
+			return rest, false, true
 		}
 		if rest, ok := cmdhistory.Suggest(state.everyGhostEntries(), line); ok {
-			return rest, true
+			return rest, false, true
 		}
 	}
-	return state.staticGhost(session, line)
+	rest, ok = state.staticGhost(session, line)
+	return rest, ok, ok
 }
 
 // acceptGhost types the offered text, or its first word, into the shell. It
 // reports false when there is nothing on offer, leaving the key to the shell.
 func (state *State) acceptGhost(session *Session, word bool) bool {
-	rest, ok := state.commandGhost(session)
+	rest, fromCatalog, ok := state.commandGhostSource(session)
 	if !ok {
 		return false
 	}
@@ -127,13 +136,15 @@ func (state *State) acceptGhost(session *Session, word bool) bool {
 	}
 	// Unlike the initial paint, this lookup sees all output already queued.
 	// A rejected acceptance is consumed; it must not become a program key.
-	if now, ok := state.commandGhost(current); !ok || now != rest {
+	now, nowFromCatalog, ok := state.commandGhostSource(current)
+	if !ok || now != rest {
 		return true
 	}
+	fromCatalog = nowFromCatalog
 	if word {
 		rest = firstWord(rest)
 	}
-	state.sendSuggestion(current, rest)
+	state.sendSuggestion(current, rest, fromCatalog)
 	return true
 }
 
