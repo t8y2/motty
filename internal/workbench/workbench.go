@@ -464,6 +464,7 @@ type State struct {
 	sftpMenu           sftpMenu
 	popups             popupMenus
 	selectedHostID     uint32
+	hostRevealID       uint32
 	activeSessionID    uint32
 	nextSessionID      uint32
 	nextHostID         uint32

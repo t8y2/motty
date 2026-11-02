@@ -211,8 +211,8 @@ func TestOpenCreatesPrivateVersionedDatabase(t *testing.T) {
 	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatalf("read user_version: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("user_version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("user_version = %d, want 2", version)
 	}
 
 	for _, table := range []string{"session_logs", "session_log_events"} {
@@ -292,9 +292,10 @@ func TestStartEventFinishRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Events: %v", err)
 	}
-	if len(events) != 3 {
-		t.Fatalf("events = %d, want 3", len(events))
+	if len(events) != 5 || events[0].Kind != EventStarted || events[4].Kind != EventFinished {
+		t.Fatalf("events do not include start and finish: %+v", events)
 	}
+	events = events[1:4]
 	for i, kind := range []EventKind{EventConnected, EventShellOpened, EventDisconnected} {
 		if events[i].RecordID != id || events[i].Kind != kind {
 			t.Fatalf("event %d = %+v", i, events[i])
@@ -821,7 +822,7 @@ func TestFinishIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Events: %v", err)
 	}
-	if len(events) != 0 {
+	if len(events) != 2 || events[0].Kind != EventStarted || events[1].Kind != EventFinished {
 		t.Fatalf("late event was stored: %+v", events)
 	}
 }
@@ -885,8 +886,8 @@ func TestEventTruncationAt128(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Events: %v", err)
 	}
-	if len(events) != maxEventsPerRecord {
-		t.Fatalf("events = %d, want %d", len(events), maxEventsPerRecord)
+	if len(events) != maxEventsPerRecord-1 {
+		t.Fatalf("events = %d, want 127 with the final slot reserved", len(events))
 	}
 	for i := 1; i < len(events); i++ {
 		if !events[i].At.After(events[i-1].At) {
@@ -957,7 +958,7 @@ func TestClearRespectsFavorites(t *testing.T) {
 	if got := eventCount(t, store, plainID); got != 0 {
 		t.Fatalf("Clear(false) kept %d events of a removed record", got)
 	}
-	if got := eventCount(t, store, favoriteID); got != 1 {
+	if got := eventCount(t, store, favoriteID); got != 2 {
 		t.Fatalf("Clear(false) touched the favorite's events: %d left", got)
 	}
 
@@ -972,8 +973,8 @@ func TestClearRespectsFavorites(t *testing.T) {
 	}
 	// VACUUM must not lose the schema version or leave an unusable file.
 	var version int
-	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 1 {
-		t.Fatalf("user_version after Clear(true) = %d, err = %v; want 1", version, err)
+	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
+		t.Fatalf("user_version after Clear(true) = %d, err = %v; want 2", version, err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -1053,6 +1054,7 @@ func TestNoTerminalOrAuthPayloadInStoredRows(t *testing.T) {
 	wantLogColumns := []string{
 		"id", "run_id", "host", "address", "account", "protocol", "started_at",
 		"ended_at", "status", "favorite", "reconnect_count", "reason", "truncated",
+		"catalog_id", "port", "shell_name", "target_kind",
 	}
 	if got := columnNames(t, store, "session_logs"); !slices.Equal(got, wantLogColumns) {
 		t.Fatalf("session_logs columns = %v, want %v (no arbitrary error/payload field)", got, wantLogColumns)
@@ -1293,7 +1295,7 @@ func TestStatsReportsTheJournalFootprint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats: %v", err)
 	}
-	if stats.Records != 2 || stats.Favorites != 1 || stats.Events != 2 || stats.Bytes < empty.Bytes {
+	if stats.Records != 2 || stats.Favorites != 1 || stats.Events != 4 || stats.Bytes < empty.Bytes {
 		t.Fatalf("stats = %+v (empty %+v)", stats, empty)
 	}
 }

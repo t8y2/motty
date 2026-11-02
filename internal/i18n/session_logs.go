@@ -5,8 +5,9 @@ package i18n
 // done with the records. Only connection metadata is stored, so nothing here
 // talks about terminal contents, recordings or replay.
 type SessionLogsMessages struct {
-	Title       string
-	Description string
+	FieldStopped string
+	Title        string
+	Description  string
 
 	// The search box and the four filters. The labels are what assistive
 	// technology reads on a trigger whose visible text is the current choice.
@@ -93,16 +94,35 @@ type SessionLogsMessages struct {
 	WriteFailed                             string
 
 	// Settings > Security: the local capture switch and what the journal holds.
-	SettingsGroup              string
-	SettingsCaptureRow         string
-	SettingsCaptureDescription string
-	SettingsStorageRow         string
-	SettingsStorageDescription string
-	SettingsStorageFmt         string
-	SettingsStorageUnavailable string
+	SettingsGroup                                                              string
+	SettingsCaptureRow                                                         string
+	SettingsCaptureDescription                                                 string
+	SettingsStorageRow                                                         string
+	SettingsStorageDescription                                                 string
+	SettingsStorageFmt                                                         string
+	SettingsStorageUnavailable                                                 string
+	EventStarted, EventHostKeyPrompt, EventAuthenticating                      string
+	EventFinished, EventRecovered, ResultSummaryFmt                            string
+	FieldRecovered, DurationRecoveredFmt, FieldHostname, FieldPort, FieldShell string
+	FilterOutcome, OutcomeAll, OutcomeNormal, OutcomeAbnormal                  string
+	Reopen, ChooseHost, LocateHost, CopyMetadata                               string
+	NewLocal                                                                   string
+	More, ClearSelectionFmt                                                    string
+	TargetChangedFmt, TargetChangedAgain, MetadataCopied, MetadataCopyFailed   string
 }
 
 var chineseSessionLogs = SessionLogsMessages{
+	FieldStopped:      "记录停止",
+	More:              "更多会话日志操作",
+	ClearSelectionFmt: "%s：本机日志库中本次选定的 %d 条记录，含 %d 条收藏。范围不受当前筛选影响。\n确认后只删除本次快照；后来新增的记录保留。清除未收藏时，后来被收藏的记录也会保留。\n活动连接不会关闭；删除后该会话不自动补录。命令历史、录制和诊断日志不受影响。",
+	NewLocal:          "新建本地终端",
+	Reopen:            "再次连接", ChooseHost: "选择主机", LocateHost: "定位主机", CopyMetadata: "复制元数据摘要",
+	TargetChangedFmt: "连接目标已改变。\n记录：%s\n当前：%s\n使用当前主机配置创建新会话？", TargetChangedAgain: "目标再次发生变化，请取消后重新确认。",
+	MetadataCopied: "已复制会话元数据", MetadataCopyFailed: "无法复制会话元数据",
+	FilterOutcome: "按结果筛选", OutcomeAll: "全部结果", OutcomeNormal: "正常结束", OutcomeAbnormal: "异常结束",
+	EventStarted: "开始会话", EventHostKeyPrompt: "等待主机密钥确认", EventAuthenticating: "认证中",
+	EventFinished: "会话结束", EventRecovered: "恢复时发现会话中断", ResultSummaryFmt: "依据记录结果：%s",
+	FieldRecovered: "恢复发现", DurationRecoveredFmt: "%s（截至恢复）", FieldHostname: "主机名", FieldPort: "端口", FieldShell: "Shell",
 	Title:       "会话日志",
 	Description: "记录从工作台发起连接的主机、开始时间与结束方式。只保存在本机，不含终端内容。",
 
@@ -191,7 +211,7 @@ var chineseSessionLogs = SessionLogsMessages{
 	No:                      "否",
 	Events:                  "事件",
 	EventsCountFmt:          "共 %d 条事件",
-	EventsTruncatedFmt:      "仅保留最早的 %d 条事件",
+	EventsTruncatedFmt:      "保留 %d 条事件（含最终结果，部分中间事件已省略）",
 	EventsEmpty:             "没有记录生命周期事件",
 	NoMoreInformation:       "没有为此会话保存更多信息。",
 	EventConnected:          "已连接",
@@ -239,6 +259,17 @@ var chineseSessionLogs = SessionLogsMessages{
 }
 
 var englishSessionLogs = SessionLogsMessages{
+	FieldStopped:      "Capture ended",
+	More:              "More session log actions",
+	ClearSelectionFmt: "%s: %d records selected from this computer's journal, including %d favorites, across all filters.\nOnly this selection will be deleted. New records are kept; clearing unfavorited records also protects entries favorited later.\nLive connections stay open; deleted sessions are not recorded again. Command history, recordings and diagnostics are unaffected.",
+	NewLocal:          "New local terminal",
+	Reopen:            "Connect again", ChooseHost: "Choose host", LocateHost: "Locate host", CopyMetadata: "Copy metadata summary",
+	TargetChangedFmt: "The target has changed.\nRecorded: %s\nCurrent: %s\nCreate a new session with the current host settings?", TargetChangedAgain: "The target changed again. Cancel and review it again.",
+	MetadataCopied: "Session metadata copied", MetadataCopyFailed: "Could not copy session metadata",
+	FilterOutcome: "Filter by outcome", OutcomeAll: "All outcomes", OutcomeNormal: "Ended normally", OutcomeAbnormal: "Ended abnormally",
+	EventStarted: "Session started", EventHostKeyPrompt: "Waiting for host key verification", EventAuthenticating: "Authenticating",
+	EventFinished: "Session ended", EventRecovered: "Interrupted session detected on recovery", ResultSummaryFmt: "From recorded result: %s",
+	FieldRecovered: "Recovered", DurationRecoveredFmt: "%s (until recovery)", FieldHostname: "Hostname", FieldPort: "Port", FieldShell: "Shell",
 	Title:       "Session Logs",
 	Description: "Connections opened from the workbench, when they started and how they ended. Stored locally, without terminal contents.",
 
@@ -327,7 +358,7 @@ var englishSessionLogs = SessionLogsMessages{
 	No:                      "No",
 	Events:                  "Events",
 	EventsCountFmt:          "%d events",
-	EventsTruncatedFmt:      "Only the first %d events are kept",
+	EventsTruncatedFmt:      "%d events retained, including the final result; intermediate events omitted",
 	EventsEmpty:             "No lifecycle events recorded",
 	NoMoreInformation:       "No more information is stored for this session.",
 	EventConnected:          "Connected",
