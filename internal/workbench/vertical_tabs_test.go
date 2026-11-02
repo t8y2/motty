@@ -15,7 +15,7 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 	state.Click(hitSettings)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
-	for _, id := range []ui.ID{hitSettingsTabsHorizontal, hitSettingsTabsVertical, hitSettingsVerticalTabsAutoHide} {
+	for _, id := range []ui.ID{hitSettingsTabsHorizontal, hitSettingsTabsVertical} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("missing General setting %v", id)
 		}
@@ -47,7 +47,7 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
 		frame := state.workspacePixelBounds(size)
-		if frame.X != verticalTabsWidth || frame.Width+frame.X != size.Width {
+		if frame.X <= 0 || frame.Width+frame.X != size.Width {
 			t.Fatalf("workspace does not make room for tabs: %+v", frame)
 		}
 		var previous ui.Rect
@@ -71,7 +71,8 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	first := state.workspaceTabs[0].ID
-	if hit, ok := hitByID(&canvas, hitTabList.At(int(first))); !ok || hit.Bounds.X+hit.Bounds.Width > navigationWidth {
+	if hit, ok := hitByID(&canvas, hitTabList.At(int(first))); !ok || state.verticalTabs.bounds.Width <= 0 ||
+		hit.Bounds.X+hit.Bounds.Width > state.verticalTabs.bounds.X+state.verticalTabs.bounds.Width {
 		t.Fatal("settings must retain the session list in its navigation sidebar")
 	}
 	state.Click(hitTabList.At(int(first)))
@@ -115,8 +116,8 @@ func TestVerticalTabsScrollNavigateAndReorder(t *testing.T) {
 	target := hitTabList.At(int(first))
 	press(state, target, from)
 	dragTo(state, target, to)
-	if state.tabDrag.drop.kind != dropReorder || state.tabDrag.drop.zone.Height != 2 {
-		t.Fatalf("vertical drop needs a horizontal insertion marker: %+v", state.tabDrag.drop)
+	if zone := state.tabDrag.drop.zone; state.tabDrag.drop.kind != dropReorder || zone.Width <= zone.Height {
+		t.Fatalf("a vertical list needs a marker that lies across it: %+v", state.tabDrag.drop)
 	}
 	release(state, target, to)
 	if got := tabOrder(state); got[0] != second || got[2] != first {
@@ -133,24 +134,92 @@ func TestVerticalTabsHoverDoesNotResizeWorkspace(t *testing.T) {
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
 	before := state.workspacePixelBounds(size)
-	if state.verticalTabs.bounds.Width != verticalTabsRail || before.X != verticalTabsRail {
-		t.Fatal("auto-hide must start as a compact rail")
+	rail := state.verticalTabs.bounds.Width
+	if rail <= 0 || before.X != rail {
+		t.Fatalf("auto-hide must start as a rail the workspace leaves room for: rail %v, workspace %+v", rail, before)
 	}
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: 20, Y: 100, Viewport: size})
+	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: rail / 2, Y: 100, Viewport: size})
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	if !result.Repaint || state.verticalTabs.bounds.Width != verticalTabsWidth || state.workspacePixelBounds(size) != before {
+	if !result.Repaint || state.verticalTabs.bounds.Width <= rail || state.workspacePixelBounds(size) != before {
 		t.Fatal("hover expansion must overlay rather than resize the workspace")
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: 500, Y: 300, Viewport: size})
+	expanded := state.verticalTabs.bounds.Width
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: size.Width - 100, Y: 300, Viewport: size})
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	if state.verticalTabs.bounds.Width != verticalTabsRail || state.workspacePixelBounds(size) != before {
+	if state.verticalTabs.bounds.Width != rail || state.workspacePixelBounds(size) != before {
 		t.Fatal("moving away must collapse the sidebar without resizing")
 	}
 	state.Click(hitVerticalTabsPin)
-	if state.verticalTabs.autoHide || state.workspacePixelBounds(size).X != verticalTabsWidth {
+	if state.verticalTabs.autoHide || state.workspacePixelBounds(size).X != expanded {
 		t.Fatal("pinning must keep the sidebar expanded")
+	}
+}
+
+// A rail of icons is no place to arrive at with the keyboard: the sidebar opens
+// while keyboard focus is in it, and a mouse click that leaves focus there does
+// not keep it open.
+func TestVerticalTabsOpenForKeyboardFocus(t *testing.T) {
+	state := newTestState(t, Options{})
+	openEmptyTab(state)
+	state.setTabOrientation(tabsVertical)
+	state.setVerticalTabsAutoHide(true)
+	size := ui.Size{Width: 1000, Height: 600}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	rail := state.verticalTabs.bounds.Width
+	tab := hitTabList.At(int(state.deck.ActiveWorkspace()))
+	canvas.Reset()
+	canvas.SetInteraction(ui.ID{}, ui.ID{}, tab, false)
+	state.Paint(&canvas, size)
+	if state.verticalTabs.bounds.Width != rail {
+		t.Fatal("a pointer-focused tab must not hold the sidebar open")
+	}
+	canvas.Reset()
+	canvas.SetInteraction(ui.ID{}, ui.ID{}, tab, true)
+	state.Paint(&canvas, size)
+	if state.verticalTabs.bounds.Width <= rail {
+		t.Fatal("keyboard focus on a tab must open the sidebar")
+	}
+}
+
+func TestTabPreferencesDefaultToHorizontalWhenTheSavedStateLacksThem(t *testing.T) {
+	state := newTestState(t, Options{})
+	state.setTabOrientation(tabsVertical)
+	state.setVerticalTabsAutoHide(true)
+	state.save()
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.TabOrientation != "vertical" {
+		t.Fatalf("saved: %+v, %v", saved, err)
+	}
+	// What an older build writes: the same state without the new fields.
+	saved.TabOrientation, saved.VerticalTabsAutoHide = "", false
+	if err := saveState(state.options.StatePath, saved); err != nil {
+		t.Fatal(err)
+	}
+	options := state.options
+	state.Close()
+	restored := newTestState(t, options)
+	if restored.tabOrientation != tabsHorizontal || restored.verticalTabs.autoHide || restored.tabStrip.vertical {
+		t.Fatalf("missing fields must restore the horizontal default: %v, auto-hide %v", restored.tabOrientation, restored.verticalTabs.autoHide)
+	}
+}
+
+func TestAutoHideSettingIsOfferedOnlyForVerticalTabs(t *testing.T) {
+	state := newTestState(t, Options{})
+	state.Click(hitSettings)
+	size := ui.Size{Width: 1400, Height: 1800}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsAutoHide); ok {
+		t.Fatal("horizontal tabs have nothing to auto-hide")
+	}
+	state.Click(hitSettingsTabsVertical)
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsAutoHide); !ok {
+		t.Fatal("vertical tabs must offer the auto-hide switch")
 	}
 }
 
@@ -168,7 +237,7 @@ func TestVerticalTabsLeaveRoomForFilesAndAssistant(t *testing.T) {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
 		files, panes := state.contextRect, state.workspacePixelBounds(size)
-		if files.Width <= 0 || files.X < verticalTabsWidth || panes.X < verticalTabsWidth ||
+		if files.Width <= 0 || files.X < state.verticalTabsReserve(size) || panes.X < state.verticalTabsReserve(size) ||
 			files.X+files.Width > size.Width-state.aiReserve(workspace, size)+1 {
 			t.Fatalf("panels overlap the tabs or assistant: files=%+v panes=%+v", files, panes)
 		}

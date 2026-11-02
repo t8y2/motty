@@ -116,6 +116,16 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	return changed
 }
 
+// verticalTabsKeyboardFocused says the keyboard has moved into the sidebar. A
+// rail of icons is no place to arrive at with Tab, so the sidebar opens while the
+// focus ring is on one of its controls, as it does under the pointer. Only a
+// visible (keyboard) focus counts: a click leaves focus on the tab and must not
+// pin the sidebar open.
+func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
+	focus := canvas.FocusVisible()
+	return focus.Scope() == hitTabList || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
+}
+
 func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	if state.tabOrientation != tabsVertical {
 		return
@@ -126,7 +136,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	compact := false
 	if terminal {
 		width := state.verticalTabsReserve(size)
-		compact = view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed
+		compact = view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(canvas)
 		if view.autoHide && !compact {
 			width = min(verticalTabsWidth, size.Width*0.6)
 		}
