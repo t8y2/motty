@@ -294,6 +294,52 @@ func TestWorkerRemovesALinkToAFolderAsTheLinkItIs(t *testing.T) {
 	}
 }
 
+// endlessRemote lists one more folder inside every folder it is asked about, as
+// a looping mount or a hostile server would.
+type endlessRemote struct{ *treeRemote }
+
+func (remote endlessRemote) ReadDir(directory string) ([]os.FileInfo, error) {
+	remote.listed = append(remote.listed, directory)
+	return []os.FileInfo{fakeInfo{name: "again", mode: os.ModeDir | 0o755}}, nil
+}
+
+func TestWorkerGivesUpOnATreeThatNeverEnds(t *testing.T) {
+	remote := endlessRemote{newTreeRemote(map[string][]os.FileInfo{"/loop": nil}, nil)}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveDirectory("/loop") {
+		t.Fatal("the removal was not queued")
+	}
+	if result := waitResult(t, worker); result.Err == nil {
+		t.Fatal("an endless tree was walked to its end")
+	}
+	if len(remote.listed) > maxRemoveDepth+2 {
+		t.Fatalf("listed %d folders before giving up", len(remote.listed))
+	}
+	if len(remote.removed) != 0 {
+		t.Fatalf("removed %q from a tree that was never finished", remote.removed)
+	}
+}
+
+func TestWorkerRefusesToRemoveThroughAnEntryNamedLikeAPath(t *testing.T) {
+	remote := newTreeRemote(map[string][]os.FileInfo{
+		"/data": {fakeInfo{name: "../other", size: 1}},
+	}, nil)
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveDirectory("/data") {
+		t.Fatal("the removal was not queued")
+	}
+	if result := waitResult(t, worker); !errors.Is(result.Err, ErrPathTraversal) {
+		t.Fatalf("remove directory error = %v, want path traversal", result.Err)
+	}
+	if len(remote.removed) != 0 {
+		t.Fatalf("removed %q", remote.removed)
+	}
+}
+
 func BenchmarkEntriesFrom(b *testing.B) {
 	infos := make([]os.FileInfo, 128)
 	for index := range infos {

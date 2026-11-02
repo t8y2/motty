@@ -220,7 +220,7 @@ func TestWorkerRemovesDirectoryWithItsContentsOverSFTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(kept, filepath.Join(directory, "kept-link")); err != nil {
-		t.Logf("no symbolic link to test with: %v", err)
+		t.Skipf("symbolic links are not available here: %v", err)
 	}
 
 	result := requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
@@ -236,6 +236,77 @@ func TestWorkerRemovesDirectoryWithItsContentsOverSFTP(t *testing.T) {
 
 	result = requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
 	requireProtocolError(t, result, os.ErrNotExist)
+}
+
+// Links nested in the tree are removed as links, whether they point at an
+// absolute path or climb out with "..": what they lead to is not the folder's.
+func TestWorkerRemovalNeverReachesThroughNestedLinks(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	workspace := filepath.Join(root, "workspace")
+	outsideAbsolute := filepath.Join(root, "outside-absolute")
+	outsideRelative := filepath.Join(root, "outside-relative")
+	for _, directory := range []string{filepath.Join(workspace, "deep", "deeper"), outsideAbsolute, outsideRelative} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{
+		filepath.Join(workspace, "deep", "deeper", "own.txt"),
+		filepath.Join(outsideAbsolute, "precious.txt"),
+		filepath.Join(outsideRelative, "precious.txt"),
+	} {
+		if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outsideAbsolute, filepath.Join(workspace, "deep", "to-absolute")); err != nil {
+		t.Skipf("symbolic links are not available here: %v", err)
+	}
+	if err := os.Symlink("../../../outside-relative", filepath.Join(workspace, "deep", "deeper", "to-relative")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("workspace"), worker, OperationRemoveDirectory)
+	if result.Err != nil {
+		t.Fatalf("remove directory result = %+v", result)
+	}
+	if _, err := os.Lstat(workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the workspace still exists: %v", err)
+	}
+	for _, outside := range []string{outsideAbsolute, outsideRelative} {
+		if content, err := os.ReadFile(filepath.Join(outside, "precious.txt")); err != nil || string(content) != "data" {
+			t.Fatalf("%s lost its content: %q, %v", outside, content, err)
+		}
+	}
+}
+
+// A folder that cannot be listed is reported as unreadable, not as the "not
+// empty" the server answers when asked to remove it anyway.
+func TestWorkerRemovalReportsAFolderItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission bits do not stop this user from listing a folder")
+	}
+	worker, root := newProtocolWorker(t)
+	locked := filepath.Join(root, "workspace", "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "hidden.txt"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("workspace"), worker, OperationRemoveDirectory)
+	requireProtocolError(t, result, os.ErrPermission)
+	if !strings.Contains(result.Err.Error(), "workspace/locked") {
+		t.Fatalf("the error does not name the folder: %v", result.Err)
+	}
+	if _, err := os.Stat(locked); err != nil {
+		t.Fatalf("the unreadable folder was touched: %v", err)
+	}
 }
 
 // A link to a folder is deleted as the link it is: what it points at stays.
