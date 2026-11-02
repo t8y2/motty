@@ -188,20 +188,21 @@ func TestTabPreferencesDefaultToHorizontalWhenTheSavedStateLacksThem(t *testing.
 	state := newTestState(t, Options{})
 	state.setTabOrientation(tabsVertical)
 	state.setVerticalTabsAutoHide(true)
+	state.setVerticalTabsGrouping(true)
 	state.save()
 	saved, _, err := loadState(state.options.StatePath)
-	if err != nil || saved.TabOrientation != "vertical" {
+	if err != nil || saved.TabOrientation != "vertical" || !saved.VerticalTabsGrouping {
 		t.Fatalf("saved: %+v, %v", saved, err)
 	}
 	// What an older build writes: the same state without the new fields.
-	saved.TabOrientation, saved.VerticalTabsAutoHide = "", false
+	saved.TabOrientation, saved.VerticalTabsAutoHide, saved.VerticalTabsGrouping = "", false, false
 	if err := saveState(state.options.StatePath, saved); err != nil {
 		t.Fatal(err)
 	}
 	options := state.options
 	state.Close()
 	restored := newTestState(t, options)
-	if restored.tabOrientation != tabsHorizontal || restored.verticalTabs.autoHide || restored.tabStrip.vertical {
+	if restored.tabOrientation != tabsHorizontal || restored.verticalTabs.autoHide || restored.verticalTabs.grouping || restored.tabStrip.vertical {
 		t.Fatalf("missing fields must restore the horizontal default: %v, auto-hide %v", restored.tabOrientation, restored.verticalTabs.autoHide)
 	}
 }
