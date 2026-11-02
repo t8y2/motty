@@ -181,6 +181,10 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 	if previous != paneID {
 		// The candidate list belongs to the terminal that opened it.
 		state.closeCompletionList()
+		// So does find mode: the bar replaces the shared rail, and a find left
+		// open on a pane that lost focus would toggle the rail with every
+		// switch, resizing both PTYs and clearing their selections.
+		state.closePaneFind(workspaceID, previous)
 	}
 	if previous != paneID && state.viewport.Width > 0 && state.viewport.Height > 0 {
 		state.fitWorkspaceTerminals(workspaceID)

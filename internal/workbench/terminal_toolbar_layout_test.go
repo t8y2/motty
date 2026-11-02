@@ -243,6 +243,66 @@ func TestSwitchingActiveSplitPaneKeepsSizesAndSelection(t *testing.T) {
 	}
 }
 
+func TestSwitchingAwayFromAPaneInFindModeKeepsSizesAndSelection(t *testing.T) {
+	state, world, _, _ := liveSession(t)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 || len(world.conns) < 2 {
+		t.Fatalf("split has %d sessions and %d connections", len(state.sessions), len(world.conns))
+	}
+	secondConn := world.conns[1]
+	secondConn.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	secondShell := secondConn.shell(t)
+	secondShell.say("ready\r\n")
+	state.Wake()
+
+	first, second := &state.sessions[0], &state.sessions[1]
+	if !state.ActivatePane(first.ID) {
+		t.Fatal("activate the first split")
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	state.openTerminalFind(first)
+	if !state.ActivatePane(second.ID) {
+		t.Fatal("activate the second split")
+	}
+	if first.term.find.open {
+		t.Fatal("switching panes left find open on the inactive pane")
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		geometry := state.layoutForSession(session.ID)
+		if cols, rows := session.term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
+			t.Fatalf("session %d screen=%dx%d geometry=%dx%d", session.ID, cols, rows, geometry.cols, geometry.rows)
+		}
+	}
+
+	second.term.write([]byte("select these words\r\n"))
+	second.term.selection.selectRange(
+		second.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		second.term.screen.PointAt(term.Position{Row: 0, Column: 5}),
+	)
+	secondColsBefore, secondRowsBefore := second.term.screen.Size()
+	secondResizes := len(secondShell.resizes)
+	selectionBefore := second.term.selection
+
+	if !state.ActivatePane(first.ID) {
+		t.Fatal("activate the first split again")
+	}
+	if cols, rows := second.term.screen.Size(); cols != secondColsBefore || rows != secondRowsBefore {
+		t.Fatalf("switching back resized the inactive pane: %dx%d -> %dx%d",
+			secondColsBefore, secondRowsBefore, cols, rows)
+	}
+	if len(secondShell.resizes) != secondResizes {
+		t.Fatalf("switching back resized the PTY: %d -> %d", secondResizes, len(secondShell.resizes))
+	}
+	if !second.term.selection.selected || second.term.selection != selectionBefore {
+		t.Fatalf("switching back changed the inactive selection: before %+v, after %+v",
+			selectionBefore, second.term.selection)
+	}
+}
+
 func TestSwitchingActiveSplitPaneKeepsSizesWithInputNotice(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
