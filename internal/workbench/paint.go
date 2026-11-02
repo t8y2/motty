@@ -297,8 +297,6 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintImportSessionsDialog(canvas, viewport)
 	case modalFontPicker:
 		state.paintFontPicker(canvas, viewport)
-	case modalInterfaceFont:
-		state.paintInterfaceFontPicker(canvas, viewport)
 	case modalOutboundProxy:
 		state.paintOutboundProxyDialog(canvas, viewport)
 	case modalForm:

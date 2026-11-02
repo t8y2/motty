@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 var testFonts = []string{"Fira Code", "Iosevka", "JetBrains Mono", "Menlo"}
@@ -359,5 +360,15 @@ func TestFontPickerCannotConfirmWhatTheButtonRefuses(t *testing.T) {
 	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
 	if state.modal != modalFontPicker || state.fonts.family != "" {
 		t.Fatalf("Enter confirmed an empty list: modal %d, family %q", state.modal, state.fonts.family)
+	}
+}
+
+func TestTheTerminalFontRowsDescriptionsFollowTheLanguage(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.addFallbackFont("Iosevka")
+	english, englishFallback := state.fontDescription(), state.fallbackDescription()
+	state.setLanguage(i18n.Chinese)
+	if state.fontDescription() == english || state.fallbackDescription() == englishFallback {
+		t.Fatalf("the descriptions stayed in English: %q, %q", state.fontDescription(), state.fallbackDescription())
 	}
 }

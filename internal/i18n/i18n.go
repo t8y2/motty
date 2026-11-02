@@ -132,6 +132,7 @@ type Messages struct {
 	SettingsInterfaceFontDescription       string
 	SettingsInterfaceFontDefault           string
 	SettingsInterfaceFontCurrentFmt        string
+	SettingsInterfaceFontUnsupportedFmt    string
 	SettingsTabOrientation                 string
 	SettingsTabOrientationDescription      string
 	SettingsTabsHorizontal                 string

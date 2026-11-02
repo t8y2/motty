@@ -413,7 +413,6 @@ const (
 	modalSnippet
 	modalImportSessions
 	modalFontPicker
-	modalInterfaceFont
 	modalOutboundProxy
 	modalForm
 	modalRemoteTools

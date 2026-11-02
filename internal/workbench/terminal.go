@@ -1194,9 +1194,6 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalFontPicker {
 		return state.scrollFontPicker(event)
 	}
-	if state.modal == modalInterfaceFont {
-		return state.scrollInterfaceFontPicker(event)
-	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
 	}

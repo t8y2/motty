@@ -136,6 +136,7 @@ var EnglishMessages = Messages{
 	SettingsInterfaceFontDescription:       "The font of the window, its menus and pages; the terminal's font is set apart.",
 	SettingsInterfaceFontDefault:           "Default",
 	SettingsInterfaceFontCurrentFmt:        "Now: %s. Any installed font can be used.",
+	SettingsInterfaceFontUnsupportedFmt:    "“%s” is not in use: this platform cannot change the interface font.",
 	SettingsTabOrientation:                 "Tab orientation",
 	SettingsTabOrientationDescription:      "Show session tabs across the top or in the left sidebar.",
 	SettingsTabsHorizontal:                 "Horizontal",

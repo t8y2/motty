@@ -653,7 +653,9 @@ func (state *State) restoreLocal(saved savedState) {
 	state.syncNativeAppearance()
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
-	state.setInterfaceFont(strings.TrimSpace(saved.InterfaceFont))
+	// Only the choice: what is in effect is decided once the window starts, when
+	// the platform has been asked what it can follow (validateInterfaceFont).
+	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
 	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == ui.MonoClassic
 	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && ui.MonoFamily(family) != ui.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false

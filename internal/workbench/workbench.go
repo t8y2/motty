@@ -1115,10 +1115,6 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitFontPickerSearch {
 			return &state.fonts.search
 		}
-	case modalInterfaceFont:
-		if hit == hitInterfaceFontSearch {
-			return &state.uiFont.search
-		}
 	case modalOutboundProxy:
 		switch hit {
 		case hitOutboundProxyAddress:
@@ -1297,9 +1293,6 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalFontPicker:
 		state.clickFontPicker(id)
-		return
-	case modalInterfaceFont:
-		state.clickInterfaceFontPicker(id)
 		return
 	case modalOutboundProxy:
 		state.clickOutboundProxy(id)
@@ -2213,9 +2206,6 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.fontPickerKey(event); handled {
-		return result
-	}
-	if result, handled := state.interfaceFontPickerKey(event); handled {
 		return result
 	}
 	if result, handled := state.settingsKey(event); handled {

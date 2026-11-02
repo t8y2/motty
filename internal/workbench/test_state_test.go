@@ -35,6 +35,14 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = func(func()) func() { return func() {} }
 	}
+	if options.SetInterfaceFont == nil {
+		// Nor may a test change the process's interface font, or read the fonts of
+		// the machine it runs on.
+		options.SetInterfaceFont = func(string) bool { return true }
+	}
+	if options.FontFamilies == nil {
+		options.FontFamilies = func() []string { return nil }
+	}
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
