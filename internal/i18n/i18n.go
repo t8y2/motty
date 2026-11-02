@@ -148,6 +148,10 @@ type Messages struct {
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
 	SettingsNetworkProxyDirect             string
+	SettingsToolbarPosition                string
+	SettingsToolbarPositionDescription     string
+	SettingsToolbarPositionLeft            string
+	SettingsToolbarPositionRight           string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

@@ -113,7 +113,7 @@ func (state *State) terminalScrollbarPointer(event ui.PointerEvent) (ui.EventRes
 		t.barDragging = false
 		return ui.EventResult{}, false
 	}
-	layout := terminalLayoutWithInfoBar(event.Viewport, state.cellWidth, state.cellHeight, state.terminalInfoBarHeight(session.ID), state.padding())
+	layout := state.terminalLayoutForEvent(session.ID, event.Viewport)
 	geometry := state.terminalScrollArea(nil, session, layout.area, 1).Geometry()
 	switch event.Kind {
 	case ui.PointerDown:

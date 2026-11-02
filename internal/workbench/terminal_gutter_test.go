@@ -32,7 +32,7 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local).Unix()
 	state.wallClock = func() int64 { return stamp }
 	state.setTerminalGutter(gutterBoth)
-	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	geometry := state.layoutForSession(session.ID)
 	session.term.write([]byte("alpha\r\nbeta\r\n"))
 	want := time.Unix(stamp, 0).Format("15:04:05")
 
@@ -55,9 +55,9 @@ func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	state, session, _ := selectionState()
 	state.viewport.Width = 600
 	state.setTerminalGutter(gutterOff)
-	before := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	before := state.layoutForSession(session.ID)
 	state.setTerminalGutter(gutterBoth)
-	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	geometry := state.layoutForSession(session.ID)
 	if geometry.cols >= before.cols || geometry.left <= before.left {
 		t.Fatalf("gutter did not take room: %+v -> %+v", before, geometry)
 	}

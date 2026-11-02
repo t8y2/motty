@@ -102,6 +102,7 @@ const (
 	iconClock
 	iconPaperclip
 	iconImage
+	iconSave
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -204,6 +205,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
 		state.paintAIPanel(canvas, size)
+		state.paintWorkspaceSideRail(canvas, size)
 	} else {
 		workspace := workspaceSlot.Rect().Inset(ui.All(workspaceBorder))
 		canvas.Clip(workspace)
@@ -1681,6 +1683,7 @@ var lucideIcons = [...]ui.Icon{
 	iconPlug:           icons.Plug,
 	iconPaperclip:      icons.Paperclip,
 	iconImage:          icons.Image,
+	iconSave:           icons.Download,
 	iconPaste:          icons.ClipboardPaste,
 	iconSelectAll:      icons.SquareDashed,
 	iconEraser:         icons.Eraser,

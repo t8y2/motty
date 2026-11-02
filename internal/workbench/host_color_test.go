@@ -128,7 +128,7 @@ func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	header, _ := state.connectionBarColors(session, false)
-	for _, id := range []ui.ID{contextID(hitSFTPRefresh), state.paneIdentity(session, hitSFTPOpen)} {
+	for _, id := range []ui.ID{contextID(hitSFTPRefresh), hitSFTPOpen} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok {
 			t.Fatal("missing header action", id)

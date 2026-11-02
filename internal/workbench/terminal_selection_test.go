@@ -24,7 +24,8 @@ func selectionState() (*State, *Session, terminalGeometry) {
 	live.live = true // a shell has spoken: the terminal is what the window shows
 	state.sessions = []Session{{ID: 1, Address: "test", term: live}}
 	state.activeSessionID = 1
-	return state, &state.sessions[0], terminalLayout(size, cellWidth, cellHeight, padNormal.padding())
+	chrome, _ := state.terminalChromeForSession(1)
+	return state, &state.sessions[0], terminalLayoutWithChrome(size, cellWidth, cellHeight, chrome, padNormal.padding())
 }
 
 func cellPoint(geometry terminalGeometry, row, column int, cellWidth, cellHeight float32) (float32, float32) {
@@ -361,6 +362,25 @@ func TestDraggingAboveTheGridScrollsBackIntoHistory(t *testing.T) {
 	copied := terminal.selection.text(terminal.screen)
 	if strings.Count(copied, "\n") < 4 {
 		t.Fatalf("selection lost the rows scrolled past: %q", copied)
+	}
+}
+
+func TestDraggingInsideTheActiveGridDoesNotArmAutoScroll(t *testing.T) {
+	state, session, geometry := selectionState()
+	terminal := session.term
+	fillHistory(t, terminal, 30)
+	hit := hitTerminalList.At(int(session.ID))
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+		X: x, Y: y, Viewport: state.viewport,
+	})
+	state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+		X: x + state.cellWidth, Y: y, Viewport: state.viewport,
+	})
+	if terminal.selection.edge.direction != 0 {
+		t.Fatalf("a pointer inside the active grid armed auto-scroll: %+v", terminal.selection.edge)
 	}
 }
 

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -22,143 +23,69 @@ type barTool struct {
 	disabled bool
 	style    iconButtonStyle
 	groupEnd bool // the group of pane controls ends here: a wider gap follows
-	slot     flex.Box
+	rect     ui.Rect
 }
 
-// maxBarTools is how many tools the bar can hold: transfer, Files, export log, export
-// recording, record, the resource monitor, close, the two splits and broadcast.
-const maxBarTools = 10
+// maxBarTools is how many tools the shared rail can hold: transfer, Files, save
+// output, export log, export recording, record, the resource monitor, remote
+// tools, close, the two splits and broadcast.
+const maxBarTools = 14
 
 const (
-	barToolSize = float32(24)
-	barToolGap  = float32(4)
+	terminalToolRailExtent = float32(40)
+	barToolSize            = float32(24)
+	barToolGap             = float32(4)
+	terminalBarToolSize    = float32(32)
+	terminalBarToolGap     = float32(4)
 )
 
-// paintTerminalPage draws a session: the active pane gets the complete command
-// bar while inactive split panes keep only a compact identity and status bar.
-// The page is a column: the window bar's room, the pane's bar, then the terminal
-// whose cells paintGrid draws.
+// paintTerminalPage draws a session. Active panes get a configurable tool rail
+// with only connection latency and actions; inactive split panes and find mode
+// keep the compact identity bar that makes their context clear.
 func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *Session) {
 	state.wantLatencyProbe(session, canvas)
-	pal := state.pal
-	showStats := session.stats != nil && (session.ID != state.activeSessionID || !state.monitorShown(state.deck.ActiveWorkspace()))
-	barHeight := state.terminalInfoBarHeight(session.ID)
-	geometry := terminalLayoutWithInfoBar(size, state.cellWidth, state.cellHeight, barHeight, state.padding())
+	chrome, ok := state.terminalChromeForSession(session.ID)
+	if !ok {
+		chrome = terminalChrome{top: infoBarHeight}
+	}
+	geometry := terminalLayoutWithChrome(size, state.cellWidth, state.cellHeight, chrome, state.padding())
 	inactive := state.paneIsInactive(session.ID)
 	barBackground, barBorder := state.connectionBarColors(session, inactive)
-	inSplit := state.paneInSplit(session.ID)
 	finding := !inactive && session.term.find.open
-
-	// The right edge, from the right: Files, export log, export recording,
-	// record, the opt-in resource monitor, then a gap and the two splits. The
-	// left carries the connection's light, its words when it is not simply
-	// connected, and the monitor's readout. Each button is an icon that says what
-	// it does in a tooltip. The list is in painting order, Files first; the row
-	// lays it out from the other end.
-	var toolList [maxBarTools]barTool
-	tools := toolList[:0]
-	if !inactive && !finding {
-		if session.host.isSSH() && !session.isLocal() {
-			tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
-		}
-		filesStyle := iconButtonQuiet
-		if context, ok := state.deck.Context(state.deck.ActiveWorkspace()); ok && context.Open {
-			filesStyle = iconButtonActive
-		}
-		filesHint := state.messages.TipFiles
-		if session.isLocal() {
-			filesHint = state.messages.TipFilesLocal
-		}
-		tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
-		tools = append(tools, barTool{id: hitConnExport, icon: iconFileDown, hint: state.messages.ConnExportLog, style: iconButtonQuiet})
-		tools = append(tools, barTool{id: hitTerminalRecordingExport, icon: iconFilm, hint: state.messages.RecordingExport, disabled: len(session.term.recording.events) == 0, style: iconButtonQuiet})
-		recordIcon, recordHint, recordStyle := uint8(iconRecord), state.messages.TipRecordStart, iconButtonQuiet
-		if session.term.recording.active {
-			recordIcon, recordHint, recordStyle = iconRecordStop, state.messages.TipRecordStop, iconButtonDanger
-		}
-		tools = append(tools, barTool{id: hitTerminalRecord, icon: recordIcon, hint: recordHint, disabled: session.term.shell == nil, style: recordStyle})
-		if hint, style, offered := state.remoteStatsToggle(session); offered {
-			tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
-		}
-		if inSplit {
-			tools = append(tools, barTool{id: hitPaneClose, icon: iconClose, hint: state.messages.PaneClose, style: iconButtonQuiet, groupEnd: true})
-		}
-		tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, style: iconButtonQuiet, groupEnd: !inSplit})
-		tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, style: iconButtonQuiet})
-		if inSplit {
-			hint, style := state.messages.Tools.BroadcastStart, iconButtonQuiet
-			if state.broadcasting(session.ID) {
-				hint, style = state.messages.Tools.BroadcastStop, iconButtonActive
-			}
-			tools = append(tools, barTool{id: hitBroadcast, icon: iconRadio, hint: hint, style: style})
-		}
+	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
+	status, _ := state.sessionStatus(session)
+	if inactive || finding {
+		state.clearTerminalRail(session)
 	}
-
-	status, dot := state.sessionStatus(session)
-	tools = state.orderToolbarTools(toolbarTerminal, tools, true)
 	title := session.Title
 	if title == "" {
 		title = session.Address
 	}
-	// Anything but a plain connection says so in words.
-	showStatus := session.phase != sshconn.PhaseConnected || !session.term.live
-	showProgress := !session.isLocal() && !session.term.live && !(inSplit && session.quietOK())
-	var light, spinner, statsSlot, progressSlot flex.Box
+	var spinner, inputNotice flex.Box
 	var find findBarSlots
-	var inputNotice flex.Box
 
-	// The bar is a step darker than the window bar above it and a step lighter
-	// than the terminal below, so the three read as separate strips.
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
-			switch {
-			case inactive:
-				spinner = state.declareInactiveBar(f, size.Width, title, status, session)
-			case finding:
-				find = state.declareFindBar(f, session)
-			default:
-				f.Row().Fill().PadSides(0, termPadX, 0, termPadX-2).Items(flex.Center).Children(func() {
-					// The light's box hangs two pixels outside the bar's padding: the
-					// light itself sits on the padding's edge.
-					f.Row().Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(flex.Center).Children(func() {
-						light = f.Slot().Size(16, 16)
-						// The name stays beside the light, as it does beside the terminal
-						// icon of a pane that is not active: only the icon changes with focus.
-						f.Text(title).FontSize(barTitleSize).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).
-							Width(canvas.TextWidthWeight(title, barTitleSize, ui.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
-						if showStatus {
-							f.Text(status).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(22).
-								Width(canvas.TextWidthWeight(status, metrics.FontSizeS, ui.WeightMedium)+2).MarginSides(0, 4, 0, 0)
-						}
-						state.declareLatencyTag(f, canvas, session)
-						if showStats {
-							// The readout drops the metrics that do not fit (see
-							// paintRemoteStatsReadout): it gets the room, and keeps clear of the tools.
-							statsSlot = f.Slot().Grow(1).Height(infoBarHeight).MinWidth(72).MarginSides(0, 12, 0, 0)
-						}
-						if showProgress {
-							// The log is up in place of the connection page: say how to get it back.
-							progressSlot = f.Slot().Size(196, infoBarHeight).Shrink(1)
-						}
-					})
-					f.Row().Gap(barToolGap).Shrink(0).Items(flex.Center).Children(func() {
-						for index := len(tools) - 1; index >= 0; index-- {
-							slot := f.Slot().Size(barToolSize, barToolSize).Shrink(0)
-							if tools[index].groupEnd {
-								slot = slot.MarginSides(0, barToolGap, 0, 0)
-							}
-							tools[index].slot = slot
-						}
-					})
-				})
-			}
-			f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
-		})
-		if barHeight > infoBarHeight {
-			inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+		switch {
+		case inactive || finding:
+			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
+				switch {
+				case inactive:
+					spinner = state.declareInactiveBar(f, size.Width, title, status, session)
+				case finding:
+					find = state.declareFindBar(f, session)
+				}
+				f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
+			})
+			f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+		default:
+			f.Column().Grow(1).FillHeight().Children(func() {
+				if showingInputNotice {
+					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+				}
+				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+			})
 		}
-		f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
 	})
 	f.End()
 
@@ -173,41 +100,226 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 		// and a green dot on the far side of an inactive bar would read as that.
 	case finding:
 		state.paintFindBarSlots(canvas, session, find)
-	default:
-		for index := range tools {
-			tool := &tools[index]
-			state.paintIconButton(canvas, tool.id, tool.icon, tool.slot.Rect(), tool.hint, tool.disabled, tool.style, barBackground)
-		}
-		spot := light.Rect()
-		if session.busy {
-			// One spoke step every 125 ms, so the screen is asked for a frame at
-			// exactly that pace; an idle window asks for none.
-			phase := components.SpinnerPhase(canvas.Now() / spinnerStep)
-			components.PaintSpinner(canvas, state.Theme(), spot, phase)
-			canvas.RequestFrameIn(spinnerStep)
-		} else {
-			kind, _ := state.sessionLight(session)
-			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, barBackground)
-		}
-		if showStats {
-			slot := statsSlot.Rect()
-			if len(tools) > 0 && slot.X+slot.Width > tools[len(tools)-1].slot.Rect().X {
-				// A pane too narrow for its tools: the readout is what gives way.
-				slot.Width = 0
-			}
-			state.paintRemoteStatsReadout(canvas, session.stats, slot.X, slot.Y, slot.X+slot.Width)
-		}
-		if showProgress {
-			components.BeginButtonRow(canvas, state.theme, progressSlot.Rect()).Size(components.ButtonSizeXSmall).Paint(
-				components.ButtonAction{ID: hitConnProgress, Label: state.messages.ConnShowProgress, Variant: components.ButtonGhost})
-		}
 	}
 
 	state.paintGrid(canvas, session, geometry)
 	state.paintCompletionList(canvas, session, geometry)
-	if barHeight > infoBarHeight {
+	if showingInputNotice {
 		state.paintTerminalInputNotice(canvas, session, inputNotice.Rect())
 	}
+}
+
+func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
+	if session == nil || session.term == nil || state.paneIsInactive(session.ID) || session.term.find.open {
+		return nil
+	}
+	tools := toolList[:0]
+	if session.host.isSSH() && !session.isLocal() {
+		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
+	}
+	filesStyle := iconButtonQuiet
+	if state.filesPanelShown() {
+		filesStyle = iconButtonActive
+	}
+	filesHint := state.messages.TipFiles
+	if session.isLocal() {
+		filesHint = state.messages.TipFilesLocal
+	}
+	tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
+	tools = append(tools, barTool{id: hitConnExport, icon: iconFileDown, hint: state.messages.ConnExportLog, style: iconButtonQuiet})
+	tools = append(tools, barTool{id: hitTerminalRecordingExport, icon: iconFilm, hint: state.messages.RecordingExport, disabled: len(session.term.recording.events) == 0, style: iconButtonQuiet})
+	recordIcon, recordHint, recordStyle := uint8(iconRecord), state.messages.TipRecordStart, iconButtonQuiet
+	if session.term.recording.active {
+		recordIcon, recordHint, recordStyle = iconRecordStop, state.messages.TipRecordStop, iconButtonDanger
+	}
+	tools = append(tools, barTool{id: hitTerminalRecord, icon: recordIcon, hint: recordHint, disabled: session.term.shell == nil, style: recordStyle})
+	tools = append(tools, barTool{id: hitTerminalSaveOutput, icon: iconSave, hint: state.messages.Tools.MenuSaveOutput, style: iconButtonQuiet})
+	if hint, style, offered := state.remoteStatsToggle(session); offered {
+		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
+	}
+	tools = append(tools, barTool{id: hitRemoteToolsOpen, icon: iconWrench, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
+	inSplit := state.paneInSplit(session.ID)
+	if inSplit {
+		tools = append(tools, barTool{id: hitPaneClose, icon: iconClose, hint: state.messages.PaneClose, style: iconButtonQuiet, groupEnd: true})
+	}
+	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, style: iconButtonQuiet, groupEnd: !inSplit})
+	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, style: iconButtonQuiet})
+	if inSplit {
+		hint, style := state.messages.Tools.BroadcastStart, iconButtonQuiet
+		if state.broadcasting(session.ID) {
+			hint, style = state.messages.Tools.BroadcastStop, iconButtonActive
+		}
+		tools = append(tools, barTool{id: hitBroadcast, icon: iconRadio, hint: hint, style: style})
+	}
+	ordered := state.orderToolbarTools(toolbarTerminal, tools, false)
+	if session.showLog && !session.term.live {
+		ordered = append(ordered, barTool{})
+		copy(ordered[1:], ordered[:len(ordered)-1])
+		ordered[0] = barTool{
+			id: hitConnProgress, icon: iconChevronLeft, hint: state.messages.ConnShowProgress,
+			style: iconButtonQuiet,
+		}
+	}
+	return ordered
+}
+
+func (state *State) setTerminalRailTools(session *Session, tools []barTool) {
+	if session == nil || session.term == nil {
+		return
+	}
+	session.term.railCount = min(len(tools), maxBarTools)
+	for index := 0; index < session.term.railCount; index++ {
+		session.term.railIDs[index] = tools[index].id
+		session.term.railEnabled[index] = !tools[index].disabled
+	}
+}
+
+func (state *State) clearTerminalRail(session *Session) {
+	if session == nil || session.term == nil {
+		return
+	}
+	session.term.railCount = 0
+	session.term.railEnabled = [maxBarTools]bool{}
+	session.term.railViewport = ui.Rect{}
+	session.term.railContentExtent = 0
+}
+
+// paintWorkspaceSideRail paints the one shared rail at the workspace's outer
+// edge. The active split supplies both the tools and the state they act on.
+func (state *State) paintWorkspaceSideRail(canvas *ui.Canvas, size ui.Size) {
+	session, ok := state.terminalSideRailSession()
+	if !ok {
+		return
+	}
+	bounds, ok := state.terminalSideRailBounds(size)
+	if !ok {
+		return
+	}
+	var toolList [maxBarTools]barTool
+	tools := state.activeTerminalTools(session, &toolList)
+	state.setTerminalRailTools(session, tools)
+	background, border := state.connectionBarColors(session, false)
+	state.paintTerminalSideRail(canvas, bounds, session, tools, background, border, state.terminalToolbarPosition == terminalToolbarLeft)
+}
+
+// paintTerminalSideRail draws the vertical tool rail. Latency occupies the
+// first compact slot, followed by the scrollable actions.
+func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, session *Session, tools []barTool, background, border ui.Color, left bool) {
+	if bounds.Width <= 0 || bounds.Height <= 0 || session.term == nil {
+		return
+	}
+	fullBounds := bounds
+	canvas.Fill(fullBounds, background)
+	if _, _, ok := state.latencyInfo(session); ok {
+		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: terminalBarToolSize}
+		state.paintRailLatency(canvas, session, latency, true)
+		top := terminalBarToolSize + 8
+		bounds.Y += top
+		bounds.Height = max(bounds.Height-top, 0)
+	}
+	viewport := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: max(bounds.Width-8, 0), Height: max(bounds.Height-8, 0)}
+	state.paintTerminalRailTools(canvas, session, viewport, tools, background)
+	x := bounds.X
+	if left {
+		x += bounds.Width - 1
+	}
+	canvas.Fill(ui.Rect{X: x, Y: fullBounds.Y, Width: 1, Height: fullBounds.Height}, border)
+}
+
+func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, viewport ui.Rect, tools []barTool, background ui.Color) {
+	t := session.term
+	t.railViewport = viewport
+	t.railContentExtent = terminalRailContentExtent(tools)
+	viewportExtent := viewport.Height
+	maxScroll := max(t.railContentExtent-viewportExtent, 0)
+	t.railScroll = min(max(t.railScroll, 0), maxScroll)
+
+	// A keyboard move to a tool outside the viewport brings it into view on the
+	// next paint. Pointer hover and wheel scrolling never move focus.
+	for index := range tools {
+		if tools[index].id == canvas.FocusVisible() {
+			start := terminalRailItemStart(tools, index)
+			end := start + terminalBarToolSize
+			if start-t.railScroll < 0 {
+				t.railScroll = min(start, maxScroll)
+			} else if end-t.railScroll > viewportExtent {
+				t.railScroll = min(end-viewportExtent, maxScroll)
+			}
+			break
+		}
+	}
+
+	canvas.Clip(viewport)
+	for index := range tools {
+		offset := terminalRailItemStart(tools, index)
+		tool := &tools[index]
+		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + offset - t.railScroll, Width: min(terminalBarToolSize, viewport.Width), Height: terminalBarToolSize}
+		if tool.rect.X+tool.rect.Width <= viewport.X || tool.rect.X >= viewport.X+viewport.Width ||
+			tool.rect.Y+tool.rect.Height <= viewport.Y || tool.rect.Y >= viewport.Y+viewport.Height {
+			continue
+		}
+		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, 17)
+	}
+	canvas.Unclip()
+}
+
+func terminalRailContentExtent(tools []barTool) float32 {
+	if len(tools) == 0 {
+		return 8
+	}
+	return terminalRailItemStart(tools, len(tools)-1) + terminalBarToolSize + 4
+}
+
+func terminalRailItemStart(tools []barTool, index int) float32 {
+	start := float32(4)
+	for previous := 0; previous < index; previous++ {
+		start += terminalBarToolSize + terminalBarToolGap
+		if tools[previous].groupEnd {
+			start += terminalBarToolGap
+		}
+	}
+	return start
+}
+
+func (state *State) paintRailLatency(canvas *ui.Canvas, session *Session, bounds ui.Rect, compact bool) {
+	text, color, ok := state.latencyInfo(session)
+	if !ok || bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	accessibilityText := text
+	if compact {
+		text = strings.TrimPrefix(text, "RTT ")
+	}
+	canvas.Rounded(bounds, min(radius.control, bounds.Height/2), withAlpha(color, 0.14))
+	state.paintRailLabelCenter(canvas, text, bounds, color, compact)
+	canvas.ContainerWithOptions(bounds, ui.RoleStatus, accessibilityText, ui.HitOptions{Value: accessibilityText})
+}
+
+func (state *State) paintRailLabelCenter(canvas *ui.Canvas, text string, bounds ui.Rect, color ui.Color, compact bool) {
+	size := metrics.FontSizeS
+	if compact {
+		size = 10
+	}
+	fitted := elide(canvas, text, size, ui.WeightMedium, bounds.Width-4)
+	canvas.LabelCenter(fitted, bounds, ui.TextStyle{Size: size, Weight: ui.WeightMedium, Color: color})
+}
+
+func (state *State) scrollTerminalToolbar(session *Session, event ui.ScrollEvent) (ui.EventResult, bool) {
+	if session == nil || session.term == nil ||
+		session.term.railViewport.Width <= 0 || session.term.railViewport.Height <= 0 ||
+		!pointInRect(event.X, event.Y, session.term.railViewport) {
+		return ui.EventResult{}, false
+	}
+	t := session.term
+	viewportExtent := t.railViewport.Height
+	delta := event.StepY(terminalBarToolSize + terminalBarToolGap)
+	maxScroll := max(t.railContentExtent-viewportExtent, 0)
+	next := min(max(t.railScroll+delta, 0), maxScroll)
+	if next == t.railScroll {
+		return ui.EventResult{Handled: true}, true
+	}
+	t.railScroll = next
+	return ui.EventResult{Handled: true, Repaint: true}, true
 }
 
 // paintAIMarking draws the strip that says this line's command was started by
@@ -219,15 +331,13 @@ func (state *State) paintAIMarking(canvas *ui.Canvas, geometry terminalGeometry,
 }
 
 // declareInactiveBar declares the bar of a pane that shares its workspace
-// without being the active one: the terminal icon, the name, and on the right the
-// reading or the state in words, with a mark when typing goes to this pane too.
+// without being the active one: the terminal icon, the name, and the connection
+// state in words, with a mark when typing goes to this pane too. Resource
+// readings stay in the dedicated monitor surface.
 // It returns the box where a busy pane's spinner goes.
 func (state *State) declareInactiveBar(f *flex.Frame, width float32, title, status string, session *Session) (spinner flex.Box) {
 	pal, canvas := state.pal, f.Canvas()
 	readout := status
-	if session.stats != nil {
-		readout = state.remoteStatsText(session.stats)
-	}
 	gap := float32(29) // from the name to the reading
 	if session.busy {
 		gap = 6

@@ -161,11 +161,13 @@ func (state *State) openTerminalFind(session *Session) ui.EventResult {
 	find := &session.term.find
 	find.open = true
 	find.refresh(session.term.screen, state.messages, true)
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
 }
 
 func (state *State) closeTerminalFind(session *Session) ui.EventResult {
 	session.term.find.close()
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalList.At(int(session.ID))}
 }
 
