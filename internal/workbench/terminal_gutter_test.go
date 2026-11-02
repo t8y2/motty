@@ -87,9 +87,10 @@ func TestGutterSetsTheTimeAtTheLeftEdgeAndTheNumberAgainstTheRule(t *testing.T) 
 	if number.X <= at.X {
 		t.Fatalf("number at %v does not sit right of the time at %v", number.X, at.X)
 	}
-	// The mark cell stands between the number and the rule.
-	if gap := geometry.left - number.X; gap != gutterRuleGap+float32(gutterMarkChars)*state.cellWidth {
-		t.Fatalf("number ends %v from the rule, want the mark cell's width plus the gap", gap)
+	// The cell before the mark column and the column itself stand between the
+	// number and the rule.
+	if gap := geometry.left - number.X; gap != gutterRuleGap+state.cellWidth+state.gutterMarkWidth() {
+		t.Fatalf("number ends %v from the rule, want a cell and the mark column plus the gap", gap)
 	}
 }
 
@@ -106,18 +107,19 @@ func TestGutterKeepsTheNumbersAgainstTheRuleWithoutTheTime(t *testing.T) {
 	if !ok {
 		t.Fatalf("no line number in %q", gutterTexts(&canvas))
 	}
-	// Hiding the time must not move the numbers: they keep the mark cell's side.
-	if gap := geometry.left - number.X; gap != gutterRuleGap+float32(gutterMarkChars)*state.cellWidth {
-		t.Fatalf("number ends %v from the rule, want the mark cell's width plus the gap", gap)
+	// Hiding the time must not move the numbers: they keep the mark column's side.
+	if gap := geometry.left - number.X; gap != gutterRuleGap+state.cellWidth+state.gutterMarkWidth() {
+		t.Fatalf("number ends %v from the rule, want a cell and the mark column plus the gap", gap)
 	}
 }
 
-// gutterStrokes counts the marks the strip painted in its mark cell.
+// gutterStrokes counts the marks the strip painted in its mark column.
 func gutterStrokes(canvas *ui.Canvas, state *State, geometry terminalGeometry) int {
-	x := geometry.left - gutterRuleGap - float32(gutterMarkChars)*state.cellWidth
+	width := state.gutterMarkWidth()
+	x := geometry.left - gutterRuleGap - width
 	strokes := 0
 	for _, rect := range canvas.Rectangles() {
-		if rect.Bounds.X >= x && rect.Bounds.X+rect.Bounds.Width <= x+state.cellWidth {
+		if rect.Bounds.X >= x && rect.Bounds.X+rect.Bounds.Width <= x+width {
 			strokes++
 		}
 	}
@@ -173,15 +175,19 @@ func TestGutterBoxFoldsTheOutputOfACommand(t *testing.T) {
 	}
 
 	hit := hitTerminalList.At(int(session.ID))
-	box := geometry.left - gutterRuleGap - float32(gutterMarkChars)*state.cellWidth
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
-		X: box + state.cellWidth/2, Y: geometry.top + 0.5*state.cellHeight, Viewport: state.viewport,
-	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit,
-		X: box + state.cellWidth/2, Y: geometry.top + 0.5*state.cellHeight, Viewport: state.viewport,
-	})
+	width := state.gutterMarkWidth()
+	box := geometry.left - gutterRuleGap - width
+	press := func() {
+		state.Pointer(ui.PointerEvent{
+			Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+			X: box + width/2, Y: geometry.top + 0.5*state.cellHeight, Viewport: state.viewport,
+		})
+		state.Pointer(ui.PointerEvent{
+			Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit,
+			X: box + width/2, Y: geometry.top + 0.5*state.cellHeight, Viewport: state.viewport,
+		})
+	}
+	press()
 
 	if got := session.term.screen.RowText(0); got != "$ ll" {
 		t.Fatalf("row 0 = %q, want the command row kept", got)
@@ -193,11 +199,8 @@ func TestGutterBoxFoldsTheOutputOfACommand(t *testing.T) {
 		t.Fatal("the press in the gutter started a selection")
 	}
 
-	// A press on the same cell opens the block again.
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
-		X: box + state.cellWidth/2, Y: geometry.top + 0.5*state.cellHeight, Viewport: state.viewport,
-	})
+	// A press on the same box opens the block again.
+	press()
 	if got := session.term.screen.RowText(1); got != "alpha" {
 		t.Fatalf("row 1 = %q after opening the block again", got)
 	}

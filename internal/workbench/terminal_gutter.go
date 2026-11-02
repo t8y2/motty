@@ -31,8 +31,12 @@ const (
 const (
 	gutterNumberChars = 4 // up to 9999, then the low digits
 	gutterTimeChars   = 8 // HH:MM:SS
-	gutterMarkChars   = 1 // the cell the fold box and the wrap corner take
 	gutterRuleGap     = float32(16)
+	// gutterMarkWidthCells is the width of the column the fold box and the wrap
+	// corner take, in cells. A cell and a half holds a box the size of a
+	// character with a pixel of air around it, which is what makes it read as a
+	// control rather than a stray dot.
+	gutterMarkWidthCells = 1.5
 )
 
 func (gutter terminalGutter) String() string {
@@ -62,33 +66,44 @@ func terminalGutterFromString(value string) terminalGutter {
 func (gutter terminalGutter) numbers() bool { return gutter == gutterNumbers || gutter == gutterBoth }
 func (gutter terminalGutter) times() bool   { return gutter == gutterTime || gutter == gutterBoth }
 
-// chars is the gutter's text width in cells: the time at the strip's left edge,
-// a cell to set the number apart from it, the number, and at the strip's right
-// the cell the fold box and the wrap corner take.
+// chars is the gutter's text width in cells, the mark column aside: the time at
+// the strip's left edge, a cell to set the number apart from it, the number, and
+// a cell that keeps the mark column off the text.
 func (gutter terminalGutter) chars() int {
-	n := 0
+	if gutter == gutterOff {
+		return 0
+	}
+	n := 1 // the cell before the mark column
 	if gutter.times() {
 		n += gutterTimeChars
 		if gutter.numbers() {
-			n++ // a cell between the two
+			n++ // and the one between the time and the number
 		}
 	}
 	if gutter.numbers() {
 		n += gutterNumberChars
 	}
-	if n > 0 {
-		n += gutterMarkChars
-	}
 	return n
+}
+
+// gutterMarkWidth is the width of the column the fold box and the wrap corner
+// take. It is not a whole number of cells: the box is drawn the size of a
+// character, and the column only has to hold it with a little room beside the
+// number.
+func (state *State) gutterMarkWidth() float32 {
+	if state.cellWidth <= 0 {
+		return 0
+	}
+	return snap(state.cellWidth * gutterMarkWidthCells)
 }
 
 // gutterWidth is the pixels the gutter takes from the left of the grid.
 func (state *State) gutterWidth() float32 {
-	chars := state.terminalGutter.chars()
-	if chars == 0 || state.cellWidth <= 0 {
+	if state.terminalGutter == gutterOff || state.cellWidth <= 0 {
 		return 0
 	}
-	return snap(float32(chars)*state.cellWidth) + gutterRuleGap
+	chars := float32(state.terminalGutter.chars()) * state.cellWidth
+	return snap(chars) + state.gutterMarkWidth() + gutterRuleGap
 }
 
 func (state *State) wallSeconds() int64 {
@@ -171,12 +186,12 @@ func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal,
 	if cached.written != "" {
 		canvas.Label(cached.written, ui.Rect{X: left, Y: y, Width: float32(gutterTimeChars)*state.cellWidth + 1, Height: state.cellHeight}, written)
 	}
-	mark := geometry.left - gutterRuleGap - float32(gutterMarkChars)*state.cellWidth
+	mark := geometry.left - gutterRuleGap - state.gutterMarkWidth()
 	if cached.line != "" {
-		// The number keeps the column it has before the mark cell whether or not
-		// the row carries a time: a row not written yet must not shift it.
+		// The number keeps the column it has before the mark column whether or
+		// not the row carries a time: a row not written yet must not shift it.
 		canvas.LabelAligned(cached.line, ui.Rect{
-			X:      mark - float32(gutterNumberChars)*state.cellWidth,
+			X:      mark - state.cellWidth - float32(gutterNumberChars)*state.cellWidth,
 			Y:      y,
 			Width:  float32(gutterNumberChars) * state.cellWidth,
 			Height: state.cellHeight,
@@ -186,30 +201,33 @@ func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal,
 		number.Color, withAlpha(written.Color, written.Color.Alpha*0.45))
 }
 
-// paintFoldMark draws the mark cell of one row: a box with a minus that folds a
-// command's output away (a plus once it is folded), the line that shows the rows
-// of a block while it is open, or the corner that ties a wrapped row to the line
-// it continues. They are drawn rather than set in glyphs, because the strip must
-// not depend on the terminal's font holding a fold or wrap arrow.
+// paintFoldMark draws the mark column of one row: a box with a minus that folds
+// a command's output away (a plus once it is folded), the line that shows the
+// rows of a block while it is open, or the corner that ties a wrapped row to the
+// line it continues. They are drawn rather than set in glyphs, because the strip
+// must not depend on the terminal's font holding a fold or wrap arrow.
 func (state *State) paintFoldMark(canvas *ui.Canvas, t *terminal, row int, x, y float32, info term.FoldInfo, continues bool, strong, quiet ui.Color) {
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
 	}
+	width := state.gutterMarkWidth()
 	stroke := max(float32(1), snap(cellWidth/8))
-	middle := snap(x + cellWidth/2)
+	middle := snap(x + width/2)
 	switch {
 	case info.Anchor:
-		box := snap(cellWidth - 2)
-		left, top := snap(x+1), snap(y+(cellHeight-box)/2)
+		// A box the size of a character, with a pixel of air around it.
+		box := snap(cellWidth + 2)
+		left, top := snap(x+(width-box)/2), snap(y+(cellHeight-box)/2)
 		canvas.Fill(ui.Rect{X: left, Y: top, Width: box, Height: stroke}, strong)
 		canvas.Fill(ui.Rect{X: left, Y: top + box - stroke, Width: box, Height: stroke}, strong)
 		canvas.Fill(ui.Rect{X: left, Y: top, Width: stroke, Height: box}, strong)
 		canvas.Fill(ui.Rect{X: left + box - stroke, Y: top, Width: stroke, Height: box}, strong)
-		canvas.Fill(ui.Rect{X: left + 2*stroke, Y: snap(y + cellHeight/2), Width: box - 4*stroke, Height: stroke}, strong)
+		inset := snap(box / 4)
+		canvas.Fill(ui.Rect{X: left + inset, Y: snap(y + cellHeight/2), Width: box - 2*inset, Height: stroke}, strong)
 		if info.Folded {
 			// A plus says the block can be opened again.
-			canvas.Fill(ui.Rect{X: middle, Y: top + 2*stroke, Width: stroke, Height: box - 4*stroke}, strong)
+			canvas.Fill(ui.Rect{X: middle, Y: top + inset, Width: stroke, Height: box - 2*inset}, strong)
 		} else if t.screen.FoldAt(row + 1).Inside {
 			// The line the block hangs from.
 			canvas.Fill(ui.Rect{X: middle, Y: top + box, Width: stroke, Height: y + cellHeight - (top + box)}, quiet)
@@ -218,10 +236,10 @@ func (state *State) paintFoldMark(canvas *ui.Canvas, t *terminal, row int, x, y 
 		canvas.Fill(ui.Rect{X: middle, Y: y, Width: stroke, Height: cellHeight}, quiet)
 		if !t.screen.FoldAt(row + 1).Inside {
 			// The foot closes the block's line under its last row.
-			canvas.Fill(ui.Rect{X: middle, Y: y + cellHeight - stroke, Width: snap(cellWidth * 0.6), Height: stroke}, quiet)
+			canvas.Fill(ui.Rect{X: middle, Y: y + cellHeight - stroke, Width: snap(width/2 - 1), Height: stroke}, quiet)
 		}
 	case continues:
-		paintWrapMark(canvas, x, y, cellWidth, cellHeight, quiet)
+		paintWrapMark(canvas, x, y, width, cellHeight, quiet)
 	}
 }
 
@@ -251,8 +269,9 @@ func (state *State) terminalFoldToggle(session *Session, event ui.PointerEvent) 
 		return false
 	}
 	geometry := terminalLayoutWithInfoBar(event.Viewport, state.cellWidth, state.cellHeight, state.terminalInfoBarHeight(session.ID), state.padding())
-	box := geometry.left - gutterRuleGap - float32(gutterMarkChars)*state.cellWidth
-	if event.X < box || event.X >= box+state.cellWidth {
+	width := state.gutterMarkWidth()
+	box := geometry.left - gutterRuleGap - width
+	if event.X < box || event.X >= box+width {
 		return false
 	}
 	row := int(math.Floor(float64((event.Y - geometry.top) / state.cellHeight)))
