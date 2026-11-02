@@ -32,6 +32,9 @@ var (
 	hitSessionLogsTime           = tree.ID(sessionLogHits, "time-filter")
 	hitSessionLogsStatus         = tree.ID(sessionLogHits, "status-filter")
 	hitSessionLogsProtocol       = tree.ID(sessionLogHits, "protocol-filter")
+	hitSessionLogsOutcome        = tree.ID(sessionLogHits, "outcome-filter")
+	hitSessionLogsMore           = tree.ID(sessionLogHits, "more-actions")
+	hitSessionLogsMoreDismiss    = tree.ID(sessionLogHits, "more-dismiss")
 	hitSessionLogsFavoriteFilter = tree.ID(sessionLogHits, "favorite-filter")
 	hitSessionLogsFilterDismiss  = tree.ID(sessionLogHits, "filter-dismiss")
 	hitSessionLogsFilterList     = tree.Sub(sessionLogHits, tree.Name("filter-option"))
@@ -44,8 +47,11 @@ var (
 	hitSessionLogsScroll         = tree.ID(sessionLogHits, "scroll")
 	hitSessionLogsThumb          = tree.ID(sessionLogHits, "thumb")
 	hitSessionLogsRowList        = tree.Sub(sessionLogHits, tree.Name("row"))
+	hitSessionLogsRowFavorite    = tree.Sub(sessionLogHits, tree.Name("row-favorite"))
 	hitSessionLogsDetailClose    = tree.ID(sessionLogHits, "detail-close")
 	hitSessionLogsLive           = tree.ID(sessionLogHits, "open-session")
+	hitSessionLogsCopy           = tree.ID(sessionLogHits, "copy-metadata")
+	hitSessionLogsLocate         = tree.ID(sessionLogHits, "locate-host")
 	hitSessionLogsEventsScroll   = tree.ID(sessionLogHits, "events-scroll")
 	hitSessionLogsEventsThumb    = tree.ID(sessionLogHits, "events-thumb")
 )
@@ -70,6 +76,7 @@ const (
 	sessionLogFilterTimeMenu
 	sessionLogFilterStatusMenu
 	sessionLogFilterProtocolMenu
+	sessionLogFilterOutcomeMenu
 )
 
 // sessionLogDragging is the scrollbar being dragged, if any.
@@ -85,8 +92,9 @@ const (
 // and the cells of both table layouts. Everything is formatted when the page
 // data changes, never in Paint.
 type sessionLogRow struct {
-	id       string
-	favorite bool
+	id            string
+	favorite      bool
+	favoriteLabel string
 	// cells is the six-column layout: target, started, protocol, status,
 	// duration. The favorite column is painted as an icon, so it stays empty.
 	cells [6]string
@@ -107,7 +115,7 @@ type sessionLogEventRow struct{ when, label string }
 // sessionLogDetail is the prepared detail panel: it never formats in Paint.
 type sessionLogDetail struct {
 	title  string
-	fields [12]sessionLogDetailField
+	fields [15]sessionLogDetailField
 	count  int
 	// statusIndex is the field that holds the status, which the panel paints
 	// in the tone of that status rather than as plain text.
@@ -118,6 +126,9 @@ type sessionLogDetail struct {
 	truncatedText string
 	noInfo        string
 	live          bool
+	actionLabel   string
+	hasHost       bool
+	copyEnabled   bool
 }
 
 // sessionLogStatusTone is how a status reads in the detail panel.
@@ -156,7 +167,7 @@ const (
 	sessionLogFieldHeight = float32(22)
 	// sessionLogEventsRoom is what a detail panel keeps for the event list and
 	// the session-jump action before it paints another field.
-	sessionLogEventsRoom = float32(96)
+	sessionLogEventsRoom = float32(140)
 	// sessionLogToolbarGap is the space between the toolbar's controls.
 	sessionLogToolbarGap = float32(8)
 )
@@ -178,7 +189,7 @@ var sessionLogProtocolChoices = [...]sessionlog.Protocol{
 func (state *State) sessionLogFiltered() bool {
 	view := &state.sessionLogs.view
 	return view.appliedSearch != "" || view.timeRange != sessionLogTimeAll ||
-		view.statusFilter != 0 || view.protocolFilter != 0 || view.favoriteOnly
+		view.statusFilter != 0 || view.protocolFilter != 0 || view.favoriteOnly || view.query.Outcome != sessionlog.OutcomeAll
 }
 
 // prepareSessionLogsView rebuilds every string the page paints. It runs on the
@@ -212,12 +223,16 @@ func (state *State) prepareSessionLogRows() {
 		row.cells[0] = sessionLogTargetText(record)
 		row.cells[1] = sessionLogStartedText(record.StartedAt, now)
 		row.cells[2] = sessionLogProtocolText(m, record.Protocol)
-		row.cells[3] = sessionLogStatusText(m, record.Status)
+		row.cells[3] = sessionLogResultText(m, record)
 		row.cells[4] = sessionLogDurationText(m, record, now)
 		row.cells[5] = ""
+		row.favoriteLabel = m.Favorite + " " + row.cells[0]
+		if record.Favorite {
+			row.favoriteLabel = m.Unfavorite + " " + row.cells[0]
+		}
 		row.compact[0], row.compact[1] = row.cells[0], row.cells[1]
 		row.compact[2], row.compact[3] = row.cells[3], ""
-		row.minimal[0], row.minimal[1], row.minimal[2] = row.cells[0], row.cells[1], ""
+		row.minimal[0], row.minimal[1], row.minimal[2] = row.cells[0], row.cells[3], ""
 	}
 }
 
@@ -279,7 +294,7 @@ func (state *State) clampSessionLogSelection() {
 func (state *State) prepareSessionLogDetail() {
 	view := &state.sessionLogs.view
 	detail := &view.detail
-	detail.fields = [12]sessionLogDetailField{}
+	detail.fields = [15]sessionLogDetailField{}
 	detail.count = 0
 	detail.statusIndex = -1
 	detail.events = detail.events[:0]
@@ -302,7 +317,13 @@ func (state *State) prepareSessionLogDetail() {
 	if record.EndedAt.IsZero() {
 		detail.add(m.FieldEnded, m.Pending)
 	} else {
-		detail.add(m.FieldEnded, record.EndedAt.In(time.Local).Format("2006-01-02 15:04:05"))
+		label := m.FieldEnded
+		if record.Status == sessionlog.StatusInterrupted && record.Reason == sessionlog.ReasonProcessRestart {
+			label = m.FieldRecovered
+		} else if record.Status == sessionlog.StatusTrackingStopped {
+			label = m.FieldStopped
+		}
+		detail.add(label, record.EndedAt.In(time.Local).Format("2006-01-02 15:04:05"))
 	}
 	detail.add(m.FieldDuration, sessionLogDurationText(m, &record, now))
 	detail.statusIndex = detail.count
@@ -314,7 +335,17 @@ func (state *State) prepareSessionLogDetail() {
 		detail.add(m.FieldResult, m.Pending)
 	}
 	if record.Address != "" {
-		detail.add(m.FieldAddress, record.Address)
+		label := m.FieldAddress
+		if record.Protocol == sessionlog.ProtocolLocal {
+			label = m.FieldHostname
+		}
+		detail.add(label, record.Address)
+	}
+	if record.Port != 0 {
+		detail.add(m.FieldPort, strconv.Itoa(int(record.Port)))
+	}
+	if record.ShellName != "" {
+		detail.add(m.FieldShell, record.ShellName)
 	}
 	if record.Account != "" {
 		detail.add(m.FieldAccount, record.Account)
@@ -326,7 +357,19 @@ func (state *State) prepareSessionLogDetail() {
 	} else {
 		detail.add(m.FieldFavorite, m.No)
 	}
-	detail.live = state.sessionForLogRecord(record.ID) != nil
+	owner, _ := state.sessionLogOwner(record.ID)
+	detail.live = owner != nil
+	detail.actionLabel = m.ChooseHost
+	_, detail.hasHost = state.sessionLogHost(record)
+	detail.copyEnabled = !view.eventsLoad && view.eventsErr == "" && view.eventsFor == record.ID
+	switch {
+	case detail.live:
+		detail.actionLabel = m.OpenSession
+	case record.Protocol == sessionlog.ProtocolLocal && record.TargetKind != sessionlog.TargetShared:
+		detail.actionLabel = m.NewLocal
+	case detail.hasHost:
+		detail.actionLabel = m.Reopen
+	}
 	switch {
 	case view.eventsLoad:
 		detail.eventsText = m.Loading
@@ -350,20 +393,30 @@ func (state *State) prepareSessionLogDetail() {
 	case sessionLogTerminal(record.Status) && (record.Reason == sessionlog.ReasonNone || record.Reason == sessionlog.ReasonUnknown):
 		detail.noInfo = m.NoMoreInformation
 	}
-	if cap(detail.events) < len(view.events) {
-		detail.events = make([]sessionLogEventRow, len(view.events))
-	} else {
-		detail.events = detail.events[:len(view.events)]
+	if !view.eventsLoad && view.eventsErr == "" {
+		detail.events = state.sessionLogTimeline(record, view.events)
 	}
-	for index := range view.events {
-		event := &view.events[index]
-		row := &detail.events[index]
-		row.when = event.At.In(time.Local).Format("15:04:05")
-		row.label = sessionLogEventText(m, event.Kind)
-		if event.Attempt > 0 && sessionLogReconnectEvent(event.Kind) {
-			row.label += " · " + fmt.Sprintf(m.EventAttemptFmt, event.Attempt)
+}
+
+func (state *State) sessionLogTimeline(record sessionlog.Record, events []sessionlog.Event) []sessionLogEventRow {
+	m := &state.messages.SessionLogs
+	rows := make([]sessionLogEventRow, 0, len(events)+1)
+	hasFinal := false
+	for _, event := range events {
+		label := sessionLogEventLabel(m, event)
+		if event.Kind == sessionlog.EventFinished || event.Kind == sessionlog.EventRecovered {
+			hasFinal = true
+			label = sessionLogReasonLabel(m, label, event.Reason)
 		}
+		if event.Attempt > 0 && sessionLogReconnectEvent(event.Kind) {
+			label += " · " + fmt.Sprintf(m.EventAttemptFmt, event.Attempt)
+		}
+		rows = append(rows, sessionLogEventRow{when: event.At.In(time.Local).Format("15:04:05"), label: label})
 	}
+	if !hasFinal && sessionLogTerminal(record.Status) && !record.EndedAt.IsZero() {
+		rows = append(rows, sessionLogEventRow{when: record.EndedAt.In(time.Local).Format("15:04:05"), label: fmt.Sprintf(m.ResultSummaryFmt, sessionLogReasonText(m, record.Reason))})
+	}
+	return rows
 }
 
 // add appends one field in the order the panel paints, up to the panel's room.
@@ -397,6 +450,11 @@ func sessionLogStartedText(started time.Time, now time.Time) string {
 // sessionLogDurationText is how long the session lasted, or that it is still in
 // progress.
 func sessionLogDurationText(m *i18n.SessionLogsMessages, record *sessionlog.Record, now time.Time) string {
+	if record.Status == sessionlog.StatusInterrupted && record.Reason == sessionlog.ReasonProcessRestart {
+		copy := *record
+		copy.Status = sessionlog.StatusEnded
+		return fmt.Sprintf(m.DurationRecoveredFmt, sessionLogDurationText(m, &copy, now))
+	}
 	if record.EndedAt.IsZero() {
 		return m.DurationOngoing
 	}
@@ -436,6 +494,33 @@ func sessionLogStatusText(m *i18n.SessionLogsMessages, status sessionlog.Status)
 	default:
 		return m.ReasonUnknown
 	}
+}
+
+func sessionLogResultText(m *i18n.SessionLogsMessages, record *sessionlog.Record) string {
+	label := sessionLogStatusText(m, record.Status)
+	if sessionLogTerminal(record.Status) {
+		label = sessionLogReasonLabel(m, label, record.Reason)
+	}
+	return label
+}
+
+// sessionLogReasonLabel appends a reason only when it adds what the label does
+// not already say. A normal end has no reason to add, and the tracking-stop and
+// recovery labels already name their cause.
+func sessionLogReasonLabel(m *i18n.SessionLogsMessages, label string, reason sessionlog.Reason) string {
+	switch reason {
+	case sessionlog.ReasonNone, sessionlog.ReasonTrackingOff, sessionlog.ReasonProcessRestart:
+		return label
+	}
+	text := sessionLogReasonText(m, reason)
+	if text == label {
+		return label
+	}
+	return label + " · " + text
+}
+
+func sessionLogOutcomeChoices(m *i18n.SessionLogsMessages) [4]string {
+	return [4]string{m.OutcomeAll, m.OutcomeNormal, m.OutcomeAbnormal, m.StatusTrackingStopped}
 }
 
 // sessionLogToneOf is how the detail panel colors a status.
@@ -531,6 +616,16 @@ func sessionLogReasonText(m *i18n.SessionLogsMessages, reason sessionlog.Reason)
 // sessionLogEventText localizes one lifecycle event.
 func sessionLogEventText(m *i18n.SessionLogsMessages, kind sessionlog.EventKind) string {
 	switch kind {
+	case sessionlog.EventStarted:
+		return m.EventStarted
+	case sessionlog.EventHostKeyPrompt:
+		return m.EventHostKeyPrompt
+	case sessionlog.EventAuthenticating:
+		return m.EventAuthenticating
+	case sessionlog.EventFinished:
+		return m.EventFinished
+	case sessionlog.EventRecovered:
+		return m.EventRecovered
 	case sessionlog.EventConnected:
 		return m.EventConnected
 	case sessionlog.EventShellOpened:
@@ -556,6 +651,18 @@ func sessionLogEventText(m *i18n.SessionLogsMessages, kind sessionlog.EventKind)
 	}
 }
 
+func sessionLogEventLabel(m *i18n.SessionLogsMessages, event sessionlog.Event) string {
+	if event.Kind == sessionlog.EventFinished {
+		switch event.Reason {
+		case sessionlog.ReasonTrackingOff:
+			return m.EventTrackingStopped
+		case sessionlog.ReasonProcessRestart:
+			return m.EventRecovered
+		}
+	}
+	return sessionLogEventText(m, event.Kind)
+}
+
 // sessionLogReconnectEvent reports whether an event counts a retry attempt.
 func sessionLogReconnectEvent(kind sessionlog.EventKind) bool {
 	switch kind {
@@ -571,6 +678,8 @@ func sessionLogReconnectEvent(kind sessionlog.EventKind) bool {
 // own name, which a trigger showing only its value cannot say.
 func sessionLogFilterLabel(m *i18n.SessionLogsMessages, filter sessionLogFilterMenu) string {
 	switch filter {
+	case sessionLogFilterOutcomeMenu:
+		return m.FilterOutcome
 	case sessionLogFilterTimeMenu:
 		return m.FilterTime
 	case sessionLogFilterStatusMenu:
@@ -584,6 +693,12 @@ func sessionLogFilterLabel(m *i18n.SessionLogsMessages, filter sessionLogFilterM
 func (state *State) sessionLogFilterValue(filter sessionLogFilterMenu) string {
 	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	switch filter {
+	case sessionLogFilterOutcomeMenu:
+		choices := sessionLogOutcomeChoices(m)
+		if view.query.Outcome <= sessionlog.OutcomeTrackingStopped {
+			return choices[view.query.Outcome]
+		}
+		return m.OutcomeAll
 	case sessionLogFilterTimeMenu:
 		switch view.timeRange {
 		case sessionLogTimeToday:
@@ -626,6 +741,11 @@ func sessionLogFilterIcon(filter sessionLogFilterMenu) uint8 {
 func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels *[8]string, checked *[8]bool) int {
 	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	switch filter {
+	case sessionLogFilterOutcomeMenu:
+		for i, label := range sessionLogOutcomeChoices(m) {
+			labels[i], checked[i] = label, view.query.Outcome == sessionlog.OutcomeFilter(i)
+		}
+		return 4
 	case sessionLogFilterTimeMenu:
 		labels[0], labels[1], labels[2], labels[3] = m.TimeAll, m.TimeToday, m.Time7Days, m.Time30Days
 		checked[0] = view.timeRange == sessionLogTimeAll
@@ -655,6 +775,8 @@ func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels 
 // sessionLogFilterFor is the filter menu a trigger identity opens.
 func sessionLogFilterFor(id ui.ID) sessionLogFilterMenu {
 	switch id {
+	case hitSessionLogsOutcome:
+		return sessionLogFilterOutcomeMenu
 	case hitSessionLogsTime:
 		return sessionLogFilterTimeMenu
 	case hitSessionLogsStatus:
@@ -672,16 +794,21 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	theme := state.Theme()
 	inner := max(bounds.Width-36, 0)
 	narrow := inner < sessionLogFullColumns
+	separateFilters := inner < 1120
 	sideDetail := inner >= sessionLogSideDetail && view.detailOpen && view.selected != ""
 	detailOnly := view.detailOpen && view.selected != "" && !sideDetail
 	empty := len(view.page) == 0
 	condensed := inner < 520
 	filterWidth := sessionLogFilterWidth
-	if narrow {
-		filterWidth = max(76, (inner-3*sessionLogToolbarGap-36)/3)
+	if separateFilters {
+		filterWidth = min(sessionLogFilterWidth, max(76, (inner-3*sessionLogToolbarGap)/4))
 	}
-	var search, timeSlot, statusSlot, protocolSlot, favoriteFilterBox flex.Box
-	var favoriteButton, deleteButton, clearFavoriteButton, clearAllButton flex.Box
+	searchWidth := min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-4*filterWidth-toolbarHeight-6*sessionLogToolbarGap))
+	if separateFilters {
+		searchWidth = min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-toolbarHeight-2*sessionLogToolbarGap))
+	}
+	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, favoriteFilterBox flex.Box
+	var moreButton flex.Box
 	var content, detailSlot, loadMore flex.Box
 	var emptyIcon, emptyAction flex.Box
 	// Three toolbar shapes: one row with the search box, three on a row of
@@ -691,24 +818,29 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 
 	f := state.sessionLogsLayout.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().Height(26).Items(flex.Center).Children(func() {
+		f.Row().Height(36).Gap(8).Items(flex.Center).Children(func() {
 			f.Text(m.Title).FontSize(sessionLogTitleSize).Weight(ui.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
 			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(min(inner*0.42, 160)).TextEnd().Ellipsis()
+			moreButton = f.Slot().Size(30, 30)
 		})
 		if !narrow {
 			f.Text(m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
 		}
 		f.Row().Height(40).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
-			search = f.Slot().Grow(1).MinWidth(sessionLogSearchLeast).MaxWidth(sessionLogSearchMost).Height(toolbarHeight)
-			if !narrow {
+			search = f.Slot().Size(searchWidth, toolbarHeight)
+			if !separateFilters {
 				f.Spacer()
 				timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
+			} else {
+				f.Spacer()
 				favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
 			}
 		})
-		if narrow {
+		if separateFilters {
 			f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
 				if stackedFilters {
 					timeSlot = f.Slot().Size(halfFilter, toolbarHeight)
@@ -717,26 +849,16 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 					timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
 					statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
 					protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
-					favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
+					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				}
 			})
 			if stackedFilters {
 				f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
-					protocolSlot = f.Slot().Size(max(76, inner-toolbarHeight-sessionLogToolbarGap), toolbarHeight)
-					favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
+					protocolSlot = f.Slot().Size(halfFilter, toolbarHeight)
+					outcomeSlot = f.Slot().Size(halfFilter, toolbarHeight)
 				})
 			}
 		}
-		f.Row().Height(40).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
-			favoriteWidth, _ := toolbarButtonLayout(canvas, state.sessionLogFavoriteLabel(), state.sessionLogFavoriteIcon(), iconStar, condensed)
-			deleteWidth, _ := toolbarButtonLayout(canvas, m.Delete, iconTrash, iconTrash, condensed)
-			clearFavoriteWidth, _ := toolbarButtonLayout(canvas, m.ClearUnfavorited, iconEraser, iconEraser, condensed)
-			clearAllWidth, _ := toolbarButtonLayout(canvas, m.ClearAll, iconTrash, iconTrash, condensed)
-			favoriteButton = f.Slot().Size(favoriteWidth, toolbarHeight)
-			deleteButton = f.Slot().Size(deleteWidth, toolbarHeight)
-			clearFavoriteButton = f.Slot().Size(clearFavoriteWidth, toolbarHeight)
-			clearAllButton = f.Slot().Size(clearAllWidth, toolbarHeight)
-		})
 		switch {
 		case empty:
 			descriptionColor := pal.muted
@@ -774,16 +896,19 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	// The triggers' places are kept: the open menu opens under its own trigger
 	// in the frame's menu pass, outside the card's clip.
 	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = timeSlot.Rect(), statusSlot.Rect(), protocolSlot.Rect()
+	view.filterBounds[3] = outcomeSlot.Rect()
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsTime, timeSlot.Rect(), sessionLogFilterTimeMenu)
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsStatus, statusSlot.Rect(), sessionLogFilterStatusMenu)
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsProtocol, protocolSlot.Rect(), sessionLogFilterProtocolMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsOutcome, outcomeSlot.Rect(), sessionLogFilterOutcomeMenu)
 	state.paintSessionLogFavoriteFilter(canvas, favoriteFilterBox.Rect())
 
-	selected := state.sessionLogSelectedRecord() != nil
-	state.paintToolbarButtonIn(canvas, hitSessionLogsFavorite, favoriteButton.Rect(), state.sessionLogFavoriteLabel(), state.sessionLogFavoriteIcon(), false, selected && view.favoritePending == "", condensed)
-	state.paintToolbarButtonIn(canvas, hitSessionLogsDelete, deleteButton.Rect(), m.Delete, iconTrash, false, selected, condensed)
-	state.paintToolbarButtonIn(canvas, hitSessionLogsClearFavorite, clearFavoriteButton.Rect(), m.ClearUnfavorited, iconEraser, false, state.sessionLogsCanClear(), condensed)
-	state.paintToolbarButtonIn(canvas, hitSessionLogsClearAll, clearAllButton.Rect(), m.ClearAll, iconTrash, false, state.sessionLogsCanClear(), condensed)
+	view.moreBounds = moreButton.Rect()
+	style := iconButtonQuiet
+	if view.moreMenu {
+		style = iconButtonActive
+	}
+	state.paintIconButton(canvas, hitSessionLogsMore, iconEllipsis, moreButton.Rect(), m.More, false, style, pal.surface)
 
 	switch {
 	case empty:
@@ -877,6 +1002,8 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 		active = view.statusFilter != 0
 	case sessionLogFilterProtocolMenu:
 		active = view.protocolFilter != 0
+	case sessionLogFilterOutcomeMenu:
+		active = view.query.Outcome != sessionlog.OutcomeAll
 	}
 	foreground := pal.muted
 	fill := ui.Color{}
@@ -950,7 +1077,23 @@ func (state *State) paintSessionLogFavoriteFilter(canvas *ui.Canvas, bounds ui.R
 // the workbench.
 func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
 	view := &state.sessionLogs.view
-	if state.activeSection != sectionSessionLogs || state.modal != modalNone || view.filterMenu == sessionLogFilterNone {
+	if state.activeSection != sectionSessionLogs || state.modal != modalNone {
+		return
+	}
+	if view.moreMenu {
+		m := &state.messages.SessionLogs
+		var rows menuRows
+		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearFavorite, Label: m.ClearUnfavorited, Icon: lucideIcons[iconEraser], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
+		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearAll, Label: m.ClearAll, Icon: lucideIcons[iconTrash], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
+		width, height := rows.size(canvas, state.contextMenuTheme())
+		bounds := state.popupBelow(canvas, view.moreBounds, width, height, flex.End)
+		menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsMoreDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitSessionLogsMoreDismiss), RowHeight: contextMenuRow})
+		state.menuPlaced(menu.Bounds())
+		rows.paint(&menu, nil)
+		menu.End()
+		return
+	}
+	if view.filterMenu == sessionLogFilterNone {
 		return
 	}
 	anchor := view.filterBounds[view.filterMenu-1]
@@ -1032,13 +1175,15 @@ func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
 			if star.Width < 12 {
 				continue
 			}
-			icon, color := iconStar, state.pal.faint
+			icon := iconStar
 			if row.favorite {
-				icon, color = iconStarSolid, state.pal.warning
+				icon = iconStarSolid
 			}
-			paintIcon(canvas, icon, ui.Rect{
-				X: star.X + (star.Width-14)/2, Y: star.Y + (star.Height-14)/2, Width: 14, Height: 14,
-			}, color)
+			style := iconButtonQuiet
+			if row.favorite {
+				style = iconButtonActive
+			}
+			state.paintIconButton(canvas, hitSessionLogsRowFavorite.At(index), icon, star, row.favoriteLabel, view.favoritePending != "", style, state.pal.surface)
 		}
 	}
 	area.EndContent()
@@ -1054,7 +1199,7 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 	m := &state.messages.SessionLogs
 	favorite := float32(30)
 	if width >= sessionLogFullColumns {
-		when, protocol, status, duration := float32(104), float32(84), float32(140), float32(80)
+		when, protocol, status, duration := float32(104), float32(84), float32(200), float32(80)
 		target := max(width-when-protocol-status-duration-favorite, 140)
 		columns[0] = components.TableColumn{Width: target}
 		columns[1] = components.TableColumn{Width: when}
@@ -1067,7 +1212,7 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 		return 6
 	}
 	if width >= sessionLogCompactColumns {
-		when, status := float32(100), float32(120)
+		when, status := float32(100), float32(190)
 		target := max(width-when-status-favorite, 100)
 		columns[0] = components.TableColumn{Width: target}
 		columns[1] = components.TableColumn{Width: when}
@@ -1081,7 +1226,7 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 	columns[0] = components.TableColumn{Width: target}
 	columns[1] = components.TableColumn{Width: when}
 	columns[2] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
-	headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnWhen, ""
+	headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnStatus, ""
 	return 3
 }
 
@@ -1126,7 +1271,7 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 			if index == detail.statusIndex {
 				valueColor = state.sessionLogToneColor(detail.statusTone)
 			}
-			paintSessionLogText(canvas, field.label, ui.Rect{X: inner.X, Y: y, Width: max(labelWidth-6, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, ui.WeightMedium, pal.faint)
+			paintSessionLogText(canvas, field.label, ui.Rect{X: inner.X, Y: y, Width: max(labelWidth-6, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, ui.WeightMedium, pal.muted)
 			paintSessionLogText(canvas, field.value, ui.Rect{X: inner.X + labelWidth, Y: y, Width: max(inner.Width-labelWidth, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, ui.WeightRegular, valueColor)
 			y += sessionLogFieldHeight
 		}
@@ -1139,7 +1284,7 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 	}
 	// The session-jump action sits at the bottom; above it the recorded events
 	// scroll on their own so a long timeline stays readable.
-	action := ui.Rect{X: inner.X, Y: inner.Y + inner.Height - toolbarHeight, Width: inner.Width, Height: toolbarHeight}
+	action := ui.Rect{X: inner.X, Y: inner.Y + inner.Height - 2*toolbarHeight - 6, Width: inner.Width, Height: toolbarHeight}
 	eventsTop := y
 	eventsBottom := action.Y - 10
 	headingWidth := min(inner.Width*0.42, 96)
@@ -1165,18 +1310,19 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 			for index := range detail.events {
 				event := &detail.events[index]
 				row := ui.Rect{X: geo.Content.X, Y: geo.Content.Y + float32(index)*sessionLogEventHeight, Width: geo.Content.Width, Height: sessionLogEventHeight}
-				paintSessionLogText(canvas, event.when, ui.Rect{X: row.X, Y: row.Y, Width: whenWidth - 6, Height: row.Height}, metrics.FontSizeS, ui.WeightRegular, pal.faint)
+				paintSessionLogText(canvas, event.when, ui.Rect{X: row.X, Y: row.Y, Width: whenWidth - 6, Height: row.Height}, metrics.FontSizeS, ui.WeightRegular, pal.muted)
 				paintSessionLogText(canvas, event.label, ui.Rect{X: row.X + whenWidth, Y: row.Y, Width: max(row.Width-whenWidth, 0), Height: row.Height}, metrics.FontSizeS, ui.WeightRegular, pal.text)
 			}
 			area.EndContent()
 		}
 	}
-	label := m.OpenSession
-	enabled := detail.live
-	if !detail.live {
-		label = m.SessionClosed
-	}
-	state.paintToolbarButtonIn(canvas, hitSessionLogsLive, action, label, iconTerminal, false, enabled, bounds.Width < 300)
+	state.paintToolbarButtonIn(canvas, hitSessionLogsLive, action, detail.actionLabel, iconTerminal, false, true, false)
+	tools := ui.Rect{X: action.X, Y: action.Y + toolbarHeight + 6, Width: (action.Width - 12) / 3, Height: toolbarHeight}
+	state.paintToolbarButtonIn(canvas, hitSessionLogsCopy, tools, m.CopyMetadata, iconCopy, false, detail.copyEnabled, true)
+	tools.X += tools.Width + 6
+	state.paintToolbarButtonIn(canvas, hitSessionLogsLocate, tools, m.LocateHost, iconSearch, false, detail.hasHost, true)
+	tools.X += tools.Width + 6
+	state.paintToolbarButtonIn(canvas, hitSessionLogsDelete, tools, m.Delete, iconTrash, false, true, true)
 }
 
 // paintSessionLogText is one label with a one-line ellipsis that a warm paint

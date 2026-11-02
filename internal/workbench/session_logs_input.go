@@ -111,6 +111,10 @@ func (state *State) chooseSessionLogFilter(index int) {
 		return
 	}
 	switch menu {
+	case sessionLogFilterOutcomeMenu:
+		if index < 4 {
+			view.query.Outcome = sessionlog.OutcomeFilter(index)
+		}
 	case sessionLogFilterTimeMenu:
 		if index < 4 {
 			view.timeRange = sessionLogTimeRange(index)
@@ -137,6 +141,7 @@ func (state *State) clearSessionLogFilters() {
 	view.statusFilter = 0
 	view.protocolFilter = 0
 	view.favoriteOnly = false
+	view.query.Outcome = sessionlog.OutcomeAll
 	view.filterMenu = sessionLogFilterNone
 	view.statusText = ""
 	view.statusDanger = false
@@ -193,12 +198,16 @@ func (state *State) closeSessionLogDetail() {
 // toggleSessionLogFavorite waits for the writer before claiming success. A
 // failed write leaves the currently painted favorite unchanged.
 func (state *State) toggleSessionLogFavorite() {
+	state.toggleSessionLogFavoriteID(state.sessionLogs.view.selected)
+}
+
+func (state *State) toggleSessionLogFavoriteID(id string) {
 	view := &state.sessionLogs.view
 	if view.favoritePending != "" {
 		return
 	}
-	record := state.sessionLogSelectedRecord()
-	if record == nil {
+	record, ok := state.sessionLogRecord(id)
+	if !ok {
 		return
 	}
 	view.favoritePending = record.ID
@@ -242,17 +251,47 @@ func (state *State) deleteSessionLogRecord(id string) {
 // what the confirmation covers: unfavorited records only, or every record.
 func (state *State) askClearSessionLogs(includeFavorites bool) {
 	m := &state.messages.SessionLogs
-	title, description, submit := m.ClearUnfavoritedTitle, m.ClearUnfavoritedPrompt, m.ClearUnfavoritedConfirm
+	title, scope, submit := m.ClearUnfavoritedTitle, m.ClearUnfavorited, m.ClearUnfavoritedConfirm
 	if includeFavorites {
-		title, description, submit = m.ClearAllTitle, m.ClearAllPrompt, m.ClearAllConfirm
+		title, scope, submit = m.ClearAllTitle, m.ClearAll, m.ClearAllConfirm
 	}
+	store := state.sessionLogs.store
+	var selection sessionlog.ClearSelection
+	ready := false
 	state.openForm(formDialog{
-		title: title, description: description, submit: submit, danger: true,
+		title: title, description: m.Loading, submit: submit, danger: true,
+		cancel: func(state *State) { state.sessionLogs.view.focusPending = hitSessionLogsMore },
 		run: func(state *State, _ *formDialog) string {
-			state.clearSessionLogRecords(includeFavorites)
+			if !ready {
+				return m.Loading
+			}
+			state.submitSessionLog(sessionlog.Operation{Kind: sessionlog.OpDeleteSelection, IDs: selection.IDs, IncludeFavorites: includeFavorites})
+			state.sessionLogs.view.statusText = m.Loading
+			state.sessionLogs.view.statusDanger = false
 			return ""
 		},
 	})
+	serial := state.formSerial
+	if store == nil {
+		state.form.dialogError = m.Unavailable
+		return
+	}
+	invalidate := state.options.Invalidate
+	go func() {
+		preview, err := store.PreviewClear(includeFavorites)
+		state.aiPostWithInvalidator(func(state *State) {
+			if state.modal != modalForm || state.formSerial != serial {
+				return
+			}
+			if err != nil {
+				state.form.dialogError = m.ListFailedHint
+				return
+			}
+			selection, ready = preview, true
+			state.form.description = fmt.Sprintf(m.ClearSelectionFmt, scope, len(preview.IDs), preview.Favorites)
+			state.form.dialogError = ""
+		}, invalidate)
+	}()
 }
 
 // clearSessionLogRecords clears this journal only; command history, manual
@@ -274,18 +313,29 @@ func (state *State) jumpToLiveSession() {
 	if record == nil {
 		return
 	}
-	session := state.sessionForLogRecord(record.ID)
-	if session == nil {
+	if !state.jumpToLogSession(record.ID) {
 		view.statusDanger = false
 		view.statusText = state.messages.SessionLogs.SessionClosed
 		state.prepareSessionLogDetail()
-		return
 	}
-	state.ActivatePane(session.ID)
-	state.status = state.messages.StatusOpened + session.Title
-	state.save()
+}
+
+func (state *State) jumpToLogSession(id string) bool {
+	owner, session := state.sessionLogOwner(id)
+	if session == nil {
+		return false
+	}
+	owner.ActivatePane(session.ID)
+	owner.status = owner.messages.StatusOpened + session.Title
+	owner.save()
+	if owner != state && owner.options.Raise != nil {
+		owner.options.Raise()
+	}
+	owner.invalidateWindow()
+	view := &state.sessionLogs.view
 	view.statusText = ""
 	view.statusDanger = false
+	return true
 }
 
 // clickSessionLogs handles one click on the page or its sidebar row.
@@ -301,10 +351,21 @@ func (state *State) clickSessionLogs(id ui.ID) bool {
 	if state.activeSection != sectionSessionLogs || state.modal != modalNone {
 		return false
 	}
+	if view.moreMenu && id != hitSessionLogsMore {
+		view.moreMenu = false
+		if id != hitSessionLogsClearFavorite && id != hitSessionLogsClearAll {
+			return true
+		}
+	}
 	switch id {
+	case hitSessionLogsMore:
+		view.moreMenu = !view.moreMenu
+		view.filterMenu = sessionLogFilterNone
+		return true
 	case hitSessionLogsSearch:
 		return true
-	case hitSessionLogsTime, hitSessionLogsStatus, hitSessionLogsProtocol:
+	case hitSessionLogsTime, hitSessionLogsStatus, hitSessionLogsProtocol, hitSessionLogsOutcome:
+		view.moreMenu = false
 		filter := sessionLogFilterFor(id)
 		if view.filterMenu == filter {
 			view.filterMenu = sessionLogFilterNone
@@ -341,8 +402,20 @@ func (state *State) clickSessionLogs(id ui.ID) bool {
 		state.closeSessionLogDetail()
 		return true
 	case hitSessionLogsLive:
-		state.jumpToLiveSession()
+		state.reopenSessionLogRecord(view.selected)
 		return true
+	case hitSessionLogsCopy:
+		state.copySessionLogMetadata(view.selected)
+		return true
+	case hitSessionLogsLocate:
+		state.locateSessionLogHost(view.selected)
+		return true
+	}
+	if index, ok := id.In(hitSessionLogsRowFavorite); ok {
+		if index >= 0 && index < len(view.page) {
+			state.toggleSessionLogFavoriteID(view.page[index].id)
+			return true
+		}
 	}
 	if view.filterMenu != sessionLogFilterNone {
 		if index, ok := id.In(hitSessionLogsFilterList); ok {
@@ -374,6 +447,9 @@ func (state *State) sessionLogsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	}
 	if event.Key == ui.KeyEscape {
 		switch {
+		case view.moreMenu:
+			view.moreMenu = false
+			return ui.EventResult{Handled: true, Repaint: true, Focus: hitSessionLogsMore, FocusVisible: true}, true
 		case view.filterMenu != sessionLogFilterNone:
 			view.filterMenu = sessionLogFilterNone
 			return ui.EventResult{Handled: true, Repaint: true}, true

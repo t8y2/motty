@@ -624,11 +624,11 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	if !ok {
 		t.Fatal("the detail panel has no session-jump action")
 	}
-	if !liveButton.Disabled {
-		t.Fatalf("the session jump is enabled with no open session: %+v", liveButton)
+	if liveButton.Disabled {
+		t.Fatalf("a closed record has no way to choose a host: %+v", liveButton)
 	}
-	if liveButton.Label != state.messages.SessionLogs.SessionClosed {
-		t.Fatalf("the disabled session jump says %q", liveButton.Label)
+	if liveButton.Label != state.messages.SessionLogs.ChooseHost {
+		t.Fatalf("the closed record action says %q", liveButton.Label)
 	}
 
 	// A record with no events still shows its localized result code.
@@ -644,6 +644,9 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	// A record with no events at all says so honestly.
 	state.selectSessionLogRecord("log-04")
 	sessionLogsWait(t, state)
+	// Legacy rows may predate automatic start/final events.
+	state.sessionLogs.view.events = nil
+	state.prepareSessionLogDetail()
 	labels = sessionLogLabels(state, ui.Size{Width: 1400, Height: 900})
 	if !contains(labels, state.messages.SessionLogs.NoMoreInformation) {
 		t.Fatalf("a record without events does not say %q: %v", state.messages.SessionLogs.NoMoreInformation, labels)
@@ -723,7 +726,8 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 
 	// The clear confirmations state what they clear.
 	state.Click(hitSessionLogsClearFavorite)
-	if state.modal != modalForm || state.form.description != state.messages.SessionLogs.ClearUnfavoritedPrompt {
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != state.messages.SessionLogs.Loading })
+	if state.modal != modalForm || !strings.Contains(state.form.description, state.messages.SessionLogs.ClearUnfavorited) {
 		t.Fatalf("clear-unfavorited dialog = %q", state.form.description)
 	}
 	state.Click(hitFormCancel)
@@ -731,7 +735,8 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 		t.Fatal("canceling the clear leaves the dialog open")
 	}
 	state.Click(hitSessionLogsClearAll)
-	if state.form.description != state.messages.SessionLogs.ClearAllPrompt {
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != state.messages.SessionLogs.Loading })
+	if !strings.Contains(state.form.description, state.messages.SessionLogs.ClearAll) {
 		t.Fatalf("clear-all dialog = %q", state.form.description)
 	}
 	if !strings.Contains(strings.ToLower(state.form.description), strings.ToLower(state.messages.SessionLogs.Favorite)) {
@@ -759,18 +764,15 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 		t.Fatalf("live jump went to section=%d session=%d, want session 7", live.activeSection, live.activeSessionID)
 	}
 
-	// A record whose session is gone does not jump at all.
+	// A closed local record creates a fresh local terminal, never reuses a stale ID.
 	live.sessions[1].logFinished = true
 	live.activeSection = sectionSessionLogs
 	live.activeSessionID = 2
 	live.selectSessionLogRecord("log-02")
 	sessionLogsWait(t, live)
 	live.Click(hitSessionLogsLive)
-	if live.activeSection != sectionSessionLogs || live.activeSessionID != 2 {
-		t.Fatalf("a closed record jumped to section=%d session=%d", live.activeSection, live.activeSessionID)
-	}
-	if live.sessionLogs.view.statusText != live.messages.SessionLogs.SessionClosed {
-		t.Fatalf("status after the closed jump = %q", live.sessionLogs.view.statusText)
+	if live.activeSection != sectionTerminal || live.activeSessionID == 2 || len(live.sessions) != 3 {
+		t.Fatalf("a closed local record did not create a fresh terminal: section=%d session=%d count=%d", live.activeSection, live.activeSessionID, len(live.sessions))
 	}
 }
 
