@@ -549,7 +549,7 @@ func (state *State) openShell(session *Session) {
 	if session.host.AgentForward && session.host.isSSH() {
 		config.AgentForward = true
 	}
-	if _, slow := session.conn.(slowShellOpener); !slow {
+	if opener, ok := session.conn.(slowShellOpener); !ok || !opener.opensShellSlowly() {
 		shell, err := session.conn.OpenShell(config)
 		state.shellOpened(session, shell, err)
 		return

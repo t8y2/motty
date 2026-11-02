@@ -105,6 +105,12 @@ type ToolsMessages struct {
 	GutterNumbers              string
 	GutterTime                 string
 	GutterBoth                 string
+	IntenseRow                 string
+	IntenseDescription         string
+	IntenseBoth                string
+	IntenseBright              string
+	IntenseBold                string
+	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
 	ScrollbarLabel             string

@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/vivaui/viva/app"
@@ -189,6 +190,8 @@ var (
 	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
 	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
 	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -199,6 +202,10 @@ var (
 	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
 	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
 	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
 	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
 	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
 	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
@@ -247,6 +254,9 @@ var (
 	hitProxyDialogSubmit     = tree.ID(proxiesHits, "proxy-dialog-submit")
 	hitProxyDialogTarget     = tree.ID(proxiesHits, "proxy-dialog-target")
 	hitProxyDialogJump       = tree.ID(proxiesHits, "proxy-dialog-jump")
+	hitProxyDialogViaShell   = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogViaHelp    = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
+	hitProxyDialogRelay      = tree.ID(proxiesHits, "proxy-dialog-relay")
 	hitProxyTargetDismiss    = tree.ID(proxiesHits, "proxy-target-dismiss")
 	hitProxyTargetScrollUp   = tree.ID(proxiesHits, "proxy-target-scroll-up")
 	hitProxyTargetScrollDown = tree.ID(proxiesHits, "proxy-target-scroll-down")
@@ -401,6 +411,10 @@ const (
 // resources.
 type State struct {
 	dashboard dashboardState
+	// clipboardDirty says the system clipboard changed since the desktop
+	// sessions were last offered it. It is set from any goroutine
+	// (ClipboardChanged) and cleared on the window's thread (Wake).
+	clipboardDirty atomic.Bool
 	// hostCatalog is the hosts, jump routes, keys, outbound proxy and timeouts a
 	// connection is resolved from; the headless MCP server builds one too.
 	hostCatalog
@@ -479,6 +493,7 @@ type State struct {
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
+	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
 	bg                 backgroundState
@@ -538,6 +553,7 @@ type State struct {
 	options             Options
 	appearance          appearance
 	appearanceMode      appearanceMode
+	networkProxy        networkProxyMode
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	localShell          string // executable on this computer; empty uses the platform default
@@ -595,6 +611,7 @@ type State struct {
 	selectTypeahead        selectTypeahead
 	restorePending         bool // restored tabs have not yet been connected (see connectRestoredSessions)
 	terminalClipboard      terminalClipboardPolicy
+	terminalIntense        terminalIntense
 
 	localDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
@@ -839,6 +856,7 @@ func New(options Options) *State {
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
+		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
 		syncDelay:             syncDelayDefault,
@@ -1067,6 +1085,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 	case modalAIRename:
 		if hit == hitAIRenameField {
 			return &state.ai.rename.editor
+		}
+	case modalNewProxy:
+		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
+			return &state.proxyEditor.relay
 		}
 	case modalNewForward:
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {

@@ -98,6 +98,7 @@ func (state *State) afterEvent(result *ui.EventResult) {
 	if state.runLaunches() {
 		result.Repaint = true
 	}
+	state.syncShortcutCapture()
 }
 
 // runLaunches starts the requests that came in, one at a time, while no dialog

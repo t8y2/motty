@@ -127,8 +127,10 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
-	row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
-	row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	if state.tabOrientation == tabsVertical {
+		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
+		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	}
 
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
@@ -149,6 +151,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.PaddingRow, "")
 	row(settingsTerminal, tools.GutterRow, tools.GutterDescription)
 	row(settingsTerminal, tools.CursorRow, tools.CursorDescription)
+	row(settingsTerminal, tools.IntenseRow, tools.IntenseDescription)
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
 	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)
@@ -179,6 +182,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, m.SettingsShare, m.SettingsShareDescription)
 	row(settingsConnection, m.SettingsRestore, m.SettingsRestoreDescription)
 	row(settingsConnection, m.SettingsSSHAgent, m.SettingsSSHAgentDescription)
+	row(settingsConnection, m.SettingsNetworkProxy, m.SettingsNetworkProxyDescription)
 	row(settingsConnection, tools.ProxyRow, tools.ProxyDescriptionNone)
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")

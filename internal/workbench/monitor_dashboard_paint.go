@@ -342,8 +342,7 @@ func (s *State) paintDashboardState(c *ui.Canvas, p *monitoring.Panel, h Host, r
 		color = s.pal.warning
 	}
 	if running && r.snapshot.Status == monitoring.Failed && h.ID != 0 {
-		theme := s.Theme()
-		theme.Metrics.ControlHeight = b.Height
+		theme := s.Theme().WithControlHeight(b.Height)
 		components.BeginButton(c, theme, hitDashboardRetryList.At(int(h.ID)), b).WithIcon(icons.RotateCw).Ghost(s.messages.Dashboard.Retry)
 	} else {
 		monitorLabel(c, label, b, 12, color, ui.WeightMedium)

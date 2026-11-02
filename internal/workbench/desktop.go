@@ -74,6 +74,15 @@ type desktopView struct {
 	// resizer is the session when its server can change the picture's size to
 	// follow the pane, nil for one that cannot (VNC).
 	resizer desktop.Resizer
+	// pointerKind, pointerShape and pointerVersion are what the remote last
+	// said about its pointer; cursorImage is the shape made for the system to
+	// draw as the pointer, at cursorScale. A session that names no shape
+	// leaves all of it empty.
+	pointerKind    desktop.PointerKind
+	pointerShape   desktop.PointerShape
+	pointerVersion int
+	cursorImage    *ui.CursorImage
+	cursorScale    float32
 	// pixelScale is the device pixels per logical pixel as last painted, and area
 	// where the picture was shown, in the page's coordinates.
 	pixelScale float32
@@ -139,7 +148,50 @@ func (view *desktopView) present() bool {
 	if changed {
 		view.width, view.height = view.surface.Size()
 	}
+	view.presentPointer()
 	return changed
+}
+
+// presentPointer takes what the remote last said about its pointer, and
+// forgets the cursor made from the shape before it when that changed.
+func (view *desktopView) presentPointer() {
+	source, ok := view.session.(desktop.PointerSource)
+	if !ok {
+		return
+	}
+	kind, shape, version := source.PointerShape()
+	if version == view.pointerVersion {
+		return
+	}
+	view.pointerVersion, view.pointerKind, view.pointerShape = version, kind, shape
+	view.cursorImage = nil
+}
+
+// pointerCursor is the cursor over the remote's picture: the system draws the
+// shape the remote names as its own pointer, hides it where the remote hides
+// its own, and shows the ordinary one where the remote asks for it. The
+// crosshair stays for a remote that has named nothing. scale is the device
+// pixels per logical pixel the shape is made for: the remote's pixels are the
+// screen's.
+func (view *desktopView) pointerCursor(scale float32) (ui.PointerCursor, *ui.CursorImage) {
+	switch view.pointerKind {
+	case desktop.PointerHidden:
+		return ui.PointerCursorHidden, nil
+	case desktop.PointerSystem:
+		return ui.PointerCursorDefault, nil
+	case desktop.PointerBitmap:
+		if view.cursorImage == nil || view.cursorScale != scale {
+			shape := view.pointerShape
+			hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
+			image, err := ui.NewCursorImage(shape.Width, shape.Height, hotX, hotY, scale, shape.BGRA)
+			if err != nil {
+				return ui.PointerCursorDefault, nil // a shape no system could draw: the ordinary pointer
+			}
+			view.cursorImage, view.cursorScale = image, scale
+		}
+		return ui.PointerCursorImage, view.cursorImage
+	}
+	return ui.PointerCursorCrosshair, nil
 }
 
 // desktopGeometry is where a remote-desktop page puts things, in the page's own
@@ -283,6 +335,39 @@ func (state *State) pumpDesktop(session *Session) {
 		if err := state.options.SetClipboardText(text); err != nil {
 			state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
 		}
+	}
+}
+
+// ClipboardChanged reports that the system clipboard's content changed. It
+// may run on any goroutine (the platform's clipboard watcher); the next Wake
+// offers the new content to the desktop session the user is working in.
+func (state *State) ClipboardChanged() {
+	state.clipboardDirty.Store(true)
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
+// offerClipboard gives a changed clipboard to the desktop session in front of
+// the user: the focused pane's, in a window that is showing. Other sessions,
+// on tabs behind or in a window hidden to the tray, are not told what is copied
+// elsewhere; they get it when the user comes to them and their own input
+// offers it (syncClipboard), and the change stays pending until a desktop
+// session is in front.
+func (state *State) offerClipboard() {
+	if !state.clipboardDirty.Load() || state.activeSection != sectionTerminal ||
+		state.winChrome.minimized || (state.windowVisible != nil && !state.windowVisible()) {
+		return
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.ID != state.activeSessionID || session.desk == nil {
+			continue
+		}
+		if state.clipboardDirty.CompareAndSwap(true, false) {
+			state.syncClipboard(session.desk)
+		}
+		return
 	}
 }
 
@@ -452,6 +537,46 @@ func (state *State) toggleCapture(view *desktopView) {
 		state.status = state.messages.Desktop.StatusReleased
 	} else {
 		state.status = state.messages.Desktop.StatusCaptured
+	}
+}
+
+// desktopHoldsTheKeyboard reports whether a remote desktop is what the user is typing into: the
+// session in front is a live desktop whose keyboard has not been handed back to Motty, in a
+// window that is showing, with no dialog of Motty's over it.
+func (state *State) desktopHoldsTheKeyboard() bool {
+	if state.activeSection != sectionTerminal || state.modal != modalNone || state.winChrome.minimized ||
+		(state.windowVisible != nil && !state.windowVisible()) {
+		return false
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.desk == nil || session.desk.ended || session.desk.released {
+		return false
+	}
+	return state.desktopVisible(session)
+}
+
+// systemKeyCapture is how the window takes the system's shortcuts (the Windows key and its
+// chords, Alt+Tab, Ctrl+Esc) for itself, nil where it cannot, and what it was last asked.
+type systemKeyCapture struct {
+	take  func(bool) error
+	taken bool
+}
+
+// syncShortcutCapture has the window take the system's shortcuts while a remote desktop holds
+// the keyboard and give them back when it does not, as mstsc does for its own window. Viva keeps
+// them for the window only while it has the focus, and any other window keeps its own. The
+// escape chord that hands the keyboard back hands the shortcuts back with it.
+func (state *State) syncShortcutCapture() {
+	capture := &state.systemKeys
+	if capture.take == nil {
+		return
+	}
+	if want := state.desktopHoldsTheKeyboard(); want != capture.taken {
+		capture.taken = want
+		if err := capture.take(want); err != nil && want {
+			// A platform that cannot take them leaves them with the system, as before.
+			capture.take = nil
+		}
 	}
 }
 
@@ -745,8 +870,9 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
+	cursor, cursorImage := view.pointerCursor(view.pixelScale)
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, ui.HitOptions{
-		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: ui.PointerCursorCrosshair,
+		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor, CursorImage: cursorImage,
 	})
 }
 

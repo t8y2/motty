@@ -201,6 +201,12 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	// Let the first paint settle.
 	pump(t, session, view, 3*time.Second, func() bool { return false })
 	save("first")
+	// What the server said about its pointer, which the workbench shows as the system cursor:
+	// a server that names none leaves the kind unset, which is not a failure.
+	_ = session.SendPointer(width/2, height/2, 0)
+	pump(t, session, view, 2*time.Second, func() bool { return false })
+	kind, shape, version := session.PointerShape()
+	t.Logf("pointer: kind %d, %dx%d, hotspot %d,%d, %d statement(s)", kind, shape.Width, shape.Height, shape.HotX, shape.HotY, version)
 
 	if keys, click := os.Getenv("MOTTY_RDP_PRESS"), os.Getenv("MOTTY_RDP_CLICK"); keys != "" || click != "" {
 		before := view.snapshot()

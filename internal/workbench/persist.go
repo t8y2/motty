@@ -36,6 +36,7 @@ type savedState struct {
 	TabOrientation             string              `json:"tab_orientation,omitempty"`
 	VerticalTabsAutoHide       bool                `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool                `json:"vertical_tabs_grouping,omitempty"`
+	NetworkProxy               string              `json:"network_proxy,omitempty"`
 	TerminalOption             string              `json:"terminalOption,omitempty"`
 	LocalShell                 string              `json:"local_shell,omitempty"`
 	SSHAgent                   string              `json:"ssh_agent,omitempty"`
@@ -68,6 +69,7 @@ type savedState struct {
 	TerminalSchemeLight        string              `json:"terminal_scheme_light,omitempty"`
 	TerminalPadding            string              `json:"terminal_padding,omitempty"`
 	TerminalGutter             string              `json:"terminal_gutter,omitempty"`
+	TerminalIntense            string              `json:"terminal_intense,omitempty"`
 	TerminalNotifications      string              `json:"terminal_notifications,omitempty"`
 	TerminalPasteImage         string              `json:"terminal_paste_image,omitempty"`
 	SFTPParallel               int                 `json:"sftp_parallel,omitempty"`
@@ -199,6 +201,8 @@ type savedProxy struct {
 	JumpUser      string `json:"jump_user,omitempty"`
 	JumpPort      uint16 `json:"jump_port"`
 	Stopped       bool   `json:"stopped,omitempty"`
+	ViaShell      bool   `json:"via_shell,omitempty"`
+	RelayCommand  string `json:"relay_command,omitempty"`
 }
 
 type savedSession struct {
@@ -373,6 +377,7 @@ func (state *State) snapshot() savedState {
 		TabOrientation:             state.tabOrientation.String(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
+		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
 		SSHAgent:                   savedAgent,
@@ -400,6 +405,7 @@ func (state *State) snapshot() savedState {
 		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
 		TerminalPadding:            state.terminalPad.String(),
 		TerminalGutter:             state.terminalGutter.String(),
+		TerminalIntense:            state.terminalIntense.String(),
 		TerminalNotifications:      notifyString(state.notifyOff),
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		CommandHistory:             state.history.on,
@@ -510,6 +516,7 @@ func (state *State) snapshot() savedState {
 		saved.Proxies = append(saved.Proxies, savedProxy{
 			TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
+			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
 	}
 	for index := range state.sessions {
@@ -640,6 +647,7 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	state.messages = i18n.For(state.language)
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
+	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.syncNativeAppearance()
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
@@ -678,6 +686,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.connectionTimeout, state.connectionKeepAlive = connectionTimes(saved)
 	state.connectionReconnect = reconnectPolicyFromString(saved.ConnectionReconnect)
 	state.terminalClipboard = terminalClipboardPolicyFromString(saved.TerminalClipboard)
+	state.terminalIntense = terminalIntenseFromString(saved.TerminalIntense)
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste

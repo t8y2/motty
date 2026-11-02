@@ -334,3 +334,48 @@ func TestASCIICellRunsAskForLigatureShaping(t *testing.T) {
 		}
 	}
 }
+
+// ls writes a directory as 01;34: bold and the base blue. Terminals draw that in
+// the bright blue (Windows Terminal's default, xterm, iTerm2), which is what
+// issue 305 compared against. Colors the program picked exactly stay as they are.
+func TestBoldBaseColorsAreDrawnBright(t *testing.T) {
+	input := "\x1b[1;34mA\x1b[0m\x1b[34mB\x1b[0m\x1b[1;94mC\x1b[0m\x1b[1;38;5;4mD\x1b[0m\x1b[1;38;2;0;0;200mE"
+	// Adjacent characters in one style share a run, so look a character up by its column.
+	colors := func(intense terminalIntense) (runs []ui.TextRun) {
+		pal := darkPalette
+		pal.intense = intense
+		screen := term.New(40, 3, 10)
+		screen.Write([]byte(input))
+		var cache rowCache
+		cache.begin()
+		for _, run := range cache.row(screen.Row(0), 40, -1, cellSpan{}, &pal, false).runs {
+			for cell := int32(0); cell < run.Cells; cell++ {
+				runs = append(runs, run)
+			}
+		}
+		return runs
+	}
+	rgb := func(index int) ui.Color {
+		c := darkPalette.ansi[index]
+		return ui.RGB(c[0], c[1], c[2])
+	}
+	runs := colors(intenseBright)
+	want := []ui.Color{rgb(12), rgb(4), rgb(12), rgb(12), ui.RGB(0, 0, 200)}
+	for index, color := range want {
+		if runs[index].Color != color {
+			t.Errorf("bright: run %d color %+v, want %+v", index, runs[index].Color, color)
+		}
+	}
+	if runs[0].Weight == ui.WeightBold {
+		t.Errorf("bright only: the face stays regular, got weight %v", runs[0].Weight)
+	}
+	if runs := colors(intenseBoth); runs[0].Color != rgb(12) || runs[0].Weight != ui.WeightBold {
+		t.Errorf("both: %+v", runs[0])
+	}
+	if runs := colors(intenseBold); runs[0].Color != rgb(4) || runs[0].Weight != ui.WeightBold {
+		t.Errorf("bold: %+v", runs[0])
+	}
+	if runs := colors(intensePlain); runs[0].Color != rgb(4) || runs[0].Weight == ui.WeightBold {
+		t.Errorf("plain: %+v", runs[0])
+	}
+}

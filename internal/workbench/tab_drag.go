@@ -228,12 +228,24 @@ func (state *State) tabInsertion(x float32) ui.Rect {
 	return bar
 }
 
+// tabDropArea is where a drop among the tabs is taken. Across the top the tabs
+// span the width of the strip but any height of the window bar, so a drag that
+// strays a few pixels above or below the row still reorders instead of tearing
+// the tab out; in the sidebar it is the whole sidebar, header and footer included.
+func (state *State) tabDropArea() ui.Rect {
+	if state.tabStrip.vertical {
+		return state.verticalTabs.bounds
+	}
+	area := state.tabStrip.area
+	return ui.Rect{X: area.X, Width: area.Width, Height: windowBarHeight}
+}
+
 // tabDropAt works out where a drop at window point at would land. source is the
 // tab being dragged within this window, or zero for one that comes from another
 // window with panes panes.
 func (state *State) tabDropAt(at ui.Point, source layoutcore.WorkspaceID, panes int) tabDrop {
 	strip := &state.tabStrip
-	if pointInRect(at.X, at.Y, strip.area) && strip.pitch > 0 {
+	if pointInRect(at.X, at.Y, state.tabDropArea()) && strip.pitch > 0 {
 		if state.verticalTabsGrouped() {
 			return state.groupedVerticalTabDrop(at, source)
 		}
