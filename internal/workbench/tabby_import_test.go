@@ -31,15 +31,26 @@ import (
 // read, so a blob this file made is enough.
 
 // tabbyVaultFor seals contents under passphrase and answers the three strings
-// the configuration carries.
-func tabbyVaultFor(t *testing.T, contents, passphrase string) (blob, salt, iv string) {
+// the configuration carries. A saltHex of "" gets a fresh random salt; naming
+// one is how a test picks a salt that reads as a number.
+func tabbyVaultFor(t *testing.T, contents, passphrase, saltHex string) (blob, salt, iv string) {
 	t.Helper()
-	saltBytes := make([]byte, 8)
-	ivBytes := make([]byte, aes.BlockSize)
-	for _, target := range [][]byte{saltBytes, ivBytes} {
-		if _, err := rand.Read(target); err != nil {
+	var saltBytes []byte
+	if saltHex == "" {
+		saltBytes = make([]byte, 8)
+		if _, err := rand.Read(saltBytes); err != nil {
 			t.Fatal(err)
 		}
+	} else {
+		decoded, err := hex.DecodeString(saltHex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saltBytes = decoded
+	}
+	ivBytes := make([]byte, aes.BlockSize)
+	if _, err := rand.Read(ivBytes); err != nil {
+		t.Fatal(err)
 	}
 	block, err := aes.NewCipher(pbkdf2.Key([]byte(passphrase), saltBytes, 100000, 32, sha512.New))
 	if err != nil {
@@ -127,6 +138,12 @@ vault:
 // writeTabbyConfig writes the configuration above with the secrets sealed under
 // passphrase, and answers its path and the key that is in it.
 func writeTabbyConfig(t *testing.T, passphrase string) (path string, key []byte) {
+	return writeTabbyConfigWithSalt(t, passphrase, "")
+}
+
+// writeTabbyConfigWithSalt is the same with a salt this test chose, so a salt
+// that reads as a number can be written out.
+func writeTabbyConfigWithSalt(t *testing.T, passphrase, saltHex string) (path string, key []byte) {
 	t.Helper()
 	key = newEd25519Key(t)
 	contents, err := json.Marshal(map[string]any{
@@ -152,7 +169,7 @@ func writeTabbyConfig(t *testing.T, passphrase string) (path string, key []byte)
 	if err != nil {
 		t.Fatal(err)
 	}
-	blob, salt, iv := tabbyVaultFor(t, string(contents), passphrase)
+	blob, salt, iv := tabbyVaultFor(t, string(contents), passphrase, saltHex)
 	path = filepath.Join(t.TempDir(), "config.yaml")
 	content := fmt.Sprintf(tabbyConfigWithVault, blob, salt, iv)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -359,5 +376,71 @@ func TestATabbyFileThatIsNotAConfigurationIsRefused(t *testing.T) {
 	}
 	if want := fmt.Sprintf(state.messages.ActionFeedback.ImportSessionsFailedFmt, "Tabby"); state.status != want {
 		t.Fatalf("status = %q", state.status)
+	}
+}
+
+// tabbyNumberSalt is the salt that makes Tabby lose its own vault: random bytes
+// written in hex, beginning "1e", which reads as a float. One salt in sixteen
+// looks like this.
+const tabbyNumberSalt = "1e47747792217278"
+
+func TestATabbyVaultWhoseSaltTabbySavedAsANumberIsExplainedRatherThanBlamed(t *testing.T) {
+	path, _ := writeTabbyConfigWithSalt(t, "correct horse", tabbyNumberSalt)
+	// Tabby sealed the vault with that salt, then wrote it back as .inf, which is
+	// how the file loses it.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten := strings.Replace(string(content), "keySalt: "+tabbyNumberSalt, "keySalt: .inf", 1)
+	if rewritten == string(content) {
+		t.Fatal("the salt was not where the test expected it")
+	}
+	if err := os.WriteFile(path, []byte(rewritten), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	state.Click(hitImportTabby)
+	typeInto(state, hitTabbyPassphraseField, "correct horse")
+	state.Click(hitTabbyPassphraseSubmit)
+	// The right passphrase is not called wrong: the vault is unfixable and said so.
+	if state.modal != modalTabbyPassphrase || state.tabby.dialogError != state.messages.Tools.ImportTabbyVaultMangled {
+		t.Fatalf("modal %d, error %q", state.modal, state.tabby.dialogError)
+	}
+	// What the file holds in the clear is still worth adding.
+	state.Click(hitTabbyPassphraseCancel)
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	if len(state.identities) != 0 {
+		t.Fatal("a key came out of a vault that cannot be opened")
+	}
+}
+
+func TestATabbySaltThatReadsAsANumberStillOpensTheVault(t *testing.T) {
+	// The same salt, left as the hex string it is: Tabby cannot read this file
+	// back, but this program can, because the YAML decoder hands back the text.
+	path, _ := writeTabbyConfigWithSalt(t, "correct horse", tabbyNumberSalt)
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	state.Click(hitImportTabby)
+	typeInto(state, hitTabbyPassphraseField, "correct horse")
+	state.Click(hitTabbyPassphraseSubmit)
+	if state.modal != modalHostImportResult {
+		t.Fatalf("modal %d, error %q", state.modal, state.tabby.dialogError)
+	}
+	if value, found, err := state.secrets.vault.Get(hostSecretName(state.hosts[1].CatalogID, hostPasswordPart)); err != nil || !found || value != "hunter2" {
+		t.Fatalf("the saved password = %q, %v, %v", value, found, err)
 	}
 }

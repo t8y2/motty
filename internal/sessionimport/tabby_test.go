@@ -1,11 +1,19 @@
 package sessionimport
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha512"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // The two files below were written by Tabby's own vault code (Node's crypto,
@@ -376,5 +384,92 @@ func TestATabbyFileWithoutAVaultSaysWhereItsPasswordsWent(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no warning says where the passwords went: %v", tabby.Result().Warnings)
+	}
+}
+
+// A salt Tabby picked at random is a hex string, and one in 16 of them reads as
+// a number: "1e" followed by digits is a valid float. This is the salt that
+// makes Tabby lose its own vault (see ErrTabbyVaultMangled), so it is the one
+// worth testing with.
+const tabbyNumberSalt = "1e47747792217278"
+
+// tabbyFixedIV is any 16 bytes in hex; the IV does not have to be random for the
+// decryption to work.
+const tabbyFixedIV = "41af3cc2eee4edb318791c91b880b1f7"
+
+// sealTabbyVault seals contents the way Tabby does, with a salt this test
+// chooses, so the salt is the one under test rather than a fresh random one.
+func sealTabbyVault(t *testing.T, contents, passphrase, saltHex string) string {
+	t.Helper()
+	salt, err := hex.DecodeString(saltHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	iv, err := hex.DecodeString(tabbyFixedIV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := aes.NewCipher(pbkdf2.Key([]byte(passphrase), salt, tabbyPBKDFIterations, tabbyKeySize, sha512.New))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := []byte(contents)
+	padding := aes.BlockSize - len(plain)%aes.BlockSize
+	plain = append(plain, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	sealed := make([]byte, len(plain))
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(sealed, plain)
+	return base64.StdEncoding.EncodeToString(sealed)
+}
+
+// writeTabbyVaultConfig writes a one-session configuration whose vault holds the
+// blob, with the salt and IV written exactly as given.
+func writeTabbyVaultConfig(t *testing.T, blob, salt, iv string) string {
+	t.Helper()
+	content := "version: 8\nprofiles:\n  - id: ssh:web\n    type: ssh\n    name: web\n    options:\n" +
+		"      host: web.example.com\n      port: 2222\n      user: deploy\n      auth: password\n" +
+		"vault:\n  version: 1\n  contents: " + blob + "\n  keySalt: " + salt + "\n  iv: " + iv + "\n"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestATabbySaltThatReadsAsANumberIsStillTheSalt(t *testing.T) {
+	contents := `{"secrets":[{"type":"ssh:password","key":{"user":"deploy","host":"web.example.com","port":2222},"value":"web-secret"}]}`
+	blob := sealTabbyVault(t, contents, "correct horse", tabbyNumberSalt)
+	// Unquoted: this is what a writer that did not quote the salt leaves behind,
+	// and what Tabby's own YAML reader then turns into Infinity.
+	path := writeTabbyVaultConfig(t, blob, tabbyNumberSalt, tabbyFixedIV)
+	tabby, err := ParseTabby(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tabby.NeedsPassphrase() {
+		t.Fatal("a file with a vault does not ask for its passphrase")
+	}
+	if err := tabby.Unlock("correct horse"); err != nil {
+		t.Fatalf("a salt that reads as a number was not read as the hex it is: %v", err)
+	}
+	if got := tabby.Result().Entries[0].Password; got != "web-secret" {
+		t.Fatalf("web password = %q", got)
+	}
+}
+
+func TestATabbyVaultWhoseSaltBecameInfinitySaysSoInsteadOfBlamingThePassphrase(t *testing.T) {
+	// Tabby reads the unquoted salt as a number, gets Infinity, and writes it
+	// back as .inf: the salt is gone, and no passphrase can bring it back.
+	blob := sealTabbyVault(t, `{"secrets":[]}`, "correct horse", tabbyNumberSalt)
+	path := writeTabbyVaultConfig(t, blob, ".inf", tabbyFixedIV)
+	tabby, err := ParseTabby(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tabby.Unlock("correct horse"); !errors.Is(err, ErrTabbyVaultMangled) {
+		t.Fatalf("Unlock on a vault whose salt was lost = %v", err)
+	}
+	// The sessions are still readable: only the secrets are out of reach.
+	if result := tabby.Result(); len(result.Entries) != 1 || result.Entries[0].Host != "web.example.com" {
+		t.Fatalf("entries = %+v", result.Entries)
 	}
 }

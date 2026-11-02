@@ -126,17 +126,31 @@ func (state *State) submitTabbyPassphrase() {
 		return
 	}
 	opened := 0
+	var broken error
 	for _, file := range imported.files {
 		if !file.NeedsPassphrase() {
 			continue
 		}
-		if err := file.Unlock(passphrase); err != nil {
+		err := file.Unlock(passphrase)
+		if err == nil {
+			opened++
 			continue
 		}
-		opened++
+		// A vault whose salt Tabby saved as a number cannot be opened by any
+		// passphrase, so the passphrase must not be blamed for it.
+		if broken == nil && !errors.Is(err, sessionimport.ErrTabbyVault) {
+			broken = err
+		}
 	}
 	if opened == 0 {
-		imported.dialogError = state.messages.Tools.ImportTabbyPassphraseWrong
+		switch {
+		case errors.Is(broken, sessionimport.ErrTabbyVaultMangled):
+			imported.dialogError = state.messages.Tools.ImportTabbyVaultMangled
+		case broken != nil:
+			imported.dialogError = fmt.Sprintf(state.messages.Tools.ImportTabbyVaultFailedFmt, broken)
+		default:
+			imported.dialogError = state.messages.Tools.ImportTabbyPassphraseWrong
+		}
 		imported.passphrase = text.Editor{}
 		return
 	}

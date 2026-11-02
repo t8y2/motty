@@ -1436,6 +1436,8 @@ var chineseTools = ToolsMessages{
 	ImportTabbyPassphraseSubmit:  "解锁并导入",
 	ImportTabbyPassphraseWrong:   "这个密码打不开密码库。",
 	ImportTabbyPassphraseEmpty:   "请先输入密码。",
+	ImportTabbyVaultMangled:      "Tabby 把这个保险库的部分密钥材料存成了数字而不是文本——这是 Tabby 已知的 bug——盐值因此丢失，任何密码都打不开它。如果你有更早的 config.yaml 副本，可以换回来；会话本身仍然可以导入，只是没有已保存的密码。",
+	ImportTabbyVaultFailedFmt:    "无法打开保险库：%v",
 	ImportTabbyLockedFmt:         "%s：密码库未解锁，其中保存的密码和密钥没有读取。",
 	ImportTabbyNothing:           "没有从该 Tabby 配置导入任何内容。",
 

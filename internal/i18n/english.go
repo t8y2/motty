@@ -1436,6 +1436,8 @@ var englishTools = ToolsMessages{
 	ImportTabbyPassphraseSubmit:  "Unlock and import",
 	ImportTabbyPassphraseWrong:   "That passphrase did not open the vault.",
 	ImportTabbyPassphraseEmpty:   "Type the passphrase first.",
+	ImportTabbyVaultMangled:      "Tabby saved part of this vault's key material as a number instead of text — a known Tabby bug — so the salt is gone and no passphrase can open it. Restore an earlier copy of config.yaml if you have one; the sessions can still be imported without the saved passwords.",
+	ImportTabbyVaultFailedFmt:    "The vault could not be opened: %v",
 	ImportTabbyLockedFmt:         "%s: the vault was left locked, so its saved passwords and keys were not read.",
 	ImportTabbyNothing:           "Nothing was imported from the Tabby configuration.",
 

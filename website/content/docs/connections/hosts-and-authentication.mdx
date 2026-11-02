@@ -108,6 +108,15 @@ dismissing it imports nothing at all.
 Tabby before its vault kept passwords in the system keychain, which is not
 Motty's to read; a file with no vault says so after the import.
 
+Tabby has a bug worth knowing about here: its vault's salt is random bytes
+written in hex, and roughly one salt in sixteen begins `1e` and reads as a
+number, which Tabby turns into `.inf` when it saves the file again. The salt is
+then gone and Tabby can no longer open its own vault. Motty reads the salt as
+the text it is, so a file whose salt is still there — quoted or not — opens
+normally; a file where Tabby already replaced it with `.inf` is reported as
+exactly that, rather than as a wrong passphrase, and its sessions are still
+imported. Keep a copy of `config.yaml` before you upgrade Tabby.
+
 ## Syncing with your SSH config
 
 Importing reads a file once. To keep `~/.ssh/config` and Motty in step both ways,

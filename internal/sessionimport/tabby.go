@@ -39,6 +39,13 @@ var (
 	// ErrTabbyNeedsPassphrase means the file keeps its sessions or its secrets in
 	// a vault that has not been opened yet.
 	ErrTabbyNeedsPassphrase = errors.New("tabby: the vault has not been opened")
+	// ErrTabbyVaultMangled means Tabby wrote a value the vault needs — its salt
+	// or its IV — as a number instead of the hex string it is. Both are random
+	// bytes written in hex, so one in sixteen begins "1e" and reads as a float;
+	// Tabby's own YAML reader then turns it into Infinity and writes it back as
+	// .inf, which loses it. Nothing can open such a vault, so the passphrase is
+	// not the thing to blame.
+	ErrTabbyVaultMangled = errors.New("tabby: the vault's key material was saved as a number and is lost")
 )
 
 // TabbyFile is one Tabby config.yaml: the sessions it holds, and the vault that
@@ -557,13 +564,13 @@ func decryptTabbyVault(vault *tabbyVault, passphrase string) ([]byte, error) {
 	if vault.Version != 1 {
 		return nil, fmt.Errorf("tabby: vault version %d is not read", vault.Version)
 	}
-	salt, err := hex.DecodeString(strings.TrimSpace(vault.KeySalt))
-	if err != nil || len(salt) != tabbySaltSize {
-		return nil, errors.New("tabby: the vault's salt is not readable")
+	salt, err := tabbyHexBytes(vault.KeySalt, tabbySaltSize)
+	if err != nil {
+		return nil, err
 	}
-	iv, err := hex.DecodeString(strings.TrimSpace(vault.IV))
-	if err != nil || len(iv) != tabbyIVSize {
-		return nil, errors.New("tabby: the vault's IV is not readable")
+	iv, err := tabbyHexBytes(vault.IV, tabbyIVSize)
+	if err != nil {
+		return nil, err
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(vault.Contents))
 	if err != nil || len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
@@ -589,6 +596,45 @@ func decryptTabbyVault(vault *tabbyVault, passphrase string) ([]byte, error) {
 		}
 	}
 	return plain[:len(plain)-padding], nil
+}
+
+// tabbyHexBytes reads one hex value the vault carries — its salt or its IV —
+// and answers why it could not. The YAML decoder hands back the scalar's own
+// text, so a salt written unquoted as 1e47747792217278 arrives as the hex string
+// it is and opens the vault, which is one file Tabby itself can no longer read.
+// A value that does not decode and reads as a number instead is the other case:
+// Tabby's YAML reader turned it into Infinity and wrote back .inf, and the salt
+// is gone from the file.
+func tabbyHexBytes(raw string, size int) ([]byte, error) {
+	text := strings.TrimSpace(raw)
+	if value, err := hex.DecodeString(text); err == nil && len(value) == size {
+		return value, nil
+	}
+	if looksLikeYAMLNumber(text) {
+		return nil, ErrTabbyVaultMangled
+	}
+	return nil, fmt.Errorf("tabby: the vault's key material is not readable (%q)", elideTabbyValue(text))
+}
+
+// looksLikeYAMLNumber reports whether text is one of the numbers a YAML reader
+// accepts, including the ".inf" and ".nan" that a lost salt ends up as.
+func looksLikeYAMLNumber(text string) bool {
+	lower := strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(text, "+"), "-"))
+	switch lower {
+	case ".inf", ".infinity", ".nan":
+		return true
+	}
+	_, err := strconv.ParseFloat(text, 64)
+	return err == nil
+}
+
+// elideTabbyValue keeps a value the vault could not use short enough to show.
+func elideTabbyValue(text string) string {
+	const limit = 24
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit] + "…"
 }
 
 // applySecrets hands the secrets of an open vault to the sessions they belong

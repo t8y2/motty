@@ -244,8 +244,12 @@ type ToolsMessages struct {
 	ImportTabbyPassphraseSubmit string
 	ImportTabbyPassphraseWrong  string
 	ImportTabbyPassphraseEmpty  string
-	ImportTabbyLockedFmt        string // the file's name
-	ImportTabbyNothing          string
+	// Tabby wrote the salt or the IV of a vault as a number, which loses it, so
+	// no passphrase can open that vault.
+	ImportTabbyVaultMangled   string
+	ImportTabbyVaultFailedFmt string // the error
+	ImportTabbyLockedFmt      string // the file's name
+	ImportTabbyNothing        string
 
 	// Broadcast input.
 	BroadcastStart            string
