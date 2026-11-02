@@ -60,9 +60,7 @@ func (s *State) paintDashboardHeading(c *ui.Canvas, p *monitoring.Panel, h Host,
 	for _, option := range options {
 		tabsW = max(tabsW, (c.TextWidthWeight(option.Label, 12, ui.WeightMedium)+44)*3)
 	}
-	theme := s.Theme()
-	theme.Metrics.FontSizeM = 12
-	theme.Metrics.ControlHeight = 30
+	theme := s.Theme().WithFontSize(12).WithControlHeight(30)
 	components.BeginTabs(c, theme, ui.Rect{X: tabsX, Y: tabsY, Width: tabsW, Height: 30}, options[:], options[r.page].ID).Paint()
 
 	statusX := tabsX + tabsW + 8

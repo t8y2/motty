@@ -942,9 +942,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 	state.paintHostViewToggle(canvas, toggle.Rect().X, toggle.Rect().Y+toggle.Rect().Height/2)
 	if anySelected {
 		for index, action := range actions {
-			theme := state.Theme()
-			theme.Metrics.ControlHeight = rowHeight
-			theme.Metrics.FontSizeM = metrics.FontSizeS
+			theme := state.Theme().WithControlHeight(rowHeight).WithFontSize(metrics.FontSizeS)
 			if action.danger {
 				theme.Foreground = theme.Danger
 			}
