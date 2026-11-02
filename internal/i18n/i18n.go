@@ -136,6 +136,10 @@ type Messages struct {
 	SettingsTabsAutoHideDescription        string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
+	SettingsNetworkProxy                   string
+	SettingsNetworkProxyDescription        string
+	SettingsNetworkProxySystem             string
+	SettingsNetworkProxyDirect             string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

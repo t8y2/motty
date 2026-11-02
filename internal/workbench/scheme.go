@@ -195,6 +195,7 @@ func (state *State) rebuildTerminalLook() {
 		look.ansi = scheme.ansi
 	}
 	look.highlight = state.highlights
+	look.intense = state.terminalIntense
 	state.termEpoch++
 	look.epoch = state.termEpoch
 	state.termPal = look

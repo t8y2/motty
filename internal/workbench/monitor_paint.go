@@ -162,8 +162,7 @@ func (state *State) paintMonitorRefresh(c *ui.Canvas, p *monitorView, b ui.Rect,
 
 // Both monitoring surfaces use the same SVG clock frames and scheduling rules.
 func (state *State) paintIntervalClock(c *ui.Canvas, p *monitorView, b ui.Rect, live bool, id ui.ID, label string, expanded bool) {
-	theme := state.Theme()
-	theme.Metrics.ControlHeight = b.Height
+	theme := state.Theme().WithControlHeight(b.Height)
 	components.BeginButton(c, theme, ui.ID{}, b).WithState(components.ButtonState{Hovered: c.Hovered() == id, Pressed: c.Pressed() == id, Focused: c.FocusVisible() == id}).Ghost("")
 	c.HitWithOptions(id, b, label, ui.HitOptions{Role: ui.RoleButton, Expandable: true, Expanded: expanded, Value: p.intervalText})
 	frame := monitorRefreshFrame(c, p, live)

@@ -44,6 +44,20 @@ func (group *Group) windowFrame() (ui.Rect, bool) {
 // NewGroup returns an empty group.
 func NewGroup() *Group { return &Group{} }
 
+// ClipboardChanged tells every window the system clipboard changed. The
+// watcher callback runs on an unspecified thread, so each State's own flag
+// does the cross-thread handoff and its Invalidate moves the work to the
+// window's thread.
+func (group *Group) ClipboardChanged() {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.ClipboardChanged()
+	}
+}
+
 // sessionCount is how many sessions are open in all the windows.
 func (group *Group) sessionCount() int {
 	group.mu.Lock()
@@ -108,6 +122,13 @@ func (group *Group) windowAt(state *State, at ui.Point) *State {
 // tab. Call it once the window exists.
 func (state *State) SetWindow(frame func() (ui.Rect, bool), visible func() bool) {
 	state.frame, state.windowVisible = frame, visible
+}
+
+// SetShortcutCapture gives the state the window's way of taking the system's shortcuts (the
+// Windows key and its chords, Alt+Tab, Ctrl+Esc) for itself while it has the keyboard focus. The
+// state asks for them only while a remote desktop holds the keyboard.
+func (state *State) SetShortcutCapture(capture func(bool) error) {
+	state.systemKeys.take = capture
 }
 
 // tabPayload is a tab on its way from one window to another: its panes' layout

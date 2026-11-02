@@ -3,12 +3,15 @@ package workbench
 import (
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/localshell"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 )
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
@@ -68,6 +71,47 @@ func TestLocalTerminalRunsAShellOnThisComputerWithoutDialing(t *testing.T) {
 	}
 	session.term.send([]byte("echo local-$((20+22))\n"))
 	localShellOutput(t, state, session, "local-42")
+}
+
+func TestLocalTerminalNetworkProxyEnvironment(t *testing.T) {
+	direct := newLocalConn("", networkProxyDirect)
+	direct.lookupSystemProxy = func() systemproxy.Settings {
+		t.Fatal("direct mode read the system proxy")
+		return systemproxy.Settings{}
+	}
+	// Direct sets nothing, so what the shell inherits stays.
+	if got := direct.shellConfig(sshconn.ShellConfig{}, "windows").Env; got != nil {
+		t.Fatalf("direct environment = %q, want none", got)
+	}
+
+	system := newLocalConn("", networkProxySystem)
+	called := false
+	proxy := systemproxy.Settings{HTTP: "http://127.0.0.1:10808", HTTPS: "http://127.0.0.1:10808", Bypass: "localhost"}
+	system.lookupSystemProxy = func() systemproxy.Settings {
+		called = true
+		return proxy
+	}
+	if got, want := system.shellConfig(sshconn.ShellConfig{}, "windows").Env, systemproxy.Environment(proxy); !called || !slices.Equal(got, want) {
+		t.Fatalf("system environment = %q, want %q; lookup called = %v", got, want, called)
+	}
+
+	// No system proxy leaves what the shell inherits (a user's own
+	// HTTP_PROXY, say) alone instead of clearing it.
+	proxy = systemproxy.Settings{Bypass: "localhost"}
+	if got := system.shellConfig(sshconn.ShellConfig{}, "windows").Env; got != nil {
+		t.Fatalf("environment without a system proxy = %q", got)
+	}
+
+	for _, mode := range []networkProxyMode{networkProxySystem, networkProxyDirect} {
+		wsl := newLocalConn(localshell.WSLShell("Ubuntu"), mode)
+		wsl.lookupSystemProxy = func() systemproxy.Settings {
+			t.Fatal("a WSL terminal read the system proxy")
+			return systemproxy.Settings{}
+		}
+		if got := wsl.shellConfig(sshconn.ShellConfig{}, "windows").Env; got != nil {
+			t.Fatalf("WSL environment in %v mode = %q", mode, got)
+		}
+	}
 }
 
 func TestLocalTerminalOffersNoRemoteOnlyTools(t *testing.T) {
@@ -278,4 +322,20 @@ func TestWindowBarHasALocalTerminalButtonThatOpensAShell(t *testing.T) {
 			session.term.shell.Close()
 		}
 	})
+}
+
+// Following the system proxy runs the platform's settings tool, so only that
+// mode opens its shell off the window's thread, and a shell that cannot start
+// comes back as no shell at all, not as a nil pointer the caller would close.
+func TestLocalTerminalOpensOffTheWindowOnlyWhenItAsksTheSystem(t *testing.T) {
+	if newLocalConn("", networkProxyDirect).opensShellSlowly() {
+		t.Fatal("a terminal that sets no proxy opens slowly")
+	}
+	if !newLocalConn("", networkProxySystem).opensShellSlowly() {
+		t.Fatal("a terminal that follows the system proxy opens on the window's thread")
+	}
+	missing := newLocalConn(filepath.Join(t.TempDir(), "no-such-shell"), networkProxyDirect)
+	if shell, err := missing.OpenShell(sshconn.ShellConfig{Cols: 80, Rows: 24}); err == nil || shell != nil {
+		t.Fatalf("a missing shell opened as %v, %v", shell, err)
+	}
 }

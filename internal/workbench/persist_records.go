@@ -63,8 +63,9 @@ import (
 // rewrite that object from its typed struct and silently turn capture back on.
 // Version 12 preserves the device-local default editor for the same reason: an
 // older build's full save would drop the choice and the menu item with it.
-// Version 13 preserves the device-local tab orientation and auto-hide choice.
-const configFormat = 13
+// Version 13 preserves the device-local network proxy choice.
+// Version 14 preserves the device-local tab orientation and auto-hide choice.
+const configFormat = 14
 
 const (
 	kindSetting             = "setting"
@@ -190,6 +191,7 @@ var syncedSettings = map[string]bool{
 	"terminal_scheme_light":        true,
 	"terminal_padding":             true,
 	"terminal_gutter":              true,
+	"terminal_intense":             true,
 	"terminal_notifications":       true,
 	"terminal_paste_image":         true,
 	"sftp_parallel":                true,

@@ -124,6 +124,7 @@ type palette struct {
 	// look so a prepared line knows it is stale.
 	termFG    ui.Color
 	highlight *highlight.Set
+	intense   terminalIntense
 	epoch     uint16
 }
 
