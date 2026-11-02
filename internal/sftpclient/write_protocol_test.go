@@ -53,9 +53,20 @@ func TestTransfersSupportMaximumLengthNames(t *testing.T) {
 
 func newProtocolWorker(t *testing.T) (*Worker, string) {
 	t.Helper()
+	return newProtocolWorkerOn(t, nil, nil)
+}
+
+// newProtocolWorkerOn is newProtocolWorker with a say in the two ends: serverSide
+// wraps the server's end of the pipe, and wrapRemote the remote the worker uses.
+func newProtocolWorkerOn(t *testing.T, serverSide func(net.Conn) net.Conn, wrapRemote func(remote) Remote) (*Worker, string) {
+	t.Helper()
 	root := t.TempDir()
 	clientConnection, serverConnection := net.Pipe()
-	server, err := sftp.NewServer(serverConnection, sftp.WithServerWorkingDirectory(root))
+	var serverEnd io.ReadWriteCloser = serverConnection
+	if serverSide != nil {
+		serverEnd = serverSide(serverConnection)
+	}
+	server, err := sftp.NewServer(serverEnd, sftp.WithServerWorkingDirectory(root))
 	if err != nil {
 		clientConnection.Close()
 		serverConnection.Close()
@@ -72,7 +83,12 @@ func newProtocolWorker(t *testing.T) (*Worker, string) {
 		serverConnection.Close()
 		t.Fatal(err)
 	}
-	worker := NewWorker(func() (Remote, error) { return remote{Client: client}, nil }, nil)
+	worker := NewWorker(func() (Remote, error) {
+		if wrapRemote != nil {
+			return wrapRemote(remote{Client: client}), nil
+		}
+		return remote{Client: client}, nil
+	}, nil)
 	t.Cleanup(func() {
 		worker.Close()
 		select {

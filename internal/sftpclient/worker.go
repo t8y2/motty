@@ -3,6 +3,7 @@ package sftpclient
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/leaks"
 	"io"
 	"os"
 	"path"
@@ -13,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/vivaui/viva/leaks"
 
 	"github.com/pkg/sftp"
 )
@@ -218,6 +217,10 @@ type transferRecord struct {
 	settled  bool
 	// paused holds the transfer back; active says a goroutine is running it.
 	paused, active bool
+	// canceledByUser is set by CancelTransfer, the user's own decision to give
+	// the transfer up. Cancel and Close end a transfer too, but they are about
+	// the connection, and what the transfer left behind is kept for a retry.
+	canceledByUser bool
 	// The speed is measured over at least rateWindow, then smoothed.
 	rateAt    time.Time
 	rateBytes int64
@@ -307,6 +310,9 @@ type Worker struct {
 	linksGroup sync.WaitGroup
 	clock      func() time.Time
 	progressAt time.Time // last progress-only notification, protected by mu
+	// cancelGrace is how long a canceled upload may take to stop on its own
+	// before the connection is dropped (uploadCancelGrace).
+	cancelGrace time.Duration
 	// ids are the user and group names the server's account files gave, read
 	// once, on the first listing.
 	ids       IDNames
@@ -321,6 +327,7 @@ func NewWorker(open func() (Remote, error), notify func()) *Worker {
 		results:  make(chan Result, maxQueuedRequests),
 		done:     make(chan struct{}), finished: make(chan struct{}),
 		parallel: DefaultParallel, resume: make(chan struct{}), clock: time.Now,
+		cancelGrace: uploadCancelGrace,
 	}
 	liveWorkers.Acquire()
 	go worker.run()
@@ -578,6 +585,53 @@ func (worker *Worker) wakeLocked() {
 	worker.resume = make(chan struct{})
 }
 
+// wakeChannel returns the channel closed by the next wakeLocked. Take it before
+// looking at the state it announces a change of.
+func (worker *Worker) wakeChannel() <-chan struct{} {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	return worker.resume
+}
+
+// canceledByUser reports whether the user gave up transfer id with
+// CancelTransfer, as opposed to the connection being discarded under it.
+func (worker *Worker) canceledByUser(id uint64) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	record := worker.transferLocked(id)
+	return record != nil && record.canceledByUser
+}
+
+// interruptIfAlone discards the subsystem of generation when transfer id is the
+// only thing using it, which is what ends requests that wait on a link that no
+// longer answers, and reports whether the subsystem is gone. A subsystem other
+// transfers share is left alone.
+//
+// The subsystem is closed on a goroutine of its own: pkg/sftp's Close waits for
+// the lock a blocked write holds, so on a stalled link it does not return until
+// the connection gives up, and the caller must not be held by it.
+func (worker *Worker) interruptIfAlone(generation, id uint64) bool {
+	worker.mu.Lock()
+	if worker.generation != generation {
+		worker.mu.Unlock()
+		return true
+	}
+	for index := range worker.transfers {
+		if record := &worker.transfers[index]; record.active && record.snapshot.ID != id {
+			worker.mu.Unlock()
+			return false
+		}
+	}
+	worker.generation++
+	client := worker.client
+	worker.client = nil
+	worker.mu.Unlock()
+	if client != nil {
+		go func() { _ = client.Close() }()
+	}
+	return true
+}
+
 // stopped reports whether work should end: the subsystem was discarded, or the
 // transfer (id, when not zero) was cancelled.
 func (worker *Worker) stopped(generation, id uint64) bool {
@@ -703,6 +757,7 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.settled = false
 	record.paused = false
+	record.canceledByUser = false
 	worker.mu.Unlock()
 	worker.schedule()
 	worker.changed()
@@ -722,6 +777,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	record.snapshot.Retryable = false
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.paused = false
+	record.canceledByUser = true
 	active := record.active
 	if !active {
 		// A queued task has no copy goroutine to finish its cancellation.
@@ -735,9 +791,11 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	}
 	worker.wakeLocked()
 	worker.mu.Unlock()
-	if active && others == 0 && record.request.operation == OperationDownload {
+	if active && others == 0 && record.request.operation != OperationUpload {
 		// Nothing else is using the subsystem, and a read that is waiting on the
-		// network only ends when it goes.
+		// network only ends when it goes. An upload is given a moment to stop on
+		// its own first, because the subsystem is also what removes its partial
+		// file (see uploadPipelined).
 		if client := worker.invalidate(); client != nil {
 			_ = client.Close()
 		}
@@ -1327,13 +1385,21 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		return 0, 0, err
 	}
 	closed := false
-	committed := false
+	// A partial file is only worth keeping for a resume. One the user gave up
+	// on, and that they did not ask to continue, is removed; one a failure or a
+	// lost connection left behind stays, as does every partial under
+	// ExistingResume, however the transfer ended.
+	discard := false
 	defer func() {
-		if !closed {
+		// An abandoned upload has requests in flight on the handle, and closing
+		// it would wait for them; it goes with the connection.
+		if errors.Is(err, errUploadAbandoned) {
+			err = ErrCanceled
+		} else if !closed {
 			err = errors.Join(err, destination.Close())
 		}
-		if !committed && (policy != ExistingResume || errors.Is(err, ErrCanceled)) {
-			worker.removeRemotePartial(client, partial)
+		if discard {
+			worker.removeRemotePartial(client, generation, partial)
 		}
 	}()
 	if policy == ExistingResume && partialExists {
@@ -1356,6 +1422,17 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	newBytes, err := worker.uploadCopy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
 	written = resumed + newBytes
 	if err != nil {
+		if errors.Is(err, errUploadAbandoned) {
+			return written, resumed, err
+		}
+		if policy != ExistingResume && worker.canceledByUser(transferID) {
+			discard = true
+		} else {
+			// Writes after the one that failed may have landed, leaving
+			// zero-filled gaps that the next resume could not verify. Keep only
+			// the bytes that are known to be there.
+			_ = destination.Truncate(written)
+		}
 		return written, resumed, err
 	}
 	if err := destination.Sync(); err != nil && !isUnsupportedSFTP(err) {
@@ -1374,7 +1451,6 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	if err := commitRemote(client, partial, remotePath, finalExists); err != nil {
 		return written, resumed, err
 	}
-	committed = true
 	return written, resumed, nil
 }
 
@@ -1592,13 +1668,9 @@ func (worker *Worker) downloadFile(client transferRemote, remotePath, localPath 
 		return 0, 0, err
 	}
 	closed := false
-	committed := false
 	defer func() {
 		if !closed {
 			err = errors.Join(err, destination.Close())
-		}
-		if !committed && policy != ExistingResume {
-			_ = os.Remove(partial)
 		}
 	}()
 	if policy == ExistingResume && partialExists {
@@ -1636,248 +1708,317 @@ func (worker *Worker) downloadFile(client transferRemote, remotePath, localPath 
 	if err := replaceLocalFile(partial, localPath); err != nil {
 		return written, resumed, err
 	}
-	committed = true
 	if worker.preserveTimes() && !modTime.IsZero() {
 		_ = os.Chtimes(localPath, modTime, modTime)
 	}
 	return written, resumed, nil
 }
 
-var uploadChunkPool = sync.Pool{
-	New: func() any {
-		return make([]byte, 32*1024)
-	},
-}
+// uploadChunkSize is the payload of one SFTP write: the packet size pkg/sftp
+// uses unless told otherwise, so a chunk is exactly one request.
+const uploadChunkSize = 32 * 1024
 
-type uploadPipelinedChunk struct {
+// uploadWindow is how many chunks one file keeps unacknowledged: 2 MiB, the
+// receive window an SSH channel starts with. More could not be sent before the
+// first acknowledgements return anyway, and the window is what bounds the
+// memory of an upload.
+const uploadWindow = 64
+
+// uploadCancelGrace is how long a canceled upload gets to finish its writes in
+// flight before the connection is dropped under them. Writes that are only
+// waiting for acknowledgements end in a round trip, and ending them leaves the
+// subsystem usable to remove the partial file; writes on a link that no longer
+// answers would hold the transfer for as long as the link takes to give up.
+const uploadCancelGrace = 3 * time.Second
+
+// errUploadAbandoned accompanies ErrCanceled when an upload was left with
+// writes still in flight: the file handle cannot be used or closed safely.
+var errUploadAbandoned = errors.New("sftp: upload left with requests in flight")
+
+var uploadChunkPool = sync.Pool{New: func() any { return new([uploadChunkSize]byte) }}
+
+// uploadChunk travels from the reader to a writer as a request and back as its
+// acknowledgement.
+type uploadChunk struct {
 	seq    int64
 	offset int64
-	data   []byte
-	raw    []byte
+	buffer *[uploadChunkSize]byte
+	n      int
+	err    error
+	landed bool
 }
 
-type uploadPipelinedAck struct {
-	seq int64
-	n   int
-	err error
+// uploadPipeline is one file's upload: a reader cuts the source into numbered
+// chunks, up to uploadWindow writers send them to explicit offsets, and the
+// goroutine that owns the pipeline counts acknowledgements in order.
+type uploadPipeline struct {
+	worker      *Worker
+	destination io.WriterAt
+	source      io.Reader
+	generation  uint64
+	transferID  uint64
+	resumed     int64
+
+	tasks chan uploadChunk
+	acks  chan uploadChunk
+	// free holds buffers whose chunk was acknowledged in order. A buffer comes
+	// back only then, so no more than uploadWindow chunks are ever between
+	// being read and being counted, which is also what lets run keep their
+	// results in a ring of uploadWindow slots.
+	free chan *[uploadChunkSize]byte
+	stop chan struct{}
+	once sync.Once
+
+	writers    sync.WaitGroup
+	readerDone chan struct{}
+
+	// The reader owns these until readerDone is closed.
+	dispatched int64
+	atEOF      bool
+	readErr    error
+	buffers    [uploadWindow]*[uploadChunkSize]byte
+	taken      int
 }
 
-// uploadPipelinedWriterAt streams an uploaded file using a continuous sliding window of
-// concurrent WriteAt requests. It completely eliminates the stop-and-wait pipeline stall,
-// keeping high-latency links saturated, while strictly guaranteeing that progress
-// reflects only continuous, remotely acknowledged bytes.
-func (worker *Worker) uploadPipelinedWriterAt(destination io.WriterAt, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
-	const (
-		pipelinedWindow = 64
-	)
+func (pipeline *uploadPipeline) halt() { pipeline.once.Do(func() { close(pipeline.stop) }) }
 
-	tasks := make(chan uploadPipelinedChunk, pipelinedWindow)
-	acks := make(chan uploadPipelinedAck, pipelinedWindow)
-	done := make(chan struct{})
-	var closeOnce sync.Once
-	stopPipeline := func() {
-		closeOnce.Do(func() {
-			close(done)
-		})
+// acquire returns a buffer to read into, or nil once the pipeline has stopped.
+// The pool is only asked for as many buffers as the window ever uses, so a small
+// file does not borrow 2 MiB.
+func (pipeline *uploadPipeline) acquire() *[uploadChunkSize]byte {
+	select {
+	case buffer := <-pipeline.free:
+		return buffer
+	default:
 	}
-	defer stopPipeline()
-
-	var workers sync.WaitGroup
-	var activeWorkers atomic.Int32
-	for range pipelinedWindow {
-		workers.Go(func() {
-			activeWorkers.Add(1)
-			defer activeWorkers.Add(-1)
-			for {
-				select {
-				case <-done:
-					return
-				case task, ok := <-tasks:
-					if !ok {
-						return
-					}
-					n, err := destination.WriteAt(task.data, task.offset)
-					uploadChunkPool.Put(task.raw)
-
-					select {
-					case acks <- uploadPipelinedAck{seq: task.seq, n: n, err: err}:
-					case <-done:
-						return
-					}
-				}
-			}
-		})
+	if pipeline.taken < uploadWindow {
+		buffer := uploadChunkPool.Get().(*[uploadChunkSize]byte)
+		pipeline.buffers[pipeline.taken] = buffer
+		pipeline.taken++
+		return buffer
 	}
+	select {
+	case buffer := <-pipeline.free:
+		return buffer
+	case <-pipeline.stop:
+		return nil
+	}
+}
 
-	var readErr error
-	go func() {
-		defer close(tasks)
-		var seq int64
-		currentOffset := resumed
-		for {
-			if transferID != 0 {
-				if !worker.holdWhilePaused(generation, transferID) {
-					readErr = ErrCanceled
-					stopPipeline()
-					return
-				}
-			} else if worker.canceled(generation) {
-				readErr = ErrCanceled
-				stopPipeline()
+func (pipeline *uploadPipeline) read() {
+	defer close(pipeline.readerDone)
+	defer close(pipeline.tasks)
+	offset := pipeline.resumed
+	for seq := int64(0); ; seq++ {
+		select {
+		case <-pipeline.stop:
+			return
+		default:
+		}
+		buffer := pipeline.acquire()
+		if buffer == nil {
+			return
+		}
+		worker := pipeline.worker
+		if pipeline.transferID != 0 {
+			if !worker.holdWhilePaused(pipeline.generation, pipeline.transferID) {
+				pipeline.readErr = ErrCanceled
+				pipeline.halt()
 				return
 			}
-			select {
-			case <-done:
-				return
-			default:
+		} else if worker.canceled(pipeline.generation) {
+			pipeline.readErr = ErrCanceled
+			pipeline.halt()
+			return
+		}
+		n, err := io.ReadFull(pipeline.source, buffer[:])
+		if n > 0 {
+			if seq < uploadWindow {
+				// Writers are started as the chunks need them, so a file of a
+				// few chunks does not start sixty-four goroutines.
+				pipeline.writers.Add(1)
+				go pipeline.write()
 			}
-
-			raw := uploadChunkPool.Get().([]byte)
-			n, err := io.ReadFull(source, raw)
-			if n > 0 {
-				task := uploadPipelinedChunk{
-					seq:    seq,
-					offset: currentOffset,
-					data:   raw[:n],
-					raw:    raw,
-				}
-				seq++
-				currentOffset += int64(n)
-				select {
-				case tasks <- task:
-				case <-done:
-					uploadChunkPool.Put(raw)
-					return
-				}
+			// Never blocks: at most uploadWindow chunks are outstanding.
+			pipeline.tasks <- uploadChunk{seq: seq, offset: offset, buffer: buffer, n: n}
+			pipeline.dispatched++
+			offset += int64(n)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				pipeline.atEOF = true
 			} else {
-				uploadChunkPool.Put(raw)
+				pipeline.readErr = err
+				pipeline.halt()
 			}
-			if err != nil {
-				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-					readErr = err
-					stopPipeline()
-				}
-				return
-			}
+			return
 		}
-	}()
+	}
+}
 
+func (pipeline *uploadPipeline) write() {
+	defer pipeline.writers.Done()
+	for chunk := range pipeline.tasks {
+		// Looked at before every request. Requests already in flight cannot be
+		// called back, so after a failure some later offsets can still land;
+		// uploadFile cuts the file back to what was counted.
+		select {
+		case <-pipeline.stop:
+			return
+		default:
+		}
+		n, err := pipeline.destination.WriteAt(chunk.buffer[:chunk.n], chunk.offset)
+		if err == nil && n < chunk.n {
+			err = io.ErrShortWrite
+		}
+		chunk.err = err
+		pipeline.acks <- chunk // never blocks: see free
+	}
+}
+
+// run counts acknowledgements until every goroutine of the pipeline has ended
+// and returns the bytes that are acknowledged without a gap before them, which
+// is all that progress, resume and the partial file's length may rely on.
+func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, error) {
+	worker := pipeline.worker
 	go func() {
-		workers.Wait()
-		close(acks)
+		<-pipeline.readerDone
+		pipeline.writers.Wait()
+		close(pipeline.acks)
 	}()
 
-	var continuousWritten int64
-	var nextExpectedSeq int64
-	pendingAcks := make(map[int64]int)
-	var firstWriteErr error
-
+	var (
+		slots     [uploadWindow]uploadChunk
+		next      int64
+		confirmed int64
+		failed    error
+		aborted   bool
+		abandoned bool
+		grace     <-chan time.Time
+		abandon   <-chan time.Time
+	)
 	lastNotify := worker.clock()
-
-	for ack := range acks {
-		if ack.err != nil && firstWriteErr == nil {
-			firstWriteErr = ack.err
-			stopPipeline()
+	wake := worker.wakeChannel()
+	check := true // the channel is taken before the state is looked at
+	for running := true; running; {
+		if check && !aborted {
+			check = false
+			if worker.stopped(pipeline.generation, pipeline.transferID) {
+				aborted = true
+				pipeline.halt()
+				timer := time.NewTimer(worker.cancelGrace)
+				defer timer.Stop()
+				grace = timer.C
+			}
 		}
-		if firstWriteErr == nil {
-			pendingAcks[ack.seq] = ack.n
+		select {
+		case chunk, ok := <-pipeline.acks:
+			if !ok {
+				running = false
+				break
+			}
+			chunk.landed = true
+			slots[chunk.seq%uploadWindow] = chunk
+			if chunk.err != nil && failed == nil {
+				failed = chunk.err
+				pipeline.halt()
+			}
+			advanced := false
 			for {
-				n, ok := pendingAcks[nextExpectedSeq]
-				if !ok {
+				slot := &slots[next%uploadWindow]
+				if !slot.landed || slot.seq != next || slot.err != nil {
 					break
 				}
-				delete(pendingAcks, nextExpectedSeq)
-				continuousWritten += int64(n)
-				nextExpectedSeq++
+				confirmed += int64(slot.n)
+				pipeline.free <- slot.buffer // never blocks: at most uploadWindow buffers exist
+				slot.landed = false
+				next++
+				advanced = true
 			}
-			now := worker.clock()
-			if transferID != 0 && (now.Sub(lastNotify) >= 50*time.Millisecond || len(pendingAcks) == 0) {
-				lastNotify = now
-				worker.setProgress(transferID, filesDone, bytesBefore+resumed+continuousWritten, resumed)
+			if advanced && pipeline.transferID != 0 {
+				if now := worker.clock(); now.Sub(lastNotify) >= progressFrameInterval {
+					lastNotify = now
+					worker.setProgress(pipeline.transferID, filesDone, bytesBefore+pipeline.resumed+confirmed, pipeline.resumed)
+				}
 			}
+		case <-wake:
+			wake = worker.wakeChannel()
+			check = true
+		case <-grace:
+			grace = nil
+			if worker.interruptIfAlone(pipeline.generation, pipeline.transferID) {
+				// Requests that still do not return are given up on below.
+				timer := time.NewTimer(worker.cancelGrace)
+				defer timer.Stop()
+				abandon = timer.C
+			}
+		case <-abandon:
+			abandoned = true
+			running = false
 		}
 	}
 
-	if transferID != 0 {
-		worker.setProgress(transferID, filesDone, bytesBefore+resumed+continuousWritten, resumed)
+	if pipeline.transferID != 0 {
+		worker.setProgress(pipeline.transferID, filesDone, bytesBefore+pipeline.resumed+confirmed, pipeline.resumed)
 	}
-
-	if firstWriteErr != nil {
-		return continuousWritten, firstWriteErr
+	if abandoned {
+		// The reader never waits on the network and has been told to stop; the
+		// source is closed once this returns, so wait for it.
+		<-pipeline.readerDone
+		// Writers are still inside requests that cannot be called back. They end
+		// with the connection; until then they own their buffers, which are
+		// left to the garbage collector rather than lent to the next upload.
+		return confirmed, errors.Join(ErrCanceled, errUploadAbandoned)
 	}
-	if readErr != nil {
-		return continuousWritten, readErr
+	for _, buffer := range pipeline.buffers[:pipeline.taken] {
+		uploadChunkPool.Put(buffer)
 	}
-	return continuousWritten, nil
+	switch {
+	case failed == nil && pipeline.readErr == nil && pipeline.atEOF && next == pipeline.dispatched:
+		return confirmed, nil
+	case aborted:
+		// Write errors after the user stopped it are the connection being
+		// dropped, not a finding.
+		return confirmed, ErrCanceled
+	case failed != nil:
+		return confirmed, failed
+	case pipeline.readErr != nil:
+		return confirmed, pipeline.readErr
+	}
+	return confirmed, ErrCanceled
 }
 
-// uploadCopy moves a local file to a remote writer. When the destination implements
-// io.WriterAt, it uses a continuous sliding window (uploadPipelinedWriterAt) to
-// achieve optimal throughput over high-latency links while strictly acknowledging
-// continuous progress. Otherwise, it falls back to ReadFromWithConcurrency or
-// sequential copy.
+// uploadPipelined sends source to destination with a sliding window of writes
+// to explicit offsets. One write at a time per file costs a round trip per
+// 32 KiB, and a batch that waits for its last acknowledgement before starting
+// the next leaves the link idle once per batch; here the next chunk goes out as
+// soon as one of the window is acknowledged.
+//
+// The result counts only bytes acknowledged without a gap before them. Writes
+// beyond a failed one may still have landed, leaving the remote file longer than
+// that and zero-filled in between; the caller truncates it to the result.
+func (worker *Worker) uploadPipelined(destination io.WriterAt, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	pipeline := &uploadPipeline{
+		worker: worker, destination: destination, source: source,
+		generation: generation, transferID: transferID, resumed: resumed,
+		tasks:      make(chan uploadChunk, uploadWindow),
+		acks:       make(chan uploadChunk, uploadWindow),
+		free:       make(chan *[uploadChunkSize]byte, uploadWindow),
+		stop:       make(chan struct{}),
+		readerDone: make(chan struct{}),
+	}
+	go pipeline.read()
+	return pipeline.run(filesDone, bytesBefore)
+}
+
+// uploadCopy moves a local file to a remote writer. A destination that takes
+// writes at offsets, which is every SFTP file, gets the sliding window; any other
+// is written sequentially.
 func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
 	if writerAt, ok := destination.(io.WriterAt); ok {
-		return worker.uploadPipelinedWriterAt(writerAt, source, generation, transferID, filesDone, bytesBefore, resumed)
+		return worker.uploadPipelined(writerAt, source, generation, transferID, filesDone, bytesBefore, resumed)
 	}
-	readFrom, ok := destination.(interface {
-		ReadFromWithConcurrency(io.Reader, int) (int64, error)
-	})
-	if !ok {
-		return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
-	}
-	progress := &copyReadProgress{
-		worker: worker, source: source, generation: generation, transferID: transferID,
-	}
-	var written int64
-	for {
-		// ReadFrom only confirms the writes when it returns. Keep pipelining
-		// bounded batches, publishing acknowledged bytes rather than read-ahead.
-		n, err := readFrom.ReadFromWithConcurrency(io.LimitReader(progress, uploadProgressBatch), uploadConcurrency)
-		if err != nil {
-			if progress.read == 0 {
-				return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
-			}
-			return written, err
-		}
-		written += n
-		if transferID != 0 {
-			worker.setProgress(transferID, filesDone, bytesBefore+resumed+written, resumed)
-		}
-		if n < uploadProgressBatch {
-			return written, nil
-		}
-	}
-}
-
-// uploadConcurrency is how many 32 KiB writes one uploaded file keeps in
-// flight. It is high enough to saturate high-latency links (like jump hosts)
-// while fitting comfortably within the SSH channel window.
-const uploadConcurrency = 64
-
-const uploadProgressBatch = int64(uploadConcurrency * 64 * 1024)
-
-// copyReadProgress tracks read-ahead for fallback detection and applies pause
-// and cancel to the reader. Only uploadCopy publishes acknowledged progress.
-type copyReadProgress struct {
-	worker     *Worker
-	source     io.Reader
-	generation uint64
-	transferID uint64
-	read       int64
-}
-
-func (progress *copyReadProgress) Read(chunk []byte) (int, error) {
-	if progress.transferID != 0 {
-		if !progress.worker.holdWhilePaused(progress.generation, progress.transferID) {
-			return 0, ErrCanceled
-		}
-	} else if progress.worker.canceled(progress.generation) {
-		return 0, ErrCanceled
-	}
-	read, err := progress.source.Read(chunk)
-	progress.read += int64(read)
-	return read, err
+	return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
 }
 
 // downloadCopy keeps pipelined reads when the source supports WriteTo. Fallback
@@ -2164,21 +2305,15 @@ func commitRemote(client transferRemote, partial, final string, finalExists bool
 	return client.Rename(partial, final)
 }
 
-func (worker *Worker) removeRemotePartial(client transferRemote, partial string) {
-	if client != nil {
-		if err := client.Remove(partial); err == nil {
-			return
-		}
+// removeRemotePartial deletes the partial file of an upload that was given up.
+// It is best effort and never opens a subsystem of its own: when the connection
+// was discarded the file stays, and the goroutine that ran the transfer is not
+// made to wait on a link that is already gone.
+func (worker *Worker) removeRemotePartial(client transferRemote, generation uint64, partial string) {
+	if worker.canceled(generation) {
+		return
 	}
-	if worker != nil && worker.open != nil {
-		cleaner, err := worker.open()
-		if err == nil && cleaner != nil {
-			defer cleaner.Close()
-			if remover, ok := cleaner.(remoteFileRemover); ok {
-				_ = remover.Remove(partial)
-			}
-		}
-	}
+	_ = client.Remove(partial)
 }
 
 func remoteLstat(client transferRemote, remotePath string) (os.FileInfo, bool, error) {
