@@ -74,6 +74,15 @@ type desktopView struct {
 	// resizer is the session when its server can change the picture's size to
 	// follow the pane, nil for one that cannot (VNC).
 	resizer desktop.Resizer
+	// pointerKind, pointerShape and pointerVersion are what the remote last
+	// said about its pointer; cursorImage is the shape made for the system to
+	// draw as the pointer, at cursorScale. A session that names no shape
+	// leaves all of it empty.
+	pointerKind    desktop.PointerKind
+	pointerShape   desktop.PointerShape
+	pointerVersion int
+	cursorImage    *ui.CursorImage
+	cursorScale    float32
 	// pixelScale is the device pixels per logical pixel as last painted, and area
 	// where the picture was shown, in the page's coordinates.
 	pixelScale float32
@@ -139,7 +148,50 @@ func (view *desktopView) present() bool {
 	if changed {
 		view.width, view.height = view.surface.Size()
 	}
+	view.presentPointer()
 	return changed
+}
+
+// presentPointer takes what the remote last said about its pointer, and
+// forgets the cursor made from the shape before it when that changed.
+func (view *desktopView) presentPointer() {
+	source, ok := view.session.(desktop.PointerSource)
+	if !ok {
+		return
+	}
+	kind, shape, version := source.PointerShape()
+	if version == view.pointerVersion {
+		return
+	}
+	view.pointerVersion, view.pointerKind, view.pointerShape = version, kind, shape
+	view.cursorImage = nil
+}
+
+// pointerCursor is the cursor over the remote's picture: the system draws the
+// shape the remote names as its own pointer, hides it where the remote hides
+// its own, and shows the ordinary one where the remote asks for it. The
+// crosshair stays for a remote that has named nothing. scale is the device
+// pixels per logical pixel the shape is made for: the remote's pixels are the
+// screen's.
+func (view *desktopView) pointerCursor(scale float32) (ui.PointerCursor, *ui.CursorImage) {
+	switch view.pointerKind {
+	case desktop.PointerHidden:
+		return ui.PointerCursorHidden, nil
+	case desktop.PointerSystem:
+		return ui.PointerCursorDefault, nil
+	case desktop.PointerBitmap:
+		if view.cursorImage == nil || view.cursorScale != scale {
+			shape := view.pointerShape
+			hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
+			image, err := ui.NewCursorImage(shape.Width, shape.Height, hotX, hotY, scale, shape.BGRA)
+			if err != nil {
+				return ui.PointerCursorDefault, nil // a shape no system could draw: the ordinary pointer
+			}
+			view.cursorImage, view.cursorScale = image, scale
+		}
+		return ui.PointerCursorImage, view.cursorImage
+	}
+	return ui.PointerCursorCrosshair, nil
 }
 
 // desktopGeometry is where a remote-desktop page puts things, in the page's own
@@ -778,8 +830,9 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
+	cursor, cursorImage := view.pointerCursor(view.pixelScale)
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, ui.HitOptions{
-		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: ui.PointerCursorCrosshair,
+		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor, CursorImage: cursorImage,
 	})
 }
 
