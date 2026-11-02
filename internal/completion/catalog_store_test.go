@@ -129,8 +129,16 @@ func TestCatalogStoreUpdateReportsRepairedSources(t *testing.T) {
 	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
+	// The snapshot carries the counters next to the catalog, so every window
+	// reads them without a second, racy lookup.
+	if _, _, snapshotStats := store.Snapshot(); snapshotStats.RepairedFiles != 1 || snapshotStats.SkippedSources != 0 {
+		t.Fatalf("snapshot stats = %+v", snapshotStats)
+	}
 	if _, _, latestStats, installedAgain, err := store.Update(context.Background(), client); err != nil || latestStats != (ImportStats{}) || installedAgain {
 		t.Fatalf("up-to-date stats = %+v, installed=%v, %v", latestStats, installedAgain, err)
+	}
+	if _, _, snapshotStats := store.Snapshot(); snapshotStats.RepairedFiles != 1 {
+		t.Fatalf("a no-op update changed the snapshot stats: %+v", snapshotStats)
 	}
 }
 
@@ -160,7 +168,7 @@ func TestCatalogStoreConcurrentUpdateCannotRegress(t *testing.T) {
 	if err := <-second; err != nil {
 		t.Fatal(err)
 	}
-	catalog, generation := store.Snapshot()
+	catalog, generation, _ := store.Snapshot()
 	installed, err := LoadInstalled(path)
 	if err != nil || catalog.Release != "v12.0.0" || installed.Release != "v12.0.0" || generation != 2 || downloads.Load() != 1 {
 		t.Fatalf("regressed: memory=%s disk=%v generation=%d downloads=%d err=%v", catalog.Release, installed, generation, downloads.Load(), err)
@@ -187,7 +195,7 @@ func TestCatalogStoreCanceledWaitDoesNotInstall(t *testing.T) {
 		close(finish)
 		t.Fatal("canceled update waited for the active download")
 	}
-	catalog, generation := store.Snapshot()
+	catalog, generation, _ := store.Snapshot()
 	if catalog.Release != "v10.0.0" || generation != 1 {
 		t.Fatalf("canceled waiter changed snapshot: %s, %d", catalog.Release, generation)
 	}
@@ -222,7 +230,7 @@ func TestCatalogStoreLoadContextCancelsWhileUpdateHoldsWriter(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("canceled load waited for another window's download")
 	}
-	catalog, generation := store.Snapshot()
+	catalog, generation, _ := store.Snapshot()
 	if catalog.Release != "v10.0.0" || generation != 1 {
 		t.Fatalf("canceled load changed snapshot: %s, %d", catalog.Release, generation)
 	}
@@ -235,7 +243,7 @@ func TestCatalogStoreCanceledLoadDoesNotInitialize(t *testing.T) {
 	if _, _, _, err := store.LoadContext(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled load = %v", err)
 	}
-	if catalog, generation := store.Snapshot(); catalog != nil || generation != 0 {
+	if catalog, generation, _ := store.Snapshot(); catalog != nil || generation != 0 {
 		t.Fatal("a canceled load initialized the store")
 	}
 	if catalog, generation, _, err := store.Load(); err != nil || catalog == nil || generation != 1 {
@@ -251,7 +259,7 @@ func TestCatalogStoreCanceledDownloadKeepsDiskAndSnapshot(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled download = %v", err)
 	}
-	catalog, generation := store.Snapshot()
+	catalog, generation, _ := store.Snapshot()
 	installed, loadErr := LoadInstalled(path)
 	if loadErr != nil || catalog.Release != "v10.0.0" || installed.Release != "v10.0.0" || generation != 1 {
 		t.Fatalf("canceled download changed baseline: %v %d %v", catalog, generation, loadErr)
@@ -293,7 +301,7 @@ func TestCatalogStoreFirstUpdateRejectsShrinkAgainstBuiltin(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("shrunk catalog was installed: %v", err)
 	}
-	catalog, generation := store.Snapshot()
+	catalog, generation, _ := store.Snapshot()
 	if catalog == nil || catalog.RootCount() < 700 || generation != 1 {
 		t.Fatalf("built-in baseline was not retained: %v, %d", catalog, generation)
 	}
@@ -347,7 +355,7 @@ func TestCatalogStoreUpdateRejectsLowCoverage(t *testing.T) {
 	if diskErr != nil || !bytes.Equal(onDisk.Encode(), baseline.Encode()) {
 		t.Fatalf("refused update changed the installed file: %v", diskErr)
 	}
-	still, stillGeneration := store.Snapshot()
+	still, stillGeneration, _ := store.Snapshot()
 	if still.Release != "v10.0.0" || stillGeneration != 1 {
 		t.Fatalf("refused update changed the snapshot: %s, %d", still.Release, stillGeneration)
 	}
@@ -383,7 +391,7 @@ func TestCatalogStoresKeepPathsIndependent(t *testing.T) {
 	if _, _, _, _, err := first.Update(context.Background(), client); err != nil {
 		t.Fatal(err)
 	}
-	catalog, generation := second.Snapshot()
+	catalog, generation, _ := second.Snapshot()
 	if catalog.Release != "v10.0.0" || generation != 1 {
 		t.Fatalf("another data directory changed this store: %s, %d", catalog.Release, generation)
 	}

@@ -21,6 +21,10 @@ type CatalogStore struct {
 	mu         sync.RWMutex
 	catalog    *Catalog
 	generation uint64
+	// stats describe the import that produced catalog; they are stored beside
+	// the generation so every window reads one coherent snapshot. A catalog
+	// loaded from disk or embedded in the binary carries zero stats.
+	stats ImportStats
 }
 
 // NewCatalogStore creates a store for a catalog.bin path without reading it.
@@ -29,10 +33,12 @@ func NewCatalogStore(path string) *CatalogStore {
 }
 
 // Snapshot reads only memory; initialization belongs on a background worker.
-func (store *CatalogStore) Snapshot() (*Catalog, uint64) {
+// Catalog, generation and import stats are returned together so a caller never
+// mixes the counters of one catalog with the identity of another.
+func (store *CatalogStore) Snapshot() (*Catalog, uint64, ImportStats) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	return store.catalog, store.generation
+	return store.catalog, store.generation, store.stats
 }
 
 // Load initializes once, choosing the newest usable installed or built-in
@@ -49,7 +55,7 @@ func (store *CatalogStore) LoadContext(ctx context.Context) (catalog *Catalog, g
 	}
 	defer func() { <-store.writer }()
 	store.load()
-	catalog, generation = store.Snapshot()
+	catalog, generation, _ = store.Snapshot()
 	return catalog, generation, store.note, store.err
 }
 
@@ -81,7 +87,7 @@ func (store *CatalogStore) load() {
 			current = installed
 		}
 	}
-	store.publish(current)
+	store.publish(current, ImportStats{})
 }
 
 func validCatalogVersion(catalog *Catalog) bool {
@@ -100,9 +106,9 @@ func minimumInstalledRoots(builtinRoots int) int {
 	return floor
 }
 
-func (store *CatalogStore) publish(catalog *Catalog) {
+func (store *CatalogStore) publish(catalog *Catalog, stats ImportStats) {
 	store.mu.Lock()
-	store.catalog = catalog
+	store.catalog, store.stats = catalog, stats
 	store.generation++
 	store.mu.Unlock()
 }
@@ -143,7 +149,7 @@ func (store *CatalogStore) acquire(ctx context.Context) error {
 }
 
 func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, bool, error) {
-	current, generation := store.Snapshot()
+	current, generation, _ := store.Snapshot()
 	release, err := LatestCommit(ctx, client)
 	if err != nil {
 		return nil, 0, ImportStats{}, false, err
@@ -168,8 +174,8 @@ func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client
 	if err := installCatalog(ctx, store.path, catalog); err != nil {
 		return nil, 0, ImportStats{}, false, err
 	}
-	store.publish(catalog)
-	catalog, generation = store.Snapshot()
+	store.publish(catalog, stats)
+	catalog, generation, _ = store.Snapshot()
 	return catalog, generation, stats, true, nil
 }
 

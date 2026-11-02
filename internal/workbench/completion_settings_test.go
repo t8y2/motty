@@ -1,9 +1,16 @@
 package workbench
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode"
@@ -184,17 +191,114 @@ func TestCompletionKeyHelpIsSearchableInShortcuts(t *testing.T) {
 	}
 }
 
-// loadCompletionBaseline gives the state a real store and catalog generation so
-// a queued update result looks like the install it reports.
-func loadCompletionBaseline(t *testing.T, state *State) *completion.CatalogStore {
+// completionTestCatalog builds an installed baseline large enough for the load
+// floor and rich enough that a synthetic update can lose subcommands.
+func completionTestCatalog(t *testing.T, roots, children int) *completion.Catalog {
 	t.Helper()
-	store := completion.NewCatalogStore("")
+	nodes := make([]*completion.Node, roots)
+	for index := range nodes {
+		nodes[index] = &completion.Node{Token: fmt.Sprintf("tool%03d", index)}
+		if index < children {
+			nodes[index].Children = []*completion.Node{{Token: "child", Flags: []completion.Flag{{Long: "flag"}}}}
+		}
+	}
+	catalog, err := completion.NewCatalog(completion.RepositoryName, "v10.0.0", strings.Repeat("a", 40), "MIT", nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
+}
+
+// sharedCompletionStore returns one store shared by several windows, holding
+// the same kind of catalog as the app's data directory: enough commands for
+// the load floor and enough options for the coverage guard.
+func sharedCompletionStore(t *testing.T) *completion.CatalogStore {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), completion.FileName)
+	if err := completion.InstallCatalog(path, completionTestCatalog(t, 200, 150)); err != nil {
+		t.Fatal(err)
+	}
+	store := completion.NewCatalogStore(path)
 	if _, _, _, err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	state.completion.store = store
-	state.completion.catalogGeneration = 0
 	return store
+}
+
+// completionTestArchive is a synthetic codeload archive matching the shared
+// baseline. broken adds the upstream plain-scalar defect, so importing it
+// reports one repaired file.
+func completionTestArchive(t *testing.T, tag string, broken bool) []byte {
+	t.Helper()
+	prefix := "carapace-bin-" + tag + "/"
+	entries := map[string]string{prefix + "LICENSE": "MIT"}
+	for index := 0; index < 200; index++ {
+		name := fmt.Sprintf("tool%03d", index)
+		entries[prefix+"man/cmd/"+name+"/"+name+".yaml"] = "name: " + name + "\n"
+		if index < 150 {
+			entries[prefix+"man/cmd/"+name+"/"+name+".child.yaml"] = "name: child\nflags:\n  --flag: an option\n"
+		}
+	}
+	if broken {
+		entries[prefix+"man/cmd/broken/broken.yaml"] = "name: broken\nflags:\n  --align?: Vertical (default: top): now\n"
+	}
+	var buffer bytes.Buffer
+	zipper := gzip.NewWriter(&buffer)
+	writer := tar.NewWriter(zipper)
+	for name, data := range entries {
+		header := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(data)), Typeflag: tar.TypeReg}
+		if err := writer.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zipper.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+type completionRewriteTransport struct{ target string }
+
+func (transport completionRewriteTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.URL.Scheme = "http"
+	clone.URL.Host = strings.TrimPrefix(transport.target, "http://")
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+// completionUpdateClient serves one release feed and archive to the fixed
+// api.github.com/codeload URLs the updater uses.
+func completionUpdateClient(t *testing.T, tag string, archive []byte) *http.Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/releases/latest"):
+			fmt.Fprintf(writer, `{"tag_name":%q}`, tag)
+		case strings.Contains(request.URL.Path, "/git/ref/tags/"):
+			fmt.Fprint(writer, `{"object":{"type":"commit","sha":"`+strings.Repeat("b", 40)+`"}}`)
+		case strings.Contains(request.URL.Path, "/tar.gz/"):
+			writer.Write(archive)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return &http.Client{Transport: completionRewriteTransport{target: server.URL}}
+}
+
+func installCompletionUpdate(t *testing.T, store *completion.CatalogStore, tag string, broken bool) completion.ImportStats {
+	t.Helper()
+	_, _, stats, installed, err := store.Update(context.Background(), completionUpdateClient(t, tag, completionTestArchive(t, tag, broken)))
+	if err != nil || !installed {
+		t.Fatalf("installing %s: installed=%v err=%v", tag, installed, err)
+	}
+	return stats
 }
 
 func queueCompletionUpdate(state *State, stats completion.ImportStats, installed bool) {
@@ -206,24 +310,32 @@ func queueCompletionUpdate(state *State, stats completion.ImportStats, installed
 func TestCompletionUpdateReportsRepairedAndSkippedSources(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
-	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2}, true)
-	catalog := state.completion.catalog
-	if catalog == nil {
-		t.Fatal("the update result left no catalog")
+	store := sharedCompletionStore(t)
+	stats := installCompletionUpdate(t, store, "v11.0.0", true)
+	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+		t.Fatalf("import stats = %+v", stats)
+	}
+	c := &state.completion
+	c.store, c.catalogGeneration = store, 0
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{stats: stats, installed: true}
+	state.adoptCompletion() // catalog and its stats first, the result second
+	catalog := c.catalog
+	if catalog == nil || catalog.Release != "v11.0.0" {
+		t.Fatalf("catalog = %+v", catalog)
 	}
 	m := state.messages.Completion
-	if want := fmt.Sprintf(m.UpdatedRepairedFmt, catalog.Release, 9, 2); state.status != want {
+	if want := fmt.Sprintf(m.UpdatedRepairedFmt, catalog.Release, stats.RepairedFiles, stats.SkippedSources); state.status != want {
 		t.Fatalf("status = %q, want %q", state.status, want)
 	}
 	status, err := state.completionCatalogStatus()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary := fmt.Sprintf(m.RepairSummaryFmt, 9, 2); !strings.Contains(status, summary) {
+	if summary := fmt.Sprintf(m.RepairSummaryFmt, stats.RepairedFiles, stats.SkippedSources); !strings.Contains(status, summary) {
 		t.Fatalf("settings status %q does not explain %q", status, summary)
 	}
-	if checked := state.completion.checked.Format("2006-01-02 15:04"); !strings.Contains(status, checked) {
+	if checked := c.checked.Format("2006-01-02 15:04"); !strings.Contains(status, checked) {
 		t.Fatalf("settings status %q lost its check time %q", status, checked)
 	}
 }
@@ -231,10 +343,16 @@ func TestCompletionUpdateReportsRepairedAndSkippedSources(t *testing.T) {
 func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
-	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{}, true)
+	store := sharedCompletionStore(t)
+	stats := installCompletionUpdate(t, store, "v11.0.0", false)
+	if stats.RepairedFiles != 0 || stats.SkippedSources != 0 {
+		t.Fatalf("clean import stats = %+v", stats)
+	}
+	c := &state.completion
+	c.store, c.catalogGeneration = store, 0
+	queueCompletionUpdate(state, stats, true)
 	m := state.messages.Completion
-	if want := fmt.Sprintf(m.UpdatedFmt, state.completion.catalog.Release); state.status != want {
+	if want := fmt.Sprintf(m.UpdatedFmt, c.catalog.Release); state.status != want {
 		t.Fatalf("status = %q, want %q", state.status, want)
 	}
 	status, err := state.completionCatalogStatus()
@@ -248,10 +366,9 @@ func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 
 func TestCompletionUpdateWithoutANewVersionStaysUpToDate(t *testing.T) {
 	w := newCompletionWorld(t)
-	state := w.state
-	queueCompletionUpdate(state, completion.ImportStats{}, false)
-	if state.status != state.messages.Completion.UpToDate {
-		t.Fatalf("status = %q, want the up-to-date message", state.status)
+	queueCompletionUpdate(w.state, completion.ImportStats{}, false)
+	if w.state.status != w.state.messages.Completion.UpToDate {
+		t.Fatalf("status = %q, want the up-to-date message", w.state.status)
 	}
 }
 
@@ -340,10 +457,12 @@ func TestCompletionCatalogStatusBoundsErrorText(t *testing.T) {
 func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
-	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2}, true)
+	store := sharedCompletionStore(t)
+	stats := installCompletionUpdate(t, store, "v11.0.0", true)
 	c := &state.completion
-	summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, 9, 2)
+	c.store, c.catalogGeneration = store, 0
+	queueCompletionUpdate(state, stats, true)
+	summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, stats.RepairedFiles, stats.SkippedSources)
 
 	// A later check that installs nothing returns zero stats; the installed
 	// catalog still needed those repairs, so the summary must stay.
@@ -365,7 +484,7 @@ func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 	c.updateReady = make(chan completionUpdateResult, 1)
 	c.updateReady <- completionUpdateResult{err: errors.New("network down")}
 	state.adoptCompletionUpdate()
-	if c.updateStats.RepairedFiles != 9 || c.updateStats.SkippedSources != 2 {
+	if c.updateStats.RepairedFiles != stats.RepairedFiles || c.updateStats.SkippedSources != stats.SkippedSources {
 		t.Fatalf("failed check changed update stats: %+v", c.updateStats)
 	}
 }
@@ -377,24 +496,79 @@ func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 func TestCompletionInstallAdoptedBeforeResultStillReportsTheUpdate(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
-	loadCompletionBaseline(t, state)
+	store := sharedCompletionStore(t)
+	stats := installCompletionUpdate(t, store, "v11.0.0", true)
 	c := &state.completion
+	c.store, c.catalogGeneration = store, 0
 	c.updateReady = make(chan completionUpdateResult, 1)
-	c.updateReady <- completionUpdateResult{
-		stats:     completion.ImportStats{RepairedFiles: 9, SkippedSources: 2},
-		installed: true,
-	}
+	c.updateReady <- completionUpdateResult{stats: stats, installed: true}
 	state.adoptCompletion() // the real order: catalog first, update result second
 	message := state.messages.Completion
-	if want := fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, 9, 2); state.status != want {
+	if want := fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, stats.RepairedFiles, stats.SkippedSources); state.status != want {
 		t.Fatalf("status = %q, want %q", state.status, want)
 	}
 	status, err := state.completionCatalogStatus()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary := fmt.Sprintf(message.RepairSummaryFmt, 9, 2); !strings.Contains(status, summary) {
+	if summary := fmt.Sprintf(message.RepairSummaryFmt, stats.RepairedFiles, stats.SkippedSources); !strings.Contains(status, summary) {
 		t.Fatalf("settings status %q lacks %q", status, summary)
+	}
+}
+
+// Repair counts belong to the shared catalog, not to the window that started
+// the update: every window reads them from the store, and a newer clean install
+// clears them for all of them.
+func TestCompletionRepairStatsFollowTheSharedCatalogAcrossWindows(t *testing.T) {
+	store := sharedCompletionStore(t)
+	first := newCompletionWorld(t)
+	second := newCompletionWorld(t)
+	for _, state := range []*State{first.state, second.state} {
+		state.completion.store = store
+		state.completion.catalogGeneration = 0
+		state.adoptCompletionCatalog()
+		if state.completion.updateStats != (completion.ImportStats{}) {
+			t.Fatalf("window adopted stats %+v from a load", state.completion.updateStats)
+		}
+	}
+
+	// The first window installs a catalog that needed a repair.
+	repairStats := installCompletionUpdate(t, store, "v11.0.0", true)
+	for name, state := range map[string]*State{"first": first.state, "second": second.state} {
+		state.adoptCompletionCatalog()
+		if state.completion.updateStats.RepairedFiles != repairStats.RepairedFiles {
+			t.Fatalf("%s window stats = %+v, want %+v", name, state.completion.updateStats, repairStats)
+		}
+		status, err := state.completionCatalogStatus()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, repairStats.RepairedFiles, repairStats.SkippedSources); !strings.Contains(status, summary) {
+			t.Fatalf("%s window status %q lacks %q", name, status, summary)
+		}
+	}
+
+	// The second window installs a newer clean catalog; the counters of the
+	// repaired one must not be attributed to it anywhere.
+	cleanStats := installCompletionUpdate(t, store, "v12.0.0", false)
+	if cleanStats.RepairedFiles != 0 || cleanStats.SkippedSources != 0 {
+		t.Fatalf("clean import stats = %+v", cleanStats)
+	}
+	for name, state := range map[string]*State{"first": first.state, "second": second.state} {
+		state.adoptCompletionCatalog()
+		if stats := state.completion.updateStats; stats.RepairedFiles != 0 || stats.SkippedSources != 0 {
+			t.Fatalf("%s window kept stale stats %+v", name, stats)
+		}
+		if state.completion.catalog.Release != "v12.0.0" {
+			t.Fatalf("%s window release = %q", name, state.completion.catalog.Release)
+		}
+		status, err := state.completionCatalogStatus()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, repairStats.RepairedFiles, repairStats.SkippedSources); strings.Contains(status, summary) {
+			t.Fatalf("%s window status %q still reports the old repairs", name, status)
+		}
 	}
 }
 

@@ -138,8 +138,9 @@ type completionUI struct {
 	// against had loaded; it starts when the load finishes.
 	updatePending bool
 	updateErr     error
-	// updateStats keeps what the last successful import had to repair or
-	// skip, so the settings row can explain an imperfectly clean update.
+	// updateStats belongs to the catalog this window holds; it is adopted
+	// together with the catalog from the shared store, so every window shows
+	// the counters of the same generation.
 	updateStats  completion.ImportStats
 	checked      time.Time
 	updateReady  chan completionUpdateResult
@@ -278,9 +279,9 @@ func (state *State) adoptCompletionCatalog() {
 	if c.store == nil {
 		return
 	}
-	catalog, generation := c.store.Snapshot()
+	catalog, generation, stats := c.store.Snapshot()
 	if catalog != nil && generation != c.catalogGeneration {
-		c.catalog, c.catalogGeneration = catalog, generation
+		c.catalog, c.catalogGeneration, c.updateStats = catalog, generation, stats
 		state.closeCompletionList()
 	}
 	if c.catalog != nil && c.updatePending && !c.updating {
@@ -306,15 +307,15 @@ func (state *State) adoptCompletionUpdate() {
 		state.adoptCompletionCatalog()
 		installed := result.err == nil && result.installed && c.catalog != nil
 		if installed {
-			// A new snapshot replaced the previous one, so its counters
-			// describe what is installed now. A check that installs nothing
-			// (already newest, or failed) keeps the previous summary: the
-			// installed catalog still needed those repairs.
-			c.updateStats = result.stats
+			// The store keeps the counters beside the catalog, so
+			// adoptCompletionCatalog already adopted them for every window.
+			// The result only drives this window's one-shot status message; a
+			// check that installs nothing (already newest, or failed) leaves
+			// both the catalog and its counters alone.
 			c.catalogNote = nil
 			message := state.messages.Completion
-			if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
-				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, c.updateStats.RepairedFiles, c.updateStats.SkippedSources))
+			if result.stats.RepairedFiles > 0 || result.stats.SkippedSources > 0 {
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, result.stats.RepairedFiles, result.stats.SkippedSources))
 			} else {
 				state.status = completionStatusText(fmt.Sprintf(message.UpdatedFmt, c.catalog.Release))
 			}
