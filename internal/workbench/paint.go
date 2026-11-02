@@ -117,6 +117,7 @@ func (state *State) terminalPage() bool {
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	canvas.SetTree(&tree)
+	state.workspaceCardRegions = state.workspaceCardRegions[:0]
 	state.pixelScale = canvas.PixelScale()
 	// Motty keeps one central click handler. The event pass of a click names its
 	// target here; the handler runs once this paint has returned, outside it,
@@ -221,7 +222,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	root.Children(func() {
 		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
 		if !fullPage {
-			f.Row().Grow(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
+			f.Row().Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
 				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
 				state.declareNavigation(f)
 				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
@@ -253,6 +254,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		canvas.Clip(workspace)
 		if !state.devPaintPage(canvas, workspace) {
 			switch state.activeSection {
+			case sectionWorkspaces:
+				state.paintWorkspaceLibrary(canvas, workspace)
 			case sectionDashboard:
 				state.paintDashboard(canvas, workspace)
 			case sectionKeys:
@@ -379,6 +382,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintHistory(canvas, viewport)
 	case modalShortcutCapture:
 		state.paintShortcutCaptureDialog(canvas, viewport)
+	case modalWorkspaceDraft:
+		state.paintWorkspaceDraft(canvas, viewport)
+	case modalWorkspaceSave:
+		state.paintWorkspaceSaveDialog(canvas, viewport)
 	}
 	if state.knownHosts.action != knownHostsActionNone {
 		state.paintKnownHostsDialog(canvas, viewport)
@@ -875,6 +882,7 @@ func (state *State) declareNavigation(f *flex.Frame) {
 		active bool
 	}{
 		{hitHosts, iconHosts, m.NavHosts, state.activeSection == sectionHosts},
+		{hitWorkspaces, iconColumns2, m.NavWorkspaces, state.activeSection == sectionWorkspaces},
 		{hitDashboard, iconActivity, m.Dashboard.Title, state.activeSection == sectionDashboard},
 		{hitSessionLogs, iconFileClock, m.SessionLogs.Title, state.activeSection == sectionSessionLogs},
 		{hitKeychain, iconKey, m.NavKeychain, state.activeSection == sectionKeys},

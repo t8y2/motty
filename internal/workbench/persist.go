@@ -115,6 +115,7 @@ type savedState struct {
 	HostCatalogVersion      int                   `json:"host_catalog_version"`
 	Hosts                   []savedHost           `json:"hosts"`
 	HostGroups              []savedHostGroup      `json:"host_groups,omitempty"`
+	WorkspaceTemplates      []WorkspaceTemplate   `json:"workspace_templates,omitempty"`
 	IdentityFiles           []string              `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. It belongs to this computer, not to the hosts that sync, so a host
@@ -124,9 +125,12 @@ type savedState struct {
 	Proxies    []savedProxy        `json:"proxies,omitempty"`
 	Sessions   []savedSession      `json:"sessions,omitempty"`
 	Deck       *layoutcore.DeckDTO `json:"deck,omitempty"`
-	Sync       *savedSync          `json:"sync,omitempty"`
-	HostView   string              `json:"host_view,omitempty"`
-	Background *savedBackground    `json:"background,omitempty"`
+	// An empty array distinguishes a new snapshot with no managed workspaces
+	// from an older snapshot that never recorded workspace identity.
+	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
+	Sync             *savedSync             `json:"sync,omitempty"`
+	HostView         string                 `json:"host_view,omitempty"`
+	Background       *savedBackground       `json:"background,omitempty"`
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
@@ -451,6 +455,7 @@ func (state *State) snapshot() savedState {
 		HostCatalogVersion:         hostCatalogSchemaVersion,
 		Hosts:                      make([]savedHost, 0, len(state.hosts)),
 		HostGroups:                 make([]savedHostGroup, 0, len(state.hostGroups)),
+		WorkspaceTemplates:         slices.Clone(state.templates),
 		IdentityFiles:              make([]string, 0, len(state.identities)),
 		Forwards:                   make([]savedForward, 0, len(state.forwards)),
 		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
@@ -568,23 +573,30 @@ func (state *State) snapshot() savedState {
 		deck := state.savedWorkspaceDeck()
 		saved.Deck = &deck
 	}
+	saved.WorkspaceLayouts = state.savedWorkspaceLayouts()
 	return saved
 }
 
-// save persists the state. A failure is reported in the status line instead of
-// interrupting what the user is doing; the change stays in memory. A state that
-// started from a file of a newer build never saves, so that file stays as it is;
-// the dialog that says so comes back each time the user changes something.
+// save persists the state. Callers that need to distinguish a write from a
+// skipped save use saveResult.
 func (state *State) save() {
+	_ = state.saveResult()
+}
+
+// saveResult reports whether the snapshot reached the store. A failure is
+// reported in the status line instead of interrupting what the user is doing; a
+// state that started from a file of a newer build never saves, so that file
+// stays as it is and the notice comes back on each change.
+func (state *State) saveResult() bool {
 	defer state.sshSyncFlush()
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice
 		}
-		return
+		return false
 	}
 	if state.config == nil || state.pauseSave > 0 {
-		return
+		return false
 	}
 	snapshot := state.snapshot()
 	// Many actions save after changing only run-local UI state. Comparing the
@@ -593,30 +605,31 @@ func (state *State) save() {
 	if state.hasSaved {
 		changes := changedSavedFields(state.lastSaved, snapshot)
 		if len(changes) == 0 {
-			return
+			return true
 		}
 		shared, handled, err := writeChangedFields(state.config, state.configBase, state.configDefaults, changes)
 		if handled {
 			if err != nil {
 				state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-				return
+				return false
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
 			if shared {
 				state.scheduleSync()
 			}
-			return
+			return true
 		}
 	}
 	shared, err := writeConfig(state.config, state.configBase, state.configDefaults, snapshot)
 	if err != nil {
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-		return
+		return false
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
 	if shared {
 		state.scheduleSync()
 	}
+	return true
 }
 
 // restore applies a loaded state at start: its settings and catalog, then the
@@ -626,6 +639,7 @@ func (state *State) restore(saved savedState) {
 	state.stopAppearanceWatch = state.options.WatchSystemAppearance(state.systemAppearanceChanged)
 	sourceSessions := state.restoreSessions(saved.Sessions, saved.ActiveSession)
 	state.restoreWorkspaceDeck(saved.Deck, sourceSessions)
+	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
 }
@@ -751,6 +765,12 @@ func (state *State) restoreShared(saved savedState) {
 	clear(state.hosts)
 	clear(state.hostGroups)
 	state.hosts, state.nextHostID = decodeHosts(saved.Hosts, known, state.nextHostID)
+	state.templates = state.templates[:0]
+	for _, template := range saved.WorkspaceTemplates {
+		if normalized, err := normalizeWorkspaceTemplate(template); err == nil {
+			state.templates = append(state.templates, normalized)
+		}
+	}
 	state.hostGroups = state.hostGroups[:0]
 	for _, entry := range saved.HostGroups {
 		name := strings.TrimSpace(entry.Name)
@@ -771,6 +791,8 @@ func (state *State) workspaceName() string {
 		return name
 	}
 	switch state.activeSection {
+	case sectionWorkspaces:
+		return "workspaces"
 	case sectionDashboard:
 		return "monitor"
 	case sectionSessionLogs:
@@ -839,6 +861,8 @@ func (state *State) restoreWorkspace(workspace string) {
 		return
 	}
 	switch workspace {
+	case "workspaces":
+		state.activeSection = sectionWorkspaces
 	case "monitor":
 		state.activeSection = sectionDashboard
 	case "session-logs":

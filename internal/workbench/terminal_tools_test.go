@@ -436,6 +436,10 @@ func twoPanes(t *testing.T) (state *State, first, second *fakeShell, firstID, se
 	firstID = firstSession.ID
 	state.Click(hitPaneSplitHorizontal)
 	secondID = state.activeSessionID
+	firstSession.term.live = true
+	secondSession, _ := state.sessionByIDPointer(secondID)
+	secondSession.term.live = true
+	state.Wake()
 	if secondID == firstID || len(world.shared) != 1 {
 		t.Fatalf("split did not make a second pane: %d %d", firstID, secondID)
 	}

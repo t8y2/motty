@@ -70,6 +70,10 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	}
 	bounds.Width = max(0, bounds.Width-monitor)
 	bounds.Width = max(0, bounds.Width-state.aiReserve(workspaceID, size))
+	if state.workspaceManaged(workspaceID) {
+		bounds.Y += workspaceHeaderHeight
+		bounds.Height = max(0, bounds.Height-workspaceHeaderHeight)
+	}
 	return bounds
 }
 
@@ -117,7 +121,13 @@ func (state *State) refreshWorkspaceViews() bool {
 
 func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	state.refreshWorkspaceViews()
+	state.workspacePaneTools.count = 0
+	defer state.paintWorkspacePaneTools(canvas)
 	frame := state.workspacePixelBounds(size)
+	headerOpen := state.paintWorkspaceHeader(canvas, size)
+	if !headerOpen {
+		state.workspaceHeaderMenu = workspaceHeaderMenuNone
+	}
 	if len(state.panes) == 0 {
 		state.paintEmptyWorkspace(canvas, frame)
 		state.paintContextPanel(canvas, size, frame)

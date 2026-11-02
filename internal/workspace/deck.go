@@ -217,7 +217,8 @@ func (deck *Deck) Panes(workspaceID WorkspaceID, dst []Pane) []Pane {
 	if !ok {
 		return dst
 	}
-	order := workspace.layout.Sessions(nil)
+	var scratch [MaxPanes]SessionID
+	order := workspace.layout.Sessions(scratch[:0])
 	for _, item := range order {
 		if pane, ok := workspace.pane(PaneID(item)); ok {
 			dst = append(dst, *pane)

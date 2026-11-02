@@ -70,6 +70,7 @@ type Messages struct {
 
 	// Navigation.
 	NavHosts                  string
+	NavWorkspaces             string
 	NavKeychain               string
 	NavProxies                string
 	NavSnippets               string
@@ -84,6 +85,69 @@ type Messages struct {
 	CommandPaletteEmpty       string
 	CommandSwitchSessionFmt   string
 	NewWindow                 string
+
+	// Saved multi-host workspace templates.
+	WorkspaceLibraryTitle           string
+	WorkspaceLibraryDescription     string
+	WorkspaceLibraryEmpty           string
+	WorkspaceLibraryEmptySub        string
+	WorkspaceEnter                  string
+	WorkspaceOpenHint               string
+	WorkspaceSingleHost             string
+	WorkspaceSingleColumn           string
+	WorkspaceColumnsFmt             string
+	WorkspaceTemplateHostCountFmt   string
+	WorkspaceTemplateMissingFmt     string
+	WorkspaceTemplateMissingListFmt string
+	WorkspaceTemplateNoHosts        string
+	WorkspaceTemplateApplyFailed    string
+	WorkspaceNew                    string
+	WorkspaceDraftTemporary         string
+	WorkspaceDraftFixed             string
+	WorkspaceDraftTitleTemporary    string
+	WorkspaceDraftTitleFixed        string
+	WorkspaceDraftDescription       string
+	WorkspaceDraftName              string
+	WorkspaceDraftNamePlaceholder   string
+	WorkspaceDraftHosts             string
+	WorkspaceDraftHostSearch        string
+	WorkspaceDraftSelectedFmt       string
+	WorkspaceDraftLimit             string
+	WorkspaceDraftColumns           string
+	WorkspaceDraftHostsRequired     string
+	WorkspaceDraftEmptyPane         string
+	WorkspaceDraftMissingSession    string
+	WorkspaceDraftMissingHost       string
+	WorkspaceDraftDuplicateHost     string
+	WorkspaceLocalTerminalHint      string
+	WorkspaceDraftNameRequired      string
+	WorkspaceDraftLaunch            string
+	WorkspaceDraftSave              string
+	WorkspaceDraftNoHosts           string
+	WorkspaceDraftSavedFmt          string
+	WorkspaceDraftTemporaryName     string
+	WorkspaceSaveMenu               string
+	WorkspaceSaveTitle              string
+	WorkspaceSaveDescriptionFmt     string
+	WorkspaceSaveFailed             string
+	WorkspaceLayoutHint             string
+	WorkspaceTemplateLayoutHint     string
+	WorkspaceLayoutStale            string
+	WorkspaceCardReorderHint        string
+	WorkspaceBroadcastWaitingFmt    string
+	WorkspacePaneTools              string
+	WorkspaceHeaderBroadcast        string
+	WorkspaceHeaderBroadcastingFmt  string
+	WorkspaceDraftPreview           string
+	WorkspaceDraftPreviewEmpty      string
+	WorkspaceDraftTemporaryHint     string
+	WorkspaceDraftFixedHint         string
+	WorkspaceHeaderBack             string
+	WorkspaceHeaderConnectionFmt    string
+	WorkspaceHeaderPendingFmt       string
+	WorkspaceHeaderNeedsTwo         string
+	WorkspaceHeaderEmptyFmt         string
+	WorkspaceHeaderLayout           string
 
 	// Debug workspace: a preview surface for the framework's components.
 	DebugTitle                  string
