@@ -17,6 +17,7 @@ func TestDurationSortPutsOngoingLast(t *testing.T) {
 		{"a", 0, 2 * time.Minute}, {"b", 0, 2 * time.Minute},
 		{"c", time.Minute, time.Minute}, {"d", 2 * time.Minute, 0},
 		{"e", 3 * time.Minute, 2 * time.Minute},
+		{"f", 2 * time.Minute, 0}, {"g", 4 * time.Minute, 0},
 	} {
 		r := sampleRecord(fixture.id, base.Add(fixture.start))
 		startRecord(t, s, r)
@@ -30,16 +31,16 @@ func TestDurationSortPutsOngoingLast(t *testing.T) {
 		order SortOrder
 		want  []string
 	}{
-		{SortStartedDesc, []string{"e", "d", "c", "b", "a"}},
-		{SortStartedAsc, []string{"a", "b", "c", "d", "e"}},
-		{SortDurationDesc, []string{"e", "b", "a", "c", "d"}},
-		{SortDurationAsc, []string{"c", "e", "b", "a", "d"}},
+		{SortStartedDesc, []string{"g", "e", "f", "d", "c", "b", "a"}},
+		{SortStartedAsc, []string{"a", "b", "c", "d", "f", "e", "g"}},
+		{SortDurationDesc, []string{"e", "b", "a", "c", "g", "f", "d"}},
+		{SortDurationAsc, []string{"c", "e", "b", "a", "g", "f", "d"}},
 	} {
 		query := Query{Sort: tc.order, Limit: 2}
 		var ids []string
 		for range 4 {
 			page := mustList(t, s, query)
-			if page.Total != 5 || page.Matched != 5 {
+			if page.Total != 7 || page.Matched != 7 {
 				t.Fatalf("counts changed with cursor: %+v", page)
 			}
 			for _, r := range page.Records {
@@ -58,7 +59,7 @@ func TestDurationSortPutsOngoingLast(t *testing.T) {
 		}
 	}
 	page := mustList(t, s, Query{Search: "no matching host"})
-	if page.Total != 5 || page.Matched != 0 || len(page.Records) != 0 {
+	if page.Total != 7 || page.Matched != 0 || len(page.Records) != 0 {
 		t.Fatalf("zero-match counts = %+v", page)
 	}
 }

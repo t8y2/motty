@@ -29,8 +29,10 @@ import (
 
 // sessionLogs is the metadata journal owned by one window.
 type sessionLogs struct {
-	store *sessionlog.Store
-	queue *sessionlog.Queue
+	calendar    sessionLogCalendar
+	preferences *savedSessionLogsView
+	store       *sessionlog.Store
+	queue       *sessionlog.Queue
 	// runID names this process run. It is the same for every window of the
 	// process, so one window's startup recovery never marks another window's
 	// live row interrupted.
@@ -522,6 +524,7 @@ func (state *State) setSessionLogsEnabled(on bool) {
 // closeSessionLogs flushes pending rows and closes the journal. Call it after
 // the window's sessions are finalized: the queue drains before its store closes.
 func (state *State) closeSessionLogs() {
+	state.stopSessionLogCalendar()
 	if state.sessionLogs.done != nil {
 		select {
 		case <-state.sessionLogs.done:

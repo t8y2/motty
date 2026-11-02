@@ -202,7 +202,6 @@ func (state *State) prepareSessionLogsView() {
 	view := &state.sessionLogs.view
 	view.synced = true
 	view.syncedLanguage = state.language
-	view.clockStamp = state.sessionLogClockStamp()
 	view.customRangeHint = ""
 	if view.timeRange == sessionLogTimeCustom {
 		view.customRangeHint = fmt.Sprintf(state.messages.SessionLogs.CustomRangeHintFmt, view.customStartDate, view.customEndDate)
@@ -222,7 +221,7 @@ func (state *State) prepareSessionLogRows() {
 		view.page = view.page[:len(view.rows)]
 	}
 	m := &state.messages.SessionLogs
-	now := state.wallNow()
+	now := state.wallNow().In(state.sessionLogLocation())
 	for index := range view.rows {
 		record := &view.rows[index]
 		row := &view.page[index]
@@ -241,6 +240,9 @@ func (state *State) prepareSessionLogRows() {
 		row.compact[0], row.compact[1] = row.cells[0], row.cells[1]
 		row.compact[2], row.compact[3] = row.cells[3], ""
 		row.minimal[0], row.minimal[1], row.minimal[2] = row.cells[0], row.cells[3], ""
+		if view.query.Sort >= sessionlog.SortDurationDesc {
+			row.compact[1], row.minimal[1] = row.cells[4], row.cells[4]
+		}
 	}
 	state.prepareSessionLogItems()
 }
@@ -324,7 +326,7 @@ func (state *State) prepareSessionLogDetail() {
 	detail.title = m.Details
 	detail.add(m.FieldTarget, sessionLogTargetText(&record))
 	now := state.wallNow()
-	detail.add(m.FieldStarted, record.StartedAt.In(time.Local).Format("2006-01-02 15:04:05"))
+	detail.add(m.FieldStarted, record.StartedAt.In(state.sessionLogLocation()).Format("2006-01-02 15:04:05"))
 	if record.EndedAt.IsZero() {
 		detail.add(m.FieldEnded, m.Pending)
 	} else {
@@ -334,7 +336,7 @@ func (state *State) prepareSessionLogDetail() {
 		} else if record.Status == sessionlog.StatusTrackingStopped {
 			label = m.FieldStopped
 		}
-		detail.add(label, record.EndedAt.In(time.Local).Format("2006-01-02 15:04:05"))
+		detail.add(label, record.EndedAt.In(state.sessionLogLocation()).Format("2006-01-02 15:04:05"))
 	}
 	detail.add(m.FieldDuration, sessionLogDurationText(m, &record, now))
 	detail.statusIndex = detail.count
@@ -422,10 +424,10 @@ func (state *State) sessionLogTimeline(record sessionlog.Record, events []sessio
 		if event.Attempt > 0 && sessionLogReconnectEvent(event.Kind) {
 			label += " · " + fmt.Sprintf(m.EventAttemptFmt, event.Attempt)
 		}
-		rows = append(rows, sessionLogEventRow{when: event.At.In(time.Local).Format("15:04:05"), label: label})
+		rows = append(rows, sessionLogEventRow{when: event.At.In(state.sessionLogLocation()).Format("15:04:05"), label: label})
 	}
 	if !hasFinal && sessionLogTerminal(record.Status) && !record.EndedAt.IsZero() {
-		rows = append(rows, sessionLogEventRow{when: record.EndedAt.In(time.Local).Format("15:04:05"), label: fmt.Sprintf(m.ResultSummaryFmt, sessionLogReasonText(m, record.Reason))})
+		rows = append(rows, sessionLogEventRow{when: record.EndedAt.In(state.sessionLogLocation()).Format("15:04:05"), label: fmt.Sprintf(m.ResultSummaryFmt, sessionLogReasonText(m, record.Reason))})
 	}
 	return rows
 }
@@ -451,8 +453,8 @@ func sessionLogTargetText(record *sessionlog.Record) string {
 // sessionLogStartedText is the local start time; the year only appears when it
 // is not the current one, which keeps the column readable at a glance.
 func sessionLogStartedText(started time.Time, now time.Time) string {
-	local := started.In(time.Local)
-	if local.Year() == now.In(time.Local).Year() {
+	local := started.In(now.Location())
+	if local.Year() == now.Year() {
 		return local.Format("01-02 15:04")
 	}
 	return local.Format("2006-01-02")
@@ -1270,6 +1272,9 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 		columns[2] = components.TableColumn{Width: status}
 		columns[3] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
 		headings[0], headings[1], headings[2], headings[3] = m.ColumnTarget, m.ColumnWhen, m.ColumnStatus, ""
+		if state.sessionLogs.view.query.Sort >= sessionlog.SortDurationDesc {
+			headings[1] = m.ColumnDuration
+		}
 		return 4
 	}
 	when := float32(100)
@@ -1278,6 +1283,9 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 	columns[1] = components.TableColumn{Width: when}
 	columns[2] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
 	headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnStatus, ""
+	if state.sessionLogs.view.query.Sort >= sessionlog.SortDurationDesc {
+		headings[1] = m.ColumnDuration
+	}
 	return 3
 }
 

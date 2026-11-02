@@ -28,10 +28,40 @@ func TestSessionLogCustomRangeCalendarBoundaries(t *testing.T) {
 			t.Fatalf("%s: [%v,%v) %v", tc.date, start, end, err)
 		}
 	}
-	for _, dates := range [][2]string{{"2026-02-30", "2026-03-01"}, {"2026-11-02", "2026-11-01"}, {"2026-1-1", "2026-01-02"}, {"", "2026-01-01"}} {
+	for _, dates := range [][2]string{{"2026-02-30", "2026-03-01"}, {"2026-11-02", "2026-11-01"}, {"2026-1-1", "2026-01-02"}, {"", "2026-01-01"}, {"0000-12-31", "0000-12-31"}} {
 		if _, _, err := sessionLogDateRange(dates[0], dates[1], location); err == nil {
 			t.Fatalf("invalid calendar range accepted: %v", dates)
 		}
+	}
+	if _, _, err := sessionLogDateRange("0001-01-01", "0001-01-01", time.UTC); err == nil {
+		t.Fatal("zero-time lower bound accepted")
+	}
+}
+
+func TestSessionLogCustomRangeMidnightTransitions(t *testing.T) {
+	for _, tc := range []struct {
+		zone, date, from, until string
+	}{
+		{"America/Santiago", "2026-09-05", "2026-09-05T04:00:00Z", "2026-09-06T04:00:00Z"},
+		{"America/Santiago", "2026-09-06", "2026-09-06T04:00:00Z", "2026-09-07T03:00:00Z"},
+		{"Pacific/Apia", "2011-12-29", "2011-12-29T10:00:00Z", "2011-12-30T10:00:00Z"},
+		{"America/Havana", "2026-11-01", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z"},
+	} {
+		location, err := time.LoadLocation(tc.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, until, err := sessionLogDateRange(tc.date, tc.date, location)
+		if err != nil || from.Format(time.RFC3339) != tc.from || until.Format(time.RFC3339) != tc.until {
+			t.Fatalf("%s %s = [%v,%v), %v", tc.zone, tc.date, from, until, err)
+		}
+		if since, _ := sessionLogRange(from.In(location).Add(time.Hour), sessionLogTimeToday); !since.Equal(from) {
+			t.Fatalf("%s Today = %v, want %v", tc.zone, since, from)
+		}
+	}
+	location, _ := time.LoadLocation("Pacific/Apia")
+	if _, _, err := sessionLogDateRange("2011-12-30", "2011-12-30", location); err == nil {
+		t.Fatal("nonexistent local date accepted")
 	}
 }
 
@@ -54,6 +84,12 @@ func TestSessionLogsCustomRangeFormAndSortControls(t *testing.T) {
 	state.submitForm()
 	if state.modal != modalForm || state.form.dialogError == "" {
 		t.Fatal("inverted range did not keep validation visible")
+	}
+	state.form.set(0, "0000-12-31")
+	state.form.set(1, "0000-12-31")
+	state.submitForm()
+	if state.modal != modalForm || state.form.dialogError == "" {
+		t.Fatal("year-zero range did not keep validation visible")
 	}
 	state.form.set(0, "2026-10-30")
 	state.form.set(1, "2026-10-30")
@@ -118,6 +154,40 @@ func TestSessionLogsMidnightRebuildsRelativeLabels(t *testing.T) {
 	sessionLogsWait(t, state)
 	if len(state.sessionLogs.view.page) != 0 {
 		t.Fatal("relative today range did not recompute")
+	}
+}
+
+func TestSessionLogsTimezoneChangeRebindsCustomRange(t *testing.T) {
+	t.Setenv("TZ", "UTC")
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	options := sessionLogsTestOptions(t)
+	options.WallNow = func() time.Time { return now }
+	state := newTestState(t, options)
+	for i, stamp := range []string{"2026-11-01T02:00:00Z", "2026-11-01T05:00:00Z", "2026-11-02T04:30:00Z", "2026-11-02T06:00:00Z"} {
+		at, _ := time.Parse(time.RFC3339, stamp)
+		sessionLogsInsert(t, state, sessionlog.Record{ID: fmt.Sprintf("zone-%d", i), RunID: "run", Host: "host", Protocol: sessionlog.ProtocolSSH, StartedAt: at}, sessionlog.StatusEnded, sessionlog.ReasonUserClosed, at.Add(time.Minute))
+	}
+	view := &state.sessionLogs.view
+	view.timeRange, view.customStartDate, view.customEndDate = sessionLogTimeCustom, "2026-11-01", "2026-11-01"
+	state.openSessionLogs()
+	sessionLogsWait(t, state)
+	if !slices.Equal(sessionLogRowIDs(state), []string{"zone-1", "zone-0"}) {
+		t.Fatalf("initial UTC calendar day = %v", sessionLogRowIDs(state))
+	}
+	generation := state.sessionLogs.requestGeneration
+	t.Setenv("TZ", "America/New_York")
+	now = now.Add(61 * time.Second)
+	// An unrelated projection must not acknowledge a clock change on behalf of
+	// the query, even when it happens before the next wake.
+	state.prepareSessionLogsView()
+	state.Wake()
+	sessionLogsWait(t, state)
+	if !slices.Equal(sessionLogRowIDs(state), []string{"zone-2", "zone-1"}) || state.sessionLogs.requestGeneration <= generation || view.query.Until.Sub(view.query.Since) != 25*time.Hour {
+		t.Fatalf("changed local calendar day = %v [%v,%v), generation %d", sessionLogRowIDs(state), view.query.Since, view.query.Until, state.sessionLogs.requestGeneration)
+	}
+	state.applySessionLogsResult(sessionLogsResult{generation: generation, page: sessionlog.Page{Records: []sessionlog.Record{{ID: "old-zone"}}, Matched: 1, Total: 1}})
+	if !slices.Equal(sessionLogRowIDs(state), []string{"zone-2", "zone-1"}) || view.total != 4 {
+		t.Fatal("old-zone response replaced the rebound custom range")
 	}
 }
 

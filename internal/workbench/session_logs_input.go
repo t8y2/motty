@@ -20,12 +20,12 @@ func (state *State) openSessionLogs() {
 	if state.activeSection != sectionSessionLogs {
 		state.activeSection = sectionSessionLogs
 		state.save()
-		state.applySessionLogFilters()
+		state.refreshSessionLogFilters()
 		return
 	}
 	view := &state.sessionLogs.view
 	if !view.loaded && !view.loading {
-		state.applySessionLogFilters()
+		state.refreshSessionLogFilters()
 	}
 }
 
@@ -36,12 +36,18 @@ func (state *State) openSessionLogs() {
 // the platform's text service, so the comparison here is what notices them.
 func (state *State) syncSessionLogs() {
 	view := &state.sessionLogs.view
+	if state.activeSection != sectionSessionLogs {
+		state.stopSessionLogCalendar()
+		return
+	}
+	state.updateSessionLogCalendar()
 	clockChanged := view.synced && view.clockStamp != state.sessionLogClockStamp()
-	if clockChanged && state.activeSection == sectionSessionLogs && view.timeRange >= sessionLogTimeToday && view.timeRange <= sessionLogTimeMonth {
-		state.applySessionLogFilters()
+	if clockChanged && view.timeRange != sessionLogTimeAll {
+		state.refreshSessionLogFilters()
 		return
 	}
 	if !view.synced || view.syncedLanguage != state.language || clockChanged {
+		view.clockStamp = state.sessionLogClockStamp()
 		state.prepareSessionLogsView()
 	}
 	query := strings.TrimSpace(view.search.String())
@@ -61,16 +67,16 @@ func (state *State) syncSessionLogs() {
 		return
 	}
 	if state.activeSection == sectionSessionLogs && !view.loaded && !view.loading && !view.unavailable {
-		state.refreshSessionLogs()
+		state.refreshSessionLogFilters()
 	}
 }
 
 // sessionLogRange is the query's time window for a filter choice.
 func sessionLogRange(now time.Time, span sessionLogTimeRange) (since, until time.Time) {
-	local := now.In(time.Local)
+	local := now
 	switch span {
 	case sessionLogTimeToday:
-		midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
+		midnight := sessionLogCalendarBoundary(sessionLogCalendarDate(local), local.Location())
 		return midnight, time.Time{}
 	case sessionLogTimeWeek:
 		return now.Add(-7 * 24 * time.Hour), time.Time{}
@@ -84,7 +90,16 @@ func sessionLogRange(now time.Time, span sessionLogTimeRange) (since, until time
 // applySessionLogFilters pushes the filter choices into the query and reloads
 // the first page. It runs from a click, never from Paint.
 func (state *State) applySessionLogFilters() {
+	if state.refreshSessionLogFilters() {
+		state.rememberSessionLogsView()
+	}
+}
+
+// Opening a page or crossing midnight recalculates relative bounds without
+// replacing defaults most recently chosen in another window.
+func (state *State) refreshSessionLogFilters() bool {
 	view := &state.sessionLogs.view
+	state.updateSessionLogCalendar()
 	view.query.Status = nil
 	if view.statusFilter != 0 {
 		status := view.statusFilter
@@ -100,19 +115,21 @@ func (state *State) applySessionLogFilters() {
 		favorite := true
 		view.query.Favorite = &favorite
 	}
-	view.query.Since, view.query.Until = sessionLogRange(state.wallNow(), view.timeRange)
+	view.query.Since, view.query.Until = sessionLogRange(state.wallNow().In(state.sessionLogLocation()), view.timeRange)
 	if view.timeRange == sessionLogTimeCustom {
-		since, until, err := sessionLogDateRange(view.customStartDate, view.customEndDate, time.Local)
+		since, until, err := sessionLogDateRange(view.customStartDate, view.customEndDate, state.sessionLogLocation())
 		if err != nil {
 			view.statusText, view.statusDanger = state.messages.SessionLogs.InvalidDateRange, true
-			return
+			return false
 		}
 		view.query.Since, view.query.Until = since, until
 	}
 	view.query.Cursor = sessionlog.Cursor{}
 	view.scrollRows = 0
 	view.filterMenu = sessionLogFilterNone
+	view.clockStamp = state.sessionLogClockStamp()
 	state.refreshSessionLogs()
+	return true
 }
 
 // chooseSessionLogFilter applies one choice of the open filter menu.
