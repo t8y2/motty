@@ -155,15 +155,18 @@ type Terminal struct {
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
 	clock      func() int64 // stamps lines on first write; nil records nothing
 
-	// folds are the command blocks the reader folded shut, keyed by the identity
-	// of the row the command was typed on. shown is the mapping the view is built
-	// on; it is made again when the buffer, the scroll or the folds change.
-	folds     map[uint64]bool
+	// folding turns the command blocks the shell marked into something the view
+	// can fold; shown is the mapping of view rows to buffer rows it builds, made
+	// again when the buffer or the scroll changes. See fold.go.
+	folding   bool
+	sawMarks  bool // the shell has sent a marker, so blocks may exist
+	anyFolded bool // some block may be folded; false means none is
 	shown     []viewRow
 	shownAt   uint64
 	shownFrom int
-	shownFor  int
 	shownOK   bool
+	// shownIdentity is true when shown is the window as it is: no fold hides a row.
+	shownIdentity bool
 
 	cx, cy            int
 	pend              bool // a character was written in the last column; wrap on the next
@@ -302,8 +305,10 @@ func (t *Terminal) ClearScreen() bool {
 	for i := 1; i < len(lines); i++ {
 		t.eraseLine2(lines[i])
 	}
-	// The rows every folded block owned are gone with them.
-	t.folds = nil
+	// The rows of every command block but the cursor's are gone with them.
+	for i := 1; i < len(lines); i++ {
+		lines[i].mark = 0
+	}
 	// What stays on the line above is gone, so it no longer continues it.
 	lines[0].wrapped = false
 	t.clearHistory()
@@ -363,6 +368,9 @@ func (t *Terminal) Scroll(lines int) bool {
 		return false
 	}
 	view := clampInt(t.view+lines, 0, t.histCount)
+	if t.folding && view != t.view {
+		view = t.snapView(view, lines > 0)
+	}
 	if view == t.view {
 		return false
 	}
@@ -379,11 +387,14 @@ func (t *Terminal) ScrollToBottom() bool { return t.Scroll(-t.view) }
 // cursor line is off screen.
 func (t *Terminal) Cursor() Cursor {
 	row := t.cy + t.view
-	if place := t.displayRow(row); place >= 0 {
-		row = place
-	} else if place := len(t.viewRows()); place < t.rows {
-		// A fold shut over the cursor's row: it is drawn at the first free row.
-		row = place
+	if !t.identity() {
+		// A fold moved the rows about; a cursor row the view does not reach is
+		// off screen.
+		if place := t.displayRow(row); place >= 0 {
+			row = place
+		} else {
+			row = t.rows
+		}
 	}
 	return Cursor{X: t.cx, Y: row, Visible: t.modes.CursorVisible && row < t.rows, Style: t.cursor, Steady: t.cursorSteady}
 }
@@ -391,11 +402,11 @@ func (t *Terminal) Cursor() Cursor {
 // Row returns view row i (0 is the top). A row a fold hides is not in the view,
 // so the rows under it answer for their own content.
 func (t *Terminal) Row(i int) Row {
-	rows := t.viewRows()
-	if i < 0 || i >= len(rows) {
+	index, ok := t.windowIndex(i)
+	if !ok {
 		return Row{}
 	}
-	return t.rowOf(t.lineAt(rows[i].index))
+	return t.rowOf(t.lineAt(index))
 }
 
 func (t *Terminal) rowOf(l *line) Row {
@@ -503,7 +514,7 @@ func (t *Terminal) Reset() {
 	}
 	t.view = 0
 	t.title = ""
-	t.folds = nil
+	t.sawMarks, t.anyFolded = false, false
 	t.resetState()
 }
 
@@ -568,7 +579,7 @@ func (t *Terminal) recycle(l *line) *line {
 	l.marks = l.marks[:0]
 	l.hyperlinks = nil
 	l.wrapped = false
-	l.start = false
+	l.mark = 0
 	l.at = 0
 	t.nextID++
 	l.id = t.nextID
@@ -613,7 +624,7 @@ func (t *Terminal) pushHistory(l *line) {
 		dst.hyperlinks = nil
 	}
 	dst.wrapped, dst.id, dst.version, dst.at = l.wrapped, l.id, l.version, l.at
-	dst.start = l.start
+	dst.mark = l.mark
 	t.hist[(t.histHead+t.histCount)%t.histMax] = dst
 	t.histCount++
 	t.histBytes += lineHistoryBytes(dst)
@@ -638,7 +649,7 @@ func (t *Terminal) popHistory() *line {
 		t.histHead = 0
 	}
 	l := &line{cells: append([]Cell(nil), h.cells...), marks: append([]Mark(nil), h.marks...),
-		wrapped: h.wrapped, start: h.start, id: h.id, version: h.version, at: h.at}
+		wrapped: h.wrapped, mark: h.mark, id: h.id, version: h.version, at: h.at}
 	if h.hyperlinks != nil {
 		links := append([]uint32(nil), (*h.hyperlinks)...)
 		l.hyperlinks = &links
@@ -920,19 +931,22 @@ func (l *line) text(cols int) string {
 
 // RowText is the text of view row i with trailing spaces removed.
 func (t *Terminal) RowText(i int) string {
-	rows := t.viewRows()
-	if i < 0 || i >= len(rows) {
+	index, ok := t.windowIndex(i)
+	if !ok {
 		return ""
 	}
-	return t.lineAt(rows[i].index).text(t.cols)
+	return t.lineAt(index).text(t.cols)
 }
 
-// Text is the whole view as lines of text, trailing empty lines removed.
+// Text is the whole view as lines of text, trailing empty lines removed. It is
+// the window of the buffer as the terminal holds it, folded blocks included:
+// folding is a way of looking at the screen, and what is handed on, to the
+// assistant or anywhere else, is not what the reader chose to look away from.
 func (t *Terminal) Text() string {
 	rows := make([]string, t.rows)
 	last := -1
 	for i := range rows {
-		rows[i] = t.RowText(i)
+		rows[i] = t.lineAt(i).text(t.cols)
 		if rows[i] != "" {
 			last = i
 		}
@@ -1002,15 +1016,19 @@ func (t *Terminal) SetClock(now func() int64) { t.clock = now }
 // LineNumber is the 1-based number of view row i among every line the main
 // screen has produced since the terminal started. It keeps counting as the
 // history drops its oldest lines, and is not meaningful on the alternate
-// screen. A folded block leaves its rows out of the numbering the view shows,
-// so the numbers after it continue from its anchor.
+// screen. A folded block leaves its rows out of the view but not out of the
+// numbering, so the numbers after it continue from where the block ends and the
+// jump shows how much it hides.
 func (t *Terminal) LineNumber(i int) uint64 {
 	base := t.scrolled - uint64(t.view) + 1
-	rows := t.viewRows()
-	if i >= 0 && i < len(rows) {
-		return base + uint64(rows[i].index)
+	if t.identity() {
+		return base + uint64(max(i, 0))
+	}
+	if index, ok := t.windowIndex(i); ok {
+		return base + uint64(index)
 	}
 	// Rows a fold left empty at the bottom keep counting from the last one.
+	rows := t.viewRows()
 	last := 0
 	if len(rows) > 0 {
 		last = rows[len(rows)-1].index + 1
@@ -1022,11 +1040,14 @@ func (t *Terminal) LineNumber(i int) uint64 {
 // it wrapped into. The first row of the view looks at the line just above the
 // screen, so a scrollback that starts mid-wrap still says so.
 func (t *Terminal) ContinuesAbove(i int) bool {
-	rows := t.viewRows()
-	if i < 0 || i >= len(rows) {
+	if t.onAlt {
 		return false
 	}
-	index := t.histCount - t.view + rows[i].index
+	index, ok := t.windowIndex(i)
+	if !ok {
+		return false
+	}
+	index += t.histCount - t.view
 	return index > 0 && t.bufferLine(index-1).wrapped
 }
 

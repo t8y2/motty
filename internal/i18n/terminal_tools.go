@@ -105,6 +105,10 @@ type ToolsMessages struct {
 	GutterNumbers              string
 	GutterTime                 string
 	GutterBoth                 string
+	FoldOutput                 string
+	UnfoldOutput               string
+	FoldLastOutput             string
+	UnfoldAllOutput            string
 	IntenseRow                 string
 	IntenseDescription         string
 	IntenseBoth                string

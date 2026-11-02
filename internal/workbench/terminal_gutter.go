@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"math"
 	"strconv"
 	"time"
 
@@ -29,7 +28,10 @@ const (
 )
 
 const (
-	gutterNumberChars = 4 // up to 9999, then the low digits
+	// gutterNumberChars is the least width of the number column. A terminal
+	// that has written more lines than it holds widens the column, so a number
+	// is never shown cut to its low digits.
+	gutterNumberChars = 6
 	gutterTimeChars   = 8 // HH:MM:SS
 	gutterRuleGap     = float32(16)
 	// gutterMarkWidthCells is the width of the column the fold box and the wrap
@@ -67,9 +69,9 @@ func (gutter terminalGutter) numbers() bool { return gutter == gutterNumbers || 
 func (gutter terminalGutter) times() bool   { return gutter == gutterTime || gutter == gutterBoth }
 
 // chars is the gutter's text width in cells, the mark column aside: the time at
-// the strip's left edge, a cell to set the number apart from it, the number, and
-// a cell that keeps the mark column off the text.
-func (gutter terminalGutter) chars() int {
+// the strip's left edge, a cell to set the number apart from it, the number in
+// digits cells, and a cell that keeps the mark column off the text.
+func (gutter terminalGutter) chars(digits int) int {
 	if gutter == gutterOff {
 		return 0
 	}
@@ -81,9 +83,32 @@ func (gutter terminalGutter) chars() int {
 		}
 	}
 	if gutter.numbers() {
-		n += gutterNumberChars
+		n += digits
 	}
 	return n
+}
+
+// gutterNumberDigits is the width of the number column in cells: the least, or
+// what the line numbers written so far need.
+func (state *State) gutterNumberDigits() int { return max(state.gutterDigits, gutterNumberChars) }
+
+// growGutterNumbers widens the number column when the terminal has written a
+// line whose number no longer fits, which takes a million lines; it never
+// narrows again, so the grid is not resized by output scrolling back and forth
+// across a power of ten. It reports whether the gutter changed width.
+func (state *State) growGutterNumbers(session *Session) bool {
+	t := session.term
+	if t == nil || !state.terminalGutter.numbers() || t.presentedAltScreen() {
+		return false
+	}
+	_, rows := t.screen.Size()
+	digits := len(strconv.FormatUint(t.screen.LineNumber(rows-1), 10))
+	if digits <= state.gutterNumberDigits() {
+		return false
+	}
+	state.gutterDigits = digits
+	state.fitTerminals()
+	return true
 }
 
 // gutterMarkWidth is the width of the column the fold box and the wrap corner
@@ -102,7 +127,7 @@ func (state *State) gutterWidth() float32 {
 	if state.terminalGutter == gutterOff || state.cellWidth <= 0 {
 		return 0
 	}
-	chars := float32(state.terminalGutter.chars()) * state.cellWidth
+	chars := float32(state.terminalGutter.chars(state.gutterNumberDigits())) * state.cellWidth
 	return snap(chars) + state.gutterMarkWidth() + gutterRuleGap
 }
 
@@ -113,9 +138,13 @@ func (state *State) wallSeconds() int64 {
 	return time.Now().Unix()
 }
 
-// stampTerminal turns line timestamps on or off for a terminal. Off, the
-// emulator records nothing.
+// stampTerminal applies the gutter to a terminal: line timestamps on or off, and
+// the fold boxes that live in the gutter. Without the gutter nothing is folded,
+// whatever was folded before, so no output is left hidden with no box to open
+// it; the choices stay on their lines and come back with the gutter. Off, the
+// emulator records no times.
 func (state *State) stampTerminal(t *terminal) {
+	t.screen.SetFolding(state.terminalGutter != gutterOff)
 	if state.terminalGutter.times() {
 		t.screen.SetClock(state.wallSeconds)
 	} else {
@@ -173,7 +202,8 @@ func gutterStyles(size float32, face ui.MonoFace, pal *palette) (number, written
 // cell before the rule carries the mark: the box that folds a command's output
 // away, the line that shows which rows a block owns, or the corner that ties a
 // wrapped row to the line above it.
-func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written ui.TextStyle) {
+func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, session *Session, geometry terminalGeometry, row int, y float32, number, written ui.TextStyle) {
+	t := session.term
 	mode := state.terminalGutter
 	line := t.screen.Row(row)
 	lineNumber := t.screen.LineNumber(row)
@@ -191,22 +221,25 @@ func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal,
 		// The number keeps the column it has before the mark column whether or
 		// not the row carries a time: a row not written yet must not shift it.
 		canvas.LabelAligned(cached.line, ui.Rect{
-			X:      mark - state.cellWidth - float32(gutterNumberChars)*state.cellWidth,
+			X:      mark - state.cellWidth - float32(state.gutterNumberDigits())*state.cellWidth,
 			Y:      y,
-			Width:  float32(gutterNumberChars) * state.cellWidth,
+			Width:  float32(state.gutterNumberDigits()) * state.cellWidth,
 			Height: state.cellHeight,
 		}, number, ui.AlignRight)
 	}
-	state.paintFoldMark(canvas, t, row, mark, y, t.screen.FoldAt(row), t.screen.ContinuesAbove(row),
-		number.Color, withAlpha(written.Color, written.Color.Alpha*0.45))
+	state.paintFoldMark(canvas, session, row, mark, y, t.screen.FoldAt(row), t.screen.FoldAt(row+1).Inside,
+		t.screen.ContinuesAbove(row), number.Color, withAlpha(written.Color, written.Color.Alpha*0.45))
 }
 
 // paintFoldMark draws the mark column of one row: a box with a minus that folds
 // a command's output away (a plus once it is folded), the line that shows the
-// rows of a block while it is open, or the corner that ties a wrapped row to the
-// line it continues. They are drawn rather than set in glyphs, because the strip
-// must not depend on the terminal's font holding a fold or wrap arrow.
-func (state *State) paintFoldMark(canvas *ui.Canvas, t *terminal, row int, x, y float32, info term.FoldInfo, continues bool, strong, quiet ui.Color) {
+// rows of a block while it is open, and the corner that ties a wrapped row to
+// the line it continues, which a row inside a block can need as well as any
+// other. They are drawn rather than set in glyphs, because the strip must not
+// depend on the terminal's font holding a fold or wrap arrow. The box is also a
+// control: it is remembered here and made a button once the terminal's own
+// region has been declared, so that it sits above it (see declareFoldBoxes).
+func (state *State) paintFoldMark(canvas *ui.Canvas, session *Session, row int, x, y float32, info term.FoldInfo, nextInside, continues bool, strong, quiet ui.Color) {
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	if cellWidth <= 0 || cellHeight <= 0 {
 		return
@@ -214,8 +247,13 @@ func (state *State) paintFoldMark(canvas *ui.Canvas, t *terminal, row int, x, y 
 	width := state.gutterMarkWidth()
 	stroke := max(float32(1), snap(cellWidth/8))
 	middle := snap(x + width/2)
-	switch {
-	case info.Anchor:
+	if info.Anchor {
+		t := session.term
+		bounds := ui.Rect{X: x, Y: y, Width: width, Height: cellHeight}
+		t.foldBoxes = append(t.foldBoxes, foldBox{row: row, bounds: bounds, folded: info.Folded})
+		if canvas.Hovered() == hitTerminalFold.At(foldHitIndex(session.ID, row)) {
+			canvas.Fill(bounds, withAlpha(strong, 0.2))
+		}
 		// A box the size of a character, with a pixel of air around it.
 		box := snap(cellWidth + 2)
 		left, top := snap(x+(width-box)/2), snap(y+(cellHeight-box)/2)
@@ -228,17 +266,18 @@ func (state *State) paintFoldMark(canvas *ui.Canvas, t *terminal, row int, x, y 
 		if info.Folded {
 			// A plus says the block can be opened again.
 			canvas.Fill(ui.Rect{X: middle, Y: top + inset, Width: stroke, Height: box - 2*inset}, strong)
-		} else if t.screen.FoldAt(row + 1).Inside {
+		} else if nextInside {
 			// The line the block hangs from.
 			canvas.Fill(ui.Rect{X: middle, Y: top + box, Width: stroke, Height: y + cellHeight - (top + box)}, quiet)
 		}
-	case info.Inside:
+	} else if info.Inside {
 		canvas.Fill(ui.Rect{X: middle, Y: y, Width: stroke, Height: cellHeight}, quiet)
-		if !t.screen.FoldAt(row + 1).Inside {
+		if !nextInside {
 			// The foot closes the block's line under its last row.
 			canvas.Fill(ui.Rect{X: middle, Y: y + cellHeight - stroke, Width: snap(width/2 - 1), Height: stroke}, quiet)
 		}
-	case continues:
+	}
+	if continues && !info.Anchor {
 		paintWrapMark(canvas, x, y, width, cellHeight, quiet)
 	}
 }
@@ -258,35 +297,96 @@ func paintWrapMark(canvas *ui.Canvas, x, y, cellWidth, cellHeight float32, color
 	canvas.Fill(ui.Rect{X: left, Y: middle - stroke, Width: right - left, Height: stroke}, color)
 }
 
-// terminalFoldToggle folds or opens the command block whose box a press hit, and
-// reports whether the press was one. The box sits in the gutter, outside the
-// grid, so a press there is neither a selection nor the application's.
-func (state *State) terminalFoldToggle(session *Session, event ui.PointerEvent) bool {
-	if state.terminalGutter == gutterOff || event.Button != ui.PointerButtonPrimary {
-		return false
-	}
-	if state.cellWidth <= 0 || state.cellHeight <= 0 {
-		return false
-	}
-	geometry := terminalLayoutWithInfoBar(event.Viewport, state.cellWidth, state.cellHeight, state.terminalInfoBarHeight(session.ID), state.padding())
-	width := state.gutterMarkWidth()
-	box := geometry.left - gutterRuleGap - width
-	if event.X < box || event.X >= box+width {
-		return false
-	}
-	row := int(math.Floor(float64((event.Y - geometry.top) / state.cellHeight)))
-	return session.term.screen.ToggleFold(row)
-}
-
 // formatGutter is the two texts of a gutter: the line number and the time.
 func formatGutter(mode terminalGutter, number uint64, written int64) (line, at string) {
 	if mode.numbers() {
-		var scratch [gutterNumberChars]byte
-		line = string(strconv.AppendUint(scratch[:0], number%10000, 10))
+		var scratch [20]byte
+		line = string(strconv.AppendUint(scratch[:0], number, 10))
 	}
 	if mode.times() && written != 0 {
 		var scratch [gutterTimeChars]byte
 		at = string(time.Unix(written, 0).AppendFormat(scratch[:0], "15:04:05"))
 	}
 	return line, at
+}
+
+// hitTerminalFold is the box on a command's row that folds its output. Its item
+// number holds the session and the view row.
+var hitTerminalFold = tree.Sub(shellHits, tree.Name("terminal-fold"))
+
+// foldHitRows is the number of rows an item number reserves for one session: the
+// terminal has at most 500.
+const foldHitRows = 512
+
+func foldHitIndex(session uint32, row int) int { return int(session)*foldHitRows + row }
+
+// foldBox is a box the gutter painted this frame.
+type foldBox struct {
+	row    int
+	bounds ui.Rect
+	folded bool
+}
+
+// declareFoldBoxes makes the boxes the gutter painted into buttons, after the
+// terminal's own region so that a press on one is the button's and not the
+// terminal's: it is neither a selection nor a mouse report for the program, and
+// the pointer shows a hand over it. Assistive technology finds a button that
+// says whether the output is folded. A press folds or opens the block; a double
+// click is one press too many for a control that toggles, so only its first
+// counts.
+func (state *State) declareFoldBoxes(canvas *ui.Canvas, session *Session) {
+	t := session.term
+	for _, box := range t.foldBoxes {
+		id := hitTerminalFold.At(foldHitIndex(session.ID, box.row))
+		label := state.messages.Tools.FoldOutput
+		if box.folded {
+			label = state.messages.Tools.UnfoldOutput
+		}
+		canvas.HitWithOptions(id, box.bounds, label, ui.HitOptions{
+			Role: ui.RoleButton, Cursor: ui.PointerCursorHand, SkipFocus: true, SkipTab: true,
+			Expandable: true, Expanded: !box.folded,
+		})
+		row := box.row
+		toggle := func() { t.screen.ToggleFold(row) }
+		if event, ok := canvas.PointerOn(id); ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary {
+			canvas.Consume()
+			if event.ClickCount <= 1 {
+				canvas.AfterPaint(toggle)
+			}
+		} else if canvas.Clicked(id) {
+			canvas.AfterPaint(toggle)
+		}
+	}
+	t.foldBoxes = t.foldBoxes[:0]
+}
+
+// The palette is the keyboard's way to a fold: the boxes are for the pointer and
+// the assistive tools that press buttons, and the terminal owns every key.
+var (
+	hitFoldLastOutput  = tree.ID(shellHits, "terminal-fold-last")
+	hitUnfoldAllOutput = tree.ID(shellHits, "terminal-unfold-all")
+)
+
+// foldPaletteEntries lists the palette's fold commands, which exist while the
+// gutter that carries the folds does.
+func (state *State) foldPaletteEntries(palette *commandPalette) {
+	if state.terminalGutter == gutterOff {
+		return
+	}
+	palette.add(state.messages.Tools.FoldLastOutput, hitFoldLastOutput)
+	palette.add(state.messages.Tools.UnfoldAllOutput, hitUnfoldAllOutput)
+}
+
+// foldCommand runs a fold command of the palette on the active terminal.
+func (state *State) foldCommand(id ui.ID) {
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.term == nil {
+		return
+	}
+	switch id {
+	case hitFoldLastOutput:
+		session.term.screen.ToggleLastFold()
+	case hitUnfoldAllOutput:
+		session.term.screen.UnfoldAll()
+	}
 }

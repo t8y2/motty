@@ -357,7 +357,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		}
 		if gutterShown && row <= cursor.Y {
 			// Rows below the cursor have not been written yet.
-			state.paintGutter(canvas, entry, t, geometry, row, y, gutterNumberStyle, gutterTimeStyle)
+			state.paintGutter(canvas, entry, session, geometry, row, y, gutterNumberStyle, gutterTimeStyle)
 		}
 		if !t.presentedAltScreen() && row <= cursor.Y {
 			if _, ok := t.aiRows[t.rowIDs[row]]; ok {
@@ -433,6 +433,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	canvas.HitWithOptions(id, geometry.area, t.accessibleName(state.messages.LabelTerminalFmt, session.Address), ui.HitOptions{
 		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID,
 	})
+	state.declareFoldBoxes(canvas, session)
 }
 
 func (state *State) paintTerminalImages(canvas *ui.Canvas, terminal *terminal, geometry terminalGeometry, behind bool, visible []uint64) {

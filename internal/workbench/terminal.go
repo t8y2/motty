@@ -100,7 +100,9 @@ type terminal struct {
 	cache      rowCache
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
-	rowIDs    []uint64
+	rowIDs []uint64
+	// foldBoxes are the fold boxes the gutter painted in the frame in progress.
+	foldBoxes []foldBox
 	selection terminalSelection
 	find      terminalFind
 	links     terminalLinks
@@ -493,9 +495,6 @@ func (t *terminal) noteShellInput(p []byte) {
 			if t.promptDirty || !atPrompt {
 				t.submittedLines++
 			}
-			// The row the command was typed on opens the block it is about to
-			// print, which the gutter can fold away.
-			t.screen.MarkCommand()
 			t.promptDirty, atPrompt = false, false
 		case 3:
 			t.promptDirty, t.submittedLines = false, 0
@@ -723,6 +722,7 @@ func (state *State) pump(session *Session) {
 	if len(data) > 0 {
 		t.recording.append(state.now(), terminalRecordingOutput, data)
 		t.writeRemote(data, state.now())
+		state.growGutterNumbers(session)
 		if wasExec {
 			t.markAIBlock(t.exec == nil)
 		}

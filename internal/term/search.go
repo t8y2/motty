@@ -142,29 +142,28 @@ func (t *Terminal) bufferLine(index int) *line {
 // ViewLine returns the retained-buffer line displayed at view row, or -1 when
 // row lies outside the screen or a fold hides it.
 func (t *Terminal) ViewLine(row int) int {
-	if row < 0 || row >= t.rows {
+	index, ok := t.windowIndex(row)
+	if !ok {
 		return -1
 	}
 	if t.onAlt {
-		return row
+		return index
 	}
-	rows := t.viewRows()
-	if row >= len(rows) {
-		return -1
-	}
-	return t.histCount - t.view + rows[row].index
+	return t.histCount - t.view + index
 }
 
 // RevealLine scrolls the main-screen view to include line, centered when the
-// retained history permits it. The alternate screen cannot scroll.
+// retained history permits it, and opens the folded block that hides it. The
+// alternate screen cannot scroll.
 func (t *Terminal) RevealLine(line int) bool {
 	if line < 0 || line >= t.bufferLineCount() || t.onAlt {
 		return false
 	}
+	changed := t.unfoldAround(line)
 	top := clampInt(line-t.rows/2, 0, t.histCount)
 	view := t.histCount - top
 	if view == t.view {
-		return false
+		return changed
 	}
 	t.view = view
 	t.version++

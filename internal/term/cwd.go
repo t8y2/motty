@@ -52,6 +52,42 @@ func (t *Terminal) SetPromptToken(token string) {
 // including commands that readline takes from previously submitted typeahead.
 func (t *Terminal) SetCommandStart(fn func()) { t.commandStartFn = fn }
 
+// osc133 reads one of the shell integration's prompt markers: A starts a
+// prompt, B ends it where the command is typed, C starts the command's output.
+// Only the owning shell's markers count, the ones that carry the prompt token;
+// a nested login or a program that implements the standard on its own is not
+// the shell Motty set up and cannot open or close a command block. The
+// integration does not send D, the end of a command: a block ends where the next
+// prompt starts.
+func (t *Terminal) osc133(text []byte) {
+	if len(text) == 0 {
+		return
+	}
+	suffix := ""
+	if t.promptToken != "" {
+		suffix = ";motty=" + t.promptToken
+	}
+	if string(text[1:]) != suffix {
+		return
+	}
+	switch text[0] {
+	case 'A':
+		t.markPromptStart()
+		if t.promptStartFn != nil {
+			t.promptStartFn()
+		}
+	case 'B':
+		if t.promptReadyFn != nil {
+			t.promptReadyFn()
+		}
+	case 'C':
+		t.markOutputStart()
+		if t.commandStartFn != nil {
+			t.commandStartFn()
+		}
+	}
+}
+
 // WorkingDirectory is the last directory the shell reported, or false.
 func (t *Terminal) WorkingDirectory() (Cwd, bool) { return t.cwd, t.cwd.Path != "" }
 

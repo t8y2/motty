@@ -665,8 +665,11 @@ type State struct {
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter
-	wallClock      func() int64
-	notifyOff      bool
+	// gutterDigits is the width the number column has grown to; see
+	// growGutterNumbers.
+	gutterDigits int
+	wallClock    func() int64
+	notifyOff    bool
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
 	fonts         fontsUI
@@ -1446,6 +1449,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.openCommandPalette()
 	case id == hitHistoryOpen:
 		state.openHistoryActive()
+	case id == hitFoldLastOutput || id == hitUnfoldAllOutput:
+		state.foldCommand(id)
 	case id == hitSettingsHistoryToggle:
 		state.toggleHistory()
 	case id == hitCompletionUpdate:

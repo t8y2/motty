@@ -101,9 +101,6 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 	terminal := session.term
 	selection := &terminal.selection
 	position := state.terminalPositionAt(event.Viewport, event.X, event.Y)
-	if event.Kind == ui.PointerDown && state.terminalFoldToggle(session, event) {
-		return ui.EventResult{Handled: true, Repaint: true}
-	}
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
 		result.Repaint = terminal.links.clear() || result.Repaint
 		return result
