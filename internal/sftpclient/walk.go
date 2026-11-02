@@ -53,6 +53,9 @@ type WalkSummary struct {
 	// Truncated is set when a bound stopped the walk before the whole tree
 	// was read, Canceled when its context did.
 	Truncated, Canceled bool
+	// RootErr is why the folder the walk started in could not be read, when it
+	// could not: there is then no tree to search at all.
+	RootErr error
 }
 
 // Walk reads root and the folders under it a level at a time, so the nearest
@@ -78,14 +81,17 @@ func Walk(ctx context.Context, reader DirReader, root string, options WalkOption
 				return summary
 			}
 			batch := level[start:min(len(level), start+parallel)]
-			infos, failed := readFolders(reader, root, batch, options.Join)
+			infos, errs := readFolders(reader, root, batch, options.Join)
 			for index, dir := range batch {
 				if ctx.Err() != nil {
 					summary.Canceled = true
 					return summary
 				}
-				if failed[index] {
+				if errs[index] != nil {
 					summary.Failed++
+					if dir == "" {
+						summary.RootErr = errs[index]
+					}
 				}
 				if infos[index] == nil {
 					continue
@@ -127,15 +133,15 @@ func Walk(ctx context.Context, reader DirReader, root string, options WalkOption
 
 // readFolders reads the folders of a batch at the same time. A folder that
 // failed part way keeps what was read of it.
-func readFolders(reader DirReader, root string, batch []string, join func(dir, name string) string) ([][]os.FileInfo, []bool) {
-	infos, failed := make([][]os.FileInfo, len(batch)), make([]bool, len(batch))
+func readFolders(reader DirReader, root string, batch []string, join func(dir, name string) string) ([][]os.FileInfo, []error) {
+	infos, errs := make([][]os.FileInfo, len(batch)), make([]error, len(batch))
 	read := func(index int) {
 		dir := root
 		if batch[index] != "" {
 			dir = join(root, batch[index])
 		}
 		entries, err := reader.ReadDir(dir)
-		failed[index] = err != nil
+		errs[index] = err
 		if entries == nil && err == nil {
 			entries = []os.FileInfo{}
 		}
@@ -146,7 +152,7 @@ func readFolders(reader DirReader, root string, batch []string, join func(dir, n
 	}
 	if len(batch) == 1 {
 		read(0)
-		return infos, failed
+		return infos, errs
 	}
 	var group sync.WaitGroup
 	for index := range batch {
@@ -157,7 +163,7 @@ func readFolders(reader DirReader, root string, batch []string, join func(dir, n
 		}()
 	}
 	group.Wait()
-	return infos, failed
+	return infos, errs
 }
 
 // LocalReader reads folders of this computer for Walk. An entry whose details

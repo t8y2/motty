@@ -111,6 +111,19 @@ func TestWalkStopsAtItsBoundsAndSaysSo(t *testing.T) {
 	}
 }
 
+func TestWalkSaysWhyTheRootCouldNotBeRead(t *testing.T) {
+	reader := sampleTree()
+	reader.fail["/srv"] = true
+	got, summary := walkAll(t, reader, "/srv", WalkOptions{MaxEntries: 100, MaxDepth: 5})
+	if len(got) != 0 || summary.RootErr == nil || summary.Failed != 1 || summary.Folders != 0 {
+		t.Fatalf("got %q, summary %+v", got, summary)
+	}
+	// A folder below the root that cannot be read is counted, not a failure of the search.
+	if _, summary := walkAll(t, sampleTree(), "/srv", WalkOptions{MaxEntries: 100, MaxDepth: 5}); summary.RootErr != nil || summary.Failed != 1 {
+		t.Fatalf("summary %+v", summary)
+	}
+}
+
 func TestWalkEntersOnlyPlainFolders(t *testing.T) {
 	reader := &treeReader{folders: map[string][]os.FileInfo{
 		"/srv":          {dir("real"), fakeInfo{name: "junction", mode: os.ModeIrregular}, fakeInfo{name: "tty", mode: os.ModeDevice | os.ModeCharDevice}, fakeInfo{name: "pipe", mode: os.ModeNamedPipe}},
