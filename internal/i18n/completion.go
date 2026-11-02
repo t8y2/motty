@@ -26,8 +26,13 @@ type CompletionMessages struct {
 	Updating              string
 	UpToDate              string
 	UpdatedFmt            string
-	CheckFailedFmt        string
-	CacheFailedFmt        string
-	CheckedFmt            string
-	NoDataDir             string
+	// UpdatedRepairedFmt is shown when an update needed repair or skipped
+	// upstream files; the other UpdatedFmt stays the clean case.
+	UpdatedRepairedFmt string
+	// RepairSummaryFmt is the settings-row fragment for those nonzero counts.
+	RepairSummaryFmt string
+	CheckFailedFmt   string
+	CacheFailedFmt   string
+	CheckedFmt       string
+	NoDataDir        string
 }

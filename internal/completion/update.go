@@ -247,39 +247,40 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 // FetchCatalog downloads the archive of one immutable commit and imports it
 // under the same limits as the built-in snapshot. The archive is read into
 // memory only up to the configured compressed size; the tar reader enforces
-// the expanded, member and file limits.
-func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*Catalog, error) {
+// the expanded, member and file limits. The returned stats describe how the
+// import went, including any upstream files that needed repair or were skipped.
+func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*Catalog, ImportStats, error) {
 	if release.Tag == "" || release.Commit == "" {
-		return nil, errors.New("the release is not pinned")
+		return nil, ImportStats{}, errors.New("the release is not pinned")
 	}
 	url := "https://codeload.github.com/" + RepositoryOwner + "/" + RepositoryName + "/tar.gz/" + release.Commit
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	request.Header.Set("User-Agent", "motty")
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the download answered %s", response.Status)
+		return nil, ImportStats{}, fmt.Errorf("the download answered %s", response.Status)
 	}
 	data, err := readLimited(response.Body, maxArchiveBytes)
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	source, err := ReadSourceArchive(bytes.NewReader(data), DefaultArchiveLimits())
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	metadata := Metadata{Source: RepositoryName, Release: release.Tag, Commit: release.Commit, License: "MIT"}
-	catalog, _, err := Import(source.Files, metadata, DefaultImportOptions())
+	catalog, stats, err := Import(source.Files, metadata, DefaultImportOptions())
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
-	return catalog, nil
+	return catalog, stats, nil
 }
 
 // readLimited reads at most limit bytes and rejects a longer answer instead of

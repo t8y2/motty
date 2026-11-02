@@ -2099,6 +2099,8 @@ var englishCompletion = CompletionMessages{
 	Updating:              "Checking and installing a newer catalog…",
 	UpToDate:              "The catalog is up to date.",
 	UpdatedFmt:            "Catalog updated to %s.",
+	UpdatedRepairedFmt:    "Catalog updated to %s. Repaired %d and skipped %d upstream files.",
+	RepairSummaryFmt:      "repaired %d and skipped %d upstream files",
 	CheckFailedFmt:        "Could not update the catalog: %v",
 	CacheFailedFmt:        "%s (the downloaded catalog could not be read: %v)",
 	CheckedFmt:            "%s · checked %s",

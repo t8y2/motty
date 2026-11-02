@@ -2099,6 +2099,8 @@ var chineseCompletion = CompletionMessages{
 	Updating:              "正在检查并安装新的命令库…",
 	UpToDate:              "命令库已是最新。",
 	UpdatedFmt:            "命令库已更新到 %s。",
+	UpdatedRepairedFmt:    "命令库已更新到 %s。修复 %d 个、跳过 %d 个上游文件。",
+	RepairSummaryFmt:      "修复 %d 个、跳过 %d 个上游文件",
 	CheckFailedFmt:        "无法更新命令库：%v",
 	CacheFailedFmt:        "%s（下载的命令库无法读取：%v）",
 	CheckedFmt:            "%s · 检查于 %s",

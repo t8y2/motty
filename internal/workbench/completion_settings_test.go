@@ -2,9 +2,12 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/completion"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 )
@@ -175,6 +178,77 @@ func TestCompletionKeyHelpIsSearchableInShortcuts(t *testing.T) {
 	searchSettings(t, state, "Alt+→")
 	if state.settings.count != 1 || state.settings.results[0].category != settingsShortcuts || state.settings.results[0].label != state.messages.Completion.KeysAcceptWord {
 		t.Fatalf("word acceptance search results: %+v", state.settings.results[:state.settings.count])
+	}
+}
+
+// loadCompletionBaseline gives the state a real store and catalog generation so
+// a queued update result looks like the install it reports.
+func loadCompletionBaseline(t *testing.T, state *State) *completion.CatalogStore {
+	t.Helper()
+	store := completion.NewCatalogStore("")
+	if _, _, _, err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	state.completion.store = store
+	state.completion.catalogGeneration = 0
+	return store
+}
+
+func queueCompletionUpdate(state *State, stats completion.ImportStats) {
+	state.completion.updateReady = make(chan completionUpdateResult, 1)
+	state.completion.updateReady <- completionUpdateResult{stats: stats}
+	state.adoptCompletionUpdate()
+}
+
+func TestCompletionUpdateReportsRepairedAndSkippedSources(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	loadCompletionBaseline(t, state)
+	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2})
+	catalog := state.completion.catalog
+	if catalog == nil {
+		t.Fatal("the update result left no catalog")
+	}
+	m := state.messages.Completion
+	if want := fmt.Sprintf(m.UpdatedRepairedFmt, catalog.Release, 9, 2); state.status != want {
+		t.Fatalf("status = %q, want %q", state.status, want)
+	}
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary := fmt.Sprintf(m.RepairSummaryFmt, 9, 2); !strings.Contains(status, summary) {
+		t.Fatalf("settings status %q does not explain %q", status, summary)
+	}
+	if checked := state.completion.checked.Format("2006-01-02 15:04"); !strings.Contains(status, checked) {
+		t.Fatalf("settings status %q lost its check time %q", status, checked)
+	}
+}
+
+func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	loadCompletionBaseline(t, state)
+	queueCompletionUpdate(state, completion.ImportStats{})
+	m := state.messages.Completion
+	if want := fmt.Sprintf(m.UpdatedFmt, state.completion.catalog.Release); state.status != want {
+		t.Fatalf("status = %q, want %q", state.status, want)
+	}
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary := fmt.Sprintf(m.RepairSummaryFmt, 0, 0); strings.Contains(status, summary) {
+		t.Fatalf("settings status %q reports a defect-free update", status)
+	}
+}
+
+func TestCompletionUpdateWithoutANewVersionStaysUpToDate(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	queueCompletionUpdate(state, completion.ImportStats{})
+	if state.status != state.messages.Completion.UpToDate {
+		t.Fatalf("status = %q, want the up-to-date message", state.status)
 	}
 }
 

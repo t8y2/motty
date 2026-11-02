@@ -142,7 +142,7 @@ func TestFetchCatalogImportsThePinnedArchive(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &http.Client{Transport: rewriteTransport{target: server.URL}}
-	catalog, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
+	catalog, stats, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -152,10 +152,37 @@ func TestFetchCatalogImportsThePinnedArchive(t *testing.T) {
 	if catalog.RootCount() != 1 || catalog.Root("tool") == nil {
 		t.Fatalf("roots = %d", catalog.RootCount())
 	}
+	if stats.RepairedFiles != 0 || stats.SkippedSources != 0 {
+		t.Fatalf("clean archive reported %+v", stats)
+	}
+}
+
+func TestFetchCatalogRepairsAnUpstreamSourceAndReportsIt(t *testing.T) {
+	body := repairableReleaseArchive(t)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !strings.HasSuffix(request.URL.Path, "/tar.gz/commit-sha") {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Write(body)
+	}))
+	defer server.Close()
+	client := &http.Client{Transport: rewriteTransport{target: server.URL}}
+	catalog, stats, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	flag, ok := catalog.FindFlag(catalog.Root("tool"), "--align")
+	if !ok || flag.Desc != "Vertical position (default: top). Details see --align-x" {
+		t.Fatalf("repaired flag = %+v, found=%v", flag, ok)
+	}
 }
 
 func TestFetchCatalogRejectsAnUnpinnedRelease(t *testing.T) {
-	if _, err := FetchCatalog(context.Background(), http.DefaultClient, Release{Tag: "v1.9.0"}); err == nil {
+	if _, _, err := FetchCatalog(context.Background(), http.DefaultClient, Release{Tag: "v1.9.0"}); err == nil {
 		t.Fatal("a release without a commit was fetched")
 	}
 }
@@ -185,7 +212,7 @@ func TestFetchCatalogRejectsDownloadFailure(t *testing.T) {
 	client := &http.Client{Transport: catalogTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway", Body: io.NopCloser(strings.NewReader("failed"))}, nil
 	})}
-	if _, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"}); err == nil {
+	if _, _, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"}); err == nil {
 		t.Fatal("a failed download was accepted")
 	}
 }
@@ -202,15 +229,29 @@ func (transport rewriteTransport) RoundTrip(request *http.Request) (*http.Respon
 
 func releaseArchive(t *testing.T) []byte {
 	t.Helper()
-	var buffer bytes.Buffer
-	zipper := gzip.NewWriter(&buffer)
-	writer := tar.NewWriter(zipper)
-	entries := map[string]string{
+	return tarGzipArchive(t, map[string]string{
 		"carapace-bin-1.9.0/LICENSE":                    "MIT",
 		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml":     "name: tool\r\ndescription: a tool\r\n",
 		"carapace-bin-1.9.0/man/cmd/tool/tool.run.yaml": "name: run\r\nflags:\r\n  '-v=': verbose\r\n",
 		"carapace-bin-1.9.0/cmd/carapace/main.go":       "package main",
-	}
+	})
+}
+
+// repairableReleaseArchive is a release that ships the upstream defect: one
+// plain scalar contains ": ", which the importer must quote and count.
+func repairableReleaseArchive(t *testing.T) []byte {
+	t.Helper()
+	return tarGzipArchive(t, map[string]string{
+		"carapace-bin-1.9.0/LICENSE":                "MIT",
+		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml": "name: tool\nflags:\n  --align?: Vertical position (default: top). Details see --align-x\n",
+	})
+}
+
+func tarGzipArchive(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	zipper := gzip.NewWriter(&buffer)
+	writer := tar.NewWriter(zipper)
 	// tar reads its members in order; the import sorts the source files itself.
 	for name := range entries {
 		data := entries[name]

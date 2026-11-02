@@ -94,18 +94,19 @@ func (store *CatalogStore) publish(catalog *Catalog) {
 
 // Update serializes the entire update against the current baseline. Waiting
 // and the final file replacement honor cancellation; failure keeps the old
-// disk file and memory snapshot.
-func (store *CatalogStore) Update(ctx context.Context, client *http.Client) (*Catalog, uint64, error) {
+// disk file and memory snapshot. The returned stats describe the import that
+// produced the new catalog, or are zero when the catalog was already newest.
+func (store *CatalogStore) Update(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, error) {
 	if err := store.acquire(ctx); err != nil {
-		return nil, 0, err
+		return nil, 0, ImportStats{}, err
 	}
 	defer func() { <-store.writer }()
 	store.load()
 	if store.err != nil {
-		return nil, 0, store.err
+		return nil, 0, ImportStats{}, store.err
 	}
 	if store.path == "" {
-		return nil, 0, errors.New("no data directory")
+		return nil, 0, ImportStats{}, errors.New("no data directory")
 	}
 	return store.updateLoaded(ctx, client)
 }
@@ -123,28 +124,28 @@ func (store *CatalogStore) acquire(ctx context.Context) error {
 	return nil
 }
 
-func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client) (*Catalog, uint64, error) {
+func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, error) {
 	current, generation := store.Snapshot()
 	release, err := LatestCommit(ctx, client)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, ImportStats{}, err
 	}
 	if !Newer(release.Tag, current.Release) {
-		return current, generation, nil
+		return current, generation, ImportStats{}, nil
 	}
-	catalog, err := FetchCatalog(ctx, client, release)
+	catalog, stats, err := FetchCatalog(ctx, client, release)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, ImportStats{}, err
 	}
 	// Losing more than a fifth of all commands indicates a partial or damaged
 	// source; do not replace a working snapshot with it.
 	if catalog.RootCount()*5 < current.RootCount()*4 {
-		return nil, 0, fmt.Errorf("the catalog covers %d commands, down from %d", catalog.RootCount(), current.RootCount())
+		return nil, 0, ImportStats{}, fmt.Errorf("the catalog covers %d commands, down from %d", catalog.RootCount(), current.RootCount())
 	}
 	if err := installCatalog(ctx, store.path, catalog); err != nil {
-		return nil, 0, err
+		return nil, 0, ImportStats{}, err
 	}
 	store.publish(catalog)
 	catalog, generation = store.Snapshot()
-	return catalog, generation, nil
+	return catalog, generation, stats, nil
 }

@@ -138,9 +138,12 @@ type completionUI struct {
 	// against had loaded; it starts when the load finishes.
 	updatePending bool
 	updateErr     error
-	checked       time.Time
-	updateReady   chan completionUpdateResult
-	cancelUpdate  context.CancelFunc
+	// updateStats keeps what the last successful import had to repair or
+	// skip, so the settings row can explain an imperfectly clean update.
+	updateStats  completion.ImportStats
+	checked      time.Time
+	updateReady  chan completionUpdateResult
+	cancelUpdate context.CancelFunc
 
 	// History reads fill history.ghost, the single cache used by both modes.
 	// The catalog never waits for these background requests.
@@ -160,7 +163,8 @@ type completionCatalogLoad struct {
 }
 
 type completionUpdateResult struct {
-	err error
+	err   error
+	stats completion.ImportStats
 }
 
 type completionHistoryLoad struct {
@@ -295,12 +299,18 @@ func (state *State) adoptCompletionUpdate() {
 			c.cancelUpdate = nil
 		}
 		c.updateErr = result.err
+		c.updateStats = result.stats
 		oldGeneration := c.catalogGeneration
 		state.adoptCompletionCatalog()
 		if result.err == nil && c.catalog != nil {
 			if c.catalogGeneration != oldGeneration {
 				c.catalogNote = nil
-				state.status = fmt.Sprintf(state.messages.Completion.UpdatedFmt, c.catalog.Release)
+				message := state.messages.Completion
+				if result.stats.RepairedFiles > 0 || result.stats.SkippedSources > 0 {
+					state.status = fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, result.stats.RepairedFiles, result.stats.SkippedSources)
+				} else {
+					state.status = fmt.Sprintf(message.UpdatedFmt, c.catalog.Release)
+				}
 			} else {
 				state.status = state.messages.Completion.UpToDate
 			}
@@ -417,8 +427,8 @@ func (state *State) updateCompletions() {
 	}
 	go func() {
 		defer c.workers.Done()
-		_, _, err := store.Update(ctx, completion.UpdateClient())
-		ready <- completionUpdateResult{err: err}
+		_, _, stats, err := store.Update(ctx, completion.UpdateClient())
+		ready <- completionUpdateResult{err: err, stats: stats}
 		for _, invalidate := range wake {
 			invalidate()
 		}
@@ -448,6 +458,9 @@ func (state *State) completionCatalogStatus() (string, error) {
 	status := fmt.Sprintf(m.CatalogDescriptionFmt, c.catalog.Release, c.catalog.RootCount(), c.catalog.FlagCount())
 	if c.catalogNote != nil {
 		status = fmt.Sprintf(m.CacheFailedFmt, status, c.catalogNote)
+	}
+	if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
+		status += " · " + fmt.Sprintf(m.RepairSummaryFmt, c.updateStats.RepairedFiles, c.updateStats.SkippedSources)
 	}
 	if !c.checked.IsZero() {
 		status = fmt.Sprintf(m.CheckedFmt, status, c.checked.Format("2006-01-02 15:04"))
