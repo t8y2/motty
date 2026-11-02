@@ -173,23 +173,130 @@ func TestImportValueBounds(t *testing.T) {
 	}
 }
 
-func TestImportRejectsStructuralErrors(t *testing.T) {
+func TestImportSkipsStructuralErrors(t *testing.T) {
 	for name, data := range map[string]string{
 		"invalid flag list":    "name: child\nflags: [not-a-map]\n",
 		"invalid scalar flags": "name: child\nflags: unexpected\n",
 		"invalid description":  "name: child\nflags:\n  --all: [bad]\n",
 		"invalid command":      "name: child\ncommands: [bad]\n",
-		"invalid yaml":         "name: child\nflags:\n  --all: invalid: description\n",
+		"unrepairable yaml":    "name: child\nflags:\n\t--tab: value\n",
 		"empty yaml":           "",
 		"null root":            "null",
 		"second document":      "name: child\n---\nflags: [bad]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			files := []SourceFile{{Name: "a/a.yaml", Data: []byte("name: a\n")}, {Name: "a/a.child.yaml", Data: []byte(data)}}
-			if _, _, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{}); err == nil {
-				t.Fatal("partial catalog accepted after a structural source error")
+			catalog, stats, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{})
+			if err != nil {
+				t.Fatalf("one unparsable file failed the whole import: %v", err)
+			}
+			if stats.SkippedSources != 1 || stats.RepairedFiles != 0 {
+				t.Fatalf("stats = %+v", stats)
+			}
+			if catalog.RootCount() != 1 || catalog.Lookup([]string{"a", "child"}) != nil {
+				t.Fatalf("roots = %d, child imported", catalog.RootCount())
 			}
 		})
+	}
+}
+
+func TestImportRepairsAPlainScalarWithMappingColons(t *testing.T) {
+	files := []SourceFile{{Name: "mpv/mpv.yaml", Data: []byte(`
+name: mpv
+description: a media player
+flags:
+    --osd-align-x?: Control to which corner of the screen OSD should be aligned to
+    --osd-align-y?: Vertical position (default: top). Details see --osd-align-x
+`)}}
+	catalog, stats := importFiles(t, files, ImportOptions{})
+	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	flag, ok := catalog.FindFlag(catalog.Root("mpv"), "--osd-align-y")
+	if !ok || flag.Desc != "Vertical position (default: top). Details see --osd-align-x" {
+		t.Fatalf("repaired flag = %+v, found=%v", flag, ok)
+	}
+}
+
+func TestImportRepairsEveryDefectLineAndKeepsItsText(t *testing.T) {
+	files := []SourceFile{{Name: "zig/zig.yaml", Data: []byte("name: zig\n")}, {Name: "zig/zig.run.yaml", Data: []byte(`
+name: run [options] [files] [-- args]
+description: Create executable and run immediately
+flags:
+    --growable-table: WebAssembly: remove maximum size from function table, allowing table to grow
+    --seed=: Override the random seed (default: 0)
+    --note: It's a 'quoted': value
+`)}}
+	catalog, stats := importFiles(t, files, ImportOptions{})
+	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	run := catalog.Lookup([]string{"zig", "run"})
+	for _, test := range []struct{ name, desc string }{
+		{"--growable-table", "WebAssembly: remove maximum size from function table, allowing table to grow"},
+		{"--seed", "Override the random seed (default: 0)"},
+		{"--note", "It's a 'quoted': value"},
+	} {
+		flag, ok := catalog.FindFlag(run, test.name)
+		if !ok || flag.Desc != test.desc {
+			t.Errorf("%s = %+v, found=%v; want %q", test.name, flag, ok, test.desc)
+		}
+	}
+}
+
+func TestImportSkipsASourceWhenRepairCannotMakeItParse(t *testing.T) {
+	files := []SourceFile{
+		{Name: "a/a.yaml", Data: []byte("name: a\n")},
+		{Name: "a/a.broken.yaml", Data: []byte("name: broken\nflags:\n  --all: first: second\n  --bad: [not, a, description]\n")},
+	}
+	catalog, stats, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{})
+	if err != nil {
+		t.Fatalf("a file that repair cannot fix failed the import: %v", err)
+	}
+	if stats.SkippedSources != 1 || stats.RepairedFiles != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if catalog.RootCount() != 1 || catalog.Lookup([]string{"a", "broken"}) != nil {
+		t.Fatalf("roots = %d", catalog.RootCount())
+	}
+}
+
+func TestImportBoundsRepairsPerSource(t *testing.T) {
+	var data strings.Builder
+	data.WriteString("name: many\nflags:\n")
+	for index := 0; index <= maxRepairsPerSource; index++ {
+		fmt.Fprintf(&data, "  --flag%d: first: second\n", index)
+	}
+	files := []SourceFile{
+		{Name: "a/a.yaml", Data: []byte("name: a\n")},
+		{Name: "a/a.many.yaml", Data: []byte(data.String())},
+	}
+	catalog, stats, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{})
+	if err != nil {
+		t.Fatalf("a file over the repair bound failed the import: %v", err)
+	}
+	if stats.SkippedSources != 1 || stats.RepairedFiles != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if catalog.RootCount() != 1 {
+		t.Fatalf("roots = %d", catalog.RootCount())
+	}
+}
+
+func TestImportHandlesAV182LikeSourceSet(t *testing.T) {
+	files := []SourceFile{
+		{Name: "mpv/mpv.yaml", Data: []byte("name: mpv\nflags:\n    --osd-align-y?: Vertical position (default: top). Details see --osd-align-x\n")},
+		{Name: "zig/zig.yaml", Data: []byte("name: zig\n")},
+		{Name: "zig/zig.run.yaml", Data: []byte("name: run [options]\nflags:\n    --growable-table: WebAssembly: remove maximum size from function table, allowing table to grow\n")},
+		{Name: "zig/zig.build-exe.yaml", Data: []byte("name: build-exe\nflags:\n    --growable-table: WebAssembly: remove maximum size from function table, allowing table to grow\n")},
+		{Name: "plain/plain.yaml", Data: []byte("name: plain\n")},
+	}
+	catalog, stats := importFiles(t, files, ImportOptions{})
+	if stats.RepairedFiles != 3 || stats.SkippedSources != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if catalog.RootCount() != 3 || catalog.Lookup([]string{"zig", "run"}) == nil || catalog.Lookup([]string{"zig", "build-exe"}) == nil {
+		t.Fatalf("roots = %d", catalog.RootCount())
 	}
 }
 

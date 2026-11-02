@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -48,6 +50,12 @@ type ImportStats struct {
 	HiddenFlags int
 	// RootlessDirs counts directories without a canonical <dir>/<dir>.yaml.
 	RootlessDirs int
+	// RepairedFiles counts source files that shipped invalid YAML of the known
+	// plain-scalar kind and were imported after quoting the offending value.
+	RepairedFiles int
+	// SkippedSources counts source files that stayed unparsable and were left
+	// out of the catalog instead of failing the whole import.
+	SkippedSources int
 }
 
 // ImportOptions bounds one import. Zero values take the package defaults.
@@ -74,6 +82,11 @@ func DefaultImportOptions() ImportOptions {
 // Import builds a catalog from the files of one Carapace man tree. Parsing is
 // pure: a source file can describe structure, options and literal values, and
 // everything else is ignored without being evaluated.
+//
+// One bad file must not cost the whole catalog. A source that only has the
+// known upstream defect (an unquoted plain scalar containing ": ") is repaired
+// in place, and a source that still cannot be parsed is skipped and counted;
+// the bounds on archive size, files, duplicates and command depth stay fatal.
 func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, ImportStats, error) {
 	defaults := DefaultImportOptions()
 	if opts.MaxFiles <= 0 {
@@ -123,9 +136,18 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 		if _, exists := files[base]; exists {
 			return nil, stats, fmt.Errorf("completion: duplicate source %s", file.Name)
 		}
-		command, err := parseSource(file.Data, opts)
+		command, repaired, err := parseSourceRecovering(file.Data, opts)
 		if err != nil {
-			return nil, stats, fmt.Errorf("completion: source %s: %w", file.Name, err)
+			// A file that violates a hard bound still fails the import; a file
+			// that simply cannot be parsed is skipped and counted.
+			if errors.Is(err, errSourceLimit) {
+				return nil, stats, fmt.Errorf("completion: source %s: %w", file.Name, err)
+			}
+			stats.SkippedSources++
+			continue
+		}
+		if repaired {
+			stats.RepairedFiles++
 		}
 		files[base] = command
 	}
@@ -372,6 +394,128 @@ func parseSource(data []byte, opts ImportOptions) (yamlCommand, error) {
 	return command, nil
 }
 
+// errSourceLimit marks a source document that breaks a hard YAML bound. Such a
+// file still fails its import: the bound exists to stop hostile input, and a
+// skipped hostile file would only hide that someone tried.
+var errSourceLimit = errors.New("completion: source exceeds a YAML bound")
+
+// parseSourceRecovering parses one source file. Carapace release archives have
+// shipped man/cmd files whose plain scalar values contain ": ", which makes the
+// YAML parser read the rest of the line as another mapping key. That defect is
+// repaired by quoting the value on the reported line, one line at a time and
+// under a bound; anything else is left to the caller as a skip.
+func parseSourceRecovering(data []byte, opts ImportOptions) (yamlCommand, bool, error) {
+	document := data
+	for repairs := 0; ; repairs++ {
+		command, err := parseSource(document, opts)
+		if err == nil {
+			return command, repairs > 0, nil
+		}
+		if errors.Is(err, errSourceLimit) {
+			return yamlCommand{}, false, err
+		}
+		line, ok := mappingValueErrorLine(err)
+		if !ok || repairs >= maxRepairsPerSource {
+			return yamlCommand{}, false, err
+		}
+		fixed, ok := quoteMappingValue(document, line)
+		if !ok {
+			return yamlCommand{}, false, err
+		}
+		document = fixed
+	}
+}
+
+// maxRepairsPerSource bounds the work one hostile or very broken file can
+// cause. Real upstream files need one repair per defect line.
+const maxRepairsPerSource = 16
+
+const mappingValuesMessage = "mapping values are not allowed in this context"
+
+// yamlLineError matches the parser's "yaml: line N: message" form.
+var yamlLineError = regexp.MustCompile(`^yaml: line ([0-9]+): (.*)$`)
+
+// mappingValueErrorLine reports the line of the one parser failure this import
+// knows how to repair.
+func mappingValueErrorLine(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	match := yamlLineError.FindStringSubmatch(err.Error())
+	if match == nil || match[2] != mappingValuesMessage {
+		return 0, false
+	}
+	line, convertErr := strconv.Atoi(match[1])
+	if convertErr != nil || line <= 0 {
+		return 0, false
+	}
+	return line, true
+}
+
+// quoteMappingValue turns the plain scalar after the first ": " of line into a
+// single-quoted scalar, which is how YAML spells text that contains ": ".
+// Single quotes inside the text are doubled; every other byte of the file is
+// kept, so the decoded text is the same one the author wrote.
+func quoteMappingValue(data []byte, line int) ([]byte, bool) {
+	start, end, ok := lineSpan(data, line)
+	if !ok {
+		return nil, false
+	}
+	body := data[start:end]
+	carriageReturn := []byte(nil)
+	if len(body) > 0 && body[len(body)-1] == '\r' {
+		carriageReturn = []byte{'\r'}
+		body = body[:len(body)-1]
+	}
+	colon := bytes.Index(body, []byte(": "))
+	if colon < 0 {
+		return nil, false
+	}
+	// Plain scalars strip the separation spaces around the value; doing the
+	// same here keeps the decoded description byte-identical.
+	value := bytes.Trim(body[colon+2:], " \t")
+	if len(value) == 0 {
+		return nil, false
+	}
+	quoted := bytes.ReplaceAll(value, []byte("'"), []byte("''"))
+
+	fixed := make([]byte, 0, len(data)+len(quoted)+2)
+	fixed = append(fixed, data[:start]...)
+	fixed = append(fixed, body[:colon+1]...)
+	fixed = append(fixed, ' ', '\'')
+	fixed = append(fixed, quoted...)
+	fixed = append(fixed, '\'')
+	fixed = append(fixed, carriageReturn...)
+	fixed = append(fixed, data[end:]...)
+	return fixed, true
+}
+
+// lineSpan returns the byte range of one 1-based line without its newline.
+func lineSpan(data []byte, line int) (start, end int, ok bool) {
+	if line <= 0 {
+		return 0, 0, false
+	}
+	start = 0
+	for skipped := 1; skipped < line; skipped++ {
+		index := bytes.IndexByte(data[start:], '\n')
+		if index < 0 {
+			return 0, 0, false
+		}
+		start += index + 1
+	}
+	if start >= len(data) {
+		return 0, 0, false
+	}
+	end = len(data)
+	if index := bytes.IndexByte(data[start:], '\n'); index >= 0 {
+		end = start + index
+	}
+	if end == start {
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
 // checkYAMLSize bounds nesting and node count before decoding, so a hostile
 // document cannot make the decoder do unbounded work.
 func checkYAMLSize(root *yaml.Node, opts ImportOptions) error {
@@ -387,10 +531,10 @@ func checkYAMLSize(root *yaml.Node, opts ImportOptions) error {
 		stack = stack[:last]
 		nodes++
 		if nodes > opts.MaxYAMLNodes {
-			return errors.New("completion: YAML document has too many nodes")
+			return fmt.Errorf("%w: the document has too many nodes", errSourceLimit)
 		}
 		if current.depth > opts.MaxYAMLDepth {
-			return errors.New("completion: YAML document nests too deeply")
+			return fmt.Errorf("%w: the document nests too deeply", errSourceLimit)
 		}
 		for _, child := range current.node.Content {
 			stack = append(stack, entry{node: child, depth: current.depth + 1})
