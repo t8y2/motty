@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
@@ -26,6 +27,8 @@ var (
 	hitFontPickerSearch      = tree.ID(fontPickerHits, "font-picker-search")
 	hitFontPickerDismiss     = tree.ID(fontPickerHits, "font-picker-dismiss")
 	hitFontPickerClose       = tree.ID(fontPickerHits, "font-picker-close")
+	hitFontPickerCancel      = tree.ID(fontPickerHits, "font-picker-cancel")
+	hitFontPickerConfirm     = tree.ID(fontPickerHits, "font-picker-confirm")
 	hitSettingsFontPick      = tree.ID(fontPickerHits, "settings-font-pick")
 	hitSettingsFallbackAdd   = tree.ID(fontPickerHits, "settings-font-fallback-add")
 	hitSettingsFallbackClear = tree.ID(fontPickerHits, "settings-font-fallback-clear")
@@ -90,6 +93,9 @@ type fontsUI struct {
 	selected int     // index into filtered
 	top      int     // first filtered row shown
 	built    bool
+
+	lastClickRow  int
+	lastClickTime time.Time
 
 	// text is the description the settings row shows; textFor is what it was made for.
 	text, textFor string
@@ -239,6 +245,8 @@ func (state *State) openFontPicker(fallback bool) {
 	state.fonts.adding = fallback
 	state.fonts.search = text.Editor{}
 	state.fonts.built = false
+	state.fonts.lastClickRow = -1
+	state.fonts.lastClickTime = time.Time{}
 	if state.fonts.installed == nil && !state.fonts.loading {
 		state.fonts.loading = true
 		state.listFonts(func(s *State, families []string) {
@@ -321,14 +329,24 @@ func (state *State) scrollFontPicker(event ui.ScrollEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: fonts.top != before}
 }
 
-// chooseFont applies the highlighted (or clicked) row and closes the picker.
-func (state *State) chooseFont(row int) {
+// selectFont updates the highlighted row so the sample previews it.
+func (state *State) selectFont(row int) {
 	fonts := &state.fonts
 	state.refreshFontPicker()
 	if row < 0 || row >= len(fonts.filtered) {
 		return
 	}
-	entry := fonts.entries[fonts.filtered[row]]
+	fonts.selected = row
+}
+
+// confirmFont applies the highlighted row and closes the picker.
+func (state *State) confirmFont() {
+	fonts := &state.fonts
+	state.refreshFontPicker()
+	if fonts.selected < 0 || fonts.selected >= len(fonts.filtered) {
+		return
+	}
+	entry := fonts.entries[fonts.filtered[fonts.selected]]
 	adding := fonts.adding
 	state.closeModal()
 	if adding {
@@ -340,6 +358,17 @@ func (state *State) chooseFont(row int) {
 	if state.useTerminalFont(entry) {
 		state.save()
 	}
+}
+
+// cancelFontPicker closes the picker without applying unconfirmed selections.
+func (state *State) cancelFontPicker() {
+	state.closeModal()
+}
+
+// chooseFont selects the row, applies it and closes the picker.
+func (state *State) chooseFont(row int) {
+	state.selectFont(row)
+	state.confirmFont()
 }
 
 // fontSampleFace is the face the picker's sample is set in: the highlighted font with
@@ -415,11 +444,21 @@ func (state *State) clearFallbackFonts() bool {
 
 func (state *State) clickFontPicker(id ui.ID) {
 	switch {
-	case id == hitFontPickerDismiss || id == hitFontPickerClose:
-		state.closeModal()
+	case id == hitFontPickerDismiss || id == hitFontPickerClose || id == hitFontPickerCancel:
+		state.cancelFontPicker()
+	case id == hitFontPickerConfirm:
+		state.confirmFont()
 	case id.Scope() == hitFontPickerItemList:
 		state.refreshFontPicker()
-		state.chooseFont(state.fonts.top + item(id))
+		row := state.fonts.top + item(id)
+		now := time.Now()
+		if state.fonts.lastClickRow == row && now.Sub(state.fonts.lastClickTime) < 300*time.Millisecond {
+			state.chooseFont(row)
+			return
+		}
+		state.fonts.lastClickRow = row
+		state.fonts.lastClickTime = now
+		state.selectFont(row)
 	}
 }
 
@@ -431,7 +470,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
 	case ui.KeyEscape:
-		state.closeModal()
+		state.cancelFontPicker()
 		return handled, true
 	case ui.KeyUp:
 		state.moveFontSelection(-1)
@@ -447,7 +486,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return handled, true
 	case ui.KeyEnter:
 		if !event.Repeat {
-			state.chooseFont(state.fonts.selected)
+			state.confirmFont()
 		}
 		return handled, true
 	}
@@ -460,7 +499,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose, InitialFocusID: hitFontPickerSearch,
-		ContentSize: ui.Size{Width: 560, Height: 502},
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 366,
 	})
 	title := m.FontPickerTitle
 	if fonts.adding {
@@ -522,5 +561,10 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
 		Focused: focused, PlatformEditing: focused && value != "",
 	})
+	confirmDisabled := len(fonts.filtered) == 0 || fonts.loading
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitFontPickerCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitFontPickerConfirm, Label: m.FontPickerConfirm, Variant: components.ButtonDefault, Disabled: confirmDisabled},
+	)
 	dialog.End()
 }

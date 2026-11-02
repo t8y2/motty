@@ -151,9 +151,13 @@ func TestFontPickerKeysMoveScrollAndLeaveTheFontAloneOnEscape(t *testing.T) {
 		t.Fatal("Escape changed the font")
 	}
 
-	// Clicking a row chooses it.
+	// Clicking a row selects it for preview without closing the modal; confirm applies it.
 	state.openFontPicker(false)
 	state.Click(hitFontPickerItemList.At(3)) // System, Classic, Family A0, Family A1
+	if state.fonts.selected != 3 || state.modal != modalFontPicker || state.fonts.family != "" {
+		t.Fatalf("selected %d modal %d family %q", state.fonts.selected, state.modal, state.fonts.family)
+	}
+	state.Click(hitFontPickerConfirm)
 	if state.fonts.family != "Family A1" || state.modal != modalNone {
 		t.Fatalf("family %q modal %d", state.fonts.family, state.modal)
 	}
@@ -165,6 +169,7 @@ func TestTheBuiltInFacesAreChosenFromTheSameList(t *testing.T) {
 	state.openFontPicker(false)
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 	state.Click(hitFontPickerItemList.At(1)) // Classic
+	state.Click(hitFontPickerConfirm)
 	if state.terminalFontFace != ui.MonoClassic || state.fonts.family != "" {
 		t.Fatalf("face %d family %q", state.terminalFontFace, state.fonts.family)
 	}
@@ -276,5 +281,60 @@ func TestADamagedFallbackListInTheStateFileIsCleaned(t *testing.T) {
 	state := newTestState(t, options)
 	if got := state.fonts.fallbacks; len(got) != maxFallbackFonts || got[0] != "Iosevka" || got[1] != "A" || got[2] != "B" {
 		t.Fatalf("fallbacks = %q", got)
+	}
+}
+
+func TestFontPickerClickSelectsAndPreviewsWithoutClosing(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.useTerminalFont(fontEntry{family: "Menlo"})
+	state.openFontPicker(false)
+	waitFor(t, state, func() bool { return !state.fonts.loading })
+	state.refreshFontPicker()
+
+	// Click Iosevka: row index in filtered:
+	// 0: System, 1: Classic, 2: Fira Code, 3: Iosevka, 4: JetBrains Mono, 5: Menlo
+	state.Click(hitFontPickerItemList.At(3))
+	if state.modal != modalFontPicker {
+		t.Fatalf("expected modal to remain open, got %d", state.modal)
+	}
+	if state.fonts.selected != 3 {
+		t.Fatalf("expected selected row 3, got %d", state.fonts.selected)
+	}
+	if state.fonts.family != "Menlo" {
+		t.Fatalf("font family should remain Menlo before confirm, got %q", state.fonts.family)
+	}
+
+	// Verify sample face uses the selected font (Iosevka)
+	entry := state.fonts.entries[state.fonts.filtered[state.fonts.selected]]
+	sampleFace := state.fontSampleFace(entry)
+	if ui.MonoFamilyName(sampleFace) != "Iosevka" {
+		t.Fatalf("sample face family = %q, want Iosevka", ui.MonoFamilyName(sampleFace))
+	}
+
+	// Click Cancel: leaves font unchanged and closes modal
+	state.Click(hitFontPickerCancel)
+	if state.modal != modalNone {
+		t.Fatalf("expected modal to close on cancel, got %d", state.modal)
+	}
+	if state.fonts.family != "Menlo" {
+		t.Fatalf("font family should remain Menlo, got %q", state.fonts.family)
+	}
+}
+
+func TestFontPickerDoubleClickConfirms(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.openFontPicker(false)
+	waitFor(t, state, func() bool { return !state.fonts.loading })
+
+	// First click: selects row 2 (Fira Code)
+	state.Click(hitFontPickerItemList.At(2))
+	if state.modal != modalFontPicker || state.fonts.selected != 2 {
+		t.Fatalf("modal %d selected %d", state.modal, state.fonts.selected)
+	}
+
+	// Second click within 300ms: confirms and closes modal
+	state.Click(hitFontPickerItemList.At(2))
+	if state.modal != modalNone || state.fonts.family != "Fira Code" {
+		t.Fatalf("expected confirm on double-click: modal %d, family %q", state.modal, state.fonts.family)
 	}
 }
