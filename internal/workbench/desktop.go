@@ -286,6 +286,39 @@ func (state *State) pumpDesktop(session *Session) {
 	}
 }
 
+// ClipboardChanged reports that the system clipboard's content changed. It
+// may run on any goroutine (the platform's clipboard watcher); the next Wake
+// offers the new content to the desktop session the user is working in.
+func (state *State) ClipboardChanged() {
+	state.clipboardDirty.Store(true)
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
+// offerClipboard gives a changed clipboard to the desktop session in front of
+// the user: the focused pane's, in a window that is showing. Other sessions,
+// on tabs behind or in a window hidden to the tray, are not told what is copied
+// elsewhere; they get it when the user comes to them and their own input
+// offers it (syncClipboard), and the change stays pending until a desktop
+// session is in front.
+func (state *State) offerClipboard() {
+	if !state.clipboardDirty.Load() || state.activeSection != sectionTerminal ||
+		state.winChrome.minimized || (state.windowVisible != nil && !state.windowVisible()) {
+		return
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.ID != state.activeSessionID || session.desk == nil {
+			continue
+		}
+		if state.clipboardDirty.CompareAndSwap(true, false) {
+			state.syncClipboard(session.desk)
+		}
+		return
+	}
+}
+
 // syncClipboard gives the remote the local clipboard if it changed since the
 // last time, for a host that shares it.
 func (state *State) syncClipboard(view *desktopView) {

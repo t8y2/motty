@@ -44,6 +44,20 @@ func (group *Group) windowFrame() (ui.Rect, bool) {
 // NewGroup returns an empty group.
 func NewGroup() *Group { return &Group{} }
 
+// ClipboardChanged tells every window the system clipboard changed. The
+// watcher callback runs on an unspecified thread, so each State's own flag
+// does the cross-thread handoff and its Invalidate moves the work to the
+// window's thread.
+func (group *Group) ClipboardChanged() {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.ClipboardChanged()
+	}
+}
+
 // sessionCount is how many sessions are open in all the windows.
 func (group *Group) sessionCount() int {
 	group.mu.Lock()

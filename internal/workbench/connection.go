@@ -665,6 +665,7 @@ func (state *State) Wake() {
 	}
 	state.pumpForwards()
 	state.pumpTransfer()
+	state.offerClipboard()
 	state.runLaunches()
 	if state.updateAtStart && !state.updateStarted {
 		state.updateStarted = true
