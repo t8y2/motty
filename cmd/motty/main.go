@@ -376,7 +376,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		// a change reaches them without the pointer moving first. It hangs on
 		// the window's messages, so it starts once the window exists; where
 		// the platform cannot watch, the pointer path in the workbench remains.
-		if watchErr := app.OnClipboardChange(windowGroup.ClipboardChanged); watchErr != nil {
+		if watchErr := app.OnClipboardChange(windowGroup.ClipboardChanged); watchErr != nil && !errors.Is(watchErr, app.ErrUnsupported) {
 			log.Print("motty: the clipboard cannot be watched: ", watchErr)
 		}
 		if background && status.hasStatusArea() {

@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"sync/atomic"
-
 	"context"
 	"fmt"
 	"motty/internal/desktop"
@@ -10,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/vivaui/viva/app"

@@ -27,40 +27,73 @@ func (s *clippingDesktop) offered() []string {
 	return append([]string(nil), s.given...)
 }
 
-// TestClipboardChangeReachesEveryDesktopSession marks the clipboard changed the
-// way the platform watcher does and checks the next Wake offers the new
-// content to each sharing session, without any pointer moving between.
-func TestClipboardChangeReachesEveryDesktopSession(t *testing.T) {
-	state := newTestState(t, Options{
+// clipboardStateWithTwoDesktops is a window with two sharing desktop sessions,
+// the first of them in front.
+func clipboardStateWithTwoDesktops(t *testing.T) (state *State, front, behind *clippingDesktop) {
+	t.Helper()
+	state = newTestState(t, Options{
 		ClipboardText: func() (string, error) { return "pasted text", nil },
 	})
-	first := &clippingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
-	second := &clippingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
+	front = &clippingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
+	behind = &clippingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
 	firstSession := &Session{ID: 1, Address: "one:0"}
 	secondSession := &Session{ID: 2, Address: "two:0"}
-	firstSession.desk = newDesktopView(first, true)
-	secondSession.desk = newDesktopView(second, true)
+	firstSession.desk = newDesktopView(front, true)
+	secondSession.desk = newDesktopView(behind, true)
 	state.sessions = append(state.sessions, *firstSession, *secondSession)
+	state.activeSessionID = 1
+	state.activeSection = sectionTerminal
+	return state, front, behind
+}
+
+// TestClipboardChangeReachesOnlyTheDesktopInFront marks the clipboard changed
+// the way the platform watcher does and checks the next Wake offers the new
+// content to the session the user is working in, without any pointer moving,
+// and to no other: what is copied elsewhere is not handed to every host the
+// window holds open.
+func TestClipboardChangeReachesOnlyTheDesktopInFront(t *testing.T) {
+	state, front, behind := clipboardStateWithTwoDesktops(t)
 
 	// The watcher's word, from any goroutine.
 	state.ClipboardChanged()
-
-	// The next Wake drains it and offers the clipboard to every session.
-	for state.clipboardDirty.Load() {
-		state.Wake()
+	state.Wake()
+	if offered := front.offered(); len(offered) != 1 || offered[0] != "pasted text" {
+		t.Fatalf("the session in front was offered %v", offered)
 	}
-	if offered := first.offered(); len(offered) != 1 || offered[0] != "pasted text" {
-		t.Fatalf("first session offered %v", offered)
-	}
-	if offered := second.offered(); len(offered) != 1 || offered[0] != "pasted text" {
-		t.Fatalf("second session offered %v", offered)
+	if offered := behind.offered(); len(offered) != 0 {
+		t.Fatalf("a session behind was offered %v", offered)
 	}
 
 	// Without new news a Wake offers nothing new: the same text is not sent
 	// again.
 	state.Wake()
-	if offered := first.offered(); len(offered) != 1 {
+	if offered := front.offered(); len(offered) != 1 {
 		t.Fatalf("unchanged clipboard was sent again: %v", offered)
+	}
+}
+
+// TestClipboardChangeWaitsForADesktopInFront: a change made while the user is
+// elsewhere, or the window is out of sight, stays pending and reaches the
+// desktop once the user is at it.
+func TestClipboardChangeWaitsForADesktopInFront(t *testing.T) {
+	state, front, behind := clipboardStateWithTwoDesktops(t)
+	shown := false
+	state.windowVisible = func() bool { return shown }
+
+	state.ClipboardChanged()
+	state.Wake()
+	if offered := front.offered(); len(offered) != 0 {
+		t.Fatalf("a hidden window offered %v", offered)
+	}
+
+	shown = true
+	state.activeSessionID = 2
+	state.Wake()
+	if offered := front.offered(); len(offered) != 0 {
+		t.Fatalf("the session the user left was offered %v", offered)
+	}
+	if offered := behind.offered(); len(offered) != 1 || offered[0] != "pasted text" {
+		t.Fatalf("the session the user came to was offered %v", offered)
 	}
 }
 
@@ -74,6 +107,8 @@ func TestClipboardChangeSkipsHostsWithoutSharing(t *testing.T) {
 	session := &Session{ID: 3, Address: "three:0"}
 	session.desk = newDesktopView(private, false) // the host shares nothing
 	state.sessions = append(state.sessions, *session)
+	state.activeSessionID = session.ID
+	state.activeSection = sectionTerminal
 
 	state.ClipboardChanged()
 	state.Wake()

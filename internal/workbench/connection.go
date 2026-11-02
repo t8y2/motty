@@ -663,13 +663,7 @@ func (state *State) Wake() {
 	}
 	state.pumpForwards()
 	state.pumpTransfer()
-	if state.clipboardDirty.CompareAndSwap(true, false) {
-		for index := range state.sessions {
-			if session := &state.sessions[index]; session.desk != nil {
-				state.syncClipboard(session.desk)
-			}
-		}
-	}
+	state.offerClipboard()
 	state.runLaunches()
 	if state.updateAtStart && !state.updateStarted {
 		state.updateStarted = true

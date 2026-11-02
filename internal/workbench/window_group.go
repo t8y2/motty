@@ -44,7 +44,7 @@ func (group *Group) windowFrame() (ui.Rect, bool) {
 // NewGroup returns an empty group.
 func NewGroup() *Group { return &Group{} }
 
-// clipboardChanged tells every window the system clipboard changed. The
+// ClipboardChanged tells every window the system clipboard changed. The
 // watcher callback runs on an unspecified thread, so each State's own flag
 // does the cross-thread handoff and its Invalidate moves the work to the
 // window's thread.
