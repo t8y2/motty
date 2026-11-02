@@ -22,6 +22,7 @@ import (
 type fakeConn struct {
 	mu                sync.Mutex
 	status            sshconn.Status
+	statusReads       int
 	trusted           []bool
 	rejected          int
 	passwords         []string
@@ -229,6 +230,7 @@ func (shell *fakeShell) typed() string {
 func (fake *fakeConn) Status() sshconn.Status {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
+	fake.statusReads++
 	return fake.status
 }
 

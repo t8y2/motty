@@ -272,6 +272,28 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	}
 }
 
+func TestEmbeddedSFTPWakeDoesNotRescanOwnedConnections(t *testing.T) {
+	state := &State{sftpWindows: make(map[uint32]*sftpWindow)}
+	connections := []*fakeConn{{}, {}}
+	for index, conn := range connections {
+		id := uint32(index + 1)
+		state.sftpWindows[id] = &sftpWindow{
+			owner:          state,
+			session:        Session{ID: id, conn: conn},
+			view:           &sftpView{},
+			ownsConnection: true,
+		}
+	}
+
+	state.wakeEmbeddedSFTPWindows()
+
+	for index, conn := range connections {
+		if conn.statusReads != 0 {
+			t.Fatalf("embedded page %d repeated a workbench-wide connection scan: %d reads", index+1, conn.statusReads)
+		}
+	}
+}
+
 func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
 	state, source, _, _, _ := openSFTPTabFixture(t)
 	state.setTabOrientation(tabsVertical)
