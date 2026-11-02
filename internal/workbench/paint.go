@@ -57,6 +57,7 @@ const (
 	iconFileDown
 	iconColumns2
 	iconRows2
+	iconGrid2x2
 	iconBot
 	iconHistory
 	iconCopy
@@ -518,6 +519,16 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 						tabOptions := ui.HitOptions{Role: ui.RoleTab, Selected: active}
 						if workspace.Locked {
 							tabOptions.Hint = m.TabLockedHint
+						}
+						// A desktop keeps its size and protection in the status
+						// line under the picture, which the host may have hidden:
+						// the tab says it on hover instead.
+						if pane, ok := state.deck.Pane(workspace.ID, workspace.ActivePane); ok && pane.SessionID != 0 {
+							if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && session.desk != nil {
+								if hint := state.desktopStripLeft(session.desk, session); hint != "" {
+									tabOptions.Hint = hint
+								}
+							}
 						}
 						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
@@ -1602,6 +1613,7 @@ var lucideIcons = [...]ui.Icon{
 	iconFileDown:   icons.FileDown,
 	iconColumns2:   icons.Columns2,
 	iconRows2:      icons.Rows2,
+	iconGrid2x2:    icons.Grid2x2,
 
 	iconBot:            icons.Bot,
 	iconHistory:        icons.History,

@@ -241,6 +241,15 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 		page.group("", func() {
 			page.row(messages.SettingsLanguage, "", language[:], selectedLanguage)
 			page.row(messages.SettingsAppearance, "", appearance[:], selectedAppearance)
+			textSize := state.settingsTextSizeOptions()
+			selectedTextSize := hitSettingsTextRegular
+			switch state.textScale {
+			case textScaleSmall:
+				selectedTextSize = hitSettingsTextSmall
+			case textScaleLarge:
+				selectedTextSize = hitSettingsTextLarge
+			}
+			page.row(messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], selectedTextSize)
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)
 			}

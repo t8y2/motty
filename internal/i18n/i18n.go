@@ -128,6 +128,11 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsTextSize                       string
+	SettingsTextSizeDescription            string
+	SettingsTextSizeSmall                  string
+	SettingsTextSizeRegular                string
+	SettingsTextSizeLarge                  string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

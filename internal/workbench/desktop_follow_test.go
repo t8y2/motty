@@ -137,7 +137,7 @@ func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.
 	size := ui.Size{Width: 1400, Height: 900}
 	state, session, server, request, screen := followState(t, 1.25, true, size)
 
-	area := desktopLayout(size).area
+	area := desktopLayout(size, false).area
 	wantWidth, wantHeight := int(math.Floor(float64(area.Width)*1.25))&^1, int(math.Floor(float64(area.Height)*1.25))
 	if request.Width != wantWidth || request.Height != wantHeight || request.Scale != 1.25 {
 		t.Fatalf("the server was asked for %dx%d at %v, want the pane's %dx%d pixels at 1.25", request.Width, request.Height, request.Scale, wantWidth, wantHeight)
@@ -185,7 +185,7 @@ func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.
 		t.Fatalf("no frame is wanted to end the wait: %v %v", delay, ok)
 	}
 	screen.paint(ui.Size{Width: 800, Height: 600}, 1200*time.Millisecond+desktopResizeDelay)
-	settled := desktopLayout(ui.Size{Width: 800, Height: 600}).area
+	settled := desktopLayout(ui.Size{Width: 800, Height: 600}, false).area
 	want := desktopTarget{width: int(math.Floor(float64(settled.Width)*1.25)) &^ 1, height: int(math.Floor(float64(settled.Height) * 1.25)), scale: 1.25}
 	if got := server.asked(); len(got) != 1 || got[0] != want {
 		t.Fatalf("the settled pane asked for %v, want exactly %v", got, want)

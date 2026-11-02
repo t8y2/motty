@@ -122,11 +122,14 @@ type savedTransport struct {
 	// ViaSSH and Clipboard are a remote desktop host's (VNC or RDP): reached
 	// through an SSH connection to the same machine, and sharing the clipboard
 	// with the remote desktop. Console is an RDP host's: connect to the server's
-	// console session instead of a new one, as mstsc /admin does. The password is
-	// never here: it is asked for, and kept in the vault only if the user says so.
-	ViaSSH    bool `json:"via_ssh,omitempty"`
-	Clipboard bool `json:"clipboard,omitempty"`
-	Console   bool `json:"console,omitempty"`
+	// console session instead of a new one, as mstsc /admin does. Chromeless is
+	// a desktop host's: its page shows the picture without the bars around it.
+	// The password is never here: it is asked for, and kept in the vault only if
+	// the user says so.
+	ViaSSH     bool `json:"via_ssh,omitempty"`
+	Clipboard  bool `json:"clipboard,omitempty"`
+	Console    bool `json:"console,omitempty"`
+	Chromeless bool `json:"chromeless,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -136,10 +139,10 @@ func (host Host) transport() savedTransport {
 		transport.Protocol = "telnet"
 		return transport
 	case protocolVNC:
-		transport.Protocol, transport.ViaSSH, transport.Clipboard = "vnc", host.ViaSSH, host.Clipboard
+		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
 		return transport
 	case protocolRDP:
-		transport.Protocol, transport.ViaSSH, transport.Clipboard = "rdp", host.ViaSSH, host.Clipboard
+		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
 		return transport
 	case protocolSerial:
@@ -184,9 +187,9 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	case "telnet":
 		host.Protocol = protocolTelnet
 	case "vnc":
-		host.Protocol, host.ViaSSH, host.Clipboard = protocolVNC, transport.ViaSSH, transport.Clipboard
+		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 	case "rdp":
-		host.Protocol, host.ViaSSH, host.Clipboard = protocolRDP, transport.ViaSSH, transport.Clipboard
+		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 	case "serial":
 		host.Proxy = nil

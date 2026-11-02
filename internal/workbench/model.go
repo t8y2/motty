@@ -58,10 +58,12 @@ type Host struct {
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
 	// it asks Windows for its console (administrative) session instead of a new
-	// one.
-	ViaSSH    bool
-	Clipboard bool
-	Console   bool
+	// one. Chromeless is a desktop host's too: its page shows the picture alone,
+	// without the bar above it and the status line under it.
+	ViaSSH     bool
+	Clipboard  bool
+	Console    bool
+	Chromeless bool
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
