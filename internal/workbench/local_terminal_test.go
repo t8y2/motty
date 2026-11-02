@@ -79,8 +79,9 @@ func TestLocalTerminalNetworkProxyEnvironment(t *testing.T) {
 		t.Fatal("direct mode read the system proxy")
 		return systemproxy.Settings{}
 	}
-	if got, want := direct.shellConfig(sshconn.ShellConfig{}, "windows").Env, systemproxy.Environment(systemproxy.Settings{}); !slices.Equal(got, want) {
-		t.Fatalf("direct environment = %q, want %q", got, want)
+	// Direct sets nothing, so what the shell inherits stays.
+	if got := direct.shellConfig(sshconn.ShellConfig{}, "windows").Env; got != nil {
+		t.Fatalf("direct environment = %q, want none", got)
 	}
 
 	system := newLocalConn("", networkProxySystem)
@@ -321,4 +322,20 @@ func TestWindowBarHasALocalTerminalButtonThatOpensAShell(t *testing.T) {
 			session.term.shell.Close()
 		}
 	})
+}
+
+// Following the system proxy runs the platform's settings tool, so only that
+// mode opens its shell off the window's thread, and a shell that cannot start
+// comes back as no shell at all, not as a nil pointer the caller would close.
+func TestLocalTerminalOpensOffTheWindowOnlyWhenItAsksTheSystem(t *testing.T) {
+	if newLocalConn("", networkProxyDirect).opensShellSlowly() {
+		t.Fatal("a terminal that sets no proxy opens slowly")
+	}
+	if !newLocalConn("", networkProxySystem).opensShellSlowly() {
+		t.Fatal("a terminal that follows the system proxy opens on the window's thread")
+	}
+	missing := newLocalConn(filepath.Join(t.TempDir(), "no-such-shell"), networkProxyDirect)
+	if shell, err := missing.OpenShell(sshconn.ShellConfig{Cols: 80, Rows: 24}); err == nil || shell != nil {
+		t.Fatalf("a missing shell opened as %v, %v", shell, err)
+	}
 }

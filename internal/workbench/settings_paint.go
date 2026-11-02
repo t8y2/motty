@@ -367,9 +367,9 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 	case restoreConnectAll:
 		selectedRestore = hitSettingsRestoreAll
 	}
-	selectedNetworkProxy := hitSettingsNetworkSystem
-	if state.networkProxy == networkProxyDirect {
-		selectedNetworkProxy = hitSettingsNetworkDirect
+	selectedNetworkProxy := hitSettingsNetworkDirect
+	if state.networkProxy == networkProxySystem {
+		selectedNetworkProxy = hitSettingsNetworkSystem
 	}
 	networkProxy := state.settingsNetworkProxyOptions()
 	page.groups(func() {

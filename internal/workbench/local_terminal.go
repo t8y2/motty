@@ -58,20 +58,29 @@ func (conn *localConn) SkipIdentity()              {}
 func (conn *localConn) Cancel()                    {}
 
 func (conn *localConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
-	return localshell.Start(conn.shellConfig(config, runtime.GOOS))
+	shell, err := localshell.Start(conn.shellConfig(config, runtime.GOOS))
+	if err != nil {
+		// A nil *localshell.Shell inside the interface would not be nil to the
+		// caller that closes whatever a failed open handed back.
+		return nil, err
+	}
+	return shell, nil
 }
 
+// opensShellSlowly: following the system proxy runs the platform's settings
+// tool, which can take a while when a desktop service is stuck, so such a shell
+// opens off the window's thread. Otherwise starting a process is quick.
+func (conn *localConn) opensShellSlowly() bool { return conn.networkProxy == networkProxySystem }
+
 // proxyEnvironment is the proxy variables the shell is started with on top of
-// the ones it inherits. A WSL distribution gets none: its own network may not
-// reach a proxy on this computer's loopback, and WSL has its own proxy setting.
+// the ones it inherits: none unless the terminal follows the system. A WSL
+// distribution gets none either: its own network may not reach a proxy on this
+// computer's loopback, and WSL has its own proxy setting.
 func (conn *localConn) proxyEnvironment() []string {
 	if _, wsl := localshell.WSLDistro(conn.shell); wsl {
 		return nil
 	}
-	if conn.networkProxy == networkProxyDirect {
-		return systemproxy.Environment(systemproxy.Settings{})
-	}
-	if conn.lookupSystemProxy == nil {
+	if conn.networkProxy != networkProxySystem || conn.lookupSystemProxy == nil {
 		return nil
 	}
 	if proxy := conn.lookupSystemProxy(); proxy.Enabled() {

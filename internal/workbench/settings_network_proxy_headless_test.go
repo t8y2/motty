@@ -3,8 +3,6 @@
 package workbench
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -35,19 +33,14 @@ func TestNetworkProxySettingThroughNativeDriver(t *testing.T) {
 	if err := view.Click(connection.Bounds.X+connection.Bounds.Width/2, connection.Bounds.Y+connection.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if hit := find(hitSettingsNetworkSystem); !hit.Selected {
-		t.Fatal("follow system is not the default selection")
+	if hit := find(hitSettingsNetworkDirect); !hit.Selected {
+		t.Fatal("leaving the proxy unset is not the default selection")
 	}
-	direct := find(hitSettingsNetworkDirect)
-	if err := view.Click(direct.Bounds.X+direct.Bounds.Width/2, direct.Bounds.Y+direct.Bounds.Height/2); err != nil {
+	system := find(hitSettingsNetworkSystem)
+	if err := view.Click(system.Bounds.X+system.Bounds.Width/2, system.Bounds.Y+system.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if state.networkProxy != networkProxyDirect || !find(hitSettingsNetworkDirect).Selected || find(hitSettingsNetworkSystem).Selected {
-		t.Fatal("the native driver did not select direct")
-	}
-	if directory := os.Getenv("MOTTY_NETWORK_PROXY_SCREENSHOTS"); directory != "" {
-		if err := view.Screenshot(filepath.Join(directory, "connection-local-terminal-proxy.png")); err != nil {
-			t.Fatal(err)
-		}
+	if state.networkProxy != networkProxySystem || !find(hitSettingsNetworkSystem).Selected || find(hitSettingsNetworkDirect).Selected {
+		t.Fatal("the native driver did not select follow system")
 	}
 }

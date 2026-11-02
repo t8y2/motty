@@ -152,14 +152,15 @@ func closeActionFromString(value string) closeAction {
 }
 
 // networkProxyMode is which proxy a local terminal's programs are told to use.
-// Following the system, the default, sets the proxy variables only while the
-// system names a proxy and otherwise leaves the inherited ones alone; direct
-// clears them.
+// Direct, the default, sets nothing: the terminal behaves as it would if it
+// were started from any other terminal, with the environment it inherits.
+// Following the system sets the proxy variables while the system names a proxy
+// and otherwise leaves the inherited ones alone.
 type networkProxyMode uint8
 
 const (
-	networkProxySystem networkProxyMode = iota
-	networkProxyDirect
+	networkProxyDirect networkProxyMode = iota
+	networkProxySystem
 )
 
 func (mode networkProxyMode) String() string {
@@ -170,10 +171,10 @@ func (mode networkProxyMode) String() string {
 }
 
 func networkProxyModeFromString(value string) networkProxyMode {
-	if value == networkProxyDirect.String() {
-		return networkProxyDirect
+	if value == networkProxySystem.String() {
+		return networkProxySystem
 	}
-	return networkProxySystem
+	return networkProxyDirect
 }
 
 func (state *State) openSettings() {
@@ -450,8 +451,8 @@ func (state *State) settingsAppearanceOptions() [3]components.SegmentOption {
 
 func (state *State) settingsNetworkProxyOptions() [2]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitSettingsNetworkSystem, Label: state.messages.SettingsNetworkProxySystem},
 		{ID: hitSettingsNetworkDirect, Label: state.messages.SettingsNetworkProxyDirect},
+		{ID: hitSettingsNetworkSystem, Label: state.messages.SettingsNetworkProxySystem},
 	}
 }
 
