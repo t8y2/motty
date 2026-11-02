@@ -51,6 +51,114 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	}
 }
 
+// gutterLabel is the bounds of the label the strip painted with this text.
+func gutterLabel(canvas *ui.Canvas, value string) (ui.Rect, bool) {
+	for _, text := range canvas.Texts() {
+		if text.Value == value {
+			return text.Bounds, true
+		}
+	}
+	return ui.Rect{}, false
+}
+
+func TestGutterSetsTheTimeAtTheLeftEdgeAndTheNumberAgainstTheRule(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local).Unix()
+	state.wallClock = func() int64 { return stamp }
+	state.setTerminalGutter(gutterBoth)
+	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	session.term.write([]byte("alpha\r\nbeta\r\n"))
+
+	var canvas ui.Canvas
+	state.paintGrid(&canvas, session, geometry)
+	texts := gutterTexts(&canvas)
+	at, ok := gutterLabel(&canvas, time.Unix(stamp, 0).Format("15:04:05"))
+	if !ok {
+		t.Fatalf("no time in %q", texts)
+	}
+	number, ok := gutterLabel(&canvas, "1")
+	if !ok {
+		t.Fatalf("no line number in %q", texts)
+	}
+	if want := geometry.left - state.gutterWidth(); at.X != want {
+		t.Fatalf("time starts at %v, want the strip's left edge %v", at.X, want)
+	}
+	if number.X <= at.X {
+		t.Fatalf("number at %v does not sit right of the time at %v", number.X, at.X)
+	}
+	if gap := geometry.left - number.X; gap != gutterRuleGap {
+		t.Fatalf("number ends %v from the rule, want %v", gap, gutterRuleGap)
+	}
+}
+
+func TestGutterKeepsTheNumbersAgainstTheRuleWithoutTheTime(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	state.setTerminalGutter(gutterNumbers)
+	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	session.term.write([]byte("alpha\r\nbeta\r\n"))
+
+	var canvas ui.Canvas
+	state.paintGrid(&canvas, session, geometry)
+	number, ok := gutterLabel(&canvas, "1")
+	if !ok {
+		t.Fatalf("no line number in %q", gutterTexts(&canvas))
+	}
+	// Hiding the time must not move the numbers: they keep the rule's side.
+	if gap := geometry.left - number.X; gap != gutterRuleGap {
+		t.Fatalf("number ends %v from the rule, want %v", gap, gutterRuleGap)
+	}
+}
+
+// gutterStrokes counts the marks the strip painted in its wrap cell.
+func gutterStrokes(canvas *ui.Canvas, state *State, geometry terminalGeometry) int {
+	x := geometry.left - state.gutterWidth()
+	if state.terminalGutter.times() {
+		x += float32(gutterTimeChars) * state.cellWidth
+	}
+	strokes := 0
+	for _, rect := range canvas.Rectangles() {
+		if rect.Bounds.X >= x && rect.Bounds.X+rect.Bounds.Width <= x+state.cellWidth {
+			strokes++
+		}
+	}
+	return strokes
+}
+
+func TestGutterMarksTheRowsThatContinueAWrappedLine(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	state.setTerminalGutter(gutterBoth)
+	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+
+	var canvas ui.Canvas
+	// Three full rows of one line: the last two continue it.
+	session.term.write([]byte(strings.Repeat("x", 3*geometry.cols) + "\r\n"))
+	state.paintGrid(&canvas, session, geometry)
+	cursor := session.term.presentedCursor()
+	continued := 0
+	for row := 0; row <= cursor.Y && row < geometry.rows; row++ {
+		if session.term.screen.ContinuesAbove(row) {
+			continued++
+		}
+	}
+	if continued == 0 {
+		t.Fatalf("nothing wrapped on a %d column screen", geometry.cols)
+	}
+	if got := gutterStrokes(&canvas, state, geometry); got != 2*continued {
+		t.Fatalf("%d mark strokes for %d rows continuing a line", got, continued)
+	}
+
+	canvas.Reset()
+	session.term.screen.ClearScreen()
+	session.term.write([]byte("alpha\r\nbeta\r\n"))
+	state.paintGrid(&canvas, session, geometry)
+	if got := gutterStrokes(&canvas, state, geometry); got != 0 {
+		t.Fatalf("%d mark strokes on a screen that does not wrap", got)
+	}
+}
+
 func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	state, session, _ := selectionState()
 	state.viewport.Width = 600

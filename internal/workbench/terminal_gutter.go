@@ -29,6 +29,7 @@ const (
 const (
 	gutterNumberChars = 6 // up to 999999, then the low digits
 	gutterTimeChars   = 8 // HH:MM:SS
+	gutterMarkChars   = 1 // the cell the wrap mark takes
 	gutterRuleGap     = float32(16)
 )
 
@@ -59,17 +60,18 @@ func terminalGutterFromString(value string) terminalGutter {
 func (gutter terminalGutter) numbers() bool { return gutter == gutterNumbers || gutter == gutterBoth }
 func (gutter terminalGutter) times() bool   { return gutter == gutterTime || gutter == gutterBoth }
 
-// chars is the gutter's text width in cells.
+// chars is the gutter's text width in cells: the time at the strip's left edge,
+// the cell the wrap mark takes, then the number against the rule.
 func (gutter terminalGutter) chars() int {
 	n := 0
-	if gutter.numbers() {
-		n += gutterNumberChars
-	}
 	if gutter.times() {
 		n += gutterTimeChars
 	}
-	if n == gutterNumberChars+gutterTimeChars {
-		n++ // a cell between the two
+	if gutter.numbers() {
+		n += gutterNumberChars
+	}
+	if n > 0 {
+		n += gutterMarkChars
 	}
 	return n
 }
@@ -145,9 +147,11 @@ func gutterStyles(size float32, face ui.MonoFace, pal *palette) (number, written
 	return number, written
 }
 
-// paintGutter draws the strip for row. entry is the row's cache entry. The
-// number is right-aligned against the rule's side of its block so the digits
-// line up whatever their count; the time starts after it.
+// paintGutter draws the strip for row. entry is the row's cache entry. The time
+// starts at the strip's left edge and the number ends against the rule: the
+// number is right-aligned in its block so the digits line up whatever their
+// count, and the time sits ahead of it, where the eye finds it first. A row that
+// continues a wrapped line is tied to it by a mark in the cell between the two.
 func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written ui.TextStyle) {
 	mode := state.terminalGutter
 	line := t.screen.Row(row)
@@ -158,14 +162,41 @@ func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal,
 		cached.line, cached.written = formatGutter(mode, lineNumber, line.Written)
 	}
 	left := geometry.left - state.gutterWidth()
-	if cached.line != "" {
-		width := float32(gutterNumberChars) * state.cellWidth
-		canvas.LabelAligned(cached.line, ui.Rect{X: left, Y: y, Width: width, Height: state.cellHeight}, number, ui.AlignRight)
-		left += width + state.cellWidth
-	}
 	if cached.written != "" {
 		canvas.Label(cached.written, ui.Rect{X: left, Y: y, Width: float32(gutterTimeChars)*state.cellWidth + 1, Height: state.cellHeight}, written)
 	}
+	mark := left
+	if mode.times() {
+		mark += float32(gutterTimeChars) * state.cellWidth
+	}
+	if cached.line != "" {
+		// The number keeps the column it has beside the rule whether or not the
+		// row carries a time: a row not written yet must not shift it.
+		canvas.LabelAligned(cached.line, ui.Rect{
+			X:      mark + float32(gutterMarkChars)*state.cellWidth,
+			Y:      y,
+			Width:  float32(gutterNumberChars) * state.cellWidth,
+			Height: state.cellHeight,
+		}, number, ui.AlignRight)
+	}
+	if t.screen.ContinuesAbove(row) {
+		paintWrapMark(canvas, mark, y, state.cellWidth, state.cellHeight, written.Color)
+	}
+}
+
+// paintWrapMark draws the corner that ties a row to the line it continues: a
+// stroke down the cell's left turning right along its middle, so a wrapped block
+// reads as one line whose tail runs under it. It is drawn rather than set in a
+// glyph, because the strip must not depend on the terminal's font holding a wrap
+// arrow.
+func paintWrapMark(canvas *ui.Canvas, x, y, cellWidth, cellHeight float32, color ui.Color) {
+	stroke := max(float32(1), snap(cellWidth/8))
+	top := snap(y + cellHeight*0.2)
+	middle := snap(y + cellHeight*0.58)
+	left := snap(x + cellWidth*0.25)
+	right := snap(x + cellWidth*0.8)
+	canvas.Fill(ui.Rect{X: left, Y: top, Width: stroke, Height: middle - top}, color)
+	canvas.Fill(ui.Rect{X: left, Y: middle - stroke, Width: right - left, Height: stroke}, color)
 }
 
 // formatGutter is the two texts of a gutter: the line number and the time.

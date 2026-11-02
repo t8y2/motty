@@ -971,6 +971,17 @@ func (t *Terminal) SetClock(now func() int64) { t.clock = now }
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
 
+// ContinuesAbove reports whether view row i is the tail of a line the row above
+// it wrapped into. The first row of the view looks at the line just above the
+// screen, so a scrollback that starts mid-wrap still says so.
+func (t *Terminal) ContinuesAbove(i int) bool {
+	if i > 0 {
+		return t.lineAt(i - 1).wrapped
+	}
+	above := t.histCount - t.view - 1
+	return above >= 0 && t.histAt(above).wrapped
+}
+
 // stamp records the first write to l.
 func (t *Terminal) stamp(l *line) {
 	if t.clock != nil && l.at == 0 {
