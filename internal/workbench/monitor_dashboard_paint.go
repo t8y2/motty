@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/workbench/icons"
@@ -22,11 +23,22 @@ type dashboardRow struct {
 	width                                           int
 	x                                               []float32
 	values                                          [5][]float32
-	charts                                          [4]monitorChart
+	charts                                          [4]dashboardChart
 	origin                                          time.Time
 	clock                                           func([]byte, float32) []byte
 	label, cpu, memory, capacity, down, up, updated string
 	disks                                           []remotestats.Disk
+}
+
+type dashboardChart struct {
+	monitorChart
+	canvas   ui.Canvas
+	version  uint64
+	size     ui.Size
+	theme    ui.Theme
+	language i18n.Language
+	scale    float32
+	focused  bool
 }
 
 var dashboardGreen = ui.RGB(38, 214, 163)
@@ -387,6 +399,9 @@ func (s *State) paintDashboardHost(c *ui.Canvas, p *monitoring.Panel, h Host, r 
 			box.X = b.X
 			box.Y = y + float32(i)*172
 		}
+		if !s.dashboardShown(box) {
+			continue
+		}
 		c.RoundedBorder(box, 7, 1, pal.line, pal.workspace)
 		c.DrawIcon([]ui.Icon{icons.Cpu, icons.MemoryStick, icons.Wifi}[i], ui.Rect{X: box.X + 12, Y: box.Y + 13, Width: 14, Height: 14}, pal.muted)
 		monitorLabel(c, label, ui.Rect{X: box.X + 34, Y: box.Y + 6, Width: 74, Height: 28}, 13, pal.text, ui.WeightMedium)
@@ -419,6 +434,9 @@ func (s *State) paintDashboardHost(c *ui.Canvas, p *monitoring.Panel, h Host, r 
 	} else {
 		for i, disk := range r.disks {
 			box := ui.Rect{X: b.X + float32(i%cols)*(diskW+8), Y: y + float32(i/cols)*48, Width: diskW, Height: 40}
+			if !s.dashboardShown(box) {
+				continue
+			}
 			c.RoundedBorder(box, 6, 1, pal.line, pal.workspace)
 			c.DrawIcon(icons.HardDrive, ui.Rect{X: box.X + 10, Y: box.Y + 13, Width: 14, Height: 14}, dashboardAmber)
 			monitorLabel(c, disk.Path, ui.Rect{X: box.X + 32, Y: box.Y, Width: max(0, box.Width*.18-24), Height: 40}, 12, pal.text, ui.WeightMedium)
@@ -429,6 +447,15 @@ func (s *State) paintDashboardHost(c *ui.Canvas, p *monitoring.Panel, h Host, r 
 	}
 	c.Fill(ui.Rect{X: b.X, Y: b.Y + b.Height - 6, Width: b.Width, Height: 1}, pal.line)
 }
+
+// dashboardShown reports whether b, in the scrolled content, meets the visible
+// body. A host lists every mount it has (a Docker host dozens), so only what is
+// on screen is drawn.
+func (s *State) dashboardShown(b ui.Rect) bool {
+	body := s.dashboard.body
+	return b.Y+b.Height > body.Y && b.Y < body.Y+body.Height
+}
+
 func (s *State) paintDashboardChart(c *ui.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b ui.Rect, metric int, label string) {
 	dashboardGreen, dashboardBlue, dashboardAmber := s.dashboardColors()
 	if len(r.x) == 0 {
@@ -438,6 +465,20 @@ func (s *State) paintDashboardChart(c *ui.Canvas, p *monitoring.Panel, h Host, r
 		return
 	}
 	cache := &r.charts[metric]
+	size := ui.Size{Width: b.Width, Height: b.Height}
+	theme := s.Theme()
+	theme.Border = ui.Color{}
+	focused := c.Focused() == r.chartIDs[metric]
+	// The clock and scrolling repaint without changing samples. Keep the chart
+	// in local coordinates so these frames can reuse its tessellation and text.
+	if cache.version == r.snapshot.Version && cache.size == size && cache.theme == theme && cache.language == s.language && cache.scale == c.PixelScale() && cache.focused == focused {
+		c.Embed(&cache.canvas, ui.Point{X: b.X, Y: b.Y}, 0)
+		return
+	}
+	cache.canvas.BeginEmbedded(c, 0)
+	if cache.language != s.language {
+		cache.state = components.ChartState{}
+	}
 	color := dashboardGreen
 	valueIndex := metric
 	if metric == 1 {
@@ -471,9 +512,14 @@ func (s *State) paintDashboardChart(c *ui.Canvas, p *monitoring.Panel, h Host, r
 	if metric == 2 {
 		yaxis = components.ChartAxis{Format: dashboardNetworkAxis}
 	}
-	theme := s.Theme()
-	theme.Border = ui.Color{}
-	components.PaintAreaChart(c, theme, b, r.chartIDs[metric], components.AreaChart{Series: cache.series[:count], X: r.x, Values: cache.values[:count], Curve: components.ChartCurveMonotone, Fill: components.ChartFillGradient, StrokeWidth: 1.5, XAxis: components.ChartAxis{Linear: true, Fixed: true, Min: 0, Max: 1, Ticks: 3, Format: r.clock}, YAxis: yaxis, Label: label, Version: uint32(r.snapshot.Version), HideTooltip: true}, &cache.state)
+	// Straight segments: an hour of samples is denser than the chart's pixels,
+	// where a smooth curve looks the same but is cut into many small segments
+	// to tessellate on every paint.
+	components.PaintAreaChart(&cache.canvas, theme, ui.Rect{Width: b.Width, Height: b.Height}, r.chartIDs[metric], components.AreaChart{Series: cache.series[:count], X: r.x, Values: cache.values[:count], Curve: components.ChartCurveLinear, Fill: components.ChartFillGradient, StrokeWidth: 1.5, XAxis: components.ChartAxis{Linear: true, Fixed: true, Min: 0, Max: 1, Ticks: 3, Format: r.clock}, YAxis: yaxis, Label: label, Version: uint32(r.snapshot.Version), HideTooltip: true}, &cache.state)
+	cache.canvas.EndFrame()
+	cache.version, cache.size, cache.theme = r.snapshot.Version, size, theme
+	cache.language, cache.scale, cache.focused = s.language, c.PixelScale(), focused
+	c.Embed(&cache.canvas, ui.Point{X: b.X, Y: b.Y}, 0)
 }
 
 // Selects are declared in the overlay pass, outside the workspace clip. Both
