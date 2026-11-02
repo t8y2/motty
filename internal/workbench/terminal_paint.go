@@ -41,8 +41,9 @@ const (
 
 // paintTerminalPage draws a session. Active panes get a configurable tool rail
 // with only connection latency and actions. Every split pane reserves the same
-// bar height; active panes leave it blank while inactive panes identify their
-// session. Find mode temporarily replaces the bar with its search controls.
+// bar height and identifies its own session there, so switching focus cannot
+// move or resize a PTY. Find mode temporarily replaces the bar with its search
+// controls.
 func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *Session) {
 	state.wantLatencyProbe(session, canvas)
 	chrome, ok := state.terminalChromeForSession(session.ID)
@@ -63,7 +64,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	if title == "" {
 		title = session.Address
 	}
-	var spinner, inputNotice flex.Box
+	var spinner, light, inputNotice flex.Box
 	var find findBarSlots
 
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
@@ -72,10 +73,10 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 		case inSplit || finding:
 			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				switch {
-				case inactive:
-					spinner = state.declareInactiveBar(f, size.Width, title, status, session)
 				case finding:
 					find = state.declareFindBar(f, session)
+				default:
+					spinner, light = state.declarePaneBar(f, size.Width, title, status, session, !inactive)
 				}
 				f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
 			})
@@ -97,16 +98,17 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	f.End()
 
 	switch {
-	case inactive:
+	case finding:
+		state.paintFindBarSlots(canvas, session, find)
+	case inSplit:
 		if session.busy {
 			phase := components.SpinnerPhase(canvas.Now() / spinnerStep)
 			components.PaintSpinner(canvas, state.Theme(), spinner.Rect(), phase)
 			canvas.RequestFrameIn(spinnerStep)
+		} else if spot := light.Rect(); spot.Width > 0 && spot.Height > 0 {
+			kind, dot := state.sessionLight(session)
+			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, barBackground)
 		}
-		// No status light here: the light is what marks the pane that has the focus,
-		// and a green dot on the far side of an inactive bar would read as that.
-	case finding:
-		state.paintFindBarSlots(canvas, session, find)
 	}
 
 	state.paintGrid(canvas, session, geometry)
@@ -338,12 +340,12 @@ func (state *State) paintAIMarking(canvas *ui.Canvas, geometry terminalGeometry,
 	canvas.Fill(ui.Rect{X: x, Y: y, Width: 3, Height: cellHeight}, withAlpha(state.pal.accent, 0.85))
 }
 
-// declareInactiveBar declares the bar of a pane that shares its workspace
-// without being the active one: the terminal icon, the name, and the connection
-// state in words, with a mark when typing goes to this pane too. Resource
-// readings stay in the dedicated monitor surface.
-// It returns the box where a busy pane's spinner goes.
-func (state *State) declareInactiveBar(f *flex.Frame, width float32, title, status string, session *Session) (spinner flex.Box) {
+// declarePaneBar identifies a pane that shares its workspace. The active pane
+// starts with a status light; inactive panes use the terminal icon so the light
+// remains a reliable focus marker. Both show the name and connection state, and
+// the active bar is the only one that can carry a busy spinner in that slot.
+// Resource readings stay in the dedicated monitor surface.
+func (state *State) declarePaneBar(f *flex.Frame, width float32, title, status string, session *Session, active bool) (spinner, light flex.Box) {
 	pal, canvas := state.pal, f.Canvas()
 	readout := status
 	gap := float32(29) // from the name to the reading
@@ -351,20 +353,33 @@ func (state *State) declareInactiveBar(f *flex.Frame, width float32, title, stat
 		gap = 6
 	}
 	f.Row().Fill().PadX(termPadX).Items(flex.Center).Children(func() {
-		f.Icon(lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
-		f.Text(title).FontSize(barTitleSize).Weight(ui.WeightSemibold).Color(pal.muted).LineHeight(22).Ellipsis().Grow(1).MarginSides(0, gap, 0, 0)
+		if active {
+			light = f.Slot().Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
+		} else {
+			f.Icon(lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
+		}
+		titleColor := pal.muted
+		if active {
+			titleColor = pal.text
+		}
+		f.Text(title).FontSize(barTitleSize).Weight(ui.WeightSemibold).Color(titleColor).LineHeight(22).
+			Ellipsis().Grow(1).Shrink(1).MinWidth(0).MarginSides(0, gap, 0, 0)
 		state.declareLatencyTag(f, canvas, session)
 		if session.busy {
 			spinner = f.Slot().Size(14, 14).MarginSides(0, 9, 0, 0)
 		}
-		f.Text(readout).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(20).
-			Width(canvas.TextWidthWeight(readout, metrics.FontSizeS, ui.WeightMedium) + 2).MaxWidth(width * 0.42).Shrink(0)
+		readoutColor := pal.faint
+		if active {
+			readoutColor = pal.muted
+		}
+		f.Text(readout).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(readoutColor).LineHeight(20).
+			MaxWidth(width * 0.42).Ellipsis().Shrink(1)
 		if state.broadcasting(session.ID) {
 			// Typing goes to this pane too: the one mark an inactive bar carries.
 			f.Icon(lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
 		}
 	})
-	return spinner
+	return spinner, light
 }
 
 // paintGrid draws a session's character grid: for each row its background

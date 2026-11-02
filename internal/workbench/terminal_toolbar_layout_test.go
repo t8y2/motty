@@ -118,6 +118,57 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 	assertRecordHint(second)
 }
 
+func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	assertPaneBar := func(session *Session) {
+		t.Helper()
+		if !state.ActivatePane(session.ID) {
+			t.Fatalf("activate session %d", session.ID)
+		}
+		var canvas ui.Canvas
+		state.Paint(&canvas, size)
+
+		workspace, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if !ok {
+			t.Fatalf("session %d has no pane", session.ID)
+		}
+		fraction, _, ok := state.paneFractionBounds(workspace, paneID)
+		if !ok {
+			t.Fatalf("session %d has no pane geometry", session.ID)
+		}
+		bounds := pixelBounds(state.workspacePixelBounds(size), fraction)
+		title := session.Title
+		if title == "" {
+			title = session.Address
+		}
+		status, _ := state.sessionStatus(session)
+		foundTitle, foundStatus := false, false
+		for _, text := range canvas.Texts() {
+			if text.Bounds.Y < bounds.Y || text.Bounds.Y >= bounds.Y+infoBarHeight ||
+				text.Bounds.X < bounds.X || text.Bounds.X >= bounds.X+bounds.Width {
+				continue
+			}
+			foundTitle = foundTitle || text.Value == title
+			foundStatus = foundStatus || text.Value == status
+		}
+		if !foundTitle || !foundStatus {
+			t.Fatalf("active session %d title=%q found=%v status=%q found=%v in pane bar %+v",
+				session.ID, title, foundTitle, status, foundStatus, bounds)
+		}
+	}
+
+	assertPaneBar(&state.sessions[0])
+	assertPaneBar(&state.sessions[1])
+}
+
 func TestSwitchingActiveSplitPaneKeepsSizesAndSelection(t *testing.T) {
 	state, world, _, firstShell := liveSession(t)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
