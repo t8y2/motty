@@ -242,57 +242,51 @@ func TestLatencyToggleThroughSettings(t *testing.T) {
 	}
 }
 
-func TestLatencyProbeTimeoutDoesNotPermanentlyBreak(t *testing.T) {
+// A probe that gets no reply in time is not a broken connection, but it gives no
+// sample either: the reading is kept while it is recent, dropped once it is not,
+// and probing resumes by itself when replies come back.
+func TestLatencyProbeTimeoutKeepsRecentReadingThenDropsIt(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.terminalShowLatency = true
 
-	// 模拟第一次探测成功
 	conn := &mockPingerConn{rtt: 35 * time.Millisecond}
 	session := &Session{ID: 1, conn: conn, phase: sshconn.PhaseConnected}
 	state.maybeProbeLatency(session)
 	waitForLatency(t, session, 1)
 
-	if got := atomic.LoadInt64(&session.rttMs); got != 35 {
-		t.Fatalf("rttMs = %d, want 35", got)
-	}
-
-	// 模拟第二次探测由于网络上传大文件导致超时
-	conn.err = context.DeadlineExceeded
-	session.rttLastPing = time.Now().Add(-2 * latencyProbeInterval)
-	state.maybeProbeLatency(session)
-
-	// 等待探测执行完毕
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&session.rttMeasuring) == 0 {
-			break
+	probeAgain := func() {
+		t.Helper()
+		session.rttLastPing = time.Now().Add(-2 * latencyProbeInterval)
+		state.maybeProbeLatency(session)
+		deadline := time.Now().Add(2 * time.Second)
+		for atomic.LoadInt32(&session.rttMeasuring) != 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("probe never finished")
+			}
+			time.Sleep(time.Millisecond)
 		}
-		time.Sleep(5 * time.Millisecond)
 	}
 
-	// 验证：瞬时超时不应置 rttBroken = 1，先前采样的延迟仍然可用
-	if atomic.LoadInt32(&session.rttBroken) != 0 {
-		t.Fatal("timeout unexpectedly marked probe as permanently broken")
-	}
-	if atomic.LoadInt32(&session.rttAvailable) != 1 {
-		t.Fatal("timeout wiped previously available RTT reading")
-	}
-
-	// 模拟第三次探测网络恢复正常
-	conn.err = nil
-	conn.rtt = 48 * time.Millisecond
-	session.rttLastPing = time.Now().Add(-2 * latencyProbeInterval)
-	state.maybeProbeLatency(session)
-
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt64(&session.rttMs) == 48 {
-			break
+	for _, timeout := range []error{context.DeadlineExceeded, sshconn.ErrPingPending} {
+		conn.err = timeout
+		probeAgain()
+		if atomic.LoadInt32(&session.rttBroken) != 0 {
+			t.Fatalf("%v marked probing as broken", timeout)
 		}
-		time.Sleep(5 * time.Millisecond)
+		if atomic.LoadInt32(&session.rttAvailable) != 1 {
+			t.Fatalf("%v dropped a reading that is still recent", timeout)
+		}
 	}
 
-	if got := atomic.LoadInt64(&session.rttMs); got != 48 {
-		t.Fatalf("recovered rttMs = %d, want 48", got)
+	atomic.StoreInt64(&session.rttSampledAt, time.Now().Add(-2*latencyStaleAfter).UnixNano())
+	probeAgain()
+	if atomic.LoadInt32(&session.rttAvailable) != 0 {
+		t.Fatal("a reading that stopped being refreshed is still shown")
+	}
+
+	conn.err, conn.rtt = nil, 48*time.Millisecond
+	probeAgain()
+	if got := atomic.LoadInt64(&session.rttMs); got != 48 || atomic.LoadInt32(&session.rttAvailable) != 1 {
+		t.Fatalf("after recovery rttMs = %d available = %d, want 48 and 1", got, atomic.LoadInt32(&session.rttAvailable))
 	}
 }

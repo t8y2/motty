@@ -14,6 +14,16 @@ import (
 
 const latencyProbeInterval = 3 * time.Second
 
+// latencyProbeTimeout is how long one probe waits. The request queues behind
+// the data a transfer already has in flight, so it needs more than the default
+// two seconds to get a reading while an upload fills the link.
+const latencyProbeTimeout = 3500 * time.Millisecond
+
+// latencyStaleAfter is how long the last reading stays on screen without a new
+// one. Probes that time out give no sample; showing the last number forever
+// would claim a round trip the connection no longer has.
+const latencyStaleAfter = 4 * latencyProbeInterval
+
 // wantLatencyProbe records a session Paint saw that may need a sample and
 // keeps the refresh frame coming; the request itself is sent from Wake.
 func (state *State) wantLatencyProbe(session *Session, canvas *ui.Canvas) {
@@ -83,18 +93,25 @@ func (state *State) maybeProbeLatency(session *Session) {
 				atomic.StoreInt32(&session.rttMeasuring, 0)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), latencyProbeTimeout)
 		defer cancel()
 		rtt, err := pinger.Ping(ctx)
 		if atomic.LoadUint32(&session.rttGeneration) != generation {
 			return
 		}
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				// Temporary timeout under heavy transfer congestion: do NOT permanently
-				// break probing. Keep previously valid sample and retry on the next interval.
-				return
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, sshconn.ErrPingPending) {
+			// No sample this round. The request cannot be canceled and Ping
+			// sends no second one until it is answered, so the next interval
+			// probes again without piling anything up. Drop a reading that has
+			// gone stale rather than keep showing it.
+			if atomic.LoadInt32(&session.rttAvailable) == 1 &&
+				time.Since(time.Unix(0, atomic.LoadInt64(&session.rttSampledAt))) > latencyStaleAfter {
+				atomic.StoreInt32(&session.rttAvailable, 0)
+				notify()
 			}
+			return
+		}
+		if err != nil {
 			atomic.StoreInt32(&session.rttBroken, 1)
 			atomic.StoreInt32(&session.rttAvailable, 0)
 			notify()
@@ -105,6 +122,7 @@ func (state *State) maybeProbeLatency(session *Session) {
 			ms = 1
 		}
 		atomic.StoreInt64(&session.rttMs, ms)
+		atomic.StoreInt64(&session.rttSampledAt, time.Now().UnixNano())
 		atomic.StoreInt32(&session.rttAvailable, 1)
 		notify()
 	}()
@@ -118,6 +136,7 @@ func (session *Session) resetLatency() {
 	atomic.StoreInt32(&session.rttBroken, 0)
 	atomic.StoreInt32(&session.rttAvailable, 0)
 	atomic.StoreInt64(&session.rttMs, 0)
+	atomic.StoreInt64(&session.rttSampledAt, 0)
 	session.rttLastPing = time.Time{}
 }
 
