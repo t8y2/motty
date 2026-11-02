@@ -738,6 +738,7 @@ var EnglishMessages = Messages{
 	SFTPDeleteDirectoryTitle:    "Delete Folder",
 	SFTPDeleteDescriptionFmt:    "Permanently delete %s? This action cannot be undone.",
 	SFTPDeleteFolderContentsFmt: "Permanently delete the folder %s and everything in it? This action cannot be undone.",
+	SFTPDeletePartialHint:       "The folder may be partly deleted.",
 	SFTPDeleteConfirm:           "Delete",
 	SFTPDeletingFmt:             "Deleting %s…",
 	SFTPDeletedFmt:              "Deleted %s",

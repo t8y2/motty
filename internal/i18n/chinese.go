@@ -738,6 +738,7 @@ var ChineseMessages = Messages{
 	SFTPDeleteDirectoryTitle:    "删除文件夹",
 	SFTPDeleteDescriptionFmt:    "永久删除 %s？此操作无法撤销。",
 	SFTPDeleteFolderContentsFmt: "永久删除文件夹 %s 及其中所有内容？此操作无法撤销。",
+	SFTPDeletePartialHint:       "文件夹可能已被部分删除。",
 	SFTPDeleteConfirm:           "删除",
 	SFTPDeletingFmt:             "正在删除 %s…",
 	SFTPDeletedFmt:              "已删除 %s",

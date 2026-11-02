@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
@@ -1006,6 +1007,12 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	remote.mu.Unlock()
 	if !stillExists || view.errorText == "" {
 		t.Fatalf("refused delete: exists=%v error=%q", stillExists, view.errorText)
+	}
+	// The walk may have deleted part of the folder before it was refused: say so
+	// in a notice that is not cut off, and drop what was remembered of it.
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastError ||
+		!strings.Contains(state.fileNotices.items[0].detail, state.messages.SFTPDeletePartialHint) || len(view.listings) != 0 {
+		t.Fatalf("refused delete: notices=%+v listings=%d", state.fileNotices.items, len(view.listings))
 	}
 }
 
