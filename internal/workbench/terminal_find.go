@@ -257,7 +257,7 @@ func (state *State) clickTerminalFind(id ui.ID) bool {
 	case hitTerminalFindNext:
 		session.term.find.move(session.term.screen, state.messages, 1)
 	case hitTerminalFindClose:
-		session.term.find.close()
+		state.closeTerminalFind(session)
 	}
 	return true
 }

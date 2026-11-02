@@ -49,6 +49,9 @@ func TestAConnectedSessionOpensAShellTheSizeOfTheTerminal(t *testing.T) {
 	if len(fake.configs) != 1 {
 		t.Fatalf("shell opened %d times", len(fake.configs))
 	}
+	if got := fake.configs[0]; got.Cols != geometry.cols || got.Rows != geometry.rows {
+		t.Fatalf("shell opened at %dx%d, want final geometry %dx%d", got.Cols, got.Rows, geometry.cols, geometry.rows)
+	}
 	if cols, rows := state.sessions[0].term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
 		t.Fatalf("terminal = %dx%d, want %dx%d", cols, rows, geometry.cols, geometry.rows)
 	}

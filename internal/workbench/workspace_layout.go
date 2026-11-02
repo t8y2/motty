@@ -197,6 +197,10 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	state.activeSection = sectionTerminal
 	state.syncMonitorTarget()
 	state.closeCompletionList()
+	if state.viewport.Width > 0 && state.viewport.Height > 0 {
+		state.fitWorkspaceTerminals(id)
+		state.fitSFTP(state.viewport)
+	}
 	return true
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
@@ -117,6 +118,89 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 	assertRecordHint(second)
 }
 
+func TestSwitchingActiveSplitPaneKeepsSizesAndSelection(t *testing.T) {
+	state, world, _, firstShell := liveSession(t)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 || len(world.conns) < 2 {
+		t.Fatalf("split has %d sessions and %d connections", len(state.sessions), len(world.conns))
+	}
+	secondConn := world.conns[1]
+	secondConn.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	secondShell := secondConn.shell(t)
+	secondShell.say("ready\r\n")
+	state.Wake()
+
+	first, second := &state.sessions[0], &state.sessions[1]
+	if !state.ActivatePane(first.ID) {
+		t.Fatal("activate the first split")
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	first.term.write([]byte("select these words\r\n"))
+	first.term.selection.selectRange(
+		first.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		first.term.screen.PointAt(term.Position{Row: 0, Column: 5}),
+	)
+
+	firstColsBefore, firstRowsBefore := first.term.screen.Size()
+	secondColsBefore, secondRowsBefore := second.term.screen.Size()
+	firstResizes, secondResizes := len(firstShell.resizes), len(secondShell.resizes)
+	selectionBefore := first.term.selection
+
+	if !state.ActivatePane(second.ID) {
+		t.Fatal("activate the second split")
+	}
+	firstColsAfter, firstRowsAfter := first.term.screen.Size()
+	secondColsAfter, secondRowsAfter := second.term.screen.Size()
+	if firstColsAfter != firstColsBefore || firstRowsAfter != firstRowsBefore ||
+		secondColsAfter != secondColsBefore || secondRowsAfter != secondRowsBefore {
+		t.Fatalf("screens changed on pane switch: first %dx%d -> %dx%d, second %dx%d -> %dx%d",
+			firstColsBefore, firstRowsBefore, firstColsAfter, firstRowsAfter,
+			secondColsBefore, secondRowsBefore, secondColsAfter, secondRowsAfter)
+	}
+	if len(firstShell.resizes) != firstResizes || len(secondShell.resizes) != secondResizes {
+		t.Fatalf("pane switch resized a PTY: first %d -> %d, second %d -> %d",
+			firstResizes, len(firstShell.resizes), secondResizes, len(secondShell.resizes))
+	}
+	if !first.term.selection.selected || first.term.selection != selectionBefore {
+		t.Fatalf("pane switch changed the inactive selection: before %+v, after %+v",
+			selectionBefore, first.term.selection)
+	}
+}
+
+func TestSwitchingActiveSplitPaneKeepsSizesWithInputNotice(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatal("split did not create a second session")
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	first, second := &state.sessions[0], &state.sessions[1]
+	first.term.commandReporting = true
+	first.term.inputGuard.environment.Charset = "other"
+	if !state.ActivatePane(first.ID) {
+		t.Fatal("activate the first split")
+	}
+	if !state.terminalInputNoticeVisibleInWorkspace(first) {
+		t.Fatal("fixture did not reserve the locale notice in the workspace")
+	}
+	firstColsBefore, firstRowsBefore := first.term.screen.Size()
+	secondColsBefore, secondRowsBefore := second.term.screen.Size()
+	if !state.ActivatePane(second.ID) {
+		t.Fatal("activate the second split")
+	}
+	firstColsAfter, firstRowsAfter := first.term.screen.Size()
+	secondColsAfter, secondRowsAfter := second.term.screen.Size()
+	if firstColsAfter != firstColsBefore || firstRowsAfter != firstRowsBefore ||
+		secondColsAfter != secondColsBefore || secondRowsAfter != secondRowsBefore {
+		t.Fatalf("notice-driven pane switch resized a PTY: first %dx%d -> %dx%d, second %dx%d -> %dx%d",
+			firstColsBefore, firstRowsBefore, firstColsAfter, firstRowsAfter,
+			secondColsBefore, secondRowsBefore, secondColsAfter, secondRowsAfter)
+	}
+}
+
 func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
@@ -148,6 +232,85 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 		if want := session.term.screen.PointAt(term.Position{Row: 0, Column: 1}); session.term.selection.anchor != want {
 			t.Fatalf("session %d active=%v point (%v,%v) mapped to %+v, want %+v", session.ID, session.ID == state.activeSessionID, x, y, session.term.selection.anchor, want)
 		}
+	}
+}
+
+func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	session := &state.sessions[1]
+	if !state.ActivatePane(session.ID) {
+		t.Fatal("activate the second split")
+	}
+	shell := &fakeShell{}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID))))
+	if !ok {
+		t.Fatal("the second split has no painted terminal hit")
+	}
+	bounds, _, viewport, embedded := state.paneEventGeometry(session.ID, size)
+	if !embedded {
+		t.Fatal("the second split did not report embedded geometry")
+	}
+	geometry := state.layoutForSession(session.ID)
+	windowX := geometry.left + state.cellWidth*4.5
+	windowY := geometry.top + state.cellHeight*2.5
+	result := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit.ID,
+		X: windowX, Y: windowY, Viewport: size,
+	})
+	if !result.Handled || shell.typed() != "\x1b[<0;5;3M" {
+		t.Fatalf("pane=%+v viewport=%v result=%+v input=%q", bounds, viewport, result, shell.typed())
+	}
+}
+
+func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	session := &state.sessions[1]
+	if !state.ActivatePane(session.ID) {
+		t.Fatal("activate the second split")
+	}
+	for line := 0; line < 100; line++ {
+		session.term.screen.Write([]byte("history line\r\n"))
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	bar, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))))
+	if !ok {
+		t.Fatal("the second split has no painted scrollbar")
+	}
+	_, origin, _, embedded := state.paneEventGeometry(session.ID, size)
+	if !embedded {
+		t.Fatal("the second split did not report embedded geometry")
+	}
+	geometry := state.terminalScrollArea(nil, session, state.layoutForSession(session.ID).area, 1).Geometry()
+	x := bar.Bounds.X + bar.Bounds.Width/2 + origin.X
+	grab := origin.Y + geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
+	result := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		Target: tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))),
+		X:      x, Y: grab, Viewport: size,
+	})
+	if !result.Handled || !session.term.barDragging {
+		t.Fatalf("scrollbar press=%+v dragging=%v", result, session.term.barDragging)
 	}
 }
 
@@ -250,6 +413,58 @@ func TestSharedSidePanelsFollowActiveSplit(t *testing.T) {
 	}
 }
 
+func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
+			state, session, _, _ := openTestSFTP(t)
+			state.terminalToolbarPosition = position
+			state.ai.open = true
+			state.ai.panelWidth = 280
+			workspace := state.deck.ActiveWorkspace()
+			context, _ := state.deck.Context(workspace)
+			context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, true, layoutcore.ContextRight
+			context.MonitorOpen, context.MonitorLeft = true, position == terminalToolbarLeft
+			if err := state.deck.SetContext(workspace, context); err != nil {
+				t.Fatal(err)
+			}
+			size := ui.Size{Width: 1500, Height: 900}
+			state.Resize(size)
+			state.aiPanelSync()
+
+			var canvas ui.Canvas
+			state.Paint(&canvas, size)
+			rail, ok := state.terminalSideRailBounds(size)
+			if !ok {
+				t.Fatal("shared toolbar bounds are missing")
+			}
+			full := state.fullWorkspacePixelBounds(size)
+			if position == terminalToolbarLeft {
+				if rail.X != full.X {
+					t.Fatalf("left rail x=%v, want outer-%v", rail.X, full.X)
+				}
+			} else if rail.X+rail.Width != full.X+full.Width {
+				t.Fatalf("right rail right=%v, want outer-%v", rail.X+rail.Width, full.X+full.Width)
+			}
+			terminal := state.layoutForSession(session.ID).area
+			for name, panel := range map[string]ui.Rect{
+				"monitor":   state.monitorRect,
+				"files":     state.contextRect,
+				"assistant": state.ai.panel.rect,
+			} {
+				if panel.Width <= 0 || panel.Height <= 0 {
+					t.Fatalf("%s panel has no geometry: %+v", name, panel)
+				}
+				if overlap := intersectRect(panel, rail); overlap.Width > 0 && overlap.Height > 0 {
+					t.Fatalf("%s panel=%+v overlaps shared rail=%+v", name, panel, rail)
+				}
+			}
+			if overlap := intersectRect(terminal, rail); overlap.Width > 0 && overlap.Height > 0 {
+				t.Fatalf("terminal=%+v overlaps shared rail=%+v", terminal, rail)
+			}
+		})
+	}
+}
+
 func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
@@ -347,6 +562,67 @@ func TestWheelOverSharedTerminalToolbarDoesNotScrollTerminalHistory(t *testing.T
 	}
 	if session.term.screen.ViewOffset() != before {
 		t.Fatal("wheel over the shared rail moved terminal history")
+	}
+}
+
+func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
+			state, _, _, _ := liveSession(t)
+			session := &state.sessions[0]
+			state.terminalToolbarPosition = position
+			size := ui.Size{Width: 900, Height: 300}
+			state.Resize(size)
+			for line := 0; line < 80; line++ {
+				session.term.screen.Write([]byte("history line\r\n"))
+			}
+			var canvas ui.Canvas
+			state.Paint(&canvas, size)
+			if session.term.railContentExtent <= session.term.railViewport.Height {
+				t.Fatal("fixture does not overflow")
+			}
+			before := session.term.screen.ViewOffset()
+			rail := session.term.railBounds
+			x := rail.X + 1
+			if position == terminalToolbarRight {
+				x = rail.X + rail.Width - 1
+			}
+			result := state.scroll(ui.ScrollEvent{X: x, Y: rail.Y + 2, DeltaY: 1})
+			if !result.Handled || session.term.railScroll <= 0 {
+				t.Fatalf("gutter wheel result=%+v offset=%v", result, session.term.railScroll)
+			}
+			if session.term.screen.ViewOffset() != before {
+				t.Fatal("wheel over the rail gutter moved terminal history")
+			}
+		})
+	}
+}
+
+func TestActivatingTerminalWorkspaceFitsShellToSharedRail(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.viewport = size
+	workspace := state.deck.ActiveWorkspace()
+	state.activeSection = sectionHosts
+	geometry := state.layoutForSession(state.sessions[0].ID)
+	state.fitWorkspaceTerminals(workspace)
+	cols, rows := state.sessions[0].term.screen.Size()
+	if cols != geometry.cols || rows != geometry.rows {
+		t.Fatalf("fixture before activation screen=%dx%d geometry=%dx%d", cols, rows, geometry.cols, geometry.rows)
+	}
+	resizes := len(shell.resizes)
+	state.sessions[0].term.screen.Resize(cols+5, rows)
+
+	if !state.activateWorkspace(workspace) {
+		t.Fatal("activate the terminal workspace")
+	}
+	geometry = state.layoutForSession(state.sessions[0].ID)
+	cols, rows = state.sessions[0].term.screen.Size()
+	if cols != geometry.cols || rows != geometry.rows {
+		t.Fatalf("activated terminal screen=%dx%d geometry=%dx%d", cols, rows, geometry.cols, geometry.rows)
+	}
+	if len(shell.resizes) != resizes+1 {
+		t.Fatalf("activation made %d resize calls, want exactly the final fit", len(shell.resizes)-resizes)
 	}
 }
 
@@ -453,4 +729,34 @@ func TestTerminalFindResizesEveryPaneForTheSharedRail(t *testing.T) {
 	assertPaneSizes("find open")
 	state.closeTerminalFind(active)
 	assertPaneSizes("find closed")
+}
+
+func TestClickingFindCloseResizesEveryPaneForTheSharedRail(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	active, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("the active split session is missing")
+	}
+	state.openTerminalFind(active)
+	if !state.clickTerminalFind(hitTerminalFindClose) || active.term.find.open {
+		t.Fatal("the stable find close control did not close the bar")
+	}
+	assertPaneSizes := func(stage string) {
+		t.Helper()
+		for index := range state.sessions {
+			session := &state.sessions[index]
+			geometry := state.layoutForSession(session.ID)
+			if cols, rows := session.term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
+				t.Fatalf("%s: session %d screen=%dx%d geometry=%dx%d", stage, session.ID, cols, rows, geometry.cols, geometry.rows)
+			}
+		}
+	}
+	assertPaneSizes("stable click close")
 }

@@ -85,6 +85,7 @@ type terminal struct {
 	wheelY                float32            // vertical wheel travel not yet worth a whole cell
 	railScroll            float32            // horizontal or vertical tool-rail offset
 	railViewport          ui.Rect            // last painted, scrollable tool viewport
+	railBounds            ui.Rect            // full painted rail, including its gutter
 	railContentExtent     float32            // full length of the ordered tool rail
 	railIDs               [maxBarTools]ui.ID // ordered controls for roving keyboard focus
 	railEnabled           [maxBarTools]bool  // disabled actions stay visible but leave the keyboard order
@@ -879,14 +880,40 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	}
 	inactive := state.paneIsInactive(sessionID)
 	finding := !inactive && session.term != nil && session.term.find.open
+	inSplit := state.paneInSplit(sessionID)
 	var chrome terminalChrome
-	if inactive || finding {
+	// Every pane in a split keeps the same top chrome whether it owns focus or
+	// not. The active pane leaves that strip blank, but reserving it here keeps
+	// switching panes from resizing either PTY or clearing a selection.
+	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
-	if !inactive && !finding && state.terminalInputNoticeVisible(session) {
+	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {
 		chrome.top += inputNoticeHeight
 	}
 	return chrome, true
+}
+
+// terminalInputNoticeVisibleInWorkspace keeps a split's top chrome equal on
+// every pane while any pane shows the locale warning. The warning belongs to
+// one shell, but resizing only its pane would change that PTY and its selection
+// each time focus moved. The notice itself is still painted only on its owner.
+func (state *State) terminalInputNoticeVisibleInWorkspace(session *Session) bool {
+	if state.terminalInputNoticeVisible(session) {
+		return true
+	}
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	if !ok {
+		return false
+	}
+	for index := range state.sessions {
+		other := &state.sessions[index]
+		owner, _, owned := state.deck.PaneForSession(layoutcore.SessionID(other.ID))
+		if owned && owner == workspaceID && state.terminalInputNoticeVisible(other) {
+			return true
+		}
+	}
+	return false
 }
 
 // terminalToolbarSession reports the active terminal whose eventual return to
@@ -896,7 +923,7 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 func (state *State) terminalToolbarSession() (*Session, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term == nil || session.restored || session.desk != nil ||
-		session.term.find.open || state.showsProgress(session) {
+		session.term.find.open {
 		return nil, false
 	}
 	return session, true
@@ -909,7 +936,11 @@ func (state *State) terminalSideRailSession() (*Session, bool) {
 	if state.activeSection != sectionTerminal {
 		return nil, false
 	}
-	return state.terminalToolbarSession()
+	session, ok := state.terminalToolbarSession()
+	if !ok || state.showsProgress(session) {
+		return nil, false
+	}
+	return session, true
 }
 
 // paneIsInactive reports a pane that shares its workspace without being the

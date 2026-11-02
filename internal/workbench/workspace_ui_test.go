@@ -132,10 +132,7 @@ func TestSplitPanesShareOneWorkspaceToolbar(t *testing.T) {
 			}
 			bounds := pixelBounds(frame, pane.Bounds)
 			geometry := state.layoutForSession(session.ID)
-			wantY, wantWidth := bounds.Y, bounds.Width
-			if !pane.Active {
-				wantY += infoBarHeight
-			}
+			wantY, wantWidth := bounds.Y+infoBarHeight, bounds.Width
 			if geometry.area.Y != wantY || geometry.area.Width != wantWidth || geometry.area.X != bounds.X {
 				t.Fatalf("pane %d active=%v terminal area=%+v, want x=%v y=%v width=%v", pane.ID, pane.Active, geometry.area, bounds.X, wantY, wantWidth)
 			}

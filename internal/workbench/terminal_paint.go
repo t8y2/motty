@@ -40,8 +40,9 @@ const (
 )
 
 // paintTerminalPage draws a session. Active panes get a configurable tool rail
-// with only connection latency and actions; inactive split panes and find mode
-// keep the compact identity bar that makes their context clear.
+// with only connection latency and actions. Every split pane reserves the same
+// bar height; active panes leave it blank while inactive panes identify their
+// session. Find mode temporarily replaces the bar with its search controls.
 func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *Session) {
 	state.wantLatencyProbe(session, canvas)
 	chrome, ok := state.terminalChromeForSession(session.ID)
@@ -50,6 +51,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	}
 	geometry := terminalLayoutWithChrome(size, state.cellWidth, state.cellHeight, chrome, state.padding())
 	inactive := state.paneIsInactive(session.ID)
+	inSplit := state.paneInSplit(session.ID)
 	barBackground, barBorder := state.connectionBarColors(session, inactive)
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
@@ -67,7 +69,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
 		switch {
-		case inactive || finding:
+		case inSplit || finding:
 			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				switch {
 				case inactive:
@@ -77,7 +79,12 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 				}
 				f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
 			})
-			f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+			f.Column().Grow(1).FillHeight().Children(func() {
+				if showingInputNotice {
+					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+				}
+				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+			})
 		default:
 			f.Column().Grow(1).FillHeight().Children(func() {
 				if showingInputNotice {
@@ -181,6 +188,7 @@ func (state *State) clearTerminalRail(session *Session) {
 	session.term.railCount = 0
 	session.term.railEnabled = [maxBarTools]bool{}
 	session.term.railViewport = ui.Rect{}
+	session.term.railBounds = ui.Rect{}
 	session.term.railContentExtent = 0
 }
 
@@ -209,10 +217,11 @@ func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, ses
 		return
 	}
 	fullBounds := bounds
+	session.term.railBounds = bounds
 	canvas.Fill(fullBounds, background)
-	if _, _, ok := state.latencyInfo(session); ok {
+	if text, color, ok := state.latencyInfo(session); ok {
 		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: terminalBarToolSize}
-		state.paintRailLatency(canvas, session, latency, true)
+		state.paintRailLatency(canvas, text, color, latency, true)
 		top := terminalBarToolSize + 8
 		bounds.Y += top
 		bounds.Height = max(bounds.Height-top, 0)
@@ -281,9 +290,8 @@ func terminalRailItemStart(tools []barTool, index int) float32 {
 	return start
 }
 
-func (state *State) paintRailLatency(canvas *ui.Canvas, session *Session, bounds ui.Rect, compact bool) {
-	text, color, ok := state.latencyInfo(session)
-	if !ok || bounds.Width <= 0 || bounds.Height <= 0 {
+func (state *State) paintRailLatency(canvas *ui.Canvas, text string, color ui.Color, bounds ui.Rect, compact bool) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	accessibilityText := text
@@ -306,8 +314,8 @@ func (state *State) paintRailLabelCenter(canvas *ui.Canvas, text string, bounds 
 
 func (state *State) scrollTerminalToolbar(session *Session, event ui.ScrollEvent) (ui.EventResult, bool) {
 	if session == nil || session.term == nil ||
-		session.term.railViewport.Width <= 0 || session.term.railViewport.Height <= 0 ||
-		!pointInRect(event.X, event.Y, session.term.railViewport) {
+		session.term.railBounds.Width <= 0 || session.term.railBounds.Height <= 0 ||
+		!pointInRect(event.X, event.Y, session.term.railBounds) {
 		return ui.EventResult{}, false
 	}
 	t := session.term

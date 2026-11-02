@@ -58,6 +58,7 @@ func (state *State) resetTerminalToolRails() {
 		}
 		terminal.railScroll = 0
 		terminal.railViewport = ui.Rect{}
+		terminal.railBounds = ui.Rect{}
 		terminal.railContentExtent = 0
 	}
 }

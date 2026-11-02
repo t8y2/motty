@@ -204,8 +204,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
-		state.paintAIPanel(canvas, size)
 		state.paintWorkspaceSideRail(canvas, size)
+		// Assistant popovers may intentionally extend to the window edge; paint
+		// the rail first so they can remain above it and nothing is clipped.
+		state.paintAIPanel(canvas, size)
 	} else {
 		workspace := workspaceSlot.Rect().Inset(ui.All(workspaceBorder))
 		canvas.Clip(workspace)
