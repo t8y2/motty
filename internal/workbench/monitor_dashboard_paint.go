@@ -512,10 +512,7 @@ func (s *State) paintDashboardChart(c *ui.Canvas, p *monitoring.Panel, h Host, r
 	if metric == 2 {
 		yaxis = components.ChartAxis{Format: dashboardNetworkAxis}
 	}
-	// Straight segments: an hour of samples is denser than the chart's pixels,
-	// where a smooth curve looks the same but is cut into many small segments
-	// to tessellate on every paint.
-	components.PaintAreaChart(&cache.canvas, theme, ui.Rect{Width: b.Width, Height: b.Height}, r.chartIDs[metric], components.AreaChart{Series: cache.series[:count], X: r.x, Values: cache.values[:count], Curve: components.ChartCurveLinear, Fill: components.ChartFillGradient, StrokeWidth: 1.5, XAxis: components.ChartAxis{Linear: true, Fixed: true, Min: 0, Max: 1, Ticks: 3, Format: r.clock}, YAxis: yaxis, Label: label, Version: uint32(r.snapshot.Version), HideTooltip: true}, &cache.state)
+	components.PaintAreaChart(&cache.canvas, theme, ui.Rect{Width: b.Width, Height: b.Height}, r.chartIDs[metric], components.AreaChart{Series: cache.series[:count], X: r.x, Values: cache.values[:count], Curve: components.ChartCurveMonotone, Fill: components.ChartFillGradient, StrokeWidth: 1.5, XAxis: components.ChartAxis{Linear: true, Fixed: true, Min: 0, Max: 1, Ticks: 3, Format: r.clock}, YAxis: yaxis, Label: label, Version: uint32(r.snapshot.Version), HideTooltip: true}, &cache.state)
 	cache.canvas.EndFrame()
 	cache.version, cache.size, cache.theme = r.snapshot.Version, size, theme
 	cache.language, cache.scale, cache.focused = s.language, c.PixelScale(), focused
