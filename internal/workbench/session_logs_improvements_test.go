@@ -143,3 +143,39 @@ func TestSessionLogsFavoriteHitDoesNotChangeSelection(t *testing.T) {
 		t.Fatal("row favorite control did not update its own record")
 	}
 }
+
+func TestSessionLogsNormalEndDoesNotClaimAnUnknownReason(t *testing.T) {
+	state := sessionLogsState(t, false)
+	started := sessionLogsTestNow.Add(-time.Hour)
+	record := sessionlog.Record{ID: "clean-end", RunID: "run", Host: "api-1", Address: "api-1.example.com", Account: "root", Protocol: sessionlog.ProtocolSSH, TargetKind: sessionlog.TargetUnknown, StartedAt: started}
+	sessionLogsInsert(t, state, record, sessionlog.StatusEnded, sessionlog.ReasonNone, started.Add(time.Minute), sessionlog.EventConnected, sessionlog.EventShellOpened)
+	state.refreshSessionLogs()
+	sessionLogsWait(t, state)
+	state.selectSessionLogRecord(record.ID)
+	sessionLogsWait(t, state)
+
+	m := state.messages.SessionLogs
+	row := state.sessionLogs.view.page[0]
+	if row.cells[3] != m.StatusEnded {
+		t.Fatalf("normal end row = %q, want %q", row.cells[3], m.StatusEnded)
+	}
+	if strings.Contains(row.cells[3], m.ReasonUnknown) {
+		t.Fatalf("normal end row claims an unavailable reason: %q", row.cells[3])
+	}
+	detail := state.sessionLogs.view.detail
+	result := ""
+	for _, field := range detail.fields[:detail.count] {
+		if field.label == m.FieldResult {
+			result = field.value
+		}
+	}
+	if result != m.ReasonNone {
+		t.Fatalf("normal end result = %q, want %q", result, m.ReasonNone)
+	}
+	if len(detail.events) == 0 || detail.events[len(detail.events)-1].label != m.EventFinished {
+		t.Fatalf("normal end timeline = %+v, want final %q", detail.events, m.EventFinished)
+	}
+	if got := sessionLogResultText(&m, &sessionlog.Record{Status: sessionlog.StatusTrackingStopped, Reason: sessionlog.ReasonTrackingOff}); got != m.StatusTrackingStopped {
+		t.Fatalf("tracking stop row = %q, want %q", got, m.StatusTrackingStopped)
+	}
+}

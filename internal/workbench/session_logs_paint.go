@@ -406,7 +406,7 @@ func (state *State) sessionLogTimeline(record sessionlog.Record, events []sessio
 		label := sessionLogEventLabel(m, event)
 		if event.Kind == sessionlog.EventFinished || event.Kind == sessionlog.EventRecovered {
 			hasFinal = true
-			label += " · " + sessionLogReasonText(m, event.Reason)
+			label = sessionLogReasonLabel(m, label, event.Reason)
 		}
 		if event.Attempt > 0 && sessionLogReconnectEvent(event.Kind) {
 			label += " · " + fmt.Sprintf(m.EventAttemptFmt, event.Attempt)
@@ -499,9 +499,24 @@ func sessionLogStatusText(m *i18n.SessionLogsMessages, status sessionlog.Status)
 func sessionLogResultText(m *i18n.SessionLogsMessages, record *sessionlog.Record) string {
 	label := sessionLogStatusText(m, record.Status)
 	if sessionLogTerminal(record.Status) {
-		label += " · " + sessionLogReasonText(m, record.Reason)
+		label = sessionLogReasonLabel(m, label, record.Reason)
 	}
 	return label
+}
+
+// sessionLogReasonLabel appends a reason only when it adds what the label does
+// not already say. A normal end has no reason to add, and the tracking-stop and
+// recovery labels already name their cause.
+func sessionLogReasonLabel(m *i18n.SessionLogsMessages, label string, reason sessionlog.Reason) string {
+	switch reason {
+	case sessionlog.ReasonNone, sessionlog.ReasonTrackingOff, sessionlog.ReasonProcessRestart:
+		return label
+	}
+	text := sessionLogReasonText(m, reason)
+	if text == label {
+		return label
+	}
+	return label + " · " + text
 }
 
 func sessionLogOutcomeChoices(m *i18n.SessionLogsMessages) [4]string {
