@@ -93,6 +93,9 @@ type syncState struct {
 	waitingForVault bool
 	// timer is the one pending start of a sync, after a change or a failure.
 	timer *time.Timer
+	// holdBack is set while a restore from the server settles: the changes it
+	// made are not a reason to sync.
+	holdBack bool
 
 	rowText, runText string
 	runFor           time.Time
@@ -220,9 +223,17 @@ func (state *State) backupErrorText(err error) string {
 	return err.Error()
 }
 
+// partialRestoreError says a restore replaced the hosts and settings but not
+// everything: a trusted key or a saved password could not be written. Message is
+// what to show; the restore is not to be reported as a success.
+type partialRestoreError struct{ message string }
+
+func (err *partialRestoreError) Error() string { return err.message }
+
 // applyBackup replaces the hosts, settings, host keys and saved passwords with a
 // backup's, keeping what was there in a safety copy. It returns an error before
-// changing anything when the restore cannot go through.
+// changing anything when the restore cannot go through, and a
+// *partialRestoreError, with the hosts restored, when part of it could not.
 func (state *State) applyBackup(document backup.Document) (hosts int, err error) {
 	m := state.messages.Tools
 	if len(state.sessions) > 0 {
@@ -240,7 +251,7 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 	}
 
 	if data, readErr := os.ReadFile(state.options.StatePath); readErr == nil {
-		if err := writeFileAtomic(state.options.StatePath+beforeRestoreSuffix, data); err != nil {
+		if err := keepBeforeRestore(state.options.StatePath, data); err != nil {
 			return 0, err
 		}
 	}
@@ -262,8 +273,9 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 	state.rebuildTabOptions()
 	state.save()
 
+	var incomplete error
 	if err := state.mergeKnownHosts(document.KnownHosts); err != nil {
-		state.status = fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)
+		incomplete = &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)}
 	}
 	if opened != nil {
 		for _, secret := range document.Secrets {
@@ -271,14 +283,28 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 				continue
 			}
 			if err := opened.Set(secret.Name, secret.Value); err != nil {
-				state.status = fmt.Sprintf(state.messages.Tools.BackupSecretsFailedFmt, state.vaultErrorText(err))
-				return len(state.hosts), nil
+				return len(state.hosts), &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupSecretsFailedFmt, state.vaultErrorText(err))}
 			}
 		}
 		// A backup made before secrets were kept under hosts has them under logins.
 		state.migrateSecretsToHosts(true)
 	}
-	return len(state.hosts), nil
+	return len(state.hosts), incomplete
+}
+
+// keepBeforeRestore writes the state file as it was to <state>.before-restore.
+// A copy already there is the state before an earlier restore, which a second
+// restore must not destroy (the second copy is the first restore's result), so
+// it is moved aside under the time it was written.
+func keepBeforeRestore(statePath string, data []byte) error {
+	target := statePath + beforeRestoreSuffix
+	if info, err := os.Stat(target); err == nil {
+		aside := target + "." + info.ModTime().UTC().Format("20060102T150405.000000")
+		if err := os.Rename(target, aside); err != nil {
+			return err
+		}
+	}
+	return writeFileAtomic(target, data)
 }
 
 // mergeKnownHosts adds the backup's trusted keys that this computer lacks;
@@ -404,10 +430,15 @@ func (state *State) openRestoreBackup() {
 				return state.backupErrorText(err)
 			}
 			hosts, err := state.applyBackup(document)
-			if err != nil {
+			var partial *partialRestoreError
+			switch {
+			case errors.As(err, &partial):
+				state.status = partial.message
+			case err != nil:
 				return state.backupErrorText(err)
+			default:
+				state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, hosts)
 			}
-			state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, hosts)
 			return ""
 		},
 	}, formField{label: m.BackupPassword, secure: true})
@@ -455,10 +486,7 @@ func (state *State) runSyncConfigure(form *formDialog) string {
 		return m.BackupErrPasswordShort
 	}
 	if _, err := webdav.New(webdav.Config{URL: address, User: user, Password: "x", Path: path, AllowInsecureHTTP: form.checked}, nil); err != nil {
-		if errors.Is(err, cloudsync.ErrInsecure) {
-			return m.SyncErrInsecure
-		}
-		return m.SyncErrAddress
+		return webdavAddressError(m, err)
 	}
 	if message := state.keepSyncSecrets(webdavPasswordSecret, webdavPassword, backupPassword); message != "" {
 		return message
@@ -475,7 +503,18 @@ func (state *State) runSyncConfigure(form *formDialog) string {
 	return ""
 }
 
+// webdavAddressError says what is wrong with a server address. The error from
+// webdav.New quotes the address, which may carry a password the user typed into
+// it (https://user:secret@host), so it is never shown.
+func webdavAddressError(m i18n.ToolsMessages, err error) string {
+	if errors.Is(err, cloudsync.ErrInsecure) {
+		return m.SyncErrInsecure
+	}
+	return m.SyncErrAddress
+}
+
 func (state *State) clearSync() {
+	state.syncEpoch++
 	state.sync = syncState{}
 	if opened := state.secrets.vault; opened != nil {
 		for _, name := range [...]string{webdavPasswordSecret, s3SecretName, gistTokenSecret, backupPasswordSecret} {
@@ -557,12 +596,7 @@ func (state *State) testSync() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
-		var err error
-		if preparer, ok := store.(interface{ Prepare(context.Context) error }); ok {
-			err = preparer.Prepare(ctx)
-		} else {
-			err = store.Test(ctx)
-		}
+		err := store.Test(ctx)
 		state.aiPost(func(state *State) {
 			if err != nil {
 				state.syncFailed(err)
@@ -584,6 +618,9 @@ func (state *State) runWebdavFormTest(form *formDialog) string {
 	if path == "" {
 		path = defaultSyncPath
 	}
+	if user == "" {
+		return m.SyncErrFields
+	}
 	password := form.value(2)
 	if password == "" {
 		if state.sync.kind != syncWebDAV || !state.hasSyncSecret(webdavPasswordSecret) {
@@ -600,7 +637,7 @@ func (state *State) runWebdavFormTest(form *formDialog) string {
 	}
 	client, err := webdav.New(webdav.Config{URL: address, User: user, Password: password, Path: path, AllowInsecureHTTP: form.checked}, nil)
 	if err != nil {
-		return state.backupErrorText(err)
+		return webdavAddressError(m, err)
 	}
 	serial := state.formSerial
 	go func() {
@@ -613,8 +650,9 @@ func (state *State) runWebdavFormTest(form *formDialog) string {
 }
 
 // openSyncRestore asks before replacing this computer's shared state with the
-// server's. It keeps the local copy in .before-restore, and the cloud login and
-// this window's layout stay as they are.
+// server's. Whatever was changed here and never synced is lost, except for the
+// safety copy in .before-restore; the cloud login and this window's layout stay
+// as they are.
 func (state *State) openSyncRestore() {
 	m := state.messages.Tools
 	if !state.sync.configured() || state.sync.working {
@@ -628,18 +666,30 @@ func (state *State) openSyncRestore() {
 	if !ok {
 		return
 	}
+	epoch := state.syncEpoch
 	state.openForm(formDialog{
 		title: m.SyncRestoreTitle, description: m.SyncRestoreWarning, submit: m.SyncRestoreConfirm, danger: true,
 		run: func(state *State, _ *formDialog) string {
-			return state.runSyncRestore(store, password)
+			return state.runSyncRestore(store, password, epoch)
 		},
 	})
 }
 
 // runSyncRestore reads the remote backup and applies it on the window thread.
-func (state *State) runSyncRestore(store cloudsync.Store, password string) string {
+// The dialog may have been open while a sync started or the service was changed;
+// store and epoch are the service the user confirmed.
+func (state *State) runSyncRestore(store cloudsync.Store, password string, epoch uint32) string {
+	m := state.messages.Tools
+	switch {
+	case state.syncEpoch != epoch:
+		return m.SyncRestoreChanged
+	case state.sync.working:
+		return m.SyncWorking
+	case len(state.sessions) > 0:
+		return m.BackupErrSessions
+	}
 	state.sync.working, state.sync.runText = true, ""
-	state.status = state.messages.Tools.SyncWorking
+	state.status = m.SyncWorking
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
@@ -648,26 +698,59 @@ func (state *State) runSyncRestore(store cloudsync.Store, password string) strin
 		if err == nil {
 			remote, err = backup.Open(data, password)
 		}
-		state.aiPost(func(state *State) { state.finishSyncRestore(remote, tag, err) })
+		state.aiPost(func(state *State) { state.finishSyncRestore(epoch, remote, tag, err) })
 	}()
 	return ""
 }
 
 // finishSyncRestore replaces the shared state only after the whole backup has
-// arrived and opened. It does not upload the result: restoring is one direction.
-func (state *State) finishSyncRestore(remote backup.Document, tag string, err error) {
+// arrived and opened, and only if the service is still the one it came from.
+//
+// A restore is one direction, so it does not start a sync of its own. It cannot
+// promise that nothing is uploaded afterwards: the records it wrote carry new
+// stamps, and the next sync, after any later change or at the next start, sends
+// the ones that differ from the server's. That is the same data; what it can do
+// is not surprise the user with an upload a few seconds after asking to restore.
+func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag string, err error) {
+	if state.syncEpoch != epoch {
+		// The service was changed or cleared while the download ran; the new one
+		// owns the working flag and nothing of this belongs to it.
+		state.status = state.messages.Tools.SyncRestoreChanged
+		return
+	}
 	state.sync.working, state.sync.runText = false, ""
-	if err != nil {
-		message := state.backupErrorText(err)
-		state.sync.err, state.sync.runText = message, ""
+	again := state.sync.again
+	state.sync.again = false
+	fail := func(message string) {
+		state.sync.err = message
 		state.status = fmt.Sprintf(state.messages.Tools.SyncFailedFmt, message)
+		if again {
+			state.scheduleSync() // something changed here while the restore ran
+		}
+	}
+	if err != nil {
+		fail(state.backupErrorText(err))
 		return
 	}
 	if len(state.sessions) > 0 {
-		state.status = state.messages.Tools.BackupErrSessions
+		fail(state.messages.Tools.BackupErrSessions)
 		return
 	}
-	if _, err := state.applyBackup(remote); err != nil {
+
+	state.stopSyncTimer()
+	state.sync.holdBack = true
+	_, err = state.applyBackup(remote)
+	// What the restore itself asks of the sync engine (a saved password changed
+	// by the vault is posted from the vault) is queued ahead of this.
+	if !state.aiPost(func(state *State) { state.sync.holdBack = false }) {
+		state.sync.holdBack = false
+	}
+	var partial *partialRestoreError
+	switch {
+	case errors.As(err, &partial):
+		state.status = partial.message
+		return
+	case err != nil:
 		state.status = state.backupErrorText(err)
 		return
 	}
@@ -759,6 +842,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 			page.toggleRow(m.SyncAuto, m.SyncAutoDescription, !state.sync.manual, hitSyncAuto)
 			page.actionRow(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
 				components.ButtonAction{ID: hitSyncNow, Label: m.SyncNow, Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSyncRestore, Label: m.SyncRestore, Variant: components.ButtonOutline},
 			)
 		})
 	})

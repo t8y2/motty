@@ -105,6 +105,7 @@ func (state *State) clickForm(id ui.ID) {
 		}
 	case hitFormCancel, hitFormClose, hitFormDismiss:
 		cancel := state.form.cancel
+		state.clearFormTestStatus()
 		state.closeModal()
 		if cancel != nil {
 			cancel(state)
@@ -128,14 +129,24 @@ func (state *State) startFormTest() string {
 	return ""
 }
 
+// clearFormTestStatus takes "testing" off the status line when no result is
+// going to replace it.
+func (state *State) clearFormTestStatus() {
+	if state.status == state.messages.Tools.SyncTestRunning {
+		state.status = ""
+	}
+}
+
 // finishFormTest reports an asynchronous form test in the open form. A closed
-// or replaced form silently drops the stale result.
+// or replaced form drops the stale result.
 func (state *State) finishFormTest(serial uint32, err error) {
 	if state.modal != modalForm || state.formSerial != serial {
+		state.clearFormTestStatus()
 		return
 	}
 	state.form.testRunning = false
 	if err != nil {
+		state.clearFormTestStatus()
 		state.form.dialogError = state.backupErrorText(err)
 		return
 	}

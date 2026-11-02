@@ -504,6 +504,7 @@ type ToolsMessages struct {
 	SyncRestoreTitle                string
 	SyncRestoreWarning              string
 	SyncRestoreConfirm              string
+	SyncRestoreChanged              string
 	SyncAuto                        string
 	SyncAutoDescription             string
 	SyncRunFailedFmt                string
