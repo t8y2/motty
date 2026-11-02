@@ -92,8 +92,13 @@ func (state *State) sftpMenuPointer(event ui.PointerEvent) (ui.EventResult, bool
 	view := session.files
 	folder := view.active()
 	index := folder.first + item(event.Target)
-	if view.dialog != sftpDialogNone || index >= len(folder.rows) || view.busy && !view.local {
+	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
 		return ui.EventResult{Handled: true}, true
+	}
+	if folder.searching() {
+		// The actions in the menu are the folder's; a result is not in it.
+		folder.search.selectRow(index)
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	if !folder.rows[index].selected {
 		folder.selectRow(index, 0)

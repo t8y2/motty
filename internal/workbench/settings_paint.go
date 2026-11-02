@@ -237,10 +237,25 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	case appearancePinnedLight:
 		selectedAppearance = hitSettingsAppearanceLight
 	}
+	toolbarPosition := state.settingsToolbarPositionOptions()
+	selectedToolbarPosition := hitSettingsToolbarRight
+	if state.terminalToolbarPosition == terminalToolbarLeft {
+		selectedToolbarPosition = hitSettingsToolbarLeft
+	}
 	page.groups(func() {
 		page.group("", func() {
 			page.row(messages.SettingsLanguage, "", language[:], selectedLanguage)
 			page.row(messages.SettingsAppearance, "", appearance[:], selectedAppearance)
+			textSize := state.settingsTextSizeOptions()
+			selectedTextSize := hitSettingsTextRegular
+			switch state.textScale {
+			case textScaleSmall:
+				selectedTextSize = hitSettingsTextSmall
+			case textScaleLarge:
+				selectedTextSize = hitSettingsTextLarge
+			}
+			page.row(messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], selectedTextSize)
+			page.row(messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, toolbarPosition[:], selectedToolbarPosition)
 			tabs := state.settingsTabOrientationOptions()
 			selectedTabs := hitSettingsTabsHorizontal
 			if state.tabOrientation == tabsVertical {

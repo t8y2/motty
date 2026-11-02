@@ -28,6 +28,8 @@ With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a p
 
 `E2E_NO_SFTP=1` makes it a server without an SFTP subsystem: the subsystem request is refused and the only commands accepted are the `scp -f`/`scp -t` source and sink and the fixed listing, `mkdir`, `rm`, `rmdir`, `mv`, `chmod` and `ln` commands of Motty's SCP backend, matched by exact shape, run without a shell and confined to the fixture root (see `tools/e2e/scp_e2e.txt`).
 
+`E2E_MAX_SFTP=n` refuses an SFTP subsystem request while n are open, as a server with a small `MaxSessions` does; every subsystem opened, refused or closed is logged. Use it to see how a second channel for a folder search behaves (see `tools/e2e/sftp_search_e2e.txt`).
+
 `E2E_SFTP_ONLY=1` makes it an account restricted to SFTP: a shell request is accepted, prints `This service allows sftp connections only.` and ends with exit status 1, while the SFTP subsystem keeps working (see `tools/e2e/sftp_only_e2e.txt`).
 
 It is its own module so the pty dependency never reaches the application.

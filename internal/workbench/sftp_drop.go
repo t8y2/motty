@@ -113,7 +113,7 @@ func (state *State) dropFolderRow(view *sftpView, target ui.ID) int {
 		return -1
 	}
 	index := view.first + item(local)
-	if index < 0 || index >= len(view.rows) || !view.rows[index].entry.IsDir() {
+	if view.searching() || index < 0 || index >= len(view.rows) || !view.rows[index].entry.IsDir() {
 		return -1
 	}
 	return index

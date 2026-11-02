@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
+	layoutcore "motty/internal/workspace"
 )
 
 // Two readings a second apart from a server 37.5% busy that uses 3 of 8 GiB and
@@ -133,9 +134,9 @@ func TestClosingSessionCancelsRemoteStats(t *testing.T) {
 	}
 }
 
-// The reading sits at the left of the bar, after the connection's light, one
-// colored piece per metric, and never reaches the tools on the right.
-func TestRemoteStatsReadoutSitsLeftInDistinctColors(t *testing.T) {
+// The configurable active tool rail contains actions and latency only. Remote
+// resource readings stay in their dedicated monitor surface.
+func TestRemoteStatsReadoutIsNotDuplicatedInTheActiveToolRail(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	sample := remotestats.Sample{
@@ -146,30 +147,44 @@ func TestRemoteStatsReadoutSitsLeftInDistinctColors(t *testing.T) {
 	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
-		splits, ok := hitByID(&canvas, hitPaneSplitHorizontal)
-		if !ok {
-			t.Fatalf("at %v no split button", size)
+		if _, ok := hitByID(&canvas, hitRemoteStats); !ok {
+			t.Fatalf("at %v no monitor control", size)
 		}
-		colors := map[ui.Color]bool{}
-		previous := float32(0)
 		for _, part := range session.stats.parts {
-			var found *ui.Text
-			for index, text := range canvas.Texts() {
+			for _, text := range canvas.Texts() {
 				if text.Value == part {
-					found = &canvas.Texts()[index]
+					t.Fatalf("at %v the resource piece %q is duplicated in the tool rail", size, part)
 				}
 			}
-			if found == nil {
-				t.Fatalf("at %v the piece %q was not painted", size, part)
-			}
-			if found.Bounds.X < previous || found.Bounds.X+found.Bounds.Width > splits.Bounds.X {
-				t.Fatalf("at %v piece %q at %+v is out of order or under the tools (%+v)", size, part, found.Bounds, splits.Bounds)
-			}
-			previous = found.Bounds.X + found.Bounds.Width
-			colors[found.Style.Color] = true
 		}
-		if len(colors) != int(statsMetricCount) {
-			t.Fatalf("at %v the %d metrics use %d colors", size, statsMetricCount, len(colors))
+	}
+}
+
+func TestRemoteStatsReadoutIsNotShownInAnInactiveSplitBar(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	statsSession := &state.sessions[0]
+	if state.activeSessionID == statsSession.ID {
+		if !state.ActivatePane(state.sessions[1].ID) {
+			t.Fatal("activate the second split")
+		}
+	}
+	sample := remotestats.Sample{
+		CPUPercent: 37.5, MemoryUsedBytes: 3 << 30, MemoryTotalBytes: 8 << 30,
+		ReceiveBytesPerSecond: 128 << 10, SendBytesPerSecond: 64 << 10,
+	}
+	statsSession.stats = &remoteStatsView{state: remoteStatsReady, text: formatRemoteStats(sample), parts: remoteStatsParts(sample)}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for _, part := range statsSession.stats.parts {
+		for _, text := range canvas.Texts() {
+			if text.Value == part {
+				t.Fatalf("inactive split bar contains resource piece %q", part)
+			}
 		}
 	}
 }

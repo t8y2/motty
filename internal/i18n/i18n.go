@@ -128,6 +128,11 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsTextSize                       string
+	SettingsTextSizeDescription            string
+	SettingsTextSizeSmall                  string
+	SettingsTextSizeRegular                string
+	SettingsTextSizeLarge                  string
 	SettingsInterfaceFont                  string
 	SettingsInterfaceFontDescription       string
 	SettingsInterfaceFontDefault           string
@@ -148,6 +153,10 @@ type Messages struct {
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
 	SettingsNetworkProxyDirect             string
+	SettingsToolbarPosition                string
+	SettingsToolbarPositionDescription     string
+	SettingsToolbarPositionLeft            string
+	SettingsToolbarPositionRight           string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

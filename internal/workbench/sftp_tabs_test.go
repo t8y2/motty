@@ -646,6 +646,9 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 }
 
 func TestSFTPFileTabPaintStaysAllocationFree(t *testing.T) {
+	if raceDetector {
+		t.Skip("allocation counts are not comparable under the race detector")
+	}
 	state, _, _, _, _ := openSFTPTabFixture(t)
 	workspace := state.deck.ActiveWorkspace()
 	if workspace == 0 {

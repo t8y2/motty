@@ -32,6 +32,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			terminal := state.sessions[0].term
 			shell := &fakeShell{done: make(chan struct{})}
 			terminal.shell, terminal.live = shell, true
+			state.fitTerminal(&state.sessions[0])
 			terminal.screen.Write([]byte(strings.Repeat("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz--RIGHT-EDGE-END\r\n", 80) + "prompt> "))
 			before := string(terminal.screen.AppendRetainedText(nil))
 			cols, rows := terminal.screen.Size()
@@ -66,7 +67,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			var canvas ui.Canvas
 			state.Paint(&canvas, size)
 			hit, ok := hitByID(&canvas, hitTerminalList.At(int(originalID)))
-			if !ok || hit.Bounds.Width != 1200 {
+			if !ok || hit.Bounds.Width != 1200-terminalToolRailExtent {
 				t.Fatalf("restored terminal hit = %+v", hit)
 			}
 		})
@@ -92,16 +93,16 @@ func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {
 			t.Fatalf("terminal painted management navigation %d: %+v", id, hit)
 		}
 	}
-	if bounds := state.workspacePixelBounds(size); bounds.X != 0 || bounds.Width != size.Width {
-		t.Fatalf("terminal workspace = %+v, want full width", bounds)
+	if bounds := state.workspacePixelBounds(size); bounds.X != 0 || bounds.Width != size.Width-terminalToolRailExtent {
+		t.Fatalf("terminal workspace = %+v, want room for the shared right rail", bounds)
 	}
 	terminalHit, ok := hitByID(&terminal, hitTerminalList.At(int(state.sessions[0].ID)))
-	if !ok || terminalHit.Bounds.X != 0 || terminalHit.Bounds.Width != size.Width {
+	if !ok || terminalHit.Bounds.X != 0 || terminalHit.Bounds.Width != size.Width-terminalToolRailExtent {
 		t.Fatalf("single terminal does not use full workspace: %+v", terminalHit)
 	}
 }
 
-func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
+func TestSplitPanesShareOneWorkspaceToolbar(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
@@ -116,6 +117,9 @@ func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
 		frame := state.workspacePixelBounds(size)
+		if _, ok := hitByID(&canvas, hitSFTPOpen); !ok {
+			t.Fatal("shared toolbar Files control is missing")
+		}
 		for _, pane := range state.Panes(nil) {
 			session, ok := state.sessionByIDPointer(pane.SessionID)
 			if !ok {
@@ -123,16 +127,16 @@ func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
 			}
 			_, hasFiles := hitByID(&canvas, tree.MountID(paneMount(session), hitSFTPOpen))
 			_, hasClose := hitByID(&canvas, tree.MountID(paneMount(session), hitPaneClose))
-			if hasFiles != pane.Active || hasClose != pane.Active {
+			if hasFiles || hasClose {
 				t.Fatalf("pane %d active=%v Files=%v Close=%v", pane.ID, pane.Active, hasFiles, hasClose)
 			}
-			barHeight := infoBarHeight // the same whether or not the pane is active
 			bounds := pixelBounds(frame, pane.Bounds)
-			if geometry := state.layoutForSession(session.ID); geometry.area.Y != bounds.Y+barHeight {
-				t.Fatalf("pane %d terminal y=%v, want %v", pane.ID, geometry.area.Y, bounds.Y+barHeight)
+			geometry := state.layoutForSession(session.ID)
+			wantY, wantWidth := bounds.Y+infoBarHeight, bounds.Width
+			if geometry.area.Y != wantY || geometry.area.Width != wantWidth || geometry.area.X != bounds.X {
+				t.Fatalf("pane %d active=%v terminal area=%+v, want x=%v y=%v width=%v", pane.ID, pane.Active, geometry.area, bounds.X, wantY, wantWidth)
 			}
 			cols, rows := session.term.screen.Size()
-			geometry := state.layoutForSession(session.ID)
 			if cols != geometry.cols || rows != geometry.rows {
 				t.Fatalf("pane %d screen=%dx%d geometry=%dx%d", pane.ID, cols, rows, geometry.cols, geometry.rows)
 			}
@@ -147,7 +151,7 @@ func TestOnlyActiveSplitPanePaintsFullTerminalToolbar(t *testing.T) {
 	assertToolbarOwnership()
 }
 
-func TestMountedPaneCloseToolbarButtonClosesItsPane(t *testing.T) {
+func TestSharedToolbarCloseButtonClosesActivePane(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
@@ -162,17 +166,15 @@ func TestMountedPaneCloseToolbarButtonClosesItsPane(t *testing.T) {
 	}
 	t.Cleanup(driver.Close)
 
-	session, _ := state.sessionByIDPointer(closedSession)
-	closeID := tree.MountID(paneMount(session), hitPaneClose)
 	var closeHit ui.Hit
 	for _, hit := range driver.Snapshot().Hits {
-		if hit.ID == closeID {
+		if hit.ID == hitPaneClose {
 			closeHit = hit
 			break
 		}
 	}
 	if closeHit.ID.IsZero() {
-		t.Fatalf("active pane close hit %d is missing", closeID)
+		t.Fatal("shared toolbar close hit is missing")
 	}
 	if err := driver.Click(closeHit.Bounds.X+closeHit.Bounds.Width/2, closeHit.Bounds.Y+closeHit.Bounds.Height/2); err != nil {
 		t.Fatal(err)
@@ -188,9 +190,9 @@ func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
 
-	for _, id := range []ui.ID{hitPanePrevious, hitPaneNext, hitPaneSplitHorizontal, hitPaneSplitVertical, hitPaneClose} {
-		if hit, ok := hitByID(&canvas, id); ok {
-			t.Fatalf("pane action %d painted a floating control: %+v", id, hit)
+	for _, id := range []ui.ID{hitPaneSplitHorizontal, hitPaneSplitVertical, hitPaneClose} {
+		if _, ok := hitByID(&canvas, id); !ok {
+			t.Fatalf("shared toolbar action %d is missing", id)
 		}
 	}
 	for index, split := range state.paneSplits {

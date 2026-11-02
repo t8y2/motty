@@ -57,6 +57,7 @@ const (
 	iconFileDown
 	iconColumns2
 	iconRows2
+	iconGrid2x2
 	iconBot
 	iconHistory
 	iconCopy
@@ -102,6 +103,7 @@ const (
 	iconClock
 	iconPaperclip
 	iconImage
+	iconSave
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -224,6 +226,9 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
+		state.paintWorkspaceSideRail(canvas, size)
+		// Assistant popovers may intentionally extend to the window edge; paint
+		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
@@ -702,17 +707,15 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	case hovered:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	if pane, ok := state.deck.Pane(workspace.ID, workspace.ActivePane); ok {
-		if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
-			amount := float32(.08)
-			if active {
-				amount = .18
-			} else if hovered {
-				amount = .12
-			}
-			fill = tintHostSurface(fill, session.host.Color, amount)
-			edge = tintHostSurface(edge, session.host.Color, .35)
+	if session := state.tabSession(workspace); session != nil {
+		amount := float32(.08)
+		if active {
+			amount = .18
+		} else if hovered {
+			amount = .12
 		}
+		fill = tintHostSurface(fill, session.host.Color, amount)
+		edge = tintHostSurface(edge, session.host.Color, .35)
 	}
 	entry.background = fill
 	label := state.tabLabel(workspace)
@@ -721,6 +724,13 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 		tabOptions.Hint = m.TabLockedHint
 	} else if vertical {
 		tabOptions.Hint = label
+	}
+	// A desktop keeps its size and protection in the status line under the
+	// picture, which the host may have hidden: the tab says it on hover instead.
+	if session := state.tabSession(workspace); session != nil && session.desk != nil {
+		if hint := state.desktopStripLeft(session.desk, session); hint != "" {
+			tabOptions.Hint = hint
+		}
 	}
 	row := f.Row().Size(width, height).Shrink(0)
 	if vertical {
@@ -1786,6 +1796,7 @@ var lucideIcons = [...]ui.Icon{
 	iconFileDown:   icons.FileDown,
 	iconColumns2:   icons.Columns2,
 	iconRows2:      icons.Rows2,
+	iconGrid2x2:    icons.Grid2x2,
 
 	iconBot:            icons.Bot,
 	iconHistory:        icons.History,
@@ -1806,6 +1817,7 @@ var lucideIcons = [...]ui.Icon{
 	iconPlug:           icons.Plug,
 	iconPaperclip:      icons.Paperclip,
 	iconImage:          icons.Image,
+	iconSave:           icons.Download,
 	iconPaste:          icons.ClipboardPaste,
 	iconSelectAll:      icons.SquareDashed,
 	iconEraser:         icons.Eraser,

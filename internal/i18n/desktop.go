@@ -15,6 +15,7 @@ type DesktopMessages struct {
 	StripTLS        string
 	ViaSSH          string
 	ShareClipboard  string
+	HideBars        string
 	ConsoleSession  string
 	VNCPlaintext    string
 	TipCapture      string

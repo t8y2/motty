@@ -39,7 +39,7 @@ func (state *State) sftpListPointer(event ui.PointerEvent) (ui.EventResult, bool
 		// The row above the pointer keeps the offset the drag left: paint derives
 		// the same row from it with floor, so releasing over a partial row no
 		// longer snaps the list back by up to half a row.
-		folder.first = min(max(0, int(math.Floor(float64(folder.scrollOffset/sftpRowHeight)))), max(0, len(folder.rows)-max(folder.visibleRows, 1)))
+		folder.first = min(max(0, int(math.Floor(float64(folder.scrollOffset/sftpRowHeight)))), max(0, len(folder.shownRows())-max(folder.visibleRows, 1)))
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	case ui.PointerExit:
 		if !event.Captured {
@@ -51,6 +51,6 @@ func (state *State) sftpListPointer(event ui.PointerEvent) (ui.EventResult, bool
 	}
 	before := folder.scrollOffset
 	folder.scrollOffset = geometry.VerticalOffsetForThumb(event.Y - view.scrollGrab)
-	folder.first = min(max(0, int(math.Floor(float64(folder.scrollOffset/sftpRowHeight)))), max(0, len(folder.rows)-max(folder.visibleRows, 1)))
+	folder.first = min(max(0, int(math.Floor(float64(folder.scrollOffset/sftpRowHeight)))), max(0, len(folder.shownRows())-max(folder.visibleRows, 1)))
 	return ui.EventResult{Handled: true, Repaint: before != folder.scrollOffset}, true
 }

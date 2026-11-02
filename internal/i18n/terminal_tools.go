@@ -317,6 +317,18 @@ type ToolsMessages struct {
 	FilesMore                       string
 	FilesShowHidden                 string
 	FilesHideHidden                 string
+	// Searching the folders below the current one by name.
+	FilesSearchSubfolders           string
+	FilesSearchPlaceholder          string
+	FilesSearchScanningFmt          string // matches, entries read
+	FilesSearchDoneFmt              string // matches, entries read
+	FilesSearchShownFmt             string // results shown
+	FilesSearchTruncated            string
+	FilesSearchFailedFmt            string // folders that could not be read
+	FilesSearchUnavailable          string
+	FilesSearchUnavailableFmt       string // the error
+	FilesSearchSearching            string
+	FilesSearchNoMatches            string
 	FilesKeepTimes                  string
 	FilesKeepTimesDescription       string
 	FilesFollow                     string

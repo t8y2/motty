@@ -470,13 +470,24 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				request.Reply(false, nil)
 				continue
 			}
+			// E2E_MAX_SFTP=n refuses an SFTP subsystem while n are open, as a server
+			// whose MaxSessions is that small does.
+			if !sftpSessionAllowed() {
+				log.Printf("sftp subsystem refused")
+				request.Reply(false, nil)
+				continue
+			}
 			request.Reply(true, nil)
+			log.Printf("sftp subsystem opened")
 			server, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(sftpRoot))
 			if err != nil {
+				sftpSessionDone()
 				return
 			}
 			_ = server.Serve()
 			_ = server.Close()
+			sftpSessionDone()
+			log.Printf("sftp subsystem closed")
 			return
 		default:
 			request.Reply(strings.HasPrefix(request.Type, "x-"), nil)

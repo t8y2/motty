@@ -46,8 +46,14 @@ func screenText(state *State, index int) string { return state.sessions[index].t
 func TestAConnectedSessionOpensAShellTheSizeOfTheTerminal(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	geometry := state.layout()
-	if len(fake.configs) != 1 || fake.configs[0].Cols != geometry.cols || fake.configs[0].Rows != geometry.rows {
-		t.Fatalf("shell config = %+v, want %dx%d", fake.configs, geometry.cols, geometry.rows)
+	if len(fake.configs) != 1 {
+		t.Fatalf("shell opened %d times", len(fake.configs))
+	}
+	if got := fake.configs[0]; got.Cols != geometry.cols || got.Rows != geometry.rows {
+		t.Fatalf("shell opened at %dx%d, want final geometry %dx%d", got.Cols, got.Rows, geometry.cols, geometry.rows)
+	}
+	if cols, rows := state.sessions[0].term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
+		t.Fatalf("terminal = %dx%d, want %dx%d", cols, rows, geometry.cols, geometry.rows)
 	}
 	if geometry.cols < 100 || geometry.rows < 30 {
 		t.Fatalf("a 1400x900 window fits only %dx%d cells", geometry.cols, geometry.rows)
@@ -114,16 +120,19 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 		t.Fatalf("1000 points fit %d columns", geometry.cols)
 	}
 	for index := range state.sessions {
-		if cols, rows := state.sessions[index].term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
-			t.Errorf("session %d is %dx%d, want %dx%d", index, cols, rows, geometry.cols, geometry.rows)
+		sessionGeometry := state.layoutForSession(state.sessions[index].ID)
+		if cols, rows := state.sessions[index].term.screen.Size(); cols != sessionGeometry.cols || rows != sessionGeometry.rows {
+			t.Errorf("session %d is %dx%d, want %dx%d", index, cols, rows, sessionGeometry.cols, sessionGeometry.rows)
 		}
 	}
-	if len(shell.resizes) != 2 || shell.resizes[1] != [2]int{geometry.cols, geometry.rows} {
-		t.Fatalf("the pty was told %v, want pane creation then %dx%d", shell.resizes, geometry.cols, geometry.rows)
+	firstGeometry := state.layoutForSession(state.sessions[0].ID)
+	if len(shell.resizes) == 0 || shell.resizes[len(shell.resizes)-1] != [2]int{firstGeometry.cols, firstGeometry.rows} {
+		t.Fatalf("the pty was told %v, want its final %dx%d", shell.resizes, firstGeometry.cols, firstGeometry.rows)
 	}
+	resizeCount := len(shell.resizes)
 	state.Resize(ui.Size{Width: 1000, Height: 700})
-	if len(shell.resizes) != 2 {
-		t.Fatal("an unchanged size resized the pty again")
+	if len(shell.resizes) != resizeCount {
+		t.Fatalf("an unchanged size resized the pty %d more times", len(shell.resizes)-resizeCount)
 	}
 }
 
@@ -483,7 +492,8 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 		t.Fatalf("label = %q", hit.Label)
 	}
 	geometry := state.layout()
-	if hit.Bounds != geometry.area || hit.Bounds.X != state.workspacePixelBounds(state.viewport).X || hit.Bounds.X+hit.Bounds.Width != 1400 || hit.Bounds.Y+hit.Bounds.Height != 900 {
+	workspace := state.workspacePixelBounds(state.viewport)
+	if hit.Bounds != geometry.area || hit.Bounds.X != workspace.X || hit.Bounds.X+hit.Bounds.Width != workspace.X+workspace.Width || hit.Bounds.Y+hit.Bounds.Height != 900 {
 		t.Fatalf("the terminal %+v does not fill the window below the bars", hit.Bounds)
 	}
 	// Window-bar buttons leave the keyboard where it is.
@@ -495,7 +505,7 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 	}
 }
 
-func TestInfoBarSaysNothingWhileSimplyConnected(t *testing.T) {
+func TestActiveToolRailOmitsConnectionIdentityAndStatus(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	_, texts := paintedTexts(state)
 	if contains(texts, "deploy@prod.example.com:22") || contains(texts, "Connected") {
@@ -504,8 +514,8 @@ func TestInfoBarSaysNothingWhileSimplyConnected(t *testing.T) {
 	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseClosed })
 	state.Wake()
 	_, texts = paintedTexts(state)
-	if !contains(texts, "Not connected") {
-		t.Fatalf("a closed session reads %q", texts)
+	if contains(texts, "Not connected") {
+		t.Fatalf("the active tool rail still contains connection status: %q", texts)
 	}
 }
 

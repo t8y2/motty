@@ -121,6 +121,7 @@ var (
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
+	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
 	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
@@ -190,8 +191,13 @@ var (
 	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
 	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
 	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsTextSmall        = tree.ID(settingsHits, "settings-text-small")
+	hitSettingsTextRegular      = tree.ID(settingsHits, "settings-text-regular")
+	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
 	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
 	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -374,7 +380,6 @@ const TitlebarHeight = float32(36)
 const (
 	windowBarHeight = TitlebarHeight
 	infoBarHeight   = float32(34)
-	barTitleSize    = float32(13) // the name in a pane's bar: a size under the assistant's title
 	navigationWidth = float32(204)
 	popupLayer      = uint16(300) // a popup inside a page: above the page's text, below dialogs
 	// A layer paints all its shapes and then all its text, so two overlays on
@@ -576,6 +581,9 @@ type State struct {
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
 	terminalScrollback  int
+	// textScale is the interface text size the user chose: the scale the whole
+	// window's text is drawn at, apart from the terminal's own font size.
+	textScale           textScale
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
@@ -645,6 +653,9 @@ type State struct {
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
 	latencyProbe        []uint32
+	// The shared terminal tool rail is a device-local presentation choice.
+	// Its zero value keeps the historical right-edge placement.
+	terminalToolbarPosition terminalToolbarPosition
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
@@ -721,13 +732,12 @@ type State struct {
 	// area: terminal and workspace panes
 	terminalPageLayout flex.View
 	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane, the menu's switch and the like: one at a time
+	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
 	filesHeader flex.View
 	filesPopup  flex.View
-	statsLayout flex.View // the monitor's readout in the terminal's info bar
 	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
 	filesRowIcons []flex.Box
 	filesRowBoxes []flex.Box
@@ -1401,6 +1411,10 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case id == hitTerminalRecord:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.toggleTerminalRecording(session)
+		}
+	case id == hitTerminalSaveOutput:
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			state.saveTerminalOutput(session)
 		}
 	case id == hitTerminalRecordingExport:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
@@ -2275,6 +2289,13 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if result, handled := state.settingsKey(event); handled {
 		return result
+	}
+	if state.modal == modalNone && state.activeSection == sectionTerminal {
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			if result, handled := state.terminalToolbarKey(session, event); handled {
+				return result
+			}
+		}
 	}
 	if session := state.terminalSession(event.Target); session != nil && state.modal == modalNone {
 		if session.desk != nil {

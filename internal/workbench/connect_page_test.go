@@ -403,10 +403,9 @@ func TestTheConnectionBallWaitsAtTheStartUntilConnected(t *testing.T) {
 	}
 }
 
-// The info bar's right edge holds, from the right, the files button, the state
-// in words, its light and, while the log stands in for the connection page, the
-// way back. None of them may sit on another.
-func TestTheInfoBarsRightEdgeHasRoomForEverything(t *testing.T) {
+// The shared rail gives the log's way back and the files action separate slots,
+// including in a narrow window.
+func TestTheSharedToolbarLogButtonsDoNotOverlap(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	fake := connect(t, state, world)
@@ -416,7 +415,6 @@ func TestTheInfoBarsRightEdgeHasRoomForEverything(t *testing.T) {
 	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
-		var spans []ui.Rect
 		files, ok := hitByID(&canvas, hitSFTPOpen)
 		if !ok {
 			t.Fatal("no files button")
@@ -425,22 +423,8 @@ func TestTheInfoBarsRightEdgeHasRoomForEverything(t *testing.T) {
 		if !ok {
 			t.Fatal("no way back to the connection page")
 		}
-		spans = append(spans, files.Bounds, back.Bounds)
-		for _, text := range canvas.Texts() {
-			if text.Value == state.messages.HostStateFailed {
-				spans = append(spans, text.Bounds)
-			}
-		}
-		if len(spans) != 3 {
-			t.Fatalf("found %d of the info bar's right-edge items", len(spans))
-		}
-		for first := range spans {
-			for second := first + 1; second < len(spans); second++ {
-				a, b := spans[first], spans[second]
-				if a.X < b.X+b.Width && b.X < a.X+a.Width {
-					t.Errorf("at %v: %+v overlaps %+v", size, a, b)
-				}
-			}
+		if overlap := intersectRect(files.Bounds, back.Bounds); overlap.Width > 0 && overlap.Height > 0 {
+			t.Errorf("at %v files %+v overlaps back %+v", size, files.Bounds, back.Bounds)
 		}
 	}
 }
