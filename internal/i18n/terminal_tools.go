@@ -494,10 +494,16 @@ type ToolsMessages struct {
 	SyncPassword                    string
 	SyncPath                        string
 	SyncSave                        string
+	SyncTest                        string
+	SyncTestRunning                 string
 	SyncRunRow                      string
 	SyncRunNever                    string
 	SyncRunLastFmt                  string
 	SyncNow                         string
+	SyncRestore                     string
+	SyncRestoreTitle                string
+	SyncRestoreWarning              string
+	SyncRestoreConfirm              string
 	SyncAuto                        string
 	SyncAutoDescription             string
 	SyncRunFailedFmt                string

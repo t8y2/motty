@@ -18,6 +18,7 @@ var formDialogHits = tree.Feature("form-dialog")
 var (
 	hitFormFieldList = tree.Sub(formDialogHits, tree.Name("form-field"))
 	hitFormSubmit    = tree.ID(formDialogHits, "form-submit")
+	hitFormTest      = tree.ID(formDialogHits, "form-test")
 	hitFormCancel    = tree.ID(formDialogHits, "form-cancel")
 	hitFormClose     = tree.ID(formDialogHits, "form-close")
 	hitFormDismiss   = tree.ID(formDialogHits, "form-dismiss")
@@ -40,6 +41,11 @@ type formDialog struct {
 	title, description string
 	submit             string
 	danger             bool
+	// test, if set, gives the form a button that tries what the fields say
+	// without saving them. It starts its network work and returns "" at once;
+	// its result comes back on the window thread.
+	test        func(*State, *formDialog) string
+	testRunning bool
 	// A form may ask for explicit consent after its fields. The caller owns
 	// the label, explanation and saved value; other forms have no checkbox.
 	checkLabel, checkDescription string
@@ -60,6 +66,7 @@ func (state *State) openForm(form formDialog, fields ...formField) *formDialog {
 	state.form = form
 	state.form.count = copy(state.form.fields[:], fields)
 	state.form.dialogError = ""
+	state.form.testRunning = false
 	state.modal = modalForm
 	return &state.form
 }
@@ -92,6 +99,10 @@ func (state *State) clickForm(id ui.ID) {
 		}
 	case hitFormSubmit:
 		state.submitForm()
+	case hitFormTest:
+		if message := state.startFormTest(); message != "" {
+			state.form.dialogError = message
+		}
 	case hitFormCancel, hitFormClose, hitFormDismiss:
 		cancel := state.form.cancel
 		state.closeModal()
@@ -99,6 +110,37 @@ func (state *State) clickForm(id ui.ID) {
 			cancel(state)
 		}
 	}
+}
+
+// startFormTest runs the form's optional test without saving. The form stays
+// open; the test's asynchronous result also stays in this exact form.
+func (state *State) startFormTest() string {
+	if state.form.test == nil || state.form.testRunning {
+		return ""
+	}
+	message := state.form.test(state, &state.form)
+	if message != "" {
+		return message
+	}
+	state.form.testRunning = true
+	state.form.dialogError = ""
+	state.status = state.messages.Tools.SyncTestRunning
+	return ""
+}
+
+// finishFormTest reports an asynchronous form test in the open form. A closed
+// or replaced form silently drops the stale result.
+func (state *State) finishFormTest(serial uint32, err error) {
+	if state.modal != modalForm || state.formSerial != serial {
+		return
+	}
+	state.form.testRunning = false
+	if err != nil {
+		state.form.dialogError = state.backupErrorText(err)
+		return
+	}
+	state.form.dialogError = ""
+	state.status = state.messages.Tools.SyncTestOK
 }
 
 func (state *State) submitForm() {
@@ -183,9 +225,13 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.danger {
 		variant = components.ButtonDestructive
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitFormSubmit, Label: form.submit, Variant: variant},
-	)
+	actions := []components.ButtonAction{
+		{ID: hitFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+	}
+	if form.test != nil {
+		actions = append(actions, components.ButtonAction{ID: hitFormTest, Label: state.messages.Tools.SyncTest, Variant: components.ButtonOutline, Disabled: form.testRunning})
+	}
+	actions = append(actions, components.ButtonAction{ID: hitFormSubmit, Label: form.submit, Variant: variant})
+	dialog.Actions(layout, actions...)
 	dialog.End()
 }

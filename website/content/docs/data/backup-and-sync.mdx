@@ -15,14 +15,16 @@ Record-level sync works through:
 - a GitHub Gist
 
 Records carry hybrid logical clocks, and deletions are kept as 90-day tombstones, so
-several computers converge without one overwriting the other.
+several computers converge without one overwriting the other. The WebDAV form can
+test the login and its folders before saving; a configured service can sync now or
+replace this computer's shared state with the remote backup.
 
 ### Jianguoyun (坚果云) and other WebDAV services
 
 Motty creates the folders above the backup file when it uploads, but some services only
 let their own app create top-level folders. Jianguoyun is one: first make a sync folder
-in its web page or client, then set the file to `that-folder/backup.mottybak`. The
-password is the third-party app password from the Jianguoyun account's security
+in its web page or client, then set the file to an existing folder such as `motty-sync/backup.mottybak`.
+The password is the third-party app password from the Jianguoyun account's security
 settings, not the login password.
 
 ## What stays local

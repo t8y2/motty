@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -190,6 +191,88 @@ func TestARestoreKeepsTheLocalWebDAVServer(t *testing.T) {
 	saved, _, _ := loadState(state.options.StatePath)
 	if saved.Sync == nil || saved.Sync.URL != "https://dav.example.com/dav" {
 		t.Fatalf("the server was not kept in the file: %+v", saved.Sync)
+	}
+}
+
+func TestWebDAVFormTestsTheTypedConnectionWithoutSaving(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if user, password, ok := r.BasicAuth(); !ok || user != "alice" || password != "s3cret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Method == "PROPFIND" {
+			if r.URL.Path == "/dav/motty-sync" {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusMultiStatus)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	state, _, _ := backupTestState(t)
+	state.Click(hitSyncConfigure)
+	if state.modal != modalForm {
+		t.Fatal("the server form did not open")
+	}
+	fillForm(state, server.URL+"/dav", "alice", "s3cret", "motty-sync/backup.mottybak")
+	state.Click(hitFormTest)
+	waitFor(t, state, func() bool {
+		return !state.form.testRunning && state.form.dialogError != ""
+	})
+	if state.modal != modalForm || state.sync.configured() {
+		t.Fatalf("the test saved the form: modal %d, sync %+v", state.modal, state.sync)
+	}
+	if !strings.Contains(state.form.dialogError, `"motty-sync"`) || !strings.Contains(state.form.dialogError, "409") {
+		t.Fatalf("the test did not name the missing folder: %q", state.form.dialogError)
+	}
+}
+
+func TestSyncCanRestoreARemoteBackup(t *testing.T) {
+	server, dav := newFakeDAV(t)
+	first, _, _ := backupTestState(t)
+	first.terminalScrollback = 10000
+	first.save()
+	if err := first.secrets.vault.Set("aikey:restore@prod.example.com:22", "hunter2"); err != nil {
+		t.Fatal(err)
+	}
+	configureSync(t, first, server)
+	syncAndWait(t, first, hitSyncNow, first.messages.Tools.SyncDone)
+
+	second, _, _ := backupTestState(t)
+	second.terminalScrollback = 7
+	second.save()
+	configureSync(t, second, server)
+	state := second
+	state.status = ""
+	state.Click(hitSyncRestore)
+	if state.modal != modalForm || !state.form.danger {
+		t.Fatalf("the restore confirmation did not open: modal %d", state.modal)
+	}
+	state.Click(hitFormSubmit)
+	waitRestore := func() bool {
+		return !state.sync.working && state.status != "" && state.status != state.messages.Tools.SyncWorking
+	}
+	waitFor(t, state, waitRestore)
+	if state.status != fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, len(sampleHosts)) {
+		t.Fatalf("restore failed: %q", state.status)
+	}
+	if state.terminalScrollback != 10000 {
+		t.Fatalf("the remote backup was not restored: %d", state.terminalScrollback)
+	}
+	if value, found, err := state.secrets.vault.Get("aikey:restore@prod.example.com:22"); err != nil || !found || value != "hunter2" {
+		t.Fatalf("the restored password: %q %v %v", value, found, err)
+	}
+	if state.sync.etag == "" {
+		t.Fatal("the restored version was not remembered")
+	}
+	safety, _, err := loadState(state.options.StatePath + beforeRestoreSuffix)
+	if err != nil || safety.TerminalScrollback != 7 {
+		t.Fatalf("the safety copy: %d, %v", safety.TerminalScrollback, err)
+	}
+	if dav.puts != 1 {
+		t.Fatalf("restore uploaded again (%d uploads)", dav.puts)
 	}
 }
 

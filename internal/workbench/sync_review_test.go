@@ -12,7 +12,7 @@ import (
 	"motty/internal/configstore"
 )
 
-const davBackupPath = "/dav/motty/backup.mottybak"
+const davBackupPath = "/dav/motty-sync/backup.mottybak"
 
 func serverDocument(t *testing.T, dav *fakeDAV) backup.Document {
 	t.Helper()

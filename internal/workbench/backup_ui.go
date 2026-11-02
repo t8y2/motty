@@ -37,13 +37,14 @@ var (
 	hitSyncConfigureS3   = tree.ID(backupUiHits, "sync-configure-s3")
 	hitSyncConfigureGist = tree.ID(backupUiHits, "sync-configure-gist")
 	hitSyncNow           = tree.ID(backupUiHits, "sync-now")
+	hitSyncRestore       = tree.ID(backupUiHits, "sync-restore")
 	hitSyncAuto          = tree.ID(backupUiHits, "sync-auto")
 )
 
 const (
 	webdavPasswordSecret = "webdav:password"
 	backupPasswordSecret = "backup:password"
-	defaultSyncPath      = "motty/backup.mottybak"
+	defaultSyncPath      = "motty-sync/backup.mottybak"
 	syncTimeout          = 90 * time.Second
 	beforeRestoreSuffix  = ".before-restore"
 )
@@ -419,6 +420,7 @@ func (state *State) openSyncConfigure() {
 	form := state.openForm(formDialog{
 		title: m.SyncDialogTitle, description: m.SyncDialogDescription, submit: m.SyncSave,
 		run:        (*State).runSyncConfigure,
+		test:       (*State).runWebdavFormTest,
 		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription,
 		checked: state.sync.kind == syncWebDAV && state.sync.allowInsecureHTTP,
 	},
@@ -555,7 +557,12 @@ func (state *State) testSync() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
-		err := store.Test(ctx)
+		var err error
+		if preparer, ok := store.(interface{ Prepare(context.Context) error }); ok {
+			err = preparer.Prepare(ctx)
+		} else {
+			err = store.Test(ctx)
+		}
 		state.aiPost(func(state *State) {
 			if err != nil {
 				state.syncFailed(err)
@@ -565,6 +572,109 @@ func (state *State) testSync() {
 			state.scheduleSync() // a service just set up has not been synced yet
 		})
 	}()
+}
+
+// runWebdavFormTest tests the WebDAV login exactly as typed, without saving
+// it. A blank password falls back to the saved one, as saving would. The
+// result returns to this open form; stale results after Cancel are dropped.
+func (state *State) runWebdavFormTest(form *formDialog) string {
+	m := state.messages.Tools
+	address := strings.TrimSpace(form.value(0))
+	user, path := strings.TrimSpace(form.value(1)), strings.TrimSpace(form.value(3))
+	if path == "" {
+		path = defaultSyncPath
+	}
+	password := form.value(2)
+	if password == "" {
+		if state.sync.kind != syncWebDAV || !state.hasSyncSecret(webdavPasswordSecret) {
+			return m.SyncErrFields
+		}
+		secret, found, err := state.secrets.vault.Get(webdavPasswordSecret)
+		if err != nil {
+			return state.backupErrorText(err)
+		}
+		if !found {
+			return m.SyncErrFields
+		}
+		password = secret
+	}
+	client, err := webdav.New(webdav.Config{URL: address, User: user, Password: password, Path: path, AllowInsecureHTTP: form.checked}, nil)
+	if err != nil {
+		return state.backupErrorText(err)
+	}
+	serial := state.formSerial
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		err := client.Prepare(ctx)
+		state.aiPost(func(state *State) { state.finishFormTest(serial, err) })
+	}()
+	return ""
+}
+
+// openSyncRestore asks before replacing this computer's shared state with the
+// server's. It keeps the local copy in .before-restore, and the cloud login and
+// this window's layout stay as they are.
+func (state *State) openSyncRestore() {
+	m := state.messages.Tools
+	if !state.sync.configured() || state.sync.working {
+		return
+	}
+	if len(state.sessions) > 0 {
+		state.showActionWarning(m.SyncRestoreTitle, m.BackupErrSessions)
+		return
+	}
+	store, password, ok := state.syncLogin(func() { state.openSyncRestore() }, false)
+	if !ok {
+		return
+	}
+	state.openForm(formDialog{
+		title: m.SyncRestoreTitle, description: m.SyncRestoreWarning, submit: m.SyncRestoreConfirm, danger: true,
+		run: func(state *State, _ *formDialog) string {
+			return state.runSyncRestore(store, password)
+		},
+	})
+}
+
+// runSyncRestore reads the remote backup and applies it on the window thread.
+func (state *State) runSyncRestore(store cloudsync.Store, password string) string {
+	state.sync.working, state.sync.runText = true, ""
+	state.status = state.messages.Tools.SyncWorking
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		data, tag, err := store.Get(ctx)
+		var remote backup.Document
+		if err == nil {
+			remote, err = backup.Open(data, password)
+		}
+		state.aiPost(func(state *State) { state.finishSyncRestore(remote, tag, err) })
+	}()
+	return ""
+}
+
+// finishSyncRestore replaces the shared state only after the whole backup has
+// arrived and opened. It does not upload the result: restoring is one direction.
+func (state *State) finishSyncRestore(remote backup.Document, tag string, err error) {
+	state.sync.working, state.sync.runText = false, ""
+	if err != nil {
+		message := state.backupErrorText(err)
+		state.sync.err, state.sync.runText = message, ""
+		state.status = fmt.Sprintf(state.messages.Tools.SyncFailedFmt, message)
+		return
+	}
+	if len(state.sessions) > 0 {
+		state.status = state.messages.Tools.BackupErrSessions
+		return
+	}
+	if _, err := state.applyBackup(remote); err != nil {
+		state.status = state.backupErrorText(err)
+		return
+	}
+	state.sync.etag, state.sync.last = tag, state.options.WallNow()
+	state.sync.err, state.sync.retries = "", 0
+	state.save()
+	state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, len(state.hosts))
 }
 
 // --- settings page -------------------------------------------------------
@@ -585,6 +695,8 @@ func (state *State) clickBackupSettings(id ui.ID) bool {
 		if state.sync.configured() {
 			state.syncNow()
 		}
+	case hitSyncRestore:
+		state.openSyncRestore()
 	case hitSyncAuto:
 		if state.sync.configured() {
 			state.sync.manual = !state.sync.manual

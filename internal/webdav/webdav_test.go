@@ -15,7 +15,7 @@ import (
 
 func TestApprovedRemoteHTTPTransfersTheEncryptedFile(t *testing.T) {
 	server, _ := newFakeServer(t)
-	config := Config{URL: "http://backup.lan/dav", User: "alice", Password: "s3cret", Path: "motty/backup.mottybak"}
+	config := Config{URL: "http://backup.lan/dav", User: "alice", Password: "s3cret", Path: "motty-sync/backup.mottybak"}
 	if _, err := New(config, nil); !errors.Is(err, ErrInsecure) {
 		t.Fatalf("unapproved remote HTTP: %v", err)
 	}
@@ -114,7 +114,7 @@ func newFakeServer(t *testing.T) (*httptest.Server, *fakeServer) {
 
 func client(t *testing.T, server *httptest.Server, mutate func(*Config)) *Client {
 	t.Helper()
-	config := Config{URL: server.URL + "/dav", User: "alice", Password: "s3cret", Path: "motty/backup.mottybak"}
+	config := Config{URL: server.URL + "/dav", User: "alice", Password: "s3cret", Path: "motty-sync/backup.mottybak"}
 	if mutate != nil {
 		mutate(&config)
 	}
@@ -136,7 +136,7 @@ func TestUploadMakesTheFoldersAndDownloadReturnsTheBytes(t *testing.T) {
 	if err != nil || tag == "" {
 		t.Fatalf("put: %q, %v", tag, err)
 	}
-	if !state.collections["/dav/motty"] {
+	if !state.collections["/dav/motty-sync"] {
 		t.Fatal("the folder was not created")
 	}
 	got, gotTag, err := c.Get(ctx)
@@ -184,20 +184,62 @@ func TestTestAcceptsAMissingFolderAndRefusesBadCredentials(t *testing.T) {
 // own app; MKCOL below /dav/ answers 409 and so does a PUT into the missing one.
 func TestAnUploadIntoATopLevelFolderTheServerWillNotMakeNamesIt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/dav/existing/") && r.Method == http.MethodPut {
-			w.WriteHeader(http.StatusCreated)
+		if strings.HasPrefix(r.URL.Path, "/dav/existing") && (r.Method == http.MethodPut || r.Method == "PROPFIND") {
+			if r.Method == "PROPFIND" {
+				w.WriteHeader(http.StatusMultiStatus)
+			} else {
+				w.WriteHeader(http.StatusCreated)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusConflict)
 	}))
 	t.Cleanup(server.Close)
 	_, err := client(t, server, nil).Put(context.Background(), []byte("x"), "")
-	if err == nil || !strings.Contains(err.Error(), `"motty"`) || !strings.Contains(err.Error(), "409") {
+	if err == nil || !strings.Contains(err.Error(), `"motty-sync"`) || !strings.Contains(err.Error(), "409") {
 		t.Fatalf("the error does not name the missing folder: %v", err)
 	}
 	existing := client(t, server, func(c *Config) { c.Path = "existing/backup.mottybak" })
 	if _, err := existing.Put(context.Background(), []byte("x"), ""); err != nil {
 		t.Fatalf("a folder that is there: %v", err)
+	}
+}
+
+func TestPrepareChecksTheFoldersBeforeAnyUpload(t *testing.T) {
+	server, state := newFakeServer(t)
+	c := client(t, server, nil)
+	ctx := context.Background()
+	if err := c.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !state.collections["/dav/motty-sync"] {
+		fatal := "Prepare did not create the folder"
+		t.Fatal(fatal)
+	}
+	if _, _, err := c.Get(ctx); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Prepare uploaded: %v", err)
+	}
+	if len(state.requests) == 0 {
+		t.Fatal("Prepare made no requests")
+	}
+}
+
+func TestPrepareNamesAFolderTheServerRefuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PROPFIND" {
+			if r.URL.Path == "/dav/motty-sync" {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusMultiStatus)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	err := client(t, server, nil).Prepare(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `"motty-sync"`) || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("the error does not name the missing folder: %v", err)
 	}
 }
 
