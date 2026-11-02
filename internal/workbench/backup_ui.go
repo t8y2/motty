@@ -44,7 +44,7 @@ var (
 const (
 	webdavPasswordSecret = "webdav:password"
 	backupPasswordSecret = "backup:password"
-	defaultSyncPath      = "motty-sync/backup.mottybak"
+	defaultSyncPath      = "motty/backup.mottybak"
 	syncTimeout          = 90 * time.Second
 	beforeRestoreSuffix  = ".before-restore"
 )
