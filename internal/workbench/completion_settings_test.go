@@ -197,9 +197,9 @@ func loadCompletionBaseline(t *testing.T, state *State) *completion.CatalogStore
 	return store
 }
 
-func queueCompletionUpdate(state *State, stats completion.ImportStats) {
+func queueCompletionUpdate(state *State, stats completion.ImportStats, installed bool) {
 	state.completion.updateReady = make(chan completionUpdateResult, 1)
-	state.completion.updateReady <- completionUpdateResult{stats: stats}
+	state.completion.updateReady <- completionUpdateResult{stats: stats, installed: installed}
 	state.adoptCompletionUpdate()
 }
 
@@ -207,7 +207,7 @@ func TestCompletionUpdateReportsRepairedAndSkippedSources(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
 	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2})
+	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2}, true)
 	catalog := state.completion.catalog
 	if catalog == nil {
 		t.Fatal("the update result left no catalog")
@@ -232,7 +232,7 @@ func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
 	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{})
+	queueCompletionUpdate(state, completion.ImportStats{}, true)
 	m := state.messages.Completion
 	if want := fmt.Sprintf(m.UpdatedFmt, state.completion.catalog.Release); state.status != want {
 		t.Fatalf("status = %q, want %q", state.status, want)
@@ -249,7 +249,7 @@ func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 func TestCompletionUpdateWithoutANewVersionStaysUpToDate(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
-	queueCompletionUpdate(state, completion.ImportStats{})
+	queueCompletionUpdate(state, completion.ImportStats{}, false)
 	if state.status != state.messages.Completion.UpToDate {
 		t.Fatalf("status = %q, want the up-to-date message", state.status)
 	}
@@ -341,7 +341,7 @@ func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 	w := newCompletionWorld(t)
 	state := w.state
 	loadCompletionBaseline(t, state)
-	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2})
+	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2}, true)
 	c := &state.completion
 	summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, 9, 2)
 
@@ -367,6 +367,34 @@ func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 	state.adoptCompletionUpdate()
 	if c.updateStats.RepairedFiles != 9 || c.updateStats.SkippedSources != 2 {
 		t.Fatalf("failed check changed update stats: %+v", c.updateStats)
+	}
+}
+
+// The real Wake order observes the published catalog before it observes the
+// update result, so the catalog generation has already advanced when the result
+// is handled. The store's explicit "installed" answer is what keeps a
+// successful install from being reported as "already up to date".
+func TestCompletionInstallAdoptedBeforeResultStillReportsTheUpdate(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	loadCompletionBaseline(t, state)
+	c := &state.completion
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{
+		stats:     completion.ImportStats{RepairedFiles: 9, SkippedSources: 2},
+		installed: true,
+	}
+	state.adoptCompletion() // the real order: catalog first, update result second
+	message := state.messages.Completion
+	if want := fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, 9, 2); state.status != want {
+		t.Fatalf("status = %q, want %q", state.status, want)
+	}
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary := fmt.Sprintf(message.RepairSummaryFmt, 9, 2); !strings.Contains(status, summary) {
+		t.Fatalf("settings status %q lacks %q", status, summary)
 	}
 }
 

@@ -111,17 +111,20 @@ func (store *CatalogStore) publish(catalog *Catalog) {
 // and the final file replacement honor cancellation; failure keeps the old
 // disk file and memory snapshot. The returned stats describe the import that
 // produced the new catalog, or are zero when the catalog was already newest.
-func (store *CatalogStore) Update(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, error) {
+// installed reports whether a new snapshot was written, which a caller cannot
+// infer from the generation alone: a wake may have published the new catalog
+// before the update result is adopted.
+func (store *CatalogStore) Update(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, bool, error) {
 	if err := store.acquire(ctx); err != nil {
-		return nil, 0, ImportStats{}, err
+		return nil, 0, ImportStats{}, false, err
 	}
 	defer func() { <-store.writer }()
 	store.load()
 	if store.err != nil {
-		return nil, 0, ImportStats{}, store.err
+		return nil, 0, ImportStats{}, false, store.err
 	}
 	if store.path == "" {
-		return nil, 0, ImportStats{}, errors.New("no data directory")
+		return nil, 0, ImportStats{}, false, errors.New("no data directory")
 	}
 	return store.updateLoaded(ctx, client)
 }
@@ -139,28 +142,41 @@ func (store *CatalogStore) acquire(ctx context.Context) error {
 	return nil
 }
 
-func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, error) {
+func (store *CatalogStore) updateLoaded(ctx context.Context, client *http.Client) (*Catalog, uint64, ImportStats, bool, error) {
 	current, generation := store.Snapshot()
 	release, err := LatestCommit(ctx, client)
 	if err != nil {
-		return nil, 0, ImportStats{}, err
+		return nil, 0, ImportStats{}, false, err
 	}
 	if !Newer(release.Tag, current.Release) {
-		return current, generation, ImportStats{}, nil
+		return current, generation, ImportStats{}, false, nil
 	}
 	catalog, stats, err := FetchCatalog(ctx, client, release)
 	if err != nil {
-		return nil, 0, ImportStats{}, err
+		return nil, 0, ImportStats{}, false, err
 	}
-	// Losing more than a fifth of all commands indicates a partial or damaged
-	// source; do not replace a working snapshot with it.
-	if catalog.RootCount()*5 < current.RootCount()*4 {
-		return nil, 0, ImportStats{}, fmt.Errorf("the catalog covers %d commands, down from %d", catalog.RootCount(), current.RootCount())
+	// Losing more than a fifth of the commands, options or nodes indicates a
+	// partial or damaged source; do not replace a working snapshot with it.
+	// Root count alone is not enough: unparsable subcommand files can vanish
+	// while every canonical root file still imports.
+	if !coversBaseline(catalog, current) {
+		return nil, 0, ImportStats{}, false, fmt.Errorf(
+			"the catalog covers %d roots, %d commands and %d options, down from %d, %d and %d",
+			catalog.RootCount(), catalog.NodeCount(), catalog.FlagCount(),
+			current.RootCount(), current.NodeCount(), current.FlagCount())
 	}
 	if err := installCatalog(ctx, store.path, catalog); err != nil {
-		return nil, 0, ImportStats{}, err
+		return nil, 0, ImportStats{}, false, err
 	}
 	store.publish(catalog)
 	catalog, generation = store.Snapshot()
-	return catalog, generation, stats, nil
+	return catalog, generation, stats, true, nil
+}
+
+// coversBaseline reports whether candidate keeps at least four fifths of the
+// roots, commands and options of the snapshot it would replace.
+func coversBaseline(candidate, current *Catalog) bool {
+	return candidate.RootCount()*5 >= current.RootCount()*4 &&
+		candidate.NodeCount()*5 >= current.NodeCount()*4 &&
+		candidate.FlagCount()*5 >= current.FlagCount()*4
 }

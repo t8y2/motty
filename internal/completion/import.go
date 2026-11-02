@@ -160,6 +160,13 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 		}
 		files[base] = command
 	}
+	// Skipping a few broken files keeps a release usable, but a source set
+	// that loses more than a token few is partial: installing it would replace
+	// a working catalog with one missing most of its subcommands while the root
+	// count still looks healthy. The tolerance is intentionally small.
+	if tolerated := toleratedSkippedSources(len(ordered)); stats.SkippedSources > tolerated {
+		return nil, stats, fmt.Errorf("completion: %d source files could not be parsed, limit is %d", stats.SkippedSources, tolerated)
+	}
 	sort.Strings(dirs)
 
 	roots := make([]*Node, 0, len(dirs))
@@ -239,6 +246,17 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 		})
 	}
 	return catalog, stats, nil
+}
+
+// toleratedSkippedSources bounds how many unparsable source files an import
+// accepts before treating the source as partial. Real releases can carry a
+// handful of upstream YAML defects; a source that lost one percent of its files
+// (or more than the floor) is not the release that was advertised.
+func toleratedSkippedSources(files int) int {
+	if ratio := files / 100; ratio > 16 {
+		return ratio
+	}
+	return 16
 }
 
 // splitSourceName accepts only "<dir>/<file>.yaml" directly under man/cmd.

@@ -283,6 +283,31 @@ func TestImportBoundsRepairsPerSource(t *testing.T) {
 	}
 }
 
+// A release may carry a handful of broken files, but a source that lost most
+// of its documents must fail instead of installing a partial catalog.
+func TestImportBoundsToleratedUnparsableSources(t *testing.T) {
+	root := SourceFile{Name: "a/a.yaml", Data: []byte("name: a\n")}
+	broken := func(index int) SourceFile {
+		return SourceFile{Name: fmt.Sprintf("a/a.child%02d.yaml", index), Data: []byte("name: child\nflags: [not-a-map]\n")}
+	}
+	tolerated := []SourceFile{root}
+	for index := 0; index < 16; index++ {
+		tolerated = append(tolerated, broken(index))
+	}
+	catalog, stats, err := Import(tolerated, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{})
+	if err != nil {
+		t.Fatalf("16 skipped sources were rejected: %v", err)
+	}
+	if stats.SkippedSources != 16 || catalog.RootCount() != 1 {
+		t.Fatalf("stats = %+v, roots = %d", stats, catalog.RootCount())
+	}
+
+	tooMany := append(append([]SourceFile(nil), tolerated...), broken(16))
+	if _, stats, err := Import(tooMany, Metadata{Source: "s", Commit: "c", License: "MIT"}, ImportOptions{}); err == nil || !strings.Contains(err.Error(), "could not be parsed") {
+		t.Fatalf("17 skipped sources = %v (stats %+v)", err, stats)
+	}
+}
+
 func TestImportHandlesAV182LikeSourceSet(t *testing.T) {
 	files := []SourceFile{
 		{Name: "mpv/mpv.yaml", Data: []byte("name: mpv\nflags:\n    --osd-align-y?: Vertical position (default: top). Details see --osd-align-x\n")},

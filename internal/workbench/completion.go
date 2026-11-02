@@ -165,6 +165,10 @@ type completionCatalogLoad struct {
 type completionUpdateResult struct {
 	err   error
 	stats completion.ImportStats
+	// installed is the store's own answer to "was a new snapshot written".
+	// The catalog generation cannot answer it here: a Wake may have adopted
+	// the published catalog before the result was handled.
+	installed bool
 }
 
 type completionHistoryLoad struct {
@@ -299,9 +303,8 @@ func (state *State) adoptCompletionUpdate() {
 			c.cancelUpdate = nil
 		}
 		c.updateErr = result.err
-		oldGeneration := c.catalogGeneration
 		state.adoptCompletionCatalog()
-		installed := result.err == nil && c.catalog != nil && c.catalogGeneration != oldGeneration
+		installed := result.err == nil && result.installed && c.catalog != nil
 		if installed {
 			// A new snapshot replaced the previous one, so its counters
 			// describe what is installed now. A check that installs nothing
@@ -430,8 +433,8 @@ func (state *State) updateCompletions() {
 	}
 	go func() {
 		defer c.workers.Done()
-		_, _, stats, err := store.Update(ctx, completion.UpdateClient())
-		ready <- completionUpdateResult{err: err, stats: stats}
+		_, _, stats, installed, err := store.Update(ctx, completion.UpdateClient())
+		ready <- completionUpdateResult{err: err, stats: stats, installed: installed}
 		for _, invalidate := range wake {
 			invalidate()
 		}

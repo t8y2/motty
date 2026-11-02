@@ -105,16 +105,16 @@ func TestCatalogStoreFirstUpdateLoadsInstalledBaseline(t *testing.T) {
 	store, path := installedStore(t)
 	var downloads atomic.Int32
 	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, func(*http.Request) { downloads.Add(1) })
-	catalog, generation, _, err := store.Update(context.Background(), client)
-	if err != nil || catalog == nil || catalog.Release != "v11.0.0" || generation != 2 {
-		t.Fatalf("update = %v, %d, %v", catalog, generation, err)
+	catalog, generation, _, installed, err := store.Update(context.Background(), client)
+	if err != nil || catalog == nil || catalog.Release != "v11.0.0" || generation != 2 || !installed {
+		t.Fatalf("update = %v, %d, %v, installed=%v", catalog, generation, err, installed)
 	}
-	again, sameGeneration, _, err := store.Update(context.Background(), client)
-	if err != nil || again != catalog || sameGeneration != generation || downloads.Load() != 1 {
-		t.Fatalf("same-version update = %p, %d, %v; downloads=%d", again, sameGeneration, err, downloads.Load())
+	again, sameGeneration, _, installedAgain, err := store.Update(context.Background(), client)
+	if err != nil || again != catalog || sameGeneration != generation || installedAgain || downloads.Load() != 1 {
+		t.Fatalf("same-version update = %p, %d, %v, installed=%v; downloads=%d", again, sameGeneration, err, installedAgain, downloads.Load())
 	}
-	installed, err := LoadInstalled(path)
-	if err != nil || !bytes.Equal(installed.Encode(), catalog.Encode()) {
+	onDisk, err := LoadInstalled(path)
+	if err != nil || !bytes.Equal(onDisk.Encode(), catalog.Encode()) {
 		t.Fatalf("disk and memory differ: %v", err)
 	}
 }
@@ -122,15 +122,15 @@ func TestCatalogStoreFirstUpdateLoadsInstalledBaseline(t *testing.T) {
 func TestCatalogStoreUpdateReportsRepairedSources(t *testing.T) {
 	store, _ := installedStore(t)
 	client := storeClientForArchive(t, repairableUpdateArchive(t), func(*http.Request) string { return "v11.0.0" }, nil)
-	catalog, generation, stats, err := store.Update(context.Background(), client)
-	if err != nil || catalog == nil || generation != 2 {
-		t.Fatalf("update = %v, %d, %v", catalog, generation, err)
+	catalog, generation, stats, installed, err := store.Update(context.Background(), client)
+	if err != nil || catalog == nil || generation != 2 || !installed {
+		t.Fatalf("update = %v, %d, %v, installed=%v", catalog, generation, err, installed)
 	}
 	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
-	if _, _, latestStats, err := store.Update(context.Background(), client); err != nil || latestStats != (ImportStats{}) {
-		t.Fatalf("up-to-date stats = %+v, %v", latestStats, err)
+	if _, _, latestStats, installedAgain, err := store.Update(context.Background(), client); err != nil || latestStats != (ImportStats{}) || installedAgain {
+		t.Fatalf("up-to-date stats = %+v, installed=%v, %v", latestStats, installedAgain, err)
 	}
 }
 
@@ -149,10 +149,10 @@ func TestCatalogStoreConcurrentUpdateCannotRegress(t *testing.T) {
 		<-finishDownload
 	})
 	first := make(chan error, 1)
-	go func() { _, _, _, err := store.Update(context.Background(), client); first <- err }()
+	go func() { _, _, _, _, err := store.Update(context.Background(), client); first <- err }()
 	<-downloadStarted
 	second := make(chan error, 1)
-	go func() { _, _, _, err := store.Update(context.Background(), client); second <- err }()
+	go func() { _, _, _, _, err := store.Update(context.Background(), client); second <- err }()
 	close(finishDownload)
 	if err := <-first; err != nil {
 		t.Fatal(err)
@@ -172,11 +172,11 @@ func TestCatalogStoreCanceledWaitDoesNotInstall(t *testing.T) {
 	started, finish := make(chan struct{}), make(chan struct{})
 	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, func(*http.Request) { close(started); <-finish })
 	first := make(chan error, 1)
-	go func() { _, _, _, err := store.Update(context.Background(), client); first <- err }()
+	go func() { _, _, _, _, err := store.Update(context.Background(), client); first <- err }()
 	<-started
 	ctx, cancel := context.WithCancel(context.Background())
 	second := make(chan error, 1)
-	go func() { _, _, _, err := store.Update(ctx, client); second <- err }()
+	go func() { _, _, _, _, err := store.Update(ctx, client); second <- err }()
 	cancel()
 	select {
 	case err := <-second:
@@ -202,7 +202,7 @@ func TestCatalogStoreLoadContextCancelsWhileUpdateHoldsWriter(t *testing.T) {
 	started, finish := make(chan struct{}), make(chan struct{})
 	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, func(*http.Request) { close(started); <-finish })
 	updating := make(chan error, 1)
-	go func() { _, _, _, err := store.Update(context.Background(), client); updating <- err }()
+	go func() { _, _, _, _, err := store.Update(context.Background(), client); updating <- err }()
 	<-started
 	defer func() {
 		close(finish)
@@ -247,7 +247,7 @@ func TestCatalogStoreCanceledDownloadKeepsDiskAndSnapshot(t *testing.T) {
 	store, path := installedStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, func(*http.Request) { cancel() })
-	_, _, _, err := store.Update(ctx, client)
+	_, _, _, _, err := store.Update(ctx, client)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled download = %v", err)
 	}
@@ -287,7 +287,7 @@ func TestCatalogStoreFirstUpdateRejectsShrinkAgainstBuiltin(t *testing.T) {
 	path := filepath.Join(t.TempDir(), FileName)
 	store := NewCatalogStore(path)
 	client := storeClient(t, func(*http.Request) string { return "v99.0.0" }, nil)
-	if _, _, _, err := store.Update(context.Background(), client); err == nil {
+	if _, _, _, _, err := store.Update(context.Background(), client); err == nil {
 		t.Fatal("first update installed a one-command archive over the built-in catalog")
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
@@ -322,6 +322,37 @@ func TestCatalogStoreLoadPrefersNewerBuiltinAndRejectsInvalidVersion(t *testing.
 	}
 }
 
+// Root count alone can look healthy while most subcommands and options were
+// lost; the update path refuses such a catalog and keeps the old file.
+func TestCatalogStoreUpdateRejectsLowCoverage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	roots := testRoots(200)
+	for _, root := range roots[:150] {
+		root.Children = []*Node{{Token: "child", Flags: []Flag{{Long: "flag"}}}}
+	}
+	baseline, err := NewCatalog(RepositoryName, "v10.0.0", "old-commit", "MIT", roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallCatalog(path, baseline); err != nil {
+		t.Fatal(err)
+	}
+	store := NewCatalogStore(path)
+	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, nil)
+	catalog, generation, _, installed, err := store.Update(context.Background(), client)
+	if err == nil || installed {
+		t.Fatalf("partial catalog was accepted: release=%v generation=%d installed=%v", catalog.Release, generation, installed)
+	}
+	onDisk, diskErr := LoadInstalled(path)
+	if diskErr != nil || !bytes.Equal(onDisk.Encode(), baseline.Encode()) {
+		t.Fatalf("refused update changed the installed file: %v", diskErr)
+	}
+	still, stillGeneration := store.Snapshot()
+	if still.Release != "v10.0.0" || stillGeneration != 1 {
+		t.Fatalf("refused update changed the snapshot: %s, %d", still.Release, stillGeneration)
+	}
+}
+
 func TestCatalogStoreLoadRejectsAnImprobablySmallInstalledCatalog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), FileName)
 	tiny, err := NewCatalog(RepositoryName, "v99.0.0", "deadbeef", "MIT", []*Node{{Token: "tool"}})
@@ -349,7 +380,7 @@ func TestCatalogStoresKeepPathsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := storeClient(t, func(*http.Request) string { return "v11.0.0" }, nil)
-	if _, _, _, err := first.Update(context.Background(), client); err != nil {
+	if _, _, _, _, err := first.Update(context.Background(), client); err != nil {
 		t.Fatal(err)
 	}
 	catalog, generation := second.Snapshot()
