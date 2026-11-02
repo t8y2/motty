@@ -719,6 +719,21 @@ func sftpListingSize(entries []sftpclient.Entry) int {
 	return size
 }
 
+// sftpFolderRemovalStopped follows a folder removal that failed or was canceled
+// part-way: the walk deletes as it goes, so what it already removed is gone for
+// good. Nothing remembered about the folder can be trusted, and the notice
+// (unlike the cut-off status line) says so with the whole reason.
+func (state *State) sftpFolderRemovalStopped(view *sftpView, err error) {
+	view.forgetListings()
+	messages := state.messages
+	if errors.Is(err, sftpclient.ErrCanceled) {
+		state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, messages.SFTPDeletePartialHint, components.ToastInfo)
+		return
+	}
+	detail := fmt.Sprintf(messages.SFTPErrorFmt, err) + " " + messages.SFTPDeletePartialHint
+	state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, detail, components.ToastError)
+}
+
 // forgetListings drops everything remembered: after the remote changed, no
 // reading of it can be trusted to show.
 func (view *sftpView) forgetListings() {
@@ -1241,7 +1256,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPRenamingFmt, view.dialogEntry.Name)
 	case sftpDialogDelete:
 		remotePath := path.Join(view.path, view.dialogEntry.Name)
-		if view.dialogEntry.IsDir() {
+		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() {
+			// A folder is removed with its contents; the worker walks the tree.
+			// A link is only the link: what it points at is not ours to empty.
 			queued = view.worker.RemoveDirectory(remotePath)
 			operation = sftpclient.OperationRemoveDirectory
 		} else {
@@ -1404,6 +1421,9 @@ func (state *State) pumpSFTP(session *Session) {
 					view.errorText = state.messages.SFTPEditConflict
 				} else {
 					view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+				}
+				if result.Operation == sftpclient.OperationRemoveDirectory {
+					state.sftpFolderRemovalStopped(view, result.Err)
 				}
 				continue
 			}
