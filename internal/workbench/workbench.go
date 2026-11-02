@@ -2318,9 +2318,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	options, orientation := state.tabOptions, components.TabsHorizontal
-	if tabScope == hitTabList && state.tabOrientation == tabsVertical {
+	switch {
+	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
-	} else {
+	case tabScope == fileTabList && state.tabOrientation == tabsVertical:
+		options = state.fileTabOptions
+	default:
 		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
 		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
 		options = state.windowTabOptions

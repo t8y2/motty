@@ -131,7 +131,10 @@ func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
 }
 
 func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
-	if state.tabOrientation != tabsVertical {
+	// A file manager is a full-page tab with no navigation rail. Its own tab is
+	// painted in the top bar, so there is no vertical workspace tab slot to
+	// render.
+	if state.tabOrientation != tabsVertical || state.activeSFTPWindow() != nil {
 		return
 	}
 	view, pal, m := &state.verticalTabs, state.pal, state.messages

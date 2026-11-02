@@ -235,6 +235,28 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	}
 }
 
+func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
+	state, source, _, _ := openSFTPTabFixture(t)
+	state.setTabOrientation(tabsVertical)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+
+	fileHit, ok := hitByID(&canvas, sftpFileTabID(source.ID))
+	if !ok || fileHit.Bounds.Y >= windowBarHeight || fileHit.Bounds.Width <= barButtonSize {
+		t.Fatalf("vertical layout file tab = %+v, painted=%t", fileHit.Bounds, ok)
+	}
+	workspace := state.deck.ActiveWorkspace()
+	if _, ok := hitByID(&canvas, hitTabList.At(int(workspace))); ok {
+		t.Fatal("workspace tabs were duplicated into the horizontal bar in vertical mode")
+	}
+	if state.fileTabStrip.area.Width <= 0 {
+		t.Fatal("the top file-tab strip was not laid out")
+	}
+	if result := state.Key(ui.KeyEvent{Target: sftpFileTabID(source.ID), Key: ui.KeyRight}); !result.Handled {
+		t.Fatal("horizontal file-tab navigation stopped working with vertical workspace tabs")
+	}
+}
+
 func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	state, source, _, _ := openTestSFTP(t)
 	windowCalls := 0
