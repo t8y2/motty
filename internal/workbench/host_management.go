@@ -305,7 +305,7 @@ func (state *State) submitHostDialog() {
 			return
 		}
 		if err := vaultFile.Apply(changes); err != nil {
-			if errors.Is(err, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
+			if errors.Is(err, vault.ErrLocked) && len(proxyChanges) > 0 {
 				state.dialogError = state.messages.Tools.ProxyPasswordLocked
 			} else {
 				state.dialogError = state.hostPasswordSaveError(err)
@@ -558,8 +558,8 @@ func (state *State) confirmDeleteHosts() {
 		}
 	}
 	if len(changes) > 0 {
-		if vaultFile.NeedsConversion() {
-			state.dialogError = state.messages.VaultNeedsConversion
+		if vaultFile.Locked() {
+			state.dialogError = state.messages.VaultLocked
 			return
 		}
 		if err := vaultFile.Apply(changes); err != nil {

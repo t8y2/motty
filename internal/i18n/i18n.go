@@ -185,16 +185,34 @@ type Messages struct {
 	SettingsGroupSecurity                  string
 	SettingsVault                          string
 	SettingsVaultDescriptionFmt            string
-	SettingsVaultDescriptionLockedFmt      string
+	SettingsVaultPassword                  string
+	SettingsVaultPasswordOff               string
+	SettingsVaultPasswordOn                string
+	SettingsVaultPasswordLocked            string
 	SettingsVaultEmpty                     string
 	SettingsVaultForgetAll                 string
-	SettingsVaultConvert                   string
-	VaultConvertDescription                string
-	VaultNeedsConversion                   string
+	SettingsVaultUnlock                    string
+	SettingsVaultSetPassword               string
+	SettingsVaultChangePassword            string
+	SettingsVaultRemovePassword            string
+	VaultLocked                            string
 	VaultUnlockTitle                       string
 	VaultUnlockLabel                       string
 	VaultUnlockButton                      string
+	VaultUnlocked                          string
 	VaultWrongPassword                     string
+	VaultPasswordTitle                     string
+	VaultPasswordNewLabel                  string
+	VaultPasswordRepeatLabel               string
+	VaultPasswordSave                      string
+	VaultPasswordMismatch                  string
+	VaultPasswordShortFmt                  string
+	VaultPasswordSet                       string
+	VaultPasswordChanged                   string
+	VaultPasswordRemoved                   string
+	VaultRemovePasswordTitle               string
+	VaultRemovePasswordDescription         string
+	VaultRemovePasswordConfirm             string
 	VaultForgetTitle                       string
 	VaultForgetDescription                 string
 	VaultForgetConfirm                     string

@@ -542,7 +542,7 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 		}
 		value, found, err := secrets.Get(name)
 		switch {
-		case errors.Is(err, vault.ErrNeedsConversion):
+		case errors.Is(err, vault.ErrLocked):
 			return "", errors.New("the saved passwords are still locked by the master password of an earlier version, which an agent cannot enter; open Motty and enter it once")
 		case err != nil || !found:
 			return "", nil

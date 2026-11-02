@@ -36,7 +36,7 @@ func (state *State) loadSavedHostSecret(field hostField) {
 	vaultFile := state.secrets.vault
 	// An empty vault has nothing to read; asking it would still open the key
 	// store for a key that does not exist yet.
-	if !ok || vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
+	if !ok || vaultFile == nil || vaultFile.Len() == 0 || vaultFile.Locked() {
 		return
 	}
 	value, found, err := vaultFile.Get(name)

@@ -25,7 +25,7 @@ func otpName(host Host) string { return hostSecretName(host.CatalogID, hostOTPPa
 func (state *State) prepareOTPState(host Host) {
 	editor, vaultFile := &state.editor, state.secrets.vault
 	editor.otpSaved, editor.otpRemove = false, false
-	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() || !host.isSSH() {
+	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.Locked() || !host.isSSH() {
 		return
 	}
 	_, editor.otpSaved, _ = vaultFile.Get(otpName(host))
@@ -42,7 +42,7 @@ func (state *State) otpPrecheck() string {
 	switch {
 	case vaultFile == nil:
 		return state.messages.Tools.ErrOTPNoVault
-	case vaultFile.NeedsConversion():
+	case vaultFile.Locked():
 		return state.messages.Tools.ErrOTPLocked
 	case vaultFile.Prepare() != nil:
 		return state.messages.Tools.ErrOTPNoVault

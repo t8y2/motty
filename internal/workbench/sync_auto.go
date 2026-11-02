@@ -116,7 +116,7 @@ func syncRetryable(err error) bool {
 	switch {
 	case errors.Is(err, cloudsync.ErrUnauthorized), errors.Is(err, cloudsync.ErrInsecure), errors.Is(err, cloudsync.ErrTooLarge),
 		errors.Is(err, backup.ErrWrongPassword), errors.Is(err, backup.ErrNotBackup), errors.Is(err, backup.ErrTooNew),
-		errors.Is(err, backup.ErrWeakPassword), errors.Is(err, vault.ErrNeedsConversion):
+		errors.Is(err, backup.ErrWeakPassword), errors.Is(err, vault.ErrLocked):
 		return false
 	}
 	return true

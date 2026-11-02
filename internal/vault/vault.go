@@ -8,9 +8,11 @@
 // meant to travel (see FileKeystore). Record names are hidden too: a record's id
 // is a keyed hash of its name and the name is inside the sealed part.
 //
-// Versions before the one that removed it could protect the data key with a
-// master password. Such a file is opened once with ConvertLegacy and is an
-// ordinary vault from then on.
+// The key can instead be kept behind a master password the user chooses:
+// SetPassword wraps it with an Argon2id-derived key and takes the copy out of
+// the store, so the file alone is useless without the password. Such a vault is
+// locked when it is opened and stays locked until Unlock; RemovePassword puts the
+// key back in the store.
 package vault
 
 import (
@@ -39,11 +41,16 @@ const (
 
 // Errors callers act on; test with errors.Is.
 var (
-	// ErrNeedsConversion means the file is still kept by a master password, which
-	// this version no longer has: ConvertLegacy opens it once with that password.
-	ErrNeedsConversion = errors.New("vault: protected by a master password from an earlier version")
+	// ErrLocked means the file is kept by a master password that has not been
+	// entered yet: nothing can be read or saved until Unlock.
+	ErrLocked = errors.New("vault: locked by a master password")
 	// ErrWrongPassword means the master password did not open the vault.
 	ErrWrongPassword = errors.New("vault: wrong master password")
+	// ErrPasswordSet means the vault already has a master password, which has to
+	// be entered before it can be changed.
+	ErrPasswordSet = errors.New("vault: it already has a master password")
+	// ErrEmptyPassword means a master password was asked for with nothing in it.
+	ErrEmptyPassword = errors.New("vault: a master password cannot be empty")
 	// ErrKeyLost means the file holds records but the system store has lost the
 	// key that opens them. Clear the vault to start again.
 	ErrKeyLost = errors.New("vault: the key for the saved secrets is gone")
@@ -199,12 +206,20 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	return vault, nil
 }
 
-// NeedsConversion reports whether the file is still kept by a master password
-// from an earlier version. Nothing can be read or saved until ConvertLegacy.
-func (vault *Vault) NeedsConversion() bool {
+// Protected reports whether the file is kept by a master password, whether or
+// not it has been entered in this run.
+func (vault *Vault) Protected() bool {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
 	return vault.file.KDF != nil
+}
+
+// Locked reports whether the file is kept by a master password that has not been
+// entered yet: nothing can be read or saved until Unlock.
+func (vault *Vault) Locked() bool {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	return vault.file.KDF != nil && vault.key == nil
 }
 
 // Len is how many secrets are saved; tombstones are not secrets. Until the data
@@ -226,10 +241,10 @@ func (vault *Vault) Len() int {
 }
 
 // Prepare makes the vault usable: it takes the data key from the key store. It
-// returns ErrNeedsConversion for a file still kept by a master password,
-// ErrKeyLost when records exist but their key is gone, and ErrUnavailable when
-// there is no store. An empty vault with a store is ready: the key is made when
-// the first secret is saved.
+// returns ErrLocked for a file kept by a master password, ErrKeyLost when records
+// exist but their key is gone, and ErrUnavailable when there is no store. An
+// empty vault with a store is ready: the key is made when the first secret is
+// saved.
 func (vault *Vault) Prepare() error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -241,7 +256,7 @@ func (vault *Vault) prepare(create bool) error {
 		return nil
 	}
 	if vault.file.KDF != nil {
-		return ErrNeedsConversion
+		return ErrLocked
 	}
 	if vault.keys == nil {
 		return ErrUnavailable
@@ -280,36 +295,102 @@ func (vault *Vault) prepare(create bool) error {
 	return nil
 }
 
-// ConvertLegacy opens a vault kept by a master password, the way earlier versions
-// did, and keeps it by the key store from now on: the data key is stored first,
-// and only then is the file rewritten without the password, so a failure leaves
-// the vault as it was. A vault that is not kept by a password is left alone.
-func (vault *Vault) ConvertLegacy(password string) error {
+// Unlock enters the master password of a protected vault and keeps its data key
+// in memory for this run; the file stays protected, so the next start asks
+// again. A vault that is not protected, or that is already unlocked, is left
+// alone. Nothing is written: a wrong password changes nothing.
+func (vault *Vault) Unlock(password string) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
-	if vault.file.KDF == nil {
+	if vault.file.KDF == nil || vault.key != nil {
 		return nil
-	}
-	if vault.keys == nil {
-		return ErrUnavailable
 	}
 	key, err := unwrapKey(vault.file, password)
 	if err != nil {
 		return err
 	}
-	if err := vault.keys.Store(KeyService, KeyAccount, key); err != nil {
-		clear(key)
+	vault.key = key
+	return nil
+}
+
+// SetPassword puts the data key behind a master password: the key is wrapped with
+// an Argon2id-derived key, written to the file, and then removed from the key
+// store, so the file alone is useless without the password. On a vault that is
+// already protected it replaces the password, which needs the old one entered
+// first. An empty vault gets a data key of its own here, since there is none to
+// wrap yet.
+func (vault *Vault) SetPassword(password string) error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	if password == "" {
+		return ErrEmptyPassword
+	}
+	if vault.file.KDF != nil && vault.key == nil {
+		return ErrPasswordSet
+	}
+	key := vault.key
+	if key == nil {
+		if len(vault.file.Records) > 0 {
+			return ErrKeyLost
+		}
+		key = make([]byte, keySize)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+	}
+	params, wrapped, err := wrapKey(key, password)
+	if err != nil {
+		return err
+	}
+	file := fileData{Version: fileVersion, KDF: params, WrappedKey: wrapped, Records: vault.file.Records}
+	if file.Records == nil {
+		file.Records = []record{}
+	}
+	if err := writeFile(vault.path, file); err != nil {
+		return err
+	}
+	vault.file, vault.key = file, key
+	// The store's copy would open the file without the password, which is what
+	// setting one is meant to prevent. The file is already written, so a refusal
+	// here costs the user the retry, not the secrets.
+	if vault.keys != nil {
+		if err := vault.keys.Delete(KeyService, KeyAccount); err != nil && !errors.Is(err, ErrKeystoreNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// RemovePassword takes the master password off: the data key goes back into the
+// key store and the file stops naming a password. The vault has to be unlocked
+// first, since its key is what the store is given.
+func (vault *Vault) RemovePassword() error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	if vault.file.KDF == nil {
+		return nil
+	}
+	if vault.key == nil {
+		return ErrLocked
+	}
+	if vault.keys == nil {
+		return ErrUnavailable
+	}
+	if err := vault.keys.Store(KeyService, KeyAccount, vault.key); err != nil {
 		if errors.Is(err, ErrKeystoreUnavailable) {
 			return ErrUnavailable
 		}
 		return err
 	}
-	if err := vault.write(vault.file.Records); err != nil {
+	file := fileData{Version: fileVersion, Records: vault.file.Records}
+	if file.Records == nil {
+		file.Records = []record{}
+	}
+	if err := writeFile(vault.path, file); err != nil {
 		_ = vault.keys.Delete(KeyService, KeyAccount)
-		clear(key)
 		return err
 	}
-	vault.key = key
+	vault.file = file
 	return nil
 }
 
@@ -632,15 +713,17 @@ func (vault *Vault) Names() ([]string, error) {
 	return names, nil
 }
 
-// Clear forgets every saved secret and the data key: the next secret saved starts
-// a vault of its own. It is the way out of ErrKeyLost, and of a master password
-// from an earlier version that was forgotten.
+// Clear forgets every saved secret, the data key and the master password: the
+// next secret saved starts a vault of its own. It is the way out of ErrKeyLost,
+// and of a master password that was forgotten.
 func (vault *Vault) Clear() error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
-	if err := vault.write(nil); err != nil {
+	file := fileData{Version: fileVersion, Records: []record{}}
+	if err := writeFile(vault.path, file); err != nil {
 		return err
 	}
+	vault.file = file
 	clear(vault.key)
 	vault.key = nil
 	if vault.keys != nil {
@@ -649,9 +732,12 @@ func (vault *Vault) Clear() error {
 	return nil
 }
 
-// write saves a new state of the file, atomically, and adopts it on success.
+// write saves a new state of the file, atomically, and adopts it on success. The
+// master password, if there is one, is kept: saving a secret must not take the
+// protection off the file.
 func (vault *Vault) write(records []record) error {
-	file := fileData{Version: fileVersion, Records: records}
+	file := vault.file
+	file.Records = records
 	if file.Records == nil {
 		file.Records = []record{}
 	}
@@ -758,6 +844,38 @@ func open(key []byte, entry record) (plainRecord, error) {
 
 func deriveKey(password string, params *kdfParams) []byte {
 	return argon2.IDKey([]byte(password), params.Salt, params.Time, params.MemoryKiB, params.Threads, keySize)
+}
+
+// kdfCost is what a new master password is derived with: about a tenth of a
+// second and 64 MiB on a laptop, which makes guessing the password the slow part
+// rather than reading the file.
+const (
+	kdfTime      = 3
+	kdfMemoryKiB = 64 * 1024
+	kdfThreads   = 4
+	kdfSaltSize  = 16
+)
+
+// wrapKey derives a key from password and seals the data key with it.
+func wrapKey(key []byte, password string) (*kdfParams, []byte, error) {
+	params := &kdfParams{
+		Name: "argon2id", Time: kdfTime, MemoryKiB: kdfMemoryKiB, Threads: kdfThreads,
+		Salt: make([]byte, kdfSaltSize),
+	}
+	if _, err := rand.Read(params.Salt); err != nil {
+		return nil, nil, err
+	}
+	kek := deriveKey(password, params)
+	defer clear(kek)
+	gcm, err := newGCM(kek)
+	if err != nil {
+		return nil, nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, nil, err
+	}
+	return params, gcm.Seal(nonce, nonce, key, []byte(wrapAssociated)), nil
 }
 
 func unwrapKey(file fileData, password string) ([]byte, error) {

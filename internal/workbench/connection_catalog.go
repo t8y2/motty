@@ -277,7 +277,7 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	if saved.user != "" && env.Passwords != nil {
 		password, found, err := env.Passwords.Get(passwordSecret)
 		switch {
-		case errors.Is(err, vault.ErrNeedsConversion):
+		case errors.Is(err, vault.ErrLocked):
 			proxy.Err = env.ProxyLocked
 		case err == nil && found:
 			proxy.Password = password

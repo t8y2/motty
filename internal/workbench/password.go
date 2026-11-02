@@ -100,7 +100,7 @@ func (state *State) prefillPasswordAnswers(session *Session) {
 		return
 	}
 	vaultFile := state.secrets.vault
-	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
+	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.Locked() {
 		return
 	}
 	if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 {

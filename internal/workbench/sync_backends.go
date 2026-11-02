@@ -184,7 +184,7 @@ func (state *State) keepSyncSecrets(secretName, secret, backupPassword string) s
 			continue
 		}
 		if err := opened.Set(entry.name, entry.value); err != nil {
-			if errors.Is(err, vault.ErrNeedsConversion) {
+			if errors.Is(err, vault.ErrLocked) {
 				return m.BackupErrVault
 			}
 			return fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))

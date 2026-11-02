@@ -185,62 +185,65 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitSettingsLanguageEnglish  = tree.ID(settingsHits, "settings-language-english")
-	hitSettingsLanguageChinese  = tree.ID(settingsHits, "settings-language-chinese")
-	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
-	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
-	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
-	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
-	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
-	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
-	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
-	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
-	hitSettingsOptionMeta       = tree.ID(settingsHits, "settings-option-meta")
-	hitSettingsFontSizeDown     = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset    = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp       = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
-	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
-	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
-	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
-	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
-	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
-	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
-	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
-	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
-	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
-	hitSettingsGutterBoth       = tree.ID(settingsHits, "settings-gutter-both")
-	hitSettingsScrollback1000   = tree.ID(settingsHits, "settings-scrollback1000")
-	hitSettingsScrollback5000   = tree.ID(settingsHits, "settings-scrollback5000")
-	hitSettingsScrollback10000  = tree.ID(settingsHits, "settings-scrollback10000")
-	hitSettingsTimeout5         = tree.ID(settingsHits, "settings-timeout5")
-	hitSettingsTimeout10        = tree.ID(settingsHits, "settings-timeout10")
-	hitSettingsTimeout30        = tree.ID(settingsHits, "settings-timeout30")
-	hitSettingsKeepAliveOff     = tree.ID(settingsHits, "settings-keep-alive-off")
-	hitSettingsKeepAlive30      = tree.ID(settingsHits, "settings-keep-alive30")
-	hitSettingsKeepAlive60      = tree.ID(settingsHits, "settings-keep-alive60")
-	hitSettingsReconnectOff     = tree.ID(settingsHits, "settings-reconnect-off")
-	hitSettingsReconnectThree   = tree.ID(settingsHits, "settings-reconnect-three")
-	hitSettingsReconnectForever = tree.ID(settingsHits, "settings-reconnect-forever")
-	hitSettingsClipboardBlock   = tree.ID(settingsHits, "settings-clipboard-block")
-	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
-	hitSettingsLatencyToggle    = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick   = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsClipboardAsk     = tree.ID(settingsHits, "settings-clipboard-ask")
-	hitSettingsClipboardAllow   = tree.ID(settingsHits, "settings-clipboard-allow")
-	hitSettingsRestoreActive    = tree.ID(settingsHits, "settings-restore-active")
-	hitSettingsAgentSystem      = tree.ID(settingsHits, "settings-agent-system")
-	hitSettingsAgentOnePassword = tree.ID(settingsHits, "settings-agent-1password")
-	hitSettingsAgentBitwarden   = tree.ID(settingsHits, "settings-agent-bitwarden")
-	hitSettingsAgentCustom      = tree.ID(settingsHits, "settings-agent-custom")
-	hitSettingsRestoreOff       = tree.ID(settingsHits, "settings-restore-off")
-	hitSettingsRestoreAll       = tree.ID(settingsHits, "settings-restore-all")
-	hitSettingsShareToggle      = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget      = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert     = tree.ID(settingsHits, "settings-vault-convert")
+	hitSettingsLanguageEnglish     = tree.ID(settingsHits, "settings-language-english")
+	hitSettingsLanguageChinese     = tree.ID(settingsHits, "settings-language-chinese")
+	hitSettingsAppearanceSystem    = tree.ID(settingsHits, "settings-appearance-system")
+	hitSettingsAppearanceDark      = tree.ID(settingsHits, "settings-appearance-dark")
+	hitSettingsAppearanceLight     = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsNetworkSystem       = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect       = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsCloseTray           = tree.ID(settingsHits, "settings-close-tray")
+	hitSettingsCloseQuit           = tree.ID(settingsHits, "settings-close-quit")
+	hitSettingsOptionText          = tree.ID(settingsHits, "settings-option-text")
+	hitSettingsOptionMeta          = tree.ID(settingsHits, "settings-option-meta")
+	hitSettingsFontSizeDown        = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset       = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp          = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsPadCompact          = tree.ID(settingsHits, "settings-pad-compact")
+	hitSettingsPadNormal           = tree.ID(settingsHits, "settings-pad-normal")
+	hitSettingsPadRoomy            = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth         = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright       = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold         = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain        = tree.ID(settingsHits, "settings-intense-plain")
+	hitSettingsGutterOff           = tree.ID(settingsHits, "settings-gutter-off")
+	hitSettingsGutterNumbers       = tree.ID(settingsHits, "settings-gutter-numbers")
+	hitSettingsGutterTime          = tree.ID(settingsHits, "settings-gutter-time")
+	hitSettingsGutterBoth          = tree.ID(settingsHits, "settings-gutter-both")
+	hitSettingsScrollback1000      = tree.ID(settingsHits, "settings-scrollback1000")
+	hitSettingsScrollback5000      = tree.ID(settingsHits, "settings-scrollback5000")
+	hitSettingsScrollback10000     = tree.ID(settingsHits, "settings-scrollback10000")
+	hitSettingsTimeout5            = tree.ID(settingsHits, "settings-timeout5")
+	hitSettingsTimeout10           = tree.ID(settingsHits, "settings-timeout10")
+	hitSettingsTimeout30           = tree.ID(settingsHits, "settings-timeout30")
+	hitSettingsKeepAliveOff        = tree.ID(settingsHits, "settings-keep-alive-off")
+	hitSettingsKeepAlive30         = tree.ID(settingsHits, "settings-keep-alive30")
+	hitSettingsKeepAlive60         = tree.ID(settingsHits, "settings-keep-alive60")
+	hitSettingsReconnectOff        = tree.ID(settingsHits, "settings-reconnect-off")
+	hitSettingsReconnectThree      = tree.ID(settingsHits, "settings-reconnect-three")
+	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
+	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
+	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
+	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsClipboardAsk        = tree.ID(settingsHits, "settings-clipboard-ask")
+	hitSettingsClipboardAllow      = tree.ID(settingsHits, "settings-clipboard-allow")
+	hitSettingsRestoreActive       = tree.ID(settingsHits, "settings-restore-active")
+	hitSettingsAgentSystem         = tree.ID(settingsHits, "settings-agent-system")
+	hitSettingsAgentOnePassword    = tree.ID(settingsHits, "settings-agent-1password")
+	hitSettingsAgentBitwarden      = tree.ID(settingsHits, "settings-agent-bitwarden")
+	hitSettingsAgentCustom         = tree.ID(settingsHits, "settings-agent-custom")
+	hitSettingsRestoreOff          = tree.ID(settingsHits, "settings-restore-off")
+	hitSettingsRestoreAll          = tree.ID(settingsHits, "settings-restore-all")
+	hitSettingsShareToggle         = tree.ID(settingsHits, "settings-share")
+	hitSettingsVaultForget         = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultUnlock         = tree.ID(settingsHits, "settings-vault-unlock")
+	hitSettingsVaultSetPassword    = tree.ID(settingsHits, "settings-vault-set-password")
+	hitSettingsVaultChangePassword = tree.ID(settingsHits, "settings-vault-change-password")
+	hitSettingsVaultRemovePassword = tree.ID(settingsHits, "settings-vault-remove-password")
 )
 
 // Jump-host routing: its page and dialog.
@@ -345,18 +348,28 @@ var (
 
 // The saved-passwords dialogs, and the boxes that offer to save.
 var (
-	hitVaultUnlockField   = tree.ID(vaultHits, "vault-unlock-field")
-	hitVaultUnlockSubmit  = tree.ID(vaultHits, "vault-unlock-submit")
-	hitVaultUnlockCancel  = tree.ID(vaultHits, "vault-unlock-cancel")
-	hitVaultUnlockClose   = tree.ID(vaultHits, "vault-unlock-close")
-	hitVaultUnlockDismiss = tree.ID(vaultHits, "vault-unlock-dismiss")
-	hitVaultForgetConfirm = tree.ID(vaultHits, "vault-forget-confirm")
-	hitVaultForgetCancel  = tree.ID(vaultHits, "vault-forget-cancel")
-	hitVaultForgetClose   = tree.ID(vaultHits, "vault-forget-close")
-	hitVaultForgetDismiss = tree.ID(vaultHits, "vault-forget-dismiss")
-	hitPasswordSave       = tree.ID(vaultHits, "password-save")
-	hitPasswordHint       = tree.ID(vaultHits, "password-hint")
-	hitKeyPassphraseSave  = tree.ID(vaultHits, "key-passphrase-save")
+	hitVaultUnlockField           = tree.ID(vaultHits, "vault-unlock-field")
+	hitVaultUnlockSubmit          = tree.ID(vaultHits, "vault-unlock-submit")
+	hitVaultUnlockCancel          = tree.ID(vaultHits, "vault-unlock-cancel")
+	hitVaultUnlockClose           = tree.ID(vaultHits, "vault-unlock-close")
+	hitVaultUnlockDismiss         = tree.ID(vaultHits, "vault-unlock-dismiss")
+	hitVaultForgetConfirm         = tree.ID(vaultHits, "vault-forget-confirm")
+	hitVaultForgetCancel          = tree.ID(vaultHits, "vault-forget-cancel")
+	hitVaultForgetClose           = tree.ID(vaultHits, "vault-forget-close")
+	hitVaultForgetDismiss         = tree.ID(vaultHits, "vault-forget-dismiss")
+	hitVaultPasswordField         = tree.ID(vaultHits, "vault-password-field")
+	hitVaultRepeatField           = tree.ID(vaultHits, "vault-repeat-field")
+	hitVaultPasswordSubmit        = tree.ID(vaultHits, "vault-password-submit")
+	hitVaultPasswordCancel        = tree.ID(vaultHits, "vault-password-cancel")
+	hitVaultPasswordClose         = tree.ID(vaultHits, "vault-password-close")
+	hitVaultPasswordDismiss       = tree.ID(vaultHits, "vault-password-dismiss")
+	hitVaultRemovePasswordConfirm = tree.ID(vaultHits, "vault-remove-password-confirm")
+	hitVaultRemovePasswordCancel  = tree.ID(vaultHits, "vault-remove-password-cancel")
+	hitVaultRemovePasswordClose   = tree.ID(vaultHits, "vault-remove-password-close")
+	hitVaultRemovePasswordDismiss = tree.ID(vaultHits, "vault-remove-password-dismiss")
+	hitPasswordSave               = tree.ID(vaultHits, "password-save")
+	hitPasswordHint               = tree.ID(vaultHits, "password-hint")
+	hitKeyPassphraseSave          = tree.ID(vaultHits, "key-passphrase-save")
 )
 
 var (
@@ -1112,6 +1125,13 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitVaultUnlockField {
 			return &state.secrets.unlock
 		}
+	case modalVaultPassword:
+		switch hit {
+		case hitVaultPasswordField:
+			return &state.secrets.password
+		case hitVaultRepeatField:
+			return &state.secrets.repeat
+		}
 	case modalFontPicker:
 		if hit == hitFontPickerSearch {
 			return &state.fonts.search
@@ -1273,6 +1293,12 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalVaultUnlock:
 		state.clickVaultUnlock(id)
+		return
+	case modalVaultPassword:
+		state.clickVaultPassword(id)
+		return
+	case modalVaultRemovePassword:
+		state.clickVaultRemovePassword(id)
 		return
 	case modalHighlightRule:
 		state.clickHighlightDialog(id)
@@ -2242,6 +2268,11 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if state.modal == modalVaultUnlock && event.Key == ui.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalVaultPassword && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitVaultPasswordField || event.Target == hitVaultRepeatField) {
+		state.submitVaultPassword()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalOutboundProxy && event.Key == ui.KeyEnter && !event.Repeat &&

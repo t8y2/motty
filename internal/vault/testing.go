@@ -17,9 +17,9 @@ func (vault *Vault) DropKeyForTests() {
 	vault.key = nil
 }
 
-// LegacyForTests rewrites the vault the way a version with a master password
-// kept it: the data key wrapped by a key derived from password, and no copy of
-// it in the key store. It is ConvertLegacy that turns it back.
+// LegacyForTests rewrites the vault the way earlier versions with a master
+// password kept it: the data key wrapped by a key derived from password, and no
+// copy of it in the key store. It is Unlock that opens such a file.
 func (vault *Vault) LegacyForTests(password string) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()

@@ -232,7 +232,7 @@ func (state *State) vaultSecret(name string) (string, vaultResult) {
 	}
 	value, found, err := vaultFile.Get(name)
 	switch {
-	case errors.Is(err, vault.ErrNeedsConversion):
+	case errors.Is(err, vault.ErrLocked):
 		return "", vaultLocked
 	case err != nil || !found:
 		return "", vaultMissing
@@ -405,7 +405,7 @@ func (state *State) storeAutofillText(rule *autofill.Rule, value string) string 
 	switch {
 	case vaultFile == nil:
 		return fmt.Sprintf(m.ErrorVaultFmt, "—")
-	case vaultFile.NeedsConversion():
+	case vaultFile.Locked():
 		return m.ErrorVaultLocked
 	default:
 		if err := vaultFile.Prepare(); err != nil {

@@ -242,7 +242,7 @@ func TestTheMoveWaitsForAnOldMasterPasswordAndRunsOnceItIsGiven(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.migrateSecretsToHosts(false)
-	if !state.secrets.vault.NeedsConversion() {
+	if !state.secrets.vault.Locked() {
 		t.Fatal("the move opened a vault that still needs its master password")
 	}
 

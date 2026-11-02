@@ -190,7 +190,7 @@ func (state *State) keepKeyPassphrase(identity identityRecord, passphrase string
 			return m.KeyPassphraseWrong
 		}
 	}
-	if vaultFile.NeedsConversion() {
+	if vaultFile.Locked() {
 		state.openVaultUnlock(nil, func() {
 			if message := state.keepKeyPassphrase(identity, passphrase); message != "" {
 				state.status = message

@@ -163,7 +163,7 @@ func excludedFromBackup(name string) bool {
 
 // backupDocument gathers what a backup holds: every shared record, deleted ones
 // as tombstones, the trusted keys and the saved passwords. A locked vault is
-// reported as vault.ErrNeedsConversion, since the passwords cannot be read.
+// reported as vault.ErrLocked, since the passwords cannot be read.
 func (state *State) backupDocument() (backup.Document, error) {
 	if state.config == nil {
 		return backup.Document{}, errors.New(state.messages.Tools.SyncErrNoStore)
@@ -202,7 +202,7 @@ func (state *State) backupErrorText(err error) string {
 		return m.BackupErrNotBackup
 	case errors.Is(err, backup.ErrTooNew):
 		return m.BackupErrTooNew
-	case errors.Is(err, vault.ErrNeedsConversion):
+	case errors.Is(err, vault.ErrLocked):
 		return m.BackupErrVault
 	case errors.Is(err, cloudsync.ErrUnauthorized):
 		// The service's own words (an S3 error code, GitHub's message) follow.
@@ -246,8 +246,8 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		return 0, backup.ErrTooNew
 	}
 	opened := state.secrets.vault
-	if len(document.Secrets) > 0 && opened != nil && opened.NeedsConversion() {
-		return 0, vault.ErrNeedsConversion
+	if len(document.Secrets) > 0 && opened != nil && opened.Locked() {
+		return 0, vault.ErrLocked
 	}
 
 	if data, readErr := os.ReadFile(state.options.StatePath); readErr == nil {
@@ -543,7 +543,7 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 	if !state.sync.configured() || opened == nil {
 		return fail(m.SyncErrNeedsVault)
 	}
-	if opened.NeedsConversion() {
+	if opened.Locked() {
 		if quiet {
 			state.sync.waitingForVault = true
 			return fail(m.BackupErrVault)

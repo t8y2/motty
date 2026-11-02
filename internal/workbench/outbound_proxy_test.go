@@ -721,10 +721,10 @@ func TestDeletingAnAuthenticatedProxyHostWaitsForTheLockedVault(t *testing.T) {
 	state.secrets.vault.DropKeyForTests()
 	state.hostActionIDs = []uint32{host.ID}
 	state.confirmDeleteHosts()
-	if len(state.hosts) != len(sampleHosts) || state.dialogError != state.messages.VaultNeedsConversion {
+	if len(state.hosts) != len(sampleHosts) || state.dialogError != state.messages.VaultLocked {
 		t.Fatalf("locked delete hosts=%d error=%q", len(state.hosts), state.dialogError)
 	}
-	if err := state.secrets.vault.ConvertLegacy("a master password"); err != nil {
+	if err := state.secrets.vault.Unlock("a master password"); err != nil {
 		t.Fatal(err)
 	}
 	if got, found, err := state.secrets.vault.Get(secretName); err != nil || !found || got != "proxy-secret" {
@@ -758,7 +758,7 @@ func TestRemovingAHostProxyLoginWaitsForTheLockedVault(t *testing.T) {
 	if state.hosts[0].Proxy == nil || state.hosts[0].Proxy.kind != sshconn.ProxySOCKS5 {
 		t.Fatalf("locked removal changed saved proxy to %+v", state.hosts[0].Proxy)
 	}
-	if err := state.secrets.vault.ConvertLegacy("a master password"); err != nil {
+	if err := state.secrets.vault.Unlock("a master password"); err != nil {
 		t.Fatal(err)
 	}
 	if got, found, err := state.secrets.vault.Get(secretName); err != nil || !found || got != "old-secret" {
