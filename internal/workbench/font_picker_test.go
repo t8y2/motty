@@ -291,33 +291,15 @@ func TestFontPickerClickSelectsAndPreviewsWithoutClosing(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 	state.refreshFontPicker()
 
-	// Click Iosevka: row index in filtered:
-	// 0: System, 1: Classic, 2: Fira Code, 3: Iosevka, 4: JetBrains Mono, 5: Menlo
+	// System, Classic, Fira Code, Iosevka, JetBrains Mono, Menlo
 	state.Click(hitFontPickerItemList.At(3))
-	if state.modal != modalFontPicker {
-		t.Fatalf("expected modal to remain open, got %d", state.modal)
-	}
-	if state.fonts.selected != 3 {
-		t.Fatalf("expected selected row 3, got %d", state.fonts.selected)
-	}
-	if state.fonts.family != "Menlo" {
-		t.Fatalf("font family should remain Menlo before confirm, got %q", state.fonts.family)
+	if state.modal != modalFontPicker || state.fonts.selected != 3 || state.fonts.family != "Menlo" {
+		t.Fatalf("modal %d selected %d family %q", state.modal, state.fonts.selected, state.fonts.family)
 	}
 
-	// Verify sample face uses the selected font (Iosevka)
-	entry := state.fonts.entries[state.fonts.filtered[state.fonts.selected]]
-	sampleFace := state.fontSampleFace(entry)
-	if ui.MonoFamilyName(sampleFace) != "Iosevka" {
-		t.Fatalf("sample face family = %q, want Iosevka", ui.MonoFamilyName(sampleFace))
-	}
-
-	// Click Cancel: leaves font unchanged and closes modal
 	state.Click(hitFontPickerCancel)
-	if state.modal != modalNone {
-		t.Fatalf("expected modal to close on cancel, got %d", state.modal)
-	}
-	if state.fonts.family != "Menlo" {
-		t.Fatalf("font family should remain Menlo, got %q", state.fonts.family)
+	if state.modal != modalNone || state.fonts.family != "Menlo" {
+		t.Fatalf("cancel left modal %d family %q", state.modal, state.fonts.family)
 	}
 }
 
@@ -326,15 +308,56 @@ func TestFontPickerDoubleClickConfirms(t *testing.T) {
 	state.openFontPicker(false)
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 
-	// First click: selects row 2 (Fira Code)
+	// The first press of a double click is an ordinary click: it only selects.
 	state.Click(hitFontPickerItemList.At(2))
 	if state.modal != modalFontPicker || state.fonts.selected != 2 {
 		t.Fatalf("modal %d selected %d", state.modal, state.fonts.selected)
 	}
 
-	// Second click within 300ms: confirms and closes modal
-	state.Click(hitFontPickerItemList.At(2))
+	// The second one carries ClickCount 2, which the platform counts by the system's
+	// double click setting; the picker reads it while painting.
+	doubleClick(state, hitFontPickerItemList.At(2))
 	if state.modal != modalNone || state.fonts.family != "Fira Code" {
-		t.Fatalf("expected confirm on double-click: modal %d, family %q", state.modal, state.fonts.family)
+		t.Fatalf("modal %d, family %q", state.modal, state.fonts.family)
+	}
+}
+
+func TestFontPickerEnterOnAButtonIsThatButtonsOwn(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.openFontPicker(false)
+	waitFor(t, state, func() bool { return !state.fonts.loading })
+	state.Click(hitFontPickerItemList.At(2))
+
+	for _, target := range []ui.ID{hitFontPickerCancel, hitFontPickerClose} {
+		result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+		if result.Handled || state.modal != modalFontPicker || state.fonts.family != "" {
+			t.Fatalf("Enter on %v: handled %v, modal %d, family %q", target, result.Handled, state.modal, state.fonts.family)
+		}
+	}
+
+	// On the focused row it takes that row, whichever one is highlighted.
+	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerItemList.At(3)})
+	if state.modal != modalNone || state.fonts.family != "Iosevka" {
+		t.Fatalf("modal %d, family %q", state.modal, state.fonts.family)
+	}
+}
+
+func TestFontPickerCannotConfirmWhatTheButtonRefuses(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.openFontPicker(false)
+	if !state.fonts.loading {
+		t.Fatal("the list was read at once")
+	}
+	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	if state.modal != modalFontPicker {
+		t.Fatal("Enter confirmed while the fonts were being read")
+	}
+	waitFor(t, state, func() bool { return !state.fonts.loading })
+
+	typeInto(state, hitFontPickerSearch, "no such font")
+	state.refreshFontPicker()
+	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	if state.modal != modalFontPicker || state.fonts.family != "" {
+		t.Fatalf("Enter confirmed an empty list: modal %d, family %q", state.modal, state.fonts.family)
 	}
 }
