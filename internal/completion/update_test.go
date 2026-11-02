@@ -198,12 +198,16 @@ func TestFetchCatalogRepairsAnUpstreamSourceAndReportsIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+	if stats.RepairedFiles != 2 || stats.SkippedSources != 0 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	flag, ok := catalog.FindFlag(catalog.Root("tool"), "--align")
 	if !ok || flag.Desc != "Vertical position (default: top). Details see --align-x" {
 		t.Fatalf("repaired flag = %+v, found=%v", flag, ok)
+	}
+	flag, ok = catalog.FindFlag(catalog.Lookup([]string{"tool", "run"}), "--growable-table")
+	if !ok || flag.Desc != "WebAssembly: remove maximum size from function table" {
+		t.Fatalf("repaired zig-style flag = %+v, found=%v", flag, ok)
 	}
 }
 
@@ -276,8 +280,11 @@ func releaseArchive(t *testing.T) []byte {
 func repairableReleaseArchive(t *testing.T) []byte {
 	t.Helper()
 	return tarGzipArchive(t, map[string]string{
-		"carapace-bin-1.9.0/LICENSE":                "MIT",
-		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml": "name: tool\nflags:\n  --align?: Vertical position (default: top). Details see --align-x\n",
+		"carapace-bin-1.9.0/LICENSE": "MIT",
+		// The two defect shapes in real releases: mpv's "(default: top)" and
+		// zig's leading "WebAssembly:" in an option description.
+		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml":     "name: tool\nflags:\n  --align?: Vertical position (default: top). Details see --align-x\n",
+		"carapace-bin-1.9.0/man/cmd/tool/tool.run.yaml": "name: run\nflags:\n  --growable-table: WebAssembly: remove maximum size from function table\n",
 	})
 }
 

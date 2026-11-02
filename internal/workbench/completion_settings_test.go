@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode"
@@ -468,17 +469,27 @@ func TestCompletionCatalogStatusBoundsErrorText(t *testing.T) {
 	}
 }
 
-func TestCompletionCatalogStatusBoundsErrorAllocation(t *testing.T) {
+// The status line is painted while the settings page is open, and an update
+// error can carry text from the network. What painting allocates must not
+// follow the size of that text.
+func TestCompletionCatalogStatusAllocationDoesNotGrowWithTheError(t *testing.T) {
 	w := newCompletionWorld(t)
-	w.state.completion.updateErr = fmt.Errorf("%s", strings.Repeat("bad text ", 300_000))
-	result := testing.Benchmark(func(b *testing.B) {
-		for range b.N {
+	allocated := func(repeat int) uint64 {
+		w.state.completion.updateErr = fmt.Errorf("%s", strings.Repeat("bad text ", repeat))
+		w.state.completionCatalogStatus()
+		const runs = 20
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		for range runs {
 			w.state.completionCatalogStatus()
 		}
-	})
-	t.Logf("bounded error status: %s; %s", result.String(), result.MemString())
-	if bytes := result.AllocedBytesPerOp(); bytes > 8192 {
-		t.Fatalf("painting a bounded error status allocated %d bytes", bytes)
+		runtime.ReadMemStats(&after)
+		return (after.TotalAlloc - before.TotalAlloc) / runs
+	}
+	small, large := allocated(3_000), allocated(300_000)
+	t.Logf("allocated per paint: %d bytes for a 27 KB error, %d bytes for a 2.7 MB error", small, large)
+	if large > 2*small+1024 {
+		t.Fatalf("painting allocated %d bytes for a 2.7 MB error but %d for a 27 KB one", large, small)
 	}
 }
 
