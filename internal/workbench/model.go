@@ -203,10 +203,11 @@ type Session struct {
 	// when it moves between panes or windows, and session IDs may be reused.
 	// logStatus is what this window believes the row says, so a final status is
 	// written once even though several close paths can reach it.
-	logRecordID string
-	logStatus   sessionlog.Status
-	logFinished bool
-	logBarrier  <-chan struct{} // earlier window's writes must land before this tab's writes
+	logRecordID  string
+	logStatus    sessionlog.Status
+	logFinished  bool
+	logBarrier   <-chan struct{} // earlier window's writes must land before this tab's writes
+	logLastEvent sessionlog.EventKind
 
 	// keptAfterShell: the shell ended but the file panel or window still uses the
 	// connection, which closes with the last of them.

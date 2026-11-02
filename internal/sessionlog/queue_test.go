@@ -48,7 +48,7 @@ func TestQueueOrdersStartBeforeFinish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Events: %v", err)
 	}
-	if len(events) != 1 || events[0].Kind != EventConnected {
+	if len(events) != 3 || events[0].Kind != EventStarted || events[1].Kind != EventConnected || events[2].Kind != EventFinished {
 		t.Fatalf("events after queued writes = %+v", events)
 	}
 	if err := queue.Close(); err != nil {
@@ -141,8 +141,8 @@ func TestQueueCloseDrainsPendingWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Events: %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("drained events = %d, want 2", len(events))
+	if len(events) != 3 || events[0].Kind != EventStarted || events[2].Kind != EventShellOpened {
+		t.Fatalf("drained events = %+v", events)
 	}
 }
 

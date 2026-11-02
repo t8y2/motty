@@ -15,7 +15,13 @@ import (
 
 // schemaVersion is the schema this build writes. A file with a newer one is
 // ErrTooNew. The version lives in PRAGMA user_version.
-const schemaVersion = 1
+const schemaVersion = 2
+
+const schemaV2 = `
+ALTER TABLE session_logs ADD COLUMN catalog_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE session_logs ADD COLUMN port INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE session_logs ADD COLUMN shell_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE session_logs ADD COLUMN target_kind INTEGER NOT NULL DEFAULT 0;`
 
 // schemaV1 creates the two tables. The events cascade with their record, and the
 // indexes cover the keyset order and the filters the page uses.
@@ -138,8 +144,15 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("sessionlog: migrate: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(schemaV1); err != nil {
-		return fmt.Errorf("sessionlog: migrate: %w", err)
+	if version == 0 {
+		if _, err := tx.Exec(schemaV1); err != nil {
+			return fmt.Errorf("sessionlog: migrate: %w", err)
+		}
+	}
+	if version < 2 {
+		if _, err := tx.Exec(schemaV2); err != nil {
+			return fmt.Errorf("sessionlog: migrate: %w", err)
+		}
 	}
 	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return fmt.Errorf("sessionlog: migrate: %w", err)
@@ -195,12 +208,15 @@ func (s *Store) Start(record Record) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO session_logs
-		(id, run_id, host, address, account, protocol, started_at, ended_at, status, favorite, reconnect_count, reason, truncated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, 0)`,
+		(id, run_id, host, address, account, protocol, started_at, ended_at, status, favorite, reconnect_count, reason, truncated, catalog_id, port, shell_name, target_kind)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, 0, ?, ?, ?, ?)`,
 		normalized.ID, normalized.RunID, normalized.Host, normalized.Address, normalized.Account,
 		int(normalized.Protocol), normalized.StartedAt.UnixMilli(), int(StatusConnecting),
-		boolInt(normalized.Favorite), int(ReasonNone)); err != nil {
+		boolInt(normalized.Favorite), int(ReasonNone), normalized.CatalogID, normalized.Port, normalized.ShellName, normalized.TargetKind); err != nil {
 		return fmt.Errorf("sessionlog: start: %w", err)
+	}
+	if err := insertEvent(tx, Event{RecordID: normalized.ID, Kind: EventStarted, At: normalized.StartedAt}, false); err != nil {
+		return err
 	}
 	if err := prune(tx, normalized.StartedAt); err != nil {
 		return err
@@ -280,19 +296,9 @@ func (s *Store) AppendEvent(event Event) error {
 		// The session already finished; a late event must not rewrite history.
 		return tx.Commit()
 	}
-	var seq int
-	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM session_log_events WHERE record_id = ?`, event.RecordID).Scan(&seq); err != nil {
-		return fmt.Errorf("sessionlog: append event: %w", err)
-	}
-	if seq > maxEventsPerRecord {
-		if _, err := tx.Exec(`UPDATE session_logs SET truncated = 1 WHERE id = ?`, event.RecordID); err != nil {
-			return fmt.Errorf("sessionlog: append event: %w", err)
-		}
-		return tx.Commit()
-	}
-	if _, err := tx.Exec(`INSERT INTO session_log_events (record_id, seq, kind, at, attempt, reason) VALUES (?, ?, ?, ?, ?, ?)`,
-		event.RecordID, seq, int(event.Kind), at.UnixMilli(), attempt, int(event.Reason)); err != nil {
-		return fmt.Errorf("sessionlog: append event: %w", err)
+	event.At, event.Attempt = at, attempt
+	if err := insertEvent(tx, event, false); err != nil {
+		return err
 	}
 	if reconnectEvent(event.Kind) && attempt > 0 {
 		if _, err := tx.Exec(`UPDATE session_logs SET reconnect_count = MAX(reconnect_count, ?) WHERE id = ?`, attempt, event.RecordID); err != nil {
@@ -308,6 +314,33 @@ func (s *Store) AppendEvent(event Event) error {
 		return fmt.Errorf("sessionlog: append event: %w", err)
 	}
 	return nil
+}
+
+// Reserve the last slot for a final event, including when upgrading a full v1
+// timeline. A truncated timeline must still describe the record's final result.
+func insertEvent(tx *sql.Tx, event Event, final bool) error {
+	var seq int
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM session_log_events WHERE record_id = ?`, event.RecordID).Scan(&seq); err != nil {
+		return err
+	}
+	limit := maxEventsPerRecord - 1
+	if final {
+		limit++
+	}
+	if seq > limit {
+		if _, err := tx.Exec(`UPDATE session_logs SET truncated = 1 WHERE id = ?`, event.RecordID); err != nil {
+			return err
+		}
+		if !final {
+			return nil
+		}
+		seq = maxEventsPerRecord
+		if _, err := tx.Exec(`DELETE FROM session_log_events WHERE record_id = ? AND seq >= ?`, event.RecordID, seq); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`INSERT INTO session_log_events (record_id, seq, kind, at, attempt, reason) VALUES (?, ?, ?, ?, ?, ?)`, event.RecordID, seq, event.Kind, event.At.UnixMilli(), event.Attempt, event.Reason)
+	return err
 }
 
 // nonTerminalUpdate finishes only a session that is still connecting, active or
@@ -343,7 +376,19 @@ func (s *Store) Finish(id string, status Status, endedAt time.Time, reason Reaso
 	} else {
 		at = at.UTC()
 	}
-	result, err := s.db.Exec(nonTerminalUpdate, int(status), at.UnixMilli(), int(reason), id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := finishRecord(tx, id, status, at, reason, EventFinished); err != nil {
+		return fmt.Errorf("sessionlog: finish: %w", err)
+	}
+	return tx.Commit()
+}
+
+func finishRecord(tx *sql.Tx, id string, status Status, at time.Time, reason Reason, kind EventKind) error {
+	result, err := tx.Exec(nonTerminalUpdate, int(status), at.UnixMilli(), int(reason), id)
 	if err != nil {
 		return fmt.Errorf("sessionlog: finish: %w", err)
 	}
@@ -352,12 +397,12 @@ func (s *Store) Finish(id string, status Status, endedAt time.Time, reason Reaso
 		return fmt.Errorf("sessionlog: finish: %w", err)
 	}
 	if affected > 0 {
-		return nil
+		return insertEvent(tx, Event{RecordID: id, Kind: kind, At: at, Reason: reason}, true)
 	}
 	// Nothing changed: the record is either terminal already (nothing to do) or
 	// missing (an error).
 	var existing Status
-	err = s.db.QueryRow(`SELECT status FROM session_logs WHERE id = ?`, id).Scan(&existing)
+	err = tx.QueryRow(`SELECT status FROM session_logs WHERE id = ?`, id).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
@@ -388,15 +433,35 @@ func (s *Store) Recover(runID string, at time.Time) error {
 	} else {
 		ended = ended.UTC()
 	}
-	_, err := s.db.Exec(`UPDATE session_logs
-		SET status = ?, ended_at = ?, reason = ?
-		WHERE run_id <> ? AND status IN (?, ?, ?)`,
-		int(StatusInterrupted), ended.UnixMilli(), int(ReasonProcessRestart), runID,
-		int(StatusConnecting), int(StatusActive), int(StatusReconnecting))
+	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("sessionlog: recover: %w", err)
+		return err
 	}
-	return nil
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM session_logs WHERE run_id <> ? AND status IN (?, ?, ?)`, runID, StatusConnecting, StatusActive, StatusReconnecting)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := finishRecord(tx, id, StatusInterrupted, ended.UTC(), ReasonProcessRestart, EventRecovered); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // List returns one page of records, newest first. Ordering is strictly
@@ -420,6 +485,20 @@ func (s *Store) List(query Query) (Page, error) {
 	limit := clampLimit(query.Limit)
 	where := make([]string, 0, 8)
 	args := make([]any, 0, 12)
+	switch query.Outcome {
+	case OutcomeAll:
+	case OutcomeNormal:
+		where = append(where, `status = ?`)
+		args = append(args, StatusEnded)
+	case OutcomeAbnormal:
+		where = append(where, `status IN (?, ?)`)
+		args = append(args, StatusFailed, StatusInterrupted)
+	case OutcomeTrackingStopped:
+		where = append(where, `status = ?`)
+		args = append(args, StatusTrackingStopped)
+	default:
+		return Page{}, ErrInvalidRecord
+	}
 	if query.Search != "" {
 		pattern := "%" + escapeLike(query.Search) + "%"
 		where = append(where, `(host LIKE ? ESCAPE '\' OR address LIKE ? ESCAPE '\' OR account LIKE ? ESCAPE '\')`)
@@ -451,7 +530,7 @@ func (s *Store) List(query Query) (Page, error) {
 		args = append(args, millis, millis, query.Cursor.ID)
 	}
 	statement := `SELECT id, run_id, host, address, account, protocol, started_at, ended_at,
-		status, favorite, reconnect_count, reason, truncated FROM session_logs`
+		status, favorite, reconnect_count, reason, truncated, catalog_id, port, shell_name, target_kind FROM session_logs`
 	if len(where) > 0 {
 		statement += ` WHERE ` + strings.Join(where, ` AND `)
 	}
@@ -469,7 +548,7 @@ func (s *Store) List(query Query) (Page, error) {
 		var started int64
 		var ended sql.NullInt64
 		if err := rows.Scan(&record.ID, &record.RunID, &record.Host, &record.Address, &record.Account,
-			&protocol, &started, &ended, &status, &favorite, &record.ReconnectCount, &reason, &truncated); err != nil {
+			&protocol, &started, &ended, &status, &favorite, &record.ReconnectCount, &reason, &truncated, &record.CatalogID, &record.Port, &record.ShellName, &record.TargetKind); err != nil {
 			return Page{}, fmt.Errorf("sessionlog: list: %w", err)
 		}
 		record.Protocol = Protocol(protocol)
@@ -650,4 +729,66 @@ func boolInt(flag bool) int {
 		return 1
 	}
 	return 0
+}
+
+// PreviewClear captures identities, not a moving filter or time boundary.
+func (s *Store) PreviewClear(includeFavorites bool) (ClearSelection, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.usable(); err != nil {
+		return ClearSelection{}, err
+	}
+	statement := `SELECT id, favorite FROM session_logs`
+	if !includeFavorites {
+		statement += ` WHERE favorite = 0`
+	}
+	rows, err := s.db.Query(statement)
+	if err != nil {
+		return ClearSelection{}, err
+	}
+	defer rows.Close()
+	var selection ClearSelection
+	for rows.Next() {
+		var id string
+		var favorite int
+		if err := rows.Scan(&id, &favorite); err != nil {
+			return ClearSelection{}, err
+		}
+		selection.IDs = append(selection.IDs, id)
+		selection.Favorites += favorite
+	}
+	return selection, rows.Err()
+}
+
+func (s *Store) DeleteSelection(ids []string, includeFavorites bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.usable(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := validateKey("record id", id); err != nil {
+			return err
+		}
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for start := 0; start < len(ids); start += 200 {
+		batch := ids[start:min(start+200, len(ids))]
+		statement := `DELETE FROM session_logs WHERE id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") + `)`
+		if !includeFavorites {
+			statement += ` AND favorite = 0`
+		}
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		if _, err := tx.Exec(statement, args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

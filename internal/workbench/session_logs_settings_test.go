@@ -175,6 +175,7 @@ func TestSessionLogsClearScopeOnlyTouchesItsOwnDatabase(t *testing.T) {
 
 	openSessionLogSettings(t, state)
 	state.Click(hitSessionLogsSettingsClear)
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != state.messages.SessionLogs.Loading })
 	if state.modal != modalForm || state.form.title != state.messages.SessionLogs.ClearUnfavoritedTitle {
 		t.Fatalf("the unfavorited clear did not confirm its scope: modal %d title %q", state.modal, state.form.title)
 	}
@@ -193,7 +194,8 @@ func TestSessionLogsClearScopeOnlyTouchesItsOwnDatabase(t *testing.T) {
 	assertSessionLogSentinels(t, dir, sentinels)
 
 	state.Click(hitSessionLogsSettingsClearAll)
-	if state.modal != modalForm || !strings.Contains(state.form.description, "including favorites") {
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != state.messages.SessionLogs.Loading })
+	if state.modal != modalForm || !strings.Contains(state.form.description, "favorites") {
 		t.Fatalf("the clear-all confirmation does not name its scope: %q", state.form.description)
 	}
 	state.submitForm()
@@ -216,6 +218,23 @@ func TestSessionLogsSettingsClearFailureShowsAnError(t *testing.T) {
 	}
 	state.clearSessionLogsAndNotify(true)
 	deadline := time.Now().Add(3 * time.Second)
+	for len(state.fileNotices.items) == 0 && time.Now().Before(deadline) {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	requireActionNotice(t, state, state.messages.SessionLogs.WriteFailed, components.ToastError)
+}
+
+func TestSessionLogsSettingsSelectionFailureShowsAnError(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openSessionLogSettings(t, state)
+	state.askClearSessionLogs(true)
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != state.messages.SessionLogs.Loading })
+	if err := state.sessionLogs.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state.submitForm()
+	deadline := time.Now().Add(time.Second)
 	for len(state.fileNotices.items) == 0 && time.Now().Before(deadline) {
 		state.Wake()
 		time.Sleep(time.Millisecond)

@@ -105,9 +105,11 @@ type sessionLogsView struct {
 	protocolFilter sessionlog.Protocol
 	favoriteOnly   bool
 	filterMenu     sessionLogFilterMenu
+	moreMenu       bool
+	moreBounds     ui.Rect
 	// filterBounds are the three filter triggers' places, recorded while the page
 	// paints; the popup opens under the one whose menu is open.
-	filterBounds [3]ui.Rect
+	filterBounds [4]ui.Rect
 
 	// Scrolling and the geometry the wheel is aimed at, recorded while painting.
 	scrollRows   float32
@@ -237,6 +239,9 @@ func (state *State) sessionLogWriteSettled(operation sessionlog.Operation, err e
 		state.reportSessionLogProblem("write", err)
 		view.statusText = state.messages.SessionLogs.WriteFailed
 		view.statusDanger = true
+		if operation.Kind == sessionlog.OpDeleteSelection && state.activeSection != sectionSessionLogs {
+			state.showActionError(state.messages.SessionLogs.Title, state.messages.SessionLogs.WriteFailed)
+		}
 	} else {
 		switch operation.Kind {
 		case sessionlog.OpSetFavorite:
@@ -273,9 +278,18 @@ func (state *State) sessionLogWriteSettled(operation sessionlog.Operation, err e
 				view.eventsFor = ""
 				view.eventsLoad = false
 			}
+		case sessionlog.OpDeleteSelection:
+			view.statusDanger = false
+			view.statusText = state.messages.SessionLogs.ClearedUnfavorited
+			if operation.IncludeFavorites {
+				view.statusText = state.messages.SessionLogs.ClearedAll
+			}
 		}
 	}
 	state.sessionLogs.settings.requested = false
+	if err == nil && state.options.Group != nil {
+		state.options.Group.invalidateSessionLogViews()
+	}
 	if state.activeSection == sectionSessionLogs {
 		state.sessionLogs.view.dirty = true
 		state.invalidateWindow()
@@ -305,10 +319,30 @@ func (state *State) startSessionLog(session *Session, host Host) {
 		Account:   sessionLogText(state.login(host)),
 		Protocol:  sessionLogProtocol(host),
 		StartedAt: state.wallNow().UTC(),
+		Port:      sessionLogPort(host),
+	}
+	switch {
+	case host.ID == localHostID:
+		record.TargetKind = sessionlog.TargetLocal
+		record.Port = 0
+		if host.localShell != "" {
+			record.ShellName = sessionLogText(filepath.Base(host.localShell))
+		}
+	case session.shared || session.containerCommand != "":
+		record.TargetKind = sessionlog.TargetShared
+	default:
+		if saved, ok := state.hostByID(host.ID); ok && !host.tunnel {
+			record.CatalogID = saved.CatalogID
+			record.TargetKind = sessionlog.TargetSavedHost
+		}
+	}
+	if record.Protocol == sessionlog.ProtocolSerial {
+		record.Port = 0
 	}
 	session.logRecordID = id
 	session.logFinished = false
 	session.logStatus = sessionlog.StatusConnecting
+	session.logLastEvent = sessionlog.EventStarted
 	state.submitSessionLog(sessionlog.Operation{Kind: sessionlog.OpStart, Record: record, Wait: session.logBarrier})
 }
 
@@ -329,6 +363,10 @@ func (state *State) submitSessionLogEvent(session *Session, kind sessionlog.Even
 	if session == nil || session.logRecordID == "" || session.logFinished || !state.sessionLogsRecording() {
 		return
 	}
+	if (kind == sessionlog.EventHostKeyPrompt || kind == sessionlog.EventAuthenticating) && session.logLastEvent == kind {
+		return
+	}
+	session.logLastEvent = kind
 	state.submitSessionLog(sessionlog.Operation{
 		Kind: sessionlog.OpAppendEvent,
 		Wait: session.logBarrier,
@@ -370,6 +408,10 @@ func (state *State) journalConnectionEvent(session *Session, kind connectionEven
 		return
 	}
 	switch kind {
+	case connectionEventHostKeyPrompt:
+		state.submitSessionLogEvent(session, sessionlog.EventHostKeyPrompt, 0)
+	case connectionEventAuthenticating:
+		state.submitSessionLogEvent(session, sessionlog.EventAuthenticating, 0)
 	case connectionEventConnected:
 		// journalConnectionOutcome records it once the endpoint role is known.
 	case connectionEventClosed:
@@ -416,6 +458,9 @@ func (state *State) journalConnectionOutcome(session *Session, status sshconn.St
 			return
 		}
 		outcome, reason := sessionLogOutcome(status)
+		if session.disconnected {
+			outcome, reason = sessionlog.StatusEnded, sessionlog.ReasonUserClosed
+		}
 		state.finishSessionLog(session, outcome, reason)
 	}
 }
@@ -606,6 +651,7 @@ func (state *State) applySessionLogsResult(result sessionLogsResult) {
 			return
 		}
 		view.eventsLoad = false
+		view.eventsFor = result.eventsFor
 		view.events = result.events
 		view.eventsMore = false
 		if record, ok := state.sessionLogRecord(view.selected); ok {
@@ -644,6 +690,21 @@ func (state *State) applySessionLogsResult(result sessionLogsResult) {
 	view.unavailable = false
 	view.err = ""
 	state.prepareSessionLogsView()
+	if view.detailOpen && view.selected != "" {
+		state.loadSessionLogEvents(view.selected)
+		state.prepareSessionLogDetail()
+	}
+}
+
+func (group *Group) invalidateSessionLogViews() {
+	group.mu.Lock()
+	members := append([]*State(nil), group.members...)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.sessionLogs.view.dirty = true
+		member.sessionLogs.settings.requested = false
+		member.invalidateWindow()
+	}
 }
 
 // setSessionLogFavorite marks one record, without touching any other history.
@@ -688,11 +749,30 @@ func (state *State) sessionForLogRecord(id string) *Session {
 		return nil
 	}
 	for index := range state.sessions {
-		if state.sessions[index].logRecordID == id && !state.sessions[index].logFinished {
+		session := &state.sessions[index]
+		if session.logRecordID == id && (!session.logFinished || session.logStatus == sessionlog.StatusTrackingStopped && session.phase == sshconn.PhaseConnected) {
 			return &state.sessions[index]
 		}
 	}
 	return nil
+}
+
+func (state *State) sessionLogOwner(id string) (*State, *Session) {
+	if session := state.sessionForLogRecord(id); session != nil {
+		return state, session
+	}
+	if group := state.options.Group; group != nil {
+		group.mu.Lock()
+		defer group.mu.Unlock()
+		for _, member := range group.members {
+			if member != state {
+				if session := member.sessionForLogRecord(id); session != nil {
+					return member, session
+				}
+			}
+		}
+	}
+	return nil, nil
 }
 
 // sessionLogHostName is the bounded display name of a host: its label, or the
@@ -738,6 +818,16 @@ func sessionLogProtocol(host Host) sessionlog.Protocol {
 	default:
 		return sessionlog.ProtocolSSH
 	}
+}
+
+func sessionLogPort(host Host) uint16 {
+	if host.ID == localHostID || host.Protocol == protocolSerial {
+		return 0
+	}
+	if host.Port == 0 {
+		return host.defaultPort()
+	}
+	return host.Port
 }
 
 // broadcastSessionLogsEnabled tells every window of the process about a capture

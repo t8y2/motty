@@ -1352,6 +1352,11 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	// scrolled distance, and the clip keeps what is out of the window out of sight
 	// and out of reach.
 	state.hostsContent = state.hostListHeight(treeBounds.Width)
+	if state.hostRevealID != 0 {
+		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, treeBounds.Width)
+		canvas.RequestFocus(hitHostList.At(int(state.hostRevealID)))
+		state.hostRevealID = 0
+	}
 	state.hostsScroll = min(max(state.hostsScroll, 0), max(state.hostsContent-treeBounds.Height, 0))
 	canvas.Clip(treeBounds)
 	if state.hostView == hostViewGrid {
