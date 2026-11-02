@@ -181,13 +181,18 @@ func monitorRefreshFrame(c *ui.Canvas, p *monitorView, live bool) int {
 	frame := 0
 	if running && !c.ReduceMotion() {
 		period := time.Duration(max(p.interval, 1)) * time.Second
-		step := period / 60
+		step := period / monitorClockSteps
 		elapsed := max(now-p.refreshStarted, 0)
-		frame = int(elapsed*60/period) % 60
+		frame = int(elapsed*monitorClockSteps/period) % monitorClockSteps * (len(remoteRefreshHands) / monitorClockSteps)
 		c.RequestFrameIn(step - elapsed%step)
 	}
 	return frame
 }
+
+// monitorClockSteps is how many of the hand's positions a sweep shows. Each step
+// repaints the whole window, so at 60 a 2 s interval kept it at 30 frames a
+// second while nothing else changed.
+const monitorClockSteps = 12
 
 func (state *State) paintMonitorIntervalMenu(c *ui.Canvas) {
 	if !state.monitorMenu {

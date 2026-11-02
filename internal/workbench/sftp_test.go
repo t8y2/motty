@@ -420,7 +420,7 @@ func openTestSFTP(t testing.TB) (*State, *Session, *fakeConn, *workbenchSFTPRemo
 
 func waitSFTP(t testing.TB, state *State, session *Session, ready func(*sftpView) bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if session.files != nil && ready(session.files) {

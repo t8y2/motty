@@ -170,7 +170,7 @@ func (state *State) resizeMonitor(width float32) {
 	if c.Open {
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(state.viewport), c.Width) + 1
 	}
-	maximum = min(maximum, max(layoutcore.MinMonitorWidth, state.viewport.Width-files-minPaneWidth-1))
+	maximum = min(maximum, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(state.viewport).Width-files-minPaneWidth-1))
 	c.MonitorWidth = min(max(width, layoutcore.MinMonitorWidth), maximum)
 	if state.deck.SetContext(id, c) != nil {
 		return
