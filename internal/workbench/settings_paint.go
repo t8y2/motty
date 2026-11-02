@@ -250,6 +250,10 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				selectedTextSize = hitSettingsTextLarge
 			}
 			page.row(messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], selectedTextSize)
+			if state.interfaceFontAvailable() {
+				page.actionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), false,
+					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
+			}
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)
 			}

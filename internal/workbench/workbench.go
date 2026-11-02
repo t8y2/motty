@@ -655,6 +655,7 @@ type State struct {
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
 	fonts         fontsUI
+	uiFont        interfaceFontUI
 	proxyForm     outboundProxyForm
 	agentSetting  agentDescriptionCache
 	form          formDialog
@@ -908,6 +909,7 @@ func New(options Options) *State {
 		state.decodeBackground(state.bg.serial)
 	}
 	state.validateTerminalFont()
+	state.validateInterfaceFont()
 	state.loginOn = state.settingsLoginEnabled()
 	state.starting = false
 	if state.options.Group != nil {
@@ -1090,6 +1092,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitFontPickerSearch {
 			return &state.fonts.search
 		}
+	case modalInterfaceFont:
+		if hit == hitInterfaceFontSearch {
+			return &state.uiFont.search
+		}
 	case modalOutboundProxy:
 		switch hit {
 		case hitOutboundProxyAddress:
@@ -1268,6 +1274,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalFontPicker:
 		state.clickFontPicker(id)
+		return
+	case modalInterfaceFont:
+		state.clickInterfaceFontPicker(id)
 		return
 	case modalOutboundProxy:
 		state.clickOutboundProxy(id)
@@ -1465,6 +1474,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case tree.Within(id.Scope(), proxiesHits):
 		state.clickProxies(id)
 	case state.clickSnippetsPage(id):
+	case id == hitInterfaceFontChoose:
+		state.openInterfaceFontPicker()
 	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):
@@ -2167,6 +2178,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.fontPickerKey(event); handled {
+		return result
+	}
+	if result, handled := state.interfaceFontPickerKey(event); handled {
 		return result
 	}
 	if result, handled := state.settingsKey(event); handled {

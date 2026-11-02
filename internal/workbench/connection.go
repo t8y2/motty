@@ -277,6 +277,13 @@ type Options struct {
 	Notify func(app.Notification) error
 	// Bell sounds the terminal bell. Nil plays the system alert sound.
 	Bell func() error
+	// FontFamilies lists every installed font family, for the choice of the
+	// interface's own. Nil uses the platform's list.
+	FontFamilies func() []string
+	// SetInterfaceFont names the family the window's text is drawn in, or ""
+	// for the platform's own interface font; it reports whether the platform
+	// can follow a family at all. Nil uses the platform's own.
+	SetInterfaceFont func(family string) bool
 	// MonoFamilies lists the installed fixed-pitch font families. Nil uses
 	// app.MonospaceFamilies.
 	MonoFamilies func() []string
@@ -365,6 +372,12 @@ func (options Options) withDefaults() Options {
 	if options.MonoFamilies == nil {
 		options.MonoFamilies = app.MonospaceFamilies
 	}
+	if options.FontFamilies == nil {
+		options.FontFamilies = app.FontFamilies
+	}
+	if options.SetInterfaceFont == nil {
+		options.SetInterfaceFont = app.SetInterfaceFontFamily
+	}
 	if options.WallNow == nil {
 		options.WallNow = time.Now
 	}
@@ -399,6 +412,7 @@ const (
 	modalSnippet
 	modalImportSessions
 	modalFontPicker
+	modalInterfaceFont
 	modalOutboundProxy
 	modalForm
 	modalRemoteTools

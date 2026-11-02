@@ -133,6 +133,10 @@ type Messages struct {
 	SettingsTextSizeSmall                  string
 	SettingsTextSizeRegular                string
 	SettingsTextSizeLarge                  string
+	SettingsInterfaceFont                  string
+	SettingsInterfaceFontDescription       string
+	SettingsInterfaceFontDefault           string
+	SettingsInterfaceFontCurrentFmt        string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string
