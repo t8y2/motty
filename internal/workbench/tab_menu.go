@@ -131,7 +131,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.tabOrientation == tabsVertical {
 		closeFollowing, closeIcon = messages.MenuCloseTabsBelow, iconChevronDown
 	}
-	following := state.workspaceTabsAfter(state.tabMenu.workspace)
+	following := state.paintedWorkspaceTabsAfter(state.tabMenu.workspace)
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: closeFollowing, Icon: icon(closeIcon), Disabled: len(following) == 0})
 	if reconnect || restart || disconnect {
 		rows.separate()

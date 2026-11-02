@@ -127,7 +127,7 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 // pin the sidebar open.
 func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
 	focus := canvas.FocusVisible()
-	return focus.Scope() == hitTabList || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
+	return focus.Scope() == hitTabList || focus.Scope() == hitVerticalTabGroups || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
 }
 
 func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {

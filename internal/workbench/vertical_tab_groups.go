@@ -2,13 +2,16 @@ package workbench
 
 import (
 	"fmt"
+	"hash/fnv"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -27,6 +30,7 @@ type verticalTabKey struct {
 
 type verticalTabGroup struct {
 	key         verticalTabKey
+	hit         ui.ID // derived from key, so it outlives the group's first member
 	title       string
 	label       string
 	countText   string
@@ -38,8 +42,16 @@ type verticalTabGroup struct {
 	badge       flex.Box
 }
 
-func (group *verticalTabGroup) id(tabs []layoutcore.WorkspaceInfo) ui.ID {
-	return hitVerticalTabGroups.At(int(tabs[group.members[0]].ID))
+func (group *verticalTabGroup) id() ui.ID { return group.hit }
+
+// hash is a stable number for a group's key. The keyboard focus of a group
+// header is its hit identity: derived from the first member's workspace it would
+// be lost when that tab is closed or moved, while the key lasts as long as the
+// group does.
+func (key verticalTabKey) hash() int {
+	h := fnv.New32a()
+	fmt.Fprintf(h, "%d\x00%s\x00%s\x00%d\x00%s\x00%s\x00%s\x00%t", key.protocol, key.address, key.user, key.port, key.jump, key.proxy, key.shell, key.local)
+	return int(h.Sum32() & 0x7fffffff)
 }
 
 type verticalTabRow struct {
@@ -83,7 +95,12 @@ func (state *State) verticalSessionKey(session *Session) verticalTabKey {
 	if host.isSSH() {
 		user = state.login(host)
 	}
-	if host.isSSH() && session.endpoint.Host != "" {
+	// The connection status names whichever endpoint is being dialed now, which
+	// is a jump host until the route reaches the target. Only the target's own
+	// endpoint may stand for it: otherwise a tab would join its jump host's group
+	// first, and stay there if the route failed.
+	target := host.isSSH() && session.role == sshconn.EndpointTarget && session.endpoint.Host != ""
+	if target {
 		address, user = session.endpoint.Host, session.endpoint.User
 	}
 	if host.Protocol != protocolSerial {
@@ -95,7 +112,7 @@ func (state *State) verticalSessionKey(session *Session) verticalTabKey {
 		}
 	}
 	port := host.Port
-	if host.isSSH() && session.endpoint.Port != 0 {
+	if target && session.endpoint.Port != 0 {
 		port = session.endpoint.Port
 	}
 	if port == 0 && host.Protocol != protocolSerial {
@@ -169,6 +186,19 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 		group.count++
 		group.active = group.active || tab.ID == active && state.terminalPage()
 	}
+	for index := range view.groups {
+		group := &view.groups[index]
+		number := group.key.hash()
+		for taken := true; taken; {
+			taken = false
+			for other := range view.groups[:index] {
+				if view.groups[other].hit == hitVerticalTabGroups.At(number) {
+					number, taken = (number+1)&0x7fffffff, true
+				}
+			}
+		}
+		group.hit = hitVerticalTabGroups.At(number)
+	}
 	for key := range view.collapsed {
 		found := false
 		for _, group := range view.groups {
@@ -203,7 +233,7 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 			group.labelCount, group.labelFormat = group.count, state.messages.VerticalTabGroupCountFmt
 		}
 		if group.count > 1 && !compact {
-			id := group.id(state.workspaceTabs)
+			id := group.id()
 			view.rows = append(view.rows, verticalTabRow{group: index, tab: -1})
 			view.options = append(view.options, components.TabOption{ID: id, Label: group.label})
 			row := layoutcore.WorkspaceInfo{}
@@ -258,7 +288,7 @@ func (state *State) declareGroupedVerticalTabs(f *flex.Frame, width float32, com
 func (state *State) declareVerticalTabGroup(f *flex.Frame, index int, width float32) {
 	view, pal := &state.verticalTabs.grouped, state.pal
 	group := &view.groups[index]
-	id := group.id(state.workspaceTabs)
+	id := group.id()
 	expanded := !view.collapsed[group.key]
 	fill := pal.shell
 	if group.active {
@@ -299,7 +329,7 @@ func (state *State) clickVerticalTabGroup(id ui.ID) bool {
 		return false
 	}
 	for _, group := range state.verticalTabs.grouped.groups {
-		if group.count > 1 && group.id(state.workspaceTabs) == id {
+		if group.count > 1 && group.id() == id {
 			state.setVerticalTabGroupCollapsed(group.key, !state.verticalTabs.grouped.collapsed[group.key])
 			return true
 		}
@@ -326,7 +356,7 @@ func (state *State) verticalTabGroupKey(event ui.KeyEvent) (ui.EventResult, bool
 	view := &state.verticalTabs.grouped
 	for _, row := range view.rows {
 		group := &view.groups[row.group]
-		if row.tab < 0 && group.id(state.workspaceTabs) == event.Target {
+		if row.tab < 0 && group.id() == event.Target {
 			switch event.Key {
 			case ui.KeyLeft, ui.KeyRight:
 				collapse := event.Key == ui.KeyLeft
@@ -338,7 +368,7 @@ func (state *State) verticalTabGroupKey(event ui.KeyEvent) (ui.EventResult, bool
 				return ui.EventResult{Focus: event.Target, FocusVisible: true, Handled: true, Repaint: true}, true
 			}
 		} else if row.tab >= 0 && hitTabList.At(int(state.workspaceTabs[row.tab].ID)) == event.Target && row.indented && event.Key == ui.KeyLeft {
-			return state.focusVerticalTabRow(group.id(state.workspaceTabs)), true
+			return state.focusVerticalTabRow(group.id()), true
 		}
 	}
 	next, handled := components.TabsKeyDown(event.Target, view.options, components.TabsVertical, components.DirectionLTR, event.Key)
@@ -361,9 +391,16 @@ func (state *State) focusVerticalTabRow(id ui.ID) ui.EventResult {
 	return ui.EventResult{Focus: id, FocusVisible: true, Handled: true, Repaint: true}
 }
 
-// Grouped rows and deck positions differ. Resolve a drop to the actual target
-// workspace rather than treating a header or hidden child as a tab index.
-func (state *State) groupedVerticalTabDrop(at ui.Point, source layoutcore.WorkspaceID) tabDrop {
+// Grouped rows and deck positions differ, so a drop is resolved to what it does
+// to the deck, never read as a tab index. It lands in one of two kinds of place.
+//
+// Inside a server's group, a connection of that server is reordered among its
+// siblings. On the boundary between groups, a lone tab or a whole group (dragged
+// by its header, unit) is moved to stand there. A connection cannot leave its
+// group, because the host decides the group, so any other drop inside a group
+// is refused: it would only snap back. Whether a drop changes anything is judged
+// by where things are shown, not by their positions in the deck.
+func (state *State) groupedVerticalTabDrop(at ui.Point, source layoutcore.WorkspaceID, unit []layoutcore.WorkspaceID) tabDrop {
 	view := &state.verticalTabs.grouped
 	if len(view.rows) == 0 {
 		return tabDrop{}
@@ -371,44 +408,123 @@ func (state *State) groupedVerticalTabDrop(at ui.Point, source layoutcore.Worksp
 	strip := &state.tabStrip
 	position := (at.Y - strip.origin + strip.offset) / strip.pitch
 	rowIndex := min(max(int(position), 0), len(view.rows)-1)
-	row := view.rows[rowIndex]
-	group := view.groups[row.group]
-	tabIndex := row.tab
-	if tabIndex < 0 {
-		tabIndex = group.members[0]
-	}
 	after := position-float32(rowIndex) > 0.5
-	if row.tab < 0 && after && view.collapsed[group.key] {
-		tabIndex = group.members[group.count-1]
+	g := view.rows[rowIndex].group
+	group := &view.groups[g]
+	first, last := rowIndex, rowIndex
+	for first > 0 && view.rows[first-1].group == g {
+		first--
 	}
-	boundary := tabIndex
-	if after && (row.tab >= 0 || view.collapsed[group.key]) {
-		boundary++
+	for last+1 < len(view.rows) && view.rows[last+1].group == g {
+		last++
 	}
+	sourceGroup, sourceSlot := -1, -1
 	if source != 0 {
-		sourceIndex, ok := state.workspaceTab(source)
-		if !ok || boundary == sourceIndex || boundary == sourceIndex+1 {
+		slot, ok := state.workspaceTab(source)
+		if !ok {
 			return tabDrop{}
 		}
-		// A connection's host determines its group. Reordering a child into a
-		// different server's group would snap straight back, so reject that drop.
-		key, _ := state.verticalWorkspaceKey(state.workspaceTabs[sourceIndex])
-		if key != group.key {
-			if group.count > 1 {
-				return tabDrop{}
-			}
-			for _, sourceGroup := range view.groups {
-				if sourceGroup.key == key && sourceGroup.count > 1 {
-					return tabDrop{}
-				}
+		key, _ := state.verticalWorkspaceKey(state.workspaceTabs[slot])
+		for index := range view.groups {
+			if view.groups[index].key == key {
+				sourceGroup, sourceSlot = index, slot
 			}
 		}
+		if sourceGroup < 0 {
+			return tabDrop{}
+		}
 	}
-	y := strip.origin - strip.offset + float32(rowIndex)*strip.pitch - barGap/2
+	rowY := func(row int) float32 {
+		return strip.origin - strip.offset + float32(row)*strip.pitch - barGap/2
+	}
+	lone := len(unit) == 0 && source != 0
+	if lone && sourceGroup == g && group.count > 1 {
+		// Among the siblings: p is the place before which the connection goes.
+		childStart := first
+		if view.rows[first].tab < 0 {
+			childStart++
+		}
+		if childStart > last {
+			return tabDrop{}
+		}
+		p := 0
+		if rowIndex >= childStart {
+			p = rowIndex - childStart
+			if after {
+				p++
+			}
+		}
+		member := slices.Index(group.members[:group.count], sourceSlot)
+		if p == member || p == member+1 {
+			return tabDrop{}
+		}
+		boundary := group.members[group.count-1] + 1
+		if p < group.count {
+			boundary = group.members[p]
+		}
+		return tabDrop{kind: dropReorder, boundary: boundary, zone: state.tabInsertion(rowY(childStart + p))}
+	}
+	if lone && view.groups[sourceGroup].count > 1 || group.count > 1 && !(rowIndex == first && !after || rowIndex == last && after) {
+		return tabDrop{}
+	}
+	gap, row := g, first
 	if after {
-		y += strip.pitch
+		gap, row = g+1, last+1
 	}
-	return tabDrop{kind: dropReorder, boundary: boundary, zone: state.tabInsertion(y)}
+	if sourceGroup >= 0 && (gap == sourceGroup || gap == sourceGroup+1) {
+		return tabDrop{}
+	}
+	boundary := len(state.workspaceTabs)
+	if gap < len(view.groups) {
+		boundary = view.groups[gap].members[0]
+	}
+	return tabDrop{kind: dropReorder, boundary: boundary, moveUnit: source != 0, zone: state.tabInsertion(rowY(row))}
+}
+
+// verticalTabGroupMembers is the workspaces of the server group whose header has
+// that identity, in deck order, and the header's text.
+func (state *State) verticalTabGroupMembers(id ui.ID) ([]layoutcore.WorkspaceID, string, bool) {
+	if !state.verticalTabsGrouped() || id.Scope() != hitVerticalTabGroups {
+		return nil, "", false
+	}
+	for _, group := range state.verticalTabs.grouped.groups {
+		if group.count > 1 && group.hit == id {
+			members := make([]layoutcore.WorkspaceID, 0, group.count)
+			for _, slot := range group.members[:group.count] {
+				members = append(members, state.workspaceTabs[slot].ID)
+			}
+			return members, group.label, true
+		}
+	}
+	return nil, "", false
+}
+
+// moveWorkspaceUnit puts the tabs of unit, which keep their order, in the deck
+// directly before the tab at deck index before (the end when it is the tab count).
+func (state *State) moveWorkspaceUnit(unit []layoutcore.WorkspaceID, before int) {
+	tabs := state.workspaceTabs
+	var anchor layoutcore.WorkspaceID
+	if before < len(tabs) {
+		anchor = tabs[before].ID
+	}
+	order := make([]layoutcore.WorkspaceID, 0, len(tabs))
+	insertAt := -1
+	for _, tab := range tabs {
+		if slices.Contains(unit, tab.ID) {
+			continue
+		}
+		if tab.ID == anchor {
+			insertAt = len(order)
+		}
+		order = append(order, tab.ID)
+	}
+	if insertAt < 0 {
+		insertAt = len(order)
+	}
+	order = slices.Insert(order, insertAt, unit...)
+	for index, id := range order {
+		_ = state.deck.MoveWorkspace(id, index)
+	}
 }
 
 func (state *State) visualWorkspaceTabs() []layoutcore.WorkspaceInfo {
@@ -463,7 +579,19 @@ func (state *State) reorderVerticalTabGroup(source layoutcore.WorkspaceID, bound
 }
 
 func (state *State) workspaceTabsAfter(workspace layoutcore.WorkspaceID) []layoutcore.WorkspaceInfo {
-	tabs := state.visualWorkspaceTabs()
+	return tabsAfter(state.visualWorkspaceTabs(), workspace)
+}
+
+// paintedWorkspaceTabsAfter is workspaceTabsAfter for painting: the sidebar has
+// already put the tabs in order this frame, so they are not grouped again.
+func (state *State) paintedWorkspaceTabsAfter(workspace layoutcore.WorkspaceID) []layoutcore.WorkspaceInfo {
+	if state.verticalTabsGrouped() {
+		return tabsAfter(state.verticalTabs.grouped.order, workspace)
+	}
+	return tabsAfter(state.workspaceTabs, workspace)
+}
+
+func tabsAfter(tabs []layoutcore.WorkspaceInfo, workspace layoutcore.WorkspaceID) []layoutcore.WorkspaceInfo {
 	for index, tab := range tabs {
 		if tab.ID == workspace {
 			return tabs[index+1:]
