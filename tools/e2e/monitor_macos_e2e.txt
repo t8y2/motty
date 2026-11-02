@@ -1,0 +1,46 @@
+# End to end: the resource monitor on macOS, for a Mac server over a real SSH
+# exec channel and for this computer's own terminal. Run it on a Mac. The
+# loopback fixture must run commands for real (E2E_ALLOW_EXEC=1) and must
+# announce itself as a Mac in its banner, which the stock fixture does not:
+#
+#   cp -R tools/e2esshd /tmp/e2esshd-darwin
+#   sed -i '' 's|SSH-2.0-GopE2E|SSH-2.0-OpenSSH_9.9 Darwin|' /tmp/e2esshd-darwin/main.go
+#   (cd /tmp/e2esshd-darwin && go build -o /tmp/e2esshd-darwin-bin .)
+#   E2E_ALLOW_EXEC=1 /tmp/e2esshd-darwin-bin 2222 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/monitor_macos_e2e.txt
+#
+# The readings are this Mac's own: compare them with Activity Monitor. The
+# per-core section must say so instead of showing zeros, and no `top` may be
+# left running once the monitor is stopped (pgrep -fl "top -l").
+
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+settle 3000
+settle 800
+click "Show the host's CPU, memory, network and GPU"
+waitfor "CPU " 15000
+settle 4000
+texts
+shot /tmp/monitor-macos-ssh.png
+click "Stop the resource monitor"
+settle 800
+
+# This computer: no server, the same commands run here.
+click "Command Palette"
+type local
+waitfor "Local Terminal" 2000
+key enter
+settle 1500
+click "Show the host's CPU, memory, network and GPU"
+waitfor "CPU " 15000
+settle 4000
+texts
+shot /tmp/monitor-macos-local.png
+click "Stop the resource monitor"

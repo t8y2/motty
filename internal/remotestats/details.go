@@ -65,6 +65,10 @@ func StartDetails(runner DetailRunner, notify func()) *DetailsWorker {
 
 // StartDetailsWithInterval keeps slow metadata independent of fast streaming.
 func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int) *DetailsWorker {
+	return startDetails(runner, notify, seconds, detailsCommand)
+}
+
+func startDetails(runner DetailRunner, notify func(), seconds int, command string) *DetailsWorker {
 	if !validInterval(seconds) {
 		seconds = 5
 	}
@@ -77,7 +81,7 @@ func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int) *
 		var previousAt time.Time
 		for {
 			request, finish := context.WithTimeout(ctx, 4*time.Second)
-			data, err := runner.RunCommand(request, detailsCommand, 96<<10)
+			data, err := runner.RunCommand(request, command, 96<<10)
 			finish()
 			if ctx.Err() != nil {
 				return

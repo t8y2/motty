@@ -9,7 +9,6 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
-	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -150,7 +149,7 @@ func (state *State) monitorDrawer(size ui.Size) bool {
 }
 
 func (state *State) ensureMonitor(session *Session) {
-	if session == nil || !state.remoteToolsOffered(session) {
+	if session == nil || !state.monitorOffered(session) {
 		return
 	}
 	if session.stats == nil {
@@ -159,22 +158,19 @@ func (state *State) ensureMonitor(session *Session) {
 	}
 	v := session.stats
 	system := session.host.System
-	if system != sshconn.SystemUnknown && !system.IsLinux() && system != sshconn.SystemWindows {
+	if !monitorSupported(system) {
 		v.state = remoteStatsUnsupported
 		return
 	}
 	if v.panel.paused {
 		return
 	}
+	runner := monitorRunnerFor(session)
 	if v.worker == nil && v.state < remoteStatsUnsupported {
-		if system == sshconn.SystemWindows {
-			v.worker = remotestats.StartWindows(session.conn, state.notifyFor(session), v.panel.interval)
-		} else {
-			v.worker = remotestats.StartWithInterval(session.conn, state.notifyFor(session), v.panel.interval)
-		}
+		v.worker = startMonitorWorker(runner, state.notifyFor(session), system, v.panel.interval)
 	}
-	if system != sshconn.SystemWindows && v.panel.worker == nil && v.state < remoteStatsUnsupported {
-		v.panel.worker = remotestats.StartDetails(session.conn, state.notifyFor(session))
+	if v.panel.worker == nil && v.state < remoteStatsUnsupported {
+		v.panel.worker = startMonitorDetails(runner, state.notifyFor(session), system, 5)
 	}
 }
 
