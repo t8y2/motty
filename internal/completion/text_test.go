@@ -1,6 +1,7 @@
 package completion
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,19 +79,33 @@ func TestNormalizeTextBoundsTheDescription(t *testing.T) {
 	}
 }
 
-func TestNormalizeTextBoundsAllocationForLargeText(t *testing.T) {
-	input := strings.Repeat("bad text ", 300_000)
-	if got := NormalizeText(input, 240); len(got) != 240 {
+// allocatedPerCall reports the average heap bytes one call of f allocates.
+func allocatedPerCall(f func()) uint64 {
+	const runs = 20
+	f()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range runs {
+		f()
+	}
+	runtime.ReadMemStats(&after)
+	return (after.TotalAlloc - before.TotalAlloc) / runs
+}
+
+// The result is bounded by the limit, so what NormalizeText allocates must not
+// follow the size of the input: a megabyte of text costs about what a kilobyte
+// does.
+func TestNormalizeTextAllocationDoesNotGrowWithInput(t *testing.T) {
+	small := strings.Repeat("bad text ", 3_000)
+	large := strings.Repeat("bad text ", 300_000)
+	if got := NormalizeText(large, 240); len(got) != 240 {
 		t.Fatalf("normalized length = %d, want 240", len(got))
 	}
-	result := testing.Benchmark(func(b *testing.B) {
-		for range b.N {
-			NormalizeText(input, 240)
-		}
-	})
-	t.Logf("bounded normalization: %s; %s", result.String(), result.MemString())
-	if bytes := result.AllocedBytesPerOp(); bytes > 4096 {
-		t.Fatalf("bounded normalization allocated %d bytes for a 240-rune result", bytes)
+	smallBytes := allocatedPerCall(func() { NormalizeText(small, 240) })
+	largeBytes := allocatedPerCall(func() { NormalizeText(large, 240) })
+	t.Logf("allocated per call: %d bytes for %d input bytes, %d bytes for %d", smallBytes, len(small), largeBytes, len(large))
+	if largeBytes > 2*smallBytes+1024 {
+		t.Fatalf("allocation grew with the input: %d bytes for %d input bytes, %d bytes for %d", largeBytes, len(large), smallBytes, len(small))
 	}
 }
 
@@ -158,4 +173,44 @@ func TestSafeInsertAcceptsTokensAndValues(t *testing.T) {
 			t.Errorf("SafeInsert(%q) = true", insert)
 		}
 	}
+}
+
+// isNormalized is the allocation-free shortcut for "NormalizeText would change
+// nothing". If it ever claimed a text was clean when normalization would alter
+// it, an invisible or oversized description would pass the audit.
+func TestIsNormalizedAgreesWithNormalizeText(t *testing.T) {
+	pieces := []string{
+		"a", "Z", "0", " ", "  ", "\t", "\n", "\x00", "\x7f", "\u0085", "\u00a0",
+		"é", "中", "📚", "\u202e", "\u200b", "\u2028", "\ufe0f", "\U000e0100",
+		"\u00ad", "\xff", "\xc3", "x y", "...",
+	}
+	var build func(prefix string, depth int)
+	build = func(prefix string, depth int) {
+		for _, limit := range []int{0, 1, 2, 3, 5} {
+			if got, want := isNormalized(prefix, limit), NormalizeText(prefix, limit) == prefix; got != want {
+				t.Fatalf("isNormalized(%q, %d) = %v, but NormalizeText returns %q", prefix, limit, got, NormalizeText(prefix, limit))
+			}
+		}
+		if depth == 0 {
+			return
+		}
+		for _, piece := range pieces {
+			build(prefix+piece, depth-1)
+		}
+	}
+	build("", 3)
+}
+
+func FuzzIsNormalizedAgreesWithNormalizeText(f *testing.F) {
+	for _, seed := range []string{"", "plain text", " lead", "trail ", "a  b", "a\u202eb", "\xff", "é 中文"} {
+		f.Add(seed, 4)
+	}
+	f.Fuzz(func(t *testing.T, s string, limit int) {
+		if limit < 0 || limit > 300 {
+			return
+		}
+		if got, want := isNormalized(s, limit), NormalizeText(s, limit) == s; got != want {
+			t.Fatalf("isNormalized(%q, %d) = %v, NormalizeText = %q", s, limit, got, NormalizeText(s, limit))
+		}
+	})
 }

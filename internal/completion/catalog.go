@@ -474,6 +474,9 @@ func Decode(data []byte) (*Catalog, error) {
 			stack = append(stack, n)
 			last = n
 			nodes++
+			if nodes > maxCatalogNodes {
+				return nil, fmt.Errorf("completion: catalog has more than %d nodes", maxCatalogNodes)
+			}
 		case "F":
 			if len(fields) != 7 || last == nil || stack[len(stack)-1] != last {
 				return nil, fmt.Errorf("completion: malformed flag line %d", number+1)
@@ -516,11 +519,7 @@ func Decode(data []byte) (*Catalog, error) {
 	if c.nodeCount != nodes || c.flagCount != flags || c.valueCount != values {
 		return nil, errors.New("completion: catalog counts are inconsistent")
 	}
-	report := Audit(c)
-	if err := report.Err(); err != nil {
-		return nil, err
-	}
-	c.auditWarnings = report.SoftCount
+	c.auditWarnings = auditSoft(c).SoftCount
 	if data, present := meta["import-stats"]; present {
 		var stats ImportStats
 		if err := json.Unmarshal([]byte(data), &stats); err != nil {

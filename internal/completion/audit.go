@@ -74,6 +74,15 @@ func Audit(c *Catalog) AuditReport {
 	if c.nodeCount > maxCatalogNodes {
 		report.addHard("catalog has %d nodes, more than %d", c.nodeCount, maxCatalogNodes)
 	}
+	auditShape(&report, c)
+	for _, root := range c.roots {
+		auditNode(&report, root, 1)
+	}
+	return report
+}
+
+// auditShape reports the soft findings about the size of the whole catalog.
+func auditShape(report *AuditReport, c *Catalog) {
 	switch {
 	case c.RootCount() < auditMinRoots:
 		report.addSoft("catalog has only %d root commands", c.RootCount())
@@ -86,8 +95,29 @@ func Audit(c *Catalog) AuditReport {
 	if c.valueCount > auditMaxValues {
 		report.addSoft("catalog has %d literal values", c.valueCount)
 	}
+}
+
+// auditSoft counts the soft findings of a catalog that Decode has just built.
+// Decode already refused, record by record, every condition Audit reports as
+// hard (names, aliases, depth, value count, value alphabet) and normalized every
+// description, so repeating those checks over 50,000 options would only slow
+// down loading the built-in catalog. Only the findings that need the whole tree
+// remain.
+func auditSoft(c *Catalog) AuditReport {
+	var report AuditReport
+	auditShape(&report, c)
 	for _, root := range c.roots {
-		auditNode(&report, root, 1)
+		walk(root, func(n *Node) {
+			auditDescription(&report, n.Desc)
+			for _, flags := range [2][]Flag{n.Flags, n.Persistent} {
+				for _, flag := range flags {
+					auditDescription(&report, flag.Desc)
+					for _, value := range flag.Values {
+						auditDescription(&report, value.Desc)
+					}
+				}
+			}
+		})
 	}
 	return report
 }
@@ -103,7 +133,7 @@ func auditNode(report *AuditReport, n *Node, depth int) {
 	if !validTokenPart(n.Token) {
 		report.addHard("command name %q is not a plain token", n.Token)
 	}
-	if n.Desc != NormalizeText(n.Desc, maxDescRunes) {
+	if !isNormalized(n.Desc, maxDescRunes) {
 		report.addHard("command %q has an unsanitized or oversized description", n.Token)
 	}
 	auditDescription(report, n.Desc)
@@ -127,7 +157,7 @@ func auditFlags(report *AuditReport, command string, flags []Flag) {
 		if (flag.Long != "" && !validTokenPart(flag.Long)) || (flag.Short != "" && !validTokenPart(flag.Short)) {
 			report.addHard("command %q has an option name that is not a plain token", command)
 		}
-		if flag.Desc != NormalizeText(flag.Desc, maxDescRunes) {
+		if !isNormalized(flag.Desc, maxDescRunes) {
 			report.addHard("option %q has an unsanitized or oversized description", flag.Token())
 		}
 		auditDescription(report, flag.Desc)
@@ -138,7 +168,7 @@ func auditFlags(report *AuditReport, command string, flags []Flag) {
 			if !SafeValue(value.Text) {
 				report.addHard("option %q has an unsafe value %q", flag.Token(), value.Text)
 			}
-			if value.Desc != NormalizeText(value.Desc, maxDescRunes) {
+			if !isNormalized(value.Desc, maxDescRunes) {
 				report.addHard("option %q has an unsanitized or oversized value description", flag.Token())
 			}
 			auditDescription(report, value.Desc)
@@ -161,6 +191,9 @@ func mixedScripts(text string) bool {
 	var latin, confusable bool
 	for _, r := range text {
 		switch {
+		case r < 0x80:
+			// ASCII letters are Latin; nothing else in ASCII is a letter.
+			latin = latin || (r|0x20 >= 'a' && r|0x20 <= 'z')
 		case unicode.Is(unicode.Latin, r):
 			latin = true
 		case unicode.Is(unicode.Cyrillic, r), unicode.Is(unicode.Greek, r):

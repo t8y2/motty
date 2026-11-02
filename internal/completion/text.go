@@ -81,6 +81,9 @@ func NormalizeText(s string, limit int) string {
 	if s == "" {
 		return ""
 	}
+	if isNormalized(s, limit) {
+		return s
+	}
 	var b strings.Builder
 	capacity := len(s)
 	if limit > 0 {
@@ -124,6 +127,50 @@ func NormalizeText(s string, limit int) string {
 		}
 	}
 	return b.String()
+}
+
+// isNormalized reports whether NormalizeText(s, limit) would return s
+// unchanged, without allocating. Decoding a catalog and auditing it both ask
+// this about every description, and nearly all of them are already clean, so
+// the common case must not build a second copy of each. The scan stops once it
+// has seen more than limit runes.
+func isNormalized(s string, limit int) bool {
+	if s == "" {
+		return true
+	}
+	runes := 0
+	previousSpace := true // a leading space is dropped, so it is not normalized
+	for index := 0; index < len(s); runes++ {
+		if limit > 0 && runes >= limit {
+			return false
+		}
+		c := s[index]
+		if c < utf8.RuneSelf {
+			index++
+			switch {
+			case c == ' ':
+				if previousSpace {
+					return false
+				}
+				previousSpace = true
+			case c < ' ' || c == 0x7f:
+				return false
+			default:
+				previousSpace = false
+			}
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[index:])
+		if r == utf8.RuneError && size == 1 {
+			return false
+		}
+		if unicode.Is(unicode.Cf, r) || unicode.IsControl(r) || unicode.IsSpace(r) || isVariationSelector(r) {
+			return false
+		}
+		index += size
+		previousSpace = false
+	}
+	return !previousSpace
 }
 
 // isVariationSelector reports the two ranges of invisible variation selectors.

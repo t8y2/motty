@@ -112,6 +112,24 @@ func TestAuditCountsSoftFindings(t *testing.T) {
 	}
 }
 
+// Decode counts soft findings without re-running the hard checks it has already
+// made; the number it stores must still be the one Audit reports.
+func TestDecodeCountsTheSameSoftFindingsAsAudit(t *testing.T) {
+	catalog := catalogWith(t,
+		&Node{Token: "tool", Desc: "Latin то Cyrillic", Flags: []Flag{
+			{Long: "mode", Value: true, Desc: "Latin то Cyrillic", Values: []Value{{Text: "fast", Desc: "Latin то Cyrillic"}}}}},
+		&Node{Token: "plain", Desc: "ASCII only"},
+	)
+	want := Audit(catalog).SoftCount
+	decoded, err := Decode(catalog.Encode())
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got := decoded.AuditWarnings(); got != want || want < 4 {
+		t.Fatalf("decoded warnings = %d, Audit reports %d; want equal and at least 4", got, want)
+	}
+}
+
 // A description injected into the encoded cache must be normalized on decode;
 // the same file with an unsafe literal value must be rejected even when its
 // digest and counts are recomputed.
