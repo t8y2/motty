@@ -89,8 +89,9 @@ func TestShellOutputReachesTheScreenWithItsColors(t *testing.T) {
 		t.Fatalf("the prompt is not a multi-run fixed-pitch line: %+v", prompt)
 	}
 	runs := canvas.TextRuns(prompt)
-	if runs[0].Color != ui.RGB(98, 206, 136) || runs[0].Weight != ui.WeightBold || runs[0].Column != 0 {
-		t.Errorf("first prompt run = %+v, want bold green at column 0", runs[0])
+	brightGreen := state.pal.ansi[10] // bold 32 is drawn in the bright variant
+	if runs[0].Color != ui.RGB(brightGreen[0], brightGreen[1], brightGreen[2]) || runs[0].Weight != ui.WeightBold || runs[0].Column != 0 {
+		t.Errorf("first prompt run = %+v, want bold bright green at column 0", runs[0])
 	}
 	fileRuns := canvas.TextRuns(files)
 	if len(fileRuns) != 2 || fileRuns[0].Color != ui.RGB(240, 120, 120) || fileRuns[0].Bytes != 9 ||

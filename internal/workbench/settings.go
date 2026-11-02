@@ -334,6 +334,14 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalGutter(gutterTime)
 	case hitSettingsGutterBoth:
 		changed = state.setTerminalGutter(gutterBoth)
+	case hitSettingsIntenseBoth:
+		changed = state.setTerminalIntense(intenseBoth)
+	case hitSettingsIntenseBright:
+		changed = state.setTerminalIntense(intenseBright)
+	case hitSettingsIntenseBold:
+		changed = state.setTerminalIntense(intenseBold)
+	case hitSettingsIntensePlain:
+		changed = state.setTerminalIntense(intensePlain)
 	case hitSettingsScrollback1000:
 		changed = state.setTerminalScrollback(1000)
 	case hitSettingsScrollback5000:
@@ -490,6 +498,16 @@ func (state *State) settingsGutterOptions() [4]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsIntenseOptions() [4]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsIntenseBoth, Label: m.IntenseBoth},
+		{ID: hitSettingsIntenseBright, Label: m.IntenseBright},
+		{ID: hitSettingsIntenseBold, Label: m.IntenseBold},
+		{ID: hitSettingsIntensePlain, Label: m.IntensePlain},
+	}
+}
+
 func (state *State) settingsScrollbackOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsScrollback1000, Label: "1,000"},
@@ -584,6 +602,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain:
+		options := state.settingsIntenseOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsScrollback1000, hitSettingsScrollback5000, hitSettingsScrollback10000:
 		options := state.settingsScrollbackOptions()

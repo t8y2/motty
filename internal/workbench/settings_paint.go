@@ -275,6 +275,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	}
 	gutter := state.settingsGutterOptions()
 	selectedGutter := [...]ui.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
+	intense := state.settingsIntenseOptions()
+	selectedIntense := [...]ui.ID{hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain}[state.terminalIntense]
 	scrollback := state.settingsScrollbackOptions()
 	selectedScrollback := hitSettingsScrollback5000
 	switch state.terminalScrollback {
@@ -314,6 +316,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.PaddingRow, "", padding[:], selectedPadding)
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
+			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)

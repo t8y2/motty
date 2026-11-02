@@ -146,6 +146,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.PaddingRow, "")
 	row(settingsTerminal, tools.GutterRow, tools.GutterDescription)
 	row(settingsTerminal, tools.CursorRow, tools.CursorDescription)
+	row(settingsTerminal, tools.IntenseRow, tools.IntenseDescription)
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
 	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)

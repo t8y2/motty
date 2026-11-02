@@ -232,6 +232,9 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		{hitSettingsKeepAliveOff, hitSettingsKeepAlive30, func() bool { return state.connectionKeepAlive == 30*time.Second }},
 		{hitSettingsReconnectOff, hitSettingsReconnectThree, func() bool { return state.connectionReconnect == reconnectThree }},
 		{hitSettingsClipboardBlock, hitSettingsClipboardAsk, func() bool { return state.terminalClipboard == terminalClipboardAsk }},
+		{hitSettingsIntenseBoth, hitSettingsIntenseBright, func() bool {
+			return state.terminalIntense == intenseBright && state.termPal.intense == intenseBright
+		}},
 	} {
 		result = state.Key(ui.KeyEvent{Target: test.from, Key: ui.KeyRight})
 		if !result.Handled || result.Focus != test.to || !test.check() {

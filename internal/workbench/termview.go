@@ -131,7 +131,12 @@ type cellStyle struct {
 }
 
 func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
-	style := cellStyle{fg: pal.termColor(cell.FG, pal.termFG)}
+	bold := cell.Attr&term.Bold != 0
+	fg := cell.FG
+	if bold && pal.intense.brightens() {
+		fg = brighten(fg)
+	}
+	style := cellStyle{fg: pal.termColor(fg, pal.termFG)}
 	if cell.BG != 0 {
 		style.bg, style.hasBG = pal.termColor(cell.BG, pal.terminal), true
 	}
@@ -146,7 +151,7 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 	if inactive {
 		style.fg.Alpha *= 0.55
 	}
-	if cell.Attr&term.Bold != 0 {
+	if bold && pal.intense.embolden() {
 		style.weight = ui.WeightBold
 	}
 	style.italic = cell.Attr&term.Italic != 0

@@ -202,6 +202,10 @@ var (
 	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
 	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
 	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
 	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
 	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
 	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
@@ -601,6 +605,7 @@ type State struct {
 	selectTypeahead        selectTypeahead
 	restorePending         bool // restored tabs have not yet been connected (see connectRestoredSessions)
 	terminalClipboard      terminalClipboardPolicy
+	terminalIntense        terminalIntense
 
 	localDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
@@ -845,6 +850,7 @@ func New(options Options) *State {
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
+		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
 		syncDelay:             syncDelayDefault,
