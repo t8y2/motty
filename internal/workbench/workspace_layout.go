@@ -204,12 +204,13 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 // either end, and reports whether it moved. With one tab there is nowhere to go.
 func (state *State) cycleWorkspace(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	count := len(state.workspaceTabs)
+	tabs := state.visualWorkspaceTabs()
+	count := len(tabs)
 	if count < 2 {
 		return false
 	}
 	current := state.deck.ActiveWorkspace()
-	index := slices.IndexFunc(state.workspaceTabs, func(workspace layoutcore.WorkspaceInfo) bool { return workspace.ID == current })
+	index := slices.IndexFunc(tabs, func(workspace layoutcore.WorkspaceInfo) bool { return workspace.ID == current })
 	if index < 0 {
 		index = 0
 	}
@@ -219,7 +220,8 @@ func (state *State) cycleWorkspace(delta int) bool {
 // activateTab makes the index-th tab of the tab bar the active one.
 func (state *State) activateTab(index int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	if index < 0 || index >= len(state.workspaceTabs) || !state.activateWorkspace(state.workspaceTabs[index].ID) {
+	tabs := state.visualWorkspaceTabs()
+	if index < 0 || index >= len(tabs) || !state.activateWorkspace(tabs[index].ID) {
 		return false
 	}
 	state.save()

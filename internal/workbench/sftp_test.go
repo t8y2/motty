@@ -420,7 +420,7 @@ func openTestSFTP(t testing.TB) (*State, *Session, *fakeConn, *workbenchSFTPRemo
 
 func waitSFTP(t testing.TB, state *State, session *Session, ready func(*sftpView) bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if session.files != nil && ready(session.files) {
@@ -431,8 +431,9 @@ func waitSFTP(t testing.TB, state *State, session *Session, ready func(*sftpView
 	if session.files == nil {
 		t.Fatal("SFTP state did not settle: no file view")
 	}
-	t.Fatalf("SFTP state did not settle: path=%q rows=%d busy=%t waiting=%q prefetching=%d",
-		session.files.path, len(session.files.rows), session.files.busy, session.files.waiting, len(session.files.prefetching))
+	t.Fatalf("SFTP state did not settle: path=%q rows=%d busy=%t operation=%v status=%q error=%q waiting=%q prefetching=%d",
+		session.files.path, len(session.files.rows), session.files.busy, session.files.operation,
+		session.files.status, session.files.errorText, session.files.waiting, len(session.files.prefetching))
 }
 
 func sftpRowIndex(t testing.TB, view *sftpView, name string) int {

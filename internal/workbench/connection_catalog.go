@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -348,8 +349,47 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 			path.WriteString(formatEndpoint(endpoint))
 		}
 		route.jumpPath = path.String()
+		catalog.addRelays(&config, &route, host, chain)
 	}
 	return config, route, valid
+}
+
+// addRelays sets how the hops that are reached through a jump host's shell leave
+// it. chain is target's jump hosts, the nearest first: each host is reached by its
+// own route, and a ViaShell one runs after the command that route's jump host has
+// after login.
+func (catalog *hostCatalog) addRelays(config *sshconn.Config, route *connectionRoute, target Host, chain []Host) {
+	var key strings.Builder
+	for index := -1; index < len(chain); index++ {
+		reached := target
+		if index >= 0 {
+			reached = chain[index]
+		}
+		record, ok := catalog.proxyRoute(reached.ID)
+		if !ok || !record.ViaShell || index+1 >= len(chain) {
+			continue
+		}
+		jump := chain[index+1]
+		relay := sshconn.Relay{Prelude: jump.LoginCommand, Command: record.relayCommand()}
+		if config.Relays == nil {
+			config.Relays = make(map[sshconn.Endpoint]sshconn.Relay, 1)
+		}
+		config.Relays[sshconn.Endpoint{Host: reached.Address, Port: reached.Port, User: catalog.login(reached)}] = relay
+		// A connection that left by a relay is not one that left by a channel, nor by
+		// another program, and is not shared with it.
+		fmt.Fprintf(&key, "|relay:%d:%s:%d:%s", len(relay.Prelude), relay.Prelude, len(relay.Command), relay.Command)
+	}
+	route.proxyKey += key.String()
+}
+
+// proxyRoute is the running route that reaches the host, if it has one.
+func (catalog *hostCatalog) proxyRoute(targetID uint32) (proxyRecord, bool) {
+	for _, route := range catalog.proxies {
+		if route.TargetID == targetID && !route.Stopped {
+			return route, true
+		}
+	}
+	return proxyRecord{}, false
 }
 
 // decodeHosts turns saved host records into hosts. A host whose catalog id is in
@@ -404,7 +444,16 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
-		catalog.proxies = append(catalog.proxies, proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped})
+		route := proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
+		if entry.ViaShell {
+			route.ViaShell = true
+			// A saved command that could not have come from the form is no command:
+			// the route then runs the default one.
+			if command := strings.TrimSpace(entry.RelayCommand); sshconn.CheckRelay(sshconn.Relay{Command: command}) == nil {
+				route.Relay = command
+			}
+		}
+		catalog.proxies = append(catalog.proxies, route)
 		next++
 	}
 	return catalog.proxies

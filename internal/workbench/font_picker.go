@@ -26,6 +26,8 @@ var (
 	hitFontPickerSearch      = tree.ID(fontPickerHits, "font-picker-search")
 	hitFontPickerDismiss     = tree.ID(fontPickerHits, "font-picker-dismiss")
 	hitFontPickerClose       = tree.ID(fontPickerHits, "font-picker-close")
+	hitFontPickerCancel      = tree.ID(fontPickerHits, "font-picker-cancel")
+	hitFontPickerConfirm     = tree.ID(fontPickerHits, "font-picker-confirm")
 	hitSettingsFontPick      = tree.ID(fontPickerHits, "settings-font-pick")
 	hitSettingsFallbackAdd   = tree.ID(fontPickerHits, "settings-font-fallback-add")
 	hitSettingsFallbackClear = tree.ID(fontPickerHits, "settings-font-fallback-clear")
@@ -321,14 +323,33 @@ func (state *State) scrollFontPicker(event ui.ScrollEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: fonts.top != before}
 }
 
-// chooseFont applies the highlighted (or clicked) row and closes the picker.
-func (state *State) chooseFont(row int) {
+// selectFont updates the highlighted row so the sample previews it.
+func (state *State) selectFont(row int) {
 	fonts := &state.fonts
 	state.refreshFontPicker()
 	if row < 0 || row >= len(fonts.filtered) {
 		return
 	}
-	entry := fonts.entries[fonts.filtered[row]]
+	fonts.selected = row
+}
+
+// canConfirmFont reports whether the highlighted row can be applied: the Confirm
+// button, Enter and a double click all ask this, so none of them can do what the
+// others are shown to refuse. Nothing can be applied while the installed families are
+// still being read, and nothing is highlighted when no font matches the search.
+func (state *State) canConfirmFont() bool {
+	fonts := &state.fonts
+	state.refreshFontPicker()
+	return !fonts.loading && fonts.selected >= 0 && fonts.selected < len(fonts.filtered)
+}
+
+// confirmFont applies the highlighted row and closes the picker.
+func (state *State) confirmFont() {
+	if !state.canConfirmFont() {
+		return
+	}
+	fonts := &state.fonts
+	entry := fonts.entries[fonts.filtered[fonts.selected]]
 	adding := fonts.adding
 	state.closeModal()
 	if adding {
@@ -340,6 +361,11 @@ func (state *State) chooseFont(row int) {
 	if state.useTerminalFont(entry) {
 		state.save()
 	}
+}
+
+// cancelFontPicker closes the picker without applying unconfirmed selections.
+func (state *State) cancelFontPicker() {
+	state.closeModal()
 }
 
 // fontSampleFace is the face the picker's sample is set in: the highlighted font with
@@ -415,11 +441,13 @@ func (state *State) clearFallbackFonts() bool {
 
 func (state *State) clickFontPicker(id ui.ID) {
 	switch {
-	case id == hitFontPickerDismiss || id == hitFontPickerClose:
-		state.closeModal()
+	case id == hitFontPickerDismiss || id == hitFontPickerClose || id == hitFontPickerCancel:
+		state.cancelFontPicker()
+	case id == hitFontPickerConfirm:
+		state.confirmFont()
 	case id.Scope() == hitFontPickerItemList:
 		state.refreshFontPicker()
-		state.chooseFont(state.fonts.top + item(id))
+		state.selectFont(state.fonts.top + item(id))
 	}
 }
 
@@ -431,7 +459,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
 	case ui.KeyEscape:
-		state.closeModal()
+		state.cancelFontPicker()
 		return handled, true
 	case ui.KeyUp:
 		state.moveFontSelection(-1)
@@ -446,21 +474,52 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		state.moveFontSelection(fontPickerVisibleRows)
 		return handled, true
 	case ui.KeyEnter:
+		// Enter confirms from the search field and the list. On any other control, the
+		// Cancel and close buttons, it is that control's own activation.
+		row, onRow := event.Target.In(hitFontPickerItemList)
+		if event.Target != hitFontPickerSearch && !onRow && !event.Target.IsZero() {
+			return ui.EventResult{}, false
+		}
 		if !event.Repeat {
-			state.chooseFont(state.fonts.selected)
+			if onRow {
+				state.refreshFontPicker()
+				state.selectFont(state.fonts.top + row)
+			}
+			state.confirmFont()
 		}
 		return handled, true
 	}
 	return ui.EventResult{}, false
 }
 
+// confirmFontOnDoubleClick is called while painting the picker: when this paint is the
+// event pass of a double click on a row, that row is applied. Consuming the press
+// keeps its release from clicking whatever is under the pointer once the picker is
+// gone. It reports whether the picker was closed.
+func (state *State) confirmFontOnDoubleClick(canvas *ui.Canvas) bool {
+	index, event, ok := canvas.PointerIn(hitFontPickerItemList)
+	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.ClickCount != 2 {
+		return false
+	}
+	state.selectFont(state.fonts.top + index)
+	canvas.Consume()
+	if !state.canConfirmFont() {
+		return false
+	}
+	state.confirmFont()
+	return true
+}
+
 func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	state.refreshFontPicker()
+	if state.confirmFontOnDoubleClick(canvas) {
+		return
+	}
 	m, pal, fonts := state.messages.Tools, state.pal, &state.fonts
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose, InitialFocusID: hitFontPickerSearch,
-		ContentSize: ui.Size{Width: 560, Height: 502},
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 366,
 	})
 	title := m.FontPickerTitle
 	if fonts.adding {
@@ -522,5 +581,10 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
 		Focused: focused, PlatformEditing: focused && value != "",
 	})
+	confirmDisabled := !state.canConfirmFont()
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitFontPickerCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitFontPickerConfirm, Label: m.FontPickerConfirm, Variant: components.ButtonDefault, Disabled: confirmDisabled},
+	)
 	dialog.End()
 }

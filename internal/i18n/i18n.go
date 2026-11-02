@@ -128,6 +128,17 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsTabOrientation                 string
+	SettingsTabOrientationDescription      string
+	SettingsTabsHorizontal                 string
+	SettingsTabsVertical                   string
+	SettingsTabsAutoHide                   string
+	SettingsTabsAutoHideDescription        string
+	SettingsTabsGrouping                   string
+	SettingsTabsGroupingDescription        string
+	VerticalTabGroupCountFmt               string
+	VerticalTabsPin                        string
+	VerticalTabsAutoHide                   string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
@@ -414,6 +425,7 @@ type Messages struct {
 	NewTabConnectTo      string
 	MenuCloseOtherTabs   string
 	MenuCloseTabsToRight string
+	MenuCloseTabsBelow   string
 	MenuDuplicateTab     string
 	MenuRenameTab        string
 	MenuRenameTerminal   string
@@ -687,6 +699,14 @@ type Messages struct {
 	ErrProxySameHost           string
 	ErrProxyCycle              string
 	ErrProxyTargetTaken        string
+	ProxyFieldViaShell         string
+	ProxyViaShellHelp          string
+	ProxyFieldRelay            string
+	ProxyRelayPlaceholder      string
+	ProxyRelayPreludeFmt       string
+	ProxyRelayNoPrelude        string
+	ProxyViaShellTag           string
+	ErrProxyRelay              string
 	ConnDetailConnectingViaFmt string
 
 	// SFTP remote-file page.

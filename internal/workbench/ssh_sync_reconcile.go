@@ -963,17 +963,22 @@ func (state *State) setProxyChain(target uint32, chain []uint32) bool {
 		edges = append(edges, edge{target: current, jump: jump})
 		current = jump
 	}
-	// A route that is rebuilt as the same edge stays as stopped as it was: the file
-	// does not know about stopping, so syncing it must not start the route again.
-	stopped := make(map[edge]bool)
+	// A route that is rebuilt as the same edge stays as it was: the file does not
+	// know about stopping, nor about relaying through a shell, so syncing it must
+	// neither start the route again nor drop its relay.
+	previous := make(map[edge]proxyRecord)
 	for _, route := range state.proxies {
-		if route.TargetID == target && route.Stopped {
-			stopped[edge{target: route.TargetID, jump: route.JumpID}] = true
+		if route.TargetID == target {
+			previous[edge{target: route.TargetID, jump: route.JumpID}] = route
 		}
 	}
 	state.proxies = slices.DeleteFunc(state.proxies, func(route proxyRecord) bool { return route.TargetID == target })
 	for _, added := range edges {
-		state.proxies = append(state.proxies, proxyRecord{ID: state.nextProxyID, TargetID: added.target, JumpID: added.jump, Stopped: stopped[added]})
+		kept := previous[added]
+		state.proxies = append(state.proxies, proxyRecord{
+			ID: state.nextProxyID, TargetID: added.target, JumpID: added.jump,
+			Stopped: kept.Stopped, ViaShell: kept.ViaShell, Relay: kept.Relay,
+		})
 		state.nextProxyID++
 	}
 	if _, ok := state.proxyByID(state.selectedProxyID); !ok {

@@ -10,13 +10,14 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/localshell"
+	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 )
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if session.term != nil && strings.Contains(screenText(state, 0), want) {
@@ -114,12 +115,20 @@ func TestLocalTerminalNetworkProxyEnvironment(t *testing.T) {
 	}
 }
 
-func TestLocalTerminalOffersNoRemoteOnlyTools(t *testing.T) {
+func TestLocalTerminalOffersTheMonitorButNoRemoteOnlyTools(t *testing.T) {
 	state, session := openLocal(t)
 	state.Wake()
 	session.term.live = true
-	if _, _, offered := state.remoteStatsToggle(session); offered {
-		t.Fatal("the resource monitor is offered for this computer")
+	if _, _, offered := state.remoteStatsToggle(session); !offered {
+		t.Fatal("the resource monitor is not offered for this computer")
+	}
+	if state.remoteToolsOffered(session) {
+		t.Fatal("the remote tools are offered for this computer")
+	}
+	// The local connection refuses every command, so a local monitor must run
+	// its own and never ask the connection to.
+	if _, ok := monitorRunnerFor(session).(remotestats.Local); !ok {
+		t.Fatalf("a local terminal is monitored through %T", monitorRunnerFor(session))
 	}
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
@@ -213,7 +222,7 @@ func TestLocalTerminalReconnectsWithANewShellAfterItEnds(t *testing.T) {
 	state, session := openLocal(t)
 	state.Wake()
 	session.term.send([]byte("exit 0\n"))
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for session.term.shell != nil && time.Now().Before(deadline) {
 		state.Wake()
 		time.Sleep(5 * time.Millisecond)
@@ -228,7 +237,7 @@ func TestLocalTerminalReconnectsWithANewShellAfterItEnds(t *testing.T) {
 	// A local shell can fail to start (a sandbox without pty access, for one);
 	// wait for the attempt instead of assuming it succeeded by the next Wake, and
 	// say why if it did not.
-	deadline = time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(waitBudget())
 	for session.term.shell == nil && session.err == nil && time.Now().Before(deadline) {
 		state.Wake()
 		time.Sleep(5 * time.Millisecond)

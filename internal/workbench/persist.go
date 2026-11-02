@@ -33,6 +33,9 @@ type savedState struct {
 	Version                    int                 `json:"version"`
 	Language                   string              `json:"language,omitempty"`
 	Theme                      string              `json:"theme,omitempty"`
+	TabOrientation             string              `json:"tab_orientation,omitempty"`
+	VerticalTabsAutoHide       bool                `json:"vertical_tabs_auto_hide,omitempty"`
+	VerticalTabsGrouping       bool                `json:"vertical_tabs_grouping,omitempty"`
 	NetworkProxy               string              `json:"network_proxy,omitempty"`
 	TerminalOption             string              `json:"terminalOption,omitempty"`
 	LocalShell                 string              `json:"local_shell,omitempty"`
@@ -198,6 +201,8 @@ type savedProxy struct {
 	JumpUser      string `json:"jump_user,omitempty"`
 	JumpPort      uint16 `json:"jump_port"`
 	Stopped       bool   `json:"stopped,omitempty"`
+	ViaShell      bool   `json:"via_shell,omitempty"`
+	RelayCommand  string `json:"relay_command,omitempty"`
 }
 
 type savedSession struct {
@@ -369,6 +374,9 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		TabOrientation:             state.tabOrientation.String(),
+		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
+		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
@@ -508,6 +516,7 @@ func (state *State) snapshot() savedState {
 		saved.Proxies = append(saved.Proxies, savedProxy{
 			TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
+			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
 	}
 	for index := range state.sessions {
@@ -614,6 +623,9 @@ func (state *State) restoreSettings(saved savedState) {
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
+	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
+	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
 	state.toolbars.restore(saved.Toolbars)
 	state.localShell = saved.LocalShell

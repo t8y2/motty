@@ -30,8 +30,34 @@ func (config Config) validate() error {
 	case config.KeepAlive.Interval > 0 && config.KeepAlive.Timeout == 0:
 		return errors.New("sshconn: keepalive timeout must be positive when enabled")
 	default:
+		return config.validateRelays()
+	}
+}
+
+// validateRelays refuses a relay that cannot be used: a bad command, or one for
+// an endpoint that is not reached through a hop.
+func (config Config) validateRelays() error {
+	if len(config.Relays) == 0 {
 		return nil
 	}
+	hopped := make(map[Endpoint]bool, len(config.ProxyJumps))
+	for index, jump := range config.ProxyJumps {
+		if index > 0 {
+			hopped[jump.normalized()] = true
+		}
+	}
+	if len(config.ProxyJumps) > 0 {
+		hopped[Endpoint{Host: config.Host, Port: config.Port, User: config.User}.normalized()] = true
+	}
+	for endpoint, relay := range config.Relays {
+		if !hopped[endpoint] {
+			return fmt.Errorf("sshconn: relay for %s, which is not reached through a jump host", endpoint.address())
+		}
+		if err := CheckRelay(relay); err != nil {
+			return fmt.Errorf("sshconn: relay for %s: %w", endpoint.address(), err)
+		}
+	}
+	return nil
 }
 
 func (conn *Conn) dialThrough(client *ssh.Client, address string) (net.Conn, error) {

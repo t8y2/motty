@@ -5,6 +5,9 @@ import (
 	"github.com/vivaui/viva/ui"
 	"slices"
 	"strings"
+
+	"github.com/vivaui/viva/text"
+	"motty/internal/sshconn"
 )
 
 const proxyHostPageSize = 6
@@ -29,8 +32,27 @@ type proxyRecord struct {
 	// SSH config, which keeps describing the route, and does not touch sessions
 	// that are already open.
 	Stopped bool
-	label   string
-	cells   [4]string
+	// ViaShell carries the connection to the target through a relay program run in
+	// a shell on the jump host, instead of a forwarded channel: for a jump host
+	// that only offers a shell, such as a bastion that has the user switch
+	// accounts first. The jump host's own command after login is typed first.
+	ViaShell bool
+	// Relay is the relay program of a ViaShell route, with the tokens of a proxy
+	// command; empty means defaultRelayCommand.
+	Relay string
+	label string
+	cells [4]string
+}
+
+// defaultRelayCommand connects its standard input and output to the target.
+const defaultRelayCommand = "nc %h %p"
+
+// relayCommand is the program a ViaShell route runs on the jump host.
+func (route proxyRecord) relayCommand() string {
+	if command := strings.TrimSpace(route.Relay); command != "" {
+		return command
+	}
+	return defaultRelayCommand
 }
 
 type proxyEditor struct {
@@ -40,10 +62,17 @@ type proxyEditor struct {
 	jumpOpen     bool
 	targetOffset int
 	jumpOffset   int
+	viaShell     bool
+	relay        text.Editor
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
 	*editor = proxyEditor{targetID: targetID, jumpID: jumpID}
+	editor.relay.Insert(defaultRelayCommand)
+}
+
+func (editor *proxyEditor) relayCommand() string {
+	return strings.TrimSpace(editor.relay.String())
 }
 
 func (editor *proxyEditor) validate(state *State) string {
@@ -63,6 +92,9 @@ func (editor *proxyEditor) validate(state *State) string {
 	}
 	if state.proxyWouldCycle(editor.targetID, editor.jumpID) {
 		return state.messages.ErrProxyCycle
+	}
+	if editor.viaShell && sshconn.CheckRelay(sshconn.Relay{Command: editor.relayCommand()}) != nil {
+		return state.messages.ErrProxyRelay
 	}
 	return ""
 }
@@ -167,6 +199,8 @@ func (state *State) clickProxyDialog(id ui.ID) {
 	case hitProxyDialogJump:
 		state.proxyEditor.jumpOpen = true
 		state.proxyEditor.jumpOffset = proxyHostPage(state.hosts, state.proxyEditor.jumpID)
+	case hitProxyDialogViaShell:
+		state.proxyEditor.viaShell = !state.proxyEditor.viaShell
 	case hitProxyDialogSubmit:
 		state.submitProxyDialog()
 	}
@@ -177,6 +211,9 @@ func (state *State) submitProxyDialog() {
 		return
 	}
 	route := proxyRecord{ID: state.nextProxyID, TargetID: state.proxyEditor.targetID, JumpID: state.proxyEditor.jumpID}
+	if state.proxyEditor.viaShell {
+		route.ViaShell, route.Relay = true, state.proxyEditor.relayCommand()
+	}
 	state.nextProxyID++
 	state.proxies = append(state.proxies, route)
 	state.selectedProxyID = route.ID
@@ -294,7 +331,11 @@ func (state *State) refreshProxy(route *proxyRecord) {
 		status = state.messages.ProxyRunning
 	}
 	route.label = labels.String()
-	route.cells = [4]string{target.Label, jump.Label, status, targets.String()}
+	jumpCell := jump.Label
+	if route.ViaShell {
+		jumpCell += " · " + state.messages.ProxyViaShellTag
+	}
+	route.cells = [4]string{target.Label, jumpCell, status, targets.String()}
 }
 
 func (state *State) refreshProxies() {

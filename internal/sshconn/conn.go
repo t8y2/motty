@@ -200,6 +200,11 @@ type Config struct {
 	// for individual endpoints. An endpoint not in the map uses the fields
 	// above and every supported authentication method.
 	Authentication map[Endpoint]Authentication
+	// Relays names the endpoints whose connection leaves the hop before them
+	// through a relay program run in that hop's shell, instead of a direct-tcpip
+	// channel: for a jump host that only offers a shell. The key is the endpoint
+	// reached, so only the target and every jump host but the first can have one.
+	Relays map[Endpoint]Relay
 	// Proxy, when set and not bypassed for the destination, carries the first
 	// TCP connection: to the target, or to the first jump host.
 	Proxy *Proxy
@@ -513,7 +518,7 @@ func (conn *Conn) connect() error {
 	conn.beginEndpoint(target, EndpointTarget)
 	var socket net.Conn
 	if previous != nil {
-		socket, err = conn.dialThrough(previous, target.address())
+		socket, err = conn.dialHop(previous, previousEndpoint, target)
 		if err != nil {
 			return fmt.Errorf("connect to %s through %s: %w", target.address(), previousEndpoint.address(), err)
 		}
@@ -581,9 +586,18 @@ func (conn *Conn) dialEndpoint(endpoint Endpoint, role EndpointRole, known *host
 	return client, err
 }
 
+// dialHop opens the connection to next from the hop before it: a direct-tcpip
+// channel, or the relay the configuration names for next.
+func (conn *Conn) dialHop(previous *ssh.Client, previousEndpoint, next Endpoint) (net.Conn, error) {
+	if relay, ok := conn.config.Relays[next]; ok {
+		return conn.dialRelay(previous, previousEndpoint, relay, next)
+	}
+	return conn.dialThrough(previous, next.address())
+}
+
 func (conn *Conn) dialEndpointThrough(previous *ssh.Client, previousEndpoint, endpoint Endpoint, known *hostKeys) (*ssh.Client, error) {
 	conn.beginEndpoint(endpoint, EndpointProxyJump)
-	socket, err := conn.dialThrough(previous, endpoint.address())
+	socket, err := conn.dialHop(previous, previousEndpoint, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s through %s: %w", endpoint.address(), previousEndpoint.address(), err)
 	}
