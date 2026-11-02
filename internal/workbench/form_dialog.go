@@ -46,6 +46,9 @@ type formDialog struct {
 	// its result comes back on the window thread.
 	test        func(*State, *formDialog) string
 	testRunning bool
+	// testNote is what a test that went through says in the form; the status
+	// line behind a dialog is not seen.
+	testNote string
 	// A form may ask for explicit consent after its fields. The caller owns
 	// the label, explanation and saved value; other forms have no checkbox.
 	checkLabel, checkDescription string
@@ -124,7 +127,7 @@ func (state *State) startFormTest() string {
 		return message
 	}
 	state.form.testRunning = true
-	state.form.dialogError = ""
+	state.form.dialogError, state.form.testNote = "", ""
 	state.status = state.messages.Tools.SyncTestRunning
 	return ""
 }
@@ -150,7 +153,7 @@ func (state *State) finishFormTest(serial uint32, err error) {
 		state.form.dialogError = state.backupErrorText(err)
 		return
 	}
-	state.form.dialogError = ""
+	state.form.dialogError, state.form.testNote = "", state.messages.Tools.SyncTestOK
 	state.status = state.messages.Tools.SyncTestOK
 }
 
@@ -179,7 +182,7 @@ func (form *formDialog) bodyHeight() float32 {
 	if form.checkLabel != "" {
 		height += 72
 	}
-	return withError(height, form.dialogError)
+	return withError(height, form.dialogError+form.testNote)
 }
 
 func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
@@ -213,6 +216,9 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			})
 		}
 		state.problemLine(f, form.dialogError)
+		if form.dialogError == "" && form.testNote != "" {
+			f.Text(form.testNote).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.success).LineHeight(18)
+		}
 	})
 	f.End()
 	for index := 0; index < form.count; index++ {

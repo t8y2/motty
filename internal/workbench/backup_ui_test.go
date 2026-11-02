@@ -251,8 +251,11 @@ func TestWebDAVFormTestsTheTypedConnectionWithoutSaving(t *testing.T) {
 		t.Fatalf("the test did not start: running %v, status %q", state.form.testRunning, state.status)
 	}
 	waitFor(t, state, func() bool { return !state.form.testRunning })
-	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" {
-		t.Fatalf("status %q, form error %q", state.status, state.form.dialogError)
+	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" || state.form.testNote != state.messages.Tools.SyncTestOK {
+		t.Fatalf("status %q, form error %q, note %q", state.status, state.form.dialogError, state.form.testNote)
+	}
+	if _, texts := paintAt(state, ui.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
+		t.Fatal("the dialog does not say the test went through")
 	}
 	if state.modal != modalForm || state.sync.configured() {
 		t.Fatalf("the test saved the form: modal %d, sync %+v", state.modal, state.sync)
