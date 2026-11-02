@@ -312,7 +312,7 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 				if scheduled {
 					t.Fatalf("idle animation keeps scheduling: reduced=%v paused=%v", reduced, paused)
 				}
-			} else if !scheduled || delay <= 0 || delay > time.Second/30 {
+			} else if !scheduled || delay <= 0 || delay > time.Duration(p.interval)*time.Second/monitorClockSteps {
 				t.Fatalf("clock cadence=%v/%v", delay, scheduled)
 			}
 			if len(canvas.Hits()) != 1 || !canvas.Hits()[0].Expandable {
