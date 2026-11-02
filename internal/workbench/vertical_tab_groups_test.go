@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -200,12 +201,16 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 
 func TestVerticalTabGroupingDistinguishesTargetsAndMixedSplits(t *testing.T) {
 	entries := groupingEntries()
+	// A shell path has to be one the restore accepts on this platform: on
+	// Windows /bin/bash is not absolute, so it would be dropped and the shell
+	// group would collapse into the default one.
+	otherShell := filepath.Join(t.TempDir(), "other-shell")
 	entries = append(entries,
 		savedSession{Label: "Other port", Address: "a.example.com", User: "admin", Port: 2222},
 		savedSession{Label: "VNC", Address: "a.example.com", User: "admin", Port: 22, savedTransport: savedTransport{Protocol: "vnc"}},
 		savedSession{Label: "Local", Local: true},
 		savedSession{Label: "Local 2", Local: true},
-		savedSession{Label: "Another shell", Local: true, LocalShell: "/bin/bash"},
+		savedSession{Label: "Another shell", Local: true, LocalShell: otherShell},
 	)
 	state := restoredGroupedTabs(t, entries...)
 	state.rebuildVerticalTabGroups(false)
