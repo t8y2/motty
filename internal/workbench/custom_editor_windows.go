@@ -22,5 +22,5 @@ func customEditorCommand(executable, path string) *exec.Cmd {
 }
 
 func launchCustomEditor(executable, path string) error {
-	return customEditorCommand(executable, path).Start()
+	return startDetached(customEditorCommand(executable, path))
 }

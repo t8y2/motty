@@ -130,6 +130,21 @@ func (w *sftpWindow) wake() {
 		w.owner.pumpSFTPConnections()
 		w.owner.showNextPrompt()
 	}
+	w.pump()
+}
+
+// wakeEmbedded runs the per-browser work for a main-window tab. State.Wake has
+// already pumped standalone connections and authentication prompts once for the
+// whole workbench, so doing that here would make every open file tab scan all
+// the others.
+func (w *sftpWindow) wakeEmbedded() {
+	if w.closed {
+		return
+	}
+	w.pump()
+}
+
+func (w *sftpWindow) pump() {
 	if w.view.worker == nil {
 		return
 	}
@@ -188,7 +203,7 @@ func (state *State) syncSFTPWindows() {
 func (state *State) wakeEmbeddedSFTPWindows() {
 	for _, w := range state.sftpWindows {
 		if w != nil && !w.closed && w.window == nil {
-			w.wake()
+			w.wakeEmbedded()
 		}
 	}
 }
