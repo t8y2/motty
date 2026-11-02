@@ -198,6 +198,8 @@ type savedProxy struct {
 	JumpUser      string `json:"jump_user,omitempty"`
 	JumpPort      uint16 `json:"jump_port"`
 	Stopped       bool   `json:"stopped,omitempty"`
+	ViaShell      bool   `json:"via_shell,omitempty"`
+	RelayCommand  string `json:"relay_command,omitempty"`
 }
 
 type savedSession struct {
@@ -508,6 +510,7 @@ func (state *State) snapshot() savedState {
 		saved.Proxies = append(saved.Proxies, savedProxy{
 			TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
+			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
 	}
 	for index := range state.sessions {
