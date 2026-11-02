@@ -1451,6 +1451,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.openHistoryActive()
 	case id == hitFoldLastOutput || id == hitUnfoldAllOutput:
 		state.foldCommand(id)
+	case id.Scope() == hitTerminalFold:
+		state.foldClick(id)
 	case id == hitSettingsHistoryToggle:
 		state.toggleHistory()
 	case id == hitCompletionUpdate:
@@ -1998,6 +2000,9 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.terminalScrollbarPointer(event); handled {
+		return result
+	}
+	if result, handled := state.terminalFoldPointer(event); handled {
 		return result
 	}
 	if session := state.terminalSession(event.Target); session != nil && state.modal == modalNone && state.activeSection == sectionTerminal {

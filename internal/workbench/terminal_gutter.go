@@ -331,33 +331,51 @@ type foldBox struct {
 // terminal's own region so that a press on one is the button's and not the
 // terminal's: it is neither a selection nor a mouse report for the program, and
 // the pointer shows a hand over it. Assistive technology finds a button that
-// says whether the output is folded. A press folds or opens the block; a double
-// click is one press too many for a control that toggles, so only its first
-// counts.
+// says whether the output is folded. The box takes no keyboard focus, which
+// stays with the terminal.
 func (state *State) declareFoldBoxes(canvas *ui.Canvas, session *Session) {
 	t := session.term
 	for _, box := range t.foldBoxes {
-		id := hitTerminalFold.At(foldHitIndex(session.ID, box.row))
 		label := state.messages.Tools.FoldOutput
 		if box.folded {
 			label = state.messages.Tools.UnfoldOutput
 		}
-		canvas.HitWithOptions(id, box.bounds, label, ui.HitOptions{
+		canvas.HitWithOptions(hitTerminalFold.At(foldHitIndex(session.ID, box.row)), box.bounds, label, ui.HitOptions{
 			Role: ui.RoleButton, Cursor: ui.PointerCursorHand, SkipFocus: true, SkipTab: true,
 			Expandable: true, Expanded: !box.folded,
 		})
-		row := box.row
-		toggle := func() { t.screen.ToggleFold(row) }
-		if event, ok := canvas.PointerOn(id); ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary {
-			canvas.Consume()
-			if event.ClickCount <= 1 {
-				canvas.AfterPaint(toggle)
-			}
-		} else if canvas.Clicked(id) {
-			canvas.AfterPaint(toggle)
-		}
 	}
 	t.foldBoxes = t.foldBoxes[:0]
+}
+
+// foldBoxOf finds the session and view row a fold button belongs to.
+func (state *State) foldBoxOf(hit ui.ID) (*Session, int, bool) {
+	index, ok := hit.In(hitTerminalFold)
+	if !ok {
+		return nil, 0, false
+	}
+	for i := range state.sessions {
+		if state.sessions[i].ID == uint32(index/foldHitRows) && state.sessions[i].term != nil {
+			return &state.sessions[i], index % foldHitRows, true
+		}
+	}
+	return nil, 0, false
+}
+
+// terminalFoldPointer folds or opens a block when its box is pressed. A double
+// click is one press too many for a control that toggles, so only the first
+// press of a sequence counts; the rest of the gesture belongs to the box, not
+// to the terminal behind it.
+func (state *State) terminalFoldPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	session, row, ok := state.foldBoxOf(event.Target)
+	if !ok {
+		return ui.EventResult{}, false
+	}
+	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary {
+		return ui.EventResult{Handled: event.Kind != ui.PointerExit}, true
+	}
+	repaint := event.ClickCount <= 1 && session.term.screen.ToggleFold(row)
+	return ui.EventResult{Handled: true, Repaint: repaint}, true
 }
 
 // The palette is the keyboard's way to a fold: the boxes are for the pointer and
@@ -375,6 +393,14 @@ func (state *State) foldPaletteEntries(palette *commandPalette) {
 	}
 	palette.add(state.messages.Tools.FoldLastOutput, hitFoldLastOutput)
 	palette.add(state.messages.Tools.UnfoldAllOutput, hitUnfoldAllOutput)
+}
+
+// foldClick is a click on a fold box that did not come from the pointer's press:
+// an assistive tool pressing the button.
+func (state *State) foldClick(id ui.ID) {
+	if session, row, ok := state.foldBoxOf(id); ok {
+		session.term.screen.ToggleFold(row)
+	}
 }
 
 // foldCommand runs a fold command of the palette on the active terminal.

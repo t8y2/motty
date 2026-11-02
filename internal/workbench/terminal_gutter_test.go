@@ -223,6 +223,24 @@ func TestGutterBoxFoldsTheOutputOfACommandTheShellMarked(t *testing.T) {
 	}
 }
 
+func TestTheFoldBoxLightsUnderThePointer(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	state.setTerminalGutter(gutterBoth)
+	geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+	suffix := integrated(state, session)
+	session.term.write([]byte(shellBlock(suffix, "$ ", "ll", "alpha\r\nbeta\r\n") + "\x1b]133;A" + suffix + "\x07$ "))
+	fold := hitTerminalFold.At(foldHitIndex(session.ID, 0))
+
+	var rest, lit ui.Canvas
+	state.paintGrid(&rest, session, geometry)
+	lit.SetInteraction(fold, ui.ID{}, ui.ID{}, false)
+	state.paintGrid(&lit, session, geometry)
+	if len(lit.Rectangles()) <= len(rest.Rectangles()) {
+		t.Fatalf("hovered box painted %d rectangles, resting %d: nothing lights it", len(lit.Rectangles()), len(rest.Rectangles()))
+	}
+}
+
 func TestAShellWithoutTheIntegrationHasNoFoldBoxes(t *testing.T) {
 	state, session, _ := selectionState()
 	state.viewport.Width = 600

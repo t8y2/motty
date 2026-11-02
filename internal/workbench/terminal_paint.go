@@ -310,6 +310,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		canvas.RequestFrameIn(selectionScrollInterval)
 	}
 	canvas.Clip(geometry.area)
+	t.foldBoxes = t.foldBoxes[:0]
 	t.cache.begin()
 	if cap(t.rowIDs) < rows {
 		t.rowIDs = make([]uint64, rows)
