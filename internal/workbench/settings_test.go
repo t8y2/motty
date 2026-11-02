@@ -22,7 +22,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			texts    []string
 			hits     []ui.ID
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight}},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitInterfaceFontChoose}},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
@@ -51,7 +51,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 				if _, ok := hitByID(&canvas, id); !ok {
 					t.Errorf("entry %d category %d did not paint settings hit %d", entry, category.category, id)
 				}
-				if !tree.Within(id.Scope(), settingsHits) && id != hitSettingsFontPick {
+				if !tree.Within(id.Scope(), settingsHits) && id != hitSettingsFontPick && id != hitInterfaceFontChoose {
 					t.Errorf("settings hit %d is outside the settings place", id)
 				}
 			}

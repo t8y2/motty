@@ -42,6 +42,7 @@ type savedState struct {
 	SSHAgent                   string              `json:"ssh_agent,omitempty"`
 	SSHAgentPath               string              `json:"ssh_agent_path,omitempty"`
 	TerminalFontSize           int                 `json:"terminal_font_size,omitempty"`
+	InterfaceFont              string              `json:"interface_font,omitempty"`
 	TerminalFontFace           string              `json:"terminal_font_face,omitempty"`
 	TerminalFontFamily         string              `json:"terminal_font_family,omitempty"`
 	TerminalFontFallbacks      []string            `json:"terminal_font_fallbacks,omitempty"`
@@ -383,6 +384,7 @@ func (state *State) snapshot() savedState {
 		SSHAgent:                   savedAgent,
 		SSHAgentPath:               savedAgentPath,
 		TerminalFontSize:           int(state.terminalFontSize),
+		InterfaceFont:              state.uiFont.family,
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
@@ -651,6 +653,9 @@ func (state *State) restoreLocal(saved savedState) {
 	state.syncNativeAppearance()
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
+	// Only the choice: what is in effect is decided once the window starts, when
+	// the platform has been asked what it can follow (validateInterfaceFont).
+	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
 	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == ui.MonoClassic
 	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && ui.MonoFamily(family) != ui.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false

@@ -251,6 +251,10 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
 				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
+			if state.interfaceFontRowVisible() {
+				page.actionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), !state.uiFont.supported,
+					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
+			}
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)
 			}
