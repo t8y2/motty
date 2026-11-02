@@ -340,3 +340,42 @@ func TestGutterSettingPersists(t *testing.T) {
 		t.Fatalf("restored gutter %v", restored.terminalGutter)
 	}
 }
+
+// BenchmarkPaintTerminalGutterBlocks is a repaint of an unchanged screen with
+// the gutter on, with and without the shell's command blocks, one of them folded.
+func BenchmarkPaintTerminalGutterBlocks(b *testing.B) {
+	for _, blocks := range []bool{false, true} {
+		name := "no markers"
+		if blocks {
+			name = "three blocks, one folded"
+		}
+		b.Run(name, func(b *testing.B) {
+			state, session, _ := selectionState()
+			state.viewport.Width = 600
+			state.setTerminalGutter(gutterBoth)
+			geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+			suffix := ""
+			if blocks {
+				suffix = integrated(state, session)
+			}
+			for _, command := range []string{"one", "two", "three"} {
+				if blocks {
+					session.term.write([]byte("\x1b]133;A" + suffix + "\x07$ " + "\x1b]133;B" + suffix + "\x07" + command + "\r\n\x1b]133;C" + suffix + "\x07out\r\n"))
+				} else {
+					session.term.write([]byte("$ " + command + "\r\nout\r\n"))
+				}
+			}
+			if blocks {
+				session.term.screen.ToggleFold(0)
+			}
+			var canvas ui.Canvas
+			state.paintGrid(&canvas, session, geometry)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				canvas.Reset()
+				state.paintGrid(&canvas, session, geometry)
+			}
+		})
+	}
+}
