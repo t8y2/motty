@@ -170,9 +170,19 @@ func TestImportingTabbyAsksForThePassphraseThenBringsHostsRoutesTunnelsKeysAndPa
 	state := newTestState(t, options)
 
 	state.Click(hitImportSessions)
+	canvas, _ := paintedTexts(state)
+	if _, ok := hitByID(canvas, hitImportTabby); !ok {
+		t.Fatal("the import chooser has no Tabby button")
+	}
 	state.Click(hitImportTabby)
 	if state.modal != modalTabbyPassphrase {
 		t.Fatalf("modal = %d, want the passphrase dialog", state.modal)
+	}
+	// The dialog says what it is asking for and offers to go ahead.
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.ImportTabbyPassphraseTitle) ||
+		!contains(texts, state.messages.Tools.ImportTabbyPassphraseSubmit) {
+		t.Fatalf("the passphrase dialog shows %v", texts)
 	}
 	// Nothing is added before the vault is open.
 	if len(state.hosts) != 0 {
