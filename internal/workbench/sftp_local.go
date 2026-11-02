@@ -353,6 +353,7 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
 	case id == hitSFTPRefresh:
+		stopSFTPSearch(folder)
 		state.listLocal(view, folder.path)
 	case id == hitSFTPUp:
 		if parent := filepath.Dir(folder.path); parent != folder.path {

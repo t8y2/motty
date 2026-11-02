@@ -86,11 +86,18 @@ type sftpFolder struct {
 	coverageText   string // full semantic warning, independent of ordinary feedback
 	coverageEmpty  string
 	hiddenMatch    bool // the query matches rows this folder hides
+	// deep widens the filter to the folders below this one; search is that
+	// search while it is on show (see sftp_search.go), and reveal the entry to
+	// select once the folder a result led to is listed.
+	deep   bool
+	search *sftpSearch
+	reveal sftpReveal
 }
 
 type sftpView struct {
 	detached                        *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
 	worker                          *sftpclient.Worker
+	openFiles                       func() (sftpclient.Remote, error) // the server's files again, outside the worker's queue; nil when unavailable
 	transferScan                    uint64
 	transferHost                    *transferHost
 	transferServer, transferAddress string
@@ -213,7 +220,8 @@ func (state *State) openSFTP(session *Session) {
 	view.transferServer, view.transferAddress = session.Title, session.Address
 	view.transferHost = transferHostFor(session)
 	view.selected, view.lfolder.selected = -1, -1
-	view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, transfer) }, state.notifyFor(session))
+	view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, transfer) }
+	view.worker = sftpclient.NewWorker(view.openFiles, state.notifyFor(session))
 	state.configureSFTPWorker(view)
 	session.files = view
 	if session.term != nil {
@@ -239,6 +247,8 @@ func (state *State) closeSFTP(session *Session) {
 	session.files.localSeq++
 	session.files.remoteSeq++
 	session.files.navigation, session.files.lfolder.navigation = sftpNavigation{}, sftpNavigation{}
+	stopSFTPSearch(&session.files.sftpFolder)
+	stopSFTPSearch(&session.files.lfolder)
 	if session.files.cancelExtract != nil {
 		session.files.cancelExtract()
 	}
@@ -388,6 +398,7 @@ func (state *State) clickSFTP(id ui.ID) {
 		view.status = state.messages.SFTPCanceling
 	case id == hitSFTPRefresh && !view.busy:
 		view.forgetListings() // refresh means: trust nothing remembered
+		stopSFTPSearch(&view.sftpFolder)
 		state.listSFTP(view, view.path)
 	case id == hitSFTPUp && !view.busy:
 		state.navigateSFTPDirectory(view, path.Dir(view.path))
@@ -1574,6 +1585,9 @@ func (state *State) scrollSFTP(view *sftpView, event ui.ScrollEvent) ui.EventRes
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()
+	if folder.searching() {
+		return scrollSFTPSearch(folder.search, event)
+	}
 	if folder.visibleRows <= 0 || len(folder.rows) <= folder.visibleRows {
 		return ui.EventResult{Handled: true}
 	}
@@ -1693,6 +1707,10 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		state.clickSFTP(hitSFTPClose)
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	case ui.KeyEnter:
+		if folder := view.active(); event.Target.Scope() == hitSFTPSearchList && folder.searching() {
+			state.revealSFTPSearchResult(view, folder, folder.search.first+item(event.Target))
+			return ui.EventResult{Handled: true, Repaint: true}, true
+		}
 		if event.Target.Scope() == hitSFTPEntryList {
 			folder := view.active()
 			index := folder.first + item(event.Target)

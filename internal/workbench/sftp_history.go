@@ -180,6 +180,7 @@ func (state *State) finishSFTPNavigation(view *sftpView, local bool, place sftpP
 	if restore {
 		folder.restorePlace(place)
 	}
+	folder.applyReveal()
 	if w := view.detached; w != nil {
 		side := sideIndex(local)
 		// Same-path refresh keeps its precise offset; navigation restores a place.

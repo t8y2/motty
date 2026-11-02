@@ -114,6 +114,15 @@ func (state *State) clickSFTPFilter(view *sftpView, id ui.ID) bool {
 		folder.showHidden = !folder.showHidden
 		state.applySFTPFilter(view, folder, false)
 		return true
+	case hitSFTPSearchToggle:
+		state.toggleSFTPSearch(view)
+		return true
+	}
+	if id.Scope() == hitSFTPSearchList && folder.searching() {
+		if index := folder.search.first + item(id); index < len(folder.search.results) {
+			folder.search.selected = index
+		}
+		return true
 	}
 	return false
 }
@@ -194,6 +203,10 @@ func (state *State) paintSFTPFilter(canvas *ui.Canvas, bounds ui.Rect, folder *s
 
 func (state *State) paintSFTPFilterInput(canvas *ui.Canvas, bounds ui.Rect, folder *sftpFolder, id, clearID ui.ID) {
 	value := folder.filterInputEditor().String()
+	placeholder := state.messages.Tools.FilesFilterPlaceholder
+	if folder.deep {
+		placeholder = state.messages.Tools.FilesSearchPlaceholder
+	}
 	clear := components.InputGroupSlot{}
 	if value != "" {
 		clear = components.InputGroupSlot{
@@ -204,7 +217,7 @@ func (state *State) paintSFTPFilterInput(canvas *ui.Canvas, bounds ui.Rect, fold
 	}
 	components.PaintInputGroup(canvas, state.Theme(), bounds, components.InputGroupSnapshot{
 		ID: id, Label: state.messages.Tools.FilesFilterLabel, Value: value,
-		Placeholder:   state.messages.Tools.FilesFilterPlaceholder,
+		Placeholder:   placeholder,
 		NativeEditing: canvas.Focused() == id && value != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 		InlineEnd:     clear,
@@ -293,6 +306,7 @@ func (state *State) applySFTPFilter(view *sftpView, folder *sftpFolder, clearSel
 	}
 	state.refreshLocalCoverage(folder)
 	state.refreshSFTPFilterStatus(view, folder)
+	state.syncSFTPSearch(view, folder)
 }
 
 func (state *State) refreshLocalCoverage(folder *sftpFolder) {

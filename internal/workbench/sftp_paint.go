@@ -70,6 +70,9 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	// What the page shows decides its parts. The selection bar and the file
 	// actions are as tall as what they hold; the list takes what they leave.
 	selectedCount, selected := selectedSFTP(view)
+	if folder.searching() {
+		selectedCount = 0 // the results take no part in what the selection does
+	}
 	one := selectedCount == 1
 	places := sftpPlaceBrowser{owner: state, session: session, view: view}
 	starred := places.directoryFavorite(local)
@@ -91,7 +94,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 		status = view.errorText
 		statusColor = pal.danger
 	}
-	var buttons [20]sftpIconButton
+	var buttons [24]sftpIconButton
 	var headerList [8]barTool
 	headerTools := headerList[:0]
 	addHeader := func(id ui.ID, glyph uint8, hint string, disabled bool) {
@@ -163,7 +166,17 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 			})
 		})
 		if folder.filterOpen {
-			filterSlot = f.Slot().Height(32).Shrink(0).MarginSides(5, 0, 4, 0)
+			// The filter, and the switch that takes it into the subfolders.
+			f.Row().Height(32).Shrink(0).Gap(4).Items(flex.Center).MarginSides(5, 0, 4, 0).Children(func() {
+				filterSlot = f.Slot().Grow(1).Height(32)
+				if sftpSearchAvailable(view, local) {
+					style := iconButtonQuiet
+					if folder.deep {
+						style = iconButtonActive
+					}
+					icon(sftpButton, hitSFTPSearchToggle, iconFolderOpen, messages.Tools.FilesSearchSubfolders, false, style)
+				}
+			})
 		}
 		f.Divider().Background(pal.line).MarginSides(2, 0, 3, 0)
 
@@ -256,7 +269,11 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	} else {
 		state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
 	}
-	state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
+	if folder.searching() {
+		state.paintSFTPSearchList(canvas, listSlot.Rect(), folder)
+	} else {
+		state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
+	}
 	view.places.anchors[sideIndex(local)] = crumbs.Rect()
 	if view.bookmarksOpen {
 		places.paintDirectoryPlaces(canvas, ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
