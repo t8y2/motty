@@ -1427,6 +1427,7 @@ var englishTools = ToolsMessages{
 	ImportWarningKeyWriteFmt:     "The private key saved for %s could not be written out: %v",
 	ImportWarningSecretsFmt:      "The unlocked passwords and key passphrases could not be saved: %v",
 	ImportWarningSecretsMissing:  "The unlocked passwords and key passphrases could not be saved: there is no password vault to keep them in.",
+	ImportWarningSecretsLocked:   "The unlocked passwords and key passphrases were not saved: your own vault is locked by its master password. Unlock it under Settings > Security, then import again.",
 	ImportProxyCommandFmt:        "%s: its proxy command is saved with the host but not run until you confirm it in the host's proxy dialog.",
 	ImportWarningProxyCommandFmt: "%s: its proxy command cannot be run here, so the host goes straight to the server.",
 	ImportTabbyPassphraseTitle:   "Tabby vault",

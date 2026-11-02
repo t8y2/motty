@@ -1427,6 +1427,7 @@ var chineseTools = ToolsMessages{
 	ImportWarningKeyWriteFmt:     "为 %s 保存的私钥无法写入：%v",
 	ImportWarningSecretsFmt:      "解锁得到的密码和私钥口令无法保存：%v",
 	ImportWarningSecretsMissing:  "解锁得到的密码和私钥口令无法保存：当前没有可用的密码库。",
+	ImportWarningSecretsLocked:   "解锁得到的密码和私钥口令没有保存：你自己的保险库被主密码锁定着。请先在「设置 > 安全」里解锁，再导入一次。",
 	ImportProxyCommandFmt:        "%s：它的代理命令会随主机一起保存，但在主机的代理对话框里确认之前不会运行。",
 	ImportWarningProxyCommandFmt: "%s：它的代理命令在本机无法运行，主机将直接连接服务器。",
 	ImportTabbyPassphraseTitle:   "Tabby 密码库",

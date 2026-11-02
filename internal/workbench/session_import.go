@@ -404,6 +404,11 @@ func (state *State) writeImportedSecrets(changes []vault.Change) string {
 		return state.messages.Tools.ImportWarningSecretsMissing
 	}
 	if err := state.secrets.vault.Apply(changes); err != nil {
+		if errors.Is(err, vault.ErrLocked) {
+			// The master password is the user's own; say where to type it rather
+			// than the prompt's own wording, which points at a session.
+			return state.messages.Tools.ImportWarningSecretsLocked
+		}
 		return fmt.Sprintf(state.messages.Tools.ImportWarningSecretsFmt, state.vaultErrorText(err))
 	}
 	return ""

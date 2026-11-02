@@ -314,6 +314,34 @@ func TestDismissingTheTabbyPassphraseImportsWhatCanBeReadAndSaysWhatCouldNot(t *
 	}
 }
 
+func TestImportingTabbyWhileMottysOwnVaultIsLockedSaysWhereToUnlockIt(t *testing.T) {
+	path, _ := writeTabbyConfig(t, "correct horse")
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+	state := newTestState(t, options)
+	// The user's own vault is behind a master password this run has not typed.
+	if err := state.secrets.vault.SetPassword("long enough one"); err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault.DropKeyForTests()
+
+	state.Click(hitImportSessions)
+	state.Click(hitImportTabby)
+	typeInto(state, hitTabbyPassphraseField, "correct horse")
+	state.Click(hitTabbyPassphraseSubmit)
+	// The hosts are still worth adding, so they are, and the secrets are told
+	// about rather than silently dropped.
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	warnings := strings.Join(state.hostImportResult.warnings[:state.hostImportResult.visible], "\n")
+	if !strings.Contains(warnings, "Settings") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
 func TestATabbyFileThatIsNotAConfigurationIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("host: example.com\n"), 0o600); err != nil {
