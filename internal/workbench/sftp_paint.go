@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -70,9 +71,6 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	// What the page shows decides its parts. The selection bar and the file
 	// actions are as tall as what they hold; the list takes what they leave.
 	selectedCount, selected := selectedSFTP(view)
-	if folder.searching() {
-		selectedCount = 0 // the results take no part in what the selection does
-	}
 	one := selectedCount == 1
 	places := sftpPlaceBrowser{owner: state, session: session, view: view}
 	starred := places.directoryFavorite(local)
@@ -234,11 +232,24 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 			state.declareLocalCoverage(f, folder, hitSFTPCoverage)
 		}
 		// What is happening.
-		f.Row().Height(28).Shrink(0).Gap(8).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
+		statusRow := f.Row().Shrink(0).Gap(8).Items(flex.Center).MarginSides(6, 0, 0, 0)
+		if folder.searching() {
+			// What a search read, how much of it, and what it could not read are
+			// too long for one line of a narrow panel, and the last of them is
+			// the one not to lose.
+			statusRow = statusRow.MinHeight(28)
+		} else {
+			statusRow = statusRow.Height(28)
+		}
+		statusRow.Children(func() {
 			if view.busy {
 				spinnerSlot = f.Slot().Size(16, 16)
 			}
-			f.Text(status).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
+			if folder.searching() {
+				f.Paragraph(status, 3).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(statusColor).Grow(1).MarginSides(4, 0, 4, 0)
+			} else {
+				f.Text(status).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
+			}
 			if view.busy {
 				f.Button(hitSFTPCancel, messages.SFTPCancelTransfer).Small().Outline()
 			}
@@ -269,11 +280,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	} else {
 		state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
 	}
-	if folder.searching() {
-		state.paintSFTPSearchList(canvas, listSlot.Rect(), folder)
-	} else {
-		state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
-	}
+	state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
 	view.places.anchors[sideIndex(local)] = crumbs.Rect()
 	if view.bookmarksOpen {
 		places.paintDirectoryPlaces(canvas, ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
@@ -291,36 +298,48 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 func (state *State) paintSFTPList(canvas *ui.Canvas, size ui.Size, list ui.Rect, session *Session, view *sftpView) {
 	pal := state.pal
 	folder, local := view.active(), view.local
+	// Search results are the same list without the columns that describe a
+	// folder's entries: a result is where it is, and the panel is narrow.
+	searching, rows := folder.searching(), folder.shownRows()
 	headerHeight := min(sftpListHeaderHeight, max(list.Height, 0))
+	if searching {
+		headerHeight = 0
+	}
 	body := ui.Rect{X: list.X, Y: list.Y + headerHeight, Width: list.Width, Height: max(list.Height-headerHeight, 0)}
 	visibleRows := max(0, int(body.Height/sftpRowHeight))
-	scrolls := len(folder.rows) > visibleRows && visibleRows > 0
+	scrolls := len(rows) > visibleRows && visibleRows > 0
 	rowWidth := body.Width
 	if scrolls {
 		rowWidth = max(rowWidth-10, 0)
 	}
 	sizeWidth, modifiedWidth := sftpColumnWidths(rowWidth)
-	empty := len(folder.rows) == 0 && (!view.busy || local) && view.errorText == ""
-	loading := len(folder.rows) == 0 && view.busy && !local && view.operation == sftpclient.OperationList && view.errorText == ""
+	empty := len(rows) == 0 && (!view.busy || local) && view.errorText == ""
+	loading := len(rows) == 0 && view.busy && !local && view.operation == sftpclient.OperationList && view.errorText == ""
+	reading := searching && len(rows) == 0 && folder.search.running && folder.search.failure == ""
+	if reading {
+		empty, loading = false, false
+	}
 	boxes := state.filesRowBoxes[:0]
 	var dropColumn flex.Box
 
-	state.paintSFTPColumnHeader(canvas, ui.Rect{X: list.X, Y: list.Y, Width: list.Width, Height: headerHeight}, folder, sizeWidth, modifiedWidth, scrolls)
+	if !searching {
+		state.paintSFTPColumnHeader(canvas, ui.Rect{X: list.X, Y: list.Y, Width: list.Width, Height: headerHeight}, folder, sizeWidth, modifiedWidth, scrolls)
+	}
 
 	if !view.scrollDrag {
 		if folder.scroll.MaxOffsetY <= 0 || folder.scrollOffset > folder.scroll.MaxOffsetY || int(folder.scrollOffset/sftpRowHeight) != folder.first {
 			folder.scrollOffset = float32(folder.first) * sftpRowHeight
 		}
 	}
-	area := components.BeginScrollArea(canvas, state.Theme(), body, ui.Size{Width: body.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).
+	area := components.BeginScrollArea(canvas, state.Theme(), body, ui.Size{Width: body.Width, Height: float32(len(rows)) * sftpRowHeight}).
 		Offset(0, folder.scrollOffset).
 		VerticalScrollbar(hitSFTPListScrollbar, state.messages.SFTPFiles, "")
 	geometry := area.BeginContent()
 	folder.scroll = geometry
 	folder.scrollOffset = geometry.OffsetY
-	first := min(int(geometry.OffsetY/sftpRowHeight), max(0, len(folder.rows)-max(visibleRows, 1)))
+	first := min(int(geometry.OffsetY/sftpRowHeight), max(0, len(rows)-max(visibleRows, 1)))
 	folder.first = first
-	last := min(len(folder.rows), first+int(math.Ceil(float64(body.Height/sftpRowHeight)))+2)
+	last := min(len(rows), first+int(math.Ceil(float64(body.Height/sftpRowHeight)))+2)
 	f := state.filesList.Begin(canvas, state.Theme(), ui.Rect{
 		X: body.X, Y: body.Y - geometry.OffsetY + float32(first)*sftpRowHeight,
 		Width: rowWidth, Height: float32(last-first) * sftpRowHeight,
@@ -330,7 +349,7 @@ func (state *State) paintSFTPList(canvas *ui.Canvas, size ui.Size, list ui.Rect,
 		dropColumn.Children(func() {
 			for index := first; index < last; index++ {
 				boxes = append(boxes, state.declareSFTPRow(
-					f, &folder.rows[index], hitSFTPEntryList.At(index-first), sizeWidth, modifiedWidth,
+					f, &rows[index], hitSFTPEntryList.At(index-first), sizeWidth, modifiedWidth, searching, rowWidth,
 				))
 			}
 		})
@@ -340,19 +359,28 @@ func (state *State) paintSFTPList(canvas *ui.Canvas, size ui.Size, list ui.Rect,
 
 	folder.visibleRows = visibleRows
 	state.filesRowBoxes = boxes
-	if loading {
+	if loading || reading {
 		spinnerSize := float32(16)
 		spinner := ui.Rect{
 			X: body.X + (body.Width-spinnerSize)/2, Y: body.Y + (body.Height-spinnerSize)/2,
 			Width: spinnerSize, Height: spinnerSize,
 		}
 		components.PaintSpinner(canvas, state.Theme(), spinner, components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
-		canvas.LabelCenter(state.messages.SFTPLoading, ui.Rect{
+		label := state.messages.SFTPLoading
+		if reading {
+			label = state.messages.Tools.FilesSearchSearching
+		}
+		canvas.LabelCenter(label, ui.Rect{
 			X: body.X, Y: body.Y + body.Height/2 + 14, Width: body.Width, Height: 22,
 		}, ui.TextStyle{Size: metrics.FontSizeM, Color: pal.muted})
 	} else if empty {
 		label := state.messages.SFTPEmpty
-		if local && folder.coverageEmpty != "" {
+		switch {
+		case searching && folder.search.failure != "":
+			label = state.messages.Tools.FilesSearchUnavailable // the status line has the reason
+		case searching:
+			label = state.messages.Tools.FilesSearchNoMatches
+		case local && folder.coverageEmpty != "":
 			label = folder.coverageEmpty
 		}
 		canvas.LabelCenter(label, body, ui.TextStyle{Size: metrics.FontSizeM, Color: pal.muted})
@@ -441,7 +469,8 @@ func (state *State) declareSFTPColumnHeader(f *flex.Frame, folder *sftpFolder, c
 // declareSFTPRow declares one entry: its type icon, its name, which takes the
 // room and ends with an ellipsis, and, when there is room, its modification
 // time. A selected row is tinted; the pointer lightens one. It returns the row.
-func (state *State) declareSFTPRow(f *flex.Frame, row *sftpRow, id ui.ID, sizeWidth, modifiedWidth float32) flex.Box {
+// A search result has its folder after the name, where the columns would be.
+func (state *State) declareSFTPRow(f *flex.Frame, row *sftpRow, id ui.ID, sizeWidth, modifiedWidth float32, result bool, rowWidth float32) flex.Box {
 	pal, canvas := state.pal, f.Canvas()
 	name := row.cells[1]
 	if row.entry.IsLink() && row.entry.LinkTarget != "" {
@@ -465,16 +494,24 @@ func (state *State) declareSFTPRow(f *flex.Frame, row *sftpRow, id ui.ID, sizeWi
 	case canvas.Hovered() == id:
 		background = withAlpha(pal.surfaceHot, 0.7)
 	}
-	box := f.Row().Height(sftpRowHeight).Shrink(0).Items(flex.Center).HitWith(id, row.cells[1], ui.HitOptions{Role: ui.RoleButton, Selected: row.selected})
+	options := ui.HitOptions{Role: ui.RoleButton, Selected: row.selected}
+	if result {
+		options.Hint = row.where // the whole folder, when the row has room for part of it
+	}
+	box := f.Row().Height(sftpRowHeight).Shrink(0).Items(flex.Center).HitWith(id, row.cells[1], options)
 	contents := func() {
 		declareSFTPRowIcon(f, row, tint)
 		label := f.Row().Grow(1).Clip().Items(flex.Center).MarginSides(0, 0, 0, 8)
 		label.Children(func() {
+			if result {
+				state.declareSFTPResultLabel(f, row, nameColor, rowWidth)
+				return
+			}
 			if row.matchEnd > row.matchStart && row.matchEnd <= len(row.entry.Name) {
 				if prefix := row.entry.Name[:row.matchStart]; prefix != "" {
 					f.Text(prefix).FontSize(metrics.FontSizeM).Color(nameColor).Shrink(0)
 				}
-				f.Text(row.entry.Name[row.matchStart:row.matchEnd]).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.accent).Shrink(0)
+				state.declareSFTPMatch(f, row.entry.Name[row.matchStart:row.matchEnd])
 				suffix := row.entry.Name[row.matchEnd:]
 				if row.entry.IsLink() && row.entry.LinkTarget != "" {
 					suffix += " → " + row.entry.LinkTarget
@@ -485,7 +522,7 @@ func (state *State) declareSFTPRow(f *flex.Frame, row *sftpRow, id ui.ID, sizeWi
 			f.Text(name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
 		})
 		for _, entry := range state.sftpColumns.entries[1:] {
-			if !entry.Enabled {
+			if !entry.Enabled || result {
 				continue
 			}
 			if entry.Key == sftpColumnSize {
@@ -514,6 +551,62 @@ func (state *State) declareSFTPRow(f *flex.Frame, row *sftpRow, id ui.ID, sizeWi
 		}
 		inner.Children(contents)
 	})
+}
+
+// declareSFTPMatch declares the part of a name the query matched: heavier than
+// the rest, and on a tint of the accent that shows in light and dark alike.
+func (state *State) declareSFTPMatch(f *flex.Frame, match string) {
+	pal := state.pal
+	f.Text(match).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).Background(withAlpha(pal.accent, 0.3)).Radius(radius.control).Shrink(0)
+}
+
+// declareSFTPResultLabel declares what a search result says: its name with the
+// match marked, then its folder, which gives way when room is short. A folder
+// too long for the room loses its middle, as the first and the last folders say
+// the most about where a file is.
+func (state *State) declareSFTPResultLabel(f *flex.Frame, row *sftpRow, nameColor ui.Color, rowWidth float32) {
+	pal, canvas := state.pal, f.Canvas()
+	name := row.entry.Name
+	start, end := row.matchStart, row.matchEnd
+	if end <= start || end > len(name) {
+		start, end = 0, 0
+	}
+	if prefix := name[:start]; prefix != "" {
+		f.Text(prefix).FontSize(metrics.FontSizeM).Color(nameColor).Shrink(0)
+	}
+	if end > start {
+		state.declareSFTPMatch(f, name[start:end])
+	}
+	if suffix := name[end:]; suffix != "" {
+		f.Text(suffix).FontSize(metrics.FontSizeM).Color(nameColor).Shrink(0)
+	}
+	if row.where == "" {
+		return
+	}
+	// Left for the folder: the row less its padding, the icon, the gaps and the
+	// name, which is a little wider in its heavy match.
+	room := rowWidth - 16 - 30 - 16 - canvas.TextWidth(name, metrics.FontSizeM) - 6
+	where := elideSFTPFolder(row.where, func(text string) bool { return canvas.TextWidth(text, metrics.FontSizeS) <= room })
+	f.Text(where).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1).MarginSides(0, 0, 0, 8)
+}
+
+// elideSFTPFolder shortens a folder path that does not fit by dropping folders
+// from its middle: the first and as many of the last as fit, with an ellipsis
+// between. fits says whether a text fits the room.
+func elideSFTPFolder(dir string, fits func(string) bool) string {
+	if fits(dir) {
+		return dir
+	}
+	parts := strings.Split(dir, "/")
+	if len(parts) < 3 {
+		return dir
+	}
+	for keep := len(parts) - 2; keep >= 1; keep-- {
+		if candidate := parts[0] + "/…/" + strings.Join(parts[len(parts)-keep:], "/"); fits(candidate) {
+			return candidate
+		}
+	}
+	return parts[0] + "/…/" + parts[len(parts)-1]
 }
 
 // paintSFTPBreadcrumbs draws the path as links, keeping the folders nearest the

@@ -317,6 +317,7 @@ type ToolsMessages struct {
 	FilesSearchShownFmt             string // results shown
 	FilesSearchTruncated            string
 	FilesSearchFailedFmt            string // folders that could not be read
+	FilesSearchUnavailable          string
 	FilesSearchUnavailableFmt       string // the error
 	FilesSearchSearching            string
 	FilesSearchNoMatches            string

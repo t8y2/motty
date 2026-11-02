@@ -118,12 +118,6 @@ func (state *State) clickSFTPFilter(view *sftpView, id ui.ID) bool {
 		state.toggleSFTPSearch(view)
 		return true
 	}
-	if id.Scope() == hitSFTPSearchList && folder.searching() {
-		if index := folder.search.first + item(id); index < len(folder.search.results) {
-			folder.search.selected = index
-		}
-		return true
-	}
 	return false
 }
 
@@ -226,6 +220,12 @@ func (state *State) paintSFTPFilterInput(canvas *ui.Canvas, bounds ui.Rect, fold
 
 func (state *State) applySFTPFilter(view *sftpView, folder *sftpFolder, clearSelection bool) {
 	query := folder.filterInputEditor().String()
+	// While the list shows search results its place is a place among them, not
+	// among the folder's rows below; it comes back after the rows are rebuilt.
+	shownFirst, shownOffset := folder.first, folder.scrollOffset
+	if folder.searchShown {
+		folder.first, folder.anchor, folder.selected = 0, -1, -1
+	}
 	oldFirst, oldAnchor, oldSelected := folder.first, folder.anchor, folder.selected
 	topName, anchorName, selectedName := "", "", ""
 	if !clearSelection {
@@ -305,7 +305,9 @@ func (state *State) applySFTPFilter(view *sftpView, folder *sftpFolder, clearSel
 		folder.first = 0
 	}
 	state.refreshLocalCoverage(folder)
-	state.refreshSFTPFilterStatus(view, folder)
+	if folder.searchShown {
+		folder.first, folder.scrollOffset = shownFirst, shownOffset
+	}
 	state.syncSFTPSearch(view, folder)
 }
 
@@ -368,6 +370,12 @@ func (state *State) refreshSFTPFilterStatus(view *sftpView, folder *sftpFolder) 
 		} else {
 			view.setItemCountStatus(state.messages.SFTPItemsFmt, len(folder.rows))
 		}
+		return
+	}
+	if folder.searching() {
+		// The reading's progress, and what it could not read, stay on show
+		// whatever else asks for the status to be written again.
+		state.refreshSFTPSearchStatus(view, folder)
 		return
 	}
 	if folder.filterInputEditor().String() != "" {

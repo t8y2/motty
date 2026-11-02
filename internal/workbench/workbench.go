@@ -2010,9 +2010,6 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
-	if result, handled := state.sftpSearchPointer(event); handled {
-		return result
-	}
 	if result, handled := state.sftpRowPointer(event); handled {
 		return result
 	}

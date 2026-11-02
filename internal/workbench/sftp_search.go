@@ -3,17 +3,13 @@ package workbench
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
 
@@ -21,27 +17,32 @@ import (
 // filter's "Include subfolders" switch on, the tree under the folder is read
 // once, on a goroutine and, on a server, over an SFTP channel of its own, so
 // the transfer queue is not held up. The query is matched against what has been
-// read so far, and again as more arrives or the query changes. The results are
-// a list of their own: selection, transfers, rename and delete act on the
-// folder's rows and never see them.
+// read so far, and again as more arrives or the query changes.
+//
+// The matches are rows of the folder's own list: the list paints them, scrolls,
+// takes focus and answers keys as it does for the folder's rows. What differs
+// is what a row stands for. A result is not in the folder, so a press only
+// selects it, opening one leaves the search for the result's folder, and the
+// selection, transfers, rename and delete never see it.
 
 const (
 	maxSearchEntries = 200_000
 	maxSearchDepth   = 32
 	maxSearchResults = 5000
-	// searchFlush is how often a running search hands what it read to the
-	// window.
-	searchFlush = 100 * time.Millisecond
 )
 
-var (
-	hitSFTPSearchToggle    = tree.ID(sftpHits, "sftp-search-toggle")
-	hitSFTPSearchScrollbar = tree.ID(sftpHits, "sftp-search-scrollbar")
-	hitSFTPSearchList      = tree.Sub(sftpHits, tree.Name("sftp-search-result"))
-)
+var hitSFTPSearchToggle = tree.ID(sftpHits, "sftp-search-toggle")
+
+// searchPruned are the folders a search does not go down from the top of a file
+// system: they are not the user's files, and /proc and /sys have no end to
+// them, so they would use up the whole allowance of entries.
+var searchPruned = []string{"/proc", "/sys", "/dev"}
+
+func searchPrune(dir string) bool { return slices.Contains(searchPruned, dir) }
 
 // sftpSearch is one reading of the tree under root, and the query's matches in
-// what it has read.
+// what it has read. It outlives a query: clearing the filter keeps what was
+// read, so typing again does not read the tree again.
 type sftpSearch struct {
 	root string
 	// hidden is the folder's showHidden when the search began: hidden entries
@@ -55,36 +56,43 @@ type sftpSearch struct {
 
 	query   string
 	folded  string
-	results []sftpSearchResult
-	matched int // matches found, including those past maxSearchResults
+	rows    []sftpRow // the matches, up to maxSearchResults, as rows of the list
+	matched int       // matches found, including those past maxSearchResults
+	// selected is the result pressed, or -1.
+	selected int
 
-	first, selected, visibleRows int
-	wheel                        float32
-	scroll                       components.ScrollAreaGeometry
-	scrollOffset                 float32
-	scrollDrag                   bool
-	scrollGrab                   float32
+	// What the reading goroutine has found and not yet handed to the window.
+	// The window takes all of it at once, so however quickly folders are read
+	// it is woken once until it has looked.
+	mu          sync.Mutex
+	pending     []sftpSearchItem
+	posted      bool
+	done        bool
+	doneSummary sftpclient.WalkSummary
+	doneFailure string
 }
 
 // sftpSearchItem is an entry the search read: only what a result shows, since
 // a search keeps up to maxSearchEntries of them. dir is its folder relative to
-// the root, "" for the root itself.
+// the root with "/" between folders, "" for the root itself.
 type sftpSearchItem struct {
 	dir, name, folded string
 	mode              os.FileMode
 }
 
-// sftpSearchResult is a match: the item, and the byte range of its name that
-// matched.
-type sftpSearchResult struct {
-	item       int
-	start, end int
+// searching reports whether the folder's list shows search results instead of
+// its rows.
+func (folder *sftpFolder) searching() bool {
+	return folder.deep && folder.search != nil && folder.search.query != ""
 }
 
-// searching reports whether the folder shows search results instead of its
-// rows.
-func (folder *sftpFolder) searching() bool {
-	return folder.deep && folder.search != nil && folder.filterInputEditor().String() != ""
+// shownRows are the rows the folder's list shows: the matches while it is
+// searching, else its entries.
+func (folder *sftpFolder) shownRows() []sftpRow {
+	if folder.searching() {
+		return folder.search.rows
+	}
+	return folder.rows
 }
 
 // sftpSearchAvailable reports whether a side can search below its folder: this
@@ -94,24 +102,33 @@ func sftpSearchAvailable(view *sftpView, local bool) bool {
 }
 
 // syncSFTPSearch brings the folder's search in line with its switch, query,
-// folder and hidden-files setting: it starts, restarts or stops the reading,
-// and matches the query again when only that changed.
+// folder and hidden-files setting. The reading starts with the first query,
+// goes on to the end of the tree whatever the query becomes, and is dropped
+// only when the switch goes off or the folder or the hidden-files setting
+// changes. A query that only changed is matched again against what was read.
 func (state *State) syncSFTPSearch(view *sftpView, folder *sftpFolder) {
 	query := folder.filterInputEditor().String()
 	local := folder == &view.lfolder
-	if !folder.deep || query == "" || folder.path == "" || !sftpSearchAvailable(view, local) {
+	// The detached window has lists of its own that do not show results, so a
+	// reading on its behalf would only use a channel to show nothing.
+	if !folder.deep || folder.path == "" || view.detached != nil || !sftpSearchAvailable(view, local) {
 		stopSFTPSearch(folder)
+		state.refreshSFTPFilterStatus(view, folder)
 		return
 	}
-	search := folder.search
-	if search == nil || search.root != folder.path || search.hidden != folder.showHidden {
+	if search := folder.search; search != nil && (search.root != folder.path || search.hidden != folder.showHidden) {
 		stopSFTPSearch(folder)
+	}
+	search := folder.search
+	if search == nil && query != "" {
 		search = state.startSFTPSearch(view, folder)
 	}
-	if search.query != query {
+	if search != nil && search.query != query {
 		search.match(query)
+		folder.first, folder.scrollOffset, folder.wheel = 0, 0, 0
 	}
-	state.refreshSFTPSearchStatus(view, folder)
+	folder.syncSearchList()
+	state.refreshSFTPFilterStatus(view, folder)
 }
 
 // stopSFTPSearch ends the folder's search and forgets it.
@@ -120,39 +137,45 @@ func stopSFTPSearch(folder *sftpFolder) {
 		folder.search.cancel()
 		folder.search = nil
 	}
+	folder.syncSearchList()
+}
+
+// syncSearchList sets the list to what it now shows. The place in it and the
+// selection belong to what was shown before, so they go; and nothing of the
+// folder stays selected under the results, or the keys and buttons that act on
+// the selection would reach rows out of sight.
+func (folder *sftpFolder) syncSearchList() {
+	shown := folder.searching()
+	if shown == folder.searchShown {
+		return
+	}
+	folder.searchShown = shown
+	folder.first, folder.scrollOffset, folder.wheel = 0, 0, 0
+	folder.selected, folder.anchor = -1, -1
+	if shown {
+		for index := range folder.allRows {
+			folder.allRows[index].selected, folder.allRows[index].cells[0] = false, ""
+		}
+		for index := range folder.rows {
+			folder.rows[index].selected, folder.rows[index].cells[0] = false, ""
+		}
+	}
 }
 
 // startSFTPSearch begins reading the tree under the folder. What the walk finds
-// reaches the window in batches; a batch for a search the folder no longer has
-// is dropped.
+// reaches the window as it is read; a delivery for a search the folder no longer
+// has is dropped.
 func (state *State) startSFTPSearch(view *sftpView, folder *sftpFolder) *sftpSearch {
 	ctx, cancel := context.WithCancel(context.Background())
 	search := &sftpSearch{root: folder.path, hidden: folder.showHidden, cancel: cancel, running: true, selected: -1}
 	folder.search = search
-	// Nothing hidden under the results acts on: the selection bar and the keys
-	// that act on selected rows would otherwise reach rows out of sight.
-	for index := range folder.allRows {
-		folder.allRows[index].selected, folder.allRows[index].cells[0] = false, ""
-	}
-	for index := range folder.rows {
-		folder.rows[index].selected, folder.rows[index].cells[0] = false, ""
-	}
-	folder.selected, folder.anchor = -1, -1
 
 	local, showHidden, root, open := folder == &view.lfolder, folder.showHidden, folder.path, view.openFiles
-	post := func(apply func(*sftpSearch)) {
-		state.aiPost(func(state *State) {
-			if folder.search != search {
-				return
-			}
-			apply(search)
-			state.refreshSFTPSearchStatus(view, folder)
-		})
-	}
 	go func() {
 		var reader sftpclient.DirReader = sftpclient.LocalReader{}
 		options := sftpclient.WalkOptions{
 			Join:       func(dir, name string) string { return filepath.Join(dir, name) },
+			Prune:      searchPrune,
 			MaxEntries: maxSearchEntries, MaxDepth: maxSearchDepth, Parallel: 2,
 		}
 		if !showHidden {
@@ -161,7 +184,7 @@ func (state *State) startSFTPSearch(view *sftpView, folder *sftpFolder) *sftpSea
 		if !local {
 			remote, err := open()
 			if err != nil {
-				post(func(search *sftpSearch) { search.running, search.failure = false, err.Error() })
+				state.handSearch(view, folder, search, nil, true, sftpclient.WalkSummary{}, err.Error())
 				return
 			}
 			var once sync.Once
@@ -181,57 +204,113 @@ func (state *State) startSFTPSearch(view *sftpView, folder *sftpFolder) *sftpSea
 				options.Skip = func(info os.FileInfo) bool { return strings.HasPrefix(info.Name(), ".") }
 			}
 		}
-		var pending []sftpclient.Found
-		last := time.Now()
 		summary := sftpclient.Walk(ctx, reader, root, options, func(found []sftpclient.Found) {
-			pending = append(pending, found...)
-			if time.Since(last) >= searchFlush {
-				batch := pending
-				pending, last = nil, time.Now()
-				post(func(search *sftpSearch) { search.add(batch) })
+			if len(found) == 0 {
+				return
 			}
+			dir := found[0].Dir
+			if local {
+				dir = filepath.ToSlash(dir)
+			}
+			items := make([]sftpSearchItem, len(found))
+			for index, entry := range found {
+				name := entry.Entry.Name
+				items[index] = sftpSearchItem{dir: dir, name: name, folded: strings.ToLower(name), mode: entry.Entry.Mode}
+			}
+			state.handSearch(view, folder, search, items, false, sftpclient.WalkSummary{}, "")
 		})
 		if ctx.Err() != nil {
 			return
 		}
-		post(func(search *sftpSearch) {
-			search.add(pending)
-			search.running, search.summary = false, summary
-		})
+		failure := ""
+		if summary.RootErr != nil {
+			failure = summary.RootErr.Error() // nothing to search: say why
+		}
+		state.handSearch(view, folder, search, nil, true, summary, failure)
 	}()
 	return search
 }
 
+// handSearch passes what the reading found to the window. The window is woken
+// when nothing is waiting for it already, so what a slow folder gave is shown
+// as soon as it is read, and a quick tree does not wake the window once per
+// folder.
+func (state *State) handSearch(view *sftpView, folder *sftpFolder, search *sftpSearch, items []sftpSearchItem, done bool, summary sftpclient.WalkSummary, failure string) {
+	search.mu.Lock()
+	search.pending = append(search.pending, items...)
+	if done {
+		search.done, search.doneSummary, search.doneFailure = true, summary, failure
+	}
+	wake := !search.posted
+	search.posted = true
+	search.mu.Unlock()
+	if !wake {
+		return
+	}
+	state.aiPost(func(state *State) {
+		search.mu.Lock()
+		items, done, summary, failure := search.pending, search.done, search.doneSummary, search.doneFailure
+		search.pending, search.posted = nil, false
+		search.mu.Unlock()
+		if folder.search != search {
+			return
+		}
+		search.add(items)
+		if done {
+			search.running, search.summary, search.failure = false, summary, failure
+		}
+		state.refreshSFTPFilterStatus(view, folder)
+	})
+}
+
 // add keeps what the walk read and matches it against the query.
-func (search *sftpSearch) add(found []sftpclient.Found) {
-	for _, item := range found {
-		name := item.Entry.Name
-		search.items = append(search.items, sftpSearchItem{dir: item.Dir, name: name, folded: strings.ToLower(name), mode: item.Entry.Mode})
-		search.matchItem(len(search.items) - 1)
+func (search *sftpSearch) add(items []sftpSearchItem) {
+	first := len(search.items)
+	search.items = append(search.items, items...)
+	for index := first; index < len(search.items); index++ {
+		search.matchItem(&search.items[index])
 	}
 }
 
 // match matches every item read so far against a new query.
 func (search *sftpSearch) match(query string) {
 	search.query, search.folded = query, strings.ToLower(query)
-	search.results, search.matched = search.results[:0], 0
-	search.first, search.selected, search.scrollOffset = 0, -1, 0
+	search.rows, search.matched, search.selected = search.rows[:0], 0, -1
+	if query == "" {
+		return
+	}
 	for index := range search.items {
-		search.matchItem(index)
+		search.matchItem(&search.items[index])
 	}
 }
 
-func (search *sftpSearch) matchItem(index int) {
-	item := &search.items[index]
+func (search *sftpSearch) matchItem(item *sftpSearchItem) {
 	if search.folded == "" || !strings.Contains(item.folded, search.folded) {
 		return
 	}
 	search.matched++
-	if len(search.results) >= maxSearchResults {
+	if len(search.rows) >= maxSearchResults {
 		return
 	}
 	start, end, _ := sftpFilterMatch(item.name, search.query)
-	search.results = append(search.results, sftpSearchResult{item: index, start: start, end: end})
+	icon, mono := sftpFileIcon(item.name, item.mode)
+	search.rows = append(search.rows, sftpRow{
+		entry: sftpclient.Entry{Name: item.name, Mode: item.mode}, icon: icon, mono: mono,
+		matchStart: start, matchEnd: end, where: item.dir,
+		cells: [5]string{1: item.name},
+	})
+}
+
+// selectRow marks one result as the selected one.
+func (search *sftpSearch) selectRow(index int) {
+	if search.selected >= 0 && search.selected < len(search.rows) {
+		search.rows[search.selected].selected = false
+	}
+	search.selected = -1
+	if index >= 0 && index < len(search.rows) {
+		search.rows[index].selected = true
+		search.selected = index
+	}
 }
 
 // refreshSFTPSearchStatus puts the search's progress in the panel's status
@@ -246,12 +325,13 @@ func (state *State) refreshSFTPSearchStatus(view *sftpView, folder *sftpFolder) 
 		view.status = fmt.Sprintf(m.FilesSearchUnavailableFmt, search.failure)
 		return
 	}
-	parts := []string{fmt.Sprintf(m.FilesSearchDoneFmt, search.matched, len(search.items))}
+	count := fmt.Sprintf(m.FilesSearchDoneFmt, search.matched, len(search.items))
 	if search.running {
-		parts[0] = fmt.Sprintf(m.FilesSearchScanningFmt, search.matched, len(search.items))
+		count = fmt.Sprintf(m.FilesSearchScanningFmt, search.matched, len(search.items))
 	}
-	if search.matched > len(search.results) {
-		parts = append(parts, fmt.Sprintf(m.FilesSearchShownFmt, len(search.results)))
+	parts := []string{count}
+	if search.matched > len(search.rows) {
+		parts = append(parts, fmt.Sprintf(m.FilesSearchShownFmt, len(search.rows)))
 	}
 	if search.summary.Truncated {
 		parts = append(parts, m.FilesSearchTruncated)
@@ -271,47 +351,60 @@ func (state *State) toggleSFTPSearch(view *sftpView) {
 	state.applySFTPFilter(view, folder, false)
 }
 
+// pressSFTPSearchResult is a press on result index: it selects it, and a second
+// press of a double click leaves the search for it. A server that is busy is
+// left alone, as it is for the folder's rows.
+func (state *State) pressSFTPSearchResult(view *sftpView, folder *sftpFolder, index, clicks int) {
+	if view.busy && !view.local || index < 0 || index >= len(folder.search.rows) {
+		return
+	}
+	folder.search.selectRow(index)
+	if clicks >= 2 {
+		state.revealSFTPSearchResult(view, folder, index)
+	}
+}
+
 // revealSFTPSearchResult leaves the search for a result: a folder is opened, a
 // file is shown selected in its folder.
 func (state *State) revealSFTPSearchResult(view *sftpView, folder *sftpFolder, index int) {
 	search := folder.search
-	if search == nil || index < 0 || index >= len(search.results) {
+	if search == nil || index < 0 || index >= len(search.rows) || view.busy && !view.local {
 		return
 	}
-	item := search.items[search.results[index].item]
+	row := search.rows[index]
 	local := folder == &view.lfolder
 	join := func(dir, name string) string { return path.Join(dir, name) }
 	if local {
-		join = func(dir, name string) string { return filepath.Join(dir, name) }
+		join = func(dir, name string) string { return filepath.Join(dir, filepath.FromSlash(name)) }
 	}
-	dir := search.root
-	if item.dir != "" {
-		dir = join(search.root, item.dir)
+	dir := join(search.root, row.where)
+	target, name := dir, row.entry.Name
+	if row.entry.Mode.IsDir() {
+		target, name = join(dir, row.entry.Name), ""
 	}
-	target, name := dir, item.name
-	if item.mode.IsDir() {
-		target, name = join(dir, item.name), ""
-	}
+	// The result is in another folder; the search is over, and a new one starts
+	// from wherever the person goes next.
 	folder.clearFilter()
-	folder.reveal = sftpReveal{dir: target, name: name}
+	stopSFTPSearch(folder)
 	state.applySFTPFilter(view, folder, false)
+	folder.reveal = sftpReveal{dir: target, name: name}
 	if local {
-		state.navigateLocalDirectory(view, target)
+		_ = state.navigateLocalDirectory(view, target)
 	} else {
 		state.navigateSFTPDirectory(view, target)
 	}
+	// A navigation that was not started leaves nothing behind to claim it.
+	folder.reveal = sftpReveal{}
 }
 
-// sftpReveal is the entry to select once a folder's listing arrives.
+// sftpReveal is the entry to select once the folder a result led to is listed.
 type sftpReveal struct {
 	dir, name string
 }
 
 // applyReveal selects the entry a search result led to, when the listing that
 // arrived is the folder it is in, and brings it into view.
-func (folder *sftpFolder) applyReveal() {
-	reveal := folder.reveal
-	folder.reveal = sftpReveal{}
+func (folder *sftpFolder) applyReveal(reveal sftpReveal) {
 	if reveal.name == "" || reveal.dir != folder.path {
 		return
 	}
@@ -320,191 +413,4 @@ func (folder *sftpFolder) applyReveal() {
 		return
 	}
 	folder.restorePlace(sftpPlace{current: reveal.name, anchor: reveal.name, selected: []string{reveal.name}, first: index - folder.visibleRows/2})
-}
-
-// paintSFTPSearchList shows the results in the list's place: each match with its
-// folder relative to where the search began.
-func (state *State) paintSFTPSearchList(canvas *ui.Canvas, list ui.Rect, folder *sftpFolder) {
-	search := folder.search
-	visibleRows := max(0, int(list.Height/sftpRowHeight))
-	scrolls := len(search.results) > visibleRows && visibleRows > 0
-	rowWidth := list.Width
-	if scrolls {
-		rowWidth = max(rowWidth-10, 0)
-	}
-	if !search.scrollDrag {
-		if search.scroll.MaxOffsetY <= 0 || search.scrollOffset > search.scroll.MaxOffsetY || int(search.scrollOffset/sftpRowHeight) != search.first {
-			search.scrollOffset = float32(search.first) * sftpRowHeight
-		}
-	}
-	area := components.BeginScrollArea(canvas, state.Theme(), list, ui.Size{Width: list.Width, Height: float32(len(search.results)) * sftpRowHeight}).
-		Offset(0, search.scrollOffset).
-		VerticalScrollbar(hitSFTPSearchScrollbar, state.messages.SFTPFiles, "")
-	geometry := area.BeginContent()
-	search.scroll, search.scrollOffset = geometry, geometry.OffsetY
-	first := min(int(geometry.OffsetY/sftpRowHeight), max(0, len(search.results)-max(visibleRows, 1)))
-	search.first = first
-	last := min(len(search.results), first+int(math.Ceil(float64(list.Height/sftpRowHeight)))+2)
-	f := state.filesList.Begin(canvas, state.Theme(), ui.Rect{
-		X: list.X, Y: list.Y - geometry.OffsetY + float32(first)*sftpRowHeight,
-		Width: rowWidth, Height: float32(last-first) * sftpRowHeight,
-	})
-	f.Column().FillWidth().Children(func() {
-		for index := first; index < last; index++ {
-			state.declareSFTPSearchRow(f, search, index, hitSFTPSearchList.At(index-first))
-		}
-	})
-	f.End()
-	area.EndContent()
-	search.visibleRows = visibleRows
-
-	if len(search.results) == 0 {
-		label := state.messages.Tools.FilesSearchNoMatches
-		switch {
-		case search.failure != "":
-			label = fmt.Sprintf(state.messages.Tools.FilesSearchUnavailableFmt, search.failure)
-		case search.running:
-			label = state.messages.Tools.FilesSearchSearching
-		}
-		canvas.LabelCenter(label, list, ui.TextStyle{Size: metrics.FontSizeM, Color: state.pal.muted})
-	}
-}
-
-// declareSFTPSearchRow declares one result: its icon, its name with the match
-// in the accent, then its folder, which gives way first when room is short.
-func (state *State) declareSFTPSearchRow(f *flex.Frame, search *sftpSearch, index int, id ui.ID) {
-	pal, canvas := state.pal, f.Canvas()
-	result := search.results[index]
-	item := search.items[result.item]
-	name := item.name
-	icon, mono := sftpFileIcon(name, item.mode)
-	row := sftpRow{entry: sftpclient.Entry{Name: name, Mode: item.mode}, icon: icon, mono: mono}
-	tint := ui.Color{Alpha: 1}
-	if mono {
-		tint = pal.muted
-		if item.mode&os.ModeSymlink != 0 {
-			tint = pal.accent
-		}
-	}
-	selected := index == search.selected
-	var background ui.Color
-	switch {
-	case selected:
-		background = pal.accentSoft
-	case canvas.Hovered() == id:
-		background = withAlpha(pal.surfaceHot, 0.7)
-	}
-	where := name
-	if item.dir != "" {
-		where = item.dir + "/" + name
-	}
-	box := f.Row().Height(sftpRowHeight).Shrink(0).Items(flex.Center).HitWith(id, name, ui.HitOptions{Role: ui.RoleButton, Selected: selected, Hint: where})
-	contents := func() {
-		declareSFTPRowIcon(f, &row, tint)
-		f.Row().Grow(1).Clip().Items(flex.Center).MarginSides(0, 0, 0, 8).Children(func() {
-			if prefix := name[:result.start]; prefix != "" {
-				f.Text(prefix).FontSize(metrics.FontSizeM).Color(pal.text).Shrink(0)
-			}
-			f.Text(name[result.start:result.end]).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.accent).Shrink(0)
-			if suffix := name[result.end:]; suffix != "" {
-				f.Text(suffix).FontSize(metrics.FontSizeM).Color(pal.text).Shrink(0)
-			}
-			if item.dir != "" {
-				f.Text(item.dir).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1).MarginSides(0, 0, 0, 8)
-			}
-		})
-	}
-	if background.Alpha == 0 && canvas.FocusVisible() != id {
-		box.PadX(8).Children(contents)
-		return
-	}
-	box.PadY(1).Children(func() {
-		inner := f.Row().Grow(1).Self(flex.Stretch).Items(flex.Center).PadX(8).Background(background).Radius(radius.control)
-		if canvas.FocusVisible() == id {
-			inner.Border(1.5, pal.accent)
-		}
-		inner.Children(contents)
-	})
-}
-
-// scrollSFTPSearch moves the results a row at a time, as scrollFolder moves a
-// folder.
-func scrollSFTPSearch(search *sftpSearch, event ui.ScrollEvent) ui.EventResult {
-	if search.visibleRows <= 0 || len(search.results) <= search.visibleRows {
-		return ui.EventResult{Handled: true}
-	}
-	search.wheel += event.StepY(sftpRowHeight) / sftpRowHeight
-	lines := int(search.wheel)
-	if lines == 0 {
-		return ui.EventResult{Handled: true}
-	}
-	search.wheel -= float32(lines)
-	before := search.first
-	search.first = min(max(0, search.first+lines), len(search.results)-search.visibleRows)
-	if search.first == before {
-		search.wheel = 0
-	}
-	search.scrollOffset = float32(search.first) * sftpRowHeight
-	return ui.EventResult{Handled: true, Repaint: search.first != before}
-}
-
-// sftpSearchPointer selects the result pressed and opens one double-clicked, and
-// drags the results' scroll bar.
-func (state *State) sftpSearchPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil {
-		return ui.EventResult{}, false
-	}
-	view := session.files
-	folder := view.active()
-	if !folder.searching() || view.dialog != sftpDialogNone {
-		return ui.EventResult{}, false
-	}
-	search := folder.search
-	if search.scrollDrag || event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && event.Target == hitSFTPSearchScrollbar {
-		return state.dragSFTPSearchScrollbar(search, event)
-	}
-	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.Target.Scope() != hitSFTPSearchList {
-		return ui.EventResult{}, false
-	}
-	index := search.first + item(event.Target)
-	if index >= len(search.results) {
-		return ui.EventResult{Handled: true}, true
-	}
-	search.selected = index
-	if event.ClickCount >= 2 {
-		state.revealSFTPSearchResult(view, folder, index)
-	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
-}
-
-func (state *State) dragSFTPSearchScrollbar(search *sftpSearch, event ui.PointerEvent) (ui.EventResult, bool) {
-	geometry := search.scroll
-	switch event.Kind {
-	case ui.PointerDown:
-		search.scrollDrag = true
-		search.scrollGrab = geometry.VerticalThumb.Height / 2
-		if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
-			search.scrollGrab = event.Y - geometry.VerticalThumb.Y
-		}
-	case ui.PointerMove:
-		if !event.Captured {
-			return ui.EventResult{}, true
-		}
-	case ui.PointerUp:
-		search.scrollDrag = false
-		search.first = min(max(0, int(math.Floor(float64(search.scrollOffset/sftpRowHeight)))), max(0, len(search.results)-max(search.visibleRows, 1)))
-		return ui.EventResult{Handled: true, Repaint: true}, true
-	case ui.PointerExit:
-		if !event.Captured {
-			search.scrollDrag = false
-		}
-		return ui.EventResult{Handled: true}, true
-	default:
-		return ui.EventResult{}, false
-	}
-	before := search.scrollOffset
-	search.scrollOffset = geometry.VerticalOffsetForThumb(event.Y - search.scrollGrab)
-	search.first = min(max(0, int(math.Floor(float64(search.scrollOffset/sftpRowHeight)))), max(0, len(search.results)-max(search.visibleRows, 1)))
-	return ui.EventResult{Handled: true, Repaint: before != search.scrollOffset}, true
 }

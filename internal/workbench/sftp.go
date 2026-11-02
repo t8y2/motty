@@ -36,6 +36,9 @@ type sftpRow struct {
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
 	hidden               bool
 	matchStart, matchEnd int // byte range highlighted by the current folder filter
+	// where is the folder a search result is in, relative to where the search
+	// began; "" for a row of the folder itself.
+	where string
 }
 
 type sftpDialogKind uint8
@@ -86,12 +89,14 @@ type sftpFolder struct {
 	coverageText   string // full semantic warning, independent of ordinary feedback
 	coverageEmpty  string
 	hiddenMatch    bool // the query matches rows this folder hides
-	// deep widens the filter to the folders below this one; search is that
-	// search while it is on show (see sftp_search.go), and reveal the entry to
-	// select once the folder a result led to is listed.
-	deep   bool
-	search *sftpSearch
-	reveal sftpReveal
+	// deep widens the filter to the folders below this one; search is the
+	// reading of them, and searchShown says the list shows its results rather
+	// than rows (see sftp_search.go). reveal is the entry to select in the
+	// folder the next navigation lands in.
+	deep        bool
+	search      *sftpSearch
+	searchShown bool
+	reveal      sftpReveal
 }
 
 type sftpView struct {
@@ -425,6 +430,8 @@ func (state *State) clickSFTP(id ui.ID) {
 		if index < len(view.crumbs) {
 			state.navigateSFTPDirectory(view, view.crumbs[index].path)
 		}
+	case id.Scope() == hitSFTPEntryList && view.searching():
+		state.pressSFTPSearchResult(view, &view.sftpFolder, view.first+item(id), 1)
 	case id.Scope() == hitSFTPEntryList && !view.busy:
 		index := view.first + item(id)
 		if index < len(view.rows) {
@@ -893,7 +900,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 	view.allRows = rows
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	state.applySFTPFilter(view, &view.sftpFolder, true)
-	state.finishSFTPNavigation(view, false, place, restore)
+	state.finishSFTPNavigation(view, false, place, restore, nav)
 	view.errorText = ""
 	if view.refreshStatus != "" {
 		view.status = view.refreshStatus
@@ -1605,10 +1612,7 @@ func (state *State) scrollSFTP(view *sftpView, event ui.ScrollEvent) ui.EventRes
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()
-	if folder.searching() {
-		return scrollSFTPSearch(folder.search, event)
-	}
-	if folder.visibleRows <= 0 || len(folder.rows) <= folder.visibleRows {
+	if folder.visibleRows <= 0 || len(folder.shownRows()) <= folder.visibleRows {
 		return ui.EventResult{Handled: true}
 	}
 	// At the edges, continuing to scroll outward is a no-op that must not repaint
@@ -1643,8 +1647,8 @@ func (state *State) scrollSFTP(view *sftpView, event ui.ScrollEvent) ui.EventRes
 func (state *State) fitSFTP(size ui.Size) {
 	for index := range state.sessions {
 		if view := state.sessions[index].files; view != nil {
-			view.first = min(view.first, max(0, len(view.rows)-view.visibleRows))
-			view.lfolder.first = min(view.lfolder.first, max(0, len(view.lfolder.rows)-view.lfolder.visibleRows))
+			view.first = min(view.first, max(0, len(view.shownRows())-view.visibleRows))
+			view.lfolder.first = min(view.lfolder.first, max(0, len(view.lfolder.shownRows())-view.lfolder.visibleRows))
 		}
 	}
 }
@@ -1727,13 +1731,14 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		state.clickSFTP(hitSFTPClose)
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	case ui.KeyEnter:
-		if folder := view.active(); event.Target.Scope() == hitSFTPSearchList && folder.searching() {
-			state.revealSFTPSearchResult(view, folder, folder.search.first+item(event.Target))
-			return ui.EventResult{Handled: true, Repaint: true}, true
-		}
 		if event.Target.Scope() == hitSFTPEntryList {
 			folder := view.active()
 			index := folder.first + item(event.Target)
+			if folder.searching() {
+				// Enter on a result is a double click on it.
+				state.pressSFTPSearchResult(view, folder, index, 2)
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
 			if index < len(folder.rows) {
 				folder.selected = index
 				if view.local {
@@ -1778,8 +1783,12 @@ func (state *State) sftpRowPointer(event ui.PointerEvent) (ui.EventResult, bool)
 	view := session.files
 	folder := view.active()
 	index := folder.first + item(event.Target)
-	if view.dialog != sftpDialogNone || index >= len(folder.rows) || view.busy && !view.local {
+	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
 		return ui.EventResult{Handled: true}, true
+	}
+	if folder.searching() {
+		state.pressSFTPSearchResult(view, folder, index, event.ClickCount)
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.ClickCount == 1 {
 		// A press, not yet half of a double click. Handling it here keeps the
