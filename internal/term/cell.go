@@ -83,6 +83,9 @@ type line struct {
 	at         int64 // unix seconds of the first write; 0 when unrecorded
 	version    uint32
 	wrapped    bool
+	// start is set on the row a command was typed on: the block it prints runs
+	// from here to the row before the next one. See MarkCommand.
+	start bool
 }
 
 // Row is a read-only view of one visible row. Its slices are valid until the

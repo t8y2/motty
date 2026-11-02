@@ -140,7 +140,7 @@ func (t *Terminal) bufferLine(index int) *line {
 }
 
 // ViewLine returns the retained-buffer line displayed at view row, or -1 when
-// row lies outside the screen.
+// row lies outside the screen or a fold hides it.
 func (t *Terminal) ViewLine(row int) int {
 	if row < 0 || row >= t.rows {
 		return -1
@@ -148,7 +148,11 @@ func (t *Terminal) ViewLine(row int) int {
 	if t.onAlt {
 		return row
 	}
-	return t.histCount - t.view + row
+	rows := t.viewRows()
+	if row >= len(rows) {
+		return -1
+	}
+	return t.histCount - t.view + rows[row].index
 }
 
 // RevealLine scrolls the main-screen view to include line, centered when the

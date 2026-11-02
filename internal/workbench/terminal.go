@@ -493,6 +493,9 @@ func (t *terminal) noteShellInput(p []byte) {
 			if t.promptDirty || !atPrompt {
 				t.submittedLines++
 			}
+			// The row the command was typed on opens the block it is about to
+			// print, which the gutter can fold away.
+			t.screen.MarkCommand()
 			t.promptDirty, atPrompt = false, false
 		case 3:
 			t.promptDirty, t.submittedLines = false, 0

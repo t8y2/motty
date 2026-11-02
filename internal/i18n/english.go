@@ -1263,7 +1263,7 @@ var englishTools = ToolsMessages{
 	PaddingNormal:              "Normal",
 	PaddingRoomy:               "Roomy",
 	GutterRow:                  "Line gutter",
-	GutterDescription:          "Shows line numbers or write times.",
+	GutterDescription:          "Shows line numbers or write times, and the box that folds a command's output away.",
 	GutterOff:                  "Off",
 	GutterNumbers:              "Numbers",
 	GutterTime:                 "Time",

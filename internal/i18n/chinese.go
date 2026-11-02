@@ -1263,7 +1263,7 @@ var chineseTools = ToolsMessages{
 	PaddingNormal:              "标准",
 	PaddingRoomy:               "宽松",
 	GutterRow:                  "行号栏",
-	GutterDescription:          "显示行号或写入时间。",
+	GutterDescription:          "显示行号或写入时间，命令输出的折叠开关也在这一栏。",
 	GutterOff:                  "关闭",
 	GutterNumbers:              "行号",
 	GutterTime:                 "时间",
