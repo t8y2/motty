@@ -301,9 +301,9 @@ func installCompletionUpdate(t *testing.T, store *completion.CatalogStore, tag s
 	return stats
 }
 
-func queueCompletionUpdate(state *State, stats completion.ImportStats, installed bool) {
+func queueCompletionUpdate(state *State, installed bool) {
 	state.completion.updateReady = make(chan completionUpdateResult, 1)
-	state.completion.updateReady <- completionUpdateResult{stats: stats, installed: installed}
+	state.completion.updateReady <- completionUpdateResult{installed: installed}
 	state.adoptCompletionUpdate()
 }
 
@@ -318,7 +318,7 @@ func TestCompletionUpdateReportsRepairedAndSkippedSources(t *testing.T) {
 	c := &state.completion
 	c.store, c.catalogGeneration = store, 0
 	c.updateReady = make(chan completionUpdateResult, 1)
-	c.updateReady <- completionUpdateResult{stats: stats, installed: true}
+	c.updateReady <- completionUpdateResult{installed: true}
 	state.adoptCompletion() // catalog and its stats first, the result second
 	catalog := c.catalog
 	if catalog == nil || catalog.Release != "v11.0.0" {
@@ -350,7 +350,7 @@ func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 	}
 	c := &state.completion
 	c.store, c.catalogGeneration = store, 0
-	queueCompletionUpdate(state, stats, true)
+	queueCompletionUpdate(state, true)
 	m := state.messages.Completion
 	if want := fmt.Sprintf(m.UpdatedFmt, c.catalog.Release); state.status != want {
 		t.Fatalf("status = %q, want %q", state.status, want)
@@ -366,7 +366,7 @@ func TestCompletionUpdateWithoutDefectsKeepsThePlainMessage(t *testing.T) {
 
 func TestCompletionUpdateWithoutANewVersionStaysUpToDate(t *testing.T) {
 	w := newCompletionWorld(t)
-	queueCompletionUpdate(w.state, completion.ImportStats{}, false)
+	queueCompletionUpdate(w.state, false)
 	if w.state.status != w.state.messages.Completion.UpToDate {
 		t.Fatalf("status = %q, want the up-to-date message", w.state.status)
 	}
@@ -461,7 +461,7 @@ func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
 	stats := installCompletionUpdate(t, store, "v11.0.0", true)
 	c := &state.completion
 	c.store, c.catalogGeneration = store, 0
-	queueCompletionUpdate(state, stats, true)
+	queueCompletionUpdate(state, true)
 	summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, stats.RepairedFiles, stats.SkippedSources)
 
 	// A later check that installs nothing returns zero stats; the installed
@@ -501,7 +501,7 @@ func TestCompletionInstallAdoptedBeforeResultStillReportsTheUpdate(t *testing.T)
 	c := &state.completion
 	c.store, c.catalogGeneration = store, 0
 	c.updateReady = make(chan completionUpdateResult, 1)
-	c.updateReady <- completionUpdateResult{stats: stats, installed: true}
+	c.updateReady <- completionUpdateResult{installed: true}
 	state.adoptCompletion() // the real order: catalog first, update result second
 	message := state.messages.Completion
 	if want := fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, stats.RepairedFiles, stats.SkippedSources); state.status != want {
@@ -513,6 +513,40 @@ func TestCompletionInstallAdoptedBeforeResultStillReportsTheUpdate(t *testing.T)
 	}
 	if summary := fmt.Sprintf(message.RepairSummaryFmt, stats.RepairedFiles, stats.SkippedSources); !strings.Contains(status, summary) {
 		t.Fatalf("settings status %q lacks %q", status, summary)
+	}
+}
+
+// A pending result can be superseded by another window's install before the
+// window consumes it. The message must describe the catalog that was actually
+// adopted, not claim that the newer release needed the older result's repairs.
+func TestCompletionUpdateMessageDescribesTheAdoptedCatalog(t *testing.T) {
+	store := sharedCompletionStore(t)
+	first := newCompletionWorld(t)
+	first.state.completion.store = store
+	first.state.completion.catalogGeneration = 0
+	first.state.adoptCompletionCatalog()
+
+	// The first window's check installed the repaired v11; its result is still
+	// pending when another window installs the clean v12.
+	repairStats := installCompletionUpdate(t, store, "v11.0.0", true)
+	installCompletionUpdate(t, store, "v12.0.0", false)
+	c := &first.state.completion
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{installed: true}
+	first.state.adoptCompletion()
+	message := first.state.messages.Completion
+	if want := fmt.Sprintf(message.UpdatedFmt, "v12.0.0"); first.state.status != want {
+		t.Fatalf("status = %q, want %q", first.state.status, want)
+	}
+	status, err := first.state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "v12.0.0") {
+		t.Fatalf("settings status %q does not describe the adopted catalog", status)
+	}
+	if stale := fmt.Sprintf(message.RepairSummaryFmt, repairStats.RepairedFiles, repairStats.SkippedSources); strings.Contains(status, stale) {
+		t.Fatalf("settings status %q claims repairs the adopted catalog does not have", status)
 	}
 }
 

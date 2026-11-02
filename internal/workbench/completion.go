@@ -164,8 +164,7 @@ type completionCatalogLoad struct {
 }
 
 type completionUpdateResult struct {
-	err   error
-	stats completion.ImportStats
+	err error
 	// installed is the store's own answer to "was a new snapshot written".
 	// The catalog generation cannot answer it here: a Wake may have adopted
 	// the published catalog before the result was handled.
@@ -309,13 +308,14 @@ func (state *State) adoptCompletionUpdate() {
 		if installed {
 			// The store keeps the counters beside the catalog, so
 			// adoptCompletionCatalog already adopted them for every window.
-			// The result only drives this window's one-shot status message; a
-			// check that installs nothing (already newest, or failed) leaves
-			// both the catalog and its counters alone.
+			// Compose the one-shot message from that adopted snapshot, not
+			// from the result: another window may have installed a newer
+			// release while this result waited, and the status must not claim
+			// that newer release needed repairs it does not have.
 			c.catalogNote = nil
 			message := state.messages.Completion
-			if result.stats.RepairedFiles > 0 || result.stats.SkippedSources > 0 {
-				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, result.stats.RepairedFiles, result.stats.SkippedSources))
+			if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, c.updateStats.RepairedFiles, c.updateStats.SkippedSources))
 			} else {
 				state.status = completionStatusText(fmt.Sprintf(message.UpdatedFmt, c.catalog.Release))
 			}
@@ -434,8 +434,8 @@ func (state *State) updateCompletions() {
 	}
 	go func() {
 		defer c.workers.Done()
-		_, _, stats, installed, err := store.Update(ctx, completion.UpdateClient())
-		ready <- completionUpdateResult{err: err, stats: stats, installed: installed}
+		_, _, _, installed, err := store.Update(ctx, completion.UpdateClient())
+		ready <- completionUpdateResult{err: err, installed: installed}
 		for _, invalidate := range wake {
 			invalidate()
 		}
