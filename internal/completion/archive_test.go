@@ -168,6 +168,36 @@ func TestReadSourceArchiveRejectsDamagedGzipTrailer(t *testing.T) {
 	}
 }
 
+func TestReadSourceArchiveBoundsKeptSourceBytes(t *testing.T) {
+	data := "name: a\n"
+	limits := DefaultArchiveLimits()
+	// Room for the license and the first source, but not the second one.
+	limits.MaxSourceBytes = int64(len("MIT") + len(data))
+	if _, err := testArchive(t, []archiveEntry{
+		{name: "LICENSE", body: "MIT"},
+		{name: "man/cmd/a/a.yaml", body: data},
+		{name: "man/cmd/b/b.yaml", body: data},
+	}, limits); err == nil {
+		t.Fatal("archive sources above the memory bound were accepted")
+	}
+}
+
+func TestDefaultArchiveLimitsKeepWorkAndMemoryBoundsSeparate(t *testing.T) {
+	limits := DefaultArchiveLimits()
+	// Carapace 1.8.x expands to about 108 MB; the work bound must leave at least
+	// double that instead of failing on normal growth.
+	if limits.MaxExpanded < 200<<20 {
+		t.Fatalf("MaxExpanded = %d, want at least 200 MiB", limits.MaxExpanded)
+	}
+	// The work bound alone must not decide how much may be kept in memory.
+	if limits.MaxSourceBytes > 128<<20 {
+		t.Fatalf("MaxSourceBytes = %d, want at most 128 MiB", limits.MaxSourceBytes)
+	}
+	if limits.MaxSourceBytes > limits.MaxExpanded/2 {
+		t.Fatalf("MaxSourceBytes (%d) is not clearly below MaxExpanded (%d)", limits.MaxSourceBytes, limits.MaxExpanded)
+	}
+}
+
 func TestReadSourceArchiveBoundsBytesAfterTarEnd(t *testing.T) {
 	compressed := testArchiveBytes(t, []archiveEntry{{name: "LICENSE", body: "MIT"}, {name: "man/cmd/a/a.yaml", body: "name: a\n"}})
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))

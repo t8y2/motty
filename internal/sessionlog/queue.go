@@ -80,6 +80,7 @@ func (q *Queue) run() {
 // when many goroutines submit. The returned channel receives exactly one error
 // and is then closed. Submit never blocks for the database or a full queue.
 func (q *Queue) Submit(operation Operation) <-chan error {
+	operation.IDs = append([]string(nil), operation.IDs...)
 	ack := make(chan error, 1)
 	item := queuedOperation{operation: operation, ack: ack, done: make(chan struct{})}
 	q.mu.Lock()
@@ -150,6 +151,8 @@ func (s *Store) apply(operation Operation) error {
 		return s.Delete(operation.ID)
 	case OpClear:
 		return s.Clear(operation.IncludeFavorites)
+	case OpDeleteSelection:
+		return s.DeleteSelection(operation.IDs, operation.IncludeFavorites)
 	default:
 		return fmt.Errorf("%w: operation kind %d", ErrInvalidRecord, operation.Kind)
 	}

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
@@ -152,7 +151,9 @@ func (state *State) showInFiles(session *Session, target string) {
 	if strings.HasSuffix(target, "/") {
 		dir = path.Clean(target)
 	}
-	state.Click(hitSFTPOpen)
+	// Showing a folder only ever opens the panel: a panel that is already up
+	// keeps the view it has, and the navigation below runs on it.
+	state.showFilesPanel(session)
 	view := session.files
 	switch {
 	case view == nil:
@@ -206,7 +207,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSelectAll, Label: messages.MenuSelectAll, Icon: icon(iconSelectAll)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuClearScreen, Label: messages.MenuClearScreen, Icon: icon(iconEraser), Keys: caps(shortcutClearScreen), Disabled: session.term.screen.Modes().AltScreen})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuClear, Label: messages.MenuClearScrollback, Icon: icon(iconEraser), Disabled: session.term.screen.Scrollback() == 0})
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSave, Label: messages.Tools.MenuSaveOutput, Icon: icon(iconFileDown)})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSave, Label: messages.Tools.MenuSaveOutput, Icon: icon(iconSave)})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitRight, Label: messages.PaneSplitHorizontal, Icon: icon(iconColumns2), Keys: caps(shortcutPaneSplitHorizontal)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitDown, Label: messages.PaneSplitVertical, Icon: icon(iconRows2), Keys: caps(shortcutPaneSplitVertical)})
@@ -219,16 +220,17 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuClosePane, Label: messages.PaneClose, Icon: icon(iconClose), Keys: caps(shortcutPaneClose)})
 	}
 	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Keys: caps(shortcutSFTP), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Kind: components.ContextMenuCheckbox, Checked: state.filesPanelShown(), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || state.transfer.phase != transferNone})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuAsk, Label: messages.AIPanel.MenuAskSelection, Icon: icon(iconBot), Disabled: !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuExplain, Label: messages.AIPanel.MenuExplainOutput, Icon: icon(iconSparkles)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuHistory, Label: messages.History.Title, Icon: icon(iconHistory), Keys: caps(shortcutHistory), Disabled: !state.historyAvailable(session)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSearch, Label: messages.Tools.MenuSearchSelection, Icon: icon(iconSearch), Disabled: !hasSelection})
-	const switchWidth = float32(32)
 	if _, _, monitor := state.remoteStatsToggle(session); monitor {
-		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), TrailingWidth: switchWidth})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), Kind: components.ContextMenuCheckbox, Checked: session.stats != nil})
+	}
+	if state.remoteToolsOffered(session) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
 	}
 	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)
@@ -259,17 +261,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		RowHeight: contextMenuRow,
 	})
 	state.menuPlaced(menu.Bounds())
-	// The row is the click target; the switch in its slot only shows the state,
-	// so it is painted without a hit of its own.
-	rows.paint(&menu, func(_ components.ContextMenuItem, slot ui.Rect) {
-		var track flex.Box
-		f := state.paneChrome.Begin(canvas, state.Theme(), slot)
-		f.Row().Fill().Items(flex.Center).Children(func() {
-			track = f.Slot().Size(switchWidth, 18)
-		})
-		f.End()
-		components.BeginSwitch(canvas, state.switchTheme(), ui.ID{}, track.Rect(), session.stats != nil).Small().Paint()
-	})
+	rows.paint(&menu, nil)
 	menu.End()
 }
 

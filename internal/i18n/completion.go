@@ -26,8 +26,26 @@ type CompletionMessages struct {
 	Updating              string
 	UpToDate              string
 	UpdatedFmt            string
-	CheckFailedFmt        string
-	CacheFailedFmt        string
-	CheckedFmt            string
-	NoDataDir             string
+	// UpdatedRepairedFmt is shown when an update needed repair or skipped
+	// upstream files; the other UpdatedFmt stays the clean case.
+	UpdatedRepairedFmt string
+	// RepairSummaryFmt is the settings-row fragment for those nonzero counts.
+	RepairSummaryFmt string
+	// RecoveryStatsUnknown identifies legacy snapshots without import counters.
+	RecoveryStatsUnknown string
+	// CatalogProvenanceFmt is the settings row when the catalog commit is a
+	// full hash: release, repo@short-commit, counts and origin.
+	CatalogProvenanceFmt string
+	// CatalogRepoFmt renders repository and short commit inside that row.
+	CatalogRepoFmt string
+	// CatalogOriginBuiltin and CatalogOriginInstalled name where the active
+	// catalog came from.
+	CatalogOriginBuiltin   string
+	CatalogOriginInstalled string
+	// AuditWarningsFmt reports soft findings of the content audit.
+	AuditWarningsFmt string
+	CheckFailedFmt   string
+	CacheFailedFmt   string
+	CheckedFmt       string
+	NoDataDir        string
 }

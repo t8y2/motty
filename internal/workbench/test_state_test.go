@@ -1,12 +1,14 @@
 package workbench
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/localshell"
 )
 
 // newTestState is New for a test that may open the assistant's database: the
@@ -33,7 +35,22 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = func(func()) func() { return func() {} }
 	}
+	if options.SetInterfaceFont == nil {
+		// Nor may a test change the process's interface font, or read the fonts of
+		// the machine it runs on.
+		options.SetInterfaceFont = func(string) bool { return true }
+	}
+	if options.FontFamilies == nil {
+		options.FontFamilies = func() []string { return nil }
+	}
 	state := New(options)
+	// The shells a Windows computer offers are whatever is installed on it, and
+	// naming WSL distributions starts wsl.exe: a test sees one shell and no
+	// distributions, the way a computer with only a default shell would.
+	state.localShellMenu.discover = func() []localshell.Choice {
+		return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
+	}
+	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
 	// A test never waits for the automatic check; the ones that exercise it set
 	// these back to something short.
 	state.update.firstDelay, state.update.every = time.Hour, time.Hour

@@ -78,6 +78,10 @@ Electerm 和 Netcatty 会把已保存的密码以明文写进导出文件。Mott
 
 - 你在文件里新增或修改的 `Host` 会出现在 Motty，在 Motty 里新增或修改的主机会写回
   文件。主机地址、用户、端口和 `ProxyJump` 双向同步；`IdentityFile` 只会加入一次密钥串。
+  `ProxyCommand` 只在主机第一次进入 Motty 时带过来，并等你确认（见
+  [出站代理](/zh/docs/network/port-forwarding#出站代理)）。
+  在 Motty 里停止跳板路由只影响 Motty 自己的连接；文件里仍保留 `ProxyJump`，终端里的
+  `ssh` 依旧会经过跳板。
 - 在 Motty 里创建的主机写进由 `# --- motty: begin synced hosts` 和
   `# --- motty: end synced hosts` 围起来的区块，位置在你的通用 `Host *` 区块之前。
   文件里的其余内容，包括注释和 Motty 不认识的设置，都保持原样。你自己写的主机在原处

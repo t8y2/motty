@@ -8,7 +8,7 @@ Open the file panel with **Command+Shift+S** (**Control+Shift+S** elsewhere).
 
 - Multi-select, recursive upload and download.
 - A bounded transfer queue with resume, cancel and retry.
-- Rename, delete, permissions and bookmarks.
+- Rename, delete (a folder goes with everything in it), permissions and bookmarks.
 
 Right-click a remote folder and choose **Compress…**. Enter an archive name ending in `.tar.gz`
 (the default), `.tgz` or `.zip`. Compression runs on the server and does not replace an existing destination.
@@ -22,6 +22,20 @@ press Escape to restore the current path. This applies to both remote and local 
 Breadcrumbs remain the default.
 Navigation failures appear in a global toast at the top of the window, including the requested path.
 The current folder and typed path are preserved so you can correct the path and try again.
+
+## Finding files
+
+Press **Command+F** (**Control+F** elsewhere) in the file list to filter the current folder by name.
+The folder button next to the filter, **Include subfolders**, searches the folders below it as well:
+
+- The folders are read once, in the background, over a connection of their own, so transfers keep going.
+  Results appear as they are found, nearest folders first, each with the folder it is in.
+- Changing or clearing the query matches again what was already read, so the folders are not read twice. Nothing runs on the server but folder listings.
+- Double-click a result, or press Enter: a folder opens, a file is selected in its folder.
+- Hidden folders are searched only while hidden files are shown. Symbolic links are not followed, and a search that starts at the top of a file system leaves out `/proc`, `/sys` and `/dev`.
+- Results are a list of their own: transfers, rename and delete act on the folder's files, not on them. The detached two-pane window filters its folders only; it does not search subfolders.
+- A search reads at most 200,000 entries, 32 levels deep, and shows the first 5,000 matches;
+  the status line says when it stopped early or a folder could not be read.
 
 ## Transfer center
 

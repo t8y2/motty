@@ -314,7 +314,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	state.applySFTPFilter(view, folder, true)
-	state.finishSFTPNavigation(view, true, place, restore)
+	state.finishSFTPNavigation(view, true, place, restore, listing.navigation)
 	state.retireLocalListingStatus(view)
 	view.errorText = ""
 	if view.detached != nil {
@@ -353,6 +353,7 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
 	case id == hitSFTPRefresh:
+		stopSFTPSearch(folder)
 		state.listLocal(view, folder.path)
 	case id == hitSFTPUp:
 		if parent := filepath.Dir(folder.path); parent != folder.path {
@@ -372,6 +373,8 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 		if index := item(id); index < len(folder.crumbs) {
 			state.navigateLocalDirectory(view, folder.crumbs[index].path)
 		}
+	case id.Scope() == hitSFTPEntryList && folder.searching():
+		state.pressSFTPSearchResult(view, folder, folder.first+item(id), 1)
 	case id.Scope() == hitSFTPEntryList:
 		index := folder.first + item(id)
 		if index < len(folder.rows) {
@@ -486,7 +489,8 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 
 // scrollFolder is scrollSFTP for whichever folder is on show.
 func scrollFolder(folder *sftpFolder, event ui.ScrollEvent) ui.EventResult {
-	if folder.visibleRows <= 0 || len(folder.rows) <= folder.visibleRows {
+	rows := len(folder.shownRows())
+	if folder.visibleRows <= 0 || rows <= folder.visibleRows {
 		return ui.EventResult{Handled: true}
 	}
 	folder.wheel += event.StepY(sftpRowHeight) / sftpRowHeight
@@ -496,7 +500,7 @@ func scrollFolder(folder *sftpFolder, event ui.ScrollEvent) ui.EventResult {
 	}
 	folder.wheel -= float32(lines)
 	before := folder.first
-	folder.first = min(max(0, folder.first+lines), len(folder.rows)-folder.visibleRows)
+	folder.first = min(max(0, folder.first+lines), rows-folder.visibleRows)
 	if folder.first == before {
 		folder.wheel = 0
 	}

@@ -1,3 +1,8 @@
 *.go text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
+
+# The embedded completion catalog is a byte-exact format (Decode/Encode must
+# round-trip identically); line-ending conversion on a Windows checkout
+# corrupts it, so it is pinned as binary.
+internal/completion/data/catalog.bin binary

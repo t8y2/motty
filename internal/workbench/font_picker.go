@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // The terminal's font. The two built-in faces are always there; any installed
@@ -18,6 +19,11 @@ import (
 // Behind the font sit up to maxFallbackFonts more families, tried in order for the
 // characters it has no glyph for (a Latin programming font and a CJK one, say). The
 // picker serves both: it opens for the font, or for the next fallback.
+//
+// The same picker also chooses the interface's font (interface_font.go): what
+// differs between the three is the list of families it offers, the rows it adds
+// to it, what the highlighted row is previewed in, and what confirming does;
+// the search, the highlight, the keys, the double click and the buttons are one.
 
 // fontPickerHits is the place of the controls this file paints.
 var fontPickerHits = tree.Feature("font-picker")
@@ -26,6 +32,8 @@ var (
 	hitFontPickerSearch      = tree.ID(fontPickerHits, "font-picker-search")
 	hitFontPickerDismiss     = tree.ID(fontPickerHits, "font-picker-dismiss")
 	hitFontPickerClose       = tree.ID(fontPickerHits, "font-picker-close")
+	hitFontPickerCancel      = tree.ID(fontPickerHits, "font-picker-cancel")
+	hitFontPickerConfirm     = tree.ID(fontPickerHits, "font-picker-confirm")
 	hitSettingsFontPick      = tree.ID(fontPickerHits, "settings-font-pick")
 	hitSettingsFallbackAdd   = tree.ID(fontPickerHits, "settings-font-fallback-add")
 	hitSettingsFallbackClear = tree.ID(fontPickerHits, "settings-font-fallback-clear")
@@ -33,6 +41,40 @@ var (
 )
 
 const fontPickerVisibleRows = 8
+
+// fontPickerKind is what the picker is choosing.
+type fontPickerKind uint8
+
+const (
+	pickTerminalFont  fontPickerKind = iota // the terminal's font, the built-in faces included
+	pickFallbackFont                        // a family behind the terminal's font
+	pickInterfaceFont                       // the family of the window's own text
+)
+
+// fontList is a list of installed families, read off the window thread when it is
+// first wanted (reading it takes a moment, so never on a paint).
+type fontList struct {
+	// installed is what the system listed; nil until it has been read.
+	installed []string
+	loading   bool
+}
+
+// pickerList is the list the open picker offers: the fixed-pitch families for the
+// terminal, every family for the interface.
+func (state *State) pickerList() *fontList {
+	if state.fonts.kind == pickInterfaceFont {
+		return &state.uiFont.fontList
+	}
+	return &state.fonts.fontList
+}
+
+// pickerFamilies reads the installed families the open picker offers.
+func (state *State) pickerFamilies() func() []string {
+	if state.fonts.kind == pickInterfaceFont {
+		return state.options.FontFamilies
+	}
+	return state.options.MonoFamilies
+}
 
 // fallbackActions are the buttons of the fallback fonts row: add one more while there
 // is room, and clear them once there is one.
@@ -77,11 +119,10 @@ type fontsUI struct {
 	// choice; usable is the part of it the face is made from.
 	fallbacks []string
 	usable    []string
-	// adding is set while the picker is open for a fallback rather than the font.
-	adding bool
-	// installed is what the system listed; nil until it has been read.
-	installed []string
-	loading   bool
+	fontList
+	// kind is what the picker is open for; the fields below are the picker's,
+	// whichever it is open for.
+	kind fontPickerKind
 
 	search   text.Editor
 	raw      string // the search text the filter was built for
@@ -91,10 +132,13 @@ type fontsUI struct {
 	top      int     // first filtered row shown
 	built    bool
 
-	// text is the description the settings row shows; textFor is what it was made for.
+	// text is the description the settings row shows; textFor and textLang are what
+	// it was made for.
 	text, textFor string
+	textLang      i18n.Language
 	// fallbackText is the same for the fallback row.
 	fallbackText, fallbackFor string
+	fallbackLang              i18n.Language
 	// actions are the fallback row's buttons, cached for the settings page's
 	// zero-allocation repaint path.
 	actions                          [2]components.ButtonAction
@@ -117,8 +161,8 @@ func (state *State) fontName() string {
 // made again only when that changes.
 func (state *State) fontDescription() string {
 	name := state.fontName()
-	if state.fonts.textFor != name || state.fonts.text == "" {
-		state.fonts.textFor = name
+	if state.fonts.textFor != name || state.fonts.textLang != state.language || state.fonts.text == "" {
+		state.fonts.textFor, state.fonts.textLang = name, state.language
 		state.fonts.text = fmt.Sprintf(state.messages.Tools.FontCurrentFmt, name)
 	}
 	return state.fonts.text
@@ -132,8 +176,8 @@ func (state *State) fallbackDescription() string {
 		return state.messages.Tools.FontFallbackEmpty
 	}
 	key := strings.Join(fonts.fallbacks, "\n")
-	if fonts.fallbackFor != key || fonts.fallbackText == "" {
-		fonts.fallbackFor = key
+	if fonts.fallbackFor != key || fonts.fallbackLang != state.language || fonts.fallbackText == "" {
+		fonts.fallbackFor, fonts.fallbackLang = key, state.language
 		fonts.fallbackText = fmt.Sprintf(state.messages.Tools.FontFallbackFmt, strings.Join(fonts.fallbacks, " · "))
 	}
 	return fonts.fallbackText
@@ -194,10 +238,9 @@ func cleanFallbackFonts(names []string, primary string) []string {
 }
 
 // listFonts reads the installed families off the window thread and delivers the
-// list to fn on it.
-func (state *State) listFonts(fn func(*State, []string)) {
-	list := state.options.MonoFamilies
-	if !state.aiPost(func(*State) {}) { // the window is closing
+// list to fn on it. list is nil where the caller has none.
+func (state *State) listFonts(list func() []string, fn func(*State, []string)) {
+	if list == nil || !state.aiPost(func(*State) {}) { // none, or the window is closing
 		return
 	}
 	go func() {
@@ -215,7 +258,7 @@ func (state *State) validateTerminalFont() {
 		return
 	}
 	family := state.fonts.family
-	state.listFonts(func(s *State, families []string) {
+	state.listFonts(state.options.MonoFamilies, func(s *State, families []string) {
 		s.fonts.installed = families
 		s.fonts.built = false
 		if s.fonts.family != family {
@@ -235,22 +278,38 @@ func (state *State) validateTerminalFont() {
 // openFontPicker opens the picker for the font, or, with fallback, for the next
 // family behind it.
 func (state *State) openFontPicker(fallback bool) {
+	if fallback {
+		state.openPicker(pickFallbackFont)
+		return
+	}
+	state.openPicker(pickTerminalFont)
+}
+
+// openPicker opens the picker for what kind names, and starts reading the list it
+// offers if that has not been read.
+func (state *State) openPicker(kind fontPickerKind) {
 	state.modal = modalFontPicker
-	state.fonts.adding = fallback
+	state.fonts.kind = kind
 	state.fonts.search = text.Editor{}
 	state.fonts.built = false
-	if state.fonts.installed == nil && !state.fonts.loading {
-		state.fonts.loading = true
-		state.listFonts(func(s *State, families []string) {
-			s.fonts.loading = false
-			if families == nil {
-				families = []string{}
-			}
-			s.fonts.installed = families
-			s.fonts.built = false
-			s.applyTerminalFace()
-		})
+	list := state.pickerList()
+	if list.installed != nil || list.loading {
+		return
 	}
+	list.loading = true
+	state.listFonts(state.pickerFamilies(), func(s *State, families []string) {
+		list.loading = false
+		if families == nil {
+			families = []string{}
+		}
+		list.installed = families
+		s.fonts.built = false
+		if kind == pickInterfaceFont {
+			s.reconcileInterfaceFont()
+			return
+		}
+		s.applyTerminalFace()
+	})
 }
 
 // refreshFontPicker builds the list the picker shows for its search text.
@@ -263,13 +322,16 @@ func (state *State) refreshFontPicker() {
 	first := !fonts.built
 	fonts.built, fonts.raw = true, raw
 	fonts.entries = fonts.entries[:0]
-	if !fonts.adding {
+	switch fonts.kind {
+	case pickTerminalFont:
 		fonts.entries = append(fonts.entries,
 			fontEntry{label: state.messages.SettingsTerminalFontSystem, face: ui.MonoSystem},
 			fontEntry{label: state.messages.SettingsTerminalFontClassic, face: ui.MonoClassic})
+	case pickInterfaceFont:
+		fonts.entries = append(fonts.entries, fontEntry{label: state.messages.SettingsInterfaceFontDefault})
 	}
-	for _, name := range fonts.installed {
-		if fonts.adding && (name == fonts.family || slices.Contains(fonts.fallbacks, name)) {
+	for _, name := range state.pickerList().installed {
+		if fonts.kind == pickFallbackFont && (name == fonts.family || slices.Contains(fonts.fallbacks, name)) {
 			continue // already drawing with it
 		}
 		fonts.entries = append(fonts.entries, fontEntry{label: name, family: name})
@@ -281,7 +343,7 @@ func (state *State) refreshFontPicker() {
 		if query != "" && !strings.Contains(strings.ToLower(entry.label), query) {
 			continue
 		}
-		if !fonts.adding && state.fontInUse(entry) {
+		if fonts.kind != pickFallbackFont && state.fontInUse(entry) {
 			current = len(fonts.filtered)
 		}
 		fonts.filtered = append(fonts.filtered, int32(index))
@@ -321,25 +383,52 @@ func (state *State) scrollFontPicker(event ui.ScrollEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: fonts.top != before}
 }
 
-// chooseFont applies the highlighted (or clicked) row and closes the picker.
-func (state *State) chooseFont(row int) {
+// selectFont updates the highlighted row so the sample previews it.
+func (state *State) selectFont(row int) {
 	fonts := &state.fonts
 	state.refreshFontPicker()
 	if row < 0 || row >= len(fonts.filtered) {
 		return
 	}
-	entry := fonts.entries[fonts.filtered[row]]
-	adding := fonts.adding
-	state.closeModal()
-	if adding {
-		if state.addFallbackFont(entry.family) {
-			state.save()
-		}
+	fonts.selected = row
+}
+
+// canConfirmFont reports whether the highlighted row can be applied: the Confirm
+// button, Enter and a double click all ask this, so none of them can do what the
+// others are shown to refuse. Nothing can be applied while the installed families are
+// still being read, and nothing is highlighted when no font matches the search.
+func (state *State) canConfirmFont() bool {
+	fonts := &state.fonts
+	state.refreshFontPicker()
+	return !state.pickerList().loading && fonts.selected >= 0 && fonts.selected < len(fonts.filtered)
+}
+
+// confirmFont applies the highlighted row and closes the picker.
+func (state *State) confirmFont() {
+	if !state.canConfirmFont() {
 		return
 	}
-	if state.useTerminalFont(entry) {
+	fonts := &state.fonts
+	entry := fonts.entries[fonts.filtered[fonts.selected]]
+	kind := fonts.kind
+	state.closeModal()
+	var changed bool
+	switch kind {
+	case pickFallbackFont:
+		changed = state.addFallbackFont(entry.family)
+	case pickInterfaceFont:
+		changed = state.setInterfaceFont(entry.family)
+	default:
+		changed = state.useTerminalFont(entry)
+	}
+	if changed {
 		state.save()
 	}
+}
+
+// cancelFontPicker closes the picker without applying unconfirmed selections.
+func (state *State) cancelFontPicker() {
+	state.closeModal()
 }
 
 // fontSampleFace is the face the picker's sample is set in: the highlighted font with
@@ -347,7 +436,7 @@ func (state *State) chooseFont(row int) {
 // face with the highlighted family added, so the sample shows the mixed text.
 func (state *State) fontSampleFace(entry fontEntry) ui.MonoFace {
 	fonts := &state.fonts
-	if fonts.adding {
+	if fonts.kind == pickFallbackFont {
 		base := ui.MonoSystem
 		switch {
 		case fonts.family != "":
@@ -365,8 +454,11 @@ func (state *State) fontSampleFace(entry fontEntry) ui.MonoFace {
 	return ui.MonoStack(base, fonts.usable...)
 }
 
-// fontInUse reports whether entry is the terminal's font.
+// fontInUse reports whether entry is the font the picker is choosing.
 func (state *State) fontInUse(entry fontEntry) bool {
+	if state.fonts.kind == pickInterfaceFont {
+		return entry.family == state.uiFont.family
+	}
 	if entry.family != "" {
 		return entry.family == state.fonts.family
 	}
@@ -415,11 +507,13 @@ func (state *State) clearFallbackFonts() bool {
 
 func (state *State) clickFontPicker(id ui.ID) {
 	switch {
-	case id == hitFontPickerDismiss || id == hitFontPickerClose:
-		state.closeModal()
+	case id == hitFontPickerDismiss || id == hitFontPickerClose || id == hitFontPickerCancel:
+		state.cancelFontPicker()
+	case id == hitFontPickerConfirm:
+		state.confirmFont()
 	case id.Scope() == hitFontPickerItemList:
 		state.refreshFontPicker()
-		state.chooseFont(state.fonts.top + item(id))
+		state.selectFont(state.fonts.top + item(id))
 	}
 }
 
@@ -431,7 +525,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
 	case ui.KeyEscape:
-		state.closeModal()
+		state.cancelFontPicker()
 		return handled, true
 	case ui.KeyUp:
 		state.moveFontSelection(-1)
@@ -446,25 +540,59 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		state.moveFontSelection(fontPickerVisibleRows)
 		return handled, true
 	case ui.KeyEnter:
+		// Enter confirms from the search field and the list. On any other control, the
+		// Cancel and close buttons, it is that control's own activation.
+		row, onRow := event.Target.In(hitFontPickerItemList)
+		if event.Target != hitFontPickerSearch && !onRow && !event.Target.IsZero() {
+			return ui.EventResult{}, false
+		}
 		if !event.Repeat {
-			state.chooseFont(state.fonts.selected)
+			if onRow {
+				state.refreshFontPicker()
+				state.selectFont(state.fonts.top + row)
+			}
+			state.confirmFont()
 		}
 		return handled, true
 	}
 	return ui.EventResult{}, false
 }
 
+// confirmFontOnDoubleClick is called while painting the picker: when this paint is the
+// event pass of a double click on a row, that row is applied. Consuming the press
+// keeps its release from clicking whatever is under the pointer once the picker is
+// gone. It reports whether the picker was closed.
+func (state *State) confirmFontOnDoubleClick(canvas *ui.Canvas) bool {
+	index, event, ok := canvas.PointerIn(hitFontPickerItemList)
+	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.ClickCount != 2 {
+		return false
+	}
+	state.selectFont(state.fonts.top + index)
+	canvas.Consume()
+	if !state.canConfirmFont() {
+		return false
+	}
+	state.confirmFont()
+	return true
+}
+
 func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	state.refreshFontPicker()
+	if state.confirmFontOnDoubleClick(canvas) {
+		return
+	}
 	m, pal, fonts := state.messages.Tools, state.pal, &state.fonts
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose, InitialFocusID: hitFontPickerSearch,
-		ContentSize: ui.Size{Width: 560, Height: 502},
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 366,
 	})
 	title := m.FontPickerTitle
-	if fonts.adding {
+	switch fonts.kind {
+	case pickFallbackFont:
 		title = m.FontFallbackPickerTitle
+	case pickInterfaceFont:
+		title = state.messages.SettingsInterfaceFont
 	}
 	layout := dialog.Begin(title, "")
 	rows := max(min(len(fonts.filtered)-fonts.top, fontPickerVisibleRows), 0)
@@ -479,7 +607,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 				row := fonts.top + visible
 				entry := fonts.entries[fonts.filtered[row]]
 				selected := row == fonts.selected
-				inUse := !fonts.adding && state.fontInUse(entry)
+				inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
 				color := pal.text
 				line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(flex.Center).Radius(radius.item).
 					HitWith(hitFontPickerItemList.At(visible), entry.label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
@@ -499,7 +627,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 				})
 			}
 			switch {
-			case fonts.loading:
+			case state.pickerList().loading:
 				f.Text(m.FontPickerLoading).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
 			case len(fonts.filtered) == 0:
 				f.Text(m.FontPickerEmpty).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
@@ -507,11 +635,16 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 		if len(fonts.filtered) > 0 {
 			// The highlighted font, set in itself.
-			face := state.fontSampleFace(fonts.entries[fonts.filtered[fonts.selected]])
-			f.Column().Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
-				f.Text(m.FontPickerSample).FontSize(metrics.FontSizeM).Color(pal.text).MonoFace(face).LineHeight(20).Height(20)
-				f.Text(m.FontPickerSampleSymbols).FontSize(metrics.FontSizeM).Color(pal.muted).MonoFace(face).LineHeight(20).Height(20)
-			})
+			entry := fonts.entries[fonts.filtered[fonts.selected]]
+			if fonts.kind == pickInterfaceFont {
+				state.paintInterfaceFontSample(f, entry)
+			} else {
+				face := state.fontSampleFace(entry)
+				f.Column().Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
+					f.Text(m.FontPickerSample).FontSize(metrics.FontSizeM).Color(pal.text).MonoFace(face).LineHeight(20).Height(20)
+					f.Text(m.FontPickerSampleSymbols).FontSize(metrics.FontSizeM).Color(pal.muted).MonoFace(face).LineHeight(20).Height(20)
+				})
+			}
 		}
 	})
 	f.End()
@@ -522,5 +655,10 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
 		Focused: focused, PlatformEditing: focused && value != "",
 	})
+	confirmDisabled := !state.canConfirmFont()
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitFontPickerCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitFontPickerConfirm, Label: m.FontPickerConfirm, Variant: components.ButtonDefault, Disabled: confirmDisabled},
+	)
 	dialog.End()
 }

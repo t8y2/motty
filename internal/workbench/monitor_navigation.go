@@ -13,7 +13,6 @@ func (s *State) monitorPageOptions() [3]components.TabOption {
 
 func (s *State) paintMonitorNavigation(c *ui.Canvas, p *monitorView, b ui.Rect) {
 	options := s.monitorPageOptions()
-	theme := s.Theme()
-	theme.Metrics.FontSizeM = 12
+	theme := s.Theme().WithFontSize(12)
 	components.BeginTabs(c, theme, b, options[:], options[p.page].ID).Paint()
 }

@@ -499,7 +499,9 @@ func commentStart(line string, from int) int {
 	for i := from; i < len(line); i++ {
 		switch character := line[i]; {
 		case character == '\\' && quote != '\'':
-			i++
+			if i+1 < len(line) && escapes(line[i+1], quote) {
+				i++
+			}
 		case quote != 0:
 			if character == quote {
 				quote = 0

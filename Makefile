@@ -38,7 +38,8 @@ RACE_PACKAGES = \
 	./internal/x11fwd
 
 # How CI divides the list above. The workbench suite is half of the runtime and
-# is sliced by test name; the heaviest remaining packages get a job of their own.
+# is sliced by test name into four shards; the heaviest remaining packages get a
+# job of their own.
 RACE_WORKBENCH = ./internal/workbench
 RACE_HEAVY = \
 	./internal/ai/agent \
@@ -88,8 +89,9 @@ check:
 race:
 	go test -race -p 1 $(RACE_PACKAGES) -count=1
 
-# Half of the workbench suite (SHARD of SHARDS, picked by test-name hash): the
-# package is about half of the whole race run, so it gets the parallel jobs.
+# One shard of the workbench suite (SHARD of SHARDS, picked by test-name hash):
+# the package is about half of the whole race run and its tests cannot overlap
+# each other, so it gets the parallel jobs.
 race-workbench:
 	@test -n "$(SHARD)" -a -n "$(SHARDS)" || { echo "usage: make race-workbench SHARD=<i> SHARDS=<n>"; exit 2; }
 	@pattern=$$(go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) $(RACE_WORKBENCH)) && \

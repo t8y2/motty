@@ -5,6 +5,9 @@ import (
 	"github.com/vivaui/viva/ui"
 	"slices"
 	"strings"
+
+	"github.com/vivaui/viva/text"
+	"motty/internal/sshconn"
 )
 
 const proxyHostPageSize = 6
@@ -24,8 +27,32 @@ type proxyRecord struct {
 	ID       uint32
 	TargetID uint32
 	JumpID   uint32
-	label    string
-	cells    [3]string
+	// Stopped keeps the route configured but out of Motty's own connections, which
+	// then go straight to the target. It is not part of what is synced with the
+	// SSH config, which keeps describing the route, and does not touch sessions
+	// that are already open.
+	Stopped bool
+	// ViaShell carries the connection to the target through a relay program run in
+	// a shell on the jump host, instead of a forwarded channel: for a jump host
+	// that only offers a shell, such as a bastion that has the user switch
+	// accounts first. The jump host's own command after login is typed first.
+	ViaShell bool
+	// Relay is the relay program of a ViaShell route, with the tokens of a proxy
+	// command; empty means defaultRelayCommand.
+	Relay string
+	label string
+	cells [4]string
+}
+
+// defaultRelayCommand connects its standard input and output to the target.
+const defaultRelayCommand = "nc %h %p"
+
+// relayCommand is the program a ViaShell route runs on the jump host.
+func (route proxyRecord) relayCommand() string {
+	if command := strings.TrimSpace(route.Relay); command != "" {
+		return command
+	}
+	return defaultRelayCommand
 }
 
 type proxyEditor struct {
@@ -35,10 +62,17 @@ type proxyEditor struct {
 	jumpOpen     bool
 	targetOffset int
 	jumpOffset   int
+	viaShell     bool
+	relay        text.Editor
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
 	*editor = proxyEditor{targetID: targetID, jumpID: jumpID}
+	editor.relay.Insert(defaultRelayCommand)
+}
+
+func (editor *proxyEditor) relayCommand() string {
+	return strings.TrimSpace(editor.relay.String())
 }
 
 func (editor *proxyEditor) validate(state *State) string {
@@ -58,6 +92,9 @@ func (editor *proxyEditor) validate(state *State) string {
 	}
 	if state.proxyWouldCycle(editor.targetID, editor.jumpID) {
 		return state.messages.ErrProxyCycle
+	}
+	if editor.viaShell && sshconn.CheckRelay(sshconn.Relay{Command: editor.relayCommand()}) != nil {
+		return state.messages.ErrProxyRelay
 	}
 	return ""
 }
@@ -162,6 +199,8 @@ func (state *State) clickProxyDialog(id ui.ID) {
 	case hitProxyDialogJump:
 		state.proxyEditor.jumpOpen = true
 		state.proxyEditor.jumpOffset = proxyHostPage(state.hosts, state.proxyEditor.jumpID)
+	case hitProxyDialogViaShell:
+		state.proxyEditor.viaShell = !state.proxyEditor.viaShell
 	case hitProxyDialogSubmit:
 		state.submitProxyDialog()
 	}
@@ -172,6 +211,9 @@ func (state *State) submitProxyDialog() {
 		return
 	}
 	route := proxyRecord{ID: state.nextProxyID, TargetID: state.proxyEditor.targetID, JumpID: state.proxyEditor.jumpID}
+	if state.proxyEditor.viaShell {
+		route.ViaShell, route.Relay = true, state.proxyEditor.relayCommand()
+	}
 	state.nextProxyID++
 	state.proxies = append(state.proxies, route)
 	state.selectedProxyID = route.ID
@@ -195,6 +237,8 @@ func (state *State) clickProxies(id ui.ID) {
 	switch {
 	case id == hitProxyAdd:
 		state.openProxyDialog()
+	case id == hitProxyStartStop:
+		state.toggleSelectedProxy()
 	case id == hitProxyRemove:
 		state.removeSelectedProxy()
 	}
@@ -228,6 +272,23 @@ func (state *State) removeSelectedProxy() {
 	}
 }
 
+func (state *State) toggleSelectedProxy() {
+	for index := range state.proxies {
+		route := &state.proxies[index]
+		if route.ID != state.selectedProxyID {
+			continue
+		}
+		route.Stopped = !route.Stopped
+		state.refreshProxies()
+		state.status = state.messages.ProxyStartedStatus + route.label
+		if route.Stopped {
+			state.status = state.messages.ProxyStoppedStatus + route.label
+		}
+		state.save()
+		return
+	}
+}
+
 func (state *State) proxyByID(id uint32) (proxyRecord, bool) {
 	for _, route := range state.proxies {
 		if route.ID == id {
@@ -246,13 +307,13 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	jump, jumpOK := state.hostByID(route.JumpID)
 	if !targetOK || !jumpOK {
 		route.label = ""
-		route.cells = [3]string{}
+		route.cells = [4]string{}
 		return
 	}
-	chain, valid := state.proxyChainFor(target)
+	chain, valid := state.proxyChain(target, false)
 	if !valid || len(chain) == 0 {
 		route.label = ""
-		route.cells = [3]string{}
+		route.cells = [4]string{}
 		return
 	}
 	var labels strings.Builder
@@ -265,8 +326,16 @@ func (state *State) refreshProxy(route *proxyRecord) {
 		targets.WriteString(" → ")
 		targets.WriteString(hop.target)
 	}
+	status := state.messages.ProxyStopped
+	if !route.Stopped {
+		status = state.messages.ProxyRunning
+	}
 	route.label = labels.String()
-	route.cells = [3]string{target.Label, jump.Label, targets.String()}
+	jumpCell := jump.Label
+	if route.ViaShell {
+		jumpCell += " · " + state.messages.ProxyViaShellTag
+	}
+	route.cells = [4]string{target.Label, jumpCell, status, targets.String()}
 }
 
 func (state *State) refreshProxies() {

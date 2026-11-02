@@ -672,6 +672,20 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	}
 }
 
+func TestSectionAIDrawerUsesTheWidthWithoutTheBackgroundTerminalRail(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.terminalToolbarPosition = terminalToolbarRight
+	state.activeSection = sectionSettings
+	state.ai.open = true
+
+	canvas, _ := paintAt(state, panelNarrow)
+	input := panelHit(t, canvas, hitAIInput)
+	if input.Bounds.X+input.Bounds.Width <= panelNarrow.Width-terminalToolRailExtent {
+		t.Fatalf("drawer input ends at %v, leaving the hidden %vpx terminal rail instead of using the section width",
+			input.Bounds.X+input.Bounds.Width, terminalToolRailExtent)
+	}
+}
+
 func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
@@ -995,7 +1009,7 @@ func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
 	pointer(ui.PointerDown, x)
 	pointer(ui.PointerMove, x-2000)
 	pointer(ui.PointerUp, x-2000)
-	want := wide.Width - aiMinTerminal - 1
+	want := state.baseWorkspacePixelBounds(wide).Width - aiMinTerminal - 1
 	if got := state.aiPanelExtent(wide); got != want {
 		t.Fatalf("panel is %v wide in a %v window, want %v", got, wide.Width, want)
 	}
@@ -1013,7 +1027,7 @@ func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
 	if state.aiReserve(state.deck.ActiveWorkspace(), narrow) == 0 {
 		t.Fatal("the panel became a drawer in a window that has room for it")
 	}
-	if got, most := state.aiPanelExtent(narrow), narrow.Width-aiMinTerminal-1; got != most {
+	if got, most := state.aiPanelExtent(narrow), state.baseWorkspacePixelBounds(narrow).Width-aiMinTerminal-1; got != most {
 		t.Fatalf("panel is %v wide in a %v window, want %v", got, narrow.Width, most)
 	}
 }

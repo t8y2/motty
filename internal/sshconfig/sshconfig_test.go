@@ -123,12 +123,11 @@ Host dynamic
 `,
 			wantHosts: []Host{
 				{Alias: "unsafe", HostName: "unsafe"},
-				{Alias: "safe", HostName: "safe.example"},
+				{Alias: "safe", HostName: "safe.example", ProxyCommand: "nc gateway %h"},
 				{Alias: "dynamic"},
 			},
 			wantWarnings: []WarningCode{
 				WarningUnsupportedMatch,
-				WarningDynamicValue,
 				WarningUnsupportedDirective,
 				WarningDynamicValue,
 				WarningDynamicValue,
@@ -163,6 +162,33 @@ Host *
 				WarningDynamicValue,
 				WarningDynamicValue,
 				WarningDynamicValue,
+			},
+		},
+		{
+			name: "proxy command kept as written and competing with proxy jump",
+			config: `
+Host tunnel
+    HostName ssh.example.com
+    ProxyCommand "C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h
+Host equals
+    ProxyCommand=nc -X connect -x 'proxy:3128' %h %p
+Host jump-first
+    ProxyJump gateway
+    ProxyCommand nc %h %p
+Host command-first
+    ProxyCommand nc %h %p
+    ProxyJump gateway
+Host disabled
+    ProxyCommand none
+Host *
+    ProxyCommand fallback %h
+`,
+			wantHosts: []Host{
+				{Alias: "tunnel", HostName: "ssh.example.com", ProxyCommand: `"C:\Program Files (x86)\cloudflared\cloudflared.exe" access ssh --hostname %h`},
+				{Alias: "equals", HostName: "equals", ProxyCommand: "nc -X connect -x 'proxy:3128' %h %p"},
+				{Alias: "jump-first", HostName: "jump-first", ProxyJump: []JumpHost{{Host: "gateway"}}},
+				{Alias: "command-first", HostName: "command-first", ProxyCommand: "nc %h %p"},
+				{Alias: "disabled", HostName: "disabled"},
 			},
 		},
 		{
@@ -272,4 +298,27 @@ func stringsHasTestHome(path string) bool {
 
 func includeName(index int) string {
 	return "config-" + string(rune('a'+index))
+}
+
+// OpenSSH reads a backslash before anything but a quote, a backslash or a space
+// as itself, which is how a Windows path in IdentityFile is written.
+func TestBackslashesKeepWindowsPaths(t *testing.T) {
+	for _, test := range []struct{ line, want string }{
+		{`IdentityFile C:\Users\me\.ssh\id_ed25519`, `C:\Users\me\.ssh\id_ed25519`},
+		{`IdentityFile "C:\\Users\\me\\id key"`, `C:\Users\me\id key`},
+		{`IdentityFile C:\Users\me\id\ key`, `C:\Users\me\id key`},
+		{`IdentityFile 'C:\Users\me\id'`, `C:\Users\me\id`},
+	} {
+		path := filepath.Join(t.TempDir(), "config")
+		if err := os.WriteFile(path, []byte("Host box\n    "+test.line+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result, err := ParseFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Hosts) != 1 || result.Hosts[0].IdentityFile != test.want {
+			t.Errorf("%s read as %+v, want %q", test.line, result.Hosts, test.want)
+		}
+	}
 }

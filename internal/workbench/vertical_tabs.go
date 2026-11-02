@@ -1,0 +1,242 @@
+package workbench
+
+import (
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
+)
+
+var (
+	hitSettingsTabsHorizontal       = tree.ID(settingsHits, "tabs-horizontal")
+	hitSettingsTabsVertical         = tree.ID(settingsHits, "tabs-vertical")
+	hitSettingsVerticalTabsAutoHide = tree.ID(settingsHits, "vertical-tabs-auto-hide")
+	hitSettingsVerticalTabsGrouping = tree.ID(settingsHits, "vertical-tabs-grouping")
+	hitVerticalTabs                 = tree.ID(shellHits, "vertical-tabs")
+	hitVerticalTabsPin              = tree.ID(shellHits, "vertical-tabs-pin")
+	hitVerticalTabsNew              = tree.ID(shellHits, "vertical-tabs-new")
+	hitVerticalTabGroups            = tree.Sub(shellHits, tree.Name("vertical-tab-group"))
+)
+
+const (
+	verticalTabsWidth  = navigationWidth
+	verticalTabsRail   = float32(48)
+	verticalTabHeight  = float32(34)
+	verticalTabsHeader = float32(40)
+	verticalTabsFooter = float32(42)
+	verticalTabsLayer  = uint16(200)
+)
+
+type tabOrientation uint8
+
+const (
+	tabsHorizontal tabOrientation = iota
+	tabsVertical
+)
+
+func (orientation tabOrientation) String() string {
+	if orientation == tabsVertical {
+		return "vertical"
+	}
+	return "horizontal"
+}
+
+func tabOrientationFromString(value string) tabOrientation {
+	if value == "vertical" {
+		return tabsVertical
+	}
+	return tabsHorizontal
+}
+
+type verticalTabs struct {
+	autoHide bool
+	grouping bool
+	grouped  verticalTabGrouping
+	over     bool
+	bounds   ui.Rect
+	slot     flex.Box
+	view     flex.View
+	tabs     []barTab
+}
+
+func (state *State) settingsTabOrientationOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsTabsHorizontal, Label: state.messages.SettingsTabsHorizontal},
+		{ID: hitSettingsTabsVertical, Label: state.messages.SettingsTabsVertical},
+	}
+}
+
+func (state *State) setTabOrientation(orientation tabOrientation) bool {
+	if state.tabOrientation == orientation {
+		return false
+	}
+	state.tabOrientation = orientation
+	state.tabStrip = tabStrip{vertical: orientation == tabsVertical}
+	state.chrome.geometry.valid = false
+	state.verticalTabs.over = false
+	state.fitTerminals()
+	state.fitSFTP(state.viewport)
+	return true
+}
+
+func (state *State) setVerticalTabsAutoHide(autoHide bool) bool {
+	if state.verticalTabs.autoHide == autoHide {
+		return false
+	}
+	state.verticalTabs.autoHide = autoHide
+	state.verticalTabs.over = false
+	state.fitTerminals()
+	state.fitSFTP(state.viewport)
+	return true
+}
+
+// Hover expansion overlays the workspace; it must never resize a running PTY.
+func (state *State) verticalTabsReserve(size ui.Size) float32 {
+	if state.tabOrientation != tabsVertical || state.deck.ActiveWorkspace() == 0 {
+		return 0
+	}
+	width := verticalTabsWidth
+	if state.verticalTabs.autoHide {
+		width = verticalTabsRail
+	}
+	return min(width, size.Width*0.4)
+}
+
+func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
+	view := &state.verticalTabs
+	if state.tabOrientation != tabsVertical || !state.terminalPage() || !view.autoHide ||
+		state.modal != modalNone || state.tabMenu.open || state.tabDrag.pressed || event.Captured {
+		return false
+	}
+	over := view.over
+	switch event.Kind {
+	case ui.PointerDown, ui.PointerMove:
+		over = pointInRect(event.X, event.Y, view.bounds)
+	case ui.PointerExit:
+		over = false
+	}
+	changed := view.over != over
+	view.over = over
+	return changed
+}
+
+// verticalTabsKeyboardFocused says the keyboard has moved into the sidebar. A
+// rail of icons is no place to arrive at with Tab, so the sidebar opens while the
+// focus ring is on one of its controls, as it does under the pointer. Only a
+// visible (keyboard) focus counts: a click leaves focus on the tab and must not
+// pin the sidebar open.
+func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
+	focus := canvas.FocusVisible()
+	return focus.Scope() == hitTabList || focus.Scope() == hitVerticalTabGroups || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
+}
+
+func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
+	if state.tabOrientation != tabsVertical {
+		return
+	}
+	view, pal, m := &state.verticalTabs, state.pal, state.messages
+	terminal := state.terminalPage()
+	var bounds ui.Rect
+	compact := false
+	if terminal {
+		width := state.verticalTabsReserve(size)
+		compact = view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(canvas)
+		if view.autoHide && !compact {
+			width = min(verticalTabsWidth, size.Width*0.6)
+		}
+		bounds = ui.Rect{Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
+		canvas.PushLayer(verticalTabsLayer)
+		defer canvas.PopLayer()
+	} else if len(state.workspaceTabs) > 0 {
+		bounds = view.slot.Rect()
+	}
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	view.bounds = bounds
+	canvas.Clip(bounds)
+	defer canvas.Unclip()
+	canvas.Fill(bounds, pal.shell)
+	canvas.HitWithOptions(hitVerticalTabs, bounds, m.TrayTitle, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true})
+	if terminal {
+		canvas.Fill(ui.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
+	} else {
+		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
+	}
+	if !compact {
+		canvas.Label(m.TrayTitle, ui.Rect{X: bounds.X + 8, Y: bounds.Y, Width: max(bounds.Width-48, 0), Height: verticalTabsHeader}, ui.TextStyle{Size: metrics.FontSizeS, Color: pal.muted, Weight: ui.WeightSemibold})
+	}
+	if terminal {
+		hint, icon := m.VerticalTabsAutoHide, uint8(iconChevronLeft)
+		if view.autoHide {
+			hint, icon = m.VerticalTabsPin, iconColumns2
+		}
+		state.paintIconButton(canvas, hitVerticalTabsPin, icon, ui.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
+	}
+	list := ui.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-12, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
+	active := layoutcore.WorkspaceID(0)
+	if terminal {
+		active = state.deck.ActiveWorkspace()
+	}
+	pitch := verticalTabHeight + barGap
+	rows := state.workspaceTabs
+	if view.grouping {
+		state.rebuildVerticalTabGroups(compact)
+		rows = view.grouped.layout
+	}
+	content := max(float32(len(rows))*pitch-barGap, 0)
+	scroll := state.tabStrip.layout(list, content+barGap, rows, pitch, verticalTabHeight, active)
+	area := components.BeginScrollArea(canvas, state.Theme(), list, ui.Size{Width: list.Width, Height: content}).Offset(0, scroll)
+	geometry := area.BeginContent()
+	tabWidth := geometry.Viewport.Width
+	if geometry.MaxOffsetY > 0 {
+		tabWidth = max(tabWidth-geometry.VerticalTrack.Width, 0)
+	}
+	view.tabs = view.tabs[:0]
+	f := view.view.Begin(canvas, state.Theme(), geometry.Content)
+	f.Column().Fill().Children(func() {
+		if view.grouping {
+			state.declareGroupedVerticalTabs(f, tabWidth, compact)
+			return
+		}
+		for _, workspace := range state.workspaceTabs {
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact))
+		}
+	})
+	f.End()
+	state.paintWorkspaceTabParts(canvas, geometry.Viewport, view.tabs)
+	if view.grouping {
+		state.paintVerticalTabGroupIcons(canvas)
+	}
+	area.EndContent()
+	button := ui.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
+	if compact {
+		state.paintIconButton(canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, pal.shell)
+	} else {
+		components.BeginButton(canvas, state.Theme(), hitVerticalTabsNew, button).Secondary(m.LabelNewTab)
+	}
+}
+
+func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tabs []barTab) {
+	canvas.Clip(strip)
+	defer canvas.Unclip()
+	for index := range tabs {
+		tab := &tabs[index]
+		session := state.tabSession(tab.workspace)
+		badge := tab.badge.Rect()
+		if session != nil {
+			state.paintHostCatalogIcon(canvas, session.host, badge, tab.background)
+			kind, dot := state.sessionLight(session)
+			var light ui.Rect
+			if tab.compact {
+				light = ui.Rect{X: badge.X + badge.Width - 5, Y: badge.Y + badge.Height - 5, Width: 5, Height: 5}
+			} else {
+				light = tab.light.Rect()
+			}
+			paintLight(canvas, light.X+light.Width/2, light.Y+light.Height/2, kind, dot, tab.background)
+		} else if state.tabOrientation == tabsVertical {
+			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
+		}
+		state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+	}
+}

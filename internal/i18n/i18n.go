@@ -133,6 +133,30 @@ type Messages struct {
 	SettingsTextSizeSmall                  string
 	SettingsTextSizeRegular                string
 	SettingsTextSizeLarge                  string
+	SettingsInterfaceFont                  string
+	SettingsInterfaceFontDescription       string
+	SettingsInterfaceFontDefault           string
+	SettingsInterfaceFontCurrentFmt        string
+	SettingsInterfaceFontUnsupportedFmt    string
+	SettingsTabOrientation                 string
+	SettingsTabOrientationDescription      string
+	SettingsTabsHorizontal                 string
+	SettingsTabsVertical                   string
+	SettingsTabsAutoHide                   string
+	SettingsTabsAutoHideDescription        string
+	SettingsTabsGrouping                   string
+	SettingsTabsGroupingDescription        string
+	VerticalTabGroupCountFmt               string
+	VerticalTabsPin                        string
+	VerticalTabsAutoHide                   string
+	SettingsNetworkProxy                   string
+	SettingsNetworkProxyDescription        string
+	SettingsNetworkProxySystem             string
+	SettingsNetworkProxyDirect             string
+	SettingsToolbarPosition                string
+	SettingsToolbarPositionDescription     string
+	SettingsToolbarPositionLeft            string
+	SettingsToolbarPositionRight           string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string
@@ -283,6 +307,11 @@ type Messages struct {
 	SSHConfigWarningProxyFmt    string
 	SSHConfigWarningMoreFmt     string
 
+	// The import notes each host that came with a ProxyCommand: that command
+	// would run on this computer, so it waits for the user to confirm it.
+	SSHConfigProxyCommandFmt        string
+	SSHConfigWarningProxyCommandFmt string
+
 	// New Host dialog.
 	DialogTitle                 string
 	EditHostTitle               string
@@ -410,6 +439,7 @@ type Messages struct {
 	NewTabConnectTo      string
 	MenuCloseOtherTabs   string
 	MenuCloseTabsToRight string
+	MenuCloseTabsBelow   string
 	MenuDuplicateTab     string
 	MenuRenameTab        string
 	MenuRenameTerminal   string
@@ -656,15 +686,22 @@ type Messages struct {
 	ProxyTitle                 string
 	ProxyDescription           string
 	ProxyAdd                   string
+	ProxyStart                 string
+	ProxyStop                  string
 	ProxyRemove                string
 	ProxyColumnTarget          string
 	ProxyColumnJump            string
 	ProxyColumnRoute           string
+	ProxyColumnStatus          string
+	ProxyRunning               string
+	ProxyStopped               string
 	ProxyEmpty                 string
 	ProxyEmptySub              string
 	ProxyCountFmt              string
 	ProxySelected              string
 	ProxyAdded                 string
+	ProxyStartedStatus         string
+	ProxyStoppedStatus         string
 	ProxyRemoved               string
 	ProxyDialogTitle           string
 	ProxyFieldTarget           string
@@ -676,6 +713,14 @@ type Messages struct {
 	ErrProxySameHost           string
 	ErrProxyCycle              string
 	ErrProxyTargetTaken        string
+	ProxyFieldViaShell         string
+	ProxyViaShellHelp          string
+	ProxyFieldRelay            string
+	ProxyRelayPlaceholder      string
+	ProxyRelayPreludeFmt       string
+	ProxyRelayNoPrelude        string
+	ProxyViaShellTag           string
+	ErrProxyRelay              string
 	ConnDetailConnectingViaFmt string
 
 	// SFTP remote-file page.
@@ -732,6 +777,12 @@ type Messages struct {
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
+	// SFTPDeleteFolderContentsFmt says a folder goes with everything inside it:
+	// the panel deletes a folder's contents too, not only an empty folder.
+	SFTPDeleteFolderContentsFmt string
+	// SFTPDeletePartialHint follows a folder removal that failed or was
+	// canceled: what was deleted before it stopped stays deleted.
+	SFTPDeletePartialHint       string
 	SFTPDeleteConfirm           string
 	SFTPDeletingFmt             string
 	SFTPDeletedFmt              string

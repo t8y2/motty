@@ -181,6 +181,10 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 	if previous != paneID {
 		// The candidate list belongs to the terminal that opened it.
 		state.closeCompletionList()
+		// So does find mode: the bar replaces the shared rail, and a find left
+		// open on a pane that lost focus would toggle the rail with every
+		// switch, resizing both PTYs and clearing their selections.
+		state.closePaneFind(workspaceID, previous)
 	}
 	if previous != paneID && state.viewport.Width > 0 && state.viewport.Height > 0 {
 		state.fitWorkspaceTerminals(workspaceID)
@@ -197,6 +201,10 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	state.activeSection = sectionTerminal
 	state.syncMonitorTarget()
 	state.closeCompletionList()
+	if state.viewport.Width > 0 && state.viewport.Height > 0 {
+		state.fitWorkspaceTerminals(id)
+		state.fitSFTP(state.viewport)
+	}
 	return true
 }
 
@@ -204,12 +212,13 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 // either end, and reports whether it moved. With one tab there is nowhere to go.
 func (state *State) cycleWorkspace(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	count := len(state.workspaceTabs)
+	tabs := state.visualWorkspaceTabs()
+	count := len(tabs)
 	if count < 2 {
 		return false
 	}
 	current := state.deck.ActiveWorkspace()
-	index := slices.IndexFunc(state.workspaceTabs, func(workspace layoutcore.WorkspaceInfo) bool { return workspace.ID == current })
+	index := slices.IndexFunc(tabs, func(workspace layoutcore.WorkspaceInfo) bool { return workspace.ID == current })
 	if index < 0 {
 		index = 0
 	}
@@ -219,7 +228,8 @@ func (state *State) cycleWorkspace(delta int) bool {
 // activateTab makes the index-th tab of the tab bar the active one.
 func (state *State) activateTab(index int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	if index < 0 || index >= len(state.workspaceTabs) || !state.activateWorkspace(state.workspaceTabs[index].ID) {
+	tabs := state.visualWorkspaceTabs()
+	if index < 0 || index >= len(tabs) || !state.activateWorkspace(tabs[index].ID) {
 		return false
 	}
 	state.save()
@@ -229,6 +239,7 @@ func (state *State) activateTab(index int) bool {
 func (state *State) syncActiveSession() {
 	workspaceID := state.deck.ActiveWorkspace()
 	paneID := state.deck.ActivePane(workspaceID)
+	state.syncCachedWorkspacePane(workspaceID, paneID)
 	pane, ok := state.deck.Pane(workspaceID, paneID)
 	if !ok {
 		state.activeSessionID = 0
@@ -236,6 +247,19 @@ func (state *State) syncActiveSession() {
 	}
 	state.activeSessionID = uint32(pane.SessionID)
 	state.ensureContextSFTP()
+}
+
+// syncCachedWorkspacePane keeps the tab strip's workspace snapshots aligned
+// with the deck. Pane activation already repaints, but without this update tab
+// labels and system badges keep reading the pane that was active when the tab
+// list was last rebuilt.
+func (state *State) syncCachedWorkspacePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) {
+	for index := range state.workspaceTabs {
+		if state.workspaceTabs[index].ID == workspaceID {
+			state.workspaceTabs[index].ActivePane = paneID
+			return
+		}
+	}
 }
 
 // ensureContextSFTP opens the file list for the session the files panel follows

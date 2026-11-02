@@ -71,6 +71,12 @@ func defaultDataDir() (string, error) {
 }
 
 func canonicalPath(path string) (string, error) {
+	return canonicalPathWith(path, filepath.EvalSymlinks)
+}
+
+// canonicalPathWith is canonicalPath with the symlink resolver passed in, so a
+// test can reproduce the Windows classification of a path below a file.
+func canonicalPathWith(path string, evalSymlinks func(string) (string, error)) (string, error) {
 	absolute, err := absolutePath(path)
 	if err != nil {
 		return "", err
@@ -79,8 +85,20 @@ func canonicalPath(path string) (string, error) {
 	var missing []string
 	current := absolute
 	for {
-		resolved, err := filepath.EvalSymlinks(current)
+		resolved, err := evalSymlinks(current)
 		if err == nil {
+			// Walking up past a missing tail must stop on a directory: on
+			// Windows a path below a file reports ErrNotExist rather than
+			// ENOTDIR, so without this check a file would anchor a claim.
+			if len(missing) > 0 {
+				info, statErr := os.Stat(resolved)
+				if statErr != nil {
+					return "", statErr
+				}
+				if !info.IsDir() {
+					return "", fmt.Errorf("%s is not a directory", resolved)
+				}
+			}
 			resolved, err = canonicalExistingCase(resolved)
 			if err != nil {
 				return "", err

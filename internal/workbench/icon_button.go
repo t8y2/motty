@@ -15,6 +15,12 @@ const (
 // both what assistive technology reads and the tooltip that appears when the
 // pointer rests on it: an icon alone does not say what it does.
 func (state *State) paintIconButton(canvas *ui.Canvas, id ui.ID, icon uint8, bounds ui.Rect, hint string, disabled bool, style iconButtonStyle, behind ui.Color) {
+	state.paintIconButtonSized(canvas, id, icon, bounds, hint, disabled, style, behind, 0)
+}
+
+// paintIconButtonSized is paintIconButton with an optional explicit glyph size.
+// A zero size keeps the component's default for existing compact controls.
+func (state *State) paintIconButtonSized(canvas *ui.Canvas, id ui.ID, icon uint8, bounds ui.Rect, hint string, disabled bool, style iconButtonStyle, behind ui.Color, iconSize float32) {
 	pal := state.pal
 	if int(icon) >= len(lucideIcons) {
 		return
@@ -62,7 +68,11 @@ func (state *State) paintIconButton(canvas *ui.Canvas, id ui.ID, icon uint8, bou
 		if wash.Alpha > 0 {
 			f.Row().Fill().Radius(radius.control).Background(wash)
 		}
-		f.Icon(lucideIcons[icon]).Color(foreground)
+		glyph := f.Icon(lucideIcons[icon])
+		if iconSize > 0 {
+			glyph.Size(iconSize, iconSize)
+		}
+		glyph.Color(foreground)
 	})
 	f.End()
 }

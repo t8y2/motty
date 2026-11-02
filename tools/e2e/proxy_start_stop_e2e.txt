@@ -1,0 +1,47 @@
+# End to end: a new jump route runs by default and can be stopped and started.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/proxy_start_stop_e2e.txt
+
+click "New Host"
+settle 400
+click 500 267
+type alpha
+click 600 338
+type 10.0.0.1
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+click 500 267
+type beta
+click 600 338
+type 10.0.0.2
+click "Add Host"
+settle 400
+
+click "Proxies"
+settle 300
+click "Add Route"
+settle 300
+click "Add Route"
+settle 400
+waitfor "Running" 2000
+waitfor "Stop" 2000
+waitfor "alpha" 2000
+waitfor "beta" 2000
+layout
+
+click "Stop"
+settle 300
+waitfor "Stopped" 2000
+waitfor "Start" 2000
+waitfor "beta → alpha" 2000
+waitfor "10.0.0.2 → 10.0.0.1" 2000
+layout
+
+click "Start"
+settle 300
+waitfor "Running" 2000
+waitfor "Stop" 2000
+layout

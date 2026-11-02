@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
 
 	"motty/internal/remotestats"
-	"motty/internal/sshconn"
 )
 
 type remoteStatsState uint8
@@ -22,8 +20,7 @@ const (
 )
 
 // remoteStatsView holds the monitor and its latest reading. The reading is kept
-// as one preformatted piece per metric so that painting it, each in its own
-// color, formats and allocates nothing.
+// as preformatted metric and GPU pieces so monitor sections do not reformat it.
 type remoteStatsView struct {
 	panel  monitorView
 	worker *remotestats.Worker
@@ -32,7 +29,7 @@ type remoteStatsView struct {
 	parts  []string // the four metrics, then one piece per GPU when the server has any
 }
 
-// remoteStatsMetric is one figure of the reading; each has its own color.
+// remoteStatsMetric identifies one figure of the reading.
 type remoteStatsMetric uint8
 
 const (
@@ -41,8 +38,6 @@ const (
 	statsDown
 	statsUp
 	statsMetricCount
-	// Every GPU piece after the four metrics is colored statsGPU.
-	statsGPU = statsMetricCount
 )
 
 func (state *State) clickRemoteStats(id ui.ID) bool {
@@ -50,8 +45,7 @@ func (state *State) clickRemoteStats(id ui.ID) bool {
 		return false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone ||
-		!session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || !state.monitorOffered(session) {
 		return true
 	}
 	if session.stats == nil || session.stats.worker == nil && session.stats.state >= remoteStatsUnsupported {
@@ -165,10 +159,10 @@ func (state *State) remoteStatsText(view *remoteStatsView) string {
 }
 
 // remoteStatsToggle describes the explicit opt-in beside Files: whether it is
-// offered at all (only on a live, connected shell), what its tooltip says and
+// offered at all (only on a live, connected shell, a server's or this computer's), what its tooltip says and
 // whether the monitor is running.
 func (state *State) remoteStatsToggle(session *Session) (hint string, style iconButtonStyle, offered bool) {
-	if !session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !state.monitorOffered(session) {
 		return "", iconButtonQuiet, false
 	}
 	switch {
@@ -268,60 +262,4 @@ func byteUnit(value uint64) (string, float64) {
 	default:
 		return "B", 1
 	}
-}
-
-// paintRemoteStatsReadout draws the reading from x, each metric in its own
-// color, and returns where the next thing may start. While there is no reading
-// it draws the one-line state ("measuring", "unavailable") in the quiet color.
-// Nothing is drawn that does not fit before limit.
-func (state *State) paintRemoteStatsReadout(canvas *ui.Canvas, view *remoteStatsView, x, y, limit float32) float32 {
-	pal := state.pal
-	const gap = 14
-	var widths [int(statsMetricCount) + remotestats.MaxGPUs]float32
-	count := 0
-	text := ""
-	if view.state != remoteStatsReady {
-		text = state.remoteStatsText(view)
-		widths[0] = min(canvas.TextWidthWeight(text, metrics.FontSizeS, ui.WeightMedium)+2, max(limit-x, 0))
-		count = 1
-	} else {
-		// As many metrics as fit before the limit.
-		end := x
-		for _, part := range view.parts[:min(len(view.parts), len(widths))] {
-			width := canvas.TextWidthWeight(part, metrics.FontSizeS, ui.WeightMedium) + 2
-			if end+width > limit {
-				break
-			}
-			widths[count] = width
-			count++
-			end += width + gap
-		}
-	}
-	// CPU in the accent, memory in blue, the two directions of traffic in green
-	// and violet: the palette's own terminal colors, so both themes stay legible.
-	blue, violet := pal.ansi[4], pal.ansi[5]
-	colors := [statsMetricCount + 1]ui.Color{
-		statsCPU: pal.accent, statsMemory: ui.RGB(blue[0], blue[1], blue[2]),
-		statsDown: pal.success, statsUp: ui.RGB(violet[0], violet[1], violet[2]),
-		statsGPU: pal.warning,
-	}
-	var last flex.Box
-	trailing := float32(0)
-	f := state.statsLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: y, Width: max(limit-x, 0), Height: infoBarHeight})
-	f.Row().Fill().Items(flex.Center).Children(func() {
-		for metric := range count {
-			label, color := text, pal.muted
-			gapAfter := float32(12)
-			if view.state == remoteStatsReady {
-				label, color, gapAfter = view.parts[metric], colors[min(metric, int(statsGPU))], gap
-			}
-			last, trailing = f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(color).Width(widths[metric]).Shrink(0).MarginSides(0, gapAfter, 0, 0), gapAfter
-		}
-	})
-	f.End()
-	if count == 0 {
-		return x
-	}
-	// Where the next thing may start: after the last metric and its gap.
-	return last.Rect().X + last.Rect().Width + trailing
 }

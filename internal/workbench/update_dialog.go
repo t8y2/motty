@@ -26,7 +26,8 @@ const (
 )
 
 var (
-	hitUpdateNotes = tree.ID(launchHits, "update-notes")
+	hitUpdateNotes          = tree.ID(launchHits, "update-notes")
+	hitUpdateNotesScrollbar = tree.ID(launchHits, "update-notes-scrollbar")
 	// Every link in the notes is one identity of its own, so a click can open it.
 	hitUpdateNotesLinks = tree.Sub(launchHits, tree.Name("update-notes-links"))
 )
@@ -46,6 +47,11 @@ type updateNotes struct {
 	// viewHeight, contentHeight and max are as of the last paint, which the
 	// wheel and the keys act on.
 	viewHeight, contentHeight, max float32
+	// bar is the last painted scrollbar geometry. dragging and grab keep the
+	// thumb under the pointer while the primary button is held down.
+	bar      components.MessageScrollerGeometry
+	dragging bool
+	grab     float32
 }
 
 // updateNotesStyle is the type the notes are laid out and painted in: the
@@ -141,7 +147,8 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if notes.scrolls {
 		canvas.HitWithOptions(hitUpdateNotes, view, m.UpdateNotesLabel, ui.HitOptions{Role: ui.RoleGroup})
 	}
-	scroller := components.BeginMessageScroller(canvas, state.Theme(), view, notes.contentHeight, notes.scroll)
+	scroller := components.BeginMessageScroller(canvas, state.Theme(), view, notes.contentHeight, notes.scroll).
+		Scrollbar(hitUpdateNotesScrollbar, m.UpdateNotesLabel, "")
 	geometry := scroller.BeginContent()
 	look := components.MarkdownLookFor(state.Theme())
 	look.Text, look.Muted = state.pal.muted, state.pal.faint
@@ -162,6 +169,7 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	})
 	geometry = scroller.EndContent()
 	notes.scroll, notes.max = geometry.Offset, geometry.MaxOffset
+	notes.bar = geometry
 
 	if why != "" {
 		f := state.partLayout.Begin(canvas, state.Theme(), ui.Rect{X: box.X, Y: box.Y + box.Height + 12, Width: box.Width, Height: whyHeight - 12})
@@ -186,12 +194,58 @@ func (state *State) scrollUpdateNotes(event ui.ScrollEvent) ui.EventResult {
 	return ui.EventResult{Handled: true, Repaint: notes.scroll != before}
 }
 
+// updateDialogPointer drags the release-notes thumb. MessageScroller supplies
+// the geometry and offset mapping; the runtime pointer session belongs here.
+func (state *State) updateDialogPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	if state.modal != modalUpdate {
+		state.update.notes.dragging = false
+		return ui.EventResult{}, false
+	}
+	notes := &state.update.notes
+	if event.Target != hitUpdateNotesScrollbar && !notes.dragging {
+		return ui.EventResult{}, false
+	}
+
+	switch event.Kind {
+	case ui.PointerDown:
+		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
+			return ui.EventResult{}, false
+		}
+		thumb := notes.bar.Thumb
+		notes.grab = thumb.Height / 2
+		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
+			notes.grab = event.Y - thumb.Y
+		}
+		notes.dragging = true
+		notes.scroll = notes.bar.OffsetForThumb(event.Y - notes.grab)
+		return ui.EventResult{Handled: true, Repaint: true, Focus: event.Target}, true
+	case ui.PointerMove, ui.PointerUp:
+		if !notes.dragging || event.Kind == ui.PointerMove && !event.Captured {
+			return ui.EventResult{}, false
+		}
+		before := notes.scroll
+		notes.scroll = notes.bar.OffsetForThumb(event.Y - notes.grab)
+		if event.Kind == ui.PointerUp {
+			notes.dragging = false
+		}
+		return ui.EventResult{Handled: true, Repaint: notes.scroll != before}, true
+	case ui.PointerExit:
+		if !notes.dragging {
+			return ui.EventResult{}, false
+		}
+		notes.dragging = false
+		return ui.EventResult{Handled: true}, true
+	default:
+		return ui.EventResult{}, false
+	}
+}
+
 func (state *State) updateKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if state.modal != modalUpdate || event.Repeat && event.Key == ui.KeyEnter {
 		return ui.EventResult{}, false
 	}
 	notes := &state.update.notes
-	if event.Target == hitUpdateNotes {
+	if event.Target == hitUpdateNotes || event.Target == hitUpdateNotesScrollbar {
 		if offset, ok := notes.offsetForKey(event.Key); ok {
 			notes.scroll = offset
 			return ui.EventResult{Handled: true, Repaint: true}, true

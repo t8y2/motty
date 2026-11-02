@@ -21,7 +21,8 @@ import (
 // connection of every session, except to the destinations on its bypass list.
 // (The Proxies page is something else: it routes a host through another host.)
 // The proxy's password is kept in the saved-passwords vault, never in the state
-// file.
+// file. A host can instead name a proxy command, a local program in the place of
+// the proxy, kept in the address field; it is a host's own setting only.
 
 // outboundProxyHits is the place of the controls this file paints.
 var outboundProxyHits = tree.Feature("outbound-proxy")
@@ -33,6 +34,7 @@ var (
 	hitProxyKindNone          = tree.ID(outboundProxyHits, "proxy-kind-none")
 	hitProxyKindSOCKS5        = tree.ID(outboundProxyHits, "proxy-kind-socks5")
 	hitProxyKindHTTP          = tree.ID(outboundProxyHits, "proxy-kind-http")
+	hitProxyKindCommand       = tree.ID(outboundProxyHits, "proxy-kind-command")
 	hitOutboundProxyAddress   = tree.ID(outboundProxyHits, "outbound-proxy-address")
 	hitOutboundProxyUser      = tree.ID(outboundProxyHits, "outbound-proxy-user")
 	hitOutboundProxyPassword  = tree.ID(outboundProxyHits, "outbound-proxy-password")
@@ -57,6 +59,10 @@ type outboundProxy struct {
 	address string
 	user    string
 	bypass  string
+	// unconfirmed marks a proxy command that came with an imported SSH config.
+	// It is kept with the host but not run until the user saves it in the
+	// host's proxy dialog.
+	unconfirmed bool
 }
 
 type outboundProxyForm struct {
@@ -64,6 +70,9 @@ type outboundProxyForm struct {
 	forHost, inherit                bool
 	address, user, password, bypass text.Editor
 	dialogError                     string
+	// unconfirmed is set while the dialog shows an imported proxy command that
+	// the user has not saved yet.
+	unconfirmed bool
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
@@ -85,6 +94,8 @@ func proxyKindString(kind sshconn.ProxyKind) string {
 		return "socks5"
 	case sshconn.ProxyHTTPConnect:
 		return "http"
+	case sshconn.ProxyCommand:
+		return "command"
 	}
 	return ""
 }
@@ -95,6 +106,8 @@ func proxyKindFromString(value string) sshconn.ProxyKind {
 		return sshconn.ProxySOCKS5
 	case "http":
 		return sshconn.ProxyHTTPConnect
+	case "command":
+		return sshconn.ProxyCommand
 	}
 	return sshconn.ProxyNone
 }
@@ -109,7 +122,7 @@ func savedHostProxy(proxy *outboundProxy) *savedOutboundProxy {
 	if proxy.kind == sshconn.ProxyNone {
 		kind = "direct"
 	}
-	return &savedOutboundProxy{Kind: kind, Address: proxy.address, User: proxy.user, Bypass: proxy.bypass}
+	return &savedOutboundProxy{Kind: kind, Address: proxy.address, User: proxy.user, Bypass: proxy.bypass, Unconfirmed: proxy.unconfirmed}
 }
 
 // restoredHostProxy drops malformed overrides to inheritance. A broken saved
@@ -122,6 +135,12 @@ func restoredHostProxy(saved *savedOutboundProxy) *outboundProxy {
 		return &outboundProxy{}
 	}
 	kind := proxyKindFromString(saved.Kind)
+	if kind == sshconn.ProxyCommand {
+		if sshconn.CheckProxyCommand(saved.Address) != nil || saved.User != "" {
+			return nil
+		}
+		return &outboundProxy{kind: kind, address: saved.Address, bypass: strings.Join(splitBypass(saved.Bypass), ", "), unconfirmed: saved.Unconfirmed}
+	}
 	if kind == sshconn.ProxyNone || !validProxyAddress(saved.Address) || len(saved.User) > 255 {
 		return nil
 	}
@@ -155,6 +174,8 @@ func (state *State) proxyKindName(kind sshconn.ProxyKind) string {
 		return m.ProxySOCKS5
 	case sshconn.ProxyHTTPConnect:
 		return m.ProxyHTTP
+	case sshconn.ProxyCommand:
+		return m.ProxyCommand
 	}
 	return m.ProxyNone
 }
@@ -200,7 +221,7 @@ func validProxyAddress(value string) bool {
 // intentionally conservative: a changed bypass list starts a fresh connection
 // even when both lists happen to make this one target take the same path.
 func proxyRouteKey(proxy *sshconn.Proxy) string {
-	if proxy == nil || proxy.Kind == sshconn.ProxyNone || proxy.Address == "" {
+	if proxy == nil || !proxy.Configured() {
 		return ""
 	}
 	var key strings.Builder
@@ -211,7 +232,11 @@ func proxyRouteKey(proxy *sshconn.Proxy) string {
 	}
 	key.WriteString(strconv.Itoa(int(proxy.Kind)))
 	key.WriteByte('|')
-	write(proxy.Address)
+	if proxy.Kind == sshconn.ProxyCommand {
+		write(proxy.Command)
+	} else {
+		write(proxy.Address)
+	}
 	key.WriteByte('|')
 	write(proxy.Username)
 	for _, entry := range proxy.Bypass {
@@ -306,7 +331,7 @@ func (state *State) hostProxyChanges(host Host, previous, source *Host) (note st
 
 func (state *State) openOutboundProxyDialog() {
 	form, saved := &state.proxyForm, state.proxy
-	form.kind, form.forHost, form.inherit = saved.kind, false, false
+	form.kind, form.forHost, form.inherit, form.unconfirmed = saved.kind, false, false, false
 	state.loadProxyForm(saved, "")
 	state.modal = modalOutboundProxy
 }
@@ -318,7 +343,7 @@ func (state *State) openHostProxyDialog() {
 	if state.editor.proxy != nil {
 		saved = *state.editor.proxy
 	}
-	form.kind = saved.kind
+	form.kind, form.unconfirmed = saved.kind, saved.unconfirmed
 	state.loadProxyForm(saved, state.editor.proxyPassword)
 	state.modal = modalOutboundProxy
 }
@@ -348,6 +373,10 @@ func (state *State) clickOutboundProxy(id ui.ID) {
 		form.inherit, form.kind = false, sshconn.ProxySOCKS5
 	case hitProxyKindHTTP:
 		form.inherit, form.kind = false, sshconn.ProxyHTTPConnect
+	case hitProxyKindCommand:
+		if form.forHost {
+			form.inherit, form.kind = false, sshconn.ProxyCommand
+		}
 	case hitOutboundProxySubmit:
 		state.submitOutboundProxy()
 	case hitOutboundProxyCancel, hitOutboundProxyClose, hitOutboundProxyDismiss:
@@ -365,7 +394,14 @@ func (state *State) proxyFormValue() (outboundProxy, string, bool) {
 	user := strings.TrimSpace(form.user.String())
 	bypass := strings.TrimSpace(form.bypass.String())
 	password := form.password.String()
-	if form.kind != sshconn.ProxyNone {
+	if form.kind == sshconn.ProxyCommand {
+		// A command takes no login; what it needs is on its own line.
+		if sshconn.CheckProxyCommand(address) != nil {
+			form.dialogError = m.ProxyErrorCommand
+			return outboundProxy{}, "", false
+		}
+		user, password = "", ""
+	} else if form.kind != sshconn.ProxyNone {
 		switch {
 		case !validProxyAddress(address):
 			form.dialogError = m.ProxyErrorAddress
@@ -442,6 +478,9 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 	title, description := m.ProxyDialogTitle, m.ProxyDialogDescription
 	if form.forHost {
 		title, description = m.HostProxyDialogTitle, m.HostProxyDialogDescription
+		if form.unconfirmed && form.kind == sshconn.ProxyCommand {
+			description = m.HostProxyCommandConfirm
+		}
 	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
@@ -454,6 +493,7 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		{ID: hitProxyKindNone, Label: m.HostProxyDirect},
 		{ID: hitProxyKindSOCKS5, Label: m.ProxySOCKS5},
 		{ID: hitProxyKindHTTP, Label: m.ProxyHTTP},
+		{ID: hitProxyKindCommand, Label: m.ProxyCommand},
 	}
 	selected := hitProxyKindNone
 	if form.inherit {
@@ -464,14 +504,21 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 			selected = hitProxyKindSOCKS5
 		case sshconn.ProxyHTTPConnect:
 			selected = hitProxyKindHTTP
+		case sshconn.ProxyCommand:
+			selected = hitProxyKindCommand
 		}
 	}
 	visibleOptions := options[:]
 	if !form.forHost {
 		options[1].Label = m.ProxyNone
-		visibleOptions = options[1:]
+		visibleOptions = options[1 : len(options)-1]
 	}
 	disabled := form.inherit || form.kind == sshconn.ProxyNone
+	command := form.kind == sshconn.ProxyCommand
+	addressLabel, addressPlaceholder := m.ProxyAddress, "127.0.0.1:1080"
+	if command {
+		addressLabel, addressPlaceholder = m.ProxyCommandField, "cloudflared access ssh --hostname %h"
+	}
 	entries := [...]struct {
 		id          ui.ID
 		label       string
@@ -479,7 +526,7 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		editor      *text.Editor
 		secure      bool
 	}{
-		{hitOutboundProxyAddress, m.ProxyAddress, "127.0.0.1:1080", &form.address, false},
+		{hitOutboundProxyAddress, addressLabel, addressPlaceholder, &form.address, false},
 		{hitOutboundProxyUser, m.ProxyUser, "", &form.user, false},
 		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
@@ -500,9 +547,11 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		content := components.BeginField(canvas, theme, slots[index].Rect()).Paint(entry.label, "", "")
 		value := entry.editor.String()
 		focused := canvas.Focused() == entry.id
+		login := entry.id == hitOutboundProxyUser || entry.id == hitOutboundProxyPassword
 		state.paintSecretInput(canvas, content, components.InputSnapshot{
 			ID: entry.id, Label: entry.label, Value: value, Placeholder: entry.placeholder, Secure: entry.secure,
-			Focused: focused, PlatformEditing: focused && value != "", Disabled: disabled && entry.id != hitOutboundProxyBypass,
+			Focused: focused, PlatformEditing: focused && value != "",
+			Disabled: disabled && entry.id != hitOutboundProxyBypass || command && login,
 		})
 	}
 	dialog.Actions(layout,
@@ -519,6 +568,12 @@ func (state *State) hostProxyDescription() string {
 	}
 	if proxy.kind == sshconn.ProxyNone {
 		return m.HostProxyDescriptionDirect
+	}
+	if proxy.kind == sshconn.ProxyCommand {
+		if proxy.unconfirmed {
+			return fmt.Sprintf(m.HostProxyCommandUnconfirmedFmt, proxy.address)
+		}
+		return fmt.Sprintf(m.HostProxyCommandDescriptionFmt, proxy.address)
 	}
 	return fmt.Sprintf(m.HostProxyDescriptionFmt, state.proxyKindName(proxy.kind), proxy.address)
 }

@@ -120,11 +120,26 @@ const (
 	EventReconnectExhausted
 	EventReconnectCanceled
 	EventTrackingStopped
+	EventStarted
+	EventHostKeyPrompt
+	EventAuthenticating
+	EventFinished
+	EventRecovered
 )
 
 func (kind EventKind) valid() bool {
-	return kind >= EventConnected && kind <= EventTrackingStopped
+	return kind >= EventConnected && kind <= EventRecovered
 }
+
+// TargetKind distinguishes reusable catalog entries from borrowed transports.
+type TargetKind uint8
+
+const (
+	TargetUnknown TargetKind = iota
+	TargetSavedHost
+	TargetLocal
+	TargetShared
+)
 
 // Record is one logical session. ID is a random 128-bit identifier that stays
 // with the session when its tab moves between panes or windows; RunID names the
@@ -143,6 +158,10 @@ type Record struct {
 	ReconnectCount int
 	Reason         Reason
 	Truncated      bool
+	CatalogID      string
+	Port           uint16
+	ShellName      string
+	TargetKind     TargetKind
 }
 
 // Event is one step of a record's timeline.
@@ -167,6 +186,7 @@ type Cursor struct {
 // Since is inclusive and Until is exclusive, both on StartedAt. Limit clamps to
 // 1..50 (0 means the default of 50), and Cursor continues a previous page.
 type Query struct {
+	Outcome  OutcomeFilter
 	Search   string
 	Status   *Status
 	Protocol *Protocol
@@ -176,6 +196,15 @@ type Query struct {
 	Limit    int
 	Cursor   Cursor
 }
+
+type OutcomeFilter uint8
+
+const (
+	OutcomeAll OutcomeFilter = iota
+	OutcomeNormal
+	OutcomeAbnormal
+	OutcomeTrackingStopped
+)
 
 // Page is one page of records, newest first. More says another page exists;
 // Next is then the cursor to pass to the next List call.
@@ -197,6 +226,7 @@ const (
 	OpClear
 	// OpWait orders writes after a previous window's journal queue when a tab moves.
 	OpWait
+	OpDeleteSelection
 )
 
 // Operation is one queued write. Only the fields of its Kind are read.
@@ -211,6 +241,12 @@ type Operation struct {
 	Favorite         bool
 	IncludeFavorites bool
 	Wait             <-chan struct{}
+	IDs              []string
+}
+
+type ClearSelection struct {
+	IDs       []string
+	Favorites int
 }
 
 var (
@@ -343,6 +379,16 @@ func normalizeStart(record Record, now time.Time) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	if err := validateDisplayText("catalog id", record.CatalogID); err != nil {
+		return Record{}, err
+	}
+	if len(record.CatalogID) > maxSnapshotBytes || record.TargetKind > TargetShared {
+		return Record{}, ErrInvalidRecord
+	}
+	shell, err := boundedDisplay("shell name", record.ShellName)
+	if err != nil {
+		return Record{}, err
+	}
 	if !record.Protocol.valid() {
 		return Record{}, fmt.Errorf("%w: protocol %d", ErrInvalidRecord, record.Protocol)
 	}
@@ -353,15 +399,19 @@ func normalizeStart(record Record, now time.Time) (Record, error) {
 		started = started.UTC()
 	}
 	return Record{
-		ID:        record.ID,
-		RunID:     record.RunID,
-		Host:      host,
-		Address:   address,
-		Account:   account,
-		Protocol:  record.Protocol,
-		StartedAt: started,
-		Status:    StatusConnecting,
-		Favorite:  record.Favorite,
+		ID:         record.ID,
+		RunID:      record.RunID,
+		Host:       host,
+		Address:    address,
+		Account:    account,
+		Protocol:   record.Protocol,
+		StartedAt:  started,
+		Status:     StatusConnecting,
+		Favorite:   record.Favorite,
+		CatalogID:  record.CatalogID,
+		Port:       record.Port,
+		ShellName:  shell,
+		TargetKind: record.TargetKind,
 	}, nil
 }
 

@@ -122,7 +122,7 @@ func TestSFTPHistoryNativeHideReopenSessionLifetime(t *testing.T) {
 			if transferred && session.files != view {
 				t.Fatal("transfer-owned browser lost")
 			}
-			historyDriverClick(t, driver, state.paneIdentity(session, hitSFTPOpen))
+			historyDriverClick(t, driver, hitSFTPOpen)
 			waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy })
 			if len(session.files.history.entries) != 2 || !reflect.DeepEqual(before, session.files.history.recent) {
 				t.Fatal("same-session pane hide lost browsing history")

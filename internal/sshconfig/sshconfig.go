@@ -56,6 +56,9 @@ type Host struct {
 	Port         uint16
 	IdentityFile string
 	ProxyJump    []JumpHost
+	// ProxyCommand is the command line as written, its %-tokens left for the
+	// connection to fill in. Empty when none applies, or when it is "none".
+	ProxyCommand string
 }
 
 // Result contains imported concrete aliases in source order and non-fatal
@@ -70,6 +73,8 @@ type directive struct {
 	line int
 	name string
 	args []string
+	// raw is the unsplit value of a ProxyCommand.
+	raw string
 }
 
 type parser struct {
@@ -208,7 +213,11 @@ func (p *parser) readFile(path string, depth int, inMatch *bool) error {
 			continue
 		}
 		if isSupportedDirective(name) {
-			p.directives = append(p.directives, directive{path: canonical, line: lineNumber, name: name, args: args})
+			d := directive{path: canonical, line: lineNumber, name: name, args: args}
+			if name == "proxycommand" {
+				d.raw = rawValue(line.text)
+			}
+			p.directives = append(p.directives, d)
 			continue
 		}
 		code := WarningUnsupportedDirective
@@ -287,7 +296,9 @@ func (p *parser) collectAliases(d directive) {
 func (p *parser) evaluate(alias string) Host {
 	host := Host{Alias: alias}
 	active := true
-	var hostNameSet, userSet, portSet, identitySet, proxyJumpSet bool
+	// ProxyJump and ProxyCommand compete: whichever comes first decides, as in
+	// OpenSSH.
+	var hostNameSet, userSet, portSet, identitySet, proxySet bool
 	for _, d := range p.directives {
 		if d.name == "host" {
 			active = matchPatternList(d.args, alias)
@@ -345,11 +356,23 @@ func (p *parser) evaluate(alias string) Host {
 				continue
 			}
 			host.IdentityFile = expanded
-		case "proxyjump":
-			if proxyJumpSet {
+		case "proxycommand":
+			if proxySet {
 				continue
 			}
-			proxyJumpSet = true
+			proxySet = true
+			if d.raw == "" {
+				p.warn(WarningInvalidSyntax, d.path, d.line, d.name, "directive requires a command")
+				continue
+			}
+			if !strings.EqualFold(d.raw, "none") {
+				host.ProxyCommand = d.raw
+			}
+		case "proxyjump":
+			if proxySet {
+				continue
+			}
+			proxySet = true
 			value, ok := p.singleValue(d)
 			if !ok || p.rejectDynamic(d, value) || strings.EqualFold(value, "none") {
 				continue
@@ -503,16 +526,28 @@ func hasDynamicValue(value string) bool {
 
 func isSupportedDirective(name string) bool {
 	switch name {
-	case "hostname", "user", "port", "identityfile", "proxyjump":
+	case "hostname", "user", "port", "identityfile", "proxyjump", "proxycommand":
 		return true
 	default:
 		return false
 	}
 }
 
+// rawValue is everything after a directive's name and its separator, unsplit,
+// which is how OpenSSH reads a ProxyCommand: its quotes and backslashes belong
+// to the command.
+func rawValue(line string) string {
+	line = strings.TrimLeft(line, " \t")
+	end := strings.IndexAny(line, " \t=")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimLeft(line[end:], " \t="))
+}
+
 func isDynamicCommand(name string) bool {
 	switch name {
-	case "knownhostscommand", "localcommand", "proxycommand", "remotecommand":
+	case "knownhostscommand", "localcommand", "remotecommand":
 		return true
 	default:
 		return false

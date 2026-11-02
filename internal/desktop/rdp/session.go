@@ -62,6 +62,12 @@ type Session struct {
 	closed  bool
 	remote  string
 	hasText bool
+	// pointerKind is what the server last said about its pointer,
+	// pointerShape its pixels when the kind is PointerBitmap, and
+	// pointerVersion how many statements it has made. Guarded by mu.
+	pointerKind    desktop.PointerKind
+	pointerShape   desktop.PointerShape
+	pointerVersion int
 	// buttons are the pointer buttons the server believes are down, so a change
 	// is sent as the press or release it is; shift says whether Shift is held, so
 	// a character that needs it on a US keyboard can add it by itself.
@@ -177,6 +183,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		session.syncSize()
 		_ = client.RefreshRect(0, 0, width, height)
 	})
+	client.OnPointer(session.onPointer)
 	client.OnDisconnect(func(err error) { session.finish(err) })
 	if opts.Clipboard {
 		client.OnClipboardUpdate(func(hasText, _ bool) {
@@ -382,6 +389,63 @@ func (session *Session) SetClipboard(text string) error {
 		return nil
 	}
 	return session.client.SetClipboard(text)
+}
+
+// onPointer records what the server last said about its pointer. It runs on
+// the connection's read goroutine.
+func (session *Session) onPointer(update *rdpcore.PointerUpdate) {
+	var kind desktop.PointerKind
+	var shape desktop.PointerShape
+	switch update.Type {
+	case rdpcore.PointerNull:
+		kind = desktop.PointerHidden
+	case rdpcore.PointerDefault:
+		kind = desktop.PointerSystem
+	case rdpcore.PointerShape:
+		if cached := session.shapeFrom(update); cached.Width > 0 {
+			kind = desktop.PointerBitmap
+			shape = cached
+		} else {
+			kind = desktop.PointerHidden // a shape that failed to decode hides
+		}
+	case rdpcore.PointerCached:
+		// The client hands a cached shape on as a PointerShape; a cached index it has
+		// no shape for names nothing, and the pointer stays as it was.
+		return
+	default:
+		return
+	}
+	session.mu.Lock()
+	session.pointerKind, session.pointerShape = kind, shape
+	session.pointerVersion++
+	session.mu.Unlock()
+	session.wake()
+}
+
+// shapeFrom copies an update into a desktop shape, RGBA to BGRA as the
+// presenter takes it.
+func (session *Session) shapeFrom(update *rdpcore.PointerUpdate) desktop.PointerShape {
+	shape := desktop.PointerShape{
+		Width:  int(update.Width),
+		Height: int(update.Height),
+		HotX:   int(update.HotSpotX),
+		HotY:   int(update.HotSpotY),
+		BGRA:   make([]byte, len(update.Data)),
+	}
+	for index := 0; index+3 < len(update.Data); index += 4 {
+		shape.BGRA[index] = update.Data[index+2]
+		shape.BGRA[index+1] = update.Data[index+1]
+		shape.BGRA[index+2] = update.Data[index]
+		shape.BGRA[index+3] = update.Data[index+3]
+	}
+	return shape
+}
+
+// PointerShape implements desktop.PointerSource.
+func (session *Session) PointerShape() (desktop.PointerKind, desktop.PointerShape, int) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.pointerKind, session.pointerShape, session.pointerVersion
 }
 
 // RDP pointer event flags.

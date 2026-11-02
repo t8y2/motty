@@ -236,15 +236,26 @@ func TestTheMenuOffersNoClearToAFullScreenProgram(t *testing.T) {
 	}
 }
 
-func TestTerminalMenuHasAResourceMonitorSwitchThatTogglesIt(t *testing.T) {
+func TestTerminalMenuUsesCheckboxesForMonitorAndFiles(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
 	rightClick(state, session, 400, 300)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuStats); !ok {
+	stats, ok := hitByID(&canvas, hitTerminalMenuStats)
+	if !ok {
 		t.Fatal("the menu has no resource monitor row on a live shell")
+	}
+	if stats.Checked {
+		t.Fatal("resource monitor starts checked")
+	}
+	files, ok := hitByID(&canvas, hitTerminalMenuFiles)
+	if !ok {
+		t.Fatal("the menu has no files row")
+	}
+	if files.Checked {
+		t.Fatal("files starts checked")
 	}
 	if session.stats != nil {
 		t.Fatal("the monitor is running before it was asked for")
@@ -255,6 +266,26 @@ func TestTerminalMenuHasAResourceMonitorSwitchThatTogglesIt(t *testing.T) {
 	}
 	if state.terminalMenu.open {
 		t.Fatal("the menu stayed open after a choice")
+	}
+
+	rightClick(state, session, 400, 300)
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if stats, ok = hitByID(&canvas, hitTerminalMenuStats); !ok || !stats.Checked {
+		t.Fatalf("running monitor checkbox = %+v, %v", stats, ok)
+	}
+	if files, ok = hitByID(&canvas, hitTerminalMenuFiles); !ok || files.Checked {
+		t.Fatalf("closed files checkbox = %+v, %v", files, ok)
+	}
+	state.Click(hitTerminalMenuFiles)
+	if !state.filesPanelShown() {
+		t.Fatal("the files checkbox row did not open the panel")
+	}
+	rightClick(state, session, 400, 300)
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if files, ok = hitByID(&canvas, hitTerminalMenuFiles); !ok || !files.Checked {
+		t.Fatalf("open files checkbox = %+v, %v", files, ok)
 	}
 	state.stopRemoteStats(session)
 }
@@ -310,7 +341,8 @@ func rightClickOn(t *testing.T, state *State, session *Session, needle string) {
 	for _, text := range canvas.Texts() {
 		if at := strings.Index(text.Value, needle); at >= 0 {
 			x := text.Bounds.X + (float32(at)+float32(len(needle))/2)*state.cellWidth
-			rightClick(state, session, x, text.Bounds.Y+state.cellHeight/2)
+			y := text.Bounds.Y + state.cellHeight/2
+			rightClick(state, session, x, y)
 			state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
 			return
 		}

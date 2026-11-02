@@ -72,6 +72,11 @@ type sftpNavigation struct {
 	path  string
 	kind  sftpNavigationKind
 	index int
+	// reveal is the entry to select when this navigation lands: it belongs to
+	// the navigation that was started for it, not to the folder, so a reading
+	// of another folder arriving first, or this one failing, neither spends
+	// nor keeps it.
+	reveal sftpReveal
 }
 
 func (state *State) beginSFTPNavigation(view *sftpView, local bool, directory string, kind sftpNavigationKind, index int) sftpNavigation {
@@ -81,6 +86,7 @@ func (state *State) beginSFTPNavigation(view *sftpView, local bool, directory st
 	if local {
 		folder = &view.lfolder
 	}
+	nav.reveal, folder.reveal = folder.reveal, sftpReveal{}
 	folder.navigation = nav
 	if !local {
 		view.remoteSeq++
@@ -172,7 +178,7 @@ func (folder *sftpFolder) restorePlace(place sftpPlace) {
 	folder.rememberSelection()
 }
 
-func (state *State) finishSFTPNavigation(view *sftpView, local bool, place sftpPlace, restore bool) {
+func (state *State) finishSFTPNavigation(view *sftpView, local bool, place sftpPlace, restore bool, nav sftpNavigation) {
 	folder := &view.sftpFolder
 	if local {
 		folder = &view.lfolder
@@ -180,6 +186,7 @@ func (state *State) finishSFTPNavigation(view *sftpView, local bool, place sftpP
 	if restore {
 		folder.restorePlace(place)
 	}
+	folder.applyReveal(nav.reveal)
 	if w := view.detached; w != nil {
 		side := sideIndex(local)
 		// Same-path refresh keeps its precise offset; navigation restores a place.

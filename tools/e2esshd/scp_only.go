@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -25,6 +27,21 @@ var (
 	plainWord    = regexp.MustCompile(`^[A-Za-z0-9_=+%.,:/@-]+$`)
 	listAltSplit = " || "
 )
+
+var openSFTPSessions atomic.Int32
+
+// sftpSessionAllowed counts an SFTP subsystem in, unless E2E_MAX_SFTP names a
+// number of them and that many are open.
+func sftpSessionAllowed() bool {
+	limit, _ := strconv.Atoi(os.Getenv("E2E_MAX_SFTP"))
+	if limit > 0 && int(openSFTPSessions.Load()) >= limit {
+		return false
+	}
+	openSFTPSessions.Add(1)
+	return true
+}
+
+func sftpSessionDone() { openSFTPSessions.Add(-1) }
 
 // scpOnlyEnabled reports whether the server refuses SFTP.
 func scpOnlyEnabled() bool { return os.Getenv("E2E_NO_SFTP") == "1" }

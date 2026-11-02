@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,7 +116,7 @@ func textAt(texts []ui.Text, value string, maxY float32) (ui.Text, bool) {
 // text, a navigation row aligned with its siblings, and a detail panel that
 // switches rows with the pointer.
 func TestSessionLogsNativeLayout(t *testing.T) {
-	sizes := []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 620}}
+	sizes := []ui.Size{{Width: 1400, Height: 900}, {Width: 1180, Height: 807}, {Width: 760, Height: 620}}
 	for _, size := range sizes {
 		for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
 			for _, look := range []appearance{appearanceDark, appearanceLight} {
@@ -131,6 +132,7 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 					m := state.messages.SessionLogs
 
 					windowHitsInside(t, view, size)
+					sessionLogsScreenshot(t, view, fmt.Sprintf("%gx%g-%v-%v-list", size.Width, size.Height, language, look))
 
 					snapshot := view.Snapshot()
 					nav, ok := view.Hit(m.Title)
@@ -198,7 +200,8 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 					if !view.HasText("10.0.0.1") {
 						t.Fatalf("the detail panel does not show the record's address: %v", view.Texts())
 					}
-					if size.Width < 940 {
+					sessionLogsScreenshot(t, view, fmt.Sprintf("%gx%g-%v-%v-detail", size.Width, size.Height, language, look))
+					if hasHitLabel(view, m.BackToList) {
 						if !hasHitLabel(view, m.BackToList) {
 							t.Fatal("the narrow detail panel has no way back to the list")
 						}
@@ -236,6 +239,104 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func sessionLogsScreenshot(t *testing.T, view *headless.Session, name string) {
+	t.Helper()
+	dir := os.Getenv("MOTTY_SESSIONLOG_SCREENSHOTS")
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Screenshot(filepath.Join(dir, name+".png")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionLogsNativeP1Actions(t *testing.T) {
+	state := sessionLogsState(t, true)
+	state.setLanguage(i18n.Chinese)
+	state.setAppearance(appearanceDark)
+	size := ui.Size{Width: 1180, Height: 807}
+	view := openSessionLogsWindow(t, state, size)
+	m := state.messages.SessionLogs
+	if err := view.ClickLabel(state.sessionLogs.view.page[1].favoriteLabel); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsWaitFor(t, state, func() bool { r, _ := state.sessionLogRecord("log-05"); return r.Favorite })
+	sessionLogsSettle(t, view, state)
+	if state.sessionLogs.view.selected != "" {
+		t.Fatal("native favorite click also selected the row")
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(state.sessionLogs.view.page[1].favoriteLabel); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsWaitFor(t, state, func() bool { r, _ := state.sessionLogRecord("log-05"); return !r.Favorite })
+	sessionLogsSettle(t, view, state)
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(state.sessionLogs.view.page[1].favoriteLabel); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsWaitFor(t, state, func() bool { r, _ := state.sessionLogRecord("log-05"); return r.Favorite })
+	sessionLogsSettle(t, view, state)
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.More); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	windowHitsInside(t, view, size)
+	sessionLogsScreenshot(t, view, "p1-more-menu")
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == hitSessionLogsMore && hit.Disabled {
+			t.Fatal("open menu disabled its trigger")
+		}
+	}
+	// The popup's dismiss layer owns presses outside its scope, including the
+	// trigger; use its painted coordinates for the native outside-click path.
+	anchor := state.sessionLogs.view.moreBounds
+	if err := view.Click(anchor.X+anchor.Width/2, anchor.Y+anchor.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.sessionLogs.view.moreMenu {
+		t.Fatal("more trigger did not close its menu")
+	}
+	if err := view.ClickLabel(m.More); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.ClearAll); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsWaitFor(t, state, func() bool { return state.form.description != m.Loading })
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(state.form.description, "6") || !strings.Contains(state.form.description, "1") {
+		t.Fatalf("native confirmation hides scope: %q", state.form.description)
+	}
+	sessionLogsScreenshot(t, view, "p1-clear-confirmation")
+	if err := view.ClickLabel(state.messages.Cancel); err != nil {
+		t.Fatal(err)
+	}
+	if len(sessionLogRows(t, state)) != 6 {
+		t.Fatal("canceling a native cleanup changed the records")
 	}
 }
 

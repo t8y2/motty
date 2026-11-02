@@ -99,7 +99,7 @@ func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 }
 
 func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
-	state, session, _, _ := openTestSFTP(t)
+	state, _, _, _ := openTestSFTP(t)
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
@@ -119,9 +119,6 @@ func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	for group, catalog := range toolbarCatalog {
 		for _, spec := range catalog {
 			id := spec.id
-			if toolbarGroup(group) == toolbarTerminal {
-				id = state.paneIdentity(session, id)
-			}
 			if toolbarGroup(group) == toolbarSFTP {
 				id = contextID(id)
 			}
@@ -149,7 +146,7 @@ func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 }
 
 func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
-	state, session, _, _ := openTestSFTP(t)
+	state, _, _, _ := openTestSFTP(t)
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		slices.Reverse(state.toolbars.customize(group))
 	}
@@ -161,22 +158,48 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 	state.toolbars.restore(saved.Toolbars)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, pair := range [][2]ui.ID{
-		{hitWindowSettings, hitTransferCenter},
-		{state.paneIdentity(session, hitSFTPOpen), state.paneIdentity(session, hitConnExport)},
-		{contextID(hitSFTPClose), contextID(hitSFTPUpload)},
+	for _, pair := range []struct {
+		first, second ui.ID
+		horizontal    bool
+	}{
+		{hitWindowSettings, hitTransferCenter, true},
+		{hitSFTPOpen, hitConnExport, false},
+		{contextID(hitSFTPClose), contextID(hitSFTPUpload), true},
 	} {
-		left, leftOK := hitByID(&canvas, pair[0])
-		right, rightOK := hitByID(&canvas, pair[1])
-		if !leftOK || !rightOK || left.Bounds.X >= right.Bounds.X {
-			t.Fatalf("saved order was not applied: %+v %+v", left, right)
+		first, firstOK := hitByID(&canvas, pair.first)
+		second, secondOK := hitByID(&canvas, pair.second)
+		wrongOrder := first.Bounds.Y >= second.Bounds.Y
+		if pair.horizontal {
+			wrongOrder = first.Bounds.X >= second.Bounds.X
+		}
+		if !firstOK || !secondOK || wrongOrder {
+			t.Fatalf("saved order was not applied: %+v %+v", first, second)
 		}
 	}
-	if _, ok := hitByID(&canvas, state.paneIdentity(session, hitBroadcast)); ok {
+	if _, ok := hitByID(&canvas, hitBroadcast); ok {
 		t.Fatal("customizing the toolbar invented an unavailable split-pane action")
 	}
-	if hit, ok := hitByID(&canvas, state.paneIdentity(session, hitTerminalRecordingExport)); !ok || !hit.Disabled {
+	if hit, ok := hitByID(&canvas, hitTerminalRecordingExport); !ok || !hit.Disabled {
 		t.Fatal("reordering enabled an unavailable recording export")
+	}
+}
+
+func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	var got []string
+	for _, entry := range state.toolbars.entries(toolbarTerminal) {
+		if entry.Enabled {
+			got = append(got, entry.Key)
+		}
+	}
+	want := []string{
+		"close-pane", "broadcast",
+		"split-horizontal", "split-vertical",
+		"record", "export-recording", "save-output", "export-log",
+		"resources", "files", "file-transfer", "remote-tools",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("terminal toolbar order = %v, want %v", got, want)
 	}
 }
 

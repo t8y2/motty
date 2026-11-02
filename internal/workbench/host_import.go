@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"motty/internal/i18n"
 	"motty/internal/sshconfig"
+	"motty/internal/sshconn"
 )
 
 const maxVisibleHostImportWarnings = 7
@@ -135,7 +136,31 @@ func (builder *hostImportBuilder) addSourceHost(source sshconfig.Host) {
 	builder.aliasIDs[strings.ToLower(source.Alias)] = host.ID
 	if !added {
 		builder.plan.duplicateHosts++
+		return
 	}
+	if source.ProxyCommand != "" {
+		builder.addProxyCommand(source)
+	}
+}
+
+// addProxyCommand gives the host just added the source's ProxyCommand as its
+// own proxy, and says so.
+func (builder *hostImportBuilder) addProxyCommand(source sshconfig.Host) {
+	proxy, note := importedProxyCommand(&builder.state.messages, source)
+	builder.plan.hosts[len(builder.plan.hosts)-1].Proxy = proxy
+	builder.warn(note)
+}
+
+// importedProxyCommand is the proxy a host read from an SSH config gets for its
+// ProxyCommand, and the line that tells the user. The command would run here,
+// so it stays unconfirmed until the user saves it in the host's proxy dialog. A
+// command Motty cannot run is left out (nil) and the line says so.
+func importedProxyCommand(m *i18n.Messages, source sshconfig.Host) (*outboundProxy, string) {
+	if sshconn.CheckProxyCommand(source.ProxyCommand) != nil {
+		return nil, fmt.Sprintf(m.SSHConfigWarningProxyCommandFmt, source.Alias)
+	}
+	proxy := &outboundProxy{kind: sshconn.ProxyCommand, address: source.ProxyCommand, unconfirmed: true}
+	return proxy, fmt.Sprintf(m.SSHConfigProxyCommandFmt, source.Alias)
 }
 
 func (builder *hostImportBuilder) addIdentity(path string) {

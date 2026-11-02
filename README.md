@@ -60,6 +60,19 @@ use win32-input-mode. Font ligatures are shaped inside the fixed-pitch grid.
 Tabs can be reordered, split horizontally or vertically, moved between windows
 and restored without reconnecting.
 
+Choose **Settings > General > Tab orientation** for horizontal tabs or a vertical
+list in the left sidebar. In terminal workspaces, keep the vertical list expanded
+or let it collapse to an icon rail that expands on hover without resizing the
+terminal. These layout preferences stay on this device.
+
+**Group vertical tabs** is a separate General setting, off by default. When
+enabled, multiple tabs for the same connection target appear under a collapsible
+server heading; a single connection stays a standalone tab. Different accounts,
+protocols, ports or local shell environments, and split tabs spanning multiple
+servers, stay separate. Grouping only changes the vertical list: it never merges
+or disconnects sessions, and turning it off or returning to horizontal mode
+restores the original order.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword
@@ -122,9 +135,10 @@ Local, remote, SOCKS5 and HTTP CONNECT rules are loopback-only, persisted and
 started explicitly. Tunnels stop with the SSH tab that owns them. Jump routes
 verify and authenticate every hop independently. A global outbound SOCKS5/HTTP
 proxy can carry the initial connection; each saved network host can inherit it,
-force a direct connection, or use its own SOCKS5/HTTP proxy. X11 forwarding
-validates a per-session fake cookie before replacing it with the local Xauthority
-cookie.
+force a direct connection, use its own SOCKS5/HTTP proxy, or connect through a
+proxy command such as `cloudflared access ssh` (OpenSSH's `ProxyCommand`). X11
+forwarding validates a per-session fake cookie before replacing it with the local
+Xauthority cookie.
 
 <p align="center">
   <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" width="620" alt="New port forward dialog" /></a>

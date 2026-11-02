@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"motty/internal/cmdhistory"
+	"motty/internal/completion"
 )
 
 // A suggestion is proof about one echoed line, not permission to type into a
@@ -49,11 +50,21 @@ func (state *State) suggestionOwner(snapshot suggestionSnapshot) *Session {
 	return session
 }
 
-func (state *State) sendSuggestion(session *Session, suffix string) {
+// sendSuggestion types one suffix into the session. Catalog-sourced text is
+// checked once more here, immediately before it becomes input: the importer
+// already refuses unsafe tokens and values, but a tampered or damaged cache
+// decoded later must not be able to type characters that neither a command
+// token nor a literal value can contain. Text learned from the user's own
+// history is their own input and is not constrained further than the
+// control-character guard below.
+func (state *State) sendSuggestion(session *Session, suffix string, fromCatalog bool) {
 	if suffix == "" || len(suffix) > cmdhistory.MaxCommand || !utf8.ValidString(suffix) {
 		return
 	}
 	if strings.IndexFunc(suffix, unicode.IsControl) >= 0 {
+		return
+	}
+	if fromCatalog && !completion.SafeInsert(suffix) {
 		return
 	}
 	// Draining again here could invalidate the proof after checking it. The

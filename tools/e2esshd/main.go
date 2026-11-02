@@ -2,7 +2,9 @@
 // forwarding, and jump-host paths. Password "secret" works for any user, the
 // server listens on loopback only, and shells run on a real pty. The first
 // argument is the port (default 2222); further arguments are exact loopback
-// endpoints that direct-tcpip may reach for jump-host tests.
+// endpoints that direct-tcpip may reach for jump-host tests. With
+// E2E_NO_DIRECT=1 every direct-tcpip request is refused, which makes the server a
+// bastion that only offers a shell.
 package main
 
 import (
@@ -161,6 +163,12 @@ func main() {
 						go serve(conn, fixture.sftpRoot, channel, reqs)
 					}
 				case "direct-tcpip":
+					if os.Getenv("E2E_NO_DIRECT") == "1" {
+						// A bastion that gives a shell and nothing else: forwarding is
+						// refused whatever the target, as with AllowTcpForwarding no.
+						newChannel.Reject(ssh.Prohibited, "administratively prohibited")
+						continue
+					}
 					target, err := allowedDirectTarget(newChannel.ExtraData(), allowedTargets...)
 					if err != nil {
 						newChannel.Reject(ssh.Prohibited, err.Error())
@@ -462,13 +470,24 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				request.Reply(false, nil)
 				continue
 			}
+			// E2E_MAX_SFTP=n refuses an SFTP subsystem while n are open, as a server
+			// whose MaxSessions is that small does.
+			if !sftpSessionAllowed() {
+				log.Printf("sftp subsystem refused")
+				request.Reply(false, nil)
+				continue
+			}
 			request.Reply(true, nil)
+			log.Printf("sftp subsystem opened")
 			server, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(sftpRoot))
 			if err != nil {
+				sftpSessionDone()
 				return
 			}
 			_ = server.Serve()
 			_ = server.Close()
+			sftpSessionDone()
+			log.Printf("sftp subsystem closed")
 			return
 		default:
 			request.Reply(strings.HasPrefix(request.Type, "x-"), nil)

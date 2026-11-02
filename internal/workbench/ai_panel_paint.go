@@ -480,7 +480,8 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), size); reserve > 0 {
 		// Under the window bar, at the right: a hairline, then the panel.
 		var bounds, divider flex.Box
-		f := state.aiFlex.shell.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
+		inner := state.baseWorkspacePixelBounds(size)
+		f := state.aiFlex.shell.Begin(canvas, state.Theme(), ui.Rect{X: inner.X, Width: inner.Width, Height: size.Height})
 		f.Column().Fill().Children(func() {
 			f.Column().Height(windowBarHeight).Shrink(0)
 			f.Row().Grow(1).Children(func() {
@@ -493,14 +494,16 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 		})
 		f.End()
 		// The hairline is the panel's left edge, and can be dragged to change its width.
-		window := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
-		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, divider.Rect().X/max(window.Width-1, 1)).
+		window := ui.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: max(size.Height-windowBarHeight, 0)}
+		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, (divider.Rect().X-inner.X)/max(window.Width-1, 1)).
 			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
 		state.paintAIBody(canvas, bounds.Rect())
 		state.paintAIMenuOverlay(canvas)
 		return
 	}
-	viewport := state.baseWorkspacePixelBounds(size)
+	// A section page has no visible terminal rail, even while a background
+	// terminal keeps its PTY fitted for that rail.
+	viewport := state.visibleWorkspacePixelBounds(size)
 	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
 		Layer: drawerLayer, Scope: dialogScope, DismissID: hitAIDrawerDismiss,
 		Side: components.DrawerRight, ContentExtent: min(aiPanelWidth, size.Width*0.92),

@@ -33,11 +33,13 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
 	},
 	toolbarTerminal: {
-		{"broadcast", hitBroadcast, iconRadio}, {"split-horizontal", hitPaneSplitHorizontal, iconColumns2},
-		{"split-vertical", hitPaneSplitVertical, iconRows2}, {"close-pane", hitPaneClose, iconClose},
-		{"resources", hitRemoteStats, iconActivity}, {"record", hitTerminalRecord, iconRecord},
-		{"export-recording", hitTerminalRecordingExport, iconFilm}, {"export-log", hitConnExport, iconFileDown},
+		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
+		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
+		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
+		{"save-output", hitTerminalSaveOutput, iconSave},
+		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
 		{"files", hitSFTPOpen, iconFolderOpen}, {"file-transfer", hitSFTPDetach, iconSFTPTransfer},
+		{"remote-tools", hitRemoteToolsOpen, iconWrench},
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
@@ -183,8 +185,12 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.PaneClose
 	case hitRemoteStats:
 		return m.TipStatsStart
+	case hitRemoteToolsOpen:
+		return m.Tools.RemoteMenu
 	case hitTerminalRecord:
 		return m.TipRecordStart
+	case hitTerminalSaveOutput:
+		return m.Tools.MenuSaveOutput
 	case hitTerminalRecordingExport:
 		return m.RecordingExport
 	case hitConnExport:

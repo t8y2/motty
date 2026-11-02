@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/vivaui/viva/app"
@@ -120,6 +121,7 @@ var (
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
+	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
 	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
@@ -192,6 +194,10 @@ var (
 	hitSettingsTextSmall        = tree.ID(settingsHits, "settings-text-small")
 	hitSettingsTextRegular      = tree.ID(settingsHits, "settings-text-regular")
 	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
+	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -202,6 +208,10 @@ var (
 	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
 	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
 	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
 	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
 	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
 	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
@@ -242,6 +252,7 @@ var (
 // Jump-host routing: its page and dialog.
 var (
 	hitProxyAdd              = tree.ID(proxiesHits, "proxy-add")
+	hitProxyStartStop        = tree.ID(proxiesHits, "proxy-start-stop")
 	hitProxyRemove           = tree.ID(proxiesHits, "proxy-remove")
 	hitProxyDialogDismiss    = tree.ID(proxiesHits, "proxy-dialog-dismiss")
 	hitProxyDialogClose      = tree.ID(proxiesHits, "proxy-dialog-close")
@@ -249,6 +260,9 @@ var (
 	hitProxyDialogSubmit     = tree.ID(proxiesHits, "proxy-dialog-submit")
 	hitProxyDialogTarget     = tree.ID(proxiesHits, "proxy-dialog-target")
 	hitProxyDialogJump       = tree.ID(proxiesHits, "proxy-dialog-jump")
+	hitProxyDialogViaShell   = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogViaHelp    = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
+	hitProxyDialogRelay      = tree.ID(proxiesHits, "proxy-dialog-relay")
 	hitProxyTargetDismiss    = tree.ID(proxiesHits, "proxy-target-dismiss")
 	hitProxyTargetScrollUp   = tree.ID(proxiesHits, "proxy-target-scroll-up")
 	hitProxyTargetScrollDown = tree.ID(proxiesHits, "proxy-target-scroll-down")
@@ -402,6 +416,10 @@ const (
 // resources.
 type State struct {
 	dashboard dashboardState
+	// clipboardDirty says the system clipboard changed since the desktop
+	// sessions were last offered it. It is set from any goroutine
+	// (ClipboardChanged) and cleared on the window's thread (Wake).
+	clipboardDirty atomic.Bool
 	// hostCatalog is the hosts, jump routes, keys, outbound proxy and timeouts a
 	// connection is resolved from; the headless MCP server builds one too.
 	hostCatalog
@@ -442,6 +460,8 @@ type State struct {
 	tabOptions         []components.TabOption
 	workspaceTabs      []layoutcore.WorkspaceInfo
 	tabStrip           tabStrip
+	tabOrientation     tabOrientation
+	verticalTabs       verticalTabs
 	tabMenu            tabMenu
 	hostMenu           hostMenu
 	localShellPicker   localShellPicker
@@ -449,6 +469,7 @@ type State struct {
 	sftpMenu           sftpMenu
 	popups             popupMenus
 	selectedHostID     uint32
+	hostRevealID       uint32
 	activeSessionID    uint32
 	nextSessionID      uint32
 	nextHostID         uint32
@@ -478,6 +499,7 @@ type State struct {
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
+	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
 	bg                 backgroundState
@@ -537,6 +559,7 @@ type State struct {
 	options             Options
 	appearance          appearance
 	appearanceMode      appearanceMode
+	networkProxy        networkProxyMode
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	localShell          string // executable on this computer; empty uses the platform default
@@ -597,6 +620,7 @@ type State struct {
 	selectTypeahead        selectTypeahead
 	restorePending         bool // restored tabs have not yet been connected (see connectRestoredSessions)
 	terminalClipboard      terminalClipboardPolicy
+	terminalIntense        terminalIntense
 
 	localDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
@@ -613,6 +637,9 @@ type State struct {
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
 	latencyProbe        []uint32
+	// The shared terminal tool rail is a device-local presentation choice.
+	// Its zero value keeps the historical right-edge placement.
+	terminalToolbarPosition terminalToolbarPosition
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
@@ -655,15 +682,19 @@ type State struct {
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
 	fonts         fontsUI
+	uiFont        interfaceFontUI
 	proxyForm     outboundProxyForm
 	agentSetting  agentDescriptionCache
 	form          formDialog
 	formSerial    uint32
-	closeAsked    bool
-	sync          syncState
-	sshSync       sshSyncState
-	remote        remoteToolsView
-	edits         externalEdits
+	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
+	// that started against the old one can tell its result no longer belongs here.
+	syncEpoch  uint32
+	closeAsked bool
+	sync       syncState
+	sshSync    sshSyncState
+	remote     remoteToolsView
+	edits      externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText  string
 	fontSizeShown float32
@@ -685,13 +716,12 @@ type State struct {
 	// area: terminal and workspace panes
 	terminalPageLayout flex.View
 	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane, the menu's switch and the like: one at a time
+	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
 	filesHeader flex.View
 	filesPopup  flex.View
-	statsLayout flex.View // the monitor's readout in the terminal's info bar
 	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
 	filesRowIcons []flex.Box
 	filesRowBoxes []flex.Box
@@ -841,6 +871,7 @@ func New(options Options) *State {
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
+		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
 		syncDelay:             syncDelayDefault,
@@ -908,6 +939,7 @@ func New(options Options) *State {
 		state.decodeBackground(state.bg.serial)
 	}
 	state.validateTerminalFont()
+	state.validateInterfaceFont()
 	state.loginOn = state.settingsLoginEnabled()
 	state.starting = false
 	if state.options.Group != nil {
@@ -1069,6 +1101,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 	case modalAIRename:
 		if hit == hitAIRenameField {
 			return &state.ai.rename.editor
+		}
+	case modalNewProxy:
+		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
+			return &state.proxyEditor.relay
 		}
 	case modalNewForward:
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
@@ -1324,6 +1360,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 	if state.clickTerminalFind(id) {
 		return
 	}
+	if state.clickVerticalTabGroup(id) {
+		return
+	}
 	if state.clickRemoteStats(id) {
 		return
 	}
@@ -1354,6 +1393,10 @@ func (state *State) click(id ui.ID, feedback bool) {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.toggleTerminalRecording(session)
 		}
+	case id == hitTerminalSaveOutput:
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			state.saveTerminalOutput(session)
+		}
 	case id == hitTerminalRecordingExport:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.exportTerminalRecording(session)
@@ -1366,8 +1409,11 @@ func (state *State) click(id ui.ID, feedback bool) {
 		}
 		state.activeSection = sectionHosts
 		state.save()
-	case id == hitNewTab:
+	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
+	case id == hitVerticalTabsPin:
+		state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
+		state.save()
 	case id == hitNewWindow:
 		state.openNewWindow()
 	case id == hitSearch:
@@ -1465,6 +1511,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case tree.Within(id.Scope(), proxiesHits):
 		state.clickProxies(id)
 	case state.clickSnippetsPage(id):
+	case id == hitInterfaceFontChoose:
+		state.openInterfaceFontPicker()
 	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):
@@ -1812,6 +1860,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
+	if state.trackVerticalTabs(event) {
+		defer func() { outcome.Repaint = true }()
+	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}
@@ -1926,6 +1977,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
+	if result, handled := state.updateDialogPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
 			state.editor.groupPicker.control.Open = false
@@ -2172,6 +2226,13 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.settingsKey(event); handled {
 		return result
 	}
+	if state.modal == modalNone && state.activeSection == sectionTerminal {
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			if result, handled := state.terminalToolbarKey(session, event); handled {
+				return result
+			}
+		}
+	}
 	if session := state.terminalSession(event.Target); session != nil && state.modal == modalNone {
 		if session.desk != nil {
 			return state.desktopKey(session, event)
@@ -2230,13 +2291,20 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitKeyPassphrase()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
+	if result, handled := state.verticalTabGroupKey(event); handled {
+		return result
+	}
 	if event.Target.Scope() != hitTabList {
 		return ui.EventResult{}
+	}
+	orientation := components.TabsHorizontal
+	if state.tabOrientation == tabsVertical {
+		orientation = components.TabsVertical
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
 		state.tabOptions,
-		components.TabsHorizontal,
+		orientation,
 		components.DirectionLTR,
 		event.Key,
 	)
