@@ -28,15 +28,20 @@ func barPointer(state *State, session *Session, kind ui.PointerEventKind, x, y f
 }
 
 func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
-	state, session, geometry := historyState()
+	state, session, _ := historyState()
 	screen := session.term.screen
 	history := screen.Scrollback()
 	if history < 50 {
 		t.Fatalf("fixture has only %d lines of history", history)
 	}
 
+	chrome, ok := state.terminalChromeForSession(session.ID)
+	if !ok {
+		t.Fatal("terminal chrome was not found")
+	}
+	actualGeometry := terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
 	var canvas ui.Canvas
-	state.paintGrid(&canvas, session, geometry)
+	state.paintGrid(&canvas, session, actualGeometry)
 	bar, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID)))
 	if !ok {
 		t.Fatal("a terminal with history paints no scrollbar")
@@ -44,7 +49,7 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 	x := bar.Bounds.X + bar.Bounds.Width/2
 
 	// At the live screen the thumb is at the bottom: dragging it up goes back.
-	area := state.terminalScrollArea(nil, session, geometry.area, 1).Geometry()
+	area := state.terminalScrollArea(nil, session, actualGeometry.area, 1).Geometry()
 	grab := area.VerticalThumb.Y + area.VerticalThumb.Height/2
 	barPointer(state, session, ui.PointerDown, x, grab)
 	if result := barPointer(state, session, ui.PointerMove, x, bar.Bounds.Y); !result.Handled || !result.Repaint {
@@ -58,7 +63,7 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 	// A press on the track below the thumb pages toward the live screen.
 	before := screen.ViewOffset()
 	barPointer(state, session, ui.PointerDown, x, bar.Bounds.Y+bar.Bounds.Height-2)
-	if want := before - (geometry.rows - 1); screen.ViewOffset() != want {
+	if want := before - (actualGeometry.rows - 1); screen.ViewOffset() != want {
 		t.Fatalf("a press below the thumb moved to %d, want %d", screen.ViewOffset(), want)
 	}
 }

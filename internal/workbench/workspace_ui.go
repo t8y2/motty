@@ -17,8 +17,42 @@ const (
 )
 
 func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
+	bounds := state.fullWorkspacePixelBounds(size)
+	if _, ok := state.terminalToolbarSession(); !ok {
+		return bounds
+	}
+	if state.terminalToolbarPosition == terminalToolbarLeft {
+		bounds.X += terminalToolRailExtent
+	}
+	bounds.Width = max(bounds.Width-terminalToolRailExtent, 0)
+	return bounds
+}
+
+// visibleWorkspacePixelBounds is the frame available to content currently on
+// screen. The terminal rail is absent from section pages even when a background
+// terminal is already fitted for the rail it will show on return.
+func (state *State) visibleWorkspacePixelBounds(size ui.Size) ui.Rect {
+	if state.terminalPage() {
+		return state.baseWorkspacePixelBounds(size)
+	}
+	return state.fullWorkspacePixelBounds(size)
+}
+
+func (state *State) fullWorkspacePixelBounds(size ui.Size) ui.Rect {
 	left := state.verticalTabsReserve(size)
 	return ui.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+}
+
+func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
+	if _, ok := state.terminalSideRailSession(); !ok {
+		return ui.Rect{}, false
+	}
+	bounds := state.fullWorkspacePixelBounds(size)
+	bounds.Width = terminalToolRailExtent
+	if state.terminalToolbarPosition == terminalToolbarRight {
+		bounds.X = max(size.Width-terminalToolRailExtent, 0)
+	}
+	return bounds, true
 }
 
 func (state *State) workspacePixelBounds(size ui.Size) ui.Rect {
@@ -52,8 +86,7 @@ func (state *State) contextPanelExtent(workspace ui.Rect, preferred float32) flo
 }
 
 func (state *State) contextPanelWidth(workspace ui.Rect, context layoutcore.ContextState) float32 {
-	width := context.Width
-	return state.contextPanelExtent(workspace, width)
+	return state.contextPanelExtent(workspace, context.Width)
 }
 
 func pixelBounds(frame ui.Rect, bounds FractionBounds) ui.Rect {

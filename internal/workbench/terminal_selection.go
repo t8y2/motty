@@ -100,7 +100,7 @@ func (selection terminalSelection) span(lineNumber uint64, line term.Row, cols i
 func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.EventResult {
 	terminal := session.term
 	selection := &terminal.selection
-	position := state.terminalPositionAt(event.Viewport, event.X, event.Y)
+	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
 		result.Repaint = terminal.links.clear() || result.Repaint
 		return result
@@ -155,7 +155,7 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			return ui.EventResult{Handled: hovered, Repaint: changed}
 		}
 		changed := selection.extend(terminal.screen.PointAt(position))
-		state.armSelectionScroll(terminal, event, position.Column)
+		state.armSelectionScroll(session, event, position.Column)
 		if changed {
 			changed = terminal.links.clear() || changed
 		}
@@ -207,17 +207,17 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 // has to follow it. A pointer held above or below the grid keeps scrolling
 // even when it stops moving, so the steps come from the frames paint asks for
 // (see stepSelectionScroll), not from further pointer events.
-func (state *State) armSelectionScroll(terminal *terminal, event ui.PointerEvent, column int) {
-	selection := &terminal.selection
-	geometry := terminalLayout(event.Viewport, state.cellWidth, state.cellHeight, state.padding())
-	_, rows := terminal.screen.Size()
+func (state *State) armSelectionScroll(session *Session, event ui.PointerEvent, column int) {
+	selection := &session.term.selection
+	geometry := state.terminalLayoutForEvent(session.ID, event.Viewport)
+	_, rows := session.term.screen.Size()
 	bottom := geometry.top + float32(rows)*state.cellHeight
 	edge := selectionEdge{column: column, last: selection.edge.last, stepped: selection.edge.stepped}
 	var distance float32
 	switch {
-	case event.Y < geometry.top && terminal.screen.ViewOffset() < terminal.screen.Scrollback():
+	case event.Y < geometry.top && session.term.screen.ViewOffset() < session.term.screen.Scrollback():
 		edge.direction, distance = 1, geometry.top-event.Y
-	case event.Y >= bottom && terminal.screen.ViewOffset() > 0:
+	case event.Y >= bottom && session.term.screen.ViewOffset() > 0:
 		edge.direction, distance = -1, event.Y-bottom
 	default:
 		selection.edge = selectionEdge{}
@@ -364,8 +364,8 @@ func terminalMouseModifiers(modifiers ui.Modifiers) term.MouseModifiers {
 	return result
 }
 
-func (state *State) terminalPositionAt(viewport ui.Size, x, y float32) term.Position {
-	geometry := terminalLayout(viewport, state.cellWidth, state.cellHeight, state.padding())
+func (state *State) terminalPositionAt(session *Session, viewport ui.Size, x, y float32) term.Position {
+	geometry := state.terminalLayoutForEvent(session.ID, viewport)
 	column, row := 0, 0
 	if state.cellWidth > 0 {
 		column = int(math.Floor(float64((x - geometry.left) / state.cellWidth)))

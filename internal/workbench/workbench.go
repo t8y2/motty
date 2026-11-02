@@ -121,6 +121,7 @@ var (
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
+	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
 	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
@@ -192,6 +193,8 @@ var (
 	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
 	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
 	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -629,6 +632,9 @@ type State struct {
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
 	latencyProbe        []uint32
+	// The shared terminal tool rail is a device-local presentation choice.
+	// Its zero value keeps the historical right-edge placement.
+	terminalToolbarPosition terminalToolbarPosition
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
@@ -705,13 +711,12 @@ type State struct {
 	// area: terminal and workspace panes
 	terminalPageLayout flex.View
 	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane, the menu's switch and the like: one at a time
+	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
 	filesHeader flex.View
 	filesPopup  flex.View
-	statsLayout flex.View // the monitor's readout in the terminal's info bar
 	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
 	filesRowIcons []flex.Box
 	filesRowBoxes []flex.Box
@@ -1382,6 +1387,10 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case id == hitTerminalRecord:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.toggleTerminalRecording(session)
+		}
+	case id == hitTerminalSaveOutput:
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			state.saveTerminalOutput(session)
 		}
 	case id == hitTerminalRecordingExport:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
@@ -2211,6 +2220,13 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if result, handled := state.settingsKey(event); handled {
 		return result
+	}
+	if state.modal == modalNone && state.activeSection == sectionTerminal {
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+			if result, handled := state.terminalToolbarKey(session, event); handled {
+				return result
+			}
+		}
 	}
 	if session := state.terminalSession(event.Target); session != nil && state.modal == modalNone {
 		if session.desk != nil {

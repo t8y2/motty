@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 // terminalFindHits is the place of the controls this file paints.
@@ -161,12 +162,30 @@ func (state *State) openTerminalFind(session *Session) ui.EventResult {
 	find := &session.term.find
 	find.open = true
 	find.refresh(session.term.screen, state.messages, true)
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
 }
 
 func (state *State) closeTerminalFind(session *Session) ui.EventResult {
 	session.term.find.close()
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalList.At(int(session.ID))}
+}
+
+// closePaneFind ends find mode on the session a pane shows. The find bar paints
+// only for the active pane, and the rail follows the active session, so a find
+// left open on a pane that lost focus would keep toggling the rail and resizing
+// every PTY in the workspace on each switch.
+func (state *State) closePaneFind(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) {
+	pane, ok := state.deck.Pane(workspaceID, paneID)
+	if !ok {
+		return
+	}
+	session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
+	if !ok || session.term == nil || !session.term.find.open {
+		return
+	}
+	session.term.find.close()
 }
 
 func (state *State) terminalFindEditor(hit ui.ID) *text.Editor {
@@ -255,7 +274,7 @@ func (state *State) clickTerminalFind(id ui.ID) bool {
 	case hitTerminalFindNext:
 		session.term.find.move(session.term.screen, state.messages, 1)
 	case hitTerminalFindClose:
-		session.term.find.close()
+		state.closeTerminalFind(session)
 	}
 	return true
 }

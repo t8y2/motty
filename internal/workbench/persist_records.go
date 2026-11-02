@@ -67,7 +67,8 @@ import (
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
 // Version 15 preserves the device-local vertical tab grouping switch.
 // Version 16 preserves the interface font.
-const configFormat = 16
+// Version 17 preserves the device-local terminal toolbar position.
+const configFormat = 17
 
 const (
 	kindSetting             = "setting"

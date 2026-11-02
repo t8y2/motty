@@ -310,6 +310,10 @@ func (state *State) clickSettings(id ui.ID) bool {
 	case hitSettingsNetworkDirect:
 		changed = state.networkProxy != networkProxyDirect
 		state.networkProxy = networkProxyDirect
+	case hitSettingsToolbarLeft:
+		changed = state.setTerminalToolbarPosition(terminalToolbarLeft)
+	case hitSettingsToolbarRight:
+		changed = state.setTerminalToolbarPosition(terminalToolbarRight)
 	case hitSettingsCloseTray:
 		changed = state.closeAction != closeToTray
 		state.closeAction = closeToTray
@@ -601,6 +605,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
 		options := state.settingsNetworkProxyOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsToolbarLeft, hitSettingsToolbarRight:
+		options := state.settingsToolbarPositionOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsCloseTray, hitSettingsCloseQuit:
 		options := state.settingsCloseOptions()

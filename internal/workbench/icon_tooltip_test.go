@@ -12,6 +12,9 @@ import (
 // resting the pointer on one shows it as a tooltip after the delay.
 func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 	state, _, _, _ := liveSession(t)
+	for index := range state.toolbars.customize(toolbarTerminal) {
+		state.toolbars.customize(toolbarTerminal)[index].Enabled = true
+	}
 	size := ui.Size{Width: 1400, Height: 900}
 	paint := func(now time.Duration, hovered ui.ID) *ui.Canvas {
 		var canvas ui.Canvas
@@ -31,7 +34,9 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 		{hitSFTPOpen, state.messages.TipFiles},
 		{hitConnExport, state.messages.ConnExportLog},
 		{hitTerminalRecord, state.messages.TipRecordStart},
+		{hitTerminalSaveOutput, state.messages.Tools.MenuSaveOutput},
 		{hitTerminalRecordingExport, state.messages.RecordingExport},
+		{hitRemoteToolsOpen, state.messages.Tools.RemoteMenu},
 		{hitCommandPalette, state.messages.CommandPaletteTitle},
 		{hitWindowSettings, state.messages.NavSettings},
 	} {
