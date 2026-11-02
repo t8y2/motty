@@ -686,6 +686,7 @@ type State struct {
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
 	fonts         fontsUI
+	uiFont        interfaceFontUI
 	proxyForm     outboundProxyForm
 	agentSetting  agentDescriptionCache
 	form          formDialog
@@ -943,6 +944,7 @@ func New(options Options) *State {
 		state.decodeBackground(state.bg.serial)
 	}
 	state.validateTerminalFont()
+	state.validateInterfaceFont()
 	state.loginOn = state.settingsLoginEnabled()
 	state.starting = false
 	if state.options.Group != nil {
@@ -1513,6 +1515,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case tree.Within(id.Scope(), proxiesHits):
 		state.clickProxies(id)
 	case state.clickSnippetsPage(id):
+	case id == hitInterfaceFontChoose:
+		state.openInterfaceFontPicker()
 	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -260,6 +261,8 @@ type Conn struct {
 	retired    bool
 	terminated bool
 	doneOnce   sync.Once
+	// pingPending is set while a keepalive probe sent by Ping is unanswered.
+	pingPending atomic.Bool
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and

@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+func TestDecodeRejectsInvalidImportStatistics(t *testing.T) {
+	encoded := string(testCatalog(t).Encode())
+	for _, metadata := range []string{`null`, `{}`, `{"Files":-1}`, `{"RepairedFiles":-1}`, `{"Files":"invalid"}`} {
+		data := strings.Replace(encoded, "\ndigest\t", "\nimport-stats\t"+metadata+"\ndigest\t", 1)
+		if _, err := Decode([]byte(data)); err == nil {
+			t.Errorf("accepted invalid import statistics: %s", metadata)
+		}
+	}
+}
+
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	catalog := testCatalog(t)
 	encoded := catalog.Encode()
@@ -62,6 +72,15 @@ func TestDecodeRejectsCorruptCatalogs(t *testing.T) {
 	}
 	if _, err := Decode(nil); err == nil {
 		t.Error("Decode(nil) succeeded")
+	}
+}
+
+func TestDecodeRejectsValuesOutsideTheLiteralPolicy(t *testing.T) {
+	encoded := testCatalog(t).Encode()
+	for _, value := range []string{"evil;rm", "$(id)", "a|b", "a&b", "a\"b", "a`b"} {
+		if _, err := Decode(resealCatalog(encoded, "json", value)); err == nil {
+			t.Errorf("Decode accepted the unsafe value %q", value)
+		}
 	}
 }
 

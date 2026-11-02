@@ -67,9 +67,10 @@ import (
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
 // Version 15 preserves the device-local vertical tab grouping switch.
 // Version 16 preserves the device-local terminal toolbar position.
-// Version 17 preserves the SFTP transfer layout and custom editor path: an
+// Version 17 preserves the device-local interface font.
+// Version 18 preserves the SFTP transfer layout and custom editor path: an
 // older build's full save would otherwise drop these device-local fields.
-const configFormat = 17
+const configFormat = 18
 
 const (
 	kindSetting             = "setting"

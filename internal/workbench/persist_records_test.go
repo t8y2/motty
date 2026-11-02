@@ -19,7 +19,7 @@ import (
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
+		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true,
 		"workspace": true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
 		"host_view": true, "background": true, "snippet_shortcuts": true,
@@ -167,6 +167,44 @@ func TestFormatTenUpgradeKeepsTheLocalSessionLogSwitchAndBlocksOlderWriters(t *t
 	}
 	if _, _, err := configstore.ReadOnly(path, 10); !errors.Is(err, configstore.ErrTooNew) {
 		t.Fatalf("a format-10 build could overwrite the upgraded configuration: %v", err)
+	}
+}
+
+func TestFormatSixteenKeepsTheInterfaceFontAndBlocksOlderWriters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.db")
+	want := richState()
+	want.InterfaceFont = "Sarasa Gothic"
+	if err := saveState(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, report, err := loadState(path)
+	if err != nil || report.outcome != loadOK || got.InterfaceFont != "Sarasa Gothic" {
+		t.Fatalf("reload: %q, %+v, %v", got.InterfaceFont, report, err)
+	}
+	// A format-15 build would rewrite the local state from its own struct and drop
+	// the font, so it must refuse the store.
+	if _, _, err := configstore.ReadOnly(path, 15); !errors.Is(err, configstore.ErrTooNew) {
+		t.Fatalf("a format-15 build could overwrite the configuration: %v", err)
+	}
+
+	// A store a format-15 build wrote has no font: it opens with the default.
+	older := filepath.Join(t.TempDir(), "config.db")
+	state := richState()
+	entries, local, err := splitState(state, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := configstore.Open(older, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Commit(configstore.Change{Put: entries, Local: map[string][]byte{localKey: local}})
+	if err := errors.Join(err, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+	got, report, err = loadState(older)
+	if err != nil || report.outcome != loadOK || got.InterfaceFont != "" {
+		t.Fatalf("an older store: %q, %+v, %v", got.InterfaceFont, report, err)
 	}
 }
 

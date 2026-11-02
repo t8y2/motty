@@ -81,13 +81,17 @@ skipped-flags: %d
 skipped-values: %d
 hidden-flags: %d
 rootless-dirs: %d
+repaired-files: %d
+skipped-sources: %d
+audit-warnings: %d
 generated-by: tools/completiongen
 `, *source, *release, *commit, *licenseName, completion.FormatVersion,
 		filepath.Base(*archivePath), len(archive), archiveSHA,
 		len(snapshot), hex.EncodeToString(snapshotSum[:]),
 		stats.Roots, stats.Nodes, stats.Flags, stats.Values,
 		len(sources.Files), stats.SkippedFiles, stats.SkippedCommands,
-		stats.SkippedFlags, stats.SkippedValues, stats.HiddenFlags, stats.RootlessDirs)
+		stats.SkippedFlags, stats.SkippedValues, stats.HiddenFlags, stats.RootlessDirs,
+		stats.RepairedFiles, stats.SkippedSources, stats.AuditWarnings)
 
 	outputs := []struct {
 		name string
