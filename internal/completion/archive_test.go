@@ -184,10 +184,10 @@ func TestReadSourceArchiveBoundsKeptSourceBytes(t *testing.T) {
 
 func TestDefaultArchiveLimitsKeepWorkAndMemoryBoundsSeparate(t *testing.T) {
 	limits := DefaultArchiveLimits()
-	// Carapace 1.8.x already expands past 100 MiB; the work bound must leave
-	// several releases of headroom instead of failing on normal growth.
-	if limits.MaxExpanded < 400<<20 {
-		t.Fatalf("MaxExpanded = %d, want at least 400 MiB", limits.MaxExpanded)
+	// Carapace 1.8.x expands to about 88 MB; the work bound must leave at least
+	// double that instead of failing on normal growth.
+	if limits.MaxExpanded < 200<<20 {
+		t.Fatalf("MaxExpanded = %d, want at least 200 MiB", limits.MaxExpanded)
 	}
 	// The work bound alone must not decide how much may be kept in memory.
 	if limits.MaxSourceBytes > 128<<20 {

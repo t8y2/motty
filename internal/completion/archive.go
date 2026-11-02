@@ -3,7 +3,6 @@ package completion
 import (
 	"archive/tar"
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -40,6 +39,24 @@ type SourceArchive struct {
 	License []byte
 }
 
+var errArchiveTooLarge = errors.New("completion: archive exceeds the size limit")
+
+// cappedReader fails once more than the allowed number of bytes has been read,
+// so a hostile or endless download stops at the limit instead of filling memory.
+type cappedReader struct {
+	reader    io.Reader
+	remaining int64
+}
+
+func (capped *cappedReader) Read(p []byte) (int, error) {
+	n, err := capped.reader.Read(p)
+	capped.remaining -= int64(n)
+	if capped.remaining < 0 {
+		return n, errArchiveTooLarge
+	}
+	return n, err
+}
+
 // ReadSourceArchive reads man/cmd/*.yaml and LICENSE from a gzipped or plain
 // tar stream. Only regular files directly below man/cmd are read; symlinks,
 // absolute paths and path traversal are refused. Nothing is extracted to disk.
@@ -50,14 +67,9 @@ func ReadSourceArchive(reader io.Reader, limits ArchiveLimits) (*SourceArchive, 
 	if limits.MaxSourceBytes <= 0 {
 		limits.MaxSourceBytes = maxSourceBytes
 	}
-	data, err := io.ReadAll(io.LimitReader(reader, limits.MaxCompressed+1))
-	if err != nil {
-		return nil, fmt.Errorf("completion: read archive: %w", err)
-	}
-	if int64(len(data)) > limits.MaxCompressed {
-		return nil, errors.New("completion: archive exceeds the size limit")
-	}
-	buffered := bufio.NewReader(bytes.NewReader(data))
+	// The stream is read once, as it arrives: the compressed archive is never
+	// held in memory beside the sources taken from it.
+	buffered := bufio.NewReader(&cappedReader{reader: reader, remaining: limits.MaxCompressed})
 	var stream io.Reader = buffered
 	if magic, err := buffered.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
 		gzipReader, err := gzip.NewReader(buffered)

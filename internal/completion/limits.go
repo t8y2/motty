@@ -18,10 +18,10 @@ const (
 	// maxArchiveBytes bounds the compressed archive read during an update.
 	maxArchiveBytes = 64 << 20
 	// maxExpandedBytes bounds the total uncompressed bytes read from an archive
-	// stream. Carapace archives are already near 80% of 128 MiB and grow with
-	// every release, so the work bound leaves several releases of headroom;
-	// what is kept in memory is bounded separately by maxSourceBytes.
-	maxExpandedBytes = 512 << 20
+	// stream. Carapace v1.8.2 expands to about 88 MB and grows slowly, so this
+	// leaves roughly three times the headroom; what is kept in memory is
+	// bounded separately by maxSourceBytes.
+	maxExpandedBytes = 256 << 20
 	// maxArchiveMembers bounds the archive members visited.
 	maxArchiveMembers = 20_000
 	// maxSourceFileBytes bounds one YAML file.

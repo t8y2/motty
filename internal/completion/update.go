@@ -1,7 +1,6 @@
 package completion
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -274,11 +273,7 @@ func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*C
 	if response.StatusCode != http.StatusOK {
 		return nil, ImportStats{}, fmt.Errorf("the download answered %s", response.Status)
 	}
-	data, err := readLimited(response.Body, maxArchiveBytes)
-	if err != nil {
-		return nil, ImportStats{}, err
-	}
-	source, err := ReadSourceArchive(bytes.NewReader(data), DefaultArchiveLimits())
+	source, err := ReadSourceArchive(response.Body, DefaultArchiveLimits())
 	if err != nil {
 		return nil, ImportStats{}, err
 	}
