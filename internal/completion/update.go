@@ -1,7 +1,6 @@
 package completion
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -84,7 +83,7 @@ func installCatalog(ctx context.Context, path string, catalog *Catalog) error {
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data := catalog.Encode()
@@ -110,6 +109,13 @@ func installCatalog(ctx context.Context, path string, catalog *Catalog) error {
 		return err
 	}
 	remove = false
+	// Make the replacement durable without letting a crash expose the old
+	// name and the new bytes as different files. Best effort: some filesystems
+	// refuse to fsync a directory.
+	if directory, err := os.Open(dir); err == nil {
+		_ = directory.Sync()
+		directory.Close()
+	}
 	return nil
 }
 
@@ -120,7 +126,7 @@ func writeCatalogFile(file *os.File, data []byte) error {
 	if err := file.Sync(); err != nil {
 		return err
 	}
-	if err := file.Chmod(0o644); err != nil {
+	if err := file.Chmod(0o600); err != nil {
 		return err
 	}
 	return file.Close()
@@ -247,39 +253,36 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 // FetchCatalog downloads the archive of one immutable commit and imports it
 // under the same limits as the built-in snapshot. The archive is read into
 // memory only up to the configured compressed size; the tar reader enforces
-// the expanded, member and file limits.
-func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*Catalog, error) {
+// the expanded, member and file limits. The returned stats describe how the
+// import went, including any upstream files that needed repair or were skipped.
+func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*Catalog, ImportStats, error) {
 	if release.Tag == "" || release.Commit == "" {
-		return nil, errors.New("the release is not pinned")
+		return nil, ImportStats{}, errors.New("the release is not pinned")
 	}
 	url := "https://codeload.github.com/" + RepositoryOwner + "/" + RepositoryName + "/tar.gz/" + release.Commit
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	request.Header.Set("User-Agent", "motty")
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the download answered %s", response.Status)
+		return nil, ImportStats{}, fmt.Errorf("the download answered %s", response.Status)
 	}
-	data, err := readLimited(response.Body, maxArchiveBytes)
+	source, err := ReadSourceArchive(response.Body, DefaultArchiveLimits())
 	if err != nil {
-		return nil, err
-	}
-	source, err := ReadSourceArchive(bytes.NewReader(data), DefaultArchiveLimits())
-	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
 	metadata := Metadata{Source: RepositoryName, Release: release.Tag, Commit: release.Commit, License: "MIT"}
-	catalog, _, err := Import(source.Files, metadata, DefaultImportOptions())
+	catalog, stats, err := Import(source.Files, metadata, DefaultImportOptions())
 	if err != nil {
-		return nil, err
+		return nil, ImportStats{}, err
 	}
-	return catalog, nil
+	return catalog, stats, nil
 }
 
 // readLimited reads at most limit bytes and rejects a longer answer instead of
@@ -295,8 +298,28 @@ func readLimited(reader io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// allowedUpdateHosts are the only hosts a redirect may reach. The requests
+// themselves use fixed constants; the allowlist keeps a redirect from handing
+// the catalog download to an unrelated HTTPS host.
+var allowedUpdateHosts = []string{"api.github.com", "codeload.github.com", "github.com"}
+
+// allowedUpdateHost reports whether host is one of GitHub's own download hosts.
+// Release assets on GitHub are served from *.githubusercontent.com.
+func allowedUpdateHost(host string) bool {
+	host = strings.ToLower(host)
+	if strings.HasSuffix(host, ".githubusercontent.com") {
+		return true
+	}
+	for _, allowed := range allowedUpdateHosts {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateClient returns the HTTP client the updater uses: bounded in total
-// time, with no redirect to another scheme and no proxy configuration of its
+// time, redirects only to GitHub over https, and no proxy configuration of its
 // own.
 func UpdateClient() *http.Client {
 	return &http.Client{
@@ -307,6 +330,9 @@ func UpdateClient() *http.Client {
 			}
 			if request.URL.Scheme != "https" {
 				return errors.New("only https downloads are followed")
+			}
+			if !allowedUpdateHost(request.URL.Hostname()) {
+				return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
 			}
 			return nil
 		},
