@@ -128,6 +128,11 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsInterfaceFont                  string
+	SettingsInterfaceFontDescription       string
+	SettingsInterfaceFontDefault           string
+	SettingsInterfaceFontCurrentFmt        string
+	SettingsInterfaceFontUnsupportedFmt    string
 	SettingsTabOrientation                 string
 	SettingsTabOrientationDescription      string
 	SettingsTabsHorizontal                 string
