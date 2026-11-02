@@ -278,6 +278,14 @@ type ToolsMessages struct {
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
+	FilesWindowOrder                string
+	FilesWindowOrderDescription     string
+	FilesWindowLocalLeft            string
+	FilesWindowRemoteLeft           string
+	FilesOpenMode                   string
+	FilesOpenModeDescription        string
+	FilesOpenWindow                 string
+	FilesOpenTab                    string
 	FilesMoveLeft, FilesMoveRight   string
 	FilesParallel                   string
 	FilesPathInput                  string
@@ -326,6 +334,9 @@ type ToolsMessages struct {
 	FilesEditorNone                 string
 	FilesEditorVSCode               string
 	FilesEditorZed                  string
+	FilesEditorCustom               string
+	FilesEditorCustomDescription    string
+	FilesCustomEditorRemoteOnly     string
 	FilesEditorUnknownFmt           string
 	FilesEditorOpenFmt              string
 	FilesEditorOpenFailedTitleFmt   string
@@ -333,6 +344,16 @@ type ToolsMessages struct {
 	FilesEditorPortFmt              string
 	FilesEditorJump                 string
 	FilesEditorNotFound             string
+	FilesCustomEditor               string
+	FilesCustomEditorNotSet         string
+	FilesCustomEditorChoose         string
+	FilesCustomEditorClear          string
+	FilesCustomEditorPicker         string
+	FilesCustomEditorFilter         string
+	FilesCustomEditorPickerFailed   string
+	FilesCustomEditorInvalid        string
+	FilesCustomEditorSaved          string
+	FilesCustomEditorUnavailable    string
 	TipNewLink                      string
 	LinkTitle                       string
 	LinkName                        string

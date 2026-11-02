@@ -191,6 +191,8 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
 	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
+	row(settingsFiles, tools.FilesWindowOrder, tools.FilesWindowOrderDescription)
+	row(settingsFiles, tools.FilesOpenMode, tools.FilesOpenModeDescription)
 	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesColumns, tools.FilesColumnsDescription)
 	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)

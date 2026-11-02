@@ -177,25 +177,28 @@ func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
 	}
 }
 
-func TestOnlyInstalledEditorsAreOffered(t *testing.T) {
+func TestKnownEditorsRemainVisibleWhileAvailabilityIsStillReported(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	known := map[string]error{"vscode": nil, "zed": errors.New("no xdg-mime")}
 	installed := map[string]bool{"vscode": false, "zed": false}
 	state.options.SchemeHandlerAvailable = func(scheme string) (bool, error) { return installed[scheme], known[scheme] }
 
-	// VS Code is not installed; the system cannot say whether Zed is.
+	// Both known editors stay visible even when the system has not registered
+	// their URL scheme yet. VS Code on Windows commonly registers it on first use.
 	state.refreshEditors()
-	if want := []ExternalEditor{editorNone, editorZed}; !slices.Equal(state.editorMenu.choices, want) {
+	want := []ExternalEditor{editorNone, editorVSCode, editorZed}
+	if customEditorSupported() {
+		want = append(want, editorCustom)
+	}
+	if !slices.Equal(state.editorMenu.choices, want) {
 		t.Fatalf("choices = %v, want %v", state.editorMenu.choices, want)
 	}
-	// An editor chosen earlier and since uninstalled stays visible, so the row
-	// does not claim another one.
 	state.defaultEditor = editorVSCode
 	state.refreshEditors()
-	if want := []ExternalEditor{editorNone, editorZed, editorVSCode}; !slices.Equal(state.editorMenu.choices, want) {
+	if !slices.Equal(state.editorMenu.choices, want) {
 		t.Fatalf("choices = %v, want %v", state.editorMenu.choices, want)
 	}
-	if state.editorInstalled(editorVSCode) || state.editorSelected() != 2 {
+	if state.editorInstalled(editorVSCode) || state.editorSelected() != 1 {
 		t.Fatalf("installed = %t, selected = %d", state.editorInstalled(editorVSCode), state.editorSelected())
 	}
 	// A value this build does not know highlights nothing and says so.

@@ -380,6 +380,9 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 		// The keyboard belongs to the remote desktop: none of Motty's shortcuts run.
 		return state.desktopShortcut(view, event)
 	}
+	if result, handled := state.sftpTabShortcut(event); handled {
+		return result
+	}
 	if result, handled := state.aiPanelShortcut(event); handled {
 		return result
 	}
@@ -392,8 +395,8 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 			return ui.EventResult{Handled: true, Repaint: true}
 		}
 		if index, ok := tabNumberChord(chord); ok {
-			if !event.Repeat && state.activateTab(index) {
-				return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+			if !event.Repeat && state.activateTopTab(index) {
+				return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTopTabFocusHit()}
 			}
 			return ui.EventResult{Handled: true}
 		}
@@ -532,12 +535,12 @@ func (state *State) executeShortcut(action shortcutAction) ui.EventResult {
 	case shortcutCloseTab:
 		state.closeActivePaneOrTab()
 	case shortcutNextTab:
-		if state.cycleWorkspace(1) {
-			result.Focus = state.activeTerminalFocusHit()
+		if state.cycleWindowTabs(1) {
+			result.Focus = state.activeTopTabFocusHit()
 		}
 	case shortcutPreviousTab:
-		if state.cycleWorkspace(-1) {
-			result.Focus = state.activeTerminalFocusHit()
+		if state.cycleWindowTabs(-1) {
+			result.Focus = state.activeTopTabFocusHit()
 		}
 	case shortcutPanePrevious:
 		state.Click(hitPanePrevious)

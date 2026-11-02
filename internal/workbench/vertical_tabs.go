@@ -223,7 +223,11 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 	for index := range tabs {
 		tab := &tabs[index]
 		var session *Session
-		if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
+		if tab.fileSession != 0 {
+			if manager := state.sftpWindows[tab.fileSession]; manager != nil && !manager.closed {
+				session = &manager.session
+			}
+		} else if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
 			session, _ = state.sessionByIDPointer(uint32(pane.SessionID))
 		}
 		badge := tab.badge.Rect()
@@ -240,6 +244,8 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 		} else if state.tabOrientation == tabsVertical {
 			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
 		}
-		state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+		if tab.workspace.ID != 0 {
+			state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+		}
 	}
 }

@@ -16,32 +16,31 @@ var (
 
 // editorSelect is the setting that picks the editor a folder is handed to.
 type editorSelect struct {
-	// choices is "no editor", then the editors this computer has an application
-	// registered for, then the saved editor if it is not among them.
+	// choices is the system default followed by every editor this build knows.
+	// Known editors stay visible so a URL scheme that registers on first launch
+	// does not make the editor appear unsupported.
 	choices []ExternalEditor
 	loaded  bool
 	open    bool
 	bounds  ui.Rect
 }
 
-// refreshEditors asks the system which editors are installed. Where it cannot
-// tell, the editor is listed rather than hidden. Linux runs a short process per
-// editor, so this runs when the choice is shown, not on every paint.
+// refreshEditors lists every editor this build knows. Some applications, such as
+// VS Code on Windows, register their URL scheme only after they have started;
+// hiding them until then makes a supported editor look unavailable.
 func (state *State) refreshEditors() {
 	menu := &state.editorMenu
 	menu.choices, menu.loaded = []ExternalEditor{editorNone}, true
 	for _, info := range editors {
-		if available, err := state.options.SchemeHandlerAvailable(info.scheme); available || err != nil {
-			menu.choices = append(menu.choices, info.id)
-		}
+		menu.choices = append(menu.choices, info.id)
 	}
-	if _, known := editorByID(state.defaultEditor); known && !slices.Contains(menu.choices, state.defaultEditor) {
-		menu.choices = append(menu.choices, state.defaultEditor)
+	if customEditorSupported() || state.defaultEditor == editorCustom {
+		menu.choices = append(menu.choices, editorCustom)
 	}
 }
 
 func (state *State) editorSelected() int {
-	if _, known := editorByID(state.defaultEditor); !known && state.defaultEditor != editorNone {
+	if _, known := editorByID(state.defaultEditor); !known && state.defaultEditor != editorNone && state.defaultEditor != editorCustom {
 		return -1
 	}
 	return slices.Index(state.editorMenu.choices, state.defaultEditor)
@@ -67,6 +66,9 @@ func (state *State) editorInstalled(editor ExternalEditor) bool {
 }
 
 func (state *State) settingsEditorDescription() string {
+	if state.defaultEditor == editorCustom {
+		return state.messages.Tools.FilesEditorCustomDescription
+	}
 	if _, known := editorByID(state.defaultEditor); known || state.defaultEditor == editorNone {
 		return state.messages.Tools.FilesEditorDescription
 	}
@@ -146,6 +148,14 @@ func (state *State) clickEditorSelect(id ui.ID) bool {
 	}
 	editor := menu.choices[index]
 	menu.open = false
+	if editor == editorCustom && state.defaultEditor != editorCustom {
+		previousEditor, previousPath := state.defaultEditor, state.customEditorPath
+		state.chooseCustomEditor()
+		if state.defaultEditor != editorCustom {
+			state.defaultEditor, state.customEditorPath = previousEditor, previousPath
+		}
+		return true
+	}
 	if state.defaultEditor != editor {
 		state.defaultEditor = editor
 		state.save()

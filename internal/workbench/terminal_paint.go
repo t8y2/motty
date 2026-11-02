@@ -59,7 +59,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	tools := toolList[:0]
 	if !inactive && !finding {
 		if session.host.isSSH() && !session.isLocal() {
-			tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
+			tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 		}
 		filesStyle := iconButtonQuiet
 		if context, ok := state.deck.Context(state.deck.ActiveWorkspace()); ok && context.Open {

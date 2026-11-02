@@ -39,20 +39,23 @@ type sftpWindow struct {
 	initialLocal, initialRemote string
 	browse                      sftpBrowseSync
 	bookmark                    sftpBookmarkEditor
+	fileProperties              sftpFileProperties
 }
 
 func (state *State) openSFTPWindow(source *Session) {
-	if source == nil || source.conn == nil || !source.hasServer() || source.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil {
+	if source == nil || source.conn == nil || !source.hasServer() || source.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable() {
 		return
 	}
 	if existing := state.sftpWindows[source.ID]; existing != nil && !existing.closed {
-		if existing.window != nil {
-			existing.window.Show()
-		}
+		existing.reveal()
 		return
 	}
 	w := state.newSFTPWindow(source)
-	w.show()
+	if state.sftpOpenMode == sftpOpenTab {
+		w.openTab()
+	} else {
+		w.show()
+	}
 }
 
 func (state *State) newSFTPWindow(source *Session) *sftpWindow {
@@ -97,16 +100,16 @@ func (w *sftpWindow) show() {
 }
 
 func (w *sftpWindow) startBrowser() {
-	if w.closed || w.window == nil || w.view.worker != nil || !w.connected() {
+	if w.closed || w.view.worker != nil || !w.connected() {
 		return
 	}
-	state, window := w.owner, w.window
+	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
-	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, func() { window.Invalidate(); state.options.Invalidate() })
+	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, w.invalidate)
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
-	window.Invalidate()
+	w.invalidate()
 }
 
 func (w *sftpWindow) config() app.Config {
@@ -155,14 +158,14 @@ func (w *sftpWindow) wake() {
 }
 
 func (view *sftpView) invalidateDetached() {
-	if view.detached != nil && !view.detached.closed && view.detached.window != nil {
-		view.detached.window.Invalidate()
+	if view.detached != nil && !view.detached.closed {
+		view.detached.invalidate()
 	}
 }
 
 func (state *State) syncSFTPWindows() {
 	for _, w := range state.sftpWindows {
-		if w.closed || w.window == nil {
+		if w.closed {
 			continue
 		}
 		phase := w.session.phase
@@ -171,7 +174,19 @@ func (state *State) syncSFTPWindows() {
 		}
 		if w.phase != phase || w.language != state.language || w.pal != state.pal {
 			w.phase, w.language, w.pal = phase, state.language, state.pal
-			w.window.Invalidate()
+			w.invalidate()
+		}
+	}
+}
+
+// A native transfer window receives its own OnWake callback. A manager hosted
+// by a main-window tab does not, so the workbench pumps it here even while
+// another tab is visible. This keeps transfers and document polling alive in
+// the background without painting the hidden manager.
+func (state *State) wakeEmbeddedSFTPWindows() {
+	for _, w := range state.sftpWindows {
+		if w != nil && !w.closed && w.window == nil {
+			w.wake()
 		}
 	}
 }
@@ -187,6 +202,8 @@ func (state *State) closeSFTPWindows() {
 		w.releaseConnection()
 	}
 	state.sftpWindows = nil
+	state.sftpTabs = nil
+	state.activeSFTPTab = 0
 }
 
 func (w *sftpWindow) requestClose(allow func()) {
@@ -194,7 +211,7 @@ func (w *sftpWindow) requestClose(allow func()) {
 		w.allowClose = allow
 		w.closeConfirm = true
 		w.cancelDrag()
-		w.window.Invalidate()
+		w.invalidate()
 		return
 	}
 	allow()
@@ -244,11 +261,68 @@ func (state *State) confirmSFTPWindows(allow func()) bool {
 				allow()
 			}
 		}
-		w.requestClose(w.window.Close)
-		w.window.Show()
+		w.requestClose(w.closeHostNow)
+		w.reveal()
 		return true
 	}
 	return false
+}
+
+// invalidateSFTPWindows repaints every manager after a setting that changes
+// their shared presentation. A native manager repaints itself; a tab asks the
+// main window, which hosts it.
+func (state *State) invalidateSFTPWindows() {
+	for _, w := range state.sftpWindows {
+		if !w.closed {
+			w.invalidate()
+		}
+	}
+	state.options.Invalidate()
+}
+
+func (w *sftpWindow) invalidate() {
+	if w == nil || w.closed {
+		return
+	}
+	if w.window != nil {
+		w.window.Invalidate()
+		return
+	}
+	w.owner.options.Invalidate()
+}
+
+func (w *sftpWindow) reveal() {
+	if w == nil || w.closed {
+		return
+	}
+	if w.window != nil {
+		w.window.Show()
+		w.window.Invalidate()
+		return
+	}
+	w.owner.activateSFTPTab(w.session.ID)
+}
+
+func (w *sftpWindow) closeHostNow() {
+	if w == nil || w.closed {
+		return
+	}
+	if w.window != nil {
+		w.window.Close()
+		return
+	}
+	w.owner.removeSFTPTab(w)
+}
+
+func (w *sftpWindow) requestHostClose() {
+	if w == nil || w.closed {
+		return
+	}
+	if w.window != nil {
+		w.window.RequestClose()
+		return
+	}
+	w.owner.requestCloseSFTPTab(w)
 }
 
 func (w *sftpWindow) hasWork() bool {

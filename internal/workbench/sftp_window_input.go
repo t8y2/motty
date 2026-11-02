@@ -141,36 +141,49 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	if w.ui.barDrag > 0 {
 		side := w.ui.barDrag - 1
 		if event.Kind == ui.PointerMove {
-			if side == 2 {
-				w.ui.queueOffset = w.ui.queueBar.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-			} else {
-				w.ui.offset[side] = w.ui.bars[side].VerticalOffsetForThumb(event.Y - w.ui.barGrab)
+			if !event.Captured {
+				return ui.EventResult{Handled: true}
 			}
-		} else if event.Kind == ui.PointerUp || event.Kind == ui.PointerExit {
+			var before, after float32
+			if side == 2 {
+				before = w.ui.queueOffset
+				w.ui.queueOffset = w.ui.queueBar.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
+				after = w.ui.queueOffset
+			} else {
+				before = w.ui.offset[side]
+				w.ui.offset[side] = w.ui.bars[side].VerticalOffsetForThumb(event.Y - w.ui.barGrab)
+				after = w.ui.offset[side]
+			}
+			return ui.EventResult{Handled: true, Repaint: before != after}
+		} else if event.Kind == ui.PointerUp {
+			w.ui.barDrag = 0
+		} else if event.Kind == ui.PointerExit && !event.Captured {
 			w.ui.barDrag = 0
 		}
-		return handled
+		return ui.EventResult{Handled: true}
 	}
 	if event.Kind == ui.PointerDown && event.Target == hitSFTPWindowQueueBar {
 		geometry := w.ui.queueBar
+		before := w.ui.queueOffset
 		w.ui.barGrab = geometry.VerticalThumb.Height / 2
 		if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
 			w.ui.barGrab = event.Y - geometry.VerticalThumb.Y
 		}
 		w.ui.barDrag = 3
 		w.ui.queueOffset = geometry.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-		return handled
+		return ui.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
 	}
 	for side, id := range sftpWindowBar {
 		if event.Kind == ui.PointerDown && event.Target == id {
 			geometry := w.ui.bars[side]
+			before := w.ui.offset[side]
 			w.ui.barGrab = geometry.VerticalThumb.Height / 2
 			if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
 				w.ui.barGrab = event.Y - geometry.VerticalThumb.Y
 			}
 			w.ui.barDrag = side + 1
 			w.ui.offset[side] = geometry.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-			return handled
+			return ui.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
 		}
 	}
 	if w.drag.armed || w.drag.active {
@@ -260,11 +273,11 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 }
 
 func (w *sftpWindow) click(id ui.ID) {
-	defer w.window.Invalidate()
+	defer w.invalidate()
 	if w.view.worker == nil {
 		switch id {
 		case hitSFTPWindowConnectCancel:
-			w.window.Close()
+			w.closeHostNow()
 		case hitSFTPWindowConnectRetry:
 			if w.session.failed() || w.session.phase == sshconn.PhaseClosed {
 				w.connect()
@@ -272,6 +285,9 @@ func (w *sftpWindow) click(id ui.ID) {
 		case hitSFTPWindowAuthenticate:
 			w.owner.raiseSFTPAuthentication(&w.session)
 		}
+		return
+	}
+	if w.clickFileProperties(id) {
 		return
 	}
 	if w.notices.click(id) {
@@ -325,18 +341,7 @@ func (w *sftpWindow) click(id ui.ID) {
 			return
 		}
 		if id == hitSFTPWindowMenuCopy {
-			folder := w.folder(w.activeLocal)
-			var names []string
-			for _, row := range folder.rows {
-				if row.selected {
-					location := path.Join(folder.path, row.entry.Name)
-					if w.activeLocal {
-						location = filepath.Join(folder.path, row.entry.Name)
-					}
-					names = append(names, location)
-				}
-			}
-			if err := w.owner.options.SetClipboardText(strings.Join(names, "\n")); err != nil {
+			if err := w.owner.copySFTPPaths(w.folder(w.activeLocal), w.activeLocal); err != nil {
 				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
 			}
 		}
@@ -362,7 +367,7 @@ func (w *sftpWindow) click(id ui.ID) {
 		}
 	}
 	if w.owner.clickTransferTask(id) {
-		w.window.Invalidate()
+		w.invalidate()
 		return
 	}
 	if id == hitSFTPBookmarkList {
@@ -494,10 +499,13 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	if w.view.worker == nil {
 		if event.Key == ui.KeyEscape && !event.Repeat {
-			w.window.RequestClose()
+			w.requestHostClose()
 			return handled
 		}
 		return ui.EventResult{}
+	}
+	if result, handled := w.filePropertiesKey(event); handled {
+		return result
 	}
 	if w.bookmark.open && !w.closeConfirm {
 		if result, handled := w.profileScopeKey(event); handled {
@@ -776,7 +784,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 		w.refresh(w.activeLocal)
 		return handled
 	case "w":
-		w.window.RequestClose()
+		w.requestHostClose()
 		return handled
 	}
 	return ui.EventResult{}
@@ -822,8 +830,9 @@ func (w *sftpWindow) scroll(event ui.ScrollEvent) ui.EventResult {
 		}
 	}
 	if pointInRect(event.X, event.Y, w.ui.queueBounds) {
+		before := w.ui.queueOffset
 		w.ui.queueOffset = max(0, min(w.ui.queueBar.MaxOffsetY, w.ui.queueOffset+event.DeltaY))
-		return ui.EventResult{Handled: true, Repaint: true}
+		return ui.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
 	}
 	return ui.EventResult{}
 }

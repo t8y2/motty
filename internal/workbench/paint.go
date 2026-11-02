@@ -123,6 +123,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		canvas.AfterPaint(func() { state.Click(id) })
 	}
 	state.syncVisible()
+	state.syncSFTPTabs()
 	state.reveal.beginPaint()
 	state.contextRect = ui.Rect{}
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
@@ -132,6 +133,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.ai.cfg.agentSelectBounds = ui.Rect{}
 	state.localShellMenu.bounds = ui.Rect{}
 	state.editorMenu.bounds = ui.Rect{}
+	state.fileManagerRect = ui.Rect{}
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsFiles || state.settingsSearching() {
 		state.editorMenu.open = false
 	}
@@ -157,15 +159,29 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// them must not cover it.
 	picture := state.paintBackground(canvas, size)
 	terminal := state.terminalPage()
+	fileManager := state.activeSFTPWindow() != nil
+	fullPage := terminal || fileManager
 	chrome := &state.chrome
 	geometry := state.windowBarGeometry(canvas, size.Width)
-	active := layoutcore.WorkspaceID(0)
+	activeIndex := -1
 	if state.activeSection == sectionTerminal {
-		active = state.deck.ActiveWorkspace()
+		for index, tab := range state.workspaceTabs {
+			if tab.ID == state.deck.ActiveWorkspace() {
+				activeIndex = index
+				break
+			}
+		}
+	} else if fileManager {
+		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
+			activeIndex = len(state.workspaceTabs) + index
+		}
 	}
 	scroll := float32(0)
 	if state.tabOrientation == tabsHorizontal {
-		scroll = state.tabStrip.layout(geometry.area, float32(len(state.workspaceTabs))*(geometry.tabWidth+barGap), state.workspaceTabs, geometry.tabWidth+barGap, geometry.tabWidth, active)
+		topTabCount := len(state.workspaceTabs) + len(state.sftpTabs)
+		scroll = state.tabStrip.layoutIndex(geometry.area, float32(topTabCount)*(geometry.tabWidth+barGap), topTabCount, activeIndex, geometry.tabWidth+barGap, geometry.tabWidth)
+	} else if len(state.sftpTabs) > 0 {
+		scroll = state.fileTabStrip.layoutIndex(geometry.area, float32(len(state.sftpTabs))*(geometry.tabWidth+barGap), len(state.sftpTabs), activeIndex-len(state.workspaceTabs), geometry.tabWidth+barGap, geometry.tabWidth)
 	} else if !terminal {
 		state.tabStrip.area = ui.Rect{}
 	}
@@ -183,7 +199,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	root.Children(func() {
 		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
-		if !terminal {
+		if !fullPage {
 			f.Row().Grow(1).Children(func() {
 				state.declareNavigation(f)
 				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
@@ -193,7 +209,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	})
 	f.End()
 	state.paintWindowBarParts(canvas, geometry.area)
-	if !terminal {
+	if !fullPage {
 		state.paintLockup(canvas, chrome.lockup.Rect())
 	}
 
@@ -203,6 +219,9 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
+		state.paintAIPanel(canvas, size)
+	} else if fileManager {
+		state.paintSFTPTab(canvas, ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
 		state.paintAIPanel(canvas, size)
 	} else {
 		workspace := workspaceSlot.Rect().Inset(ui.All(workspaceBorder))
@@ -321,6 +340,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintUpdateDialog(canvas, viewport)
 	case modalUpdateProgress:
 		state.paintUpdateProgress(canvas, viewport)
+	case modalFileProperties:
+		state.paintFileProperties(canvas, viewport)
 	case modalCommandPalette:
 		state.paintCommandPalette(canvas, viewport)
 	case modalHistory:
@@ -382,6 +403,7 @@ type windowBar struct {
 type barTab struct {
 	badge, light flex.Box
 	workspace    layoutcore.WorkspaceInfo
+	fileSession  uint32
 	id, closeID  ui.ID
 	background   ui.Color
 	compact      bool
@@ -410,12 +432,13 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 	chrome := &state.chrome
 	leading, trailing := app.TitlebarInsets()
 	buttons := state.windowBarButtons()
+	tabCount := len(state.workspaceTabs) + len(state.sftpTabs)
 	locked := false
 	for _, tab := range state.workspaceTabs {
 		locked = locked || tab.Locked
 	}
 	geometry := &chrome.geometry
-	if geometry.valid && geometry.width == width && geometry.tabCount == len(state.workspaceTabs) &&
+	if geometry.valid && geometry.width == width && geometry.tabCount == tabCount &&
 		geometry.barButtons == buttons &&
 		geometry.orientation == state.tabOrientation &&
 		geometry.locked == locked &&
@@ -428,7 +451,7 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 	})
 	f.End()
 	*geometry = barGeometry{
-		width: width, tabCount: len(state.workspaceTabs), barButtons: buttons, leading: leading, trailing: trailing, valid: true,
+		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, valid: true,
 		locked:      locked,
 		orientation: state.tabOrientation,
 		area:        chrome.probeArea.Rect(), row: chrome.probeRow.Rect(), tabWidth: barTabMax,
@@ -449,6 +472,12 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, trailing := app.TitlebarInsets()
 	themeIcon, themeLabel := iconSun, m.LabelThemeToLight
+	visibleFileTabs := 0
+	for _, tab := range state.sftpTabs {
+		if tab != nil && !tab.closed {
+			visibleFileTabs++
+		}
+	}
 	if state.appearance == appearanceLight {
 		themeIcon, themeLabel = iconMoon, m.LabelThemeToDark
 	}
@@ -470,7 +499,9 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		if state.tabOrientation == tabsVertical {
 			if !probe {
 				label := m.TrayTitle
-				if state.terminalPage() {
+				if manager := state.activeSFTPWindow(); manager != nil {
+					label = state.sftpFileTabTitle(manager)
+				} else if state.terminalPage() {
 					for _, tab := range state.workspaceTabs {
 						if tab.ID == state.deck.ActiveWorkspace() {
 							label = state.tabLabel(tab)
@@ -486,7 +517,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		// like (barTabMax) and shrink together to barTabMin; the new-tab button
 		// follows the last of them, or ends the room when they do not fit.
 		tabRoom := f.Stack().Grow(1).MarginSides(0, barGap, 0, 0)
-		if state.tabOrientation == tabsVertical {
+		if state.tabOrientation == tabsVertical && visibleFileTabs == 0 {
 			tabRoom.Grow(0).Width(barButtonSize)
 		}
 		tabRoom.Children(func() {
@@ -522,6 +553,72 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 							first = -scroll
 						}
 						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false)
+						bar.tabs = append(bar.tabs, entry)
+					}
+					for fileIndex, fileTab := range state.sftpTabs {
+						if fileTab == nil || fileTab.closed {
+							continue
+						}
+						index := len(state.workspaceTabs) + fileIndex
+						id, closeID := sftpFileTabID(fileTab.session.ID), sftpFileTabCloseID(fileTab.session.ID)
+						if probe {
+							minimum := barTabMin
+							if geometry.locked {
+								minimum += 18
+							}
+							tab := f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
+							chrome.probeTabs = append(chrome.probeTabs, tab)
+							bar.tabs = append(bar.tabs, barTab{})
+							continue
+						}
+						entry := barTab{fileSession: fileTab.session.ID, id: id, closeID: closeID}
+						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
+						hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+						foreground := pal.muted
+						fill, edge := pal.tab, pal.line
+						switch {
+						case active:
+							fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+						case hovered:
+							fill, foreground = pal.tabHover, pal.text
+						}
+						amount := float32(.08)
+						if active {
+							amount = .18
+						} else if hovered {
+							amount = .12
+						}
+						fill = tintHostSurface(fill, fileTab.session.host.Color, amount)
+						edge = tintHostSurface(edge, fileTab.session.host.Color, .35)
+						entry.background = fill
+						first := float32(0)
+						if index == 0 {
+							first = -scroll
+						}
+						label := state.sftpFileTabTitle(fileTab)
+						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+							PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
+							HitWith(id, label, ui.HitOptions{Role: ui.RoleTab, Selected: active}).Children(func() {
+							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+							f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+							entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
+							f.Spacer()
+							if !active && !hovered {
+								f.Slot().Size(20, 20)
+								return
+							}
+							var closeFill ui.Color
+							if f.Canvas().Hovered() == closeID {
+								closeFill = pal.line
+								if active {
+									closeFill = pal.tabCloseHot
+								}
+							}
+							f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+								HitWith(closeID, m.LabelCloseTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
+								f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+							})
+						})
 						bar.tabs = append(bar.tabs, entry)
 					}
 				})

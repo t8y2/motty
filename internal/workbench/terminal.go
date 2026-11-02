@@ -1211,7 +1211,14 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
 		return ui.EventResult{Handled: true}
 	}
-	if result, handled := state.tabStrip.scroll(event); handled {
+	tabScroll := &state.tabStrip
+	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 {
+		tabScroll = &state.fileTabStrip
+	}
+	if result, handled := tabScroll.scroll(event); handled {
+		return result
+	}
+	if result, handled := state.sftpTabScroll(event); handled {
 		return result
 	}
 	if state.tabOrientation == tabsVertical && pointInRect(event.X, event.Y, state.verticalTabs.bounds) {

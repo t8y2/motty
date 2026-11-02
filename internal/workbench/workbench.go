@@ -404,6 +404,9 @@ const (
 	// monitor page and keeps its place even in builds whose page is hidden, so
 	// the other sections do not renumber.
 	sectionSessionLogs
+	// sectionSFTP is a file-manager tab opened in the main window. It comes last
+	// so existing section values stay stable.
+	sectionSFTP
 )
 
 // State owns the complete interactive state of the window.
@@ -422,11 +425,20 @@ type State struct {
 	fileNotices       fileNotices
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
-	reveal        secretReveal
-	sftpWindows   map[uint32]*sftpWindow
-	remoteWindows []*remoteToolsWindow
-	remoteWindow  *remoteToolsWindow // set only on a native tool window's isolated presenter
-	closed        bool
+	reveal      secretReveal
+	sftpWindows map[uint32]*sftpWindow
+	// sftpTabs are the file managers hosted in the main window, in tab order.
+	// They are runtime-only and never enter the persisted workspace deck.
+	sftpTabs         []*sftpWindow
+	activeSFTPTab    uint32
+	fileTabOptions   []components.TabOption
+	windowTabOptions []components.TabOption
+	fileTabStrip     tabStrip
+	fileManagerView  ui.Canvas
+	fileManagerRect  ui.Rect
+	remoteWindows    []*remoteToolsWindow
+	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
+	closed           bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
@@ -462,6 +474,7 @@ type State struct {
 	localShellPicker   localShellPicker
 	snippetMenu        snippetMenu
 	sftpMenu           sftpMenu
+	fileProperties     sftpFileProperties
 	popups             popupMenus
 	selectedHostID     uint32
 	activeSessionID    uint32
@@ -589,10 +602,13 @@ type State struct {
 	sftpTerminalFollow     bool
 	sftpPathInput          bool
 	sftpPanelAutoOpen      bool
+	sftpWindowOrder        sftpWindowOrder
+	sftpOpenMode           sftpOpenMode
 	sftpColumns            sftpColumnPreferences
 	sftpFilesSettings      sftpFilesSettingsCache
 	sftpDownloadDirectory  string
 	defaultEditor          ExternalEditor // hands remote folders to this computer's editor
+	customEditorPath       string
 	monitorRect            ui.Rect
 	monitorMenu            bool
 	monitorMenuRect        ui.Rect
@@ -1331,6 +1347,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalUpdateProgress:
 		state.clickUpdateProgress(id)
 		return
+	case modalFileProperties:
+		state.clickFileProperties(id)
+		return
 	case modalCommandPalette:
 		state.clickCommandPalette(id)
 		return
@@ -1513,6 +1532,12 @@ func (state *State) click(id ui.ID, feedback bool) {
 				state.save()
 			}
 		}
+	case id.Scope() == fileTabCloseList:
+		if manager := state.sftpWindows[uint32(item(id))]; manager != nil && !manager.closed {
+			state.requestCloseSFTPTab(manager)
+		}
+	case id.Scope() == fileTabList:
+		state.activateSFTPTab(uint32(item(id)))
 	}
 }
 
@@ -1556,6 +1581,7 @@ func (state *State) closeSession(id uint32) {
 	}
 	session.term.abandonShell()
 	state.dropExternalEdits(session.ID)
+	state.closeSFTPTabForSource(session.ID)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.conn != nil {
@@ -1620,6 +1646,12 @@ func (state *State) closeActivePane() {
 // terminal on show (the host list, with or without tabs open behind it) has
 // nothing of that kind to close, so the window closes instead.
 func (state *State) closeActivePaneOrTab() {
+	if state.activeSection == sectionSFTP {
+		if manager := state.activeSFTPWindow(); manager != nil {
+			state.requestCloseSFTPTab(manager)
+		}
+		return
+	}
 	workspaceID := state.deck.ActiveWorkspace()
 	if workspaceID == 0 || state.activeSection != sectionTerminal {
 		if state.options.CloseWindow != nil {
@@ -1889,6 +1921,11 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sftpPlacesPointer(event); handled {
 		return result
 	}
+	if state.modal == modalNone {
+		if result, handled := state.sftpTabPointer(event); handled {
+			return result
+		}
+	}
 	if result, handled := state.aiPointer(event); handled {
 		return result
 	}
@@ -2068,6 +2105,11 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		state.tabDrag = tabDrag{}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
+	if state.modal == modalNone {
+		if result, handled := state.sftpTabKey(event); handled {
+			return result
+		}
+	}
 	var mount ui.Scope
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
 		state.ActivatePane(session.ID)
@@ -2198,6 +2240,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.terminalFindKey(event); handled {
 		return result
 	}
+	if result, handled := state.filePropertiesKey(event); handled {
+		return result
+	}
 	if result, handled := state.sftpKey(event); handled {
 		return result
 	}
@@ -2268,16 +2313,21 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.verticalTabGroupKey(event); handled {
 		return result
 	}
-	if event.Target.Scope() != hitTabList {
+	tabScope := event.Target.Scope()
+	if tabScope != hitTabList && tabScope != fileTabList {
 		return ui.EventResult{}
 	}
-	orientation := components.TabsHorizontal
-	if state.tabOrientation == tabsVertical {
+	options, orientation := state.tabOptions, components.TabsHorizontal
+	if tabScope == hitTabList && state.tabOrientation == tabsVertical {
 		orientation = components.TabsVertical
+	} else {
+		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
+		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
+		options = state.windowTabOptions
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
-		state.tabOptions,
+		options,
 		orientation,
 		components.DirectionLTR,
 		event.Key,

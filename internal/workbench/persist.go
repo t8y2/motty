@@ -79,9 +79,12 @@ type savedState struct {
 	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
 	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
+	SFTPWindowOrder            string              `json:"sftp_window_order,omitempty"`
+	SFTPOpenMode               string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns                string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory      string              `json:"sftp_download_directory,omitempty"`
 	DefaultEditor              string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
+	CustomEditorPath           string              `json:"custom_editor_path,omitempty"`
 	Toolbars                   *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck                string              `json:"update_check,omitempty"`
 	CloseAction                string              `json:"close_action,omitempty"`
@@ -419,9 +422,12 @@ func (state *State) snapshot() savedState {
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
+		SFTPWindowOrder:            state.sftpWindowOrder.String(),
+		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
 		DefaultEditor:              string(state.defaultEditor),
+		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),

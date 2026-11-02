@@ -19,6 +19,7 @@ const (
 	editorNone   ExternalEditor = ""
 	editorVSCode ExternalEditor = "vscode"
 	editorZed    ExternalEditor = "zed"
+	editorCustom ExternalEditor = "custom"
 )
 
 // editorInfo is how a folder is handed to one editor: the URL scheme the editor
@@ -51,6 +52,9 @@ func editorByID(id ExternalEditor) (editorInfo, bool) {
 // name is how the settings and the menu call this editor: "" for none, and for a
 // value this build does not know.
 func (editor ExternalEditor) name(m i18n.ToolsMessages) string {
+	if editor == editorCustom {
+		return m.FilesEditorCustom
+	}
 	if info, ok := editorByID(editor); ok {
 		return info.label(m)
 	}

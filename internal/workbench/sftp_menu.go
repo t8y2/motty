@@ -51,6 +51,9 @@ func sftpMenuAction(id ui.ID) (ui.ID, bool) {
 		return hitSFTPCompress, true
 	case hitSFTPMenuDelete:
 		return hitSFTPDelete, true
+	case hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
+		hitSFTPCopyPath, hitSFTPProperties:
+		return id, true
 	}
 	return ui.ID{}, false
 }
@@ -171,6 +174,19 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		}
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDelete, Label: messages.SFTPDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive, Disabled: busy})
+	}
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitSFTPNewDirectory, Label: messages.SFTPNewDirectory, Icon: icon(iconFolderPlus), Disabled: busy})
+	if !local {
+		rows.add(components.ContextMenuItem{ID: hitSFTPUpload, Label: messages.SFTPUpload, Icon: icon(iconUpload), Disabled: busy})
+		rows.add(components.ContextMenuItem{ID: hitSFTPUploadDirectory, Label: messages.SFTPUploadDirectory, Icon: icon(iconFolderUp), Disabled: busy})
+		rows.add(components.ContextMenuItem{ID: hitSFTPNewLink, Label: messages.Tools.TipNewLink, Icon: icon(iconLink), Disabled: busy})
+	}
+	if count > 0 {
+		rows.add(components.ContextMenuItem{ID: hitSFTPCopyPath, Label: messages.SFTPWindow.CopyPath, Icon: icon(iconCopy)})
+	}
+	if one {
+		rows.add(components.ContextMenuItem{ID: hitSFTPProperties, Label: messages.SFTPWindow.PropertiesTitle, Icon: icon(iconInfo)})
 	}
 
 	return rows

@@ -152,6 +152,9 @@ func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
 // fileDropOnPage is FileDrop for files that are not over the assistant: the file
 // panel and the terminals.
 func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
+	if result, handled := state.sftpTabFileDrop(event); handled {
+		return result
+	}
 	switch event.Phase {
 	case ui.FileDropOver:
 		if _, view := state.dropPanel(event.X, event.Y); view != nil {
