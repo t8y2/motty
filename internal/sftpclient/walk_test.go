@@ -3,6 +3,7 @@ package sftpclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -110,6 +111,48 @@ func TestWalkStopsAtItsBoundsAndSaysSo(t *testing.T) {
 	}
 }
 
+func TestWalkEntersOnlyPlainFolders(t *testing.T) {
+	reader := &treeReader{folders: map[string][]os.FileInfo{
+		"/srv":          {dir("real"), fakeInfo{name: "junction", mode: os.ModeIrregular}, fakeInfo{name: "tty", mode: os.ModeDevice | os.ModeCharDevice}, fakeInfo{name: "pipe", mode: os.ModeNamedPipe}},
+		"/srv/real":     {file("a")},
+		"/srv/junction": {file("b")},
+	}}
+	got, summary := walkAll(t, reader, "/srv", WalkOptions{MaxEntries: 100, MaxDepth: 5})
+	if !slices.Contains(got, "junction") || !slices.Contains(got, "tty") || slices.Contains(got, "junction/b") || !slices.Equal(reader.read, []string{"/srv", "/srv/real"}) || summary.Truncated {
+		t.Fatalf("got %q, read %q, summary %+v", got, reader.read, summary)
+	}
+}
+
+func TestWalkPrunesFoldersItIsToldNotToEnter(t *testing.T) {
+	reader := &treeReader{folders: map[string][]os.FileInfo{
+		"/":         {dir("proc"), dir("home")},
+		"/proc":     {dir("1")},
+		"/home":     {file("notes")},
+		"/home/sys": {},
+	}}
+	got, _ := walkAll(t, reader, "/", WalkOptions{MaxEntries: 100, MaxDepth: 5, Prune: func(dir string) bool { return dir == "/proc" }})
+	if !slices.Contains(got, "proc") || slices.Contains(got, "proc/1") || !slices.Contains(got, "home/notes") || slices.Contains(reader.read, "/proc") {
+		t.Fatalf("got %q, read %q", got, reader.read)
+	}
+	// The folder the walk starts in is read even when the prune would name it.
+	reader = &treeReader{folders: map[string][]os.FileInfo{"/proc": {file("cpuinfo")}}}
+	if got, _ := walkAll(t, reader, "/proc", WalkOptions{MaxEntries: 100, MaxDepth: 5, Prune: func(string) bool { return true }}); !slices.Equal(got, []string{"cpuinfo"}) {
+		t.Fatalf("the root was pruned: %q", got)
+	}
+}
+
+func TestCompareFoldOrdersLikeLowerCasedNames(t *testing.T) {
+	names := []string{"", "a", "A", "ab", "Ab", "aB", "b", "B", "Zebra", "apple", "Ärger", "ärger", "zürich", "ZÜRICH", "日本", "日本語", "ǅ", "ǆ", "a\xff", "a\xfe"}
+	for _, a := range names {
+		for _, b := range names {
+			want := strings.Compare(strings.ToLower(a), strings.ToLower(b))
+			if got := compareFold(a, b); got != want {
+				t.Errorf("compareFold(%q, %q) = %d, want %d", a, b, got, want)
+			}
+		}
+	}
+}
+
 func TestWalkStopsWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	reader := sampleTree()
@@ -152,5 +195,24 @@ func TestLocalReaderWalksThisComputer(t *testing.T) {
 	}
 	if _, err := (LocalReader{}).ReadDir(filepath.Join(root, "missing")); err == nil {
 		t.Fatal("a missing folder read without an error")
+	}
+}
+
+// hugeFolder is one folder of n files with mixed-case names, the size at which
+// the cost of sorting its names shows.
+func hugeFolder(n int) *treeReader {
+	infos := make([]os.FileInfo, n)
+	for index := range infos {
+		infos[index] = file(fmt.Sprintf("Report-%07d-%s.LOG", (index*7919)%n, strings.Repeat("Ab", index%5)))
+	}
+	return &treeReader{folders: map[string][]os.FileInfo{"/big": infos}}
+}
+
+func BenchmarkWalkHugeFolder(b *testing.B) {
+	reader := hugeFolder(200_000)
+	options := WalkOptions{Join: joinSlash, MaxEntries: 200_000, MaxDepth: 4}
+	b.ReportAllocs()
+	for b.Loop() {
+		Walk(context.Background(), reader, "/big", options, func([]Found) {})
 	}
 }

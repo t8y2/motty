@@ -4,8 +4,9 @@ import (
 	"context"
 	"os"
 	"slices"
-	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Walk reads a folder and the folders below it, for a search by name. It only
@@ -26,6 +27,11 @@ type WalkOptions struct {
 	// Skip leaves an entry out: it is not reported, and a folder is not
 	// entered. Nil skips nothing.
 	Skip func(info os.FileInfo) bool
+	// Prune keeps the walk out of a folder: the folder is reported as an entry
+	// but not read. It gets the folder's path, made with Join from the root, so
+	// the caller can leave out trees that have no end to them, such as /proc.
+	// Nil prunes nothing; the root itself is always read.
+	Prune func(dir string) bool
 	// MaxEntries stops the walk once that many entries were reported, and
 	// MaxDepth leaves the folders that many levels below the root unread.
 	MaxEntries, MaxDepth int
@@ -96,8 +102,14 @@ func Walk(ctx context.Context, reader DirReader, root string, options WalkOption
 					}
 					summary.Entries++
 					found = append(found, Found{Dir: dir, Entry: Entry{Name: info.Name(), Size: info.Size(), Mode: info.Mode(), ModTime: info.ModTime()}})
-					if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-						next = append(next, options.Join(dir, info.Name()))
+					// Only a plain folder is entered. A link, and on Windows a
+					// junction, which Go reports as irregular, can lead back up
+					// the tree or out of it.
+					if info.Mode().Type() == os.ModeDir {
+						child := options.Join(dir, info.Name())
+						if options.Prune == nil || !options.Prune(options.Join(root, child)) {
+							next = append(next, child)
+						}
 					}
 				}
 				if len(found) > 0 {
@@ -128,7 +140,7 @@ func readFolders(reader DirReader, root string, batch []string, join func(dir, n
 			entries = []os.FileInfo{}
 		}
 		slices.SortFunc(entries, func(a, b os.FileInfo) int {
-			return strings.Compare(strings.ToLower(a.Name()), strings.ToLower(b.Name()))
+			return compareFold(a.Name(), b.Name())
 		})
 		infos[index] = entries
 	}
@@ -164,4 +176,42 @@ func (LocalReader) ReadDir(dir string) ([]os.FileInfo, error) {
 		return nil, err
 	}
 	return infos, err
+}
+
+// compareFold orders two names as their lower-cased forms would be ordered,
+// without making either: a folder of a million names is sorted by it, and a
+// lower-cased copy per comparison was the whole cost.
+func compareFold(a, b string) int {
+	for a != "" && b != "" {
+		var ra, rb rune
+		if a[0] < utf8.RuneSelf && b[0] < utf8.RuneSelf {
+			ra, rb = rune(a[0]), rune(b[0])
+			if 'A' <= ra && ra <= 'Z' {
+				ra += 'a' - 'A'
+			}
+			if 'A' <= rb && rb <= 'Z' {
+				rb += 'a' - 'A'
+			}
+			a, b = a[1:], b[1:]
+		} else {
+			var sa, sb int
+			ra, sa = utf8.DecodeRuneInString(a)
+			rb, sb = utf8.DecodeRuneInString(b)
+			ra, rb = unicode.ToLower(ra), unicode.ToLower(rb)
+			a, b = a[sa:], b[sb:]
+		}
+		if ra != rb {
+			if ra < rb {
+				return -1
+			}
+			return 1
+		}
+	}
+	switch {
+	case a == "" && b == "":
+		return 0
+	case a == "":
+		return -1
+	}
+	return 1
 }
