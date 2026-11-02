@@ -9,7 +9,6 @@ import (
 	"github.com/vivaui/viva/ui"
 
 	"motty/internal/remotestats"
-	"motty/internal/sshconn"
 )
 
 type remoteStatsState uint8
@@ -50,8 +49,7 @@ func (state *State) clickRemoteStats(id ui.ID) bool {
 		return false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone ||
-		!session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || !state.monitorOffered(session) {
 		return true
 	}
 	if session.stats == nil || session.stats.worker == nil && session.stats.state >= remoteStatsUnsupported {
@@ -165,10 +163,10 @@ func (state *State) remoteStatsText(view *remoteStatsView) string {
 }
 
 // remoteStatsToggle describes the explicit opt-in beside Files: whether it is
-// offered at all (only on a live, connected shell), what its tooltip says and
+// offered at all (only on a live, connected shell, a server's or this computer's), what its tooltip says and
 // whether the monitor is running.
 func (state *State) remoteStatsToggle(session *Session) (hint string, style iconButtonStyle, offered bool) {
-	if !session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !state.monitorOffered(session) {
 		return "", iconButtonQuiet, false
 	}
 	switch {

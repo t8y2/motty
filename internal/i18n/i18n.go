@@ -696,6 +696,14 @@ type Messages struct {
 	ErrProxySameHost           string
 	ErrProxyCycle              string
 	ErrProxyTargetTaken        string
+	ProxyFieldViaShell         string
+	ProxyViaShellHelp          string
+	ProxyFieldRelay            string
+	ProxyRelayPlaceholder      string
+	ProxyRelayPreludeFmt       string
+	ProxyRelayNoPrelude        string
+	ProxyViaShellTag           string
+	ErrProxyRelay              string
 	ConnDetailConnectingViaFmt string
 
 	// SFTP remote-file page.

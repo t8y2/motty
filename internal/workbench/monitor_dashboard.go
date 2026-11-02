@@ -361,7 +361,7 @@ func (s *State) pumpDashboard() {
 
 func (s *State) startDashboardCollector(id string, source *dashboardSource) {
 	system := source.session.host.System
-	if system != sshconn.SystemUnknown && !system.IsLinux() && system != sshconn.SystemWindows {
+	if !monitorSupported(system) {
 		source.blocked = true
 		s.dashboard.engine.SetStatus(id, monitoring.Unsupported)
 		return
@@ -371,17 +371,11 @@ func (s *State) startDashboardCollector(id string, source *dashboardSource) {
 	source.collecting = source.interval
 	faults := make(chan error, 1)
 	source.errors = faults
-	var worker *remotestats.Worker
-	var details *remotestats.DetailsWorker
-	if system == sshconn.SystemWindows {
-		worker = remotestats.StartWindows(source.session.conn, nil, source.interval)
-	} else {
-		worker = remotestats.StartWithInterval(source.session.conn, nil, source.interval)
-		// Disks and interfaces change slowly; their details keep the sidebar's
-		// five-second floor even when the sample cadence is faster, so a fast
-		// panel does not run df and interface counters every two seconds.
-		details = remotestats.StartDetailsWithInterval(source.session.conn, nil, max(source.interval, 5))
-	}
+	// Disks and interfaces change slowly; their details keep the sidebar's
+	// five-second floor even when the sample cadence is faster, so a fast
+	// panel does not run df and interface counters every two seconds.
+	worker := startMonitorWorker(source.session.conn, nil, system, source.interval)
+	details := startMonitorDetails(source.session.conn, nil, system, max(source.interval, 5))
 	var detailResults <-chan remotestats.DetailResult
 	if details != nil {
 		detailResults = details.Results()
