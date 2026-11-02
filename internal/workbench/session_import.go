@@ -401,6 +401,9 @@ func (state *State) writeImportedSecrets(changes []vault.Change) string {
 		return ""
 	}
 	if state.secrets.vault == nil {
+		if state.secrets.denied {
+			return state.messages.Tools.ImportWarningSecretsDenied
+		}
 		return state.messages.Tools.ImportWarningSecretsMissing
 	}
 	if err := state.secrets.vault.Apply(changes); err != nil {

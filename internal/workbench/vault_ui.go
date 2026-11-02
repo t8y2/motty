@@ -30,6 +30,10 @@ type secretsUI struct {
 	// password, so the window does not ask again at every prompt until the next
 	// start; Settings can ask again.
 	declined bool
+	// denied is set when the system's secret store refused the key, which is a
+	// "allow it in the prompt" to fix, not the "there is nowhere to keep it" the
+	// import says when the vault is simply missing.
+	denied bool
 	// canSave is whether the open password or passphrase dialog offers to save,
 	// worked out when it opened, and save whether the box is ticked.
 	canSave, save bool
@@ -105,9 +109,13 @@ func (state *State) initSecrets() {
 		}
 	}
 	if err != nil {
+		// The reason is kept for the import, which is where a missing vault
+		// costs the user something they can see.
+		state.secrets.denied = errors.Is(err, vault.ErrKeystoreDenied)
 		return // no saved passwords this run; the rest of the application is unaffected
 	}
 	state.secrets.vault = opened
+	state.secrets.denied = false
 }
 
 // isPasswordQuestion reports the one secret question that asks for the account

@@ -1428,6 +1428,7 @@ var chineseTools = ToolsMessages{
 	ImportWarningSecretsFmt:      "解锁得到的密码和私钥口令无法保存：%v",
 	ImportWarningSecretsMissing:  "解锁得到的密码和私钥口令无法保存：当前没有可用的密码库。",
 	ImportWarningSecretsLocked:   "解锁得到的密码和私钥口令没有保存：你自己的保险库被主密码锁定着。请先在「设置 > 安全」里解锁，再导入一次。",
+	ImportWarningSecretsDenied:   "解锁得到的密码和私钥口令没有保存：系统拒绝了 Motty 访问它放在登录钥匙串里的密钥。在刚才的弹窗里选择「允许」，然后再导入一次。",
 	ImportProxyCommandFmt:        "%s：它的代理命令会随主机一起保存，但在主机的代理对话框里确认之前不会运行。",
 	ImportWarningProxyCommandFmt: "%s：它的代理命令在本机无法运行，主机将直接连接服务器。",
 	ImportTabbyPassphraseTitle:   "Tabby 密码库",

@@ -230,6 +230,9 @@ type ToolsMessages struct {
 	ImportWarningKeyWriteFmt    string // session name, the error
 	ImportWarningSecretsFmt     string // the error
 	ImportWarningSecretsMissing string
+	// The secrets arrived but the system's secret store refused the key that
+	// opens the vault, which the user allows in the prompt that asked.
+	ImportWarningSecretsDenied string
 	// The secrets arrived but Motty's own vault is locked by a master password.
 	ImportWarningSecretsLocked string
 	// A session that saved its own route: the command waits for confirmation,
