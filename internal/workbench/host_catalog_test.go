@@ -160,6 +160,27 @@ func TestHostCatalogStillImportsVersionOneDocuments(t *testing.T) {
 	}
 }
 
+func TestHostCatalogImportDeduplicatesByCatalogID(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	existing := Host{ID: 1, CatalogID: "host_existing", Label: "Existing", Address: "old.example.com", Port: 22}
+	existing.finish()
+	state.hosts = []Host{existing}
+	state.nextHostID = 2
+
+	document := hostCatalogDocument{Hosts: []savedHost{
+		{ID: "host_existing", Label: "Same ID", Address: "different.example.com", Port: 22},
+		{ID: "host_alias", Label: "Same endpoint", Address: "old.example.com", Port: 22},
+		{ID: "host_alias", Label: "Repeated ID", Address: "repeated.example.com", Port: 22},
+	}}
+	added, duplicates := state.applyHostCatalog(document)
+	if added != 1 || duplicates != 2 || len(state.hosts) != 2 {
+		t.Fatalf("added=%d duplicates=%d hosts=%+v", added, duplicates, state.hosts)
+	}
+	if got := state.hosts[1]; got.CatalogID != "host_alias" || got.Label != "Same endpoint" || got.Address != existing.Address {
+		t.Fatalf("imported host = %+v", got)
+	}
+}
+
 func TestHostCatalogExportsCheckedSubsetAndHandlesPickerErrors(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "selected.json")
 	options := testOptions(t)

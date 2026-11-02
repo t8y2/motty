@@ -18,6 +18,7 @@ type forwardRecord struct {
 	ID              uint32
 	Label           string
 	Mode            portforward.Mode
+	HostCatalogID   string
 	HostLabel       string
 	HostAddress     string
 	HostUser        string
@@ -88,6 +89,9 @@ func (forward *forwardRecord) savedMode() string {
 }
 
 func (forward forwardRecord) matchesHost(host Host) bool {
+	if forward.HostCatalogID != "" {
+		return forward.HostCatalogID == host.CatalogID
+	}
 	return forward.HostAddress == host.Address && forward.HostUser == host.User && forward.HostPort == host.Port
 }
 
@@ -238,7 +242,7 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	localPort, _ := editor.port(forwardFieldLocalPort)
 	forward := forwardRecord{
 		ID: id, Label: editor.value(forwardFieldLabel), Mode: editor.mode,
-		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
+		HostCatalogID: host.CatalogID, HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
 		LocalPort: localPort,
 	}
 	if !editor.usesClientDestination() {
@@ -579,13 +583,19 @@ func (state *State) restoreForwards(saved []savedForward) {
 			continue
 		}
 		forward := forwardRecord{
-			ID: next, Label: entry.Label, Mode: mode,
+			ID: next, Label: entry.Label, Mode: mode, HostCatalogID: entry.HostCatalogID,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
 			LocalPort: entry.LocalPort,
 		}
 		if mode == portforward.ModeLocal || mode == portforward.ModeRemote {
 			forward.DestinationHost = entry.DestinationHost
 			forward.DestinationPort = entry.DestinationPort
+		}
+		// Records from before catalog identities used the first matching endpoint.
+		if forward.HostCatalogID == "" {
+			if host, ok := state.forwardHost(forward); ok {
+				forward.HostCatalogID = host.CatalogID
+			}
 		}
 		if index := slices.IndexFunc(previous, forward.sameAs); index >= 0 {
 			kept := previous[index]
@@ -614,7 +624,8 @@ func (state *State) restoreForwards(saved []savedForward) {
 // sameAs says whether two records are the same forward: what is listened on and
 // where it goes, whatever it is called.
 func (forward forwardRecord) sameAs(other forwardRecord) bool {
-	return forward.Mode == other.Mode && forward.HostAddress == other.HostAddress && forward.HostUser == other.HostUser &&
+	return forward.Mode == other.Mode && forward.HostCatalogID == other.HostCatalogID &&
+		forward.HostAddress == other.HostAddress && forward.HostUser == other.HostUser &&
 		forward.HostPort == other.HostPort && forward.LocalPort == other.LocalPort &&
 		forward.DestinationHost == other.DestinationHost && forward.DestinationPort == other.DestinationPort
 }

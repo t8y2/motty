@@ -384,6 +384,7 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 		if !forward.matchesHost(previous) {
 			continue
 		}
+		forward.HostCatalogID = updated.CatalogID
 		forward.HostLabel = updated.Label
 		forward.HostAddress = updated.Address
 		forward.HostUser = updated.User

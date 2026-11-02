@@ -148,7 +148,6 @@ type sshReconciler struct {
 	pulls    []sshHostPull
 	imports  []sshconfig.Host
 	jumps    []sshJumpPull
-	usedIDs  map[string]struct{}
 	hostsNew bool
 	keysNew  bool
 	routeNew bool
@@ -295,18 +294,20 @@ func (r *sshReconciler) drop(link *sshSyncLink) {
 	r.work = slices.DeleteFunc(r.work, func(other *sshSyncLink) bool { return other == link })
 }
 
-// linkHosts gives every host that has no alias one: the alias of the file's
-// that points to the same place, or a new one written to the file.
+// linkHosts gives every host that has no alias one: the first alias of the
+// file's host with the same CatalogID, or a new one written to the file.
 func (r *sshReconciler) linkHosts() {
-	byEndpoint := map[hostConnection]string{}
+	byCatalogID := map[string]string{}
 	for _, fileHost := range r.cfg.Result().Hosts {
 		r.fileAliases[lower(fileHost.Alias)] = true
 		if !validImportedAddress(fileHost.HostName) {
 			continue
 		}
-		key := connectionKey(fileHost.HostName, fileHost.User, fileHost.Port)
-		if _, taken := byEndpoint[key]; !taken {
-			byEndpoint[key] = fileHost.Alias
+		candidate := Host{Address: fileHost.HostName, User: fileHost.User, Port: fileHost.Port}
+		candidate.normalizeEndpoint()
+		candidate.finish()
+		if _, taken := byCatalogID[candidate.CatalogID]; !taken {
+			byCatalogID[candidate.CatalogID] = fileHost.Alias
 		}
 	}
 	for _, host := range r.state.hosts {
@@ -317,7 +318,7 @@ func (r *sshReconciler) linkHosts() {
 		if r.live(link) {
 			continue
 		}
-		if alias, ok := byEndpoint[connectionKey(host.Address, host.User, host.Port)]; ok && r.owners[lower(alias)] == nil {
+		if alias, ok := byCatalogID[host.CatalogID]; ok && r.owners[lower(alias)] == nil {
 			link = r.link(host.CatalogID)
 			link.Alias, link.Detached = alias, false
 			link.Base = fieldsOf(host)
@@ -583,9 +584,11 @@ func (r *sshReconciler) pickImports() {
 			r.warn(r.state.messages.SSHConfigWarningHostFmt, fileHost.Alias)
 			continue
 		}
-		candidate := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
-		if r.state.hostIndexByEndpoint(candidate) >= 0 {
-			r.warn(r.m.WarnEndpointFmt, fileHost.Alias)
+		candidate := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: fileHost.Port}
+		candidate.normalizeEndpoint()
+		candidate.finish()
+		if _, exists := r.state.hostByCatalogID(candidate.CatalogID); exists {
+			r.warn(r.m.WarnCatalogIDFmt, fileHost.Alias)
 			continue
 		}
 		r.imports = append(r.imports, fileHost)
@@ -669,17 +672,32 @@ func (r *sshReconciler) hopEndpoint(hop sshconfig.JumpHost) (address, user strin
 	return address, user, port22(port)
 }
 
-func (r *sshReconciler) hostAt(address, user string, port uint16) (Host, bool) {
-	return r.state.hostByConnection(address, user, port)
+func (r *sshReconciler) hostAt(hop sshconfig.JumpHost) (Host, bool) {
+	address, user, port := r.hopEndpoint(hop)
+	if link := r.owners[lower(hop.Host)]; r.live(link) {
+		if known, ok := r.state.hostByCatalogID(link.ID); ok {
+			// An alias names the linked host even while an endpoint edit is waiting
+			// to be pulled. An explicit hop override only keeps that identity when
+			// it still resolves to the same endpoint.
+			if hop.User == "" && hop.Port == 0 ||
+				strings.EqualFold(known.Address, address) && known.User == user && port22(known.Port) == port {
+				return known, true
+			}
+		}
+	}
+	candidate := Host{Address: address, User: user, Port: port}
+	candidate.normalizeEndpoint()
+	candidate.finish()
+	return r.state.hostByCatalogID(candidate.CatalogID)
 }
 
 func (r *sshReconciler) fileJumpKey(fileHost sshconfig.Host) string {
 	keys := make([]string, len(fileHost.ProxyJump))
 	for index, hop := range fileHost.ProxyJump {
-		address, user, port := r.hopEndpoint(hop)
-		if known, ok := r.hostAt(address, user, port); ok && known.CatalogID != "" {
+		if known, ok := r.hostAt(hop); ok && known.CatalogID != "" {
 			keys[index] = known.CatalogID
 		} else {
+			address, user, port := r.hopEndpoint(hop)
 			keys[index] = "?" + sshconfig.FormatJump(sshconfig.JumpHost{Host: address, User: user, Port: port})
 		}
 	}
@@ -783,10 +801,6 @@ func (r *sshReconciler) applyPull(pull sshHostPull) {
 	}
 	updated.normalizeEndpoint()
 	updated.finish()
-	if other := state.hostIndexByEndpoint(updated); other >= 0 && other != index {
-		r.warn(r.m.WarnEndpointFmt, link.Alias)
-		return
-	}
 	state.replaceHost(index, previous, updated)
 	link.Base.Address, link.Base.User, link.Base.Port = updated.Address, updated.User, port22(updated.Port)
 	r.out.changedHere++
@@ -796,23 +810,10 @@ func (r *sshReconciler) applyPull(pull sshHostPull) {
 	}
 }
 
-func (r *sshReconciler) newCatalogID(host Host) string {
-	if r.usedIDs == nil {
-		r.usedIDs = make(map[string]struct{}, len(r.state.hosts))
-		for _, existing := range r.state.hosts {
-			if existing.CatalogID != "" {
-				r.usedIDs[existing.CatalogID] = struct{}{}
-			}
-		}
-	}
-	return uniqueCatalogID("", host, r.usedIDs)
-}
-
 func (r *sshReconciler) addHost(host Host) Host {
 	state := r.state
 	host.ID = state.nextHostID
 	state.nextHostID++
-	host.CatalogID = r.newCatalogID(host)
 	host.finish()
 	state.hosts = append(state.hosts, host)
 	r.hostsNew = true
@@ -820,9 +821,11 @@ func (r *sshReconciler) addHost(host Host) Host {
 }
 
 func (r *sshReconciler) importHost(fileHost sshconfig.Host) {
-	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
-	if r.state.hostIndexByEndpoint(host) >= 0 {
-		r.warn(r.m.WarnEndpointFmt, fileHost.Alias)
+	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: fileHost.Port}
+	host.normalizeEndpoint()
+	host.finish()
+	if _, exists := r.state.hostByCatalogID(host.CatalogID); exists {
+		r.warn(r.m.WarnCatalogIDFmt, fileHost.Alias)
 		return
 	}
 	if fileHost.ProxyCommand != "" {
@@ -845,14 +848,17 @@ func (r *sshReconciler) importHost(fileHost sshconfig.Host) {
 // ensureHop is the host a hop of the file goes to, made when there is none: a
 // host that exists only to be a jump is not written to the file.
 func (r *sshReconciler) ensureHop(hop sshconfig.JumpHost) (Host, bool) {
-	address, user, port := r.hopEndpoint(hop)
-	if known, ok := r.hostAt(address, user, port); ok {
+	if known, ok := r.hostAt(hop); ok {
 		return known, true
 	}
+	address, user, port := r.hopEndpoint(hop)
 	if !validImportedAddress(address) {
 		return Host{}, false
 	}
-	host := r.addHost(Host{Label: hop.Host, Address: address, User: user, Port: port})
+	host := Host{Label: hop.Host, Address: address, User: user, Port: port}
+	host.normalizeEndpoint()
+	host.finish()
+	host = r.addHost(host)
 	link := r.link(host.CatalogID)
 	link.Detached = true
 	link.Base = fieldsOf(host)

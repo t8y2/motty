@@ -163,13 +163,13 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		if !ok {
 			continue
 		}
-		if state.hostIndexByEndpoint(host) >= 0 {
+		if _, exists := usedIDs[host.CatalogID]; exists {
 			duplicates++
 			continue
 		}
 		host.ID = state.nextHostID
 		state.nextHostID++
-		host.CatalogID = uniqueCatalogID(host.CatalogID, host, usedIDs)
+		usedIDs[host.CatalogID] = struct{}{}
 		state.hosts = append(state.hosts, host)
 		state.selectedHostID = host.ID
 		added++

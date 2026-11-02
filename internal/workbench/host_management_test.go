@@ -277,7 +277,7 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	previous := state.hosts[0]
 	state.sessions = append(state.sessions, Session{ID: 1, HostID: previous.ID, Title: previous.Label, host: previous})
 	state.forwards = append(state.forwards, forwardRecord{
-		ID: 1, Label: "Web", HostLabel: previous.Label, HostAddress: previous.Address,
+		ID: 1, Label: "Web", HostCatalogID: previous.CatalogID, HostLabel: previous.Label, HostAddress: previous.Address,
 		HostUser: previous.User, HostPort: previous.Port,
 	})
 	state.proxies = append(state.proxies, proxyRecord{ID: 1, TargetID: previous.ID, JumpID: state.hosts[1].ID})
@@ -294,7 +294,7 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 		t.Fatalf("session reference = %+v", state.sessions[0])
 	}
 	forward := state.forwards[0]
-	if forward.HostLabel != updated.Label || forward.HostAddress != updated.Address || forward.HostUser != updated.User || forward.HostPort != updated.Port {
+	if forward.HostCatalogID != updated.CatalogID || forward.HostLabel != updated.Label || forward.HostAddress != updated.Address || forward.HostUser != updated.User || forward.HostPort != updated.Port {
 		t.Fatalf("forward reference = %+v", forward)
 	}
 	if state.proxies[0].TargetID != updated.ID {

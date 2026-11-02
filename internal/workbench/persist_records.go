@@ -75,7 +75,9 @@ import (
 // Version 21 preserves toolbar dock zones and mixed-context ordering.
 // Version 22 preserves the device-local docked toolbar size.
 // Version 23 requires lossless transactional field patches from every writer.
-const configFormat = 23
+// Version 24 keeps the catalog identity of the host a session, jump route or
+// forward belongs to; an older build would save those records without it.
+const configFormat = 24
 
 const (
 	kindSetting             = "setting"
@@ -158,10 +160,17 @@ var entityFields = []entityField{
 	}},
 	{field: "host_groups", kind: "group", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
 	{field: "forwards", kind: "forward", key: func(fields map[string]json.RawMessage) string {
+		if id := fieldText(fields, "host_catalog_id"); id != "" {
+			return joinKey(fieldText(fields, "mode"), id, fieldText(fields, "local_port"),
+				fieldText(fields, "destination_host"), fieldText(fields, "destination_port"))
+		}
 		return joinKey(fieldText(fields, "mode"), fieldText(fields, "host_address"), fieldText(fields, "host_user"), fieldText(fields, "host_port"),
 			fieldText(fields, "local_port"), fieldText(fields, "destination_host"), fieldText(fields, "destination_port"))
 	}},
 	{field: "proxies", kind: "proxy", key: func(fields map[string]json.RawMessage) string {
+		if id := fieldText(fields, "target_catalog_id"); id != "" {
+			return id
+		}
 		return joinKey(fieldText(fields, "target_user"), fieldText(fields, "target_address"), fieldText(fields, "target_port"))
 	}},
 	{field: "snippets", kind: "snippet", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},

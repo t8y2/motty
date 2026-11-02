@@ -396,7 +396,6 @@ var EnglishMessages = Messages{
 	IconDesktop:                 "Desktop",
 	ErrLabelRequired:            "Label is required",
 	ErrGroupRequired:            "Group is required",
-	ErrAddressTaken:             "This host already exists",
 	ErrPortInvalid:              "Port must be 1-65535",
 	ErrHostTagsInvalid:          "Use at most 12 tags of 32 characters each, without commas or line breaks",
 	Cancel:                      "Cancel",

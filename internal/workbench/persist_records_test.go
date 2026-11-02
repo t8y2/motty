@@ -65,11 +65,17 @@ func richState() savedState {
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},
 			{ID: "host_a", Label: "Alpha", Address: "a.example.com", User: "me", Port: 2222, Group: "dev"},
 		},
-		HostGroups:    []savedHostGroup{{Name: "prod", Collapsed: true}, {Name: "dev"}},
-		Snippets:      []savedSnippet{{Name: "update", Command: "apt update"}, {Name: "update", Command: "brew update"}, {Name: "zzz", Command: "ls"}},
-		Highlights:    []savedHighlight{{Pattern: "ERROR", Color: "red"}, {Pattern: "warn", CaseSensitive: true, Color: "amber"}},
-		Forwards:      []savedForward{{Label: "db", HostAddress: "b.example.com", HostUser: "me", HostPort: 22, LocalPort: 5432, DestinationHost: "localhost", DestinationPort: 5432}},
-		Proxies:       []savedProxy{{TargetAddress: "a.example.com", TargetUser: "me", TargetPort: 2222, JumpAddress: "b.example.com", JumpUser: "me", JumpPort: 22}},
+		HostGroups: []savedHostGroup{{Name: "prod", Collapsed: true}, {Name: "dev"}},
+		Snippets:   []savedSnippet{{Name: "update", Command: "apt update"}, {Name: "update", Command: "brew update"}, {Name: "zzz", Command: "ls"}},
+		Highlights: []savedHighlight{{Pattern: "ERROR", Color: "red"}, {Pattern: "warn", CaseSensitive: true, Color: "amber"}},
+		Forwards: []savedForward{{
+			Label: "db", HostCatalogID: "host_b", HostAddress: "b.example.com", HostUser: "me", HostPort: 22,
+			LocalPort: 5432, DestinationHost: "localhost", DestinationPort: 5432,
+		}},
+		Proxies: []savedProxy{{
+			TargetCatalogID: "host_a", TargetAddress: "a.example.com", TargetUser: "me", TargetPort: 2222,
+			JumpCatalogID: "host_b", JumpAddress: "b.example.com", JumpUser: "me", JumpPort: 22,
+		}},
 		Autofill:      []savedAutofill{{ID: "r1", Name: "sudo", Pattern: "password", Send: "vault"}},
 		SFTPBookmarks: []savedBookmark{{Host: "host_a", Path: "/var/log"}},
 		Shortcuts:     []savedShortcut{{Action: "new-tab", Key: "t", Modifiers: 1}},
@@ -100,6 +106,53 @@ func TestAStateComesBackFromItsRecordsAsItWas(t *testing.T) {
 	}
 	if jsonOf(t, got) != jsonOf(t, want) {
 		t.Fatalf("the state changed on the way through the store:\n got %s\nwant %s", jsonOf(t, got), jsonOf(t, want))
+	}
+}
+
+func TestForwardAndProxyRecordKeysUseCatalogIdentity(t *testing.T) {
+	saved := savedState{
+		Forwards: []savedForward{
+			{Label: "One", HostCatalogID: "one", HostAddress: "same.example.com", HostUser: "ops", HostPort: 22, LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 80},
+			{Label: "Two", HostCatalogID: "two", HostAddress: "same.example.com", HostUser: "ops", HostPort: 22, LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 80},
+		},
+		Proxies: []savedProxy{
+			{TargetCatalogID: "one", TargetAddress: "same.example.com", TargetUser: "ops", TargetPort: 22, JumpCatalogID: "jump", JumpAddress: "jump.example.com", JumpPort: 22},
+			{TargetCatalogID: "two", TargetAddress: "same.example.com", TargetUser: "ops", TargetPort: 22, JumpCatalogID: "jump", JumpAddress: "jump.example.com", JumpPort: 22},
+		},
+	}
+	entries, _, err := splitState(saved, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]map[string]bool{"forward": {}, "proxy": {}}
+	for _, entry := range entries {
+		if _, ok := ids[entry.Kind]; ok {
+			ids[entry.Kind][entry.ID] = true
+		}
+	}
+	for _, kind := range []string{"forward", "proxy"} {
+		if len(ids[kind]) != 2 {
+			t.Errorf("%s record IDs = %v, want two distinct identities", kind, ids[kind])
+		}
+	}
+
+	legacy := savedState{
+		Forwards: []savedForward{{Label: "Legacy", HostAddress: "same.example.com", HostUser: "ops", HostPort: 22, LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 80}},
+		Proxies:  []savedProxy{{TargetAddress: "same.example.com", TargetUser: "ops", TargetPort: 22, JumpAddress: "jump.example.com", JumpPort: 22}},
+	}
+	entries, _, err = splitState(legacy, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[configstore.Key]bool{
+		{Kind: "forward", ID: joinKey("", "same.example.com", "ops", "22", "9000", "localhost", "80")}: true,
+		{Kind: "proxy", ID: joinKey("ops", "same.example.com", "22")}:                                  true,
+	}
+	for _, entry := range entries {
+		delete(want, configstore.Key{Kind: entry.Kind, ID: entry.ID})
+	}
+	if len(want) != 0 {
+		t.Fatalf("legacy record keys changed: %v", want)
 	}
 }
 

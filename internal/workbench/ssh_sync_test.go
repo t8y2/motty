@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -187,6 +188,155 @@ func TestSSHSyncCarriesEditsBothWays(t *testing.T) {
 	}
 }
 
+func TestSSHSyncKeepsBothCatalogIDsWhenEndpointsConverge(t *testing.T) {
+	state, path := newSyncState(t, `Host one
+    HostName one.example
+    User deploy
+
+Host two
+    HostName two.example
+    User deploy
+`)
+	enableSync(t, state)
+	one, two := syncedHost(t, state, "one"), syncedHost(t, state, "two")
+	if one.CatalogID == two.CatalogID {
+		t.Fatalf("hosts share a CatalogID before syncing: %+v", state.hosts)
+	}
+
+	writeSyncFile(t, path, `Host one
+    HostName shared.example
+    User deploy
+
+Host two
+    HostName shared.example
+    User deploy
+`)
+	state.syncSSHConfig(true)
+	oneAfter, twoAfter := syncedHost(t, state, "one"), syncedHost(t, state, "two")
+	if len(state.hosts) != 2 || oneAfter.Address != "shared.example" || twoAfter.Address != "shared.example" {
+		t.Fatalf("hosts after endpoints converged = %+v", state.hosts)
+	}
+	if oneAfter.CatalogID != one.CatalogID || twoAfter.CatalogID != two.CatalogID {
+		t.Fatalf("CatalogIDs changed: before=%q,%q after=%q,%q", one.CatalogID, two.CatalogID, oneAfter.CatalogID, twoAfter.CatalogID)
+	}
+}
+
+func TestSSHSyncLinksHostsByCatalogID(t *testing.T) {
+	t.Run("same endpoint with different IDs imports both", func(t *testing.T) {
+		state, _ := newSyncState(t, "Host file\n    HostName shared.example\n    User deploy\n\nHost repeated\n    HostName shared.example\n    User deploy\n")
+		local := addSyncHost(t, state, "local", "shared.example", "deploy", 22)
+		state.hosts[0].CatalogID = "host_custom"
+		local.CatalogID = "host_custom"
+		state.save()
+		candidate := Host{Address: "shared.example", User: "deploy"}
+		candidate.normalizeEndpoint()
+		candidate.finish()
+
+		enableSync(t, state)
+		if len(state.hosts) != 2 {
+			t.Fatalf("hosts = %+v", state.hosts)
+		}
+		localAfter, file := syncedHost(t, state, "local"), syncedHost(t, state, "file")
+		if localAfter.CatalogID != local.CatalogID || file.CatalogID != candidate.CatalogID ||
+			localAfter.Address != file.Address || localAfter.User != file.User || localAfter.Port != file.Port {
+			t.Fatalf("same-endpoint hosts = local %+v, file %+v", localAfter, file)
+		}
+		if _, duplicate := state.hostByLabel("repeated"); duplicate {
+			t.Fatalf("a repeated CatalogID was imported with a suffix: %+v", state.hosts)
+		}
+		if link := state.sshSync.file.Links; len(link) != 2 {
+			t.Fatalf("links = %+v", link)
+		}
+	})
+
+	t.Run("same ID with different endpoints links and pulls", func(t *testing.T) {
+		state, _ := newSyncState(t, "Host file\n    HostName file.example\n    User deploy\n")
+		local := addSyncHost(t, state, "local", "old.example", "deploy", 22)
+		candidate := Host{Address: "file.example", User: "deploy", Port: 22}
+		candidate.finish()
+		state.hosts[0].CatalogID = candidate.CatalogID
+		local.CatalogID = candidate.CatalogID
+		state.save()
+
+		enableSync(t, state)
+		if len(state.hosts) != 1 {
+			t.Fatalf("hosts = %+v", state.hosts)
+		}
+		updated := syncedHost(t, state, "local")
+		if updated.CatalogID != local.CatalogID || updated.Address != "file.example" {
+			t.Fatalf("updated host = %+v", updated)
+		}
+		if links := state.sshSync.file.Links; len(links) != 1 || links[0].ID != local.CatalogID || links[0].Alias != "file" {
+			t.Fatalf("links = %+v", links)
+		}
+	})
+}
+
+func TestSSHSyncJumpLookupUsesCatalogID(t *testing.T) {
+	state, path := newSyncState(t, "# empty\n")
+	existing := Host{ID: state.nextHostID, CatalogID: "host_gate_custom", Label: "Custom gate", Address: "gate.example", User: "jump", Port: 2022}
+	state.nextHostID++
+	existing.finish()
+	state.hosts = append(state.hosts, existing)
+	cfg, err := sshconfig.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &sshReconciler{state: state, cfg: cfg, byID: map[string]*sshSyncLink{}}
+	hop := sshconfig.JumpHost{Host: "gate.example", User: "jump", Port: 2022}
+	if known, ok := r.hostAt(hop); ok || known.CatalogID != "" {
+		t.Fatalf("endpoint lookup reused a different CatalogID: %+v, %v", known, ok)
+	}
+
+	added, ok := r.ensureHop(hop)
+	if !ok || added.CatalogID == existing.CatalogID || len(state.hosts) != 2 {
+		t.Fatalf("added hop = %+v, ok=%v hosts=%+v", added, ok, state.hosts)
+	}
+	again, ok := r.ensureHop(hop)
+	if !ok || again.CatalogID != added.CatalogID || again.ID != added.ID || len(state.hosts) != 2 {
+		t.Fatalf("second hop = %+v, ok=%v hosts=%+v", again, ok, state.hosts)
+	}
+}
+
+func TestSSHSyncJumpAliasKeepsItsLinkedCatalogID(t *testing.T) {
+	state, path := newSyncState(t, `Host custom
+    HostName gate.example
+    User jump
+    Port 2022
+
+Host target
+    HostName target.example
+    ProxyJump custom
+`)
+	generated := Host{ID: 1, Label: "Generated gate", Address: "gate.example", User: "jump", Port: 2022}
+	generated.finish()
+	custom := Host{ID: 2, CatalogID: "host_gate_custom", Label: "Custom gate", Address: "gate.example", User: "jump", Port: 2022}
+	custom.finish()
+	// The generated identity comes first, so an endpoint-based lookup picks it.
+	state.hosts = []Host{generated, custom}
+	state.nextHostID = 3
+	cfg, err := sshconfig.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := &sshSyncLink{ID: custom.CatalogID, Alias: "custom"}
+	r := &sshReconciler{
+		state: state, cfg: cfg,
+		byID: map[string]*sshSyncLink{custom.CatalogID: link}, owners: map[string]*sshSyncLink{"custom": link},
+	}
+	hop := sshconfig.JumpHost{Host: "custom"}
+	if known, ok := r.hostAt(hop); !ok || known.CatalogID != custom.CatalogID {
+		t.Fatalf("alias lookup = %+v, %v; want CatalogID %q", known, ok, custom.CatalogID)
+	}
+	if known, ok := r.ensureHop(hop); !ok || known.ID != custom.ID || len(state.hosts) != 2 {
+		t.Fatalf("alias hop = %+v, %v; hosts=%+v", known, ok, state.hosts)
+	}
+	target, ok := cfg.Host("target")
+	if !ok || r.fileJumpKey(target) != custom.CatalogID {
+		t.Fatalf("file jump key = %q, want %q", r.fileJumpKey(target), custom.CatalogID)
+	}
+}
+
 func TestSSHSyncFileWinsWhenBothChanged(t *testing.T) {
 	state, path := newSyncState(t, "")
 	addSyncHost(t, state, "web", "web.example", "deploy", 22)
@@ -347,7 +497,8 @@ Host c
     HostName c.example
 `)
 	enableSync(t, state)
-	// "b" has the address of "a", and one address is one host here.
+	// "b" has the address of "a", so both aliases derive the same CatalogID and
+	// only the first one is imported.
 	if len(state.hosts) != 2 {
 		t.Fatalf("hosts = %+v", state.hosts)
 	}

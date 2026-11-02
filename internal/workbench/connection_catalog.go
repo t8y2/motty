@@ -84,6 +84,18 @@ func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
 	return Host{}, false
 }
 
+func (catalog *hostCatalog) hostByCatalogID(id string) (Host, bool) {
+	if id == "" {
+		return Host{}, false
+	}
+	for _, host := range catalog.hosts {
+		if host.CatalogID == id {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
 func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) (Host, bool) {
 	if port == 0 {
 		port = defaultPort
@@ -439,8 +451,14 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	catalog := hostCatalog{hosts: hosts}
 	next := uint32(1)
 	for _, entry := range saved {
-		target, targetOK := catalog.hostByConnection(entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByConnection(entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		target, targetOK := catalog.hostByCatalogID(entry.TargetCatalogID)
+		if entry.TargetCatalogID == "" {
+			target, targetOK = catalog.hostByConnection(entry.TargetAddress, entry.TargetUser, entry.TargetPort)
+		}
+		jump, jumpOK := catalog.hostByCatalogID(entry.JumpCatalogID)
+		if entry.JumpCatalogID == "" {
+			jump, jumpOK = catalog.hostByConnection(entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		}
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -133,6 +134,31 @@ Host warning
 	if proxy := restarted.proxyForHost(mustHostLabel(t, restarted, "warning")); proxy == nil || proxy.Kind != sshconn.ProxyCommand ||
 		proxy.Command != "nc gateway %h" || proxy.Err == nil {
 		t.Fatalf("the restored ProxyCommand, not yet confirmed, dials with %+v", proxy)
+	}
+}
+
+func TestSSHConfigImportDeduplicatesByCatalogID(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	duplicateCandidate := Host{Address: "different.example.com", User: "deploy", Port: 22}
+	duplicateCandidate.finish()
+	sameEndpoint := Host{ID: 1, CatalogID: "host_custom", Label: "Custom", Address: "shared.example.com", User: "deploy", Port: 22}
+	sameEndpoint.finish()
+	sameID := Host{ID: 2, CatalogID: duplicateCandidate.CatalogID, Label: "Old", Address: "old.example.com", Port: 22}
+	sameID.finish()
+	state.hosts = []Host{sameEndpoint, sameID}
+	state.nextHostID = 3
+
+	parsed := sshconfig.Result{Hosts: []sshconfig.Host{
+		{Alias: "alias", HostName: "shared.example.com", User: "deploy", Port: 22},
+		{Alias: "same-id", HostName: "different.example.com", User: "deploy", Port: 22},
+		{Alias: "planned-duplicate", HostName: "shared.example.com", User: "deploy"},
+	}}
+	plan := newHostImportBuilder(state, parsed).build(parsed.Hosts)
+	if len(plan.hosts) != 1 || plan.duplicateHosts != 2 {
+		t.Fatalf("hosts=%+v duplicates=%d", plan.hosts, plan.duplicateHosts)
+	}
+	if got := plan.hosts[0]; got.Label != "alias" || got.CatalogID == sameEndpoint.CatalogID || got.Address != sameEndpoint.Address {
+		t.Fatalf("imported host = %+v", got)
 	}
 }
 

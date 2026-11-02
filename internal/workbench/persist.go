@@ -194,6 +194,7 @@ type savedHostGroup struct {
 type savedForward struct {
 	Label           string `json:"label"`
 	Mode            string `json:"mode,omitempty"`
+	HostCatalogID   string `json:"host_catalog_id,omitempty"`
 	HostLabel       string `json:"host_label"`
 	HostAddress     string `json:"host_address"`
 	HostUser        string `json:"host_user,omitempty"`
@@ -204,24 +205,27 @@ type savedForward struct {
 }
 
 type savedProxy struct {
-	TargetAddress string `json:"target_address"`
-	TargetUser    string `json:"target_user,omitempty"`
-	TargetPort    uint16 `json:"target_port"`
-	JumpAddress   string `json:"jump_address"`
-	JumpUser      string `json:"jump_user,omitempty"`
-	JumpPort      uint16 `json:"jump_port"`
-	Stopped       bool   `json:"stopped,omitempty"`
-	ViaShell      bool   `json:"via_shell,omitempty"`
-	RelayCommand  string `json:"relay_command,omitempty"`
+	TargetCatalogID string `json:"target_catalog_id,omitempty"`
+	TargetAddress   string `json:"target_address"`
+	TargetUser      string `json:"target_user,omitempty"`
+	TargetPort      uint16 `json:"target_port"`
+	JumpCatalogID   string `json:"jump_catalog_id,omitempty"`
+	JumpAddress     string `json:"jump_address"`
+	JumpUser        string `json:"jump_user,omitempty"`
+	JumpPort        uint16 `json:"jump_port"`
+	Stopped         bool   `json:"stopped,omitempty"`
+	ViaShell        bool   `json:"via_shell,omitempty"`
+	RelayCommand    string `json:"relay_command,omitempty"`
 }
 
 type savedSession struct {
-	Label     string `json:"label,omitempty"`
-	Address   string `json:"address"`
-	User      string `json:"user,omitempty"`
-	Port      uint16 `json:"port,omitempty"`
-	System    string `json:"system,omitempty"`
-	SavedHost bool   `json:"saved_host,omitempty"`
+	Label         string `json:"label,omitempty"`
+	HostCatalogID string `json:"host_catalog_id,omitempty"`
+	Address       string `json:"address"`
+	User          string `json:"user,omitempty"`
+	Port          uint16 `json:"port,omitempty"`
+	System        string `json:"system,omitempty"`
+	SavedHost     bool   `json:"saved_host,omitempty"`
 	// Local marks a shell on this computer: it has no address to dial.
 	Local          bool   `json:"local,omitempty"`
 	LocalDirectory string `json:"local_directory,omitempty"`
@@ -519,7 +523,8 @@ func (state *State) snapshot() savedState {
 	}
 	for _, forward := range state.forwards {
 		saved.Forwards = append(saved.Forwards, savedForward{
-			Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
+			Label: forward.Label, Mode: forward.savedMode(), HostCatalogID: forward.HostCatalogID,
+			HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
 			HostUser: forward.HostUser, HostPort: forward.HostPort, LocalPort: forward.LocalPort,
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
 		})
@@ -531,8 +536,8 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		saved.Proxies = append(saved.Proxies, savedProxy{
-			TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
-			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
+			TargetCatalogID: target.CatalogID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			JumpCatalogID: jump.CatalogID, JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
 			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
 	}
@@ -548,11 +553,15 @@ func (state *State) snapshot() savedState {
 			}
 			continue
 		}
-		saved.Sessions = append(saved.Sessions, savedSession{
+		entry := savedSession{
 			Label: session.Title, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
 			savedTransport: session.host.transport(),
-		})
+		}
+		if entry.SavedHost {
+			entry.HostCatalogID = session.host.CatalogID
+		}
+		saved.Sessions = append(saved.Sessions, entry)
 		if session.ID == state.activeSessionID {
 			saved.ActiveSession = len(saved.Sessions)
 		}
@@ -920,6 +929,9 @@ func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 			host.localShell = entry.LocalShell
 		}
 		return host, true
+	}
+	if entry.SavedHost && entry.HostCatalogID != "" {
+		return state.hostByCatalogID(entry.HostCatalogID)
 	}
 	if entry.Address == "" {
 		return Host{}, false

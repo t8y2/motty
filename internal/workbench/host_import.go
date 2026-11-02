@@ -37,18 +37,12 @@ type hostImportPlan struct {
 	nextProxyID    uint32
 }
 
-type hostConnection struct {
-	address string
-	user    string
-	port    uint16
-}
-
 type hostImportBuilder struct {
 	state       *State
 	plan        hostImportPlan
 	sources     map[string]sshconfig.Host
 	aliasIDs    map[string]uint32
-	connections map[hostConnection]Host
+	catalogIDs  map[string]Host
 	identitySet map[string]struct{}
 	routes      map[uint32]uint32
 }
@@ -77,7 +71,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		state:       state,
 		sources:     make(map[string]sshconfig.Host, len(parsed.Hosts)),
 		aliasIDs:    make(map[string]uint32, len(parsed.Hosts)),
-		connections: make(map[hostConnection]Host, len(state.hosts)+len(parsed.Hosts)),
+		catalogIDs:  make(map[string]Host, len(state.hosts)+len(parsed.Hosts)),
 		identitySet: make(map[string]struct{}, len(state.identities)+len(parsed.Hosts)),
 		routes:      make(map[uint32]uint32, len(state.proxies)+len(parsed.Hosts)),
 	}
@@ -85,8 +79,8 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 	builder.plan.nextIdentityID = state.nextIdentityID
 	builder.plan.nextProxyID = state.nextProxyID
 	for _, host := range state.hosts {
-		if host.isSSH() {
-			builder.connections[connectionKey(host.Address, host.User, host.Port)] = host
+		if host.CatalogID != "" {
+			builder.catalogIDs[host.CatalogID] = host
 		}
 	}
 	for _, identity := range state.identities {
@@ -261,15 +255,19 @@ func (builder *hostImportBuilder) resolveJump(jump sshconfig.JumpHost) (uint32, 
 }
 
 func (builder *hostImportBuilder) ensureHost(label, address, user string, port uint16) (Host, bool) {
-	key := connectionKey(address, user, port)
-	if host, exists := builder.connections[key]; exists {
-		return host, false
-	}
-	host := Host{ID: builder.plan.nextHostID, Label: label, Address: address, User: user, Port: port}
+	return builder.ensureImportedHost(Host{Label: label, Address: address, User: user, Port: port})
+}
+
+func (builder *hostImportBuilder) ensureImportedHost(host Host) (Host, bool) {
+	host.normalizeEndpoint()
 	host.finish()
+	if existing, exists := builder.catalogIDs[host.CatalogID]; exists {
+		return existing, false
+	}
+	host.ID = builder.plan.nextHostID
 	builder.plan.nextHostID++
 	builder.plan.hosts = append(builder.plan.hosts, host)
-	builder.connections[key] = host
+	builder.catalogIDs[host.CatalogID] = host
 	return host, true
 }
 
@@ -340,13 +338,6 @@ func (state *State) clickHostImportResult(id ui.ID) {
 		state.modal = modalNone
 		state.showNextPrompt()
 	}
-}
-
-func connectionKey(address, user string, port uint16) hostConnection {
-	if port == 0 {
-		port = defaultPort
-	}
-	return hostConnection{address: address, user: user, port: port}
 }
 
 func validImportedAddress(address string) bool {

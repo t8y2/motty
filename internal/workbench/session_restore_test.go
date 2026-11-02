@@ -137,6 +137,144 @@ func TestTypedSessionRestoresAsAnEphemeralTarget(t *testing.T) {
 	}
 }
 
+func TestSameEndpointProfilesRestoreTheirOwnSessionsRoutesAndForwards(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	clickHostAction(state, hitCopyHost)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || len(state.hosts) != 4 {
+		t.Fatalf("copy host: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
+	}
+	original, duplicate := state.hosts[0], state.hosts[3]
+
+	state.selectedHostID = original.ID
+	openHost(state)
+	state.Click(hitHosts)
+	state.selectedHostID = duplicate.ID
+	openHost(state)
+	remotePort := freePort(t)
+	state.selectedHostID = original.ID
+	addRemoteForwardRule(t, state, "Original", remotePort, "127.0.0.1", 8080)
+	state.selectedHostID = duplicate.ID
+	addRemoteForwardRule(t, state, "Duplicate", remotePort, "127.0.0.1", 8080)
+	addProxyRoute(t, state, duplicate.ID, original.ID)
+
+	snapshot := state.snapshot()
+	if len(snapshot.Sessions) != 2 || snapshot.Sessions[0].HostCatalogID != original.CatalogID || snapshot.Sessions[1].HostCatalogID != duplicate.CatalogID {
+		t.Fatalf("saved sessions = %+v", snapshot.Sessions)
+	}
+	if len(snapshot.Forwards) != 2 || snapshot.Forwards[0].HostCatalogID != original.CatalogID || snapshot.Forwards[1].HostCatalogID != duplicate.CatalogID {
+		t.Fatalf("saved forwards = %+v", snapshot.Forwards)
+	}
+	if len(snapshot.Proxies) != 1 || snapshot.Proxies[0].TargetCatalogID != duplicate.CatalogID || snapshot.Proxies[0].JumpCatalogID != original.CatalogID {
+		t.Fatalf("saved routes = %+v", snapshot.Proxies)
+	}
+
+	restarted := newTestState(t, options)
+	if len(restarted.sessions) != 2 {
+		t.Fatalf("restored sessions = %+v", restarted.sessions)
+	}
+	for index, want := range []Host{original, duplicate} {
+		session := restarted.sessions[index]
+		if session.host.CatalogID != want.CatalogID || session.HostID != session.host.ID {
+			t.Errorf("session %d restored to %+v, want %s", index, session.host, want.Label)
+		}
+	}
+	if len(restarted.forwards) != 2 {
+		t.Fatalf("restored forwards = %+v", restarted.forwards)
+	}
+	for index, want := range []Host{original, duplicate} {
+		forward := restarted.forwards[index]
+		host, ok := restarted.forwardHost(forward)
+		if !ok || host.CatalogID != want.CatalogID || forward.HostCatalogID != want.CatalogID {
+			t.Errorf("forward %d restored to %+v (%+v), want %s", index, host, forward, want.Label)
+		}
+	}
+	if len(restarted.proxies) != 1 {
+		t.Fatalf("restored routes = %+v", restarted.proxies)
+	}
+	target, targetOK := restarted.hostByID(restarted.proxies[0].TargetID)
+	jump, jumpOK := restarted.hostByID(restarted.proxies[0].JumpID)
+	if !targetOK || !jumpOK || target.CatalogID != duplicate.CatalogID || jump.CatalogID != original.CatalogID {
+		t.Fatalf("restored route target=%+v jump=%+v", target, jump)
+	}
+}
+
+func TestLegacyReferencesMigrateToTheFirstMatchingEndpoint(t *testing.T) {
+	options := freshOptions(t).withDefaults()
+	hosts := []savedHost{
+		{ID: "first", Label: "First", Address: "same.example.com", User: "ops", Port: 22},
+		{ID: "second", Label: "Second", Address: "same.example.com", User: "ops", Port: 22},
+		{ID: "jump", Label: "Jump", Address: "jump.example.com", User: "ops", Port: 22},
+	}
+	if err := saveState(options.StatePath, savedState{
+		Hosts: hosts,
+		Sessions: []savedSession{{
+			Label: "Legacy", Address: "same.example.com", User: "ops", Port: 22, SavedHost: true,
+		}},
+		Forwards: []savedForward{{
+			Label: "Legacy", HostAddress: "same.example.com", HostUser: "ops", HostPort: 22,
+			LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 80,
+		}},
+		Proxies: []savedProxy{{
+			TargetAddress: "same.example.com", TargetUser: "ops", TargetPort: 22,
+			JumpAddress: "jump.example.com", JumpUser: "ops", JumpPort: 22,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	first := state.hosts[0]
+	if len(state.sessions) != 1 || state.sessions[0].host.CatalogID != first.CatalogID {
+		t.Fatalf("legacy sessions = %+v", state.sessions)
+	}
+	if len(state.forwards) != 1 || state.forwards[0].HostCatalogID != first.CatalogID {
+		t.Fatalf("legacy forwards = %+v", state.forwards)
+	}
+	if len(state.proxies) != 1 || state.proxies[0].TargetID != first.ID || state.proxies[0].JumpID != state.hosts[2].ID {
+		t.Fatalf("legacy routes = %+v", state.proxies)
+	}
+	snapshot := state.snapshot()
+	if snapshot.Sessions[0].HostCatalogID != first.CatalogID || snapshot.Forwards[0].HostCatalogID != first.CatalogID ||
+		snapshot.Proxies[0].TargetCatalogID != first.CatalogID || snapshot.Proxies[0].JumpCatalogID != state.hosts[2].CatalogID {
+		t.Fatalf("migration was not saved: sessions=%+v forwards=%+v routes=%+v", snapshot.Sessions, snapshot.Forwards, snapshot.Proxies)
+	}
+}
+
+func TestUnknownCatalogIdentitiesDoNotFallBackToAnEndpoint(t *testing.T) {
+	options := freshOptions(t).withDefaults()
+	hosts := []savedHost{
+		{ID: "first", Label: "First", Address: "same.example.com", User: "ops", Port: 22},
+		{ID: "second", Label: "Second", Address: "same.example.com", User: "ops", Port: 22},
+	}
+	if err := saveState(options.StatePath, savedState{
+		Hosts: hosts,
+		Sessions: []savedSession{{
+			Label: "Unknown", HostCatalogID: "missing", Address: "same.example.com", User: "ops", Port: 22, SavedHost: true,
+		}},
+		Forwards: []savedForward{{
+			Label: "Unknown", HostCatalogID: "missing", HostAddress: "same.example.com", HostUser: "ops", HostPort: 22,
+			LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 80,
+		}},
+		Proxies: []savedProxy{{
+			TargetCatalogID: "missing", TargetAddress: "same.example.com", TargetUser: "ops", TargetPort: 22,
+			JumpCatalogID: "second", JumpAddress: "same.example.com", JumpUser: "ops", JumpPort: 22,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if len(state.sessions) != 0 || len(state.proxies) != 0 {
+		t.Fatalf("unknown identities rebound: sessions=%+v routes=%+v", state.sessions, state.proxies)
+	}
+	if len(state.forwards) != 1 {
+		t.Fatalf("unknown forward was dropped: %+v", state.forwards)
+	}
+	if _, ok := state.forwardHost(state.forwards[0]); ok || state.forwardHostAvailable(state.forwards[0]) {
+		t.Fatalf("unknown forward rebound to an endpoint: %+v", state.forwards[0])
+	}
+}
+
 func TestRestoreSessionsSkipsInvalidStaleDuplicateAndExcessEntries(t *testing.T) {
 	options := freshOptions(t)
 	entries := []savedSession{

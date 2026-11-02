@@ -114,8 +114,8 @@ func (state *State) importSessions(client sessionimport.Client) {
 	state.applyHostImportSummary(plan, summary)
 }
 
-// sessionImportPlan turns sessions into new hosts, leaving out one whose address,
-// user and port a saved host (or an earlier session) already has.
+// sessionImportPlan turns sessions into new hosts, leaving out one whose
+// CatalogID a saved host (or an earlier session) already has.
 func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
 	for _, entry := range result.Entries {
@@ -123,23 +123,20 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 			state.planStreamImport(&builder.plan, entry)
 			continue
 		}
-		port := uint16(entry.Port)
-		if port == 0 {
-			port = defaultPort
+		host := Host{
+			Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+			Address: entry.Host, User: entry.User, Port: uint16(entry.Port),
 		}
-		key := connectionKey(entry.Host, entry.User, port)
-		if _, exists := builder.connections[key]; exists {
+		host.normalizeEndpoint()
+		host.finish()
+		if _, exists := builder.catalogIDs[host.CatalogID]; exists {
 			builder.plan.duplicateHosts++
 			continue
 		}
-		host := Host{
-			ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
-			Address: entry.Host, User: entry.User, Port: port,
-		}
-		host.finish()
+		host.ID = builder.plan.nextHostID
 		builder.plan.nextHostID++
 		builder.plan.hosts = append(builder.plan.hosts, host)
-		builder.connections[key] = host
+		builder.catalogIDs[host.CatalogID] = host
 	}
 	return builder.plan
 }
@@ -190,7 +187,7 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 }
 
 // planStreamImport turns a Telnet or serial session into a host, unless the
-// saved hosts or an earlier session already have that destination.
+// saved hosts or an earlier session already have its CatalogID.
 func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.Entry) {
 	host := Host{
 		ID: plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
@@ -206,12 +203,12 @@ func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.E
 	}
 	host.normalizeEndpoint()
 	host.finish()
-	if state.hostIndexByEndpoint(host) >= 0 {
+	if _, exists := state.hostByCatalogID(host.CatalogID); exists {
 		plan.duplicateHosts++
 		return
 	}
 	for _, planned := range plan.hosts {
-		if sameEndpoint(planned, host) {
+		if planned.CatalogID == host.CatalogID {
 			plan.duplicateHosts++
 			return
 		}

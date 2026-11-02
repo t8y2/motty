@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"motty/internal/sessionimport"
 )
 
 func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *testing.T) {
@@ -66,6 +67,40 @@ func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *t
 	// It is kept.
 	if restarted := newTestState(t, options); len(restarted.hosts) != len(sampleHosts)+1 {
 		t.Fatalf("restored %d hosts", len(restarted.hosts))
+	}
+}
+
+func TestSessionImportDeduplicatesByCatalogID(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	sshDuplicate := Host{Address: "different.example.com", User: "deploy", Port: 22}
+	sshDuplicate.finish()
+	streamDuplicate := Host{Protocol: protocolTelnet, Address: "different-stream.example.com", Port: 23}
+	streamDuplicate.finish()
+	state.hosts = []Host{
+		{ID: 1, CatalogID: "host_ssh_custom", Label: "SSH custom", Address: "shared.example.com", User: "deploy", Port: 22},
+		{ID: 2, CatalogID: sshDuplicate.CatalogID, Label: "SSH old", Address: "old.example.com", Port: 22},
+		{ID: 3, CatalogID: "host_stream_custom", Label: "Stream custom", Protocol: protocolTelnet, Address: "shared-stream.example.com", Port: 23},
+		{ID: 4, CatalogID: streamDuplicate.CatalogID, Label: "Stream old", Protocol: protocolTelnet, Address: "old-stream.example.com", Port: 23},
+	}
+	for index := range state.hosts {
+		state.hosts[index].finish()
+	}
+	state.nextHostID = 5
+
+	plan := state.sessionImportPlan(sessionimport.Result{Entries: []sessionimport.Entry{
+		{Name: "SSH alias", Protocol: sessionimport.SSH, Host: "shared.example.com", User: "deploy", Port: 22},
+		{Name: "SSH same ID", Protocol: sessionimport.SSH, Host: "different.example.com", User: "deploy", Port: 22},
+		{Name: "SSH planned duplicate", Protocol: sessionimport.SSH, Host: "shared.example.com", User: "deploy"},
+		{Name: "Stream alias", Protocol: sessionimport.Telnet, Host: "shared-stream.example.com", Port: 23},
+		{Name: "Stream same ID", Protocol: sessionimport.Telnet, Host: "different-stream.example.com", Port: 23},
+		{Name: "Stream planned duplicate", Protocol: sessionimport.Telnet, Host: "shared-stream.example.com"},
+	}})
+	if len(plan.hosts) != 2 || plan.duplicateHosts != 4 {
+		t.Fatalf("hosts=%+v duplicates=%d", plan.hosts, plan.duplicateHosts)
+	}
+	if plan.hosts[0].Label != "SSH alias" || plan.hosts[0].CatalogID == "host_ssh_custom" ||
+		plan.hosts[1].Label != "Stream alias" || plan.hosts[1].CatalogID == "host_stream_custom" {
+		t.Fatalf("imported hosts = %+v", plan.hosts)
 	}
 }
 
