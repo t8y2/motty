@@ -33,6 +33,7 @@ var (
 	hitSessionLogsStatus         = tree.ID(sessionLogHits, "status-filter")
 	hitSessionLogsProtocol       = tree.ID(sessionLogHits, "protocol-filter")
 	hitSessionLogsOutcome        = tree.ID(sessionLogHits, "outcome-filter")
+	hitSessionLogsSort           = tree.ID(sessionLogHits, "sort")
 	hitSessionLogsMore           = tree.ID(sessionLogHits, "more-actions")
 	hitSessionLogsMoreDismiss    = tree.ID(sessionLogHits, "more-dismiss")
 	hitSessionLogsFavoriteFilter = tree.ID(sessionLogHits, "favorite-filter")
@@ -64,6 +65,7 @@ const (
 	sessionLogTimeToday
 	sessionLogTimeWeek
 	sessionLogTimeMonth
+	sessionLogTimeCustom
 )
 
 // sessionLogFilterMenu is the filter whose choices are open, if any. The
@@ -77,6 +79,7 @@ const (
 	sessionLogFilterStatusMenu
 	sessionLogFilterProtocolMenu
 	sessionLogFilterOutcomeMenu
+	sessionLogFilterSortMenu
 )
 
 // sessionLogDragging is the scrollbar being dragged, if any.
@@ -199,6 +202,11 @@ func (state *State) prepareSessionLogsView() {
 	view := &state.sessionLogs.view
 	view.synced = true
 	view.syncedLanguage = state.language
+	view.clockStamp = state.sessionLogClockStamp()
+	view.customRangeHint = ""
+	if view.timeRange == sessionLogTimeCustom {
+		view.customRangeHint = fmt.Sprintf(state.messages.SessionLogs.CustomRangeHintFmt, view.customStartDate, view.customEndDate)
+	}
 	state.prepareSessionLogRows()
 	state.prepareSessionLogSummary()
 	state.clampSessionLogSelection()
@@ -234,6 +242,7 @@ func (state *State) prepareSessionLogRows() {
 		row.compact[2], row.compact[3] = row.cells[3], ""
 		row.minimal[0], row.minimal[1], row.minimal[2] = row.cells[0], row.cells[3], ""
 	}
+	state.prepareSessionLogItems()
 }
 
 // prepareSessionLogSummary prepares the counts and the state the page's content
@@ -242,10 +251,12 @@ func (state *State) prepareSessionLogRows() {
 func (state *State) prepareSessionLogSummary() {
 	view := &state.sessionLogs.view
 	m := &state.messages.SessionLogs
-	if state.sessionLogFiltered() {
-		view.countText = fmt.Sprintf(m.CountFilteredFmt, len(view.page))
-	} else {
-		view.countText = fmt.Sprintf(m.CountFmt, len(view.page))
+	view.countText = fmt.Sprintf(m.CountSummaryFmt, len(view.page), view.matched, view.total)
+	if view.loading {
+		view.countText = m.Loading
+	}
+	if view.unavailable || view.err != "" {
+		view.countText = ""
 	}
 	switch {
 	case view.unavailable:
@@ -678,6 +689,8 @@ func sessionLogReconnectEvent(kind sessionlog.EventKind) bool {
 // own name, which a trigger showing only its value cannot say.
 func sessionLogFilterLabel(m *i18n.SessionLogsMessages, filter sessionLogFilterMenu) string {
 	switch filter {
+	case sessionLogFilterSortMenu:
+		return m.FilterSort
 	case sessionLogFilterOutcomeMenu:
 		return m.FilterOutcome
 	case sessionLogFilterTimeMenu:
@@ -693,6 +706,12 @@ func sessionLogFilterLabel(m *i18n.SessionLogsMessages, filter sessionLogFilterM
 func (state *State) sessionLogFilterValue(filter sessionLogFilterMenu) string {
 	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	switch filter {
+	case sessionLogFilterSortMenu:
+		choices := sessionLogSortChoices(m)
+		if view.query.Sort <= sessionlog.SortDurationAsc {
+			return choices[view.query.Sort]
+		}
+		return m.SortNewest
 	case sessionLogFilterOutcomeMenu:
 		choices := sessionLogOutcomeChoices(m)
 		if view.query.Outcome <= sessionlog.OutcomeTrackingStopped {
@@ -707,6 +726,8 @@ func (state *State) sessionLogFilterValue(filter sessionLogFilterMenu) string {
 			return m.Time7Days
 		case sessionLogTimeMonth:
 			return m.Time30Days
+		case sessionLogTimeCustom:
+			return m.TimeCustom
 		default:
 			return m.TimeAll
 		}
@@ -726,6 +747,8 @@ func (state *State) sessionLogFilterValue(filter sessionLogFilterMenu) string {
 // sessionLogFilterIcon is the glyph that names a filter to the eye.
 func sessionLogFilterIcon(filter sessionLogFilterMenu) uint8 {
 	switch filter {
+	case sessionLogFilterSortMenu:
+		return iconTransfer
 	case sessionLogFilterTimeMenu:
 		return iconClock
 	case sessionLogFilterStatusMenu:
@@ -735,12 +758,21 @@ func sessionLogFilterIcon(filter sessionLogFilterMenu) uint8 {
 	}
 }
 
+func sessionLogSortChoices(m *i18n.SessionLogsMessages) [4]string {
+	return [4]string{m.SortNewest, m.SortOldest, m.SortLongest, m.SortShortest}
+}
+
 // sessionLogFilterChoices fills the labels and checked states of the open
 // filter's choices and returns how many there are. Painting and clicking share
 // it, so a choice is the same item in both.
 func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels *[8]string, checked *[8]bool) int {
 	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	switch filter {
+	case sessionLogFilterSortMenu:
+		for i, label := range sessionLogSortChoices(m) {
+			labels[i], checked[i] = label, view.query.Sort == sessionlog.SortOrder(i)
+		}
+		return 4
 	case sessionLogFilterOutcomeMenu:
 		for i, label := range sessionLogOutcomeChoices(m) {
 			labels[i], checked[i] = label, view.query.Outcome == sessionlog.OutcomeFilter(i)
@@ -752,7 +784,8 @@ func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels 
 		checked[1] = view.timeRange == sessionLogTimeToday
 		checked[2] = view.timeRange == sessionLogTimeWeek
 		checked[3] = view.timeRange == sessionLogTimeMonth
-		return 4
+		labels[4], checked[4] = m.TimeCustom, view.timeRange == sessionLogTimeCustom
+		return 5
 	case sessionLogFilterStatusMenu:
 		labels[0] = m.StatusAll
 		checked[0] = view.statusFilter == 0
@@ -775,6 +808,8 @@ func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels 
 // sessionLogFilterFor is the filter menu a trigger identity opens.
 func sessionLogFilterFor(id ui.ID) sessionLogFilterMenu {
 	switch id {
+	case hitSessionLogsSort:
+		return sessionLogFilterSortMenu
 	case hitSessionLogsOutcome:
 		return sessionLogFilterOutcomeMenu
 	case hitSessionLogsTime:
@@ -794,33 +829,34 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	theme := state.Theme()
 	inner := max(bounds.Width-36, 0)
 	narrow := inner < sessionLogFullColumns
-	separateFilters := inner < 1120
+	separateFilters := inner < 1260
 	sideDetail := inner >= sessionLogSideDetail && view.detailOpen && view.selected != ""
 	detailOnly := view.detailOpen && view.selected != "" && !sideDetail
 	empty := len(view.page) == 0
 	condensed := inner < 520
 	filterWidth := sessionLogFilterWidth
+	stackedFilters := separateFilters && inner < 680
 	if separateFilters {
-		filterWidth = min(sessionLogFilterWidth, max(76, (inner-3*sessionLogToolbarGap)/4))
+		columns := float32(5)
+		if stackedFilters {
+			columns = 3
+		}
+		filterWidth = min(sessionLogFilterWidth, max(76, (inner-(columns-1)*sessionLogToolbarGap)/columns))
 	}
-	searchWidth := min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-4*filterWidth-toolbarHeight-6*sessionLogToolbarGap))
+	searchWidth := min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-5*filterWidth-toolbarHeight-7*sessionLogToolbarGap))
 	if separateFilters {
 		searchWidth = min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-toolbarHeight-2*sessionLogToolbarGap))
 	}
-	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, favoriteFilterBox flex.Box
+	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox flex.Box
 	var moreButton flex.Box
 	var content, detailSlot, loadMore flex.Box
 	var emptyIcon, emptyAction flex.Box
-	// Three toolbar shapes: one row with the search box, three on a row of
-	// their own, or two pairs when the card is squeezed under 420 pixels.
-	stackedFilters := narrow && inner < 420
-	halfFilter := max(76, (inner-sessionLogToolbarGap)/2)
 
 	f := state.sessionLogsLayout.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().Height(36).Gap(8).Items(flex.Center).Children(func() {
 			f.Text(m.Title).FontSize(sessionLogTitleSize).Weight(ui.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(min(inner*0.42, 160)).TextEnd().Ellipsis()
+			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
 			moreButton = f.Slot().Size(30, 30)
 		})
 		if !narrow {
@@ -834,6 +870,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
 			} else {
 				f.Spacer()
@@ -842,20 +879,18 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 		})
 		if separateFilters {
 			f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
-				if stackedFilters {
-					timeSlot = f.Slot().Size(halfFilter, toolbarHeight)
-					statusSlot = f.Slot().Size(halfFilter, toolbarHeight)
-				} else {
-					timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-					statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
-					protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
+				if !stackedFilters {
 					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
+					sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				}
 			})
 			if stackedFilters {
 				f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
-					protocolSlot = f.Slot().Size(halfFilter, toolbarHeight)
-					outcomeSlot = f.Slot().Size(halfFilter, toolbarHeight)
+					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
+					sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				})
 			}
 		}
@@ -897,10 +932,12 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	// in the frame's menu pass, outside the card's clip.
 	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = timeSlot.Rect(), statusSlot.Rect(), protocolSlot.Rect()
 	view.filterBounds[3] = outcomeSlot.Rect()
+	view.filterBounds[4] = sortSlot.Rect()
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsTime, timeSlot.Rect(), sessionLogFilterTimeMenu)
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsStatus, statusSlot.Rect(), sessionLogFilterStatusMenu)
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsProtocol, protocolSlot.Rect(), sessionLogFilterProtocolMenu)
 	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsOutcome, outcomeSlot.Rect(), sessionLogFilterOutcomeMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsSort, sortSlot.Rect(), sessionLogFilterSortMenu)
 	state.paintSessionLogFavoriteFilter(canvas, favoriteFilterBox.Rect())
 
 	view.moreBounds = moreButton.Rect()
@@ -1004,6 +1041,8 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 		active = view.protocolFilter != 0
 	case sessionLogFilterOutcomeMenu:
 		active = view.query.Outcome != sessionlog.OutcomeAll
+	case sessionLogFilterSortMenu:
+		active = view.query.Sort != sessionlog.SortStartedDesc
 	}
 	foreground := pal.muted
 	fill := ui.Color{}
@@ -1017,13 +1056,17 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 		foreground = pal.text
 	}
 	label := sessionLogFilterLabel(m, filter)
+	hint := label
+	if filter == sessionLogFilterTimeMenu && view.customRangeHint != "" {
+		hint = view.customRangeHint
+	}
 	value := state.sessionLogFilterValue(filter)
 	// The chevron is what a trigger past 96 pixels can afford; a narrower one
 	// keeps the value legible and says it opens with its accessible name.
 	chevron := bounds.Width >= 96
 	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
-		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: label, Selected: active, Expanded: open, Expandable: true}).
+		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: hint, Selected: active, Expanded: open, Expandable: true}).
 		Children(func() {
 			f.Icon(lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8)
 			f.Text(value).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).Ellipsis()
@@ -1107,7 +1150,7 @@ func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
 		return
 	}
 	height := float32(count*32 + 8)
-	width := max(sessionLogFilterWidth, anchor.Width)
+	width := max(float32(220), anchor.Width)
 	bounds := state.popupBelow(canvas, anchor, width, height, flex.Start)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsFilterDismiss,
@@ -1145,7 +1188,7 @@ func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
 	head := components.BeginTable(canvas, theme, ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: headerHeight}, columns[:count])
 	head.Header(headings[:count])
 
-	content := ui.Size{Width: bounds.Width, Height: float32(len(view.page)) * rowHeight}
+	content := ui.Size{Width: bounds.Width, Height: state.sessionLogListHeight(rowHeight)}
 	area := components.BeginScrollArea(canvas, theme, body, content).
 		Offset(0, view.scrollRows).Viewport(hitSessionLogsScroll, m.ListScroll).
 		VerticalScrollbar(hitSessionLogsThumb, m.ListScroll, "")
@@ -1155,9 +1198,17 @@ func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
 		if cap(view.rowCells) < count {
 			view.rowCells = make([]ui.Rect, count)
 		}
-		table := components.BeginTable(canvas, theme, geo.Content, columns[:count])
-		for index := range view.page {
+		y := geo.Content.Y
+		for _, item := range view.items {
+			if item.row < 0 {
+				paintSessionLogText(canvas, item.heading, ui.Rect{X: geo.Content.X + 8, Y: y, Width: max(geo.Content.Width-16, 0), Height: sessionLogGroupHeight}, metrics.FontSizeS, ui.WeightSemibold, state.pal.muted)
+				y += sessionLogGroupHeight
+				continue
+			}
+			index := item.row
 			row := &view.page[index]
+			table := components.BeginTable(canvas, theme, ui.Rect{X: geo.Content.X, Y: y, Width: geo.Content.Width, Height: rowHeight}, columns[:count])
+			y += rowHeight
 			var rowCells []string
 			switch count {
 			case 6:

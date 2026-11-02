@@ -473,6 +473,9 @@ func (s *Store) List(query Query) (Page, error) {
 	if err := s.usable(); err != nil {
 		return Page{}, err
 	}
+	if err := validateCursor(query); err != nil {
+		return Page{}, err
+	}
 	if err := s.pruneExpired(s.now().UTC()); err != nil {
 		return Page{}, err
 	}
@@ -524,19 +527,34 @@ func (s *Store) List(query Query) (Page, error) {
 		where = append(where, `started_at < ?`)
 		args = append(args, query.Until.UnixMilli())
 	}
-	if !query.Cursor.StartedAt.IsZero() {
-		where = append(where, `(started_at < ? OR (started_at = ? AND id < ?))`)
-		millis := query.Cursor.StartedAt.UnixMilli()
-		args = append(args, millis, millis, query.Cursor.ID)
+	filter := ""
+	if len(where) > 0 {
+		filter = ` WHERE ` + strings.Join(where, ` AND `)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Page{}, err
+	}
+	defer tx.Rollback()
+	var page Page
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM session_logs`).Scan(&page.Total); err != nil {
+		return Page{}, err
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM session_logs`+filter, args...).Scan(&page.Matched); err != nil {
+		return Page{}, err
+	}
+	if clause, cursorArgs := cursorPredicate(query); clause != "" {
+		where = append(where, clause)
+		args = append(args, cursorArgs...)
 	}
 	statement := `SELECT id, run_id, host, address, account, protocol, started_at, ended_at,
 		status, favorite, reconnect_count, reason, truncated, catalog_id, port, shell_name, target_kind FROM session_logs`
 	if len(where) > 0 {
 		statement += ` WHERE ` + strings.Join(where, ` AND `)
 	}
-	statement += ` ORDER BY started_at DESC, id DESC LIMIT ?`
+	statement += ` ORDER BY ` + queryOrder(query.Sort) + ` LIMIT ?`
 	args = append(args, limit+1)
-	rows, err := s.db.Query(statement, args...)
+	rows, err := tx.Query(statement, args...)
 	if err != nil {
 		return Page{}, fmt.Errorf("sessionlog: list: %w", err)
 	}
@@ -565,12 +583,18 @@ func (s *Store) List(query Query) (Page, error) {
 	if err := rows.Err(); err != nil {
 		return Page{}, fmt.Errorf("sessionlog: list: %w", err)
 	}
-	page := Page{Records: records}
+	if err := rows.Close(); err != nil {
+		return Page{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Page{}, err
+	}
+	page.Records = records
 	if len(records) > limit {
 		page.More = true
 		page.Records = records[:limit]
 		last := page.Records[len(page.Records)-1]
-		page.Next = Cursor{StartedAt: last.StartedAt, ID: last.ID}
+		page.Next = cursorFor(last, query.Sort)
 	}
 	return page, nil
 }
