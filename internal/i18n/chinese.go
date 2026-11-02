@@ -287,6 +287,7 @@ var ChineseMessages = Messages{
 	NewHost:       "新建主机",
 	EditHost:      "编辑",
 	CopyHost:      "复制",
+	CopyAddress:   "复制地址",
 	DeleteHost:    "删除",
 	MoveHostGroup: "移动分组",
 	HostGroupActions: HostGroupMessages{

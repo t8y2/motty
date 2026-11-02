@@ -287,6 +287,7 @@ var EnglishMessages = Messages{
 	NewHost:       "New Host",
 	EditHost:      "Edit",
 	CopyHost:      "Copy",
+	CopyAddress:   "Copy address",
 	DeleteHost:    "Delete",
 	MoveHostGroup: "Move Group",
 	HostGroupActions: HostGroupMessages{

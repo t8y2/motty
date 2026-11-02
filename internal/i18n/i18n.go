@@ -290,6 +290,7 @@ type Messages struct {
 	NewHost          string
 	EditHost         string
 	CopyHost         string
+	CopyAddress      string
 	DeleteHost       string
 	MoveHostGroup    string
 	HostGroupActions HostGroupMessages

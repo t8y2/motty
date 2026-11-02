@@ -258,11 +258,18 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	textWidth := max(card.Width-14-12-36-12*2-checkWidth, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
-	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth)
-	if room := textWidth - subtitleWidth - 8; room >= 40 {
+	// The address copy button sits right after the subtitle. It takes its room
+	// from the tags only while it shows, so a card at rest keeps all its tags.
+	copyIcon, copyShown := state.hostAddressCopyIcon(canvas, host, id)
+	copyWidth := float32(0)
+	if copyShown {
+		copyWidth = hostCopyButtonSize + 4
+	}
+	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth-copyWidth)
+	if room := textWidth - subtitleWidth - copyWidth - 8; room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
-	var avatar, light flex.Box
+	var avatar, light, copyButton flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), card)
 	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(flex.Center).Children(func() {
 		f.Stack().Size(36, 36).Shrink(0).Children(func() {
@@ -275,6 +282,9 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 			f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
 			f.Row().Gap(8).Items(flex.Center).MarginSides(1, 0, 0, 0).Children(func() {
 				f.Text(subtitle).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Width(subtitleWidth).Shrink(0).Ellipsis()
+				if copyShown {
+					copyButton = f.Slot().Size(hostCopyButtonSize, hostCopyButtonSize).Shrink(0).MarginSides(0, 0, 0, -4)
+				}
 				if tagCount > 0 {
 					f.Row().Gap(5).Shrink(0).Items(flex.Center).Children(func() {
 						for _, tag := range tagList[:tagCount] {
@@ -290,6 +300,9 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	})
 	f.End()
 	state.paintHostCatalogIcon(canvas, host, avatar.Rect(), badgeBackground)
+	if copyShown {
+		state.paintIconButton(canvas, hitHostCopyAddressList.At(int(host.ID)), copyIcon, copyButton.Rect(), state.messages.CopyAddress, false, iconButtonQuiet, background)
+	}
 	if kind != lightIdle {
 		corner := light.Rect()
 		canvas.Rounded(corner, corner.Width/2, background)
