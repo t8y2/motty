@@ -45,6 +45,14 @@ func monitorDiskCount(p *monitorView) int {
 	}
 	return n
 }
+
+// monitorCoresBlock is the cores section and the gap after it, or nothing.
+func monitorCoresBlock(p *monitorView) float32 {
+	if p.noPerCore {
+		return 0
+	}
+	return monitorCoresHeight(p) + monitorGap
+}
 func monitorCoresHeight(p *monitorView) float32 {
 	if p.coresCollapsed {
 		return 32
@@ -76,7 +84,7 @@ func monitorContentHeight(p *monitorView) float32 {
 	h := float32(8)
 	switch p.page {
 	case 0:
-		h += monitorTileHeight + monitorLowerTileHeight + monitorGap*3 + monitorSummaryHeight + monitorCoresHeight(p) + monitorGap + monitorDisksHeight(p)
+		h += monitorTileHeight + monitorLowerTileHeight + monitorGap*3 + monitorSummaryHeight + monitorCoresBlock(p) + monitorDisksHeight(p)
 	case 1:
 		h += monitorTileHeight + monitorGap + monitorDisksHeight(p)
 	case 2:
@@ -275,10 +283,12 @@ func (s *State) paintMonitorSections(c *ui.Canvas, v *remoteStatsView, b, viewpo
 		y += monitorLowerTileHeight + monitorGap
 		s.paintMonitorSummary(c, p, ui.Rect{X: x, Y: y, Width: w, Height: monitorSummaryHeight})
 		y += monitorSummaryHeight + monitorGap
-		h := monitorCoresHeight(p)
-		s.paintMonitorCores(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
-		y += h + monitorGap
-		h = monitorDisksHeight(p)
+		if !p.noPerCore {
+			h := monitorCoresHeight(p)
+			s.paintMonitorCores(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
+			y += h + monitorGap
+		}
+		h := monitorDisksHeight(p)
 		s.paintMonitorDisks(c, p, ui.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		y += h + monitorGap
 		s.monitorSection(c, hitMonitorHardware, ui.Rect{X: x, Y: y, Width: w, Height: 28}, m.Hardware, icons.Cpu, colors.muted, p.hardwareOpen)

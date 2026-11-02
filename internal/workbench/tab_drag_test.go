@@ -113,6 +113,27 @@ func TestDraggingATabAlongTheStripMovesIt(t *testing.T) {
 	}
 }
 
+// The tabs are shorter than the window bar; a drag that wanders to its top or
+// bottom edge is still over the strip and must not become a tear-off.
+func TestDraggingAlongTheEdgesOfTheWindowBarStillReordersTabs(t *testing.T) {
+	for _, y := range []float32{1, windowBarHeight - 1} {
+		state, ids := threeTabs(t)
+		target := hitTabList.At(int(ids[0]))
+		press(state, target, tabCenter(state, ids[0]))
+		last := tabCenter(state, ids[2])
+		last.X += state.tabStrip.tabWidth / 2
+		last.Y = y
+		dragTo(state, target, last)
+		if state.tabDrag.drop.kind != dropReorder || state.tabDrag.drop.boundary != 3 {
+			t.Fatalf("y=%v: drop %+v", y, state.tabDrag.drop)
+		}
+		release(state, target, last)
+		if got := tabOrder(state); got[2] != ids[0] {
+			t.Fatalf("y=%v: order %v", y, got)
+		}
+	}
+}
+
 func TestDroppingATabBesideItselfChangesNothing(t *testing.T) {
 	state, ids := threeTabs(t)
 	target := hitTabList.At(int(ids[1]))

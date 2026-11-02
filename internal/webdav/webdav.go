@@ -121,6 +121,34 @@ func (client *Client) Test(ctx context.Context) error {
 	return fmt.Errorf("webdav: the server answered %s", response.Status)
 }
 
+// Prepare is Test plus an attempt to make the folders above the file, so a
+// server that will not make one, Jianguoyun among them, is found before the
+// first sync and not behind an upload conflict. It is a best effort and no
+// stricter than an upload: it fails only where the upload would, on a folder the
+// server refuses to make and then reports as not there. A server that answers
+// neither way (no PROPFIND, say) gets the benefit of the doubt.
+func (client *Client) Prepare(ctx context.Context) error {
+	if err := client.Test(ctx); err != nil {
+		return err
+	}
+	refused, refusal, err := client.makeFolders(ctx)
+	if err != nil || refused == "" {
+		return err
+	}
+	check, err := client.do(ctx, "PROPFIND", client.address(strings.Split(refused, "/")...), nil, map[string]string{"Depth": "0"})
+	if errors.Is(err, ErrUnauthorized) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	check.Body.Close()
+	if check.StatusCode == http.StatusNotFound {
+		return missingFolder(refused, refusal)
+	}
+	return nil
+}
+
 // Get downloads the file. The returned tag identifies this version of it.
 func (client *Client) Get(ctx context.Context) (data []byte, tag string, err error) {
 	response, err := client.do(ctx, http.MethodGet, client.address(strings.Split(client.config.Path, "/")...), nil, nil)
@@ -154,21 +182,13 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 	if int64(len(data)) > client.MaxBytes {
 		return "", ErrTooLarge
 	}
-	parts := strings.Split(client.config.Path, "/")
-	// refused remembers the first folder the server would neither make nor
-	// report as existing, so a PUT into it can say what is missing.
-	var refused, refusal string
-	for depth := 1; depth < len(parts); depth++ {
-		response, err := client.do(ctx, "MKCOL", client.address(parts[:depth]...), nil, nil)
-		if err != nil {
-			return "", err
-		}
-		response.Body.Close()
-		// 201 made it, 405 is "already there"; anything else surfaces at the PUT.
-		if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusMethodNotAllowed && refused == "" {
-			refused, refusal = strings.Join(parts[:depth], "/"), response.Status
-		}
+	// refused is the first folder the server would neither make nor report as
+	// existing, so a PUT into it can say what is missing.
+	refused, refusal, err := client.makeFolders(ctx)
+	if err != nil {
+		return "", err
 	}
+	parts := strings.Split(client.config.Path, "/")
 	header := map[string]string{"Content-Type": "application/octet-stream"}
 	if previous != "" {
 		header["If-Match"] = previous
@@ -184,9 +204,32 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 	case response.StatusCode == http.StatusPreconditionFailed:
 		return "", ErrChanged
 	case response.StatusCode == http.StatusConflict && refused != "":
-		return "", fmt.Errorf("webdav: the folder %q does not exist and the server refused to create it (%s); create it on the server first", refused, refusal)
+		return "", missingFolder(refused, refusal)
 	case response.StatusCode < 200 || response.StatusCode > 299:
 		return "", fmt.Errorf("webdav: the server answered %s", response.Status)
 	}
 	return response.Header.Get("ETag"), nil
+}
+
+// makeFolders asks the server to make every folder above the file. It returns
+// the first folder the server neither made nor said was already there, with its
+// answer; whether that matters is for the caller to find out.
+func (client *Client) makeFolders(ctx context.Context) (refused, refusal string, err error) {
+	parts := strings.Split(client.config.Path, "/")
+	for depth := 1; depth < len(parts); depth++ {
+		response, err := client.do(ctx, "MKCOL", client.address(parts[:depth]...), nil, nil)
+		if err != nil {
+			return "", "", err
+		}
+		response.Body.Close()
+		// 201 made it, 405 is "already there"; anything else surfaces at the PUT.
+		if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusMethodNotAllowed && refused == "" {
+			refused, refusal = strings.Join(parts[:depth], "/"), response.Status
+		}
+	}
+	return refused, refusal, nil
+}
+
+func missingFolder(folder, refusal string) error {
+	return fmt.Errorf("webdav: the folder %q does not exist and the server refused to create it (%s); create it on the server first", folder, refusal)
 }

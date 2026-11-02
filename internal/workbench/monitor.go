@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
+	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -65,11 +66,14 @@ type monitorCoreText struct {
 
 // Fixed storage bounds the last minute of samples, independent of session age.
 type monitorView struct {
-	emptyLines                                                []string
-	emptyText                                                 string
-	emptyWidth                                                float32
-	page                                                      int
-	coresCollapsed, coresMore, disksCollapsed                 bool
+	emptyLines                                []string
+	emptyText                                 string
+	emptyWidth                                float32
+	page                                      int
+	coresCollapsed, coresMore, disksCollapsed bool
+	// noPerCore is a host whose system has no per-core source (macOS): the
+	// section is left out rather than shown empty.
+	noPerCore                                                 bool
 	cores                                                     []monitorCoreText
 	coresTitle, coreMoreText, cpuNote, diskText, diskCapacity string
 	diskValue                                                 float64
@@ -127,7 +131,7 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	if c.Open {
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
 	}
-	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, size.Width-files-minPaneWidth-1)))
+	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(size).Width-files-minPaneWidth-1)))
 }
 func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
 	if !state.monitorShown(workspace) || size.Width < contextDrawerAt {
@@ -139,7 +143,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
 	}
 	width := state.monitorPanelWidth(workspace, size)
-	if size.Width-files-width-1 < minPaneWidth {
+	if state.baseWorkspacePixelBounds(size).Width-files-width-1 < minPaneWidth {
 		return 0
 	}
 	return width + 1
@@ -165,6 +169,7 @@ func (state *State) ensureMonitor(session *Session) {
 	if v.panel.paused {
 		return
 	}
+	v.panel.noPerCore = system == sshconn.SystemDarwin
 	runner := monitorRunnerFor(session)
 	if v.worker == nil && v.state < remoteStatsUnsupported {
 		v.worker = startMonitorWorker(runner, state.notifyFor(session), system, v.panel.interval)

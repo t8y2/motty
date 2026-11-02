@@ -126,6 +126,11 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
+	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	if state.tabOrientation == tabsVertical {
+		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
+		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	}
 
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
