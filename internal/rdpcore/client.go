@@ -243,7 +243,6 @@ type Client struct {
 	desktopSaveBuf *orders.DesktopSaveCache // desktop save cache for SaveBitmap orders
 
 	// Pointer (cursor) cache and conversion buffer
-	pointerMu    sync.RWMutex
 	pointerCache [128]*PointerUpdate // matches advertised cache size
 	pointerBuf   []byte              // reusable RGBA conversion buffer
 
@@ -4337,11 +4336,9 @@ func (c *Client) cacheAndNotifyPointer(pu *pointer.PointerUpdate) {
 	}
 	copy(update.Data, pu.Data)
 
-	c.pointerMu.Lock()
 	if int(pu.CacheIndex) < len(c.pointerCache) {
 		c.pointerCache[pu.CacheIndex] = update
 	}
-	c.pointerMu.Unlock()
 	if fn := c.loadOnPointer(); fn != nil {
 		fn(update)
 	}
@@ -4945,18 +4942,6 @@ func (c *Client) OnPointer(fn func(*PointerUpdate)) {
 	c.cbMu.Lock()
 	c.onPointer = fn
 	c.cbMu.Unlock()
-}
-
-// CachedPointer returns the shape a PointerCached update names, nil when the
-// slot is empty or the index is out of range. The copy is owned by the client
-// and never changes; safe from any goroutine.
-func (c *Client) CachedPointer(index uint16) *PointerUpdate {
-	c.pointerMu.RLock()
-	defer c.pointerMu.RUnlock()
-	if int(index) >= len(c.pointerCache) {
-		return nil
-	}
-	return c.pointerCache[index]
 }
 
 // OnResize sets the callback invoked after the server completes a session resize

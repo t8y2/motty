@@ -49,3 +49,14 @@ func TestPointerShapeSwitchesKinds(t *testing.T) {
 		t.Fatalf("empty shape: kind %v", kind)
 	}
 }
+
+// A cached shape the client has no copy of names nothing the session could show, so the pointer
+// the remote last named stays.
+func TestAnUnknownCachedPointerLeavesThePointerAlone(t *testing.T) {
+	session := &Session{}
+	session.onPointer(&rdpcore.PointerUpdate{Type: rdpcore.PointerDefault})
+	session.onPointer(&rdpcore.PointerUpdate{Type: rdpcore.PointerCached, CacheIndex: 9})
+	if kind, _, version := session.PointerShape(); kind != desktop.PointerSystem || version != 1 {
+		t.Fatalf("after an unknown cached pointer: kind %v, version %d", kind, version)
+	}
+}

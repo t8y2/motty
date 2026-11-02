@@ -210,7 +210,8 @@ const (
 )
 
 // PointerShape is a pointer as the remote system paints it: BGRA rows, top
-// down, with the hotspot that names which pixel of it is the pointer's point.
+// down, the color not multiplied by alpha, with the hotspot that names which
+// pixel of it is the pointer's point.
 type PointerShape struct {
 	Width, Height int
 	HotX, HotY    int
@@ -218,14 +219,14 @@ type PointerShape struct {
 }
 
 // PointerSource is a Session whose remote system names its pointer's shape.
-// The workbench paints the bitmap over the picture and takes the local pointer
-// away while it does, the way a native client of that system would.
+// The workbench has the system draw the bitmap as the local pointer over the
+// picture, the way a native client of that system would.
 type PointerSource interface {
 	Session
 	// PointerShape returns what the remote last said about its pointer, the
 	// shape itself when the kind is PointerBitmap, and a version that changes
-	// whenever the answer does. Callers must not keep the BGRA bytes past the
-	// next call.
+	// whenever the answer does. The BGRA bytes belong to the caller: a session
+	// makes new ones for every shape and never writes to them again.
 	PointerShape() (PointerKind, PointerShape, int)
 }
 

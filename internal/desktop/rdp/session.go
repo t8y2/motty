@@ -409,12 +409,9 @@ func (session *Session) onPointer(update *rdpcore.PointerUpdate) {
 			kind = desktop.PointerHidden // a shape that failed to decode hides
 		}
 	case rdpcore.PointerCached:
-		if cached := session.client.CachedPointer(update.CacheIndex); cached != nil {
-			kind = desktop.PointerBitmap
-			shape = session.shapeFrom(cached)
-		} else {
-			kind = desktop.PointerSystem // nothing cached: fall back to the arrow
-		}
+		// The client hands a cached shape on as a PointerShape; a cached index it has
+		// no shape for names nothing, and the pointer stays as it was.
+		return
 	default:
 		return
 	}
