@@ -649,10 +649,12 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 		submitLabel = messages.SFTPRenameSubmit
 	case sftpDialogDelete:
 		title = messages.SFTPDeleteFileTitle
-		if view.dialogEntry.IsDir() {
-			title = messages.SFTPDeleteDirectoryTitle
-		}
 		description = fmt.Sprintf(messages.SFTPDeleteDescriptionFmt, view.dialogEntry.Name)
+		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() {
+			// A folder goes with everything in it; the confirmation says so.
+			title = messages.SFTPDeleteDirectoryTitle
+			description = fmt.Sprintf(messages.SFTPDeleteFolderContentsFmt, view.dialogEntry.Name)
+		}
 		submitLabel = messages.SFTPDeleteConfirm
 		initialFocus = hitSFTPDialogCancel
 		submitVariant = components.ButtonDestructive

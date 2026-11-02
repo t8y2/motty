@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -107,6 +108,31 @@ func TestInstallCatalogFailuresPreserveExistingFile(t *testing.T) {
 	}
 }
 
+func TestInstallCatalogUsesPrivatePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no permission bits to check")
+	}
+	dir := filepath.Join(t.TempDir(), "completion")
+	path := filepath.Join(dir, FileName)
+	if err := InstallCatalog(path, testCatalog(t)); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := directory.Mode().Perm(); mode != 0o700 {
+		t.Fatalf("catalog directory mode = %o, want 700", mode)
+	}
+	file, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := file.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("catalog file mode = %o, want 600", mode)
+	}
+}
+
 func TestLatestCommitResolvesAnAnnotatedTagToACommit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -142,7 +168,7 @@ func TestFetchCatalogImportsThePinnedArchive(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &http.Client{Transport: rewriteTransport{target: server.URL}}
-	catalog, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
+	catalog, stats, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -152,10 +178,41 @@ func TestFetchCatalogImportsThePinnedArchive(t *testing.T) {
 	if catalog.RootCount() != 1 || catalog.Root("tool") == nil {
 		t.Fatalf("roots = %d", catalog.RootCount())
 	}
+	if stats.RepairedFiles != 0 || stats.SkippedSources != 0 {
+		t.Fatalf("clean archive reported %+v", stats)
+	}
+}
+
+func TestFetchCatalogRepairsAnUpstreamSourceAndReportsIt(t *testing.T) {
+	body := repairableReleaseArchive(t)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !strings.HasSuffix(request.URL.Path, "/tar.gz/commit-sha") {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Write(body)
+	}))
+	defer server.Close()
+	client := &http.Client{Transport: rewriteTransport{target: server.URL}}
+	catalog, stats, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if stats.RepairedFiles != 2 || stats.SkippedSources != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	flag, ok := catalog.FindFlag(catalog.Root("tool"), "--align")
+	if !ok || flag.Desc != "Vertical position (default: top). Details see --align-x" {
+		t.Fatalf("repaired flag = %+v, found=%v", flag, ok)
+	}
+	flag, ok = catalog.FindFlag(catalog.Lookup([]string{"tool", "run"}), "--growable-table")
+	if !ok || flag.Desc != "WebAssembly: remove maximum size from function table" {
+		t.Fatalf("repaired zig-style flag = %+v, found=%v", flag, ok)
+	}
 }
 
 func TestFetchCatalogRejectsAnUnpinnedRelease(t *testing.T) {
-	if _, err := FetchCatalog(context.Background(), http.DefaultClient, Release{Tag: "v1.9.0"}); err == nil {
+	if _, _, err := FetchCatalog(context.Background(), http.DefaultClient, Release{Tag: "v1.9.0"}); err == nil {
 		t.Fatal("a release without a commit was fetched")
 	}
 }
@@ -169,7 +226,15 @@ func TestUpdateClientBoundsRedirects(t *testing.T) {
 		url   string
 		hops  int
 		allow bool
-	}{{"https://codeload.github.com/archive", 1, true}, {"http://example.com", 1, false}, {"https://example.com", 5, false}} {
+	}{
+		{"https://codeload.github.com/archive", 1, true},
+		{"https://api.github.com/repos/carapace-sh/carapace-bin", 1, true},
+		{"https://objects.githubusercontent.com/archive", 1, true},
+		{"http://example.com", 1, false},
+		{"https://evil.example/archive", 1, false},
+		{"https://github.com.evil.example/archive", 1, false},
+		{"https://example.com", 5, false},
+	} {
 		target, err := url.Parse(test.url)
 		if err != nil {
 			t.Fatal(err)
@@ -185,7 +250,7 @@ func TestFetchCatalogRejectsDownloadFailure(t *testing.T) {
 	client := &http.Client{Transport: catalogTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusBadGateway, Status: "502 Bad Gateway", Body: io.NopCloser(strings.NewReader("failed"))}, nil
 	})}
-	if _, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"}); err == nil {
+	if _, _, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"}); err == nil {
 		t.Fatal("a failed download was accepted")
 	}
 }
@@ -202,15 +267,32 @@ func (transport rewriteTransport) RoundTrip(request *http.Request) (*http.Respon
 
 func releaseArchive(t *testing.T) []byte {
 	t.Helper()
-	var buffer bytes.Buffer
-	zipper := gzip.NewWriter(&buffer)
-	writer := tar.NewWriter(zipper)
-	entries := map[string]string{
+	return tarGzipArchive(t, map[string]string{
 		"carapace-bin-1.9.0/LICENSE":                    "MIT",
 		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml":     "name: tool\r\ndescription: a tool\r\n",
 		"carapace-bin-1.9.0/man/cmd/tool/tool.run.yaml": "name: run\r\nflags:\r\n  '-v=': verbose\r\n",
 		"carapace-bin-1.9.0/cmd/carapace/main.go":       "package main",
-	}
+	})
+}
+
+// repairableReleaseArchive is a release that ships the upstream defect: one
+// plain scalar contains ": ", which the importer must quote and count.
+func repairableReleaseArchive(t *testing.T) []byte {
+	t.Helper()
+	return tarGzipArchive(t, map[string]string{
+		"carapace-bin-1.9.0/LICENSE": "MIT",
+		// The two defect shapes in real releases: mpv's "(default: top)" and
+		// zig's leading "WebAssembly:" in an option description.
+		"carapace-bin-1.9.0/man/cmd/tool/tool.yaml":     "name: tool\nflags:\n  --align?: Vertical position (default: top). Details see --align-x\n",
+		"carapace-bin-1.9.0/man/cmd/tool/tool.run.yaml": "name: run\nflags:\n  --growable-table: WebAssembly: remove maximum size from function table\n",
+	})
+}
+
+func tarGzipArchive(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	zipper := gzip.NewWriter(&buffer)
+	writer := tar.NewWriter(zipper)
 	// tar reads its members in order; the import sorts the source files itself.
 	for name := range entries {
 		data := entries[name]

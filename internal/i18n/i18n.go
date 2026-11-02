@@ -763,6 +763,12 @@ type Messages struct {
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
+	// SFTPDeleteFolderContentsFmt says a folder goes with everything inside it:
+	// the panel deletes a folder's contents too, not only an empty folder.
+	SFTPDeleteFolderContentsFmt string
+	// SFTPDeletePartialHint follows a folder removal that failed or was
+	// canceled: what was deleted before it stopped stays deleted.
+	SFTPDeletePartialHint       string
 	SFTPDeleteConfirm           string
 	SFTPDeletingFmt             string
 	SFTPDeletedFmt              string

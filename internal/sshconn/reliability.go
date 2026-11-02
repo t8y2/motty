@@ -154,13 +154,21 @@ func (conn *Conn) closedError(waitErr error) error {
 	return fmt.Errorf("%w: %w", ErrDisconnected, waitErr)
 }
 
+// ErrPingPending is returned by Ping while an earlier request has not been
+// answered yet. Global requests are sent one at a time, so a new probe would
+// only queue behind the old one, waiting on a reply that may never come and
+// reporting the wait as round-trip time.
+var ErrPingPending = errors.New("sshconn: previous keepalive request is still unresolved")
+
 // Ping measures the round-trip time (RTT) to the SSH server using
 // keepalive@openssh.com.
 //
 // A context without a deadline gets the default two-second one. The request
 // itself cannot be canceled: after a timeout the client keeps waiting for the
-// reply before it can send another global request, so callers must not start a
-// new probe while the previous one is unresolved.
+// reply before it can send another global request. Ping therefore sends no new
+// request until the previous one has been answered or the connection has ended,
+// and returns ErrPingPending meanwhile. Tabs that share a client share this
+// state.
 func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	conn.mu.Lock()
 	client := conn.client
@@ -181,10 +189,18 @@ func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 		rtt time.Duration
 		err error
 	}
+	owner := conn
+	if conn.owner != nil {
+		owner = conn.owner
+	}
+	if !owner.pingPending.CompareAndSwap(false, true) {
+		return 0, ErrPingPending
+	}
 	ch := make(chan pingResult, 1)
 	start := time.Now()
 	go func() {
 		_, _, err := client.SendRequest(keepAliveRequest, true, nil)
+		owner.pingPending.Store(false)
 		ch <- pingResult{rtt: time.Since(start), err: err}
 	}()
 	select {
