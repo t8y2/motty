@@ -19,7 +19,7 @@ import (
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "terminal_font_size": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
+		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true,
 		"workspace": true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
 		"host_view": true, "background": true, "snippet_shortcuts": true,
@@ -54,7 +54,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},

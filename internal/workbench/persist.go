@@ -33,6 +33,7 @@ type savedState struct {
 	Version                    int                 `json:"version"`
 	Language                   string              `json:"language,omitempty"`
 	Theme                      string              `json:"theme,omitempty"`
+	NetworkProxy               string              `json:"network_proxy,omitempty"`
 	TerminalOption             string              `json:"terminalOption,omitempty"`
 	LocalShell                 string              `json:"local_shell,omitempty"`
 	SSHAgent                   string              `json:"ssh_agent,omitempty"`
@@ -367,6 +368,7 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
 		SSHAgent:                   savedAgent,
@@ -631,6 +633,7 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	state.messages = i18n.For(state.language)
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
+	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.syncNativeAppearance()
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
