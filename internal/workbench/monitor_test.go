@@ -381,3 +381,14 @@ func TestMonitorStartsForAQuietWorkspaceOnActivation(t *testing.T) {
 	}
 	state.closeMonitor()
 }
+
+// macOS has no per-core source, so its panel leaves the section out rather
+// than showing an empty one, and the content height drops with it.
+func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
+	var p monitorView
+	with := monitorContentHeight(&p)
+	p.noPerCore = true
+	if without := monitorContentHeight(&p); with-without != monitorCoresHeight(&p)+monitorGap {
+		t.Fatalf("content height %v with the section, %v without", with, without)
+	}
+}
