@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"fmt"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
@@ -80,15 +82,21 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	messages, theme := state.messages, state.Theme()
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitProxyDialogDismiss, CloseID: hitProxyDialogClose,
-		InitialFocusID: hitProxyDialogTarget, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(130, state.proxyDialogError), // two fields
+		InitialFocusID: hitProxyDialogTarget, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
 	})
 	layout := dialog.Begin(messages.ProxyDialogTitle, "")
 	const rowHeight = 64
-	var target, jump flex.Box
+	var target, jump, via, viaHelp, relay flex.Box
+	viaShell := state.proxyEditor.viaShell
 	f := state.proxyDialogLayout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		target = f.Slot().Height(rowHeight)
 		jump = f.Slot().Height(rowHeight)
+		via, viaHelp = state.declareDialogCheckboxHelp(f, messages.ProxyFieldViaShell, 4, 6)
+		if viaShell {
+			relay = f.Slot().Height(rowHeight)
+			f.Paragraph(state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
+		}
 		if state.proxyDialogError != "" {
 			f.Text(state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
@@ -96,11 +104,41 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	f.End()
 	state.paintProxyHostField(canvas, target.Rect(), true)
 	state.paintProxyHostField(canvas, jump.Rect(), false)
+	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, viaShell, via)
+	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, viaHelp.Rect())
+	if viaShell {
+		content := components.BeginField(canvas, theme, relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
+		value := state.proxyEditor.relay.String()
+		focused := canvas.Focused() == hitProxyDialogRelay
+		components.PaintInput(canvas, theme, content, components.InputSnapshot{
+			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
+			Focused: focused, PlatformEditing: focused && value != "",
+		})
+	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitProxyDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitProxyDialogSubmit, Label: messages.ProxyCreate},
 	)
 	dialog.End()
+}
+
+// proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the
+// choice of relaying through the jump host's shell, and when it is on the relay
+// command with the note under it.
+func (state *State) proxyDialogBodyHeight() float32 {
+	height := float32(130 + 30) // two fields, then the checkbox
+	if state.proxyEditor.viaShell {
+		height += 64 + 44 // the relay field, then a note of two lines
+	}
+	return height
+}
+
+// proxyRelayNote says what is typed on the jump host before the relay starts.
+func (state *State) proxyRelayNote() string {
+	if jump, ok := state.hostByID(state.proxyEditor.jumpID); ok && jump.LoginCommand != "" {
+		return fmt.Sprintf(state.messages.ProxyRelayPreludeFmt, jump.LoginCommand)
+	}
+	return state.messages.ProxyRelayNoPrelude
 }
 
 func (state *State) paintProxyHostField(canvas *ui.Canvas, bounds ui.Rect, target bool) {

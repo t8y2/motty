@@ -23,6 +23,16 @@ type Result struct {
 	Err     error
 }
 
+// commandKind is which output protocol a worker's command speaks. The POSIX
+// one reads Linux procfs; the other two each have their own line.
+type commandKind uint8
+
+const (
+	kindPOSIX commandKind = iota
+	kindWindows
+	kindDarwin
+)
+
 // Worker owns one goroutine and one remote command only while the user has
 // monitoring enabled.
 type Worker struct {
@@ -34,6 +44,9 @@ type Worker struct {
 	done    chan struct{}
 	close   sync.Once
 	command string
+	kind    commandKind
+	// now is the receiver's clock, which times the macOS interface counters.
+	now func() time.Time
 }
 
 // Start begins sampling immediately. It is intentionally the constructor:
@@ -43,7 +56,7 @@ func Start(runner Runner, notify func()) *Worker {
 }
 
 func start(runner Runner, notify func(), first, next time.Duration) *Worker {
-	return startCommand(runner, notify, first, next, command)
+	return startCommand(runner, notify, first, next, command, kindPOSIX)
 }
 
 // StartWithInterval changes the remote sampling interval without adding a
@@ -53,16 +66,21 @@ func StartWithInterval(runner Runner, notify func(), seconds int) *Worker {
 		seconds = 2
 	}
 	script := strings.TrimSuffix(command, "sleep 1\ndone") + "sleep " + strconv.Itoa(seconds) + "\ndone"
-	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script)
+	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script, kindPOSIX)
 }
 
-func startCommand(runner Runner, notify func(), first, next time.Duration, script string) *Worker {
+func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind) *Worker {
+	worker := newWorker(runner, notify, script, kind)
+	go worker.run(first, next)
+	return worker
+}
+
+func newWorker(runner Runner, notify func(), script string, kind commandKind) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 	worker := &Worker{
-		runner: runner, notify: notify, ctx: ctx, cancel: cancel, command: script,
+		runner: runner, notify: notify, ctx: ctx, cancel: cancel, command: script, kind: kind, now: time.Now,
 		results: make(chan Result, 1), done: make(chan struct{}),
 	}
-	go worker.run(first, next)
 	return worker
 }
 
@@ -102,9 +120,12 @@ func (worker *Worker) run(first, next time.Duration) {
 		cores, previousCores []coreCounters
 		windowsRead          bool
 		startupLines         int
+		darwinPrevious       darwinReading
+		darwinAt             time.Time
+		darwinHave           bool
 	)
 	limit := maxLineBytes
-	if strings.HasPrefix(worker.command, "powershell.exe ") {
+	if worker.kind == kindWindows {
 		limit = maxWindowsLineBytes
 	}
 	err := worker.runner.StreamCommand(ctx, worker.command, limit, func(line []byte) bool {
@@ -119,7 +140,21 @@ func (worker *Worker) run(first, next time.Duration) {
 			windowsRead = true
 			return true
 		}
-		if strings.HasPrefix(worker.command, "powershell.exe ") && !strings.HasPrefix(string(line), "gop-stats-unsupported") {
+		if strings.HasPrefix(string(line), darwinPrefix) {
+			reading, err := parseDarwin(line)
+			if err != nil {
+				fault = err
+				return false
+			}
+			at := worker.now()
+			watchdog.Reset(next)
+			if darwinHave && !reading.warm {
+				worker.publish(Result{Sample: darwinSample(darwinPrevious, reading, at.Sub(darwinAt))})
+			}
+			darwinPrevious, darwinAt, darwinHave = reading, at, true
+			return true
+		}
+		if worker.kind == kindWindows && !strings.HasPrefix(string(line), "gop-stats-unsupported") {
 			// Some Windows SSH shells print a bounded login banner even for
 			// command sessions. Never let it reset the first-reading timeout.
 			if !windowsRead && startupLines < 8 && len(line) < 1024 {

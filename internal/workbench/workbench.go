@@ -254,6 +254,9 @@ var (
 	hitProxyDialogSubmit     = tree.ID(proxiesHits, "proxy-dialog-submit")
 	hitProxyDialogTarget     = tree.ID(proxiesHits, "proxy-dialog-target")
 	hitProxyDialogJump       = tree.ID(proxiesHits, "proxy-dialog-jump")
+	hitProxyDialogViaShell   = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogViaHelp    = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
+	hitProxyDialogRelay      = tree.ID(proxiesHits, "proxy-dialog-relay")
 	hitProxyTargetDismiss    = tree.ID(proxiesHits, "proxy-target-dismiss")
 	hitProxyTargetScrollUp   = tree.ID(proxiesHits, "proxy-target-scroll-up")
 	hitProxyTargetScrollDown = tree.ID(proxiesHits, "proxy-target-scroll-down")
@@ -1083,6 +1086,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 	case modalAIRename:
 		if hit == hitAIRenameField {
 			return &state.ai.rename.editor
+		}
+	case modalNewProxy:
+		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
+			return &state.proxyEditor.relay
 		}
 	case modalNewForward:
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
