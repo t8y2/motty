@@ -241,15 +241,16 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 		page.group("", func() {
 			page.row(messages.SettingsLanguage, "", language[:], selectedLanguage)
 			page.row(messages.SettingsAppearance, "", appearance[:], selectedAppearance)
-			textSize := state.settingsTextSizeOptions()
-			selectedTextSize := hitSettingsTextRegular
-			switch state.textScale {
-			case textScaleSmall:
-				selectedTextSize = hitSettingsTextSmall
-			case textScaleLarge:
-				selectedTextSize = hitSettingsTextLarge
+			tabs := state.settingsTabOrientationOptions()
+			selectedTabs := hitSettingsTabsHorizontal
+			if state.tabOrientation == tabsVertical {
+				selectedTabs = hitSettingsTabsVertical
 			}
-			page.row(messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], selectedTextSize)
+			page.row(messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], selectedTabs)
+			if state.tabOrientation == tabsVertical {
+				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
+				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
+			}
 			if state.interfaceFontAvailable() {
 				page.actionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), false,
 					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
@@ -288,6 +289,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	}
 	gutter := state.settingsGutterOptions()
 	selectedGutter := [...]ui.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
+	intense := state.settingsIntenseOptions()
+	selectedIntense := [...]ui.ID{hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain}[state.terminalIntense]
 	scrollback := state.settingsScrollbackOptions()
 	selectedScrollback := hitSettingsScrollback5000
 	switch state.terminalScrollback {
@@ -327,6 +330,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.PaddingRow, "", padding[:], selectedPadding)
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
+			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
@@ -380,6 +384,11 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 	case restoreConnectAll:
 		selectedRestore = hitSettingsRestoreAll
 	}
+	selectedNetworkProxy := hitSettingsNetworkDirect
+	if state.networkProxy == networkProxySystem {
+		selectedNetworkProxy = hitSettingsNetworkSystem
+	}
+	networkProxy := state.settingsNetworkProxyOptions()
 	page.groups(func() {
 		page.group("", func() {
 			page.row(messages.SettingsConnectionTimeout, messages.SettingsConnectionTimeoutDescription, timeout[:], selectedTimeout)
@@ -388,6 +397,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			page.toggleRow(messages.SettingsShare, messages.SettingsShareDescription, state.shareConnections != shareConnectionsOff, hitSettingsShareToggle)
 			page.row(messages.SettingsRestore, messages.SettingsRestoreDescription, restore[:], selectedRestore)
 			state.paintSSHAgentRow(page)
+			page.row(messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, networkProxy[:], selectedNetworkProxy)
 			state.paintOutboundProxyRow(page)
 		})
 		state.paintSSHSyncSettings(page)

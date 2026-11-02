@@ -14,7 +14,7 @@ type slowConn struct {
 	release chan struct{}
 }
 
-func (*slowConn) opensShellSlowly() {}
+func (*slowConn) opensShellSlowly() bool { return true }
 
 func (conn *slowConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	<-conn.release

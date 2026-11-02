@@ -44,7 +44,7 @@ func StartWindows(runner Runner, notify func(), seconds int) *Worker {
 	if !validInterval(seconds) {
 		seconds = 2
 	}
-	return startCommand(runner, notify, 20*time.Second, time.Duration(seconds)*time.Second+15*time.Second, WindowsCommand(seconds))
+	return startCommand(runner, notify, 20*time.Second, time.Duration(seconds)*time.Second+15*time.Second, WindowsCommand(seconds), kindWindows)
 }
 
 const windowsScript = `# motty-monitor-windows-v1

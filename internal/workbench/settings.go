@@ -203,6 +203,32 @@ func closeActionFromString(value string) closeAction {
 	return closeToTray
 }
 
+// networkProxyMode is which proxy a local terminal's programs are told to use.
+// Direct, the default, sets nothing: the terminal behaves as it would if it
+// were started from any other terminal, with the environment it inherits.
+// Following the system sets the proxy variables while the system names a proxy
+// and otherwise leaves the inherited ones alone.
+type networkProxyMode uint8
+
+const (
+	networkProxyDirect networkProxyMode = iota
+	networkProxySystem
+)
+
+func (mode networkProxyMode) String() string {
+	if mode == networkProxyDirect {
+		return "direct"
+	}
+	return "system"
+}
+
+func networkProxyModeFromString(value string) networkProxyMode {
+	if value == networkProxySystem.String() {
+		return networkProxySystem
+	}
+	return networkProxyDirect
+}
+
 func (state *State) openSettings() {
 	if localShellSettingVisible() && state.settingsCategory == settingsTerminal && !state.localShellMenu.loaded {
 		state.refreshLocalShells()
@@ -322,12 +348,20 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseAppearanceMode(appearancePinnedDark)
 	case hitSettingsAppearanceLight:
 		changed = state.chooseAppearanceMode(appearancePinnedLight)
-	case hitSettingsTextSmall:
-		changed = state.setTextScale(textScaleSmall)
-	case hitSettingsTextRegular:
-		changed = state.setTextScale(textScaleRegular)
-	case hitSettingsTextLarge:
-		changed = state.setTextScale(textScaleLarge)
+	case hitSettingsTabsHorizontal:
+		changed = state.setTabOrientation(tabsHorizontal)
+	case hitSettingsTabsVertical:
+		changed = state.setTabOrientation(tabsVertical)
+	case hitSettingsVerticalTabsAutoHide:
+		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
+	case hitSettingsVerticalTabsGrouping:
+		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
+	case hitSettingsNetworkSystem:
+		changed = state.networkProxy != networkProxySystem
+		state.networkProxy = networkProxySystem
+	case hitSettingsNetworkDirect:
+		changed = state.networkProxy != networkProxyDirect
+		state.networkProxy = networkProxyDirect
 	case hitSettingsCloseTray:
 		changed = state.closeAction != closeToTray
 		state.closeAction = closeToTray
@@ -360,6 +394,14 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalGutter(gutterTime)
 	case hitSettingsGutterBoth:
 		changed = state.setTerminalGutter(gutterBoth)
+	case hitSettingsIntenseBoth:
+		changed = state.setTerminalIntense(intenseBoth)
+	case hitSettingsIntenseBright:
+		changed = state.setTerminalIntense(intenseBright)
+	case hitSettingsIntenseBold:
+		changed = state.setTerminalIntense(intenseBold)
+	case hitSettingsIntensePlain:
+		changed = state.setTerminalIntense(intensePlain)
 	case hitSettingsScrollback1000:
 		changed = state.setTerminalScrollback(1000)
 	case hitSettingsScrollback5000:
@@ -483,6 +525,13 @@ func (state *State) settingsAppearanceOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsNetworkProxyOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsNetworkDirect, Label: state.messages.SettingsNetworkProxyDirect},
+		{ID: hitSettingsNetworkSystem, Label: state.messages.SettingsNetworkProxySystem},
+	}
+}
+
 func (state *State) settingsCloseOptions() [2]components.SegmentOption {
 	m := state.messages.Tools
 	return [...]components.SegmentOption{
@@ -514,6 +563,16 @@ func (state *State) settingsGutterOptions() [4]components.SegmentOption {
 		{ID: hitSettingsGutterNumbers, Label: m.GutterNumbers},
 		{ID: hitSettingsGutterTime, Label: m.GutterTime},
 		{ID: hitSettingsGutterBoth, Label: m.GutterBoth},
+	}
+}
+
+func (state *State) settingsIntenseOptions() [4]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsIntenseBoth, Label: m.IntenseBoth},
+		{ID: hitSettingsIntenseBright, Label: m.IntenseBright},
+		{ID: hitSettingsIntenseBold, Label: m.IntenseBold},
+		{ID: hitSettingsIntensePlain, Label: m.IntensePlain},
 	}
 }
 
@@ -597,8 +656,11 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
 		options := state.settingsAppearanceOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsTextSmall, hitSettingsTextRegular, hitSettingsTextLarge:
-		options := state.settingsTextSizeOptions()
+	case hitSettingsTabsHorizontal, hitSettingsTabsVertical:
+		options := state.settingsTabOrientationOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
+		options := state.settingsNetworkProxyOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsCloseTray, hitSettingsCloseQuit:
 		options := state.settingsCloseOptions()
@@ -611,6 +673,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain:
+		options := state.settingsIntenseOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsScrollback1000, hitSettingsScrollback5000, hitSettingsScrollback10000:
 		options := state.settingsScrollbackOptions()

@@ -105,6 +105,12 @@ type ToolsMessages struct {
 	GutterNumbers              string
 	GutterTime                 string
 	GutterBoth                 string
+	IntenseRow                 string
+	IntenseDescription         string
+	IntenseBoth                string
+	IntenseBright              string
+	IntenseBold                string
+	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
 	ScrollbarLabel             string
@@ -132,6 +138,7 @@ type ToolsMessages struct {
 	FontPickerEmpty         string
 	FontPickerSample        string
 	FontPickerSampleSymbols string
+	FontPickerConfirm       string
 
 	// The fonts that draw what the terminal's font lacks.
 	FontFallbackRow         string
@@ -184,6 +191,17 @@ type ToolsMessages struct {
 	HostProxyDialogTitle        string
 	HostProxyDialogDescription  string
 	HostProxyPasswordNotCarried string
+
+	// A proxy command: a local program that carries a host's first connection.
+	ProxyCommand                   string
+	ProxyCommandField              string
+	ProxyErrorCommand              string
+	HostProxyCommandDescriptionFmt string // the command
+	// A command imported from an SSH config waits for the user to save it in
+	// the host's proxy dialog before it runs.
+	HostProxyCommandUnconfirmedFmt string // the command
+	HostProxyCommandConfirm        string
+	ProxyCommandUnconfirmed        string
 
 	// Searching the settings.
 	SearchPlaceholder string
@@ -477,10 +495,17 @@ type ToolsMessages struct {
 	SyncPassword                    string
 	SyncPath                        string
 	SyncSave                        string
+	SyncTest                        string
+	SyncTestRunning                 string
 	SyncRunRow                      string
 	SyncRunNever                    string
 	SyncRunLastFmt                  string
 	SyncNow                         string
+	SyncRestore                     string
+	SyncRestoreTitle                string
+	SyncRestoreWarning              string
+	SyncRestoreConfirm              string
+	SyncRestoreChanged              string
 	SyncAuto                        string
 	SyncAutoDescription             string
 	SyncRunFailedFmt                string

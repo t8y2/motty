@@ -52,6 +52,10 @@ type tabDrop struct {
 	boundary int
 	pane     layoutcore.PaneID
 	edge     dockEdge
+	// moveUnit says the drop moves the dragged tab, or the whole group of tabs
+	// it stands for, to stand before the tab at the deck index boundary, rather
+	// than reordering it among tabs of its own group.
+	moveUnit bool
 	// zone is what to highlight: the strip's insertion bar or the half of the
 	// pane a dock would take.
 	zone ui.Rect
@@ -69,6 +73,9 @@ type tabDrag struct {
 	pressed   bool
 	active    bool
 	workspace layoutcore.WorkspaceID
+	// group is every tab of a server group dragged by its header; the first is
+	// workspace. A group only moves among the groups of this window.
+	group     []layoutcore.WorkspaceID
 	title     string
 	start, at ui.Point
 	drop      tabDrop
@@ -97,6 +104,10 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 				if tab.ID == id {
 					*drag = tabDrag{pressed: true, workspace: id, title: state.tabLabel(tab), panes: tab.PaneCount, start: ui.Point{X: event.X, Y: event.Y}}
 				}
+			}
+		} else if state.modal == modalNone && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) {
+			if members, title, ok := state.verticalTabGroupMembers(event.Target); ok {
+				*drag = tabDrag{pressed: true, workspace: members[0], group: members, title: title, start: ui.Point{X: event.X, Y: event.Y}}
 			}
 		}
 		return ui.EventResult{}, false
@@ -137,6 +148,9 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 // left every window.
 func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
+	if len(drag.group) > 0 {
+		drag.outside = false // a group of connections is never torn off or sent to another window
+	}
 	var peer *State
 	if drag.outside && state.options.Group != nil {
 		peer = state.options.Group.windowAt(state, ui.Point{X: event.ScreenX, Y: event.ScreenY})
@@ -152,7 +166,7 @@ func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 	case drag.outside:
 		drag.drop = tabDrop{}
 	default:
-		drag.drop = state.tabDropAt(drag.at, drag.workspace, drag.panes)
+		drag.drop = state.tabDropAt(drag.at, drag.workspace, drag.panes, drag.group)
 	}
 }
 
@@ -160,6 +174,9 @@ func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 func (state *State) trackTabDragEnd(drag *tabDrag, event ui.PointerEvent) {
 	drag.at = ui.Point{X: event.X, Y: event.Y}
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
+	if len(drag.group) > 0 {
+		drag.outside = false
+	}
 	drag.peer = nil
 	switch {
 	case drag.outside && state.options.Group != nil:
@@ -171,7 +188,7 @@ func (state *State) trackTabDragEnd(drag *tabDrag, event ui.PointerEvent) {
 	case drag.outside:
 		drag.screen = ui.Point{X: event.ScreenX, Y: event.ScreenY}
 	default:
-		drag.drop = state.tabDropAt(drag.at, drag.workspace, drag.panes)
+		drag.drop = state.tabDropAt(drag.at, drag.workspace, drag.panes, drag.group)
 	}
 }
 
@@ -204,30 +221,58 @@ func (state *State) foreignDropAt(screen ui.Point, panes int) tabDrop {
 		return tabDrop{}
 	}
 	at := ui.Point{X: screen.X - frame.X, Y: screen.Y - frame.Y}
-	if drop := state.tabDropAt(at, 0, panes); drop.kind != dropNone {
+	if drop := state.tabDropAt(at, 0, panes, nil); drop.kind != dropNone {
 		return drop
 	}
 	count := len(state.workspaceTabs)
-	x := state.tabStrip.origin - state.tabStrip.offset + float32(count)*state.tabStrip.pitch - barGap/2
+	rows := count
+	if state.verticalTabsGrouped() {
+		rows = len(state.verticalTabs.grouped.rows)
+	}
+	x := state.tabStrip.origin - state.tabStrip.offset + float32(rows)*state.tabStrip.pitch - barGap/2
 	return tabDrop{kind: dropReorder, boundary: count, zone: state.tabInsertion(x)}
 }
 
 // tabInsertion is the bar that marks a gap among the tabs, centered on x and as
 // tall as a tab.
 func (state *State) tabInsertion(x float32) ui.Rect {
+	if state.tabStrip.vertical {
+		area := state.tabStrip.area
+		return ui.Rect{X: area.X, Y: x - 1, Width: area.Width, Height: 2}
+	}
 	bar := state.chrome.geometry.row
 	bar.X, bar.Width, bar.Height = x-1, 2, barTabHeight
 	return bar
 }
 
+// tabDropArea is where a drop among the tabs is taken. Across the top the tabs
+// span the width of the strip but any height of the window bar, so a drag that
+// strays a few pixels above or below the row still reorders instead of tearing
+// the tab out; in the sidebar it is the whole sidebar, header and footer included.
+func (state *State) tabDropArea() ui.Rect {
+	if state.tabStrip.vertical {
+		return state.verticalTabs.bounds
+	}
+	area := state.tabStrip.area
+	return ui.Rect{X: area.X, Width: area.Width, Height: windowBarHeight}
+}
+
 // tabDropAt works out where a drop at window point at would land. source is the
 // tab being dragged within this window, or zero for one that comes from another
-// window with panes panes.
-func (state *State) tabDropAt(at ui.Point, source layoutcore.WorkspaceID, panes int) tabDrop {
+// window with panes panes. A non-empty unit is a whole server group, which can
+// only be dropped among the tabs.
+func (state *State) tabDropAt(at ui.Point, source layoutcore.WorkspaceID, panes int, unit []layoutcore.WorkspaceID) tabDrop {
 	strip := &state.tabStrip
-	if at.Y >= 0 && at.Y < windowBarHeight && at.X >= strip.area.X && at.X <= strip.area.X+strip.area.Width && strip.pitch > 0 {
+	if pointInRect(at.X, at.Y, state.tabDropArea()) && strip.pitch > 0 {
+		if state.verticalTabsGrouped() {
+			return state.groupedVerticalTabDrop(at, source, unit)
+		}
+		positionOnAxis := at.X
+		if strip.vertical {
+			positionOnAxis = at.Y
+		}
 		count := len(state.workspaceTabs)
-		boundary := min(max(int((at.X-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
+		boundary := min(max(int((positionOnAxis-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
 		position := -1
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == source {
@@ -239,6 +284,9 @@ func (state *State) tabDropAt(at ui.Point, source layoutcore.WorkspaceID, panes 
 		}
 		x := strip.origin - strip.offset + float32(boundary)*strip.pitch - barGap/2
 		return tabDrop{kind: dropReorder, boundary: boundary, zone: state.tabInsertion(x)}
+	}
+	if len(unit) > 0 {
+		return tabDrop{}
 	}
 	workspaceID := state.deck.ActiveWorkspace()
 	if state.activeSection != sectionTerminal || workspaceID == 0 || workspaceID == source {
@@ -304,6 +352,27 @@ func (state *State) dropTab(drag tabDrag) {
 	}
 	switch drag.drop.kind {
 	case dropReorder:
+		if state.verticalTabsGrouped() {
+			if drag.drop.moveUnit {
+				unit := drag.group
+				if len(unit) == 0 {
+					unit = []layoutcore.WorkspaceID{drag.workspace}
+				}
+				state.moveWorkspaceUnit(unit, drag.drop.boundary)
+				state.rebuildTabOptions()
+				if len(drag.group) == 0 {
+					state.activateWorkspace(drag.workspace)
+				}
+				state.save()
+				return
+			}
+			if state.reorderVerticalTabGroup(drag.workspace, drag.drop.boundary) {
+				state.rebuildTabOptions()
+				state.activateWorkspace(drag.workspace)
+				state.save()
+				return
+			}
+		}
 		position := -1
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == drag.workspace {

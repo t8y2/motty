@@ -251,19 +251,49 @@ func (state *State) closeSFTP(session *Session) {
 	session.files = nil
 }
 
+// filesPanelShown reports whether the file panel is open in the active
+// workspace.
+func (state *State) filesPanelShown() bool {
+	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	return context.Open && context.Kind == layoutcore.ContextSFTP
+}
+
+// showFilesPanel opens the file panel and its view. It does nothing when the
+// view is already there, so callers that merely need the panel open can call it
+// without toggling the panel shut.
+func (state *State) showFilesPanel(session *Session) {
+	workspace := state.deck.ActiveWorkspace()
+	context, _ := state.deck.Context(workspace)
+	context.Kind = layoutcore.ContextSFTP
+	context.Open = true
+	_ = state.deck.SetContext(workspace, context)
+	state.openSFTP(session)
+	state.fitWorkspaceTerminals(workspace)
+	state.save()
+}
+
+// hideFilesPanel closes the file panel and lets an idle connection go.
+func (state *State) hideFilesPanel(session *Session) {
+	workspace := state.deck.ActiveWorkspace()
+	state.releaseIdleSFTP(session)
+	context, _ := state.deck.Context(workspace)
+	context.Open = false
+	_ = state.deck.SetContext(workspace, context)
+	state.fitWorkspaceTerminals(workspace)
+	state.save()
+}
+
 func (state *State) clickSFTP(id ui.ID) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone {
 		return
 	}
 	if id == hitSFTPOpen {
-		context, _ := state.deck.Context(state.deck.ActiveWorkspace())
-		context.Kind = layoutcore.ContextSFTP
-		context.Open = true
-		_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
-		state.openSFTP(session)
-		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-		state.save()
+		if state.filesPanelShown() {
+			state.hideFilesPanel(session)
+			return
+		}
+		state.showFilesPanel(session)
 		return
 	}
 	if id == hitSFTPDetach {
@@ -271,12 +301,7 @@ func (state *State) clickSFTP(id ui.ID) {
 		return
 	}
 	if id == hitSFTPClose || id == hitSFTPDrawerClose {
-		state.releaseIdleSFTP(session)
-		context, _ := state.deck.Context(state.deck.ActiveWorkspace())
-		context.Open = false
-		_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
-		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-		state.save()
+		state.hideFilesPanel(session)
 		return
 	}
 	if id == hitSFTPPanelSide {
@@ -692,6 +717,21 @@ func sftpListingSize(entries []sftpclient.Entry) int {
 		size += entryOverhead + len(entry.Name) + len(entry.Owner) + len(entry.Group) + len(entry.LinkTarget)
 	}
 	return size
+}
+
+// sftpFolderRemovalStopped follows a folder removal that failed or was canceled
+// part-way: the walk deletes as it goes, so what it already removed is gone for
+// good. Nothing remembered about the folder can be trusted, and the notice
+// (unlike the cut-off status line) says so with the whole reason.
+func (state *State) sftpFolderRemovalStopped(view *sftpView, err error) {
+	view.forgetListings()
+	messages := state.messages
+	if errors.Is(err, sftpclient.ErrCanceled) {
+		state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, messages.SFTPDeletePartialHint, components.ToastInfo)
+		return
+	}
+	detail := fmt.Sprintf(messages.SFTPErrorFmt, err) + " " + messages.SFTPDeletePartialHint
+	state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, detail, components.ToastError)
 }
 
 // forgetListings drops everything remembered: after the remote changed, no
@@ -1216,7 +1256,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPRenamingFmt, view.dialogEntry.Name)
 	case sftpDialogDelete:
 		remotePath := path.Join(view.path, view.dialogEntry.Name)
-		if view.dialogEntry.IsDir() {
+		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() {
+			// A folder is removed with its contents; the worker walks the tree.
+			// A link is only the link: what it points at is not ours to empty.
 			queued = view.worker.RemoveDirectory(remotePath)
 			operation = sftpclient.OperationRemoveDirectory
 		} else {
@@ -1379,6 +1421,9 @@ func (state *State) pumpSFTP(session *Session) {
 					view.errorText = state.messages.SFTPEditConflict
 				} else {
 					view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+				}
+				if result.Operation == sftpclient.OperationRemoveDirectory {
+					state.sftpFolderRemovalStopped(view, result.Err)
 				}
 				continue
 			}

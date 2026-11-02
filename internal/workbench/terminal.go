@@ -549,7 +549,7 @@ func (state *State) openShell(session *Session) {
 	if session.host.AgentForward && session.host.isSSH() {
 		config.AgentForward = true
 	}
-	if _, slow := session.conn.(slowShellOpener); !slow {
+	if opener, ok := session.conn.(slowShellOpener); !ok || !opener.opensShellSlowly() {
 		shell, err := session.conn.OpenShell(config)
 		state.shellOpened(session, shell, err)
 		return
@@ -1216,6 +1216,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if result, handled := state.tabStrip.scroll(event); handled {
 		return result
+	}
+	if state.tabOrientation == tabsVertical && pointInRect(event.X, event.Y, state.verticalTabs.bounds) {
+		return ui.EventResult{Handled: true}
 	}
 	if result, handled := state.aiScroll(event); handled {
 		return result

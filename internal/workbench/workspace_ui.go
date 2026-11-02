@@ -17,7 +17,8 @@ const (
 )
 
 func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
-	return ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
+	left := state.verticalTabsReserve(size)
+	return ui.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
 }
 
 func (state *State) workspacePixelBounds(size ui.Size) ui.Rect {

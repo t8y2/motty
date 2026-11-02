@@ -152,7 +152,9 @@ func (state *State) showInFiles(session *Session, target string) {
 	if strings.HasSuffix(target, "/") {
 		dir = path.Clean(target)
 	}
-	state.Click(hitSFTPOpen)
+	// Showing a folder only ever opens the panel: a panel that is already up
+	// keeps the view it has, and the navigation below runs on it.
+	state.showFilesPanel(session)
 	view := session.files
 	switch {
 	case view == nil:
@@ -229,6 +231,8 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	const switchWidth = float32(32)
 	if _, _, monitor := state.remoteStatsToggle(session); monitor {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), TrailingWidth: switchWidth})
+	}
+	if state.remoteToolsOffered(session) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
 	}
 	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)

@@ -70,11 +70,12 @@ func (conn realConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	return shell, nil
 }
 
-// slowShellOpener marks a Connection whose OpenShell waits on the network, so
-// the workbench opens its shell off the window's thread.
-type slowShellOpener interface{ opensShellSlowly() }
+// slowShellOpener marks a Connection whose OpenShell may wait, on the network
+// or on a settings tool, so the workbench opens its shell off the window's
+// thread when it says so.
+type slowShellOpener interface{ opensShellSlowly() bool }
 
-func (realConn) opensShellSlowly() {}
+func (realConn) opensShellSlowly() bool { return true }
 
 // pinger is a Connection that can measure its network round-trip time.
 type pinger interface {
@@ -494,7 +495,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		if shell == "" {
 			shell = state.localShell
 		}
-		conn := newLocalConn(shell)
+		conn := newLocalConn(shell, state.networkProxy)
 		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
 		session.conn = conn
 		state.finishStartingConnection(session, automatic)
@@ -554,9 +555,10 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 // hold: the trusted-keys file, the vault, and how to wake this window.
 func (state *State) connectionEnv(notify func()) connectEnv {
 	env := connectEnv{
-		KnownHostsPath: state.options.KnownHostsPath,
-		Notify:         notify,
-		ProxyLocked:    errors.New(state.messages.Tools.ProxyPasswordLocked),
+		KnownHostsPath:          state.options.KnownHostsPath,
+		Notify:                  notify,
+		ProxyLocked:             errors.New(state.messages.Tools.ProxyPasswordLocked),
+		ProxyCommandUnconfirmed: errors.New(state.messages.Tools.ProxyCommandUnconfirmed),
 	}
 	if state.secrets.vault != nil {
 		env.Passwords = state.secrets.vault
@@ -677,6 +679,8 @@ func (state *State) Wake() {
 	}
 	state.pumpForwards()
 	state.pumpTransfer()
+	defer state.syncShortcutCapture()
+	state.offerClipboard()
 	state.runLaunches()
 	if state.updateAtStart && !state.updateStarted {
 		state.updateStarted = true
@@ -1038,6 +1042,7 @@ func (state *State) showNextPrompt() {
 	if state.update.offer {
 		state.update.offer = false
 		state.update.notes.scroll = 0
+		state.update.notes.dragging = false
 		state.modal = modalUpdate
 	}
 }

@@ -583,6 +583,10 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	// The journal could not be opened: the page says so instead of pretending
 	// there are no sessions.
 	unavailable := sessionLogsState(t, false)
+	// Dropped open, the file could not be removed with the test's folder on Windows.
+	if err := unavailable.sessionLogs.store.Close(); err != nil {
+		t.Fatal(err)
+	}
 	unavailable.sessionLogs.store = nil
 	unavailable.sessionLogs.view.unavailable = true
 	unavailable.sessionLogs.view.loaded = true

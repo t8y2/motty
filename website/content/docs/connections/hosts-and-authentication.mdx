@@ -87,7 +87,11 @@ turn on **Settings > Connection > Sync with SSH config**.
 
 - A `Host` you add or change in the file shows up in Motty, and a host you add or
   change in Motty is written to the file. The host, user, port and `ProxyJump`
-  travel both ways; `IdentityFile` is added to the Keychain once.
+  travel both ways; `IdentityFile` is added to the Keychain once. A `ProxyCommand`
+  comes along once, with a host new to Motty, and waits for you to confirm it
+  (see [Outbound proxy](/en/docs/network/port-forwarding#outbound-proxy)).
+  Stopping a jump route in Motty only affects Motty's own connections; the file
+  keeps the `ProxyJump`, so `ssh` in a terminal still goes through the jump host.
 - Hosts made in Motty go in a block fenced by `# --- motty: begin synced hosts`
   and `# --- motty: end synced hosts`, placed before your general `Host *` blocks.
   Everything else in the file, comments and settings Motty does not know included,

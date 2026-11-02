@@ -338,7 +338,7 @@ func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size ui.Size) 
 func (state *State) aiSharedWidth(workspaceID layoutcore.WorkspaceID, size ui.Size) float32 {
 	base := state.baseWorkspacePixelBounds(size)
 	if workspaceID == 0 {
-		return base.Width - navigationWidth
+		return size.Width - navigationWidth
 	}
 	available := base.Width
 	available -= state.independentMonitorReserve(workspaceID, size)

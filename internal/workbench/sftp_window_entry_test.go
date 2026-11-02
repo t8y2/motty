@@ -113,7 +113,7 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	}
 	app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&document.editor)
 	document.editor.Insert("saved after browser close\n中文")
-	document.save(false)
+	document.saveDirect(false)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		state.Wake()

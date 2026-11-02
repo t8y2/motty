@@ -9,9 +9,12 @@ on:
 permissions:
   contents: read
 
+# A superseded run is cancelled, pushes to main included: a newer push to the
+# same ref contains everything the older one would have tested, and leaving the
+# older run in place makes the newer one wait for ten jobs it cannot use.
 concurrency:
   group: go-tests-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -60,6 +63,27 @@ jobs:
       - name: Test release build
         working-directory: motty
         run: go test ./... -count=1
+
+  # The dev-tagged suite is a job of its own rather than a second step of the
+  # job above: run in sequence the two suites made one job the longest one in
+  # the workflow, and neither needs the other's build. It compiles the workbench
+  # package again with the dev tag, so it stays cheaper than the release suite.
+  dev-tests:
+    name: Development components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
       - name: Test development components
         working-directory: motty
         run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
@@ -87,11 +111,75 @@ jobs:
         working-directory: motty
         run: go test -short -run 'Test(Windows|Darwin|Docker)' ./internal/remotetools -count=1
 
+  # A Windows checkout converts line endings when core.autocrlf is true, which
+  # is the Git for Windows default. The embedded completion catalog is a
+  # byte-exact format and the ssh_config parser reads Windows paths, so this job
+  # checks out with the conversion on and runs the packages that depend on it.
+  windows-checkout:
+    name: Windows checkout (autocrlf)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Convert line endings on checkout
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test the packages that read checked-out data
+        working-directory: motty
+        run: go test ./internal/completion ./internal/sshconfig -count=1
+
+  # The workbench tests above only run on Linux: they build everywhere, but no
+  # job runs them on Windows, so what a Windows clone sees never reaches CI. This
+  # job runs the whole package the way a Windows developer's git checks the
+  # sources out (core.autocrlf true), which the job above does for the data
+  # files alone.
+  #
+  # The skips are allocation and steady-paint budgets (#272): they count
+  # allocations per paint and compare timings, so a hosted runner answers
+  # differently from the desktop that set the budgets. Every skip is listed here
+  # and nothing else is: a test that fails on the runner is a defect to fix, not
+  # a new entry. The suite runs about fifteen to eighteen minutes here, well
+  # past go test's ten-minute default, hence both timeouts.
+  windows-workbench:
+    name: Workbench (Windows, autocrlf)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check the sources out the way a Windows developer's git does
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test the workbench
+        working-directory: motty
+        run: go test ./internal/workbench -count=1 -timeout 25m -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue'
+
   # The race detector is the long pole: it runs one package at a time, and it
   # multiplies the memory the tests hold. CI therefore spreads the package list
-  # over four jobs (`make race` still runs the whole list for the merge gate),
+  # over six jobs (`make race` still runs the whole list for the merge gate),
   # and a growing list keeps being covered because `make race-rest` takes every
   # package the other jobs do not name.
+  #
+  # The workbench package alone is about half of the race runtime and cannot be
+  # overlapped from the inside (its tests share the headless driver's state), so
+  # it gets four shards of its own; the other shards are package groups.
   race:
     name: Race (${{ matrix.name }})
     runs-on: ubuntu-24.04
@@ -101,8 +189,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: workbench 1/2, target: race-workbench, shard: 0, cache: workbench-0 }
-          - { name: workbench 2/2, target: race-workbench, shard: 1, cache: workbench-1 }
+          - { name: workbench 1/4, target: race-workbench, shard: 0, cache: workbench-0 }
+          - { name: workbench 2/4, target: race-workbench, shard: 1, cache: workbench-1 }
+          - { name: workbench 3/4, target: race-workbench, shard: 2, cache: workbench-2 }
+          - { name: workbench 4/4, target: race-workbench, shard: 3, cache: workbench-3 }
           - { name: heavy packages, target: race-heavy, cache: heavy }
           - { name: other packages, target: race-rest, cache: rest }
     steps:
@@ -143,5 +233,5 @@ jobs:
         working-directory: motty
         env:
           SHARD: ${{ matrix.shard }}
-          SHARDS: 2
+          SHARDS: 4
         run: make ${{ matrix.target }}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"motty/internal/ai/llm"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -42,7 +43,9 @@ func TestCodexAndOpenCodeReadPicturesFromPrivateFiles(t *testing.T) {
 				if err != nil || !bytes.Equal(data, testPNG) {
 					t.Fatalf("%s: %v", path, err)
 				}
-				if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+				// Unix permission bits do not map to Windows ACLs, where a
+				// fresh file always reads as 0666.
+				if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 					t.Fatalf("%s is %v", path, info.Mode())
 				}
 			}

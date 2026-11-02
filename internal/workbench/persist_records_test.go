@@ -19,12 +19,14 @@ import (
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
+		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true,
 		"workspace": true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
 		"host_view": true, "background": true, "snippet_shortcuts": true,
-		"sftp_local_bookmarks": true,
-		"sftp_columns":         true, "sftp_download_directory": true, "default_editor": true,
+		"tab_orientation": true, "vertical_tabs_auto_hide": true,
+		"vertical_tabs_grouping": true,
+		"sftp_local_bookmarks":   true,
+		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
 		"toolbars":    true,
 		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true,
 		"window_x": true, "window_y": true, "window_width": true, "window_height": true,
@@ -54,7 +56,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},

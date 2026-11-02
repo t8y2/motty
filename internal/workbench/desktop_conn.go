@@ -65,12 +65,14 @@ type desktopRequest struct {
 func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 	host := request.Host
 	address := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
+	// The account a proxy command's %r names: the user alone, without an RDP domain.
+	proxyUser, _ := rdpAccount(host.User)
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		if request.Tunnel != nil {
 			return request.Tunnel.DialContext(ctx, network, address)
 		}
 		if request.Proxy.Uses(address) {
-			return request.Proxy.Dial(ctx, request.Timeout, address)
+			return request.Proxy.DialAs(ctx, request.Timeout, address, proxyUser)
 		}
 		dialer := net.Dialer{Timeout: request.Timeout}
 		return dialer.DialContext(ctx, network, address)

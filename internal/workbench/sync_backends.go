@@ -165,6 +165,7 @@ func (state *State) switchSync(next syncState) {
 		_ = opened.Delete(state.sync.secretName())
 	}
 	state.stopSyncTimer()
+	state.syncEpoch++
 	next.working = false
 	state.sync = next
 }

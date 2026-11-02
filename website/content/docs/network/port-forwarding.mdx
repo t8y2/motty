@@ -27,6 +27,22 @@ direct connection, or define its own proxy address, optional login and bypass
 list. A host-specific password stays in the encrypted password vault and is not
 included in host catalog exports.
 
+A host can also connect through a **proxy command**, as OpenSSH's `ProxyCommand`
+does: Motty starts the program when the host connects and carries the connection
+over its standard input and output. This is how hosts behind
+`cloudflared access ssh`, or `nc` through a gateway, are reached. `%h`, `%p`, `%r`
+and `%%` are filled in, and the host key is still checked for the host itself. A
+proxy command is a host's own setting, never the global proxy.
+
+- A `ProxyCommand` imported from an SSH config is kept with the host but does not
+  run until you open the host's proxy settings and save it.
+- Agents connecting through `motty mcp-serve` do not start proxy commands.
+- A command started from the Dock or Finder sees the short `PATH` of a graphical
+  app, not your shell's. Write the program's full path, such as
+  `/opt/homebrew/bin/cloudflared`.
+- A host or user name that starts with `-` is refused, so it cannot be read as an
+  option of the program.
+
 ## X11 forwarding
 
 X11 forwarding shows a remote graphical program in a window on your computer.

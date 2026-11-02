@@ -295,7 +295,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	style := ui.TextStyle{Size: state.terminalFontSize, Color: pal.termFG, MonoFace: state.terminalFontFace}
 	// The strip is empty on the alternate screen, whose program owns the grid.
 	gutterShown := !sensitive && state.terminalGutter != gutterOff && !t.presentedAltScreen() && t.sync == nil
-	gutterStyle := ui.TextStyle{Size: state.terminalFontSize, Color: pal.faint, MonoFace: state.terminalFontFace}
+	gutterNumberStyle, gutterTimeStyle := gutterStyles(state.terminalFontSize, state.terminalFontFace, pal)
 	labelWidth := float32(math.Ceil(float64(float32(cols)*cellWidth))) + 1
 
 	// A find scan deferred by the refresh interval gets the frame that runs it.
@@ -338,6 +338,11 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	if t.sync == nil {
 		state.paintTerminalImages(canvas, t, geometry, true, t.rowIDs)
 	}
+	if gutterShown {
+		// The strip sits on its own faintly lifted panel, edge to rule.
+		edge := geometry.left - gutterRuleGap/2
+		canvas.Fill(ui.Rect{X: geometry.area.X, Y: geometry.area.Y, Width: edge - geometry.area.X, Height: geometry.area.Height}, withAlpha(pal.termFG, 0.035))
+	}
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
@@ -352,7 +357,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		}
 		if gutterShown && row <= cursor.Y {
 			// Rows below the cursor have not been written yet.
-			state.paintGutter(canvas, entry, t, geometry, row, y, gutterStyle)
+			state.paintGutter(canvas, entry, t, geometry, row, y, gutterNumberStyle, gutterTimeStyle)
 		}
 		if !t.presentedAltScreen() && row <= cursor.Y {
 			if _, ok := t.aiRows[t.rowIDs[row]]; ok {
@@ -367,7 +372,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		}
 	}
 	if gutterShown {
-		canvas.Fill(ui.Rect{X: geometry.left - gutterRuleGap/2, Y: geometry.top, Width: 1, Height: float32(rows) * cellHeight}, withAlpha(pal.faint, 0.35))
+		canvas.Fill(ui.Rect{X: geometry.left - gutterRuleGap/2, Y: geometry.top, Width: 1, Height: float32(rows) * cellHeight}, withAlpha(pal.termFG, 0.08))
 	}
 	if t.sync == nil {
 		state.paintTerminalImages(canvas, t, geometry, false, t.rowIDs)

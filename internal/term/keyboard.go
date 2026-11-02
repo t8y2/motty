@@ -118,10 +118,13 @@ func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte 
 	if namedOK {
 		code = named.code
 	}
-	// Enter, Tab and Backspace keep their legacy bytes unless the program
-	// asked for all keys as escape codes, so a shell still understands them
-	// after a program that changed the mode exits.
-	exception := event.Key == ui.KeyEnter || event.Key == ui.KeyTab || event.Key == ui.KeyBackspace
+	// Unmodified Enter, Tab and Backspace keep their legacy bytes unless the
+	// program asked for all keys as escape codes, so a shell still understands
+	// them after a program that changed the mode exits. With Shift, Alt or
+	// Control they have no legacy form to preserve, and programs such as Codex
+	// tell Shift+Enter (newline) from Enter (submit) only by its escape code.
+	plain := event.Modifiers&(ui.ModifierShift|ui.ModifierAlt|ui.ModifierControl) == 0
+	exception := plain && (event.Key == ui.KeyEnter || event.Key == ui.KeyTab || event.Key == ui.KeyBackspace)
 	if namedOK && exception && flags&8 == 0 {
 		if event.Release {
 			return nil
@@ -188,7 +191,8 @@ func kittyUsesCSI(event ui.KeyEvent, flags uint32, named, exception bool) bool {
 		return true
 	}
 	if named {
-		// Enter, Tab and Backspace are the protocol's legacy exceptions.
+		// Unmodified Enter, Tab and Backspace are the protocol's legacy
+		// exceptions.
 		if exception {
 			return false
 		}

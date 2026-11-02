@@ -53,9 +53,20 @@ func TestTransfersSupportMaximumLengthNames(t *testing.T) {
 
 func newProtocolWorker(t *testing.T) (*Worker, string) {
 	t.Helper()
+	return newProtocolWorkerOn(t, nil, nil)
+}
+
+// newProtocolWorkerOn is newProtocolWorker with a say in the two ends: serverSide
+// wraps the server's end of the pipe, and wrapRemote the remote the worker uses.
+func newProtocolWorkerOn(t *testing.T, serverSide func(net.Conn) net.Conn, wrapRemote func(remote) Remote) (*Worker, string) {
+	t.Helper()
 	root := t.TempDir()
 	clientConnection, serverConnection := net.Pipe()
-	server, err := sftp.NewServer(serverConnection, sftp.WithServerWorkingDirectory(root))
+	var serverEnd io.ReadWriteCloser = serverConnection
+	if serverSide != nil {
+		serverEnd = serverSide(serverConnection)
+	}
+	server, err := sftp.NewServer(serverEnd, sftp.WithServerWorkingDirectory(root))
 	if err != nil {
 		clientConnection.Close()
 		serverConnection.Close()
@@ -72,7 +83,12 @@ func newProtocolWorker(t *testing.T) (*Worker, string) {
 		serverConnection.Close()
 		t.Fatal(err)
 	}
-	worker := NewWorker(func() (Remote, error) { return remote{Client: client}, nil }, nil)
+	worker := NewWorker(func() (Remote, error) {
+		if wrapRemote != nil {
+			return wrapRemote(remote{Client: client}), nil
+		}
+		return remote{Client: client}, nil
+	}, nil)
 	t.Cleanup(func() {
 		worker.Close()
 		select {
@@ -202,28 +218,137 @@ func TestWorkerRemovesFileOverSFTP(t *testing.T) {
 	requireProtocolError(t, result, os.ErrNotExist)
 }
 
-func TestWorkerRemovesOnlyEmptyDirectoryOverSFTP(t *testing.T) {
+func TestWorkerRemovesDirectoryWithItsContentsOverSFTP(t *testing.T) {
 	worker, root := newProtocolWorker(t)
 	directory := filepath.Join(root, "remove-dir")
-	if err := os.Mkdir(directory, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(directory, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	child := filepath.Join(directory, "child.txt")
-	if err := os.WriteFile(child, []byte("keep nonempty"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "child.txt"), []byte("goes too"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "nested", "inner.txt"), []byte("goes too"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// What a link in the folder points at is not the folder's to delete.
+	kept := filepath.Join(root, "kept.txt")
+	if err := os.WriteFile(kept, []byte("stays"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(kept, filepath.Join(directory, "kept-link")); err != nil {
+		t.Skipf("symbolic links are not available here: %v", err)
 	}
 
 	result := requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
-	requireProtocolError(t, result, nil)
-	if err := os.Remove(child); err != nil {
-		t.Fatal(err)
-	}
-	result = requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
 	if result.Err != nil || result.Path != "remove-dir" {
 		t.Fatalf("remove directory result = %+v", result)
 	}
 	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("removed directory still exists: %v", err)
+	}
+	if content, err := os.ReadFile(kept); err != nil || string(content) != "stays" {
+		t.Fatalf("the link's target = %q, %v", content, err)
+	}
+
+	result = requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
+	requireProtocolError(t, result, os.ErrNotExist)
+}
+
+// Links nested in the tree are removed as links, whether they point at an
+// absolute path or climb out with "..": what they lead to is not the folder's.
+func TestWorkerRemovalNeverReachesThroughNestedLinks(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	workspace := filepath.Join(root, "workspace")
+	outsideAbsolute := filepath.Join(root, "outside-absolute")
+	outsideRelative := filepath.Join(root, "outside-relative")
+	for _, directory := range []string{filepath.Join(workspace, "deep", "deeper"), outsideAbsolute, outsideRelative} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{
+		filepath.Join(workspace, "deep", "deeper", "own.txt"),
+		filepath.Join(outsideAbsolute, "precious.txt"),
+		filepath.Join(outsideRelative, "precious.txt"),
+	} {
+		if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outsideAbsolute, filepath.Join(workspace, "deep", "to-absolute")); err != nil {
+		t.Skipf("symbolic links are not available here: %v", err)
+	}
+	if err := os.Symlink("../../../outside-relative", filepath.Join(workspace, "deep", "deeper", "to-relative")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("workspace"), worker, OperationRemoveDirectory)
+	if result.Err != nil {
+		t.Fatalf("remove directory result = %+v", result)
+	}
+	if _, err := os.Lstat(workspace); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the workspace still exists: %v", err)
+	}
+	for _, outside := range []string{outsideAbsolute, outsideRelative} {
+		if content, err := os.ReadFile(filepath.Join(outside, "precious.txt")); err != nil || string(content) != "data" {
+			t.Fatalf("%s lost its content: %q, %v", outside, content, err)
+		}
+	}
+}
+
+// A folder that cannot be listed is reported as unreadable, not as the "not
+// empty" the server answers when asked to remove it anyway.
+func TestWorkerRemovalReportsAFolderItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission bits do not stop this user from listing a folder")
+	}
+	worker, root := newProtocolWorker(t)
+	locked := filepath.Join(root, "workspace", "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "hidden.txt"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("workspace"), worker, OperationRemoveDirectory)
+	requireProtocolError(t, result, os.ErrPermission)
+	if !strings.Contains(result.Err.Error(), "workspace/locked") {
+		t.Fatalf("the error does not name the folder: %v", result.Err)
+	}
+	if _, err := os.Stat(locked); err != nil {
+		t.Fatalf("the unreadable folder was touched: %v", err)
+	}
+}
+
+// A link to a folder is deleted as the link it is: what it points at stays.
+func TestWorkerRemovesALinkToAFolderWithoutFollowingIt(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	kept := filepath.Join(root, "kept-dir")
+	if err := os.Mkdir(kept, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "inside.txt"), []byte("stays"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "kept-link")
+	if err := os.Symlink(kept, link); err != nil {
+		t.Skipf("symbolic links are not available here: %v", err)
+	}
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("kept-link"), worker, OperationRemoveDirectory)
+	if result.Err != nil {
+		t.Fatalf("remove link result = %+v", result)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the link still exists: %v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(kept, "inside.txt")); err != nil || string(content) != "stays" {
+		t.Fatalf("the folder the link pointed at = %q, %v", content, err)
 	}
 }
 

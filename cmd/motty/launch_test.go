@@ -236,3 +236,28 @@ func TestBuildIdentityDoesNotChangeSharedDataNames(t *testing.T) {
 		t.Fatalf("product=%q application=%q vault=%q", buildinfo.ProductName, applicationID, vault.KeyService)
 	}
 }
+
+// Windows reports a path below a file as missing rather than as a bad
+// directory, so the walk up a missing tail has to stop on a directory whatever
+// the resolver says.
+func TestCanonicalPathRejectsAFileAnchoringAMissingTail(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(file, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(file, "child")
+	// What Windows returns for the child, leaving the file itself resolvable.
+	asWindows := func(path string) (string, error) {
+		if path == child {
+			return "", &os.PathError{Op: "lstat", Path: path, Err: os.ErrNotExist}
+		}
+		return filepath.EvalSymlinks(path)
+	}
+	if _, err := canonicalPathWith(child, asWindows); err == nil {
+		t.Fatal("a path below a file was canonicalized")
+	}
+	if _, err := canonicalPathWith(child, filepath.EvalSymlinks); err == nil {
+		t.Fatal("a path below a file was canonicalized by the resolver")
+	}
+}

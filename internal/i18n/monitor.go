@@ -21,11 +21,11 @@ type MonitorMessages struct {
 var chineseMonitor = MonitorMessages{
 	MoveLeft: "将监控移到左侧", MoveRight: "将监控移到右侧",
 	AvailableMemory: "可用内存", LoadAverages: "负载 · 1 / 5 / 15 分钟", Uptime: "运行时长",
-	UnsupportedPlatform: "当前监控支持 Linux 和 Windows，此服务器暂不支持。",
+	UnsupportedPlatform: "当前监控支持 Linux、macOS 和 Windows，此主机暂不支持。",
 	PrimaryDisk:         "主磁盘",
 	PartialCoresFmt:     "查看已采集的 %d / %d 核",
 	Overview:            "概览", CoresTitleFmt: "CPU 核心分布（%d核）", CoresMoreFmt: "显示全部 %d 核", DiskSection: "磁盘挂载分区", NetworkSection: "网络接口",
-	NoCores: "服务器未提供核心读数", Unavailable: "不可用", LoadUnavailable: "负载不可用", LoadShortFmt: "负载 %.2f",
+	NoCores: "主机未提供核心读数", Unavailable: "不可用", LoadUnavailable: "负载不可用", LoadShortFmt: "负载 %.2f",
 	IntervalLabels: [3]string{"1 秒", "2 秒", "5 秒"},
 	Title:          "监控",
 	CPU:            "CPU", Memory: "内存", Disks: "磁盘", Network: "网络",
@@ -39,7 +39,7 @@ var chineseMonitor = MonitorMessages{
 var englishMonitor = MonitorMessages{
 	MoveLeft: "Move monitor left", MoveRight: "Move monitor right",
 	AvailableMemory: "Available memory", LoadAverages: "Load · 1 / 5 / 15 min", Uptime: "Uptime",
-	UnsupportedPlatform: "Monitoring currently supports Linux and Windows. This server is not supported yet.",
+	UnsupportedPlatform: "Monitoring supports Linux, macOS and Windows. This host is not supported yet.",
 	PrimaryDisk:         "System disk",
 	PartialCoresFmt:     "Show %d / %d available cores",
 	Overview:            "Overview", CoresTitleFmt: "CPU cores (%d)", CoresMoreFmt: "Show all %d cores", DiskSection: "Disk volumes", NetworkSection: "Network interfaces",

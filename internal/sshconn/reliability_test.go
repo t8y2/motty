@@ -255,6 +255,49 @@ func TestPingTimesOutWhenServerDoesNotReply(t *testing.T) {
 	}
 }
 
+// A probe that timed out is still waiting for its reply inside the SSH client,
+// and later global requests queue behind it. Ping must not send another until
+// the first is answered, and must measure afresh once it has been.
+func TestPingSendsNothingWhileAnEarlierProbeIsUnanswered(t *testing.T) {
+	var received atomic.Int32
+	held := make(chan *ssh.Request, 4)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			received.Add(1)
+			held <- request
+		}
+	})
+	harness := connect(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := harness.conn.Ping(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first Ping error = %v, want deadline exceeded", err)
+	}
+	for range 5 {
+		if _, err := harness.conn.Ping(context.Background()); !errors.Is(err, ErrPingPending) {
+			t.Fatalf("Ping while unanswered = %v, want ErrPingPending", err)
+		}
+	}
+	if got := received.Load(); got != 1 {
+		t.Fatalf("server received %d keepalive requests, want 1", got)
+	}
+
+	if err := (<-held).Reply(true, nil); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); harness.conn.pingPending.Load(); {
+		if time.Now().After(deadline) {
+			t.Fatal("the answered probe never released Ping")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	go func() { _ = (<-held).Reply(true, nil) }()
+	if rtt, err := harness.conn.Ping(context.Background()); err != nil || rtt <= 0 {
+		t.Fatalf("Ping after the reply = %v, %v", rtt, err)
+	}
+}
+
 func BenchmarkKeepAliveDisabled(b *testing.B) {
 	conn := Conn{}
 	b.ReportAllocs()

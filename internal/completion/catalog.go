@@ -12,6 +12,7 @@ package completion
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -105,6 +106,11 @@ type Catalog struct {
 	nodeCount  int
 	flagCount  int
 	valueCount int
+
+	// auditWarnings is the number of soft findings the content audit reported
+	// when this catalog was imported or decoded.
+	auditWarnings int
+	importStats   *ImportStats
 }
 
 // NewCatalog assembles a catalog from root nodes and derives the lookup index.
@@ -207,6 +213,25 @@ func (c *Catalog) FlagCount() int { return c.flagCount }
 // ValueCount reports how many literal option values are available.
 func (c *Catalog) ValueCount() int { return c.valueCount }
 
+// AuditWarnings reports the soft findings of the content audit that accepted
+// this catalog. Hard findings never produce a usable catalog, so they are not
+// counted here.
+func (c *Catalog) AuditWarnings() int {
+	if c == nil {
+		return 0
+	}
+	return c.auditWarnings
+}
+
+// ImportStats returns the persisted import counters. Older catalogs have no
+// counters; unknown is distinct from an import that repaired or skipped zero.
+func (c *Catalog) ImportStats() (ImportStats, bool) {
+	if c == nil || c.importStats == nil {
+		return ImportStats{}, false
+	}
+	return *c.importStats, true
+}
+
 // Roots returns the root commands in name order.
 func (c *Catalog) Roots() []*Node { return c.roots }
 
@@ -302,6 +327,10 @@ func (c *Catalog) Encode() []byte {
 	fmt.Fprintf(&out, "nodes\t%d\n", c.nodeCount)
 	fmt.Fprintf(&out, "flags\t%d\n", c.flagCount)
 	fmt.Fprintf(&out, "values\t%d\n", c.valueCount)
+	if stats, known := c.ImportStats(); known {
+		data, _ := json.Marshal(stats)
+		fmt.Fprintf(&out, "import-stats\t%s\n", data)
+	}
 	fmt.Fprintf(&out, "digest\t%s\n\n", hex.EncodeToString(sum[:]))
 	out.Write(bodyBytes)
 	return []byte(out.String())
@@ -417,7 +446,7 @@ func Decode(data []byte) (*Catalog, error) {
 				Token:   fields[2],
 				Aliases: nil,
 				Hidden:  fields[4] == "1",
-				Desc:    fields[5],
+				Desc:    NormalizeText(fields[5], maxDescRunes),
 			}
 			if fields[3] != "" {
 				n.Aliases = strings.Split(fields[3], ",")
@@ -445,6 +474,9 @@ func Decode(data []byte) (*Catalog, error) {
 			stack = append(stack, n)
 			last = n
 			nodes++
+			if nodes > maxCatalogNodes {
+				return nil, fmt.Errorf("completion: catalog has more than %d nodes", maxCatalogNodes)
+			}
 		case "F":
 			if len(fields) != 7 || last == nil || stack[len(stack)-1] != last {
 				return nil, fmt.Errorf("completion: malformed flag line %d", number+1)
@@ -487,11 +519,39 @@ func Decode(data []byte) (*Catalog, error) {
 	if c.nodeCount != nodes || c.flagCount != flags || c.valueCount != values {
 		return nil, errors.New("completion: catalog counts are inconsistent")
 	}
+	c.auditWarnings = auditSoft(c).SoftCount
+	if data, present := meta["import-stats"]; present {
+		var stats ImportStats
+		if err := json.Unmarshal([]byte(data), &stats); err != nil {
+			return nil, fmt.Errorf("completion: invalid import statistics: %w", err)
+		}
+		if !c.validImportStats(stats) {
+			return nil, errors.New("completion: inconsistent import statistics")
+		}
+		c.importStats = &stats
+	}
 	return c, nil
 }
 
+func (c *Catalog) validImportStats(stats ImportStats) bool {
+	for _, count := range []int{
+		stats.Files, stats.Roots, stats.Nodes, stats.Flags, stats.Values,
+		stats.SkippedFiles, stats.SkippedCommands, stats.SkippedFlags,
+		stats.SkippedValues, stats.HiddenFlags, stats.RootlessDirs,
+		stats.RepairedFiles, stats.SkippedSources, stats.AuditWarnings,
+	} {
+		if count < 0 {
+			return false
+		}
+	}
+	return stats.Files > 0 && stats.SkippedSources <= stats.Files &&
+		stats.RepairedFiles <= stats.Files-stats.SkippedSources &&
+		stats.Roots == c.RootCount() && stats.Nodes == c.NodeCount() &&
+		stats.Flags == c.FlagCount() && stats.Values == c.ValueCount()
+}
+
 func decodeFlag(long, short, mods, desc, encodedValues string) (Flag, error) {
-	f := Flag{Long: long, Short: short, Desc: desc}
+	f := Flag{Long: long, Short: short, Desc: NormalizeText(desc, maxDescRunes)}
 	if f.Long == "" && f.Short == "" {
 		return Flag{}, errors.New("flag has neither a long nor a short name")
 	}
@@ -521,7 +581,7 @@ func decodeFlag(long, short, mods, desc, encodedValues string) (Flag, error) {
 			if !SafeValue(text) {
 				return Flag{}, fmt.Errorf("unsafe option value %q", text)
 			}
-			f.Values = append(f.Values, Value{Text: text, Desc: valueDesc})
+			f.Values = append(f.Values, Value{Text: text, Desc: NormalizeText(valueDesc, maxDescRunes)})
 		}
 		if len(f.Values) > maxValuesPerFlag {
 			return Flag{}, errors.New("too many option values")

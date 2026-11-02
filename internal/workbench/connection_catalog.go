@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -44,6 +45,12 @@ type connectEnv struct {
 	Passwords passwordReader
 	// ProxyLocked is what a proxy reports when its password is in a locked vault.
 	ProxyLocked error
+	// ProxyCommandUnconfirmed is what a proxy command imported from an SSH
+	// config reports, instead of running, until the user confirms it.
+	ProxyCommandUnconfirmed error
+	// ProxyCommandRefused, when set, is what every proxy command reports
+	// instead of running: an agent's connections start none.
+	ProxyCommandRefused error
 }
 
 // passwordReader looks up a saved secret by name. *vault.Vault is one.
@@ -181,13 +188,17 @@ func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
 	return false
 }
 
-// proxyChainFor follows target's jump routes from the immediate jump outward.
-// The boolean is false when the in-memory graph is damaged or cyclic.
+// proxyChainFor follows target's running jump routes from the immediate jump
+// outward. The boolean is false when the in-memory graph is damaged or cyclic.
 func (catalog *hostCatalog) proxyChainFor(target Host) ([]Host, bool) {
+	return catalog.proxyChain(target, true)
+}
+
+func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, bool) {
 	var chain []Host
 	current := target
 	for range len(catalog.proxies) + 1 {
-		jump, routed, valid := catalog.proxyJump(current.ID)
+		jump, routed, valid := catalog.proxyJump(current.ID, runningOnly)
 		if !routed {
 			return chain, true
 		}
@@ -211,10 +222,13 @@ func (catalog *hostCatalog) proxyChainFor(target Host) ([]Host, bool) {
 	return nil, false
 }
 
-func (catalog *hostCatalog) proxyJump(targetID uint32) (Host, bool, bool) {
+func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
 	for _, route := range catalog.proxies {
 		if route.TargetID != targetID {
 			continue
+		}
+		if runningOnly && route.Stopped {
+			return Host{}, false, true
 		}
 		jump, ok := catalog.hostByID(route.JumpID)
 		return jump, true, ok
@@ -228,7 +242,7 @@ func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
 		if current == targetID {
 			return true
 		}
-		jump, routed, valid := catalog.proxyJump(current)
+		jump, routed, valid := catalog.proxyJump(current, false)
 		if !routed {
 			return false
 		}
@@ -246,6 +260,19 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	if saved.kind == sshconn.ProxyNone || saved.address == "" {
 		return nil
 	}
+	if saved.kind == sshconn.ProxyCommand {
+		proxy := &sshconn.Proxy{Kind: saved.kind, Command: saved.address, Bypass: splitBypass(saved.bypass)}
+		switch {
+		case env.ProxyCommandRefused != nil:
+			proxy.Err = env.ProxyCommandRefused
+		case saved.unconfirmed:
+			proxy.Err = env.ProxyCommandUnconfirmed
+			if proxy.Err == nil {
+				proxy.Err = errProxyCommandUnconfirmed
+			}
+		}
+		return proxy
+	}
 	proxy := &sshconn.Proxy{Kind: saved.kind, Address: saved.address, Username: saved.user, Bypass: splitBypass(saved.bypass)}
 	if saved.user != "" && env.Passwords != nil {
 		password, found, err := env.Passwords.Get(passwordSecret)
@@ -258,6 +285,11 @@ func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecre
 	}
 	return proxy
 }
+
+// errProxyCommandUnconfirmed stands in for connectEnv.ProxyCommandUnconfirmed
+// when a caller gives none, so an unconfirmed command never runs for want of a
+// message.
+var errProxyCommandUnconfirmed = errors.New("the proxy command imported from an SSH config is not confirmed yet")
 
 // proxyForHost resolves a host's policy at connection time so inherited hosts
 // observe later changes to the global proxy.
@@ -317,8 +349,47 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 			path.WriteString(formatEndpoint(endpoint))
 		}
 		route.jumpPath = path.String()
+		catalog.addRelays(&config, &route, host, chain)
 	}
 	return config, route, valid
+}
+
+// addRelays sets how the hops that are reached through a jump host's shell leave
+// it. chain is target's jump hosts, the nearest first: each host is reached by its
+// own route, and a ViaShell one runs after the command that route's jump host has
+// after login.
+func (catalog *hostCatalog) addRelays(config *sshconn.Config, route *connectionRoute, target Host, chain []Host) {
+	var key strings.Builder
+	for index := -1; index < len(chain); index++ {
+		reached := target
+		if index >= 0 {
+			reached = chain[index]
+		}
+		record, ok := catalog.proxyRoute(reached.ID)
+		if !ok || !record.ViaShell || index+1 >= len(chain) {
+			continue
+		}
+		jump := chain[index+1]
+		relay := sshconn.Relay{Prelude: jump.LoginCommand, Command: record.relayCommand()}
+		if config.Relays == nil {
+			config.Relays = make(map[sshconn.Endpoint]sshconn.Relay, 1)
+		}
+		config.Relays[sshconn.Endpoint{Host: reached.Address, Port: reached.Port, User: catalog.login(reached)}] = relay
+		// A connection that left by a relay is not one that left by a channel, nor by
+		// another program, and is not shared with it.
+		fmt.Fprintf(&key, "|relay:%d:%s:%d:%s", len(relay.Prelude), relay.Prelude, len(relay.Command), relay.Command)
+	}
+	route.proxyKey += key.String()
+}
+
+// proxyRoute is the running route that reaches the host, if it has one.
+func (catalog *hostCatalog) proxyRoute(targetID uint32) (proxyRecord, bool) {
+	for _, route := range catalog.proxies {
+		if route.TargetID == targetID && !route.Stopped {
+			return route, true
+		}
+	}
+	return proxyRecord{}, false
 }
 
 // decodeHosts turns saved host records into hosts. A host whose catalog id is in
@@ -373,7 +444,16 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
-		catalog.proxies = append(catalog.proxies, proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID})
+		route := proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
+		if entry.ViaShell {
+			route.ViaShell = true
+			// A saved command that could not have come from the form is no command:
+			// the route then runs the default one.
+			if command := strings.TrimSpace(entry.RelayCommand); sshconn.CheckRelay(sshconn.Relay{Command: command}) == nil {
+				route.Relay = command
+			}
+		}
+		catalog.proxies = append(catalog.proxies, route)
 		next++
 	}
 	return catalog.proxies
@@ -386,7 +466,8 @@ func decodeOutboundProxy(entry *savedOutboundProxy) outboundProxy {
 		return outboundProxy{}
 	}
 	kind := proxyKindFromString(entry.Kind)
-	if kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
+	// A proxy command is a host's own setting, never the global proxy.
+	if kind == sshconn.ProxyCommand || kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
 		kind = sshconn.ProxyNone
 	}
 	proxy := outboundProxy{kind: kind, bypass: strings.TrimSpace(entry.Bypass)}

@@ -156,8 +156,10 @@ type Session struct {
 	// rttAvailable is 1 when rttMs is valid, rttMeasuring is 1 while a ping is
 	// in flight, rttBroken stops probing after a failed request, rttGeneration
 	// invalidates results from a previous connection, and rttLastPing records
-	// the last probe.
+	// the last probe, and rttSampledAt (Unix nanoseconds) when rttMs was
+	// measured, so a reading that stopped being refreshed can be dropped.
 	rttMs         int64
+	rttSampledAt  int64
 	rttAvailable  int32
 	rttMeasuring  int32
 	rttBroken     int32
