@@ -105,7 +105,10 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 			phase := components.SpinnerPhase(canvas.Now() / spinnerStep)
 			components.PaintSpinner(canvas, state.Theme(), spinner.Rect(), phase)
 			canvas.RequestFrameIn(spinnerStep)
-		} else if spot := light.Rect(); spot.Width > 0 && spot.Height > 0 {
+		} else if !inactive {
+			// Only the active pane declares the status-light slot. Calling Rect on
+			// the empty box used by an inactive pane would dereference nil.
+			spot := light.Rect()
 			kind, dot := state.sessionLight(session)
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, barBackground)
 		}

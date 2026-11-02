@@ -169,6 +169,29 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 	assertPaneBar(&state.sessions[1])
 }
 
+func TestIdleSplitPanesPaintIdentityWithoutAStatusLightSlot(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	for index := range state.sessions {
+		state.sessions[index].term.live = true
+		state.sessions[index].busy = false
+	}
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	for _, index := range []int{0, 1, 0} {
+		if !state.ActivatePane(state.sessions[index].ID) {
+			t.Fatalf("activate session %d", state.sessions[index].ID)
+		}
+		var canvas ui.Canvas
+		state.Paint(&canvas, size)
+	}
+}
+
 func TestSwitchingActiveSplitPaneKeepsSizesAndSelection(t *testing.T) {
 	state, world, _, firstShell := liveSession(t)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
