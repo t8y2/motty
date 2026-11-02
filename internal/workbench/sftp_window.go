@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -21,6 +22,7 @@ type sftpWindow struct {
 	window                      *app.ContentWindow
 	view                        *sftpView
 	closed, closeConfirm        bool
+	closedSignal                atomic.Bool
 	allowClose, afterClosed     func()
 	activeLocal                 bool
 	localRefresh                bool
@@ -158,7 +160,7 @@ func (w *sftpWindow) wake() {
 }
 
 func (view *sftpView) invalidateDetached() {
-	if view.detached != nil && !view.detached.closed {
+	if view.detached != nil {
 		view.detached.invalidate()
 	}
 }
@@ -218,7 +220,7 @@ func (w *sftpWindow) requestClose(allow func()) {
 }
 
 func (w *sftpWindow) onClosed() {
-	if w.closed {
+	if w.closedSignal.Swap(true) {
 		return
 	}
 	w.closed = true
@@ -281,7 +283,7 @@ func (state *State) invalidateSFTPWindows() {
 }
 
 func (w *sftpWindow) invalidate() {
-	if w == nil || w.closed {
+	if w == nil || w.closedSignal.Load() || w.owner == nil {
 		return
 	}
 	if w.window != nil {
