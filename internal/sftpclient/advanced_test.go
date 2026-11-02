@@ -454,3 +454,53 @@ func TestLargeFilesTransferThroughThePipelinedPath(t *testing.T) {
 		t.Fatalf("downloaded %d bytes, err %v", len(got), err)
 	}
 }
+
+func TestWorkerCancelUploadRemovesRemotePartialFile(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	local := filepath.Join(t.TempDir(), "cancel_upload.bin")
+	f, err := os.Create(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64 * 1024 * 1024); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	id, queued := worker.QueueUpload(local, "cancel_upload.bin", false, ExistingFail)
+	if !queued {
+		t.Fatal("upload not queued")
+	}
+
+	partialPath := filepath.Join(root, remotePartialPath("cancel_upload.bin"))
+	finalPath := filepath.Join(root, "cancel_upload.bin")
+
+	// Wait until the partial file is created
+	start := time.Now()
+	for time.Since(start) < 2*time.Second {
+		if _, err := os.Stat(partialPath); err == nil {
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	if !worker.CancelTransfer(id) {
+		t.Fatal("failed to cancel upload")
+	}
+
+	result := waitResult(t, worker)
+	if !errors.Is(result.Err, ErrCanceled) {
+		t.Fatalf("expected ErrCanceled, got %v", result.Err)
+	}
+
+	// Remote final target should not exist
+	if _, err := os.Stat(finalPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("final file should not exist: %v", err)
+	}
+
+	// Remote partial file MUST be removed on cancel
+	if _, err := os.Stat(partialPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("remote partial file was not removed after cancel: %v", err)
+	}
+}

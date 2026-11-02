@@ -3,7 +3,6 @@ package sftpclient
 import (
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/leaks"
 	"io"
 	"os"
 	"path"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/vivaui/viva/leaks"
 
 	"github.com/pkg/sftp"
 )
@@ -734,7 +735,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	}
 	worker.wakeLocked()
 	worker.mu.Unlock()
-	if active && others == 0 {
+	if active && others == 0 && record.request.operation == OperationDownload {
 		// Nothing else is using the subsystem, and a read that is waiting on the
 		// network only ends when it goes.
 		if client := worker.invalidate(); client != nil {
@@ -1326,9 +1327,13 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		return 0, 0, err
 	}
 	closed := false
+	committed := false
 	defer func() {
 		if !closed {
 			err = errors.Join(err, destination.Close())
+		}
+		if !committed && (policy != ExistingResume || errors.Is(err, ErrCanceled)) {
+			worker.removeRemotePartial(client, partial)
 		}
 	}()
 	if policy == ExistingResume && partialExists {
@@ -1369,6 +1374,7 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	if err := commitRemote(client, partial, remotePath, finalExists); err != nil {
 		return written, resumed, err
 	}
+	committed = true
 	return written, resumed, nil
 }
 
@@ -1586,9 +1592,13 @@ func (worker *Worker) downloadFile(client transferRemote, remotePath, localPath 
 		return 0, 0, err
 	}
 	closed := false
+	committed := false
 	defer func() {
 		if !closed {
 			err = errors.Join(err, destination.Close())
+		}
+		if !committed && policy != ExistingResume {
+			_ = os.Remove(partial)
 		}
 	}()
 	if policy == ExistingResume && partialExists {
@@ -1626,17 +1636,190 @@ func (worker *Worker) downloadFile(client transferRemote, remotePath, localPath 
 	if err := replaceLocalFile(partial, localPath); err != nil {
 		return written, resumed, err
 	}
+	committed = true
 	if worker.preserveTimes() && !modTime.IsZero() {
 		_ = os.Chtimes(localPath, modTime, modTime)
 	}
 	return written, resumed, nil
 }
 
-// uploadCopy moves a local file to a remote writer. The SFTP client can keep
-// many writes in flight for one file; without that a high latency link pays one
-// round trip per 32 KiB, the same limit downloads had. A destination that does
-// not offer it keeps the sequential copy.
+var uploadChunkPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 32*1024)
+	},
+}
+
+type uploadPipelinedChunk struct {
+	seq    int64
+	offset int64
+	data   []byte
+	raw    []byte
+}
+
+type uploadPipelinedAck struct {
+	seq int64
+	n   int
+	err error
+}
+
+// uploadPipelinedWriterAt streams an uploaded file using a continuous sliding window of
+// concurrent WriteAt requests. It completely eliminates the stop-and-wait pipeline stall,
+// keeping high-latency links saturated, while strictly guaranteeing that progress
+// reflects only continuous, remotely acknowledged bytes.
+func (worker *Worker) uploadPipelinedWriterAt(destination io.WriterAt, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	const (
+		pipelinedWindow = 64
+	)
+
+	tasks := make(chan uploadPipelinedChunk, pipelinedWindow)
+	acks := make(chan uploadPipelinedAck, pipelinedWindow)
+	done := make(chan struct{})
+	var closeOnce sync.Once
+	stopPipeline := func() {
+		closeOnce.Do(func() {
+			close(done)
+		})
+	}
+	defer stopPipeline()
+
+	var workers sync.WaitGroup
+	var activeWorkers atomic.Int32
+	for range pipelinedWindow {
+		workers.Go(func() {
+			activeWorkers.Add(1)
+			defer activeWorkers.Add(-1)
+			for {
+				select {
+				case <-done:
+					return
+				case task, ok := <-tasks:
+					if !ok {
+						return
+					}
+					n, err := destination.WriteAt(task.data, task.offset)
+					uploadChunkPool.Put(task.raw)
+
+					select {
+					case acks <- uploadPipelinedAck{seq: task.seq, n: n, err: err}:
+					case <-done:
+						return
+					}
+				}
+			}
+		})
+	}
+
+	var readErr error
+	go func() {
+		defer close(tasks)
+		var seq int64
+		currentOffset := resumed
+		for {
+			if transferID != 0 {
+				if !worker.holdWhilePaused(generation, transferID) {
+					readErr = ErrCanceled
+					stopPipeline()
+					return
+				}
+			} else if worker.canceled(generation) {
+				readErr = ErrCanceled
+				stopPipeline()
+				return
+			}
+			select {
+			case <-done:
+				return
+			default:
+			}
+
+			raw := uploadChunkPool.Get().([]byte)
+			n, err := io.ReadFull(source, raw)
+			if n > 0 {
+				task := uploadPipelinedChunk{
+					seq:    seq,
+					offset: currentOffset,
+					data:   raw[:n],
+					raw:    raw,
+				}
+				seq++
+				currentOffset += int64(n)
+				select {
+				case tasks <- task:
+				case <-done:
+					uploadChunkPool.Put(raw)
+					return
+				}
+			} else {
+				uploadChunkPool.Put(raw)
+			}
+			if err != nil {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+					readErr = err
+					stopPipeline()
+				}
+				return
+			}
+		}
+	}()
+
+	go func() {
+		workers.Wait()
+		close(acks)
+	}()
+
+	var continuousWritten int64
+	var nextExpectedSeq int64
+	pendingAcks := make(map[int64]int)
+	var firstWriteErr error
+
+	lastNotify := worker.clock()
+
+	for ack := range acks {
+		if ack.err != nil && firstWriteErr == nil {
+			firstWriteErr = ack.err
+			stopPipeline()
+		}
+		if firstWriteErr == nil {
+			pendingAcks[ack.seq] = ack.n
+			for {
+				n, ok := pendingAcks[nextExpectedSeq]
+				if !ok {
+					break
+				}
+				delete(pendingAcks, nextExpectedSeq)
+				continuousWritten += int64(n)
+				nextExpectedSeq++
+			}
+			now := worker.clock()
+			if transferID != 0 && (now.Sub(lastNotify) >= 50*time.Millisecond || len(pendingAcks) == 0) {
+				lastNotify = now
+				worker.setProgress(transferID, filesDone, bytesBefore+resumed+continuousWritten, resumed)
+			}
+		}
+	}
+
+	if transferID != 0 {
+		worker.setProgress(transferID, filesDone, bytesBefore+resumed+continuousWritten, resumed)
+	}
+
+	if firstWriteErr != nil {
+		return continuousWritten, firstWriteErr
+	}
+	if readErr != nil {
+		return continuousWritten, readErr
+	}
+	return continuousWritten, nil
+}
+
+// uploadCopy moves a local file to a remote writer. When the destination implements
+// io.WriterAt, it uses a continuous sliding window (uploadPipelinedWriterAt) to
+// achieve optimal throughput over high-latency links while strictly acknowledging
+// continuous progress. Otherwise, it falls back to ReadFromWithConcurrency or
+// sequential copy.
 func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	if writerAt, ok := destination.(io.WriterAt); ok {
+		return worker.uploadPipelinedWriterAt(writerAt, source, generation, transferID, filesDone, bytesBefore, resumed)
+	}
 	readFrom, ok := destination.(interface {
 		ReadFromWithConcurrency(io.Reader, int) (int64, error)
 	})
@@ -1668,11 +1851,11 @@ func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, genera
 }
 
 // uploadConcurrency is how many 32 KiB writes one uploaded file keeps in
-// flight. It is high enough to cover a wide-area round trip and low enough to
-// leave room for the other transfer of a panel and for other SFTP requests.
-const uploadConcurrency = 16
+// flight. It is high enough to saturate high-latency links (like jump hosts)
+// while fitting comfortably within the SSH channel window.
+const uploadConcurrency = 64
 
-const uploadProgressBatch = int64(uploadConcurrency * 32 * 1024)
+const uploadProgressBatch = int64(uploadConcurrency * 64 * 1024)
 
 // copyReadProgress tracks read-ahead for fallback detection and applies pause
 // and cancel to the reader. Only uploadCopy publishes acknowledged progress.
@@ -1979,6 +2162,23 @@ func commitRemote(client transferRemote, partial, final string, finalExists bool
 		return fmt.Errorf("sftp: atomic remote replacement is unavailable: %w", err)
 	}
 	return client.Rename(partial, final)
+}
+
+func (worker *Worker) removeRemotePartial(client transferRemote, partial string) {
+	if client != nil {
+		if err := client.Remove(partial); err == nil {
+			return
+		}
+	}
+	if worker != nil && worker.open != nil {
+		cleaner, err := worker.open()
+		if err == nil && cleaner != nil {
+			defer cleaner.Close()
+			if remover, ok := cleaner.(remoteFileRemover); ok {
+				_ = remover.Remove(partial)
+			}
+		}
+	}
 }
 
 func remoteLstat(client transferRemote, remotePath string) (os.FileInfo, bool, error) {

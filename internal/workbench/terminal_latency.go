@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -82,13 +83,18 @@ func (state *State) maybeProbeLatency(session *Session) {
 				atomic.StoreInt32(&session.rttMeasuring, 0)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
 		defer cancel()
 		rtt, err := pinger.Ping(ctx)
 		if atomic.LoadUint32(&session.rttGeneration) != generation {
 			return
 		}
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				// Temporary timeout under heavy transfer congestion: do NOT permanently
+				// break probing. Keep previously valid sample and retry on the next interval.
+				return
+			}
 			atomic.StoreInt32(&session.rttBroken, 1)
 			atomic.StoreInt32(&session.rttAvailable, 0)
 			notify()

@@ -51,7 +51,11 @@ func Open(client *ssh.Client) (Remote, error) {
 	if client == nil {
 		return nil, fmt.Errorf("sftp: SSH client is not connected")
 	}
-	opened, err := sftp.NewClient(client)
+	opened, err := sftp.NewClient(client,
+		sftp.MaxConcurrentRequestsPerFile(128),
+		sftp.UseConcurrentReads(true),
+		sftp.UseConcurrentWrites(true),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("sftp: start subsystem: %w", err)
 	}
