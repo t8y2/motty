@@ -295,6 +295,38 @@ func TestATabbyVaultHandsBackTheSecretsItsPassphraseOpens(t *testing.T) {
 	}
 }
 
+// Tabby leaves "port" out of a session that is on the default port, and writes
+// 22 into the key of the password saved for it. Both sides have to mean the same
+// port, or a password that is right there is never found: this is what a real
+// configuration does for every host on port 22.
+func TestAPasswordSavedForASessionWithoutAPortIsStillFound(t *testing.T) {
+	const salt = "77fdcd220307f42c"
+	contents := `{"secrets":[{"type":"ssh:password",` +
+		`"key":{"user":"will","host":"192.168.68.10","port":22},"value":"lan-secret"}]}`
+	blob := sealTabbyVault(t, contents, "correct horse", salt)
+	content := "version: 8\nprofiles:\n  - id: ssh:lan\n    type: ssh\n    name: lan\n    options:\n" +
+		"      host: 192.168.68.10\n      user: will\n      auth: password\n" +
+		"vault:\n  version: 1\n  contents: " + blob + "\n  keySalt: " + salt + "\n  iv: " + tabbyFixedIV + "\n"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tabby, err := ParseTabby(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tabby.Unlock("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	entries := tabby.Result().Entries
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if got := entries[0].Password; got != "lan-secret" {
+		t.Fatalf("password of a session that names no port = %q, want %q", got, "lan-secret")
+	}
+}
+
 func TestATabbyFileWithAnEncryptedConfigurationGivesNothingBeforeThePassphrase(t *testing.T) {
 	path := writeTabbyFixture(t, tabbyFixtureEncrypted, "/home/u/.ssh/id_ed25519")
 	tabby, err := ParseTabby(path)

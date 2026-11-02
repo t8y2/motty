@@ -647,7 +647,10 @@ func (tabby *TabbyFile) applySecrets(secrets []tabbySecret) {
 		if entry.Protocol != SSH || entry.Password != "" {
 			continue
 		}
-		byPassword[tabbyPasswordKey(entry.User, entry.Host, entry.Port)] = index
+		// A session that names no port is on the default one, which is the port
+		// Tabby records in the key of the password saved for it. Keying the
+		// index on the session's own zero would never meet that password.
+		byPassword[tabbyPasswordKey(entry.User, entry.Host, tabbyPortOrDefault(entry.Port))] = index
 	}
 	files := make(map[string][]byte, len(secrets))
 	for _, secret := range secrets {
@@ -701,10 +704,7 @@ func (tabby *TabbyFile) applySecrets(secrets []tabbySecret) {
 // host and port, or, for a password Tabby saved with no host at all, a session
 // on that host with the same user.
 func (tabby *TabbyFile) passwordIndex(byPassword map[string]int, key tabbySecretKey) (int, bool) {
-	port := key.Port
-	if port == 0 {
-		port = 22
-	}
+	port := tabbyPortOrDefault(key.Port)
 	if index, ok := byPassword[tabbyPasswordKey(key.User, key.Host, port)]; ok {
 		return index, true
 	}
@@ -722,6 +722,15 @@ func (tabby *TabbyFile) passwordIndex(byPassword map[string]int, key tabbySecret
 // tabbyPasswordKey is how a password names the connection it belongs to.
 func tabbyPasswordKey(user, host string, port int) string {
 	return user + "\x00" + strings.ToLower(host) + "\x00" + strconv.Itoa(port)
+}
+
+// tabbyPortOrDefault is the port a session or a saved password means: the one
+// it names, or the default port of SSH when it names none.
+func tabbyPortOrDefault(port int) int {
+	if port == 0 {
+		return 22
+	}
+	return port
 }
 
 // tabbyKeyHash is Tabby's name for the passphrase of a key: the SHA-512 of the
