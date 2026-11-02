@@ -57,6 +57,7 @@ const (
 	iconFileDown
 	iconColumns2
 	iconRows2
+	iconGrid2x2
 	iconBot
 	iconHistory
 	iconCopy
@@ -598,6 +599,13 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 		tabOptions.Hint = m.TabLockedHint
 	} else if vertical {
 		tabOptions.Hint = label
+	}
+	// A desktop keeps its size and protection in the status line under the
+	// picture, which the host may have hidden: the tab says it on hover instead.
+	if session := state.tabSession(workspace); session != nil && session.desk != nil {
+		if hint := state.desktopStripLeft(session.desk, session); hint != "" {
+			tabOptions.Hint = hint
+		}
 	}
 	row := f.Row().Size(width, height).Shrink(0)
 	if vertical {
@@ -1663,6 +1671,7 @@ var lucideIcons = [...]ui.Icon{
 	iconFileDown:   icons.FileDown,
 	iconColumns2:   icons.Columns2,
 	iconRows2:      icons.Rows2,
+	iconGrid2x2:    icons.Grid2x2,
 
 	iconBot:            icons.Bot,
 	iconHistory:        icons.History,

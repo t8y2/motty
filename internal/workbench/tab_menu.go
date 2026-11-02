@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/desktop"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -21,6 +22,15 @@ var (
 	hitTabMenuDisconnect  = tree.ID(tabMenuHits, "tab-menu-disconnect")
 	hitTabMenuRename      = tree.ID(tabMenuHits, "tab-menu-rename")
 	hitTabMenuLock        = tree.ID(tabMenuHits, "tab-menu-lock")
+)
+
+// The desktop rows of the menu, below the tab's own: the controls a desktop
+// page's bar holds, for a host that hid its bars — and reachable without them.
+var (
+	hitTabMenuFit        = tree.ID(tabMenuHits, "tab-menu-fit")
+	hitTabMenuActual     = tree.ID(tabMenuHits, "tab-menu-actual")
+	hitTabMenuCtrlAltDel = tree.ID(tabMenuHits, "tab-menu-ctrl-alt-del")
+	hitTabMenuHideBars   = tree.ID(tabMenuHits, "tab-menu-hide-bars")
 )
 
 // The rename dialog's identities, after the menu's.
@@ -125,6 +135,17 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitTabMenuLock, Label: lockLabel, Icon: icon(iconLock)})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuDuplicate, Label: messages.MenuDuplicateTab, Icon: icon(iconCopy), Disabled: !hasSession})
 	rows.separate()
+	// A remote desktop keeps its scaling and keyboard controls in the page's
+	// bar, which a host may have asked to hide: the menu holds them either way.
+	if hasSession && session.desk != nil {
+		desktop := messages.Desktop
+		rows.add(components.ContextMenuItem{ID: hitTabMenuFit, Label: desktop.Fit, Icon: icon(iconDesktop), Kind: components.ContextMenuRadio, Selected: session.desk.fit})
+		rows.add(components.ContextMenuItem{ID: hitTabMenuActual, Label: desktop.Actual, Icon: icon(iconGrid2x2), Kind: components.ContextMenuRadio, Selected: !session.desk.fit})
+		rows.add(components.ContextMenuItem{ID: hitTabMenuCtrlAltDel, Label: desktop.CtrlAltDel, Icon: icon(iconKeyboard), Disabled: session.desk.ended})
+		rows.add(components.ContextMenuItem{ID: hitTabMenuHideBars, Label: messages.Desktop.HideBars, Icon: icon(iconEyeOff), Kind: components.ContextMenuCheckbox, Checked: session.desk.chromeless})
+		rows.separate()
+	}
+	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuClose, Label: messages.LabelCloseTab, Icon: icon(iconClose), Keys: closeKeys})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseOthers, Label: messages.MenuCloseOtherTabs, Icon: icon(iconCloseOthers), Disabled: len(state.workspaceTabs) < 2})
 	closeFollowing, closeIcon := messages.MenuCloseTabsToRight, uint8(iconCloseRight)
@@ -178,6 +199,24 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			state.pendingWorkspace, state.pendingPane = 0, 0
 			state.newHostSession(session.host)
+		}
+	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars:
+		session, ok := state.tabMenuSessionFor(workspace)
+		if !ok || session.desk == nil {
+			return true
+		}
+		state.activateWorkspace(workspace)
+		switch id {
+		case hitTabMenuFit:
+			session.desk.fit = true
+		case hitTabMenuActual:
+			session.desk.fit = false
+		case hitTabMenuCtrlAltDel:
+			if !session.desk.ended {
+				session.desk.tap([]desktop.Key{desktop.KeyControl, desktop.KeyAlt}, desktop.KeyEvent{Key: desktop.KeyDelete})
+			}
+		case hitTabMenuHideBars:
+			state.setDesktopChromeless(session, !session.desk.chromeless)
 		}
 	case hitTabMenuClose:
 		state.closeWorkspace(workspace)

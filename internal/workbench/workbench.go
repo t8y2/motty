@@ -191,6 +191,9 @@ var (
 	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
 	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
 	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsTextSmall        = tree.ID(settingsHits, "settings-text-small")
+	hitSettingsTextRegular      = tree.ID(settingsHits, "settings-text-regular")
+	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
 	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
 	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
 	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
@@ -377,7 +380,6 @@ const TitlebarHeight = float32(36)
 const (
 	windowBarHeight = TitlebarHeight
 	infoBarHeight   = float32(34)
-	barTitleSize    = float32(13) // the name in a pane's bar: a size under the assistant's title
 	navigationWidth = float32(204)
 	popupLayer      = uint16(300) // a popup inside a page: above the page's text, below dialogs
 	// A layer paints all its shapes and then all its text, so two overlays on
@@ -566,6 +568,9 @@ type State struct {
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
 	terminalScrollback  int
+	// textScale is the interface text size the user chose: the scale the whole
+	// window's text is drawn at, apart from the terminal's own font size.
+	textScale           textScale
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
 	// openStream opens the stream of a Telnet or serial host; tests replace it.

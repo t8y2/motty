@@ -82,7 +82,12 @@ type Session interface {
   line says so) and takes it again. The shortcut handler returns before any
   configured shortcut sees the chord.
 * The status line: remote size, scale, "Through SSH" or "Not encrypted", clipboard
-  sharing, and the escape chord.
+  sharing, and the escape chord. A host that chose "the picture alone" (its
+  editor switch, or the tab menu's checkbox) drops the bar above the picture and
+  this line: their room goes to the picture, the escape chord moves to a note in
+  the picture's corner while the keyboard is captured, the size and protection
+  move to the tab's tooltip, and the bar's controls (scaling, Ctrl+Alt+Del, the
+  keyboard switch) live in the tab's menu.
 * Hidden tabs ask for nothing (`SetActive`); the tab visible in the active
   workspace is active. Viva cannot say whether the window is minimized or covered,
   so that case still receives updates.
