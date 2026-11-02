@@ -13,7 +13,7 @@ import (
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if session.term != nil && strings.Contains(screenText(state, 0), want) {
@@ -169,7 +169,7 @@ func TestLocalTerminalReconnectsWithANewShellAfterItEnds(t *testing.T) {
 	state, session := openLocal(t)
 	state.Wake()
 	session.term.send([]byte("exit 0\n"))
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for session.term.shell != nil && time.Now().Before(deadline) {
 		state.Wake()
 		time.Sleep(5 * time.Millisecond)
@@ -184,7 +184,7 @@ func TestLocalTerminalReconnectsWithANewShellAfterItEnds(t *testing.T) {
 	// A local shell can fail to start (a sandbox without pty access, for one);
 	// wait for the attempt instead of assuming it succeeded by the next Wake, and
 	// say why if it did not.
-	deadline = time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(waitBudget())
 	for session.term.shell == nil && session.err == nil && time.Now().Before(deadline) {
 		state.Wake()
 		time.Sleep(5 * time.Millisecond)
