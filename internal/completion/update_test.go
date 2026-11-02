@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,9 @@ func TestInstallCatalogFailuresPreserveExistingFile(t *testing.T) {
 }
 
 func TestInstallCatalogUsesPrivatePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no permission bits to check")
+	}
 	dir := filepath.Join(t.TempDir(), "completion")
 	path := filepath.Join(dir, FileName)
 	if err := InstallCatalog(path, testCatalog(t)); err != nil {
