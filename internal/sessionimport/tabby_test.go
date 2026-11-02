@@ -38,6 +38,8 @@ const tabbyFixturePlain = `{
         "auth": "password",
         "privateKeys": [],
         "jumpHost": null,
+        "socksProxyHost": "socks.example.com",
+        "socksProxyPort": 1080,
         "x11": true,
         "agentForward": false,
         "forwardedPorts": [
@@ -193,6 +195,10 @@ func TestATabbyFileGivesItsSessionsBeforeAnyPassphrase(t *testing.T) {
 	if web.Name != "web" || web.Host != "web.example.com" || web.Port != 2222 || web.User != "deploy" ||
 		web.Auth != AuthPassword || !web.X11 || web.AgentForward || web.Color != "#3b82f6" {
 		t.Fatalf("web = %+v", web)
+	}
+	// A session can name its own route instead of going through another session.
+	if web.ProxySOCKS5 != "socks.example.com:1080" || web.ProxyCommand != "" || web.ProxyHTTP != "" {
+		t.Fatalf("web proxy = %q, %q, %q", web.ProxySOCKS5, web.ProxyCommand, web.ProxyHTTP)
 	}
 	// A group names the group above it, so the path reads from the outside in.
 	if web.Group != "Production/Databases" {

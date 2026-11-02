@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/portforward"
+	"motty/internal/sshconn"
 )
 
 // A Tabby configuration is YAML with a vault blob in it, so these tests write one
@@ -91,6 +92,7 @@ profiles:
       auth: publicKey
       privateKeys:
         - vault://key-1
+      proxyCommand: nc %%h %%p
   - id: ssh:web
     type: ssh
     name: web
@@ -103,6 +105,8 @@ profiles:
       auth: password
       x11: true
       jumpHost: ssh:bastion
+      socksProxyHost: socks.example.com
+      socksProxyPort: 1080
       forwardedPorts:
         - type: Local
           host: 127.0.0.1
@@ -199,6 +203,14 @@ func TestImportingTabbyAsksForThePassphraseThenBringsHostsRoutesTunnelsKeysAndPa
 	if web.Label != "web" || web.Group != "Lab" || web.Address != "web.example.com" || web.Port != 2222 ||
 		web.User != "deploy" || web.Auth != authPassword || !web.ForwardX11 || web.Color != "#3b82f6" {
 		t.Fatalf("web = %+v", web)
+	}
+	// A session that named its own route keeps it, and a proxy command waits for
+	// confirmation instead of running.
+	if web.Proxy == nil || web.Proxy.kind != sshconn.ProxySOCKS5 || web.Proxy.address != "socks.example.com:1080" {
+		t.Fatalf("web proxy = %+v", web.Proxy)
+	}
+	if bastion.Proxy == nil || bastion.Proxy.kind != sshconn.ProxyCommand || !bastion.Proxy.unconfirmed {
+		t.Fatalf("bastion proxy = %+v", bastion.Proxy)
 	}
 
 	// The key Tabby kept in its vault is written out beside the state file and

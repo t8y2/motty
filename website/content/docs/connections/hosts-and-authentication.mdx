@@ -66,9 +66,9 @@ cannot open are counted as skipped. A host whose address, user and port are
 already saved is left out. What a session saved beside the destination comes
 along when the client wrote it down: the authentication it asked for, X11 and
 agent forwarding, its colour, the private key it used, the jump host it went
-through, and the tunnels it opened. Passwords and key passphrases are the
-exception: only Tabby's are imported, and only once you type the passphrase of
-its vault (see [Tabby's vault](#tabby-s-vault)). For the other clients, add
+through, the proxy it named, and the tunnels it opened. Passwords and key
+passphrases are the exception: only Tabby's are imported, and only once you type
+its vault (see [The Tabby vault](#the-tabby-vault)). For the other clients, add
 them to the host afterwards.
 
 | Client | File to choose |
@@ -86,7 +86,7 @@ Electerm and Netcatty write saved passwords into the export in clear text.
 Motty does not import them and says so after the import; delete the file when
 you are done.
 
-### Tabby's vault
+### The Tabby vault
 
 Tabby keeps the passwords, key passphrases and any private key you stored in it
 inside a **vault**: one blob encrypted with a passphrase you set in Tabby. When

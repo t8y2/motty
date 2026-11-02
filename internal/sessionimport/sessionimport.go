@@ -93,6 +93,12 @@ type Entry struct {
 	KeyPassphrase string
 	KeyID         string
 	KeyData       []byte
+	// ProxyCommand, ProxySOCKS5 and ProxyHTTP are the route the client saved for
+	// reaching this session when it did not go through another session. The two
+	// addresses are "host:port"; a session that saved none leaves them empty.
+	ProxyCommand string
+	ProxySOCKS5  string
+	ProxyHTTP    string
 	// Source names where the entry came from, for warnings.
 	Source string
 }
@@ -159,6 +165,7 @@ func (result *Result) add(entry Entry) {
 	entry.Host = clean(entry.Host, 255)
 	entry.User = clean(entry.User, 128)
 	entry.Color = cleanColor(entry.Color)
+	entry.ProxyCommand = clean(entry.ProxyCommand, 512)
 	if entry.Name == "" {
 		entry.Name = entry.Host
 	}
@@ -169,6 +176,7 @@ func (result *Result) add(entry Entry) {
 		}
 		entry.User, entry.Port = "", 0
 		entry.Auth, entry.KeyPath, entry.Password, entry.KeyPassphrase = AuthUnset, "", "", ""
+		entry.ProxyCommand, entry.ProxySOCKS5, entry.ProxyHTTP = "", "", ""
 		result.Entries = append(result.Entries, entry)
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -312,6 +313,9 @@ func (tabby *TabbyFile) entry(profile tabbyProfile, kind Protocol, group, source
 	entry.X11, entry.AgentForward = profile.Options.X11, profile.Options.AgentForward
 	entry.Auth = tabbyAuth(profile.Options.Auth)
 	entry.Password = profile.Options.Password
+	entry.ProxyCommand = profile.Options.ProxyCommand
+	entry.ProxySOCKS5 = tabbyProxyAddress(profile.Options.SocksProxyHost, profile.Options.SocksProxyPort)
+	entry.ProxyHTTP = tabbyProxyAddress(profile.Options.HTTPProxyHost, profile.Options.HTTPProxyPort)
 	for _, key := range profile.Options.PrivateKeys {
 		if id, ok := strings.CutPrefix(key, "vault://"); ok {
 			// The key itself is a vault secret, read when the vault is opened.
@@ -339,6 +343,16 @@ func tabbyAuth(auth string) Auth {
 		return AuthAgent
 	}
 	return AuthUnset
+}
+
+// tabbyProxyAddress is where a SOCKS or HTTP proxy the session saved listens,
+// or "" when the session saved none or left the port out.
+func tabbyProxyAddress(host string, port int) string {
+	host = strings.TrimSpace(host)
+	if host == "" || port < 1 || port > 65535 {
+		return ""
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // tabbySerial writes a serial session's line as "9600 8N1" and its flow control,

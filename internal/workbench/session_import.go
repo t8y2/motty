@@ -11,6 +11,7 @@ import (
 	"motty/internal/portforward"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
+	"motty/internal/sshconn"
 	"motty/internal/vault"
 	"motty/internal/workbench/icons"
 )
@@ -187,6 +188,7 @@ func (state *State) planSessionHost(builder *hostImportBuilder, entry sessionimp
 		ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
 		Address: entry.Host, User: entry.User, Port: port, Color: entry.Color,
 		Auth: importedAuth(entry.Auth), ForwardX11: entry.X11, AgentForward: entry.AgentForward,
+		Proxy: importedSessionProxy(builder, entry),
 	}
 	// Naming the key is what makes the session offer that key and no other; a key
 	// whose fingerprint cannot be read is still added, and the mode then tries
@@ -235,6 +237,29 @@ func importedAuth(auth sessionimport.Auth) hostAuth {
 		return authAgent
 	}
 	return authAutomatic
+}
+
+// importedSessionProxy is the route a session saved for reaching it on its own:
+// a proxy command, a SOCKS5 proxy or an HTTP CONNECT proxy, in that order, which
+// is the order the client itself tries them in. A proxy command would run here,
+// so it waits for the user to confirm it in the host's proxy dialog, the way an
+// imported SSH config's does; one this program cannot run is left out and said.
+func importedSessionProxy(builder *hostImportBuilder, entry sessionimport.Entry) *outboundProxy {
+	m := builder.state.messages.Tools
+	switch {
+	case entry.ProxyCommand != "":
+		if sshconn.CheckProxyCommand(entry.ProxyCommand) != nil {
+			builder.warn(fmt.Sprintf(m.ImportWarningProxyCommandFmt, entry.Name))
+			return nil
+		}
+		builder.warn(fmt.Sprintf(m.ImportProxyCommandFmt, entry.Name))
+		return &outboundProxy{kind: sshconn.ProxyCommand, address: entry.ProxyCommand, unconfirmed: true}
+	case entry.ProxySOCKS5 != "":
+		return &outboundProxy{kind: sshconn.ProxySOCKS5, address: entry.ProxySOCKS5}
+	case entry.ProxyHTTP != "":
+		return &outboundProxy{kind: sshconn.ProxyHTTPConnect, address: entry.ProxyHTTP}
+	}
+	return nil
 }
 
 // planSessionRoutes adds the jump routes the sessions saved. One is dropped, and

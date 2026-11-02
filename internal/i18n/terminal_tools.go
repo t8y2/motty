@@ -230,6 +230,10 @@ type ToolsMessages struct {
 	ImportWarningKeyWriteFmt    string // session name, the error
 	ImportWarningSecretsFmt     string // the error
 	ImportWarningSecretsMissing string
+	// A session that saved its own route: the command waits for confirmation,
+	// and one this program cannot run is left out.
+	ImportProxyCommandFmt        string // session name
+	ImportWarningProxyCommandFmt string // session name
 	// Tabby keeps its sessions and its secrets in a vault the user opens with a
 	// passphrase, so its import is the one that asks for something.
 	ImportTabbyPassphraseTitle  string
