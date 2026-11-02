@@ -66,7 +66,8 @@ import (
 // Version 13 preserves the device-local network proxy choice.
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
 // Version 15 preserves the device-local vertical tab grouping switch.
-const configFormat = 15
+// Version 16 preserves the interface font.
+const configFormat = 16
 
 const (
 	kindSetting             = "setting"

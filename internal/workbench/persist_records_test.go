@@ -169,6 +169,44 @@ func TestFormatTenUpgradeKeepsTheLocalSessionLogSwitchAndBlocksOlderWriters(t *t
 	}
 }
 
+func TestFormatSixteenKeepsTheInterfaceFontAndBlocksOlderWriters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.db")
+	want := richState()
+	want.InterfaceFont = "Sarasa Gothic"
+	if err := saveState(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, report, err := loadState(path)
+	if err != nil || report.outcome != loadOK || got.InterfaceFont != "Sarasa Gothic" {
+		t.Fatalf("reload: %q, %+v, %v", got.InterfaceFont, report, err)
+	}
+	// A format-15 build would rewrite the local state from its own struct and drop
+	// the font, so it must refuse the store.
+	if _, _, err := configstore.ReadOnly(path, 15); !errors.Is(err, configstore.ErrTooNew) {
+		t.Fatalf("a format-15 build could overwrite the configuration: %v", err)
+	}
+
+	// A store a format-15 build wrote has no font: it opens with the default.
+	older := filepath.Join(t.TempDir(), "config.db")
+	state := richState()
+	entries, local, err := splitState(state, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := configstore.Open(older, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Commit(configstore.Change{Put: entries, Local: map[string][]byte{localKey: local}})
+	if err := errors.Join(err, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+	got, report, err = loadState(older)
+	if err != nil || report.outcome != loadOK || got.InterfaceFont != "" {
+		t.Fatalf("an older store: %q, %+v, %v", got.InterfaceFont, report, err)
+	}
+}
+
 func TestSessionLogCaptureDefaultsOnForAStateThatPredatesIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.db")
 	// A format-10 state never wrote the switch: absent must mean capture on.
