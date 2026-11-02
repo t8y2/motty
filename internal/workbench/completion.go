@@ -138,9 +138,13 @@ type completionUI struct {
 	// against had loaded; it starts when the load finishes.
 	updatePending bool
 	updateErr     error
-	checked       time.Time
-	updateReady   chan completionUpdateResult
-	cancelUpdate  context.CancelFunc
+	// updateStats belongs to the catalog this window holds; it is adopted
+	// together with the catalog from the shared store, so every window shows
+	// the counters of the same generation.
+	updateStats  completion.ImportStats
+	checked      time.Time
+	updateReady  chan completionUpdateResult
+	cancelUpdate context.CancelFunc
 
 	// History reads fill history.ghost, the single cache used by both modes.
 	// The catalog never waits for these background requests.
@@ -161,6 +165,10 @@ type completionCatalogLoad struct {
 
 type completionUpdateResult struct {
 	err error
+	// installed is the store's own answer to "was a new snapshot written".
+	// The catalog generation cannot answer it here: a Wake may have adopted
+	// the published catalog before the result was handled.
+	installed bool
 }
 
 type completionHistoryLoad struct {
@@ -270,9 +278,9 @@ func (state *State) adoptCompletionCatalog() {
 	if c.store == nil {
 		return
 	}
-	catalog, generation := c.store.Snapshot()
+	catalog, generation, stats := c.store.Snapshot()
 	if catalog != nil && generation != c.catalogGeneration {
-		c.catalog, c.catalogGeneration = catalog, generation
+		c.catalog, c.catalogGeneration, c.updateStats = catalog, generation, stats
 		state.closeCompletionList()
 	}
 	if c.catalog != nil && c.updatePending && !c.updating {
@@ -295,15 +303,24 @@ func (state *State) adoptCompletionUpdate() {
 			c.cancelUpdate = nil
 		}
 		c.updateErr = result.err
-		oldGeneration := c.catalogGeneration
 		state.adoptCompletionCatalog()
-		if result.err == nil && c.catalog != nil {
-			if c.catalogGeneration != oldGeneration {
-				c.catalogNote = nil
-				state.status = fmt.Sprintf(state.messages.Completion.UpdatedFmt, c.catalog.Release)
+		installed := result.err == nil && result.installed && c.catalog != nil
+		if installed {
+			// The store keeps the counters beside the catalog, so
+			// adoptCompletionCatalog already adopted them for every window.
+			// Compose the one-shot message from that adopted snapshot, not
+			// from the result: another window may have installed a newer
+			// release while this result waited, and the status must not claim
+			// that newer release needed repairs it does not have.
+			c.catalogNote = nil
+			message := state.messages.Completion
+			if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, c.updateStats.RepairedFiles, c.updateStats.SkippedSources))
 			} else {
-				state.status = state.messages.Completion.UpToDate
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedFmt, c.catalog.Release))
 			}
+		} else if result.err == nil && c.catalog != nil {
+			state.status = state.messages.Completion.UpToDate
 		}
 	default:
 	}
@@ -417,8 +434,8 @@ func (state *State) updateCompletions() {
 	}
 	go func() {
 		defer c.workers.Done()
-		_, _, err := store.Update(ctx, completion.UpdateClient())
-		ready <- completionUpdateResult{err: err}
+		_, _, _, installed, err := store.Update(ctx, completion.UpdateClient())
+		ready <- completionUpdateResult{err: err, installed: installed}
 		for _, invalidate := range wake {
 			invalidate()
 		}
@@ -434,11 +451,11 @@ func (state *State) completionCatalogStatus() (string, error) {
 		return m.Updating, nil
 	}
 	if c.updateErr != nil {
-		return fmt.Sprintf(m.CheckFailedFmt, c.updateErr), c.updateErr
+		return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, completionStatusText(c.updateErr.Error()))), c.updateErr
 	}
 	if c.catalog == nil {
 		if c.catalogErr != nil {
-			return fmt.Sprintf(m.CheckFailedFmt, c.catalogErr), c.catalogErr
+			return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, completionStatusText(c.catalogErr.Error()))), c.catalogErr
 		}
 		if state.history.suggestOff && !c.updatePending {
 			return m.CatalogOff, nil
@@ -446,13 +463,61 @@ func (state *State) completionCatalogStatus() (string, error) {
 		return m.CatalogLoading, nil
 	}
 	status := fmt.Sprintf(m.CatalogDescriptionFmt, c.catalog.Release, c.catalog.RootCount(), c.catalog.FlagCount())
+	// A full commit hash is the only provenance worth showing: a cache or a
+	// test catalog with a placeholder commit falls back to the plain version.
+	// The repository is a constant, never catalog data, so a tampered cache
+	// cannot label itself as another project.
+	if validCommit(c.catalog.Commit) {
+		origin := m.CatalogOriginInstalled
+		if builtin, err := completion.Builtin(); err == nil && c.catalog == builtin {
+			origin = m.CatalogOriginBuiltin
+		}
+		status = fmt.Sprintf(m.CatalogProvenanceFmt, c.catalog.Release,
+			fmt.Sprintf(m.CatalogRepoFmt, completion.RepositoryOwner+"/"+completion.RepositoryName, c.catalog.Commit[:12]),
+			c.catalog.RootCount(), c.catalog.FlagCount(), origin)
+	}
+	if warnings := c.catalog.AuditWarnings(); warnings > 0 {
+		status += " · " + fmt.Sprintf(m.AuditWarningsFmt, warnings)
+	}
 	if c.catalogNote != nil {
-		status = fmt.Sprintf(m.CacheFailedFmt, status, c.catalogNote)
+		status = fmt.Sprintf(m.CacheFailedFmt, status, completionStatusText(c.catalogNote.Error()))
+	}
+	if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
+		status += " · " + fmt.Sprintf(m.RepairSummaryFmt, c.updateStats.RepairedFiles, c.updateStats.SkippedSources)
+	}
+	if _, known := c.catalog.ImportStats(); !known {
+		status += " · " + m.RecoveryStatsUnknown
 	}
 	if !c.checked.IsZero() {
 		status = fmt.Sprintf(m.CheckedFmt, status, c.checked.Format("2006-01-02 15:04"))
 	}
-	return status, nil
+	return completionStatusText(status), nil
+}
+
+// completionStatusRunes bounds every catalog status string that reaches the
+// settings page. A malformed archive can make the YAML parser aggregate
+// megabytes of error text; the row must stay a row.
+const completionStatusRunes = 240
+
+// completionStatusText sanitizes untrusted status and error text before it is
+// stored or painted: invisible characters and line breaks are removed and the
+// result is bounded.
+func completionStatusText(text string) string {
+	return completion.NormalizeText(text, completionStatusRunes)
+}
+
+// validCommit reports whether commit is a full lowercase hexadecimal hash, the
+// form a real catalog records. Anything else is a placeholder and is not shown.
+func validCommit(commit string) bool {
+	if len(commit) != 40 {
+		return false
+	}
+	for _, r := range commit {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // completionEligible reports whether this session may show completions now.
@@ -734,7 +799,8 @@ func (state *State) acceptCompletion(session *Session) {
 	if session == nil || !state.completionEligible(session) {
 		return
 	}
-	state.sendSuggestion(session, list.candidates[list.selected].Insert)
+	candidate := list.candidates[list.selected]
+	state.sendSuggestion(session, candidate.Insert, candidate.FromCatalog)
 }
 
 // clickCompletion handles the list's controls.
