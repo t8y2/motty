@@ -63,13 +63,6 @@ func TestCustomEditorPickerLaunchAndLocalFolder(t *testing.T) {
 	if err := state.openWithConfiguredEditor(localFile); err == nil || !strings.Contains(err.Error(), state.messages.Tools.FilesCustomEditorInvalid) {
 		t.Fatalf("invalid executable error = %v", err)
 	}
-	command := customEditorCommand(executable, localFile)
-	if len(command.Args) != 2 || command.Args[0] != executable || command.Args[1] != localFile {
-		t.Fatalf("command args = %q", command.Args)
-	}
-	if command.SysProcAttr == nil || !command.SysProcAttr.HideWindow || command.SysProcAttr.CreationFlags&createNoWindow == 0 {
-		t.Fatal("the custom editor command does not hide its console window")
-	}
 }
 
 func TestCustomEditorReceivesRemoteTemporaryFileAndSyncsBack(t *testing.T) {

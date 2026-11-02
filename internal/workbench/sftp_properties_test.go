@@ -3,10 +3,12 @@
 package workbench
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 )
 
 func sftpMenuRowIDs(rows menuRows) map[ui.ID]bool {
@@ -115,5 +117,165 @@ func TestDualPanePropertiesPaintAndCloseInsideTheirWindow(t *testing.T) {
 	}
 	if w.fileProperties.open {
 		t.Fatal("Escape did not close the dual-window property dialog")
+	}
+}
+
+func TestSinglePanePropertiesDialogConsumesListKeys(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.sftpMenu = sftpMenu{open: true, session: session.ID}
+	state.Click(hitSFTPProperties)
+	if state.modal != modalFileProperties {
+		t.Fatal("the properties dialog did not open")
+	}
+
+	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyF2, ui.KeyBackspace} {
+		result := state.Key(ui.KeyEvent{Key: key})
+		if !result.Handled {
+			t.Fatalf("%v escaped the properties dialog", key)
+		}
+		if state.modal != modalFileProperties || view.dialog != sftpDialogNone {
+			t.Fatalf("%v acted behind the properties dialog: modal=%d file dialog=%d", key, state.modal, view.dialog)
+		}
+	}
+	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled {
+		t.Fatal("Escape did not close the properties dialog")
+	}
+	if state.modal != modalNone || state.fileProperties.open {
+		t.Fatal("Escape closed more than the properties dialog")
+	}
+}
+
+func TestSinglePanePropertiesDialogConsumesPointerAndAcceptsItsOwnClose(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.sftpMenu = sftpMenu{open: true, session: session.ID}
+	state.Click(hitSFTPProperties)
+	if state.modal != modalFileProperties {
+		t.Fatal("the properties dialog did not open")
+	}
+	selected := view.sftpFolder.selected
+
+	result := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		Target: hitSFTPEntryList.At(0), X: 20, Y: 20,
+	})
+	if !result.Handled || view.sftpFolder.selected != selected {
+		t.Fatalf("pointer input escaped the properties dialog: %+v, selection %d -> %d", result, selected, view.sftpFolder.selected)
+	}
+	if result := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, Paths: []string{"/tmp/file"}}); !result.Handled {
+		t.Fatal("a file drop escaped the properties dialog")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	hit, ok := hitByID(&canvas, hitFilePropertiesClose)
+	if !ok {
+		t.Fatal("the properties dialog painted no close action")
+	}
+	if result := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		Target: hitFilePropertiesClose, X: hit.Bounds.X + 2, Y: hit.Bounds.Y + 2,
+	}); result.Handled {
+		t.Fatalf("the dialog consumed its own click sequence: %+v", result)
+	}
+	state.Click(hitFilePropertiesClose)
+	if state.modal != modalNone || state.fileProperties.open {
+		t.Fatal("the property dialog did not close")
+	}
+}
+
+func TestDualPanePropertiesDialogConsumesListKeys(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1.0)
+	view := w.view
+	if len(view.lfolder.rows) == 0 {
+		t.Fatal("the dual-pane fixture has no local row")
+	}
+	view.lfolder.selectRow(0, 0)
+	properties, ok := captureSFTPProperties(&view.lfolder, true)
+	if !ok {
+		t.Fatal("the dual-pane fixture did not capture the selected row")
+	}
+	w.fileProperties = properties
+	if !w.fileProperties.open {
+		t.Fatal("the dual-pane properties dialog did not open")
+	}
+	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyF2, ui.KeyBackspace} {
+		result := w.key(ui.KeyEvent{Key: key, Target: sftpWindowRows[0].At(0)})
+		if !result.Handled {
+			t.Fatalf("%v escaped the dual-pane properties dialog", key)
+		}
+		if !w.fileProperties.open || view.dialog != sftpDialogNone {
+			t.Fatalf("%v acted behind the window properties dialog", key)
+		}
+	}
+}
+
+func TestDualPanePropertiesDialogConsumesPointerInput(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1.0)
+	view := w.view
+	if len(view.lfolder.rows) == 0 {
+		t.Fatal("the dual-pane fixture has no local row")
+	}
+	view.lfolder.selectRow(0, 0)
+	properties, ok := captureSFTPProperties(&view.lfolder, true)
+	if !ok {
+		t.Fatal("the dual-pane fixture did not capture the selected row")
+	}
+	w.fileProperties = properties
+
+	bar := w.ui.bars[0].VerticalThumb
+	w.drag = sftpWindowDrag{armed: true, fromLocal: true}
+	result := w.pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Target: hitSFTPWindowSplit,
+		X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2,
+	})
+	if !result.Handled || !w.fileProperties.open {
+		t.Fatalf("pointer input escaped the dual-pane properties dialog: handled=%t properties=%t", result.Handled, w.fileProperties.open)
+	}
+	if w.ui.barDrag != 0 || w.ui.splitting || !w.drag.armed || !w.drag.fromLocal {
+		t.Fatalf("pointer input changed controls behind the dialog: bar=%d split=%t drag=%+v", w.ui.barDrag, w.ui.splitting, w.drag)
+	}
+}
+
+func TestDualPanePropertiesDialogConsumesFileDrops(t *testing.T) {
+	_, w, _, _, localDir := dualSFTPFixture(t, 1.0)
+	view := w.view
+	if len(view.lfolder.rows) == 0 {
+		t.Fatal("the dual-pane fixture has no local row")
+	}
+	view.lfolder.selectRow(0, 0)
+	properties, ok := captureSFTPProperties(&view.lfolder, true)
+	if !ok {
+		t.Fatal("the dual-pane fixture did not capture the selected row")
+	}
+	w.fileProperties = properties
+	transfers := len(view.transfers)
+	file := filepath.Join(localDir, "new.yml")
+	if err := os.WriteFile(file, []byte("name: new\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	remote := w.ui.list[1]
+	over := w.fileDrop(ui.FileDropEvent{
+		Phase: ui.FileDropOver,
+		X:     remote.X + 20, Y: remote.Y + 20,
+	})
+	if !over.Handled || w.drag.active || !w.fileProperties.open {
+		t.Fatalf("drop hover escaped the properties dialog: %+v, drag=%+v", over, w.drag)
+	}
+	drop := w.fileDrop(ui.FileDropEvent{
+		Phase: ui.FileDropDrop, Paths: []string{file},
+		X: remote.X + 20, Y: remote.Y + 20,
+	})
+	if !drop.Handled || len(view.transfers) != transfers || !w.fileProperties.open {
+		t.Fatalf("drop escaped the properties dialog: %+v, transfers %d -> %d", drop, transfers, len(view.transfers))
+	}
+
+	w.queueEntries(true, []sftpclient.Entry{{Name: filepath.Base(file), Mode: 0o600}}, localDir, w.view.path)
+	if len(view.transfers) != transfers {
+		t.Fatalf("queueEntries bypassed the open properties dialog: transfers %d -> %d", transfers, len(view.transfers))
 	}
 }

@@ -32,7 +32,7 @@ var EnglishMessages = Messages{
 		PropertiesFolder: "Folder", PropertiesFile: "File", PropertiesSymlink: "Symbolic link", PropertiesOther: "Other", PropertiesUnknown: "—",
 		Open: "File transfer", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
 		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to",
-		CloseTitle: "Tasks are still active", CloseDescription: "Closing stops unfinished transfers, archive extraction and external editor synchronization in this window.", CloseTransfers: "Stop tasks and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
+		CloseTitle: "Tasks are still active", CloseDescription: "Closing stops unfinished transfers, archive extraction and external editor synchronization in this window.", CloseTabDescription: "Closing this tab stops unfinished transfers, archive extraction and external editor synchronization in it.", CloseTransfers: "Stop tasks and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
 	},
 	FileWindow: FileWindowMessages{
 		Title: "File preview and editor", Save: "Save", Reload: "Reload", Encoding: "Encoding", Auto: "Auto", Fit: "Fit", Actual: "Actual size", ZoomIn: "Zoom in", ZoomOut: "Zoom out",

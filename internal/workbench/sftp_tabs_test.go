@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -273,10 +274,12 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 }
 
 func TestEmbeddedSFTPWakeDoesNotRescanOwnedConnections(t *testing.T) {
-	state := &State{sftpWindows: make(map[uint32]*sftpWindow)}
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	state.sftpWindows = make(map[uint32]*sftpWindow)
 	connections := []*fakeConn{{}, {}}
 	for index, conn := range connections {
-		id := uint32(index + 1)
+		id := uint32(index + 2)
 		state.sftpWindows[id] = &sftpWindow{
 			owner:          state,
 			session:        Session{ID: id, conn: conn},
@@ -285,11 +288,29 @@ func TestEmbeddedSFTPWakeDoesNotRescanOwnedConnections(t *testing.T) {
 		}
 	}
 
-	state.wakeEmbeddedSFTPWindows()
-
+	remote.mu.Lock()
+	remote.reads = nil
+	remote.mu.Unlock()
+	if !view.worker.ListWithID("/woken", 0) {
+		t.Fatal("the background wake request was not queued")
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) && remote.readCount("/woken") == 0 {
+		w := &sftpWindow{owner: state, session: *session, view: view, ownsConnection: true}
+		state.sftpWindows[session.ID] = w
+		state.wakeEmbeddedSFTPWindows()
+		delete(state.sftpWindows, session.ID)
+		time.Sleep(time.Millisecond)
+	}
+	if remote.readCount("/woken") == 0 {
+		t.Fatal("wakeEmbeddedSFTPWindows did not pump the tab's own worker")
+	}
 	for index, conn := range connections {
-		if conn.statusReads != 0 {
-			t.Fatalf("embedded page %d repeated a workbench-wide connection scan: %d reads", index+1, conn.statusReads)
+		conn.mu.Lock()
+		reads := conn.statusReads
+		conn.mu.Unlock()
+		if reads != 0 {
+			t.Fatalf("embedded page %d repeated a workbench-wide connection scan: %d reads", index+1, reads)
 		}
 	}
 }
@@ -305,14 +326,269 @@ func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
 		t.Fatalf("vertical layout file tab = %+v, painted=%t", fileHit.Bounds, ok)
 	}
 	workspace := state.deck.ActiveWorkspace()
-	if _, ok := hitByID(&canvas, hitTabList.At(int(workspace))); ok {
-		t.Fatal("workspace tabs were duplicated into the horizontal bar in vertical mode")
+	if _, ok := hitByID(&canvas, hitTabList.At(int(workspace))); !ok {
+		t.Fatal("the workspace tab rail disappeared while a file tab was active")
 	}
 	if state.fileTabStrip.area.Width <= 0 {
 		t.Fatal("the top file-tab strip was not laid out")
 	}
 	if result := state.Key(ui.KeyEvent{Target: sftpFileTabID(source.ID), Key: ui.KeyRight}); !result.Handled {
 		t.Fatal("horizontal file-tab navigation stopped working with vertical workspace tabs")
+	}
+}
+
+func TestSFTPFileTabRespectsVerticalTabsAutoHide(t *testing.T) {
+	state, _, _, _, _ := openSFTPTabFixture(t)
+	state.setTabOrientation(tabsVertical)
+	state.setVerticalTabsAutoHide(true)
+
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if state.verticalTabs.bounds.Width != verticalTabsRail || state.fileManagerRect.X != verticalTabsRail {
+		t.Fatalf("collapsed rail = %+v, file manager starts at %.1f", state.verticalTabs.bounds, state.fileManagerRect.X)
+	}
+
+	state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
+	})
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if state.verticalTabs.bounds.Width <= verticalTabsRail {
+		t.Fatalf("hovering the rail did not expand it: %+v", state.verticalTabs.bounds)
+	}
+	if state.fileManagerRect.X != verticalTabsRail {
+		t.Fatalf("the expanded rail moved page content instead of overlaying it: %.1f", state.fileManagerRect.X)
+	}
+}
+
+func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
+	state, _, w, _, localDir := openSFTPTabFixture(t)
+	state.setTabOrientation(tabsVertical)
+	state.setVerticalTabsAutoHide(true)
+	state.sftpWindowOrder = sftpRemoteLeft
+	state.invalidateSFTPWindows()
+
+	size := ui.Size{Width: 800, Height: 700}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
+	})
+	canvas.Reset()
+	state.Paint(&canvas, size)
+
+	panel := state.verticalTabs.bounds
+	if panel.Width <= verticalTabsRail || state.fileManagerRect.X != verticalTabsRail {
+		t.Fatalf("expanded rail = %+v, file manager starts at %.1f", panel, state.fileManagerRect.X)
+	}
+	remoteList := w.ui.list[1]
+	x := state.fileManagerRect.X + remoteList.X + 10
+	y := state.fileManagerRect.Y + remoteList.Y + remoteList.Height/2
+	if !pointInRect(x, y, panel) {
+		t.Fatalf("test point %.1f,%.1f is outside expanded rail %+v", x, y, panel)
+	}
+
+	w.ui.bars[1].MaxOffsetY = 120
+	w.ui.offset[1] = 20
+	result := state.Scroll(ui.ScrollEvent{
+		X: x, Y: y, DeltaY: 30, Precise: true, Viewport: size,
+	})
+	if !result.Handled || w.ui.offset[1] != 20 {
+		t.Fatalf("expanded rail wheel = %+v, file offset %.1f", result, w.ui.offset[1])
+	}
+
+	w.view.selected = -1
+	state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		X: x, Y: y, Viewport: size,
+	})
+	if w.view.selected != -1 {
+		t.Fatalf("expanded rail press reached the file row behind it: selected %d", w.view.selected)
+	}
+
+	localFile := filepath.Join(localDir, "local.yml")
+	over := ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y, Paths: []string{localFile}}
+	if result := state.FileDrop(over); !result.Handled || w.drag.active {
+		t.Fatalf("expanded rail accepted a file hover into the page: %+v, drag=%t", result, w.drag.active)
+	}
+	drop := over
+	drop.Phase = ui.FileDropDrop
+	if result := state.FileDrop(drop); !result.Handled || len(w.view.worker.Transfers(nil)) != 0 {
+		t.Fatalf("expanded rail accepted a file drop into the page: %+v, transfers=%d",
+			result, len(w.view.worker.Transfers(nil)))
+	}
+}
+
+func TestSFTPFileTabsScrollAndRemainClickableWithVerticalWorkspaceTabs(t *testing.T) {
+	state, _, active, _, _ := openSFTPTabFixture(t)
+	state.setTabOrientation(tabsVertical)
+	firstID := active.session.ID
+	ids := []uint32{firstID}
+	for index := range 20 {
+		id := firstID + uint32(index) + 1
+		manager := &sftpWindow{
+			owner: state,
+			session: Session{
+				ID:      id,
+				HostID:  active.session.HostID,
+				Title:   "overflow-" + string(rune('A'+index)),
+				Address: active.session.Address,
+				host:    active.session.host,
+			},
+			view: &sftpView{},
+		}
+		state.sftpWindows[id] = manager
+		state.sftpTabs = append(state.sftpTabs, manager)
+		ids = append(ids, id)
+	}
+	state.rebuildFileTabOptions()
+
+	size := ui.Size{Width: 720, Height: 600}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if state.fileTabStrip.max <= 0 {
+		t.Fatal("twenty file tabs did not overflow the narrow top strip")
+	}
+	start := state.fileTabStrip.offset
+	result := state.Scroll(ui.ScrollEvent{
+		X:      state.fileTabStrip.area.X + 24,
+		Y:      state.fileTabStrip.area.Y + state.fileTabStrip.area.Height/2,
+		DeltaY: 160, Viewport: size,
+	})
+	if !result.Handled || !result.Repaint || state.fileTabStrip.offset != start+160 {
+		t.Fatalf("file-tab wheel = %+v, offset %.1f -> %.1f, want %.1f", result, start, state.fileTabStrip.offset, start+160)
+	}
+
+	for range 30 {
+		state.Scroll(ui.ScrollEvent{
+			X:      state.fileTabStrip.area.X + 24,
+			Y:      state.fileTabStrip.area.Y + state.fileTabStrip.area.Height/2,
+			DeltaY: 160, Viewport: size,
+		})
+	}
+	if state.fileTabStrip.offset != state.fileTabStrip.max {
+		t.Fatalf("file-tab wheel stopped at %.1f, want the end %.1f", state.fileTabStrip.offset, state.fileTabStrip.max)
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	last := sftpFileTabID(ids[len(ids)-1])
+	hit, ok := hitByID(&canvas, last)
+	strip := state.fileTabStrip.area
+	if !ok || hit.Bounds.X < strip.X || hit.Bounds.Right() > strip.Right() {
+		t.Fatalf("last file tab is not visible after scrolling: hit=%+v painted=%t strip=%+v", hit.Bounds, ok, strip)
+	}
+	state.Click(last)
+	if state.activeSection != sectionSFTP || state.activeSFTPTab != ids[len(ids)-1] {
+		t.Fatalf("clicking the revealed file tab selected section %d tab %d", state.activeSection, state.activeSFTPTab)
+	}
+
+	stale := state.fileTabStrip
+	for len(state.sftpTabs) > 0 {
+		state.removeSFTPTab(state.sftpTabs[len(state.sftpTabs)-1])
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if state.fileTabStrip.area != (ui.Rect{}) || state.fileTabStrip.max != 0 || state.fileTabStrip.offset != 0 {
+		t.Fatalf("closing every file tab left a stale strip behind: %+v", state.fileTabStrip)
+	}
+	if stale.area.Width > 0 {
+		state.Scroll(ui.ScrollEvent{
+			X: stale.area.X + 24, Y: stale.area.Y + stale.area.Height/2,
+			DeltaY: 160, Viewport: size,
+		})
+		if state.fileTabStrip.offset != 0 {
+			t.Fatalf("a closed file-tab strip still consumed wheel input: offset %.1f", state.fileTabStrip.offset)
+		}
+	}
+}
+
+func TestWorkspaceTabsRemainScrollableBesideFileTabs(t *testing.T) {
+	state, _, _, _, _ := openSFTPTabFixture(t)
+	for range 20 {
+		openEmptyTab(state)
+	}
+	state.setTabOrientation(tabsVertical)
+	size := ui.Size{Width: 720, Height: 600}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if state.tabStrip.max <= 0 || state.tabStrip.offset != state.tabStrip.max {
+		t.Fatalf("workspace tabs did not overflow and reveal the active tab: max=%.1f offset=%.1f", state.tabStrip.max, state.tabStrip.offset)
+	}
+
+	area := state.tabStrip.area
+	result := state.Scroll(ui.ScrollEvent{
+		X: area.X + 10, Y: area.Y + 10, DeltaY: -10000, Viewport: size,
+	})
+	if !result.Handled || !result.Repaint || state.tabStrip.offset != 0 {
+		t.Fatalf("workspace rail wheel = %+v, offset %.1f", result, state.tabStrip.offset)
+	}
+
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	first := state.workspaceTabs[0].ID
+	if hit, ok := hitByID(&canvas, hitTabList.At(int(first))); !ok || hit.Bounds.Y < area.Y || hit.Bounds.Bottom() > area.Bottom() {
+		t.Fatalf("first workspace tab is not visible after scrolling: hit=%+v painted=%t area=%+v", hit.Bounds, ok, area)
+	}
+	state.Click(hitTabList.At(int(first)))
+	if state.activeSection != sectionTerminal || state.deck.ActiveWorkspace() != first {
+		t.Fatalf("clicking the revealed workspace tab selected section %d workspace %d", state.activeSection, state.deck.ActiveWorkspace())
+	}
+}
+
+func TestSFTPFileTabLeavesRoomForTheAssistantAndKeepsWheelInput(t *testing.T) {
+	state, _, _, _, _ := openSFTPTabFixture(t)
+	state.setAIPanelOpen(true)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1500, Height: 900})
+
+	panel := state.ai.panel.rect
+	if panel.Width <= 0 {
+		t.Fatal("the docked assistant panel was not painted")
+	}
+	if state.fileManagerRect.Right() > panel.X {
+		t.Fatalf("file manager %+v overlaps assistant %+v", state.fileManagerRect, panel)
+	}
+	if result := state.Scroll(ui.ScrollEvent{
+		X: panel.X + 24, Y: panel.Y + 80, DeltaY: 24,
+		Viewport: ui.Size{Width: 1500, Height: 900},
+	}); !result.Handled {
+		t.Fatal("a wheel over the assistant panel was not handled by the assistant")
+	}
+}
+
+func TestSFTPFileTabYieldsToTheNarrowAssistantDrawer(t *testing.T) {
+	state, _, w, _, _ := openSFTPTabFixture(t)
+	state.setAIPanelOpen(true)
+	size := ui.Size{Width: 800, Height: 600}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+
+	panel := state.ai.panel.rect
+	if panel.Width <= 0 || state.fileManagerRect.Right() <= panel.X {
+		t.Fatalf("the drawer did not overlay the full-page file tab: panel=%+v file=%+v", panel, state.fileManagerRect)
+	}
+	input, ok := hitByID(&canvas, hitAIInput)
+	if !ok {
+		t.Fatal("the drawer input was not painted")
+	}
+	fileOffset := w.ui.offset[0]
+	result := state.Scroll(ui.ScrollEvent{
+		X: panel.X + panel.Width/2, Y: panel.Y + panel.Height/2,
+		DeltaY: 120, Precise: true, Viewport: size,
+	})
+	if !result.Handled || w.ui.offset[0] != fileOffset {
+		t.Fatalf("the drawer's wheel reached the file list: %+v, offset %.1f -> %.1f", result, fileOffset, w.ui.offset[0])
+	}
+
+	event := ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+		Target: input.ID, X: input.Bounds.X + 20, Y: input.Bounds.Y + 10,
+		Viewport: size,
+	}
+	result = state.Pointer(event)
+	if result.Handled {
+		t.Fatalf("the file tab swallowed the drawer's press: %+v", result)
 	}
 }
 
@@ -343,6 +619,21 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	if !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
 		t.Fatal("closing an active file tab skipped confirmation")
 	}
+	var canvas ui.Canvas
+	w.paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if got := w.closeDescription(); got != state.messages.SFTPWindow.CloseTabDescription {
+		t.Fatalf("file tab close description = %q", got)
+	}
+	painted := make([]string, 0, len(canvas.Texts()))
+	for _, value := range canvas.Texts() {
+		if value.Value == state.messages.SFTPWindow.CloseDescription {
+			t.Fatal("a file tab reused the independent window's close description")
+		}
+		painted = append(painted, value.Value)
+	}
+	if !strings.Contains(strings.Join(painted, " "), state.messages.SFTPWindow.CloseTabDescription) {
+		t.Fatal("the file tab close confirmation did not name the tab")
+	}
 	w.click(hitSFTPWindowCloseCancel)
 	if w.closeConfirm || w.closed {
 		t.Fatal("canceling close confirmation closed the file tab")
@@ -351,6 +642,36 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	state.requestCloseSFTPTab(w)
 	if !w.closed || len(state.sftpTabs) != 0 {
 		t.Fatal("the confirmed file tab did not close")
+	}
+}
+
+func TestSFTPFileTabPaintStaysAllocationFree(t *testing.T) {
+	state, _, _, _, _ := openSFTPTabFixture(t)
+	workspace := state.deck.ActiveWorkspace()
+	if workspace == 0 {
+		t.Fatal("the fixture needs a terminal workspace")
+	}
+	state.Click(hitTabList.At(int(workspace)))
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if allocations := testing.AllocsPerRun(50, func() {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}); allocations != 0 {
+		t.Fatalf("hidden file tab paint allocations = %v", allocations)
+	}
+
+	state.activateSFTPTab(state.sftpTabs[0].session.ID)
+	for range 3 {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}
+	if allocations := testing.AllocsPerRun(50, func() {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}); allocations > 6 {
+		t.Fatalf("active file tab paint allocations = %v, want at most the pinned baseline 6", allocations)
 	}
 }
 

@@ -1878,6 +1878,12 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
+	if state.modal == modalFileProperties {
+		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
+			return ui.EventResult{}
+		}
+		return ui.EventResult{Handled: true}
+	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
 	}
@@ -1926,13 +1932,23 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sftpPlacesPointer(event); handled {
 		return result
 	}
+	if state.fileTabVerticalRailAt(event.X, event.Y) {
+		repaint := false
+		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
+			w.cancelDrag()
+			repaint = true
+		}
+		return ui.EventResult{Handled: true, Repaint: repaint}
+	}
+	// An assistant drawer is painted over the page when the window is too narrow
+	// to dock it. It therefore owns pointer input before a full-page file tab.
+	if result, handled := state.aiPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNone {
 		if result, handled := state.sftpTabPointer(event); handled {
 			return result
 		}
-	}
-	if result, handled := state.aiPointer(event); handled {
-		return result
 	}
 	if result, handled := state.contextDividerPointer(event); handled {
 		return result
@@ -2114,6 +2130,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		if result, handled := state.sftpTabKey(event); handled {
 			return result
 		}
+	}
+	if result, handled := state.modalFilePropertiesKey(event); handled {
+		return result
 	}
 	var mount ui.Scope
 	if session, local, ok := state.decodePaneHit(event.Target); ok {

@@ -30,6 +30,10 @@ type sftpWindow struct {
 	phase                       sshconn.Phase
 	language                    i18n.Language
 	pal                         *palette
+	tabTitle                    string
+	tabTitleSource              string
+	tabTitleLanguage            i18n.Language
+	tabTitleReady               bool
 	shownPaths                  [2]string
 	input                       app.TextInput
 	notices                     fileNotices
@@ -191,6 +195,7 @@ func (state *State) syncSFTPWindows() {
 		}
 		if w.phase != phase || w.language != state.language || w.pal != state.pal {
 			w.phase, w.language, w.pal = phase, state.language, state.pal
+			w.session.phase = phase
 			w.invalidate()
 		}
 	}
@@ -232,6 +237,13 @@ func (w *sftpWindow) requestClose(allow func()) {
 		return
 	}
 	allow()
+}
+
+func (w *sftpWindow) closeDescription() string {
+	if w.window == nil {
+		return w.owner.messages.SFTPWindow.CloseTabDescription
+	}
+	return w.owner.messages.SFTPWindow.CloseDescription
 }
 
 func (w *sftpWindow) onClosed() {
@@ -416,7 +428,8 @@ func (w *sftpWindow) queueSelection(local bool) {
 }
 
 func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, sourceDir, targetDir string) {
-	if !w.connected() || w.view.worker == nil || w.view.busy || w.pendingLocal != "" || sourceDir == "" || targetDir == "" || w.closeConfirm || w.view.dialog != sftpDialogNone {
+	if !w.connected() || w.view.worker == nil || w.view.busy || w.pendingLocal != "" || sourceDir == "" || targetDir == "" ||
+		w.fileProperties.open || w.closeConfirm || w.view.dialog != sftpDialogNone {
 		return
 	}
 	queued := 0

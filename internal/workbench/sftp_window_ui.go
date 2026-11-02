@@ -151,7 +151,7 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	w.owner.paintSFTPFileProperties(canvas, ui.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
-		components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, m.SFTPWindow.CloseDescription, m.SFTPWindow.CloseTransfers, m.Cancel)
+		components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
 	if w.externalConflict != 0 && !w.closeConfirm && w.view.dialog == sftpDialogNone {
 		if edit := w.owner.editByID(w.externalConflict); edit != nil {

@@ -129,8 +129,16 @@ type terminalDrop struct {
 
 // FileDrop receives files dragged from the system over the window.
 func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
+	if state.modal == modalFileProperties {
+		return ui.EventResult{Handled: true}
+	}
 	if event.Phase == ui.FileDropLeave {
-		return ui.EventResult{Repaint: state.clearDrop() || state.aiDropHover(false)}
+		repaint := state.clearDrop() || state.aiDropHover(false)
+		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
+			w.cancelDrag()
+			repaint = true
+		}
+		return ui.EventResult{Repaint: repaint}
 	}
 	// The assistant panel is a place of its own, over the page beside it: files
 	// dropped on it are attached to the next question.
@@ -144,6 +152,14 @@ func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
 		return ui.EventResult{Handled: len(event.Paths) > 0, Repaint: true}
 	}
 	left := state.aiDropHover(false)
+	if state.fileTabVerticalRailAt(event.X, event.Y) {
+		repaint := left || state.clearDrop()
+		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
+			w.cancelDrag()
+			repaint = true
+		}
+		return ui.EventResult{Handled: true, Repaint: repaint}
+	}
 	result := state.fileDropOnPage(event)
 	result.Repaint = result.Repaint || left
 	return result

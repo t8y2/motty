@@ -217,7 +217,7 @@ type Options struct {
 	// uses app.OpenPath.
 	OpenPath func(string) error
 	// LaunchCustomEditor starts a user-chosen executable with one path. Nil uses
-	// the platform launcher.
+	// Viva's system launcher.
 	LaunchCustomEditor func(executable, path string) error
 	// OpenSchemeURL hands a link to the application registered for a custom URL
 	// scheme, for the folder an editor is asked to open. Nil uses
@@ -329,7 +329,7 @@ func (options Options) withDefaults() Options {
 		options.OpenPath = app.OpenPath
 	}
 	if options.LaunchCustomEditor == nil {
-		options.LaunchCustomEditor = launchCustomEditor
+		options.LaunchCustomEditor = app.OpenWith
 	}
 	if options.FileIcon == nil {
 		options.FileIcon = app.FileIcon

@@ -359,7 +359,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
 			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
 			state.paintEditorSetting(page)
-			if customEditorSupported() || state.defaultEditor == editorCustom || state.customEditorPath != "" {
+			if state.customEditorSettingVisible() {
 				path := state.customEditorPath
 				description := m.FilesCustomEditorNotSet
 				if !customEditorSupported() {
@@ -388,6 +388,10 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsFollowSetup, Label: m.FilesFollowSetupCopy, Variant: components.ButtonOutline})
 		})
 	})
+}
+
+func (state *State) customEditorSettingVisible() bool {
+	return customEditorSupported() || state.defaultEditor == editorCustom || state.customEditorPath != ""
 }
 
 // clickFilesSettings handles the presses of the Files settings.
@@ -590,6 +594,12 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpWindowOrder = sftpWindowOrderFromString(saved.SFTPWindowOrder)
 	state.sftpOpenMode = sftpOpenModeFromString(saved.SFTPOpenMode)
 	state.customEditorPath = strings.TrimSpace(saved.CustomEditorPath)
+	if !validCustomEditorPath(state.customEditorPath) {
+		state.customEditorPath = ""
+	}
+	if state.defaultEditor == editorCustom && state.customEditorPath == "" {
+		state.defaultEditor = editorNone
+	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.closeAction = closeActionFromString(saved.CloseAction)
 	state.update.skipped = saved.UpdateSkipped

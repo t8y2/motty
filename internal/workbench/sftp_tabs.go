@@ -225,7 +225,11 @@ func (state *State) sftpFileTabTitle(tab *sftpWindow) string {
 	if title == "" {
 		title = tab.session.Address
 	}
-	return state.messages.SFTPWindow.Title + " · " + title
+	if !tab.tabTitleReady || tab.tabTitleSource != title || tab.tabTitleLanguage != state.language {
+		tab.tabTitle = state.messages.SFTPWindow.Title + " · " + title
+		tab.tabTitleSource, tab.tabTitleLanguage, tab.tabTitleReady = title, state.language, true
+	}
+	return tab.tabTitle
 }
 
 func (state *State) activeTopTabFocusHit() ui.ID {
@@ -280,6 +284,13 @@ func (state *State) SFTPTabInput(context app.TextInputContext) *app.TextInput {
 func (state *State) sftpTabPointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil {
+		return ui.EventResult{}, false
+	}
+	// A narrow assistant is a drawer over the file manager. A field on the
+	// drawer may decline the press so Viva's normal text-input handling can
+	// place the caret; it still must not fall through to the page behind it.
+	if state.aiPanelVisible() && state.ai.panel.rect.Width > 0 &&
+		pointInRect(event.X, event.Y, state.ai.panel.rect) {
 		return ui.EventResult{}, false
 	}
 	local, _, mounted := state.sftpTabLocalID(event.Target)

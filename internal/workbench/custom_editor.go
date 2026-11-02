@@ -2,24 +2,11 @@ package workbench
 
 import (
 	"errors"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/vivaui/viva/app"
 )
-
-var errCustomEditorUnsupported = errors.New("a custom editor is unavailable on this platform")
-
-// startDetached starts a long-running editor and releases the process handle.
-// Reaping the child would make Motty wait for an application that may remain
-// open for hours.
-func startDetached(command *exec.Cmd) error {
-	if err := command.Start(); err != nil {
-		return err
-	}
-	return command.Process.Release()
-}
 
 func (state *State) chooseCustomEditor() {
 	if !customEditorSupported() {

@@ -182,8 +182,13 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		scroll = state.tabStrip.layoutIndex(geometry.area, float32(topTabCount)*(geometry.tabWidth+barGap), topTabCount, activeIndex, geometry.tabWidth+barGap, geometry.tabWidth)
 	} else if len(state.sftpTabs) > 0 {
 		scroll = state.fileTabStrip.layoutIndex(geometry.area, float32(len(state.sftpTabs))*(geometry.tabWidth+barGap), len(state.sftpTabs), activeIndex-len(state.workspaceTabs), geometry.tabWidth+barGap, geometry.tabWidth)
-	} else if !terminal {
-		state.tabStrip.area = ui.Rect{}
+	} else {
+		state.fileTabStrip.area = ui.Rect{}
+		state.fileTabStrip.max = 0
+		state.fileTabStrip.offset = 0
+		if !terminal {
+			state.tabStrip.area = ui.Rect{}
+		}
 	}
 	var workspaceSlot flex.Box
 	// The section and assistant are sibling cards, separated by the same margin
@@ -221,7 +226,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintIndependentMonitor(canvas, size)
 		state.paintAIPanel(canvas, size)
 	} else if fileManager {
-		state.paintSFTPTab(canvas, ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
+		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
 		state.paintAIPanel(canvas, size)
 	} else {
 		workspace := workspaceSlot.Rect().Inset(ui.All(workspaceBorder))
@@ -374,6 +379,25 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 // its Viva component so a press anywhere outside it dismisses it.
 func (state *State) windowRect() ui.Rect {
 	return ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
+}
+
+// fileManagerPixelBounds reserves the same side rail and assistant card that
+// ordinary sections use. The file manager remains a main-window tab, but it no
+// longer paints underneath controls that must receive input.
+func (state *State) fileManagerPixelBounds(size ui.Size) ui.Rect {
+	left := float32(0)
+	if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
+		left = state.verticalTabsReserve(size)
+	}
+	right := sectionCardMargin
+	if reserve := state.aiSectionReserve(size); reserve > 0 {
+		right = reserve
+	}
+	return ui.Rect{
+		X: left, Y: windowBarHeight,
+		Width:  max(size.Width-left-right, 0),
+		Height: max(size.Height-windowBarHeight, 0),
+	}
 }
 
 // tooltipGap is the space between a control and the tooltip that names it. The
@@ -592,7 +616,11 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 						edge = tintHostSurface(edge, fileTab.session.host.Color, .35)
 						entry.background = fill
 						first := float32(0)
-						if index == 0 {
+						if state.tabOrientation == tabsVertical {
+							if fileIndex == 0 {
+								first = -scroll
+							}
+						} else if index == 0 {
 							first = -scroll
 						}
 						label := state.sftpFileTabTitle(fileTab)

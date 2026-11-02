@@ -84,6 +84,14 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	if w.fileProperties.open {
+		// Let the dialog's own controls complete their normal press/release
+		// click sequence. Every other pointer event belongs to the modal layer.
+		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
+			return ui.EventResult{}
+		}
+		return handled
+	}
 	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
 		return ui.EventResult{}
 	}
@@ -442,7 +450,7 @@ func (w *sftpWindow) refresh(local bool) {
 }
 
 func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
-	if w.closeConfirm || w.externalConflict != 0 {
+	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 {
 		return nil
 	}
 	if w.bookmark.open {
@@ -620,7 +628,7 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 		}
 		return ui.EventResult{}
 	}
-	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
+	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
 		return ui.EventResult{}
 	}
 	if delta, ok := sftpHistoryChord(event); ok {
@@ -739,7 +747,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 			return ui.EventResult{}
 		}
 	}
-	if w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen() {
+	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen() {
 		return ui.EventResult{}
 	}
 	for _, id := range sftpWindowFilter {
@@ -812,7 +820,7 @@ func (w *sftpWindow) scroll(event ui.ScrollEvent) ui.EventResult {
 	if w.view.bookmarksOpen {
 		return ui.EventResult{Handled: true, Repaint: w.view.places.scroll.Wheel(event)}
 	}
-	if w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
+	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
 		return ui.EventResult{Handled: true}
 	}
 	for side, bounds := range w.ui.list {
@@ -841,6 +849,10 @@ func (w *sftpWindow) fileDrop(event ui.FileDropEvent) ui.EventResult {
 	if event.Phase == ui.FileDropLeave {
 		w.cancelDrag()
 		return ui.EventResult{Repaint: true}
+	}
+	if w.fileProperties.open {
+		w.cancelDrag()
+		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	_, target, _, valid := w.dropTarget(event.X, event.Y, true)
 	if !valid {

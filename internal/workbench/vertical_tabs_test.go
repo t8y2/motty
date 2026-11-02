@@ -71,7 +71,8 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	first := state.workspaceTabs[0].ID
-	if hit, ok := hitByID(&canvas, hitTabList.At(int(first))); !ok || state.verticalTabs.bounds.Width <= 0 ||
+	hit, ok := hitByID(&canvas, hitTabList.At(int(first)))
+	if !ok || state.verticalTabs.bounds.Width <= 0 ||
 		hit.Bounds.X+hit.Bounds.Width > state.verticalTabs.bounds.X+state.verticalTabs.bounds.Width {
 		t.Fatal("settings must retain the session list in its navigation sidebar")
 	}

@@ -75,6 +75,10 @@ func (state *State) openSFTPInEditor(view *sftpView) {
 	open := state.options.OpenSchemeURL
 	customExecutable := state.customEditorPath
 	launchCustom := state.options.LaunchCustomEditor
+	if request.editor == editorCustom && !validCustomEditorPath(customExecutable) {
+		state.status = state.messages.Tools.FilesCustomEditorInvalid
+		return
+	}
 	results, notify := make(chan editorResult, 1), state.notifyForView(session, view)
 	view.editorResults = results
 	go func() {

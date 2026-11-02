@@ -22,5 +22,5 @@ type SFTPWindowMessages struct {
 	PropertiesTitle, PropertiesName, PropertiesPath, PropertiesType, PropertiesSize, PropertiesModified     string
 	PropertiesPermissions, PropertiesOwner, PropertiesGroup, PropertiesLinkTarget                           string
 	PropertiesFolder, PropertiesFile, PropertiesSymlink, PropertiesOther, PropertiesUnknown                 string
-	CloseTitle, CloseDescription, CloseTransfers, Disconnected                                              string
+	CloseTitle, CloseDescription, CloseTabDescription, CloseTransfers, Disconnected                         string
 }

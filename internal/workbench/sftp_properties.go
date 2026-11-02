@@ -209,5 +209,20 @@ func (w *sftpWindow) filePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool)
 		w.fileProperties = sftpFileProperties{}
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return ui.EventResult{Handled: true}, true
+}
+
+// modalFilePropertiesKey keeps a single-column properties dialog modal: only
+// its own Enter target and Escape reach it. Everything else is consumed before
+// file-list shortcuts can act on the row behind the dialog.
+func (state *State) modalFilePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if state.modal != modalFileProperties {
+		return ui.EventResult{}, false
+	}
+	if event.Key == ui.KeyEscape && !event.Repeat ||
+		event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+		state.clickFileProperties(hitFilePropertiesClose)
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	return ui.EventResult{Handled: true}, true
 }
