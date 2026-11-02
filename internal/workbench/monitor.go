@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
+	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -65,11 +66,14 @@ type monitorCoreText struct {
 
 // Fixed storage bounds the last minute of samples, independent of session age.
 type monitorView struct {
-	emptyLines                                                []string
-	emptyText                                                 string
-	emptyWidth                                                float32
-	page                                                      int
-	coresCollapsed, coresMore, disksCollapsed                 bool
+	emptyLines                                []string
+	emptyText                                 string
+	emptyWidth                                float32
+	page                                      int
+	coresCollapsed, coresMore, disksCollapsed bool
+	// noPerCore is a host whose system has no per-core source (macOS): the
+	// section is left out rather than shown empty.
+	noPerCore                                                 bool
 	cores                                                     []monitorCoreText
 	coresTitle, coreMoreText, cpuNote, diskText, diskCapacity string
 	diskValue                                                 float64
@@ -165,6 +169,7 @@ func (state *State) ensureMonitor(session *Session) {
 	if v.panel.paused {
 		return
 	}
+	v.panel.noPerCore = system == sshconn.SystemDarwin
 	runner := monitorRunnerFor(session)
 	if v.worker == nil && v.state < remoteStatsUnsupported {
 		v.worker = startMonitorWorker(runner, state.notifyFor(session), system, v.panel.interval)

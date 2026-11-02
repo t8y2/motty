@@ -312,7 +312,7 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 				if scheduled {
 					t.Fatalf("idle animation keeps scheduling: reduced=%v paused=%v", reduced, paused)
 				}
-			} else if !scheduled || delay <= 0 || delay > time.Second/30 {
+			} else if !scheduled || delay <= 0 || delay > time.Duration(p.interval)*time.Second/monitorClockSteps {
 				t.Fatalf("clock cadence=%v/%v", delay, scheduled)
 			}
 			if len(canvas.Hits()) != 1 || !canvas.Hits()[0].Expandable {
@@ -380,4 +380,15 @@ func TestMonitorStartsForAQuietWorkspaceOnActivation(t *testing.T) {
 		t.Fatal("quiet workspace waits for unrelated terminal output to start its monitor")
 	}
 	state.closeMonitor()
+}
+
+// macOS has no per-core source, so its panel leaves the section out rather
+// than showing an empty one, and the content height drops with it.
+func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
+	var p monitorView
+	with := monitorContentHeight(&p)
+	p.noPerCore = true
+	if without := monitorContentHeight(&p); with-without != monitorCoresHeight(&p)+monitorGap {
+		t.Fatalf("content height %v with the section, %v without", with, without)
+	}
 }

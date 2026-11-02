@@ -28,6 +28,9 @@ const (
 // scheduleSync asks for a sync soon. Windows of one process share the work: the
 // first one does it, and the others hand their changes to it.
 func (state *State) scheduleSync() {
+	if state.sync.holdBack {
+		return
+	}
 	leader := state.syncLeader()
 	if leader != state {
 		leader.scheduleSync()

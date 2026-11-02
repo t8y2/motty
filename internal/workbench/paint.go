@@ -694,14 +694,22 @@ func elide(canvas *ui.Canvas, value string, size, weight, width float32) string 
 	if canvas.TextWidthWeight(value, size, weight) <= width {
 		return value
 	}
+	// The longest prefix that fits with the ellipsis, found by halving: a long
+	// path in a narrow cell would otherwise be measured once for every rune.
 	runes := []rune(value)
-	for len(runes) > 1 {
-		runes = runes[:len(runes)-1]
-		if candidate := string(runes) + "…"; canvas.TextWidthWeight(candidate, size, weight) <= width {
-			return candidate
+	fits := 0
+	for low, high := 1, len(runes)-1; low <= high; {
+		middle := (low + high) / 2
+		if canvas.TextWidthWeight(string(runes[:middle])+"…", size, weight) <= width {
+			fits, low = middle, middle+1
+		} else {
+			high = middle - 1
 		}
 	}
-	return "…"
+	if fits == 0 {
+		return "…"
+	}
+	return string(runes[:fits]) + "…"
 }
 
 // chromeLayout keeps the flex.View of each area of the window chrome that is laid

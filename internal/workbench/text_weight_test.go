@@ -39,3 +39,43 @@ func TestElidedTextFitsAtTheWeightItIsDrawnWith(t *testing.T) {
 		t.Fatalf("the heavier text kept as many letters (%q) as the regular one (%q)", heavy, regular)
 	}
 }
+
+// elide halves its way to the longest prefix that fits. It must land where
+// dropping one rune at a time lands, whatever the glyph widths and the room.
+func TestElideFindsTheLongestPrefixThatFits(t *testing.T) {
+	var canvas ui.Canvas
+	canvas.SetMeasurer(func(value string, size, weight float32) float32 {
+		var width float32
+		for _, r := range value {
+			switch {
+			case r >= 0x2e80:
+				width += size
+			case r == 'i' || r == '/':
+				width += size * .3
+			default:
+				width += size * .55
+			}
+		}
+		return width
+	})
+	linear := func(value string, width float32) string {
+		if canvas.TextWidthWeight(value, 12, ui.WeightRegular) <= width {
+			return value
+		}
+		runes := []rune(value)
+		for len(runes) > 1 {
+			runes = runes[:len(runes)-1]
+			if candidate := string(runes) + "…"; canvas.TextWidthWeight(candidate, 12, ui.WeightRegular) <= width {
+				return candidate
+			}
+		}
+		return "…"
+	}
+	for _, value := range []string{"", "a", "/var/lib/docker/volumes/0123/_data", "目录名称很长的挂载点/data/卷", "iiiiiiiiiiiiiiiiiiiiii"} {
+		for width := float32(0); width <= 260; width += 3.5 {
+			if got, want := elide(&canvas, value, 12, ui.WeightRegular, width), linear(value, width); got != want {
+				t.Fatalf("elide(%q, %v) = %q, one rune at a time gives %q", value, width, got, want)
+			}
+		}
+	}
+}

@@ -134,10 +134,12 @@ func (s *State) paintDashboardDeviceView(c *ui.Canvas, p *monitoring.Panel, h Ho
 		metric = 3
 	}
 	chart := ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 170}
-	c.RoundedBorder(chart, 7, 1, pal.line, pal.workspace)
-	c.DrawIcon([]ui.Icon{icons.Wifi, icons.HardDrive}[r.page%2], ui.Rect{X: chart.X + 12, Y: chart.Y + 11, Width: 14, Height: 14}, pal.muted)
-	monitorLabel(c, label, ui.Rect{X: chart.X + 34, Y: chart.Y + 4, Width: 180, Height: 28}, 13, pal.text, ui.WeightMedium)
-	s.paintDashboardChart(c, p, h, r, ui.Rect{X: chart.X + 8, Y: chart.Y + 33, Width: chart.Width - 16, Height: chart.Height - 36}, metric, label)
+	if s.dashboardShown(chart) {
+		c.RoundedBorder(chart, 7, 1, pal.line, pal.workspace)
+		c.DrawIcon([]ui.Icon{icons.Wifi, icons.HardDrive}[r.page%2], ui.Rect{X: chart.X + 12, Y: chart.Y + 11, Width: 14, Height: 14}, pal.muted)
+		monitorLabel(c, label, ui.Rect{X: chart.X + 34, Y: chart.Y + 4, Width: 180, Height: 28}, 13, pal.text, ui.WeightMedium)
+		s.paintDashboardChart(c, p, h, r, ui.Rect{X: chart.X + 8, Y: chart.Y + 33, Width: chart.Width - 16, Height: chart.Height - 36}, metric, label)
+	}
 	y := b.Y + 178
 	if r.snapshot.DetailsFailed {
 		monitorLabel(c, s.messages.Monitor.DetailsUnavailable, ui.Rect{X: b.X + 12, Y: y, Width: b.Width - 24, Height: 42}, 12, pal.warning, ui.WeightRegular)
@@ -150,6 +152,10 @@ func (s *State) paintDashboardDeviceView(c *ui.Canvas, p *monitoring.Panel, h Ho
 		}
 		y += 30
 		for _, disk := range r.snapshot.Details.Disks {
+			if !s.dashboardShown(ui.Rect{Y: y, Height: 32}) {
+				y += 38
+				continue
+			}
 			color := pal.text
 			if disk.Virtual {
 				color = pal.muted
@@ -167,6 +173,10 @@ func (s *State) paintDashboardDeviceView(c *ui.Canvas, p *monitoring.Panel, h Ho
 		}
 		y += 30
 		for _, n := range r.snapshot.Details.Networks {
+			if !s.dashboardShown(ui.Rect{Y: y, Height: 32}) {
+				y += 38
+				continue
+			}
 			down, up := "—", "—"
 			if n.HasRate {
 				down = dashboardRate(n.ReceivePerSecond)
