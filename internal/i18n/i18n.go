@@ -134,6 +134,9 @@ type Messages struct {
 	SettingsTabsVertical                   string
 	SettingsTabsAutoHide                   string
 	SettingsTabsAutoHideDescription        string
+	SettingsTabsGrouping                   string
+	SettingsTabsGroupingDescription        string
+	VerticalTabGroupCountFmt               string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
 	SettingsNetworkProxy                   string

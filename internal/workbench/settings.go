@@ -302,6 +302,8 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTabOrientation(tabsVertical)
 	case hitSettingsVerticalTabsAutoHide:
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
+	case hitSettingsVerticalTabsGrouping:
+		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
 	case hitSettingsNetworkSystem:
 		changed = state.networkProxy != networkProxySystem
 		state.networkProxy = networkProxySystem

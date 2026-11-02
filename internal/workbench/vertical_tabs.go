@@ -11,9 +11,11 @@ var (
 	hitSettingsTabsHorizontal       = tree.ID(settingsHits, "tabs-horizontal")
 	hitSettingsTabsVertical         = tree.ID(settingsHits, "tabs-vertical")
 	hitSettingsVerticalTabsAutoHide = tree.ID(settingsHits, "vertical-tabs-auto-hide")
+	hitSettingsVerticalTabsGrouping = tree.ID(settingsHits, "vertical-tabs-grouping")
 	hitVerticalTabs                 = tree.ID(shellHits, "vertical-tabs")
 	hitVerticalTabsPin              = tree.ID(shellHits, "vertical-tabs-pin")
 	hitVerticalTabsNew              = tree.ID(shellHits, "vertical-tabs-new")
+	hitVerticalTabGroups            = tree.Sub(shellHits, tree.Name("vertical-tab-group"))
 )
 
 const (
@@ -48,6 +50,8 @@ func tabOrientationFromString(value string) tabOrientation {
 
 type verticalTabs struct {
 	autoHide bool
+	grouping bool
+	grouped  verticalTabGrouping
 	over     bool
 	bounds   ui.Rect
 	slot     flex.Box
@@ -123,7 +127,7 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 // pin the sidebar open.
 func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
 	focus := canvas.FocusVisible()
-	return focus.Scope() == hitTabList || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
+	return focus.Scope() == hitTabList || focus.Scope() == hitVerticalTabGroups || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
 }
 
 func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
@@ -175,8 +179,13 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		active = state.deck.ActiveWorkspace()
 	}
 	pitch := verticalTabHeight + barGap
-	content := max(float32(len(state.workspaceTabs))*pitch-barGap, 0)
-	scroll := state.tabStrip.layout(list, content+barGap, state.workspaceTabs, pitch, verticalTabHeight, active)
+	rows := state.workspaceTabs
+	if view.grouping {
+		state.rebuildVerticalTabGroups(compact)
+		rows = view.grouped.layout
+	}
+	content := max(float32(len(rows))*pitch-barGap, 0)
+	scroll := state.tabStrip.layout(list, content+barGap, rows, pitch, verticalTabHeight, active)
 	area := components.BeginScrollArea(canvas, state.Theme(), list, ui.Size{Width: list.Width, Height: content}).Offset(0, scroll)
 	geometry := area.BeginContent()
 	tabWidth := geometry.Viewport.Width
@@ -186,12 +195,19 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	view.tabs = view.tabs[:0]
 	f := view.view.Begin(canvas, state.Theme(), geometry.Content)
 	f.Column().Fill().Children(func() {
+		if view.grouping {
+			state.declareGroupedVerticalTabs(f, tabWidth, compact)
+			return
+		}
 		for _, workspace := range state.workspaceTabs {
 			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact))
 		}
 	})
 	f.End()
 	state.paintWorkspaceTabParts(canvas, geometry.Viewport, view.tabs)
+	if view.grouping {
+		state.paintVerticalTabGroupIcons(canvas)
+	}
 	area.EndContent()
 	button := ui.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
 	if compact {

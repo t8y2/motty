@@ -65,6 +65,14 @@ list in the left sidebar. In terminal workspaces, keep the vertical list expande
 or let it collapse to an icon rail that expands on hover without resizing the
 terminal. These layout preferences stay on this device.
 
+**Group vertical tabs** is a separate General setting, off by default. When
+enabled, multiple tabs for the same connection target appear under a collapsible
+server heading; a single connection stays a standalone tab. Different accounts,
+protocols, ports or local shell environments, and split tabs spanning multiple
+servers, stay separate. Grouping only changes the vertical list: it never merges
+or disconnects sessions, and turning it off or returning to horizontal mode
+restores the original order.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword

@@ -249,6 +249,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			page.row(messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], selectedTabs)
 			if state.tabOrientation == tabsVertical {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
+				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)

@@ -65,7 +65,8 @@ import (
 // older build's full save would drop the choice and the menu item with it.
 // Version 13 preserves the device-local network proxy choice.
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
-const configFormat = 14
+// Version 15 preserves the device-local vertical tab grouping switch.
+const configFormat = 15
 
 const (
 	kindSetting             = "setting"

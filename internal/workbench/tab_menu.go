@@ -103,7 +103,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if !state.tabMenu.open {
 		return
 	}
-	index, ok := state.workspaceTab(state.tabMenu.workspace)
+	_, ok := state.workspaceTab(state.tabMenu.workspace)
 	if !ok {
 		state.tabMenu.open = false
 		return
@@ -131,7 +131,8 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.tabOrientation == tabsVertical {
 		closeFollowing, closeIcon = messages.MenuCloseTabsBelow, iconChevronDown
 	}
-	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: closeFollowing, Icon: icon(closeIcon), Disabled: index == len(state.workspaceTabs)-1})
+	following := state.paintedWorkspaceTabsAfter(state.tabMenu.workspace)
+	rows.add(components.ContextMenuItem{ID: hitTabMenuCloseRight, Label: closeFollowing, Icon: icon(closeIcon), Disabled: len(following) == 0})
 	if reconnect || restart || disconnect {
 		rows.separate()
 	}
@@ -183,7 +184,15 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	case hitTabMenuCloseOthers:
 		state.askCloseTabs(workspace, func(position int) bool { return position != index })
 	case hitTabMenuCloseRight:
-		state.askCloseTabs(workspace, func(position int) bool { return position > index })
+		following := state.workspaceTabsAfter(workspace)
+		state.askCloseTabs(workspace, func(position int) bool {
+			for _, tab := range following {
+				if state.workspaceTabs[position].ID == tab.ID {
+					return true
+				}
+			}
+			return false
+		})
 	case hitTabMenuReconnect:
 		if session, ok := state.tabMenuSessionFor(workspace); ok && state.canReconnect(session) {
 			state.activateWorkspace(workspace)
