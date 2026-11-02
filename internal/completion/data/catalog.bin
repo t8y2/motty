@@ -3,11 +3,11 @@ source	carapace-bin
 release	v1.8.1
 commit	6bc2b8d69a2474b6eeb626a85ef83254c2ab7d82
 license	MIT
-roots	741
-nodes	6553
-flags	48308
-values	69
-digest	c0fa02593efc5061cbfeb869e70b3cf2d897ea22da6127b0430c0e6f98051c2a
+roots	742
+nodes	6575
+flags	49748
+values	131
+digest	7dbe0699114df574adb231278b04af16148b11c333d424a5054594a08fca120b
 
 N	0	acpi		0	Shows information from the /proc filesystem
 F	f	ac-adapter	a		ac adapter information	
@@ -34699,6 +34699,1347 @@ F	f	opening-mode	o	v	File opening mode: "tab", "window" or "mixed" (open tabs in
 F	f	preferences			Open the preferences dialog	
 F	f	quit	q		Quit a running Mousepad primary instance	
 F	f	version	v		Print version information and exit	
+N	0	mpv		0	a media player
+F	f	ab-loop-a		vo	Set loop point	
+F	f	ab-loop-b		vo	Set loop Point	
+F	f	ab-loop-count		vo	Run A-B only N times	
+F	f	access-references		vo	Follow any references in the file being opened	
+F	f	ad		vo	Specify a priority list of audio decoders to be used	
+F	f	ad-lavc-ac3drc		vo	Select the Dynamic Range Compression level for AC-3 audio streams	
+F	f	ad-lavc-downmix		vo	Whether to request audio channel downmixing from the decoder	
+F	f	ad-lavc-o		vo	Pass AVOptions to libavcodec decoder	
+F	f	ad-lavc-o-add		vo		
+F	f	ad-lavc-o-append		vo		
+F	f	ad-lavc-o-clr		vo		
+F	f	ad-lavc-o-del		vo		
+F	f	ad-lavc-o-remove		vo		
+F	f	ad-lavc-o-set		vo		
+F	f	ad-lavc-threads		vo	Number of threads to use for decoding	
+F	f	ad-queue-enable		vo	Enable running the audio decoder on a separate thread	
+F	f	ad-queue-max-bytes		vo	Maximum approximate allowed size of the queue	
+F	f	ad-queue-max-samples		vo	Maximum number samples of the queue	
+F	f	ad-queue-max-secs		vo	Maximum number of seconds of media in the queue	
+F	f	ad-spdif-dtshd		vo	If DTS is passed through, use DTS-HD	
+F	f	af		vo	Specify a list of audio filters to apply to the audio stream	
+F	f	af-add		vo		
+F	f	af-append		vo		
+F	f	af-clr		vo		
+F	f	af-help		vo		
+F	f	af-pre		vo		
+F	f	af-remove		vo		
+F	f	af-set		vo		
+F	f	af-toggle		vo		
+F	f	aid		vo	Select audio track	
+F	f	alang		vo	Specify a prioritized list of audio languages to use, as IETF language tags	
+F	f	alang-add		vo		
+F	f	alang-append		vo		
+F	f	alang-clr		vo		
+F	f	alang-del		vo		
+F	f	alang-pre		vo		
+F	f	alang-remove		vo		
+F	f	alang-set		vo		
+F	f	alang-toggle		vo		
+F	f	allow-delayed-peak-detect		vo	When using --hdr-compute-peak, allow delaying the detected peak by a frame when beneficial for performance	
+F	f	alsa-buffer-time		vo	Set the requested buffer time in microseconds	
+F	f	alsa-ignore-chmap		vo	Don't read or set the channel map of the ALSA device	
+F	f	alsa-mixer-device		vo	Set the mixer device used with ao-volume	
+F	f	alsa-mixer-index		vo	Set the index of the mixer channel	
+F	f	alsa-mixer-name		vo	Set the name of the mixer element	
+F	f	alsa-non-interleaved		vo	Allow output of non-interleaved formats	
+F	f	alsa-periods		vo	Number of periods requested from the ALSA API	
+F	f	alsa-resample		vo	Enable ALSA resampling plugin	
+F	f	android-surface-size		vo	Set dimensions of the rendering surface used by the Android gpu context	
+F	f	angle-d3d11-feature-level		vo	Selects a specific feature level when using the ANGLE backend with D3D11	
+F	f	angle-d3d11-warp		vo	Use WARP (Windows Advanced Rasterization Platform) when using the ANGLE backend with D3D11	
+F	f	angle-egl-windowing		vo	Use ANGLE's built in EGL windowing functions to create a swap chain	
+F	f	angle-flip		vo	Enable flip-model presentation, which avoids unnecessarily copying the backbuffer by sharing surfaces with the DWM	
+F	f	angle-renderer		vo	Forces a specific renderer when using the ANGLE backend	
+F	f	angle-swapchain-length		vo	Set the maximum number of in-flight frames for the ANGLE backend swapchain	
+F	f	ao		vo	Specify a priority list of audio output drivers to be used	
+F	f	ao-add		vo		
+F	f	ao-append		vo		
+F	f	ao-clr		vo		
+F	f	ao-help		vo		
+F	f	ao-null-broken-delay		vo	Simulate broken audio drivers, which don't report latency correctly	
+F	f	ao-null-broken-eof		vo	Simulate broken audio drivers, which always add the fixed device latency to the reported audio playback position	
+F	f	ao-null-buffer		vo	Simulated buffer length in seconds	
+F	f	ao-null-channel-layouts		vo	If not empty, this is a , separated list of channel layouts the AO allows	
+F	f	ao-null-format		vo	Force the audio output format the AO will accept	
+F	f	ao-null-latency		vo	Simulated device latency	
+F	f	ao-null-outburst		vo	Simulated chunk size in samples	
+F	f	ao-null-speed		vo	Simulated audio playback speed as a multiplier	
+F	f	ao-null-untimed		vo	Do not simulate timing of a perfect audio device	
+F	f	ao-pcm-append		vo	Append to the file, instead of overwriting it	
+F	f	ao-pcm-file		vo	Write the sound to <filename> instead of the default audiodump.wav	
+F	f	ao-pcm-waveheader		vo	Include or do not include the WAVE header	
+F	f	ao-pre		vo		
+F	f	ao-remove		vo		
+F	f	ao-set		vo		
+F	f	ao-toggle		vo		
+F	f	archive-exts		vo	Archive file extensions to try to match when using --autocreate-playlist or --directory-filter-types	
+F	f	archive-exts-add		vo		
+F	f	archive-exts-append		vo		
+F	f	archive-exts-clr		vo		
+F	f	archive-exts-del		vo		
+F	f	archive-exts-pre		vo		
+F	f	archive-exts-remove		vo		
+F	f	archive-exts-set		vo		
+F	f	archive-exts-toggle		vo		
+F	f	audio		vo	alias for --aid	
+F	f	audio-backward-batch		vo	Number of keyframe ranges to decode at once when backward decoding	
+F	f	audio-backward-overlap		vo	Number of overlapping keyframe ranges to use for backward decoding	
+F	f	audio-buffer		vo	Set the audio output minimum buffer	
+F	f	audio-channels		vo	Control which audio channels are output	
+F	f	audio-client-name		vo	The application name the player reports to the audio API	
+F	f	audio-delay		vo	Audio delay in seconds	
+F	f	audio-demuxer		vo	Use this audio demuxer type when using --audio-file	
+F	f	audio-device		vo	Use the given audio device	
+F	f	audio-display		vo	Determines whether to display cover art when playing audio files and with what priority	
+F	f	audio-exclusive		vo	Enable exclusive output mode	
+F	f	audio-exts		vo	Audio file extensions to try to match when using --audio-file-auto, --autocreate-playlist or --directory-filter-types	
+F	f	audio-exts-add		vo		
+F	f	audio-exts-append		vo		
+F	f	audio-exts-clr		vo		
+F	f	audio-exts-del		vo		
+F	f	audio-exts-pre		vo		
+F	f	audio-exts-remove		vo		
+F	f	audio-exts-set		vo		
+F	f	audio-exts-toggle		vo		
+F	f	audio-fallback-to-null		vo	If no audio device can be opened, behave as if --ao=null was given	
+F	f	audio-file		vo	CLI/config file only alias for --audio-files-append	
+F	f	audio-file-auto		vo	Load additional audio files matching the video filename	
+F	f	audio-file-auto-exts		vo	alias for audio-exts	
+F	f	audio-file-paths		vo	Analogous to --sub-file-paths option, but for auto-loaded audio files	
+F	f	audio-file-paths-add		vo		
+F	f	audio-file-paths-append		vo		
+F	f	audio-file-paths-clr		vo		
+F	f	audio-file-paths-del		vo		
+F	f	audio-file-paths-pre		vo		
+F	f	audio-file-paths-remove		vo		
+F	f	audio-file-paths-set		vo		
+F	f	audio-file-paths-toggle		vo		
+F	f	audio-files		vo	Play audio from an external file while viewing a video	
+F	f	audio-files-add		vo		
+F	f	audio-files-append		vo		
+F	f	audio-files-clr		vo		
+F	f	audio-files-del		vo		
+F	f	audio-files-pre		vo		
+F	f	audio-files-remove		vo		
+F	f	audio-files-set		vo		
+F	f	audio-files-toggle		vo		
+F	f	audio-format		vo	Select the sample format used for output from the audio filter layer to the sound card	
+F	f	audio-normalize-downmix		vo	Enable/disable normalization if surround audio is downmixed to stereo	
+F	f	audio-pitch-correction		vo	If this is enabled (default), playing with a speed different from normal automatically inserts the scaletempo2 audio filter	
+F	f	audio-resample-cutoff		vo	Cutoff frequency	
+F	f	audio-resample-filter-size		vo	Length of the filter with respect to the lower sampling rate	
+F	f	audio-resample-linear		vo	If set then filters will be linearly interpolated between polyphase entries	
+F	f	audio-resample-max-output-size		vo	Limit maximum size of audio frames filtered at once, in ms	
+F	f	audio-resample-phase-shift		vo	Log2 of the number of polyphase entries	
+F	f	audio-reversal-buffer		vo	For backward decoding	
+F	f	audio-samplerate		vo	Select the output sample rate to be used	
+F	f	audio-set-media-role		vo	If enabled, mpv will set the appropriate media role on supported audio servers to indicate whether mpv is playing a video or an audio-only file	
+F	f	audio-spdif		vo	List of codecs for which compressed audio passthrough should be used	
+F	f	audio-stream-silence		vo	Cash-grab consumer audio hardware (such as A/V receivers) often ignore initial audio sent over HDMI	
+F	f	audio-swresample-o		vo	Set AVOptions on the SwrContext or AVAudioResampleContext	
+F	f	audio-swresample-o-add		vo		
+F	f	audio-swresample-o-append		vo		
+F	f	audio-swresample-o-clr		vo		
+F	f	audio-swresample-o-del		vo		
+F	f	audio-swresample-o-remove		vo		
+F	f	audio-swresample-o-set		vo		
+F	f	audio-wait-open		vo	This makes sense for use with --audio-stream-silence=yes. If this option is given, the player will wait for the given amount of seconds after opening the audio 	
+F	f	auto-window-resize		vo	By default, mpv will automatically resize itself if the video's size changes	
+F	f	autocreate-playlist		vo	When opening a local file, act as if the parent directory is opened and create a playlist automatically	
+F	f	autofit		vo	Set the initial window size to a maximum size specified by WxH, without changing the window's aspect ratio	
+F	f	autofit-larger		vo	This option behaves exactly like --autofit, except that it sets the maximum size of the window	
+F	f	autofit-smaller		vo	This option behaves exactly like --autofit, except that it sets the minimum size of the window	
+F	f	autoload-files		vo	Automatically load/select external files	
+F	f	autosync		vo	Gradually adjusts the A/V sync based on audio delay measurements	
+F	f	backdrop-type		vo	Controls the backdrop/border style	
+F	f	background		vo	If the frame has an alpha component, decide what kind of background, if any, to blend it with	
+F	f	background-blur-radius		vo	The blur radius (in pixels) to use for --border-background=blur	
+F	f	background-color		vo	Color used to draw parts of the mpv window not covered by video	
+F	f	background-tile-color-0		vo	Colors used to draw parts of the mpv window not covered by video in --background=tiles mode	
+F	f	background-tile-color-1		vo	Colors used to draw parts of the mpv window not covered by video in --background=tiles mode	
+F	f	background-tile-size		vo	Tile size used to draw parts of the mpv window not covered by video in --background=tiles mode	
+F	f	blend-subtitles		vo	Blend subtitles directly onto upscaled video frames, before interpolation and/or color management	
+F	f	bluray-angle		vo	Some Blu-ray discs contain scenes that can be viewed from multiple angles. This option tells mpv which angle to use	
+F	f	bluray-device		vo	Specify the Blu-ray disc location	
+F	f	border		vo	Play video with window border and decorations	
+F	f	border-background		vo	Same as --background but only applies to the black bar/border area of the window	
+F	f	brightness		vo	Adjust the brightness of the video signal	
+F	f	cache		vo	Decide whether to use network cache settings	
+F	f	cache-on-disk		vo	Write packet data to a temporary file, instead of keeping them in memory	
+F	f	cache-pause		vo	Whether the player should automatically pause when the cache runs out of data and stalls decoding/playback	
+F	f	cache-pause-initial		vo		
+F	f	cache-pause-wait		vo		
+F	f	cache-secs		vo	How many seconds of audio/video to prefetch if the cache is active	
+F	f	cdda-cdtext		vo	Print CD text	
+F	f	cdda-device		vo	Specify the CD device for CDDA playback	
+F	f	cdda-overlap		vo	Force minimum overlap search during verification to <value> sectors	
+F	f	cdda-paranoia		vo	Set paranoia level	
+F	f	cdda-sector-size		vo	Set atomic read size	
+F	f	cdda-skip		vo	(Never) accept imperfect data reconstruction	
+F	f	cdda-speed		vo	Set CD spin speed	
+F	f	cdda-toc-offset		vo	Add <value> sectors to the values reported when addressing tracks	
+F	f	chapter-merge-threshold		vo	Threshold for merging almost consecutive ordered chapter parts in milliseconds	
+F	f	chapter-seek-threshold		vo	Distance in seconds from the beginning of a chapter within which a backward chapter seek will go to the previous chapter	
+F	f	chapters-file		vo	Load chapters from this file, instead of using the chapter metadata found in the main file	
+F	f	clipboard-backends		vo	Specify a priority list of the clipboard backends to be used	
+F	f	clipboard-backends-add		vo		
+F	f	clipboard-backends-append		vo		
+F	f	clipboard-backends-clr		vo		
+F	f	clipboard-backends-help		vo		
+F	f	clipboard-backends-pre		vo		
+F	f	clipboard-backends-remove		vo		
+F	f	clipboard-backends-set		vo		
+F	f	clipboard-backends-toggle		vo		
+F	f	clipboard-monitor		vo	Enable clipboard monitoring so that the clipboard property can be observed for content changes	
+F	f	clipboard-xwayland		vo	Enable X11 clipboard backend in suspected Wayland environments	
+F	f	cocoa-cb-10bit-context		vo	Creates a 10bit capable pixel format for the context creation	
+F	f	cocoa-cb-output-csp		vo	This sets the color space of the layer to activate the macOS color transformation	
+F	f	cocoa-cb-sw-renderer		vo	Use the Apple Software Renderer when using cocoa-cb	
+F	f	config		vo		
+F	f	config-dir		vo	Force a different configuration directory	
+F	f	container-fps-override		vo	Override video framerate	
+F	f	contrast		vo	Adjust the contrast of the video signal	
+F	f	cookies		vo	Support cookies when making HTTP requests	
+F	f	cookies-file		vo	Read HTTP cookies from <filename>	
+F	f	corner-rounding		vo	If set to a value above 0.0, the output will be rendered with rounded corners, as if an alpha transparency mask had been applied	
+F	f	correct-downscaling		vo	When using convolution based filters, extend the filter size when downscaling	
+F	f	correct-pts		vo	--correct-pts=no switches mpv to a mode where video timing is determined using a fixed framerate value	
+F	f	cover-art-auto		vo	Whether to load _external_ cover art automatically	
+F	f	cover-art-auto-exts		vo	alias for image-exts	
+F	f	cover-art-file		vo	CLI/config file only alias for --cover-art-files-append	
+F	f	cover-art-files		vo	Use an external file as cover art while playing audio	
+F	f	cover-art-files-add		vo		
+F	f	cover-art-files-append		vo		
+F	f	cover-art-files-clr		vo		
+F	f	cover-art-files-del		vo		
+F	f	cover-art-files-pre		vo		
+F	f	cover-art-files-remove		vo		
+F	f	cover-art-files-set		vo		
+F	f	cover-art-files-toggle		vo		
+F	f	cover-art-whitelist		vo	Filenames to load as cover art, sorted by descending priority	
+F	f	cover-art-whitelist-add		vo		
+F	f	cover-art-whitelist-append		vo		
+F	f	cover-art-whitelist-clr		vo		
+F	f	cover-art-whitelist-del		vo		
+F	f	cover-art-whitelist-pre		vo		
+F	f	cover-art-whitelist-remove		vo		
+F	f	cover-art-whitelist-set		vo		
+F	f	cover-art-whitelist-toggle		vo		
+F	f	cscale		vo	As --scale, but for interpolating chroma information	
+F	f	cscale-antiring		vo	Set the antiringing strength	
+F	f	cscale-blur		vo	Kernel scaling factor	
+F	f	cscale-clamp		vo	Specifies a weight bias to multiply into negative coefficients	
+F	f	cscale-param1		vo	Set filter parameters	
+F	f	cscale-param2		vo	Set filter parameters	
+F	f	cscale-radius		vo	Set radius for tunable filters, must be a float number between 0.5 and 16.0	
+F	f	cscale-taper		vo	Kernel/window taper factor	
+F	f	cscale-window		vo	Choose a custom windowing function for the kernel	
+F	f	cscale-wparam		vo	Configure the parameter for the window function given by --scale-window etc	
+F	f	cscale-wtaper		vo	Kernel/window taper factor	
+F	f	cuda-decode-device		vo	Choose the GPU device used for decoding when using the cuda or nvdec hwdecs with the OpenGL GPU backend, and with the cuda-copy or nvdec-copy hwdecs in all case	
+F	f	curl-buffer-size		vo	Size of the per-stream producer-side ring buffer that decouples the network thread from the consumer	
+F	f	curl-connect-timeout		vo	TCP/TLS connect timeout in seconds	
+F	f	curl-enabled		vo	Enable the libcurl-based network backend	
+F	f	curl-http-version		vo	Select the maximum HTTP protocol version libcurl is allowed to negotiate	
+F	f	curl-max-redirects		vo	Maximum number of HTTP redirects to follow before reporting an error	
+F	f	curl-max-request-size		vo	For seekable streams, split the transfer into Range requests of at most this size	
+F	f	curl-max-retries		vo	Number of times a single seekable transfer may be transparently re-attempted after a recoverable error	
+F	f	cursor-autohide		vo	Make mouse cursor automatically hide after given number of milliseconds	
+F	f	cursor-autohide-fs-only		vo	If this option is given, the cursor is always visible in windowed mode	
+F	f	d3d11-adapter		vo	Select a specific D3D11 adapter to utilize for D3D11 rendering	
+F	f	d3d11-composition-size		vo	Set size of the output for d3d11 composition mode	
+F	f	d3d11-exclusive-fs		vo	Switches the D3D11 swap chain fullscreen state to 'fullscreen' when fullscreen video is requested	
+F	f	d3d11-feature-level		vo	Select a specific feature level when using the D3D11 GPU backend	
+F	f	d3d11-flip		vo	Enable flip-model presentation, which avoids unnecessarily copying the backbuffer by sharing surfaces with the DWM	
+F	f	d3d11-output-csp		vo	Select a specific D3D11 output color space to utilize for D3D11 rendering	
+F	f	d3d11-output-format		vo	Select a specific D3D11 output format to utilize for D3D11 rendering	
+F	f	d3d11-output-mode		vo	Use a specific output mode for creating the D3D11 swapchain	
+F	f	d3d11-sync-interval		vo	Schedule each frame to be presented for this number of VBlank intervals	
+F	f	d3d11-warp		vo	Use WARP (Windows Advanced Rasterization Platform) with the D3D11 GPU backend	
+F	f	d3d11va-zero-copy		vo	By default, when using hardware decoding with --gpu-api=d3d11, the video image will be copied (GPU-to-GPU) from the decoder surface to a shader resource. Set th	
+F	f	deband		vo	Enable the debanding algorithm	
+F	f	deband-grain		vo	Add some extra noise to the image	
+F	f	deband-iterations		vo	The number of debanding steps to perform per sample	
+F	f	deband-range		vo	The debanding filter's initial radius	
+F	f	deband-threshold		vo	The debanding filter's cut-off threshold	
+F	f	deinterlace		vo	Enable or disable deinterlacing	
+F	f	deinterlace-field-parity		vo	Specify the field parity/order when deinterlacing	
+F	f	demuxer		vo	Force demuxer type	
+F	f	demuxer-backward-playback-step		vo	Number of seconds the demuxer should seek back to get new packets during backward playback	
+F	f	demuxer-cache-dir		vo	Directory where to create temporary files	
+F	f	demuxer-cache-unlink-files		vo	Whether or when to unlink cache files	
+F	f	demuxer-cache-wait		vo	Before starting playback, read data until either the end of the file was reached, or the demuxer cache has reached maximum capacity	
+F	f	demuxer-donate-buffer		vo	Whether to let the back buffer use part of the forward buffer	
+F	f	demuxer-hysteresis-bytes		vo	Same as --demuxer-hysteresis-secs, but specifies the hysteresis in bytes of forward buffered data instead of seconds	
+F	f	demuxer-hysteresis-secs		vo	Once the demuxer limit is reached (--demuxer-max-bytes, --demuxer-readahead-secs or --cache-secs), this value can be used to specify a hysteresis before the dem	
+F	f	demuxer-lavf-allow-mimetype		vo	Allow deriving the format from the HTTP MIME type	
+F	f	demuxer-lavf-analyzeduration		vo	Maximum length in seconds to analyze the stream properties	
+F	f	demuxer-lavf-buffersize		vo	Size of the stream read buffer allocated for libavformat in bytes	
+F	f	demuxer-lavf-format		vo	Force a specific libavformat demuxer	
+F	f	demuxer-lavf-hacks		vo	By default, some formats will be handled differently from other formats by explicitly checking for them	
+F	f	demuxer-lavf-linearize-timestamps		vo	Attempt to linearize timestamp resets in demuxed streams	
+F	f	demuxer-lavf-o		vo	Pass AVOptions to libavformat demuxer	
+F	f	demuxer-lavf-o-add		vo		
+F	f	demuxer-lavf-o-append		vo		
+F	f	demuxer-lavf-o-clr		vo		
+F	f	demuxer-lavf-o-del		vo		
+F	f	demuxer-lavf-o-remove		vo		
+F	f	demuxer-lavf-o-set		vo		
+F	f	demuxer-lavf-probe-info		vo	Whether to probe stream information	
+F	f	demuxer-lavf-probescore		vo	Minimum required libavformat probe score	
+F	f	demuxer-lavf-probesize		vo	Maximum amount of data to probe during the detection phase	
+F	f	demuxer-lavf-propagate-opts		vo	Propagate FFmpeg-level options to recursively opened connections	
+F	f	demuxer-max-back-bytes		vo	This controls how much past data the demuxer is allowed to preserve	
+F	f	demuxer-max-bytes		vo	This controls how much the demuxer is allowed to buffer ahead	
+F	f	demuxer-mkv-crop-compat		vo	Enable compatibility mode for files that do not fully comply with the Matroska specification	
+F	f	demuxer-mkv-probe-start-time		vo	Check the start time of Matroska files	
+F	f	demuxer-mkv-probe-video-duration		vo	When opening the file, seek to the end of it, and check what timestamp the last video packet has, and report that as file duration	
+F	f	demuxer-mkv-subtitle-preroll		vo	Try harder to show embedded soft subtitles when seeking somewhere	
+F	f	demuxer-mkv-subtitle-preroll-secs		vo	See --demuxer-mkv-subtitle-preroll	
+F	f	demuxer-mkv-subtitle-preroll-secs-index		vo	See --demuxer-mkv-subtitle-preroll	
+F	f	demuxer-rawaudio-channels		vo	Number of channels (or channel layout) if --demuxer=rawaudio is used	
+F	f	demuxer-rawaudio-format		vo	Sample format for --demuxer=rawaudio	
+F	f	demuxer-rawaudio-rate		vo	Sample rate for --demuxer=rawaudio	
+F	f	demuxer-rawvideo-codec		vo	Set the video codec instead of selecting the rawvideo codec when using --demuxer=rawvideo	
+F	f	demuxer-rawvideo-format		vo	Color space (fourcc) in hex or string for --demuxer=rawvideo	
+F	f	demuxer-rawvideo-fps		vo	Rate in frames per second for --demuxer=rawvideo	
+F	f	demuxer-rawvideo-h		vo	Image dimension in pixels for --demuxer=rawvideo	
+F	f	demuxer-rawvideo-mp-format		vo	Color space by internal video format for --demuxer=rawvideo	
+F	f	demuxer-rawvideo-size		vo	Frame size in bytes when using --demuxer=rawvideo	
+F	f	demuxer-rawvideo-w		vo	Image dimension in pixels for --demuxer=rawvideo	
+F	f	demuxer-readahead-secs		vo	If --demuxer-thread is enabled, this controls how much the demuxer should buffer ahead in seconds	
+F	f	demuxer-seekable-cache		vo	Debugging option to control whether seeking can use the demuxer cache	
+F	f	demuxer-termination-timeout		vo	Number of seconds the player should wait to shutdown the demuxer	
+F	f	demuxer-thread		vo	Run the demuxer in a separate thread, and let it prefetch a certain amount of packets	
+F	f	directory-filter-types		vo	Media file types to filter when opening directory	
+F	f	directory-filter-types-add		vo		
+F	f	directory-filter-types-append		vo		
+F	f	directory-filter-types-clr		vo		
+F	f	directory-filter-types-del		vo		
+F	f	directory-filter-types-pre		vo		
+F	f	directory-filter-types-remove		vo		
+F	f	directory-filter-types-set		vo		
+F	f	directory-filter-types-toggle		vo		
+F	f	directory-mode		vo	When opening a directory, open subdirectories lazily, recursively or not at all	
+F	f	display-fps-override		vo	Set the display FPS used with the --video-sync=display-* modes	
+F	f	display-tags		vo	Set the list of tags that should be displayed on the terminal and stats	
+F	f	display-tags-add		vo		
+F	f	display-tags-append		vo		
+F	f	display-tags-clr		vo		
+F	f	display-tags-del		vo		
+F	f	display-tags-pre		vo		
+F	f	display-tags-remove		vo		
+F	f	display-tags-set		vo		
+F	f	display-tags-toggle		vo		
+F	f	dither		vo	Select dithering algorithm	
+F	f	dither-depth		vo	Set dither target depth to N	
+F	f	dither-size-fruit		vo	Set the size of the dither matrix	
+F	f	drag-and-drop		vo	Controls the default behavior of drag and drop on platforms that support this	
+F	f	drm-connector		vo	Select the connector to use	
+F	f	drm-device		vo	Select the DRM device file to use	
+F	f	drm-draw-plane		vo	Select the DRM plane to which video and OSD is drawn to, under normal circumstances	
+F	f	drm-draw-surface-size		vo	Sets the size of the surface used on the draw plane	
+F	f	drm-drmprime-video-plane		vo	Select the DRM plane to use for video with the drmprime-overlay hwdec interop	
+F	f	drm-format		vo	Select the DRM format to use	
+F	f	drm-mode		vo	Mode to use	
+F	f	drm-vrr-enabled		vo	Toggle use of Variable Refresh Rate (VRR), aka Freesync or Adaptive Sync on compatible systems	
+F	f	dscale		vo	Like --scale, but apply these filters on downscaling instead	
+F	f	dscale-antiring		vo	Set the antiringing strength	
+F	f	dscale-blur		vo	Kernel scaling factor	
+F	f	dscale-clamp		vo	Specifies a weight bias to multiply into negative coefficients	
+F	f	dscale-param1		vo	Set filter parameters	
+F	f	dscale-param2		vo	Set filter parameters	
+F	f	dscale-radius		vo	Set radius for tunable filters, must be a float number between 0.5 and 16.0	
+F	f	dscale-taper		vo	Kernel/window taper factor	
+F	f	dscale-window		vo	Choose a custom windowing function for the kernel	
+F	f	dscale-wparam		vo		
+F	f	dscale-wtaper		vo	Kernel/window taper factor	
+F	f	dump-stats		vo	Write certain statistics to the given file	
+F	f	dvbin-card		vo	Specifies using card number 0-15	
+F	f	dvbin-channel-switch-offset		vo	This value is not meant for setting via configuration, but used in channel switching	
+F	f	dvbin-file		vo	Instructs mpv to read the channels list from <filename>	
+F	f	dvbin-full-transponder		vo	Apply no filters on program PIDs, only tune to frequency and pass full transponder to demuxer	
+F	f	dvbin-prog		vo	This defines the program to tune to	
+F	f	dvbin-timeout		vo	Maximum number of seconds to wait when trying to tune a frequency before giving up	
+F	f	dvd-angle		vo	Some DVDs contain scenes that can be viewed from multiple angles	
+F	f	dvd-device		vo	Specify the DVD device or .iso filename	
+F	f	dvd-speed		vo	Try to limit DVD speed	
+F	f	edition		vo	(Matroska files only) Specify the edition (set of chapters) to use, where 0 is the first	
+F	f	egl-config-id		vo	(EGL only) Select EGLConfig with specific EGL_CONFIG_ID	
+F	f	egl-output-format		vo	(EGL only) Select a specific EGL output format to utilize for OpenGL rendering	
+F	f	embeddedfonts		vo	Use fonts embedded in Matroska container files and ASS scripts	
+F	f	end		vo	Stop at given time	
+F	f	error-diffusion		vo	The error diffusion kernel to use when --dither=error-diffusion is set	
+F	f	external-file		vo	CLI/config file only alias for --external-files-append	
+F	f	external-files		vo	Load a file and add all of its tracks	
+F	f	external-files-add		vo		
+F	f	external-files-append		vo		
+F	f	external-files-clr		vo		
+F	f	external-files-del		vo		
+F	f	external-files-pre		vo		
+F	f	external-files-remove		vo		
+F	f	external-files-set		vo		
+F	f	external-files-toggle		vo		
+F	f	fbo-format		vo	Selects the internal format of textures used for FBOs	
+F	f	flatten-editions		vo	Some container formats expose multiple programs or rendition groups, by default mpv respects the format and groups tracks into editions	
+F	f	focus-on		vo	(macOS only) Focus the video window and make it the front most window on specific events	
+F	f	force-media-title		vo	Force the contents of the media-title property to this value.	
+F	f	force-render		vo	Forces mpv to always render frames regardless of the visibility of the window	
+F	f	force-rgba-osd-rendering		vo	Change how some video outputs render the OSD and text subtitles	
+F	f	force-seekable		vo	If the player thinks that the media is not seekable (e.g. playing from a pipe, or it's an http stream with a server that doesn't support range requests), seekin	
+F	f	force-window		vo	Create a video output window even if there is no video	
+F	f	force-window-position		vo	Forcefully move mpv's video output window to default location whenever there is a change in video parameters, video stream or file	
+F	f	framedrop		vo	Skip displaying some frames to maintain A/V sync on slow systems, or playing high framerate video on video outputs that have an upper framerate limit	
+F	f	frames		vo	Play/convert only first <number> video frames, then quit	
+F	f	fs		vo	fullscreen playback	
+F	f	fs-screen		vo	In multi-monitor configurations (i.e. a single desktop that spans across multiple displays), this option tells mpv which screen to go fullscreen to	
+F	f	fs-screen-name		vo	In multi-monitor configurations, this option tells mpv which screen to go fullscreen to based on the screen name from the video backend	
+F	f	fullscreen		vo	Fullscreen playback	
+F	f	gamma		vo	Adjust the gamma of the video signal	
+F	f	gamma-auto		vo	Automatically corrects the gamma value depending on ambient lighting conditions	
+F	f	gamma-factor		vo	Set an additional raw gamma factor	
+F	f	gamut-mapping-mode		vo	Specifies the algorithm used for reducing the gamut of images for the target display, after any tone mapping is done	
+F	f	gapless-audio		vo	Try to play consecutive audio files with no silence or disruption at the point of file change	
+F	f	geometry		vo	Adjust the initial window position or size	
+F	f	glsl-shader		vo	Custom GLSL hooks	
+F	f	glsl-shader-opts		vo	Specifies the options to use for tunable shader parameters	
+F	f	glsl-shader-opts-add		vo		
+F	f	glsl-shader-opts-append		vo		
+F	f	glsl-shader-opts-clr		vo		
+F	f	glsl-shader-opts-del		vo		
+F	f	glsl-shader-opts-remove		vo		
+F	f	glsl-shader-opts-set		vo		
+F	f	glsl-shaders		vo	Custom GLSL hooks	
+F	f	glsl-shaders-add		vo		
+F	f	glsl-shaders-append		vo		
+F	f	glsl-shaders-clr		vo		
+F	f	glsl-shaders-del		vo		
+F	f	glsl-shaders-pre		vo		
+F	f	glsl-shaders-remove		vo		
+F	f	glsl-shaders-set		vo		
+F	f	glsl-shaders-toggle		vo		
+F	f	gpu-api		vo	Specify a priority list of accepted graphics APIs	
+F	f	gpu-api-add		vo		
+F	f	gpu-api-append		vo		
+F	f	gpu-api-clr		vo		
+F	f	gpu-api-help		vo		
+F	f	gpu-api-pre		vo		
+F	f	gpu-api-remove		vo		
+F	f	gpu-api-set		vo		
+F	f	gpu-api-toggle		vo		
+F	f	gpu-context		vo	Specify a priority list of the GPU contexts to be used	
+F	f	gpu-context-add		vo		
+F	f	gpu-context-append		vo		
+F	f	gpu-context-clr		vo		
+F	f	gpu-context-help		vo		
+F	f	gpu-context-pre		vo		
+F	f	gpu-context-remove		vo		
+F	f	gpu-context-set		vo		
+F	f	gpu-context-toggle		vo		
+F	f	gpu-debug		vo	Enables GPU debugging	
+F	f	gpu-dumb-mode		vo	This mode is extremely restricted, and will disable most extended features. That includes high quality scalers and custom shaders!	
+F	f	gpu-hwdec-interop		vo	This option is for troubleshooting hwdec interop issues	
+F	f	gpu-shader-cache		vo	Store and load compiled GLSL shaders in the cache directory	
+F	f	gpu-shader-cache-dir		vo	The directory where gpu shader cache is stored	
+F	f	gpu-sw		vo	Continue even if a software renderer is detected	
+F	f	gpu-tex-pad-x		vo	Enlarge the video source textures by this many pixels	
+F	f	gpu-tex-pad-y		vo	Enlarge the video source textures by this many pixels	
+F	f	h		vo	Show short summary of options	
+F	f	hdr-compute-peak		vo	Compute the HDR peak and frame average brightness per-frame instead of relying on tagged metadata	
+F	f	hdr-contrast-recovery		vo	Enables the HDR contrast recovery algorithm, which is to designed to enhance contrast of HDR video after tone mapping	
+F	f	hdr-contrast-smoothness		vo	Enables the HDR contrast recovery algorithm, which is to designed to enhance contrast of HDR video after tone mapping	
+F	f	hdr-peak-decay-rate		vo	The decay rate used for the HDR peak detection algorithm	
+F	f	hdr-peak-percentile		vo	Which percentile of the input image brightness histogram to consider as the true peak of the scene	
+F	f	hdr-reference-white		vo	Specifies the assumed peak brightness of the mastering display for SDR content, in cd/m² (nits)	
+F	f	hdr-scene-threshold-high		vo	The upper thresholds (in dB) for a brightness difference to be considered a scene change	
+F	f	hdr-scene-threshold-low		vo	The lower thresholds (in dB) for a brightness difference to be considered a scene change	
+F	f	help		vo	Show short summary of options	
+F	f	hidpi-window-scale		vo	Scale the window size according to the backing DPI scale factor from the OS	
+F	f	hls-bitrate		vo	If HLS streams are played, this option controls what streams are selected by default	
+F	f	hr-seek		vo	Select when to use precise seeks that are not limited to keyframes	
+F	f	hr-seek-demuxer-offset		vo	This option exists to work around failures to do precise seeks (as in --hr-seek) caused by bugs or limitations in the demuxers for some file formats	
+F	f	hr-seek-framedrop		vo	Allow the video decoder to drop frames during seek, if these frames are before the seek target	
+F	f	http-header-fields		vo	Set custom HTTP fields when accessing HTTP stream	
+F	f	http-header-fields-add		vo		
+F	f	http-header-fields-append		vo		
+F	f	http-header-fields-clr		vo		
+F	f	http-header-fields-del		vo		
+F	f	http-header-fields-pre		vo		
+F	f	http-header-fields-remove		vo		
+F	f	http-header-fields-set		vo		
+F	f	http-header-fields-toggle		vo		
+F	f	http-proxy		vo	URL of the HTTP/HTTPS proxy	
+F	f	hue		vo	Adjust the hue of the video signal	
+F	f	hwdec		vo	Specify the hardware video decoding API that should be used if possible	
+F	f	hwdec-add		vo		
+F	f	hwdec-append		vo		
+F	f	hwdec-clr		vo		
+F	f	hwdec-codecs		vo		
+F	f	hwdec-del		vo		
+F	f	hwdec-extra-frames		vo		
+F	f	hwdec-image-format		vo		
+F	f	hwdec-pre		vo		
+F	f	hwdec-remove		vo		
+F	f	hwdec-set		vo		
+F	f	hwdec-software-fallback		vo	Fallback to software decoding if the hardware-accelerated decoder fails	
+F	f	hwdec-threads		vo	Number of threads used for hardware decoding	
+F	f	hwdec-toggle		vo		
+F	f	icc-3dlut-size		vo	Size of the 3D LUT generated from the ICC profile in each dimension	
+F	f	icc-cache		vo	Store and load 3DLUTs created from the ICC profile on disk in the cache directory	
+F	f	icc-cache-dir		vo	The directory where icc cache is stored	
+F	f	icc-force-contrast		vo	Override the target device's detected contrast ratio by a specific value	
+F	f	icc-intent		vo	Specifies the ICC intent used for the color transformation	
+F	f	icc-profile		vo	Load an ICC profile and use it to transform video RGB to screen output	
+F	f	icc-profile-auto		vo	Automatically select the ICC display profile currently specified by the display settings of the operating system	
+F	f	icc-use-luma		vo	Use ICC profile luminance value	
+F	f	idle		vo	Makes mpv wait idly instead of quitting when there is no file to play	
+F	f	ignore-path-in-watch-later-config		vo	Ignore path (i.e. use filename only) when using watch later feature	
+F	f	image-display-duration		vo	If the current file is an image, play the image for the given amount of seconds	
+F	f	image-exts		vo	Image file extensions to try to match when using --cover-art-auto, --autocreate-playlist or --directory-filter-types	
+F	f	image-exts-add		vo		
+F	f	image-exts-append		vo		
+F	f	image-exts-clr		vo		
+F	f	image-exts-del		vo		
+F	f	image-exts-pre		vo		
+F	f	image-exts-remove		vo		
+F	f	image-exts-set		vo		
+F	f	image-exts-toggle		vo		
+F	f	image-lut		vo	Specifies a custom LUT file (in Adobe .cube format) to apply to the colors during image decoding	
+F	f	image-lut-type		vo	Controls the interpretation of color values fed to and from the LUT specified as --image-lut	
+F	f	image-subs-hdr-peak		vo	Controls the image subtitle diffuse white level in cd/m² (nits) for HDR output	
+F	f	image-subs-video-resolution		vo	Override the image subtitle resolution with the video resolution	
+F	f	include		vo	Specify configuration file to be parsed after the default ones	
+F	f	index		vo	Controls how to seek in files	
+F	f	initial-audio-sync		vo	When starting a video file or after events such as seeking, mpv will by default modify the audio stream to make it start from the same timestamp as video, by ei	
+F	f	input-ar-delay		vo	Delay in milliseconds before we start to autorepeat a key	
+F	f	input-ar-rate		vo	Number of key presses to generate per second on autorepeat	
+F	f	input-builtin-bindings		vo	Enable loading of built-in key bindings during start-up	
+F	f	input-builtin-drag-and-drop		vo	Enable the built-in drag-and-drop behavior	
+F	f	input-builtin-dragging		vo	Enable the built-in window-dragging behavior	
+F	f	input-cmdlist		vo	Prints all commands that can be bound to keys	
+F	f	input-commands		vo	Define a list of commands for mpv to run	
+F	f	input-commands-add		vo		
+F	f	input-commands-append		vo		
+F	f	input-commands-clr		vo		
+F	f	input-commands-del		vo		
+F	f	input-commands-pre		vo		
+F	f	input-commands-remove		vo		
+F	f	input-commands-set		vo		
+F	f	input-commands-toggle		vo		
+F	f	input-conf		vo	Specify input configuration file other than the default location in the mpv configuration directory	
+F	f	input-cursor		vo	Permit mpv to receive pointer events reported by the video output driver	
+F	f	input-cursor-passthrough		vo	Tell the backend windowing system to allow pointer events to passthrough the mpv window	
+F	f	input-default-bindings		vo		
+F	f	input-doubleclick-time		vo	Time in milliseconds to recognize two consecutive button presses as a double-click	
+F	f	input-dragging-deadzone		vo	Begin the built-in window dragging when the mouse moves outside a deadzone of N pixels while the mouse button is being held down	
+F	f	input-gamepad		vo	Enable/disable SDL2 Gamepad support	
+F	f	input-ime		vo	Enable keyboard input via an active input method (IME) connected to the VO	
+F	f	input-ipc-client		vo	Connect a single IPC client to the given FD	
+F	f	input-ipc-server		vo	Enable the IPC support and create the listening socket at the given path	
+F	f	input-key-fifo-size		vo	Specify the size of the FIFO that buffers key events	
+F	f	input-keylist		vo	Prints all keys that can be bound to commands	
+F	f	input-media-keys		vo	On systems where mpv can choose between receiving media keys or letting the system handle them - this option controls whether mpv should receive them	
+F	f	input-preprocess-wheel		vo	Preprocess WHEEL_* events so that while scrolling on the horizontal or vertical direction, the events aren't generated for another direction even when the two d	
+F	f	input-right-alt-gr		vo	(macOS and Windows only) Use the right Alt key as Alt Gr to produce special characters	
+F	f	input-tablet-emulate-mouse		vo	Emulate mouse move and button presses for tablet events	
+F	f	input-terminal		vo	--input-terminal=no prevents the player from reading key events from standard input	
+F	f	input-test		vo	Input test mode	
+F	f	input-touch-emulate-mouse		vo	When multi-touch support is enabled (either required by the platform, or enabled by --native-touch), emulate mouse move and button presses for the touch events	
+F	f	input-vo-keyboard		vo	Disable all keyboard input on for VOs which can't participate in proper keyboard input dispatching	
+F	f	interpolation		vo	Reduce stuttering caused by mismatches in the video fps and display refresh rate	
+F	f	interpolation-preserve		vo	Preserve the previous frames' interpolated results even when renderer parameters are changed - with the exception of options related to cropping and video place	
+F	f	interpolation-threshold		vo	Threshold below which frame ratio interpolation gets disabled	
+F	f	inverse-tone-mapping		vo	If set, allows inverse tone mapping (expanding SDR to HDR)	
+F	f	jack-autostart		vo	Automatically start jackd if necessary	
+F	f	jack-connect		vo	Automatically create connections to output ports	
+F	f	jack-name		vo	Client name that is passed to JACK	
+F	f	jack-port		vo	Connects to the ports with the given name	
+F	f	jack-std-channel-layout		vo	Select the standard channel layout	
+F	f	js-memory-report		vo	Enable memory reporting for javascript scripts in the stats overlay	
+F	f	keep-open		vo	Do not terminate when playing or seeking beyond the end of the file, and there is no next file to be played (and --loop is not used). Instead, pause the player.	
+F	f	keep-open-pause		vo	If set to no, instead of pausing when --keep-open is active, just stop at end of file and continue playing forward when you seek backwards until end where it st	
+F	f	keepaspect		vo	--keepaspect=no will always stretch the video to window size, and will disable the window manager hints that force the window aspect ratio	
+F	f	keepaspect-window		vo	--keepaspect-window=yes (the default) will lock the window size to the video aspect	
+F	f	lavfi-complex		vo		
+F	f	length		vo	Stop after a given time relative to the start time	
+F	f	libplacebo-opts		vo	Passes extra raw option to the libplacebo rendering backend	
+F	f	libplacebo-opts-add		vo		
+F	f	libplacebo-opts-append		vo		
+F	f	libplacebo-opts-clr		vo		
+F	f	libplacebo-opts-del		vo		
+F	f	libplacebo-opts-remove		vo		
+F	f	libplacebo-opts-set		vo		
+F	f	linear-downscaling		vo	Scale in linear light when downscaling	
+F	f	linear-upscaling		vo	Scale in linear light when upscaling	
+F	f	list-options			list all mpv options	
+F	f	list-properties		vo	Print a list of the available properties	
+F	f	list-protocols		vo	Print a list of the supported protocols	
+F	f	load-auto-profiles		vo	Enable the builtin script that does auto profiles	
+F	f	load-commands		vo	Enable the built-in script to enter commands in the console	
+F	f	load-console		vo	Enable the built-in script to handle textual input	
+F	f	load-context-menu		vo	Enable the builtin script that implements a context menu	
+F	f	load-positioning		vo	Enable the builtin script that provides various keybindings to pan videos and images	
+F	f	load-scripts		vo	If set to no, don't auto-load scripts from the scripts configuration subdirectory	
+F	f	load-select		vo	Enable the builtin script that lets you select from lists of items	
+F	f	load-stats-overlay		vo	Enable the builtin script that shows useful playback information on a key binding	
+F	f	load-unsafe-playlists		vo	Load URLs from playlists which are considered unsafe	
+F	f	log-file		vo	Opens the given path for writing, and print log messages to it	
+F	f	loop		vo	Loop a single file N times	
+F	f	loop-file		vo	Loop a single file N times	
+F	f	loop-playlist		vo	Loops playback N times	
+F	f	lut		vo	Specifies a custom LUT (in Adobe .cube format) to apply to the colors as part of color conversion	
+F	f	lut-type		vo	Controls the interpretation of color values fed to and from the LUT specified as --lut	
+F	f	macos-app-activation-policy		vo	Changes the App activation policy	
+F	f	macos-bundle-path		vo	Prepend all given paths to the default Bundle PATH	
+F	f	macos-force-dedicated-gpu		vo	Deactivates the automatic graphics switching and forces the dedicated GPU	
+F	f	macos-fs-animation-duration		vo	Sets the fullscreen resize animation duration in ms	
+F	f	macos-geometry-calculation		vo	This changes the rectangle which is used to calculate the screen position and size of the window	
+F	f	macos-menu-shortcuts		vo	Enables the default menu bar shortcuts	
+F	f	macos-render-timer		vo	Sets the mode for syncing the rendering of frames to the display's vertical refresh rate	
+F	f	macos-title-bar-appearance		vo	Sets the appearance of the title bar	
+F	f	macos-title-bar-color		vo	Sets the color of the title bar	
+F	f	macos-title-bar-material		vo	Sets the material of the title bar	
+F	f	mc		vo	Maximum A-V sync correction per frame	
+F	f	media-controls		vo	(Windows only) Enable integration of media control interface SystemMediaTransportControls	
+F	f	merge-files		vo	Pretend that all files passed to mpv are concatenated into a single, big file	
+F	f	metadata-codepage		vo	Codepage for various input metadata	
+F	f	mf-fps		vo	Framerate used when decoding from multiple PNG or JPEG files with mf://	
+F	f	mf-type		vo	Input file type for mf://	
+F	f	monitoraspect		vo	Set the aspect ratio of your monitor or TV screen	
+F	f	monitorpixelaspect		vo	Set the aspect of a single pixel of your monitor or TV screen	
+F	f	msg-color		vo	Enable colorful console output on terminals	
+F	f	msg-level		vo	Control verbosity directly for each module	
+F	f	msg-module		vo	Prepend module name to each console message	
+F	f	msg-time		vo	Prepend timing information to each console message	
+F	f	mute		vo	Set startup audio mute status	
+F	f	native-fs		vo	(macOS only) Uses the native fullscreen mechanism of the OS	
+F	f	native-keyrepeat		vo	Use system settings for keyrepeat delay and rate, instead of --input-ar-delay and --input-ar-rate	
+F	f	native-touch		vo	(Windows only) For platforms which send emulated mouse inputs for touch-unaware clients, such as Windows, use system native touch events, instead of receiving t	
+F	f	network-timeout		vo	Specify the network timeout in seconds	
+F	f	no-audio			do not play sound	
+F	f	no-config			Do not load default configuration or any user files	
+F	f	no-video			do not play video	
+F	f	o		vo	Enables encoding mode and specifies the output file name	
+F	f	oac		vo	Specifies the output audio codec	
+F	f	oacopts		vo	Specifies the output audio codec options for libavcodec	
+F	f	oacopts-add		vo		
+F	f	oacopts-append		vo		
+F	f	oacopts-clr		vo		
+F	f	oacopts-del		vo		
+F	f	oacopts-remove		vo		
+F	f	oacopts-set		vo		
+F	f	ocopy-metadata		vo	Copy metadata from input files to output files when encoding	
+F	f	of		vo	Specifies the output format	
+F	f	ofopts		vo	Specifies the output format options for libavformat	
+F	f	ofopts-add		vo		
+F	f	ofopts-append		vo		
+F	f	ofopts-clr		vo		
+F	f	ofopts-del		vo		
+F	f	ofopts-remove		vo		
+F	f	ofopts-set		vo		
+F	f	on-all-workspaces		vo	(X11 and macOS only) Show the video window on all virtual desktops	
+F	f	ontop		vo	Makes the player window stay on top of other windows	
+F	f	ontop-level		vo	(macOS only) Sets the level of an on-top window	
+F	f	openal-direct-channels		vo	Enable OpenAL Soft's direct channel extension when available to avoid tinting the sound with ambisonics or HRTF	
+F	f	openal-num-buffers		vo	Specify the number of audio buffers to use	
+F	f	openal-num-samples		vo	Specify the number of complete samples to use for each buffer	
+F	f	opengl-check-pattern-a		vo		
+F	f	opengl-check-pattern-b		vo		
+F	f	opengl-dwmflush		vo	Calls DwmFlush after swapping buffers on Windows	
+F	f	opengl-early-flush		vo	Call glFlush() after rendering a frame and before attempting to display it	
+F	f	opengl-es		vo	Controls which type of OpenGL context will be accepted	
+F	f	opengl-glfinish		vo	Call glFinish() before swapping buffers	
+F	f	opengl-pbo		vo	Enable use of PBOs	
+F	f	opengl-rectangle-textures		vo	Force use of rectangle textures	
+F	f	opengl-swapinterval		vo	Interval in displayed frames between two buffer swaps	
+F	f	opengl-waitvsync		vo	Call glXWaitVideoSyncSGI after each buffer swap	
+F	f	orawts		vo	Copies input pts to the output video	
+F	f	ordered-chapters		vo	Enable support for Matroska ordered chapters	
+F	f	ordered-chapters-files		vo	Loads the given file as playlist, and tries to use the files contained in it as reference files when opening a Matroska file that uses ordered chapters	
+F	f	oremove-metadata		vo	Specifies metadata to exclude from the output file when copying from the input file	
+F	f	oremove-metadata-add		vo		
+F	f	oremove-metadata-append		vo		
+F	f	oremove-metadata-clr		vo		
+F	f	oremove-metadata-del		vo		
+F	f	oremove-metadata-pre		vo		
+F	f	oremove-metadata-remove		vo		
+F	f	oremove-metadata-set		vo		
+F	f	oremove-metadata-toggle		vo		
+F	f	osc		vo	Whether to load the on-screen-controller	
+F	f	osd-align-x		vo	Control to which corner of the screen OSD should be aligned to	
+F	f	osd-align-y		vo	Vertical position (default: top). Details see --osd-align-x	
+F	f	osd-back-color		vo	See --sub-color. Color used for OSD text background	
+F	f	osd-bar		vo	Enable display of the OSD bar	
+F	f	osd-bar-align-x		vo	Position of the OSD bar	
+F	f	osd-bar-align-y		vo	Position of the OSD bar	
+F	f	osd-bar-border-size		vo	alias for --osd-bar-outline-size	
+F	f	osd-bar-h		vo	Height of the OSD bar, in percentage of the screen height	
+F	f	osd-bar-marker-min-size		vo	Minimum OSD bar marker size	
+F	f	osd-bar-marker-scale		vo	Factor for the OSD bar marker size relative to the OSD bar outline size	
+F	f	osd-bar-marker-style		vo	Set the OSD bar marker style	
+F	f	osd-bar-outline-size		vo	Size of the outline of the OSD bar in scaled pixels	
+F	f	osd-bar-w		vo	Width of the OSD bar, in percentage of the screen width	
+F	f	osd-bitmap-max-size		vo	Set the maximum bitmap cache size in libass cache for the OSD	
+F	f	osd-blur		vo	Gaussian blur factor applied to the OSD font border	
+F	f	osd-bold		vo	Format text on bold	
+F	f	osd-border-color		vo	alias for --osd-outline-color	
+F	f	osd-border-size		vo	alias for --osd-outline-size	
+F	f	osd-border-style		vo	See --sub-border-style. Style used for OSD text border	
+F	f	osd-color		vo	Specify the color used for OSD	
+F	f	osd-duration		vo	Set the duration of the OSD messages in ms	
+F	f	osd-font		vo	Specify font to use for OSD	
+F	f	osd-font-provider		vo	See --sub-font-provider for details and accepted values	
+F	f	osd-font-size		vo	Specify the OSD font size	
+F	f	osd-fonts-dir		vo	See --sub-fonts-dir for details	
+F	f	osd-fractions		vo	Show OSD times with fractions of seconds	
+F	f	osd-glyph-limit		vo	Set the maximum number of cached glyphs in libass cache for the OSD	
+F	f	osd-italic		vo	Format text on italic	
+F	f	osd-justify		vo		
+F	f	osd-level		vo	Specifies which mode the OSD should start in	
+F	f	osd-margin-x		vo	Left and right screen margin for the OSD in scaled pixels	
+F	f	osd-margin-y		vo	Top and bottom screen margin for the OSD in scaled pixels	
+F	f	osd-margin-y-offset		vo	Additional vertical offset added to the OSD margin, in scaled pixels	
+F	f	osd-msg1		vo	Show this string as message on OSD with OSD level 1	
+F	f	osd-msg2		vo	Similar to --osd-msg1, but for OSD level 2	
+F	f	osd-msg3		vo	Similar to --osd-msg1, but for OSD level 3	
+F	f	osd-on-seek		vo	Set what is displayed on the OSD during seeks	
+F	f	osd-outline-color		vo	See --sub-color. Color used for the OSD font outline	
+F	f	osd-outline-size		vo	Size of the OSD font outline in scaled pixels	
+F	f	osd-playing-msg		vo	Show a message on OSD when playback starts	
+F	f	osd-playing-msg-duration		vo	Set the duration of osd-playing-msg in ms	
+F	f	osd-playlist-entry		vo	Whether to display the media title, filename, or both	
+F	f	osd-prune-delay		vo	Set the delay for automatic pruning of events from memory in libass	
+F	f	osd-scale		vo	OSD font size multiplier, multiplied with --osd-font-size value	
+F	f	osd-scale-by-window		vo	Whether to scale the OSD with the window size	
+F	f	osd-selected-color		vo	The color of the selected item in lists	
+F	f	osd-selected-outline-color		vo	The outline color of the selected item in lists	
+F	f	osd-shadow-color		vo	alias for --osd-back-color	
+F	f	osd-shadow-offset		vo	Displacement of the OSD shadow in scaled pixels	
+F	f	osd-shaper		vo	Horizontal OSD/sub font spacing in scaled pixels (see --sub-font-size for details)	
+F	f	osd-spacing		vo	Horizontal OSD/sub font spacing in scaled pixels	
+F	f	osd-status-msg		vo	Show a custom string during playback instead of the standard status text	
+F	f	oset-metadata		vo	Specifies metadata to include in the output file	
+F	f	oset-metadata-add		vo		
+F	f	oset-metadata-append		vo		
+F	f	oset-metadata-clr		vo		
+F	f	oset-metadata-del		vo		
+F	f	oset-metadata-remove		vo		
+F	f	oset-metadata-set		vo		
+F	f	ovc		vo	Specifies the output video codec	
+F	f	ovcopts		vo	Specifies the output video codec options for libavcodec	
+F	f	ovcopts-add		vo		
+F	f	ovcopts-append		vo		
+F	f	ovcopts-clr		vo		
+F	f	ovcopts-del		vo		
+F	f	ovcopts-remove		vo		
+F	f	ovcopts-set		vo		
+F	f	panscan		vo	Enables pan-and-scan functionality	
+F	f	pause		vo	Start the player in paused state	
+F	f	pipewire-buffer		vo	Set the audio buffer size in milliseconds	
+F	f	pipewire-remote		vo	Specify the PipeWire remote daemon name to connect to via local UNIX sockets	
+F	f	pipewire-volume-mode		vo	Specify if the ao-volume property should apply to the channel volumes or the global volume	
+F	f	pitch		vo	Raise or lower the audio's pitch by the factor given as parameter	
+F	f	play-direction		vo	Control the playback direction	
+F	f	player-operation-mode		vo		
+F	f	playlist		vo	specify playlist file	
+F	f	playlist-exts		vo	Playlist file extensions to try to match when using --autocreate-playlist or --directory-filter-types	
+F	f	playlist-exts-add		vo		
+F	f	playlist-exts-append		vo		
+F	f	playlist-exts-clr		vo		
+F	f	playlist-exts-del		vo		
+F	f	playlist-exts-pre		vo		
+F	f	playlist-exts-remove		vo		
+F	f	playlist-exts-set		vo		
+F	f	playlist-exts-toggle		vo		
+F	f	playlist-inherit-options		vo	Whether the per-file options of a playlist file are inherited by its items	
+F	f	playlist-start		vo	Set which file on the internal playlist to start playback with	
+F	f	prefetch-playlist		vo	Prefetch next playlist entry while playback of the current entry is ending	
+F	f	priority		vo	Set process priority for mpv according to the predefined priorities available under Windows	
+F	f	profile		vo	Use the given profile(s)	
+F	f	profile-add		vo		
+F	f	profile-append		vo		
+F	f	profile-clr		vo		
+F	f	profile-del		vo		
+F	f	profile-pre		vo		
+F	f	profile-remove		vo		
+F	f	profile-set		vo		
+F	f	profile-toggle		vo		
+F	f	pulse-allow-suspended		vo	Allow mpv to use PulseAudio even if the sink is suspended	
+F	f	pulse-buffer		vo	Set the audio buffer size in milliseconds	
+F	f	pulse-host		vo	Specify the host to use	
+F	f	pulse-latency-hacks		vo	Enable hacks to workaround PulseAudio timing bugs	
+F	f	quiet		vo	Make console output less verbose	
+F	f	rar-list-all-volumes		vo	When opening multi-volume rar files, open all volumes to create a full list of contained files	
+F	f	really-quiet		vo	Display even less output and status messages than with --quiet	
+F	f	rebase-start-time		vo	Whether to move the file start time to 00:00:00	
+F	f	referrer		vo	Specify a referrer path or URL for HTTP requests	
+F	f	register		vo	Registers mpv as a media player on Windows	
+F	f	register-rpath		vo	When registering with --register, this option allows you to specify the path(s) to prepend so that mpv can find the necessary DLLs	
+F	f	replaygain		vo	Adjust volume gain according to replaygain values stored in the file metadata	
+F	f	replaygain-clip		vo	Allow the volume gain to clip	
+F	f	replaygain-fallback		vo	Gain in dB to apply if the file has no replay gain tags	
+F	f	replaygain-preamp		vo	Pre-amplification gain in dB to apply to the selected replaygain gain	
+F	f	reset-on-next-file		vo	Normally, mpv will try to keep all settings when playing the next file on the playlist, even if they were changed by the user during playback	
+F	f	reset-on-next-file-add		vo		
+F	f	reset-on-next-file-append		vo		
+F	f	reset-on-next-file-clr		vo		
+F	f	reset-on-next-file-del		vo		
+F	f	reset-on-next-file-pre		vo		
+F	f	reset-on-next-file-remove		vo		
+F	f	reset-on-next-file-set		vo		
+F	f	reset-on-next-file-toggle		vo		
+F	f	resume-playback		vo	Restore playback position from the watch_later configuration subdirectory usually ~/.config/mpv/watch_later/	
+F	f	resume-playback-check-mtime		vo	Only restore the playback position from the watch_later configuration subdirectory if the file's modification time is the same as at the time of saving	
+F	f	rtsp-transport		vo	Select RTSP transport method	
+F	f	saturation		vo	Adjust the saturation of the video signal	
+F	f	save-position-on-quit		vo	Always save the current playback position on quit, and also when the loadfile command is used to replace the current playlist	
+F	f	save-watch-history		vo	Whether to save which files are played	
+F	f	scale		vo	The filter function to use when upscaling video	
+F	f	scale-antiring		vo	Set the antiringing strength	
+F	f	scale-blur		vo	Kernel scaling factor	
+F	f	scale-clamp		vo	Specifies a weight bias to multiply into negative coefficients	
+F	f	scale-param1		vo	Set filter parameters	
+F	f	scale-param2		vo	Set filter parameters	
+F	f	scale-radius		vo	Set radius for tunable filters, must be a float number between 0.5 and 16.0	
+F	f	scale-taper		vo	Kernel/window taper factor	
+F	f	scale-window		vo	Choose a custom windowing function for the kernel	
+F	f	scale-wparam		vo	Configure the parameter for the window function given by --scale-window etc	
+F	f	scale-wtaper		vo	Kernel/window taper factor	
+F	f	scaler-resizes-only		vo	Disable the scaler if the video image is not resized	
+F	f	screen		vo	In multi-monitor configurations (i.e. a single desktop that spans across multiple displays), this option tells mpv which screen to display the video on	
+F	f	screen-name		vo	In multi-monitor configurations, this option tells mpv which screen to display the video on based on the screen name from the video backend	
+F	f	screenshot-avif-encoder		vo	Specify the AV1 encoder to be used by libavcodec for encoding avif screenshots	
+F	f	screenshot-avif-opts		vo	Specifies libavcodec options for selected encoder	
+F	f	screenshot-avif-opts-add		vo		
+F	f	screenshot-avif-opts-append		vo		
+F	f	screenshot-avif-opts-clr		vo		
+F	f	screenshot-avif-opts-del		vo		
+F	f	screenshot-avif-opts-remove		vo		
+F	f	screenshot-avif-opts-set		vo		
+F	f	screenshot-avif-pixfmt		vo	Specify the pixel format for the libavcodec encoder	
+F	f	screenshot-dir		vo	Store screenshots in this directory	
+F	f	screenshot-directory		vo	alias for --screenshot-dir	
+F	f	screenshot-format		vo	Set the image file type used for saving screenshots	
+F	f	screenshot-high-bit-depth		vo	If possible, write screenshots with a bit depth similar to the source video	
+F	f	screenshot-jpeg-quality		vo	Set the JPEG quality level	
+F	f	screenshot-jpeg-source-chroma		vo	Write JPEG files with the same chroma subsampling as the video	
+F	f	screenshot-jxl-distance		vo	Set the JPEG XL Butteraugli distance	
+F	f	screenshot-jxl-effort		vo	Set the JPEG XL compression effort	
+F	f	screenshot-png-compression		vo	Set the PNG compression level	
+F	f	screenshot-png-filter		vo	Set the filter applied prior to PNG compression	
+F	f	screenshot-sw		vo	Whether to use software rendering for screenshots	
+F	f	screenshot-tag-colorspace		vo	Tag screenshots with the appropriate colorspace	
+F	f	screenshot-template		vo	Specify the filename template used to save screenshots	
+F	f	screenshot-webp-compression		vo	Set the WebP compression level	
+F	f	screenshot-webp-lossless		vo	Write lossless WebP files	
+F	f	screenshot-webp-quality		vo	Set the WebP quality level	
+F	f	script		vo	Load a Lua script	
+F	f	script-opt		vo	Set options for scripts	
+F	f	script-opts		vo	Set options for scripts	
+F	f	script-opts-add		vo		
+F	f	script-opts-append		vo		
+F	f	script-opts-clr		vo		
+F	f	script-opts-del		vo		
+F	f	script-opts-remove		vo		
+F	f	script-opts-set		vo		
+F	f	scripts		vo	Load a Lua script	
+F	f	scripts-add		vo		
+F	f	scripts-append		vo		
+F	f	scripts-clr		vo		
+F	f	scripts-del		vo		
+F	f	scripts-pre		vo		
+F	f	scripts-remove		vo		
+F	f	scripts-set		vo		
+F	f	scripts-toggle		vo		
+F	f	sdr-adjust-gamma		vo	This option controls whether SDR content should have its gamma adjusted	
+F	f	secondary-sid		vo	Select a secondary subtitle stream	
+F	f	secondary-sub-ass-override		vo	Control whether user secondary substyle overrides should be applied	
+F	f	secondary-sub-delay		vo	Delays secondary subtitles by <sec> seconds	
+F	f	secondary-sub-pos		vo	Specify the position of secondary subtitles on the screen	
+F	f	secondary-sub-scale		vo	Factor for the secondary subtitle font size	
+F	f	secondary-sub-visibility		vo	Can be used to disable display of secondary subtitles, but still select and decode them	
+F	f	sharpen		vo	If set to a value other than 0, enable an unsharp masking filter	
+F	f	show-dependent-tracks		vo	Show dependent tracks in the track list	
+F	f	show-in-taskbar		vo	(Windows and X11 only) Show mpv in the taskbar	
+F	f	show-profile		vo	Show the description and content of a profile	
+F	f	shuffle		vo	Play files in random order	
+F	f	sid		vo	Display the subtitle stream specified by <ID>	
+F	f	sigmoid-center		vo	The center of the sigmoid curve used for --sigmoid-upscaling	
+F	f	sigmoid-slope		vo	The slope of the sigmoid curve used for --sigmoid-upscaling	
+F	f	sigmoid-upscaling		vo	When upscaling, use a sigmoidal color transform to avoid emphasizing ringing artifacts	
+F	f	slang		vo	Analogous to --alang, for subtitle tracks	
+F	f	slang-add		vo		
+F	f	slang-append		vo		
+F	f	slang-clr		vo		
+F	f	slang-del		vo		
+F	f	slang-pre		vo		
+F	f	slang-remove		vo		
+F	f	slang-set		vo		
+F	f	slang-toggle		vo		
+F	f	snap-window		vo	(Windows only) Snap the player window to screen edges	
+F	f	speed		vo	Slow down or speed up playback by the factor given as parameter	
+F	f	spirv-compiler		vo	Controls which compiler is used to translate GLSL to SPIR-V	
+F	f	sstep		vo	Skip <sec> seconds after every frame	
+F	f	start		vo	seek to given (percent, seconds, or hh:mm:ss) position	
+F	f	stop-playback-on-init-failure		vo	Stop playback if either audio or video fails to initialize	
+F	f	stop-screensaver		vo	Turns off the screensaver (or screen blanker and similar mechanisms) at startup and turns it on again on exit	
+F	f	stream-buffer-size		vo	Size of the low level stream byte buffer	
+F	f	stream-dump		vo	Instead of playing a file, read its byte stream and write it to the given destination file	
+F	f	stream-lavf-o		vo	Set AVOptions on streams opened with libavformat	
+F	f	stream-lavf-o-add		vo		
+F	f	stream-lavf-o-append		vo		
+F	f	stream-lavf-o-clr		vo		
+F	f	stream-lavf-o-del		vo		
+F	f	stream-lavf-o-remove		vo		
+F	f	stream-lavf-o-set		vo		
+F	f	stream-record		vo	Write received/read data from the demuxer to the given output file	
+F	f	stretch-dvd-subs		vo	Stretch DVD subtitles when playing anamorphic videos for better looking fonts on badly mastered DVDs	
+F	f	stretch-image-subs-to-screen		vo	Stretch DVD and other image subtitles to the screen, ignoring the video margins	
+F	f	sub		vo	alias for --sid	
+F	f	sub-align-x		vo	Control to which corner of the screen text subtitles should be aligned to	
+F	f	sub-align-y		vo	Vertical position	
+F	f	sub-ass		vo	Render ASS subtitles natively	
+F	f	sub-ass-force-margins		vo	Enables placing toptitles and subtitles in black borders when they are available, if the subtitles are in the ASS format.	
+F	f	sub-ass-justify		vo	Applies justification as defined by --sub-justify on ASS subtitles if --sub-ass-override is not set to no	
+F	f	sub-ass-override		vo	Control whether user style overrides should be applied	
+F	f	sub-ass-prune-delay		vo	Set the delay for automatic pruning of events from memory in libass	
+F	f	sub-ass-scale-with-window		vo	Like --sub-scale-with-window, but affects subtitles in ASS format only	
+F	f	sub-ass-style-overrides		vo	Override some style or script info parameters	
+F	f	sub-ass-style-overrides-add		vo		
+F	f	sub-ass-style-overrides-append		vo		
+F	f	sub-ass-style-overrides-clr		vo		
+F	f	sub-ass-style-overrides-del		vo		
+F	f	sub-ass-style-overrides-pre		vo		
+F	f	sub-ass-style-overrides-remove		vo		
+F	f	sub-ass-style-overrides-set		vo		
+F	f	sub-ass-style-overrides-toggle		vo		
+F	f	sub-ass-styles		vo	Load all SSA/ASS styles found in the specified file and use them for rendering text subtitles	
+F	f	sub-ass-use-video-data		vo	Controls which information about the video stream is passed to libass	
+F	f	sub-ass-video-aspect-override		vo	Allows passing any arbitrary aspect ratio to libass instead of the video’s actual aspect ratio	
+F	f	sub-ass-vsfilter-color-compat		vo	Mangle colors like (xy-)vsfilter do	
+F	f	sub-auto		vo	Load additional subtitle files matching the video filename	
+F	f	sub-auto-exts		vo	Subtitle extensions to try and match when using --sub-auto	
+F	f	sub-auto-exts-add		vo		
+F	f	sub-auto-exts-append		vo		
+F	f	sub-auto-exts-clr		vo		
+F	f	sub-auto-exts-del		vo		
+F	f	sub-auto-exts-pre		vo		
+F	f	sub-auto-exts-remove		vo		
+F	f	sub-auto-exts-set		vo		
+F	f	sub-auto-exts-toggle		vo		
+F	f	sub-back-color		vo	Color used for sub text background	
+F	f	sub-bitmap-max-size		vo	Set the maximum bitmap cache size in libass cache for the subtitle track	
+F	f	sub-blur		vo	Gaussian blur factor applied to the sub font border	
+F	f	sub-bold		vo	Format text on bold	
+F	f	sub-border-color		vo	alias for --sub-outline-color	
+F	f	sub-border-size		vo	alias for --sub-outline-size	
+F	f	sub-border-style		vo	The style of the border	
+F	f	sub-clear-on-seek		vo	Can be used to play broken mkv files with duplicate ReadOrder fields	
+F	f	sub-codepage		vo	You can use this option to specify the subtitle codepage	
+F	f	sub-color		vo	Specify the color used for unstyled text subtitles	
+F	f	sub-create-cc-track		vo	For every video stream, create a closed captions track	
+F	f	sub-delay		vo	Delays primary subtitles by <sec> seconds	
+F	f	sub-demuxer		vo	Force subtitle demuxer type for --sub-file	
+F	f	sub-file		vo	specify subtitle file to use	
+F	f	sub-file-paths		vo	Specify extra directories to search for subtitles matching the video	
+F	f	sub-file-paths-add		vo		
+F	f	sub-file-paths-append		vo		
+F	f	sub-file-paths-clr		vo		
+F	f	sub-file-paths-del		vo		
+F	f	sub-file-paths-pre		vo		
+F	f	sub-file-paths-remove		vo		
+F	f	sub-file-paths-set		vo		
+F	f	sub-file-paths-toggle		vo		
+F	f	sub-files		vo	Add a subtitle file to the list of external subtitles	
+F	f	sub-files-add		vo		
+F	f	sub-files-append		vo		
+F	f	sub-files-clr		vo		
+F	f	sub-files-del		vo		
+F	f	sub-files-pre		vo		
+F	f	sub-files-remove		vo		
+F	f	sub-files-set		vo		
+F	f	sub-files-toggle		vo		
+F	f	sub-filter-jsre		vo	Same as --sub-filter-regex but with JavaScript regular expressions	
+F	f	sub-filter-jsre-add		vo		
+F	f	sub-filter-jsre-append		vo		
+F	f	sub-filter-jsre-clr		vo		
+F	f	sub-filter-jsre-del		vo		
+F	f	sub-filter-jsre-pre		vo		
+F	f	sub-filter-jsre-remove		vo		
+F	f	sub-filter-jsre-set		vo		
+F	f	sub-filter-jsre-toggle		vo		
+F	f	sub-filter-regex		vo	Set a list of regular expressions to match on text subtitles, and remove any lines that match	
+F	f	sub-filter-regex-add		vo		
+F	f	sub-filter-regex-append		vo		
+F	f	sub-filter-regex-clr		vo		
+F	f	sub-filter-regex-del		vo		
+F	f	sub-filter-regex-enable		vo	Whether to enable regex filtering	
+F	f	sub-filter-regex-plain		vo		
+F	f	sub-filter-regex-pre		vo		
+F	f	sub-filter-regex-remove		vo		
+F	f	sub-filter-regex-set		vo		
+F	f	sub-filter-regex-toggle		vo		
+F	f	sub-filter-regex-warn		vo	Log dropped lines with warning log level, instead of verbose	
+F	f	sub-filter-sdh		vo	Applies filter removing subtitle additions for the deaf or hard-of-hearing	
+F	f	sub-filter-sdh-enclosures		vo	Specify a string of characters that --sub-filter-sdh will use to potentially remove text	
+F	f	sub-filter-sdh-enclosures-add		vo		
+F	f	sub-filter-sdh-enclosures-append		vo		
+F	f	sub-filter-sdh-enclosures-clr		vo		
+F	f	sub-filter-sdh-enclosures-del		vo		
+F	f	sub-filter-sdh-enclosures-pre		vo		
+F	f	sub-filter-sdh-enclosures-remove		vo		
+F	f	sub-filter-sdh-enclosures-set		vo		
+F	f	sub-filter-sdh-enclosures-toggle		vo		
+F	f	sub-filter-sdh-harder		vo	Do harder SDH filtering	
+F	f	sub-fix-timing		vo	Adjust subtitle timing is to remove minor gaps or overlaps between subtitles	
+F	f	sub-fix-timing-keep		vo	Set the minimum duration in milliseconds for subtitle events to be considered for timing fixes	
+F	f	sub-fix-timing-threshold		vo	Set the threshold in milliseconds for fixing subtitle timing	
+F	f	sub-font		vo	Specify font to use for subtitles that do not themselves specify a particular font	
+F	f	sub-font-provider		vo	Which libass font provider backend to use	
+F	f	sub-font-size		vo	Specify the sub font size	
+F	f	sub-fonts-dir		vo	Font files in this directory are used by mpv/libass for subtitles	
+F	f	sub-forced-events-only		vo	Enabling this displays only forced events within subtitle streams	
+F	f	sub-fps		vo	Specify the framerate of the subtitle file	
+F	f	sub-gauss		vo	Apply Gaussian blur to image subtitles	
+F	f	sub-glyph-limit		vo	Set the maximum number of cached glyphs in libass cache for the subtitle track	
+F	f	sub-gray		vo	Convert image subtitles to grayscale	
+F	f	sub-hdr-peak		vo	Controls the text subtitle and OSD diffuse white level in cd/m² (nits) for HDR output	
+F	f	sub-hinting		vo	Set font hinting type	
+F	f	sub-italic		vo	Format text on italic	
+F	f	sub-justify		vo	Control how multi line subs are justified irrespective of where they are aligned	
+F	f	sub-lavc-o		vo	Pass AVOptions to libavcodec decoder	
+F	f	sub-lavc-o-add		vo		
+F	f	sub-lavc-o-append		vo		
+F	f	sub-lavc-o-clr		vo		
+F	f	sub-lavc-o-del		vo		
+F	f	sub-lavc-o-remove		vo		
+F	f	sub-lavc-o-set		vo		
+F	f	sub-line-spacing		vo	Set line spacing value for SSA/ASS renderer	
+F	f	sub-margin-x		vo	Left and right screen margin for the subs in scaled pixels	
+F	f	sub-margin-y		vo	Top and bottom screen margin for the subs in scaled pixels	
+F	f	sub-margin-y-offset		vo	Additional vertical offset added to the subtitle margin, in scaled pixels	
+F	f	sub-outline-color		vo	Color used for the sub font outline	
+F	f	sub-outline-size		vo	Size of the sub font outline in scaled pixels	
+F	f	sub-past-video-end		vo	After the last frame of video, if this option is enabled, subtitles will continue to update based on audio timestamps	
+F	f	sub-pos		vo	Specify the position of subtitles on the screen	
+F	f	sub-scale		vo	Factor for the text subtitle font size	
+F	f	sub-scale-by-window		vo	Whether to scale subtitles with the window size	
+F	f	sub-scale-signs		vo		
+F	f	sub-scale-with-window		vo	Make the subtitle font size relative to the window	
+F	f	sub-shadow-color		vo	alias for --sub-back-color	
+F	f	sub-shadow-offset		vo	Displacement of the sub text shadow in scaled pixels	
+F	f	sub-shaper		vo	Set the text layout engine used by libass	
+F	f	sub-spacing		vo	Horizontal sub font spacing in scaled pixels	
+F	f	sub-speed		vo	Multiply the subtitle event timestamps with the given value	
+F	f	sub-stretch-durations		vo	Stretch a subtitle duration so it ends when the next one starts	
+F	f	sub-use-margins		vo	Enables placing toptitles and subtitles in black borders when they are available, if the subtitles are in a plain text format	
+F	f	sub-visibility		vo	Can be used to disable display of subtitles, but still select and decode them	
+F	f	sub-vsfilter-bidi-compat		vo	Set implicit bidi detection to ltr instead of auto to match ASS' default	
+F	f	subs-fallback		vo	When autoselecting a subtitle track, if no tracks match your preferred languages, select a full track even if it doesn't match your preferred subtitle language	
+F	f	subs-fallback-forced		vo	When autoselecting a subtitle track, the default value of yes will prefer using a forced subtitle track if the subtitle language matches the audio language and 	
+F	f	subs-match-os-language		vo	When autoselecting a subtitle track, select the track that matches the language of your OS if the audio stream is in a different language if suitable	
+F	f	subs-with-matching-audio		vo	When autoselecting a subtitle track, select it even if the selected audio stream matches you preferred subtitle language	
+F	f	swapchain-depth		vo	Allow up to N in-flight frames	
+F	f	sws-allow-zimg		vo	Allow using zimg	
+F	f	sws-bitexact		vo	Unknown functionality	
+F	f	sws-cgb		vo	Software scaler Gaussian blur filter	
+F	f	sws-chs		vo	Software scaler chroma horizontal shifting	
+F	f	sws-cs		vo	Software scaler sharpen filter	
+F	f	sws-cvs		vo	Software scaler chroma vertical shifting	
+F	f	sws-fast		vo	Allow optimizations that help with performance, but reduce quality	
+F	f	sws-lgb		vo	Software scaler Gaussian blur filter	
+F	f	sws-ls		vo	Software scaler sharpen filter	
+F	f	sws-scaler		vo	Specify the software scaler algorithm to be used with --vf=scale	
+F	f	target-colorspace-hint		vo	Automatically configure the output colorspace of the display to pass through the input values of the stream (e.g. for HDR passthrough), if possible	
+F	f	target-colorspace-hint-mode		vo	Select which metadata to use for the --target-colorspace-hint	
+F	f	target-colorspace-hint-strict		vo	When enabled (default), the configured swapchain colorspace (with the hint) will be respected	
+F	f	target-contrast		vo	Specifies the measured contrast of the output display	
+F	f	target-gamut		vo	Constrains the gamut of the display	
+F	f	target-lut		vo	Specifies a custom LUT file (in Adobe .cube format) to apply to the colors before display on-screen	
+F	f	target-peak		vo	Specifies the measured peak brightness of the output display, in cd/m^2 (AKA nits)	
+F	f	target-prim		vo	Specifies the primaries of the display	
+F	f	target-trc		vo	Specifies the transfer characteristics (gamma) of the display	
+F	f	taskbar-progress		vo	(Windows only) Enable/disable playback progress rendering in taskbar	
+F	f	teletext-page		vo	Select a teletext page number to decode	
+F	f	temporal-dither		vo	Enable temporal dithering	
+F	f	temporal-dither-period		vo	Determines how often the dithering pattern is updated when --temporal-dither is in use	
+F	f	term-osd		vo	Control whether OSD messages are shown on the console when no video output is available	
+F	f	term-osd-bar		vo	Enable printing a progress bar under the status line on the terminal	
+F	f	term-osd-bar-chars		vo	Customize the --term-osd-bar feature	
+F	f	term-playing-msg		vo	Print out a string after starting playback	
+F	f	term-status-msg		vo	Print out a custom string during playback instead of the standard status line	
+F	f	term-title		vo	Set the terminal title	
+F	f	terminal		vo	--terminal=no disables any use of the terminal and stdin/stdout/stderr	
+F	f	title		vo	Set the window title	
+F	f	title-bar		vo	(Windows and X11 only) Play video with the window title bar	
+F	f	tls-ca-file		vo	Certificate authority database file for use with TLS	
+F	f	tls-cert-file		vo	A file containing a certificate to use in the handshake with the peer	
+F	f	tls-key-file		vo	A file containing the private key for the certificate	
+F	f	tls-verify		vo	Verify peer certificates when using TLS (e.g. with https://...). (Silently fails with older FFmpeg versions.)	
+F	f	tone-mapping		vo	Specifies the algorithm used for tone-mapping images onto the target display	
+F	f	tone-mapping-max-boost		vo	Upper limit for how much the tone mapping algorithm is allowed to boost the average brightness by over-exposing the image	
+F	f	tone-mapping-param		vo	Set tone mapping parameters	
+F	f	tone-mapping-visualize		vo	Display a (PQ-PQ) graph of the active tone-mapping LUT	
+F	f	track-auto-selection		vo	Enable the default track auto-selection	
+F	f	treat-srgb-as-power22		vo	When enabled, sRGB is (de)linearized using a pure power 2.2 curve instead of the standard sRGB piecewise transfer function	
+F	f	tscale		vo	The filter used for interpolating the temporal axis	
+F	f	tscale-antiring		vo	Set the antiringing strength	
+F	f	tscale-blur		vo	Kernel scaling factor	
+F	f	tscale-clamp		vo	Specifies a weight bias to multiply into negative coefficients	
+F	f	tscale-param1		vo	Set filter parameters	
+F	f	tscale-param2		vo	Set filter parameters	
+F	f	tscale-radius		vo	Set radius for tunable filters, must be a float number between 0.5 and 16.0	
+F	f	tscale-taper		vo	Kernel/window taper factor	
+F	f	tscale-window		vo	Choose a custom windowing function for the kernel	
+F	f	tscale-wparam		vo	Configure the parameter for the window function given by --scale-window etc	
+F	f	tscale-wtaper		vo	Kernel/window taper factor	
+F	f	unregister		vo	Unregisters mpv as a media player on Windows, undoing all changes made by the --register option	
+F	f	untimed		vo	Do not sleep when outputting video frames	
+F	f	use-embedded-icc-profile		vo	Load the embedded ICC profile contained in media files such as PNG images	
+F	f	use-filedir-conf		vo	Look for a file-specific configuration file in the same directory as the file that is being played	
+F	f	user-agent		vo	Use <string> as user agent for HTTP streaming	
+F	f	v		vo	Increment verbosity level, one level for each -v found on the command line	
+F	f	vaapi-device		vo	Choose the DRM device for vaapi-copy	
+F	f	vd		vo	Specify a priority list of video decoders to be used	
+F	f	vd-apply-cropping		vo	Certain video codecs support cropping, meaning that only a sub-rectangle of the decoded frame is intended for display	
+F	f	vd-lavc-assume-old-x264		vo	Assume the video was encoded by an old, buggy x264 version	
+F	f	vd-lavc-bitexact		vo	Only use bit-exact algorithms in all decoding steps	
+F	f	vd-lavc-check-hw-profile		vo	Check hardware decoder profile	
+F	f	vd-lavc-dr		vo	Enable direct rendering	
+F	f	vd-lavc-fast		vo	Enable optimizations which do not comply with the format specification and potentially cause problems, like simpler dequantization, simpler motion compensation,	
+F	f	vd-lavc-film-grain		vo	Enables film grain application on the GPU	
+F	f	vd-lavc-framedrop		vo	Set framedropping mode used with --framedrop	
+F	f	vd-lavc-o		vo	Pass AVOptions to libavcodec decoder	
+F	f	vd-lavc-o-add		vo		
+F	f	vd-lavc-o-append		vo		
+F	f	vd-lavc-o-clr		vo		
+F	f	vd-lavc-o-del		vo		
+F	f	vd-lavc-o-remove		vo		
+F	f	vd-lavc-o-set		vo		
+F	f	vd-lavc-show-all		vo	Show even broken/corrupt frames	
+F	f	vd-lavc-skipframe		vo	Skips decoding of frames completely	
+F	f	vd-lavc-skipidct		vo	Skips the IDCT step	
+F	f	vd-lavc-skiploopfilter		vo	Skips the loop filter (AKA deblocking) during decoding	
+F	f	vd-lavc-threads		vo	Number of threads to use for decoding	
+F	f	vd-queue-enable		vo	Enable running the video decoder on a separate thread	
+F	f	vd-queue-max-bytes		vo	Maximum approximate allowed size of the queue	
+F	f	vd-queue-max-samples		vo	Maximum number of frames (video) or samples (audio) of the queue	
+F	f	vd-queue-max-secs		vo	Maximum number of seconds of media in the queue	
+F	f	version		vo		
+F	f	vf		vo	Setup a chain of video filters	
+F	f	vf-add		vo		
+F	f	vf-append		vo		
+F	f	vf-clr		vo		
+F	f	vf-help		vo		
+F	f	vf-pre		vo		
+F	f	vf-remove		vo		
+F	f	vf-set		vo		
+F	f	vf-toggle		vo		
+F	f	vid		vo	Select video channel	
+F	f	video		vo	alias for --vid	
+F	f	video-align-x		vo	When the video is bigger than the window, these move the displayed rectangle to show different parts of the video. --video-align-y=-1 would display the top of t	
+F	f	video-align-y		vo	When the video is bigger than the window, these move the displayed rectangle to show different parts of the video. --video-align-y=-1 would display the top of t	
+F	f	video-aspect-method		vo	This sets the default video aspect determination method	
+F	f	video-aspect-override		vo	Override video aspect ratio, in case aspect information is incorrect or missing in the file being played	
+F	f	video-backward-batch		vo	Number of keyframe ranges to decode at once when backward decoding	
+F	f	video-backward-overlap		vo	Number of overlapping keyframe ranges to use for backward decoding	
+F	f	video-crop		vo	Crop the video by starting at the x, y offset for w, h pixels	
+F	f	video-exts		vo	Video file extensions to try to match when using --autocreate-playlist or --directory-filter-types	
+F	f	video-exts-add		vo		
+F	f	video-exts-append		vo		
+F	f	video-exts-clr		vo		
+F	f	video-exts-del		vo		
+F	f	video-exts-pre		vo		
+F	f	video-exts-remove		vo		
+F	f	video-exts-set		vo		
+F	f	video-exts-toggle		vo		
+F	f	video-latency-hacks		vo	Enable some things which tend to reduce video latency by 1 or 2 frames	
+F	f	video-margin-ratio-bottom		vo	Set extra video margin on bottom border	
+F	f	video-margin-ratio-left		vo	Set extra video margin on left border	
+F	f	video-margin-ratio-right		vo	Set extra video margin on right border	
+F	f	video-margin-ratio-top		vo	Set extra video margin on top border	
+F	f	video-osd		vo	Enabled OSD rendering on the video window	
+F	f	video-output-levels		vo	RGB color levels used with YUV to RGB conversion	
+F	f	video-pan-x		vo	Moves the displayed video rectangle by the given value in the X direction	
+F	f	video-pan-y		vo	Moves the displayed video rectangle by the given value in the Y direction	
+F	f	video-recenter		vo	Whether to behave as if --video-align-x and --video-align-y were 0 when the video becomes smaller than the window in the respective direction	
+F	f	video-reversal-buffer		vo	For backward decoding	
+F	f	video-rotate		vo	Rotate the video clockwise, in degrees	
+F	f	video-scale-x		vo	Multiply the video display size with the given value	
+F	f	video-scale-y		vo	Multiply the video display size with the given value	
+F	f	video-sync		vo	How the player synchronizes audio and video	
+F	f	video-sync-max-audio-change		vo	Maximum additional speed difference in percent that is applied to audio with --video-sync=display-...	
+F	f	video-sync-max-factor		vo	Maximum multiple for which to try to fit the video's FPS to the display's FPS	
+F	f	video-sync-max-video-change		vo	Maximum speed difference in percent that is applied to video with --video-sync=display-...	
+F	f	video-timing-offset		vo	Control how long before video display target time the frame should be rendered	
+F	f	video-unscaled		vo	Disable scaling of the video	
+F	f	video-zoom		vo	Adjust the video display scale factor by the given value	
+F	f	vlang		vo	Analogous to --alang and --slang, for video tracks	
+F	f	vlang-add		vo		
+F	f	vlang-append		vo		
+F	f	vlang-clr		vo		
+F	f	vlang-del		vo		
+F	f	vlang-pre		vo		
+F	f	vlang-remove		vo		
+F	f	vlang-set		vo		
+F	f	vlang-toggle		vo		
+F	f	vo		vo	Specify the video output backend to be used	
+F	f	vo-add		vo		
+F	f	vo-append		vo		
+F	f	vo-clr		vo		
+F	f	vo-direct3d-disable-texture-align		vo	Normally texture sizes are always aligned to 16. With this option enabled, the video texture will always have exactly the same size as the video itself	
+F	f	vo-direct3d-exact-backbuffer		vo	Always resize the backbuffer to window size	
+F	f	vo-direct3d-force-power-of-2		vo	Always force textures to power of 2, even if the device reports non-power-of-2 texture sizes as supported	
+F	f	vo-direct3d-swap-discard		vo	Use D3DSWAPEFFECT_DISCARD, which might be faster	
+F	f	vo-direct3d-texture-memory		vo	Only affects operation with shaders/texturing enabled, and (E)OSD	
+F	f	vo-help		vo		
+F	f	vo-image-avif-encoder		vo		
+F	f	vo-image-avif-opts		vo		
+F	f	vo-image-avif-opts-add		vo		
+F	f	vo-image-avif-opts-append		vo		
+F	f	vo-image-avif-opts-clr		vo		
+F	f	vo-image-avif-opts-del		vo		
+F	f	vo-image-avif-opts-remove		vo		
+F	f	vo-image-avif-opts-set		vo		
+F	f	vo-image-avif-pixfmt		vo		
+F	f	vo-image-format		vo	Select the image file format	
+F	f	vo-image-high-bit-depth		vo		
+F	f	vo-image-jpeg-quality		vo	JPEG quality factor	
+F	f	vo-image-jpeg-source-chroma		vo		
+F	f	vo-image-jxl-distance		vo		
+F	f	vo-image-jxl-effort		vo		
+F	f	vo-image-outdir		vo	Specify the directory to save the image files to	
+F	f	vo-image-png-compression		vo	PNG compression factor	
+F	f	vo-image-png-filter		vo	Filter applied prior to PNG compression	
+F	f	vo-image-tag-colorspace		vo		
+F	f	vo-image-webp-compression		vo	WebP compression factor	
+F	f	vo-image-webp-lossless		vo	Enable writing lossless WebP files	
+F	f	vo-image-webp-quality		vo	WebP quality	
+F	f	vo-kitty-alt-screen		vo	Whether or not to use the alternate screen buffer and return the terminal to its previous state on exit	
+F	f	vo-kitty-auto-multiplexer-passthrough		vo	Automatically detect terminal multiplexer to passthrough escape sequences	
+F	f	vo-kitty-cols		vo	Specify the terminal size in character cells, otherwise (0) read it from the terminal, or fall back to 80x25	
+F	f	vo-kitty-config-clear		vo	Whether or not to clear the terminal whenever the output is reconfigured	
+F	f	vo-kitty-height		vo	Specify the available size in pixels, otherwise (0) read it from the terminal, or fall back to 320x240	
+F	f	vo-kitty-left		vo	Specify the position in character cells where the image starts	
+F	f	vo-kitty-rows		vo	Specify the terminal size in character cells, otherwise (0) read it from the terminal, or fall back to 80x25	
+F	f	vo-kitty-top		vo	Specify the position in character cells where the image starts	
+F	f	vo-kitty-use-shm		vo	Use shared memory objects to transfer image data to the terminal	
+F	f	vo-kitty-width		vo	Specify the available size in pixels, otherwise (0) read it from the terminal, or fall back to 320x240	
+F	f	vo-mmcss-profile		vo	Set the MMCSS profile for the video renderer thread	
+F	f	vo-null-fps		vo	Simulate display FPS	
+F	f	vo-pre		vo		
+F	f	vo-remove		vo		
+F	f	vo-set		vo		
+F	f	vo-sixel-alt-screen		vo	Whether or not to use the alternate screen buffer and return the terminal to its previous state on exit	
+F	f	vo-sixel-buffered		vo	Buffers the full output sequence before writing it to the terminal	
+F	f	vo-sixel-cols		vo	Specify the terminal size in character cells, otherwise (0) read it from the terminal, or fall back to 80x25	
+F	f	vo-sixel-config-clear		vo	Whether or not to clear the terminal whenever the output is reconfigured	
+F	f	vo-sixel-dither		vo	Selects the dither algorithm which libsixel should apply	
+F	f	vo-sixel-fixedpalette		vo	Use libsixel's built-in static palette using the XTERM256 profile for dither	
+F	f	vo-sixel-height		vo	Specify the available size in pixels, otherwise (0) read it from the terminal, or fall back to 320x240	
+F	f	vo-sixel-left		vo	Specify the position in character cells where the image starts	
+F	f	vo-sixel-pad-x		vo	Specify the number of padding pixels which are included at the size which the terminal reports	
+F	f	vo-sixel-pad-y		vo	Specify the number of padding pixels which are included at the size which the terminal reports	
+F	f	vo-sixel-reqcolors		vo	Has no effect with fixed palette	
+F	f	vo-sixel-rows		vo	Specify the terminal size in character cells, otherwise (0) read it from the terminal, or fall back to 80x25	
+F	f	vo-sixel-threshold		vo	Has no effect with fixed palette	
+F	f	vo-sixel-top		vo	Specify the position in character cells where the image starts	
+F	f	vo-sixel-width		vo	Specify the available size in pixels, otherwise (0) read it from the terminal, or fall back to 320x240	
+F	f	vo-tct-256		vo	Use 256 colors - for terminals which don't support true color	
+F	f	vo-tct-algo		vo	Select how to write the pixels to the terminal	
+F	f	vo-tct-buffering		vo	Specifies the size of data batches buffered before being sent to the terminal	
+F	f	vo-tct-height		vo	Assume the terminal has the specified character height	
+F	f	vo-tct-width		vo	Assume the terminal has the specified character width	
+F	f	vo-toggle		vo		
+F	f	vo-vaapi-scaled-osd		vo	If enabled, then the OSD is rendered at video resolution and scaled to display resolution	
+F	f	vo-vaapi-scaling		vo		
+F	f	vo-vdpau-chroma-deint		vo	Makes temporal deinterlacers operate both on luma and chroma	
+F	f	vo-vdpau-colorkey		vo	Set the VDPAU presentation queue background color, which in practice is the colorkey used if VDPAU operates in overlay mode	
+F	f	vo-vdpau-composite-detect		vo	The player tries to detect whether a compositing window manager is active. If one is detected, the player disables timing adjustments as if the user had specifi	
+F	f	vo-vdpau-denoise		vo	Apply a noise reduction algorithm to the video	
+F	f	vo-vdpau-force-yuv		vo	Never accept RGBA input	
+F	f	vo-vdpau-fps		vo	Override autodetected display refresh rate value	
+F	f	vo-vdpau-hqscaling		vo	Use default VDPAU scaling	
+F	f	vo-vdpau-output-surfaces		vo	Allocate this many output surfaces to display video frames	
+F	f	vo-vdpau-pullup		vo	Try to apply inverse telecine, needs motion adaptive temporal deinterlacing	
+F	f	vo-vdpau-queuetime-fs		vo	Use VDPAU's presentation queue functionality to queue future video frame changes at most this many milliseconds in advance	
+F	f	vo-vdpau-queuetime-windowed		vo	Use VDPAU's presentation queue functionality to queue future video frame changes at most this many milliseconds in advance	
+F	f	vo-vdpau-sharpen		vo	For positive values, apply a sharpening algorithm to the video, for negative values a blurring algorithm	
+F	f	volume		vo	Set the startup volume	
+F	f	volume-gain		vo	Set the volume gain in dB	
+F	f	volume-gain-max		vo	Set the volume gain range in dB	
+F	f	volume-gain-min		vo	Set the volume gain range in dB	
+F	f	volume-max		vo	Set the maximum amplification level in percent	
+F	f	vulkan-async-compute		vo	Enables the use of async compute queues on supported vulkan devices	
+F	f	vulkan-async-transfer		vo	Enables the use of async transfer queues on supported vulkan devices	
+F	f	vulkan-device		vo	The name or UUID of the Vulkan device to use for rendering and presentation	
+F	f	vulkan-display-display		vo	The index of the display, on the selected Vulkan device, to present on when using the displayvk GPU context	
+F	f	vulkan-display-mode		vo	The index of the display mode, of the selected Vulkan display, to use when using the displayvk GPU contex	
+F	f	vulkan-display-plane		vo	The index of the plane, on the selected Vulkan device, to present on when using the displayvk GPU context	
+F	f	vulkan-queue-count		vo	Controls the number of VkQueues used for rendering	
+F	f	vulkan-swap-mode		vo	Controls the presentation mode of the vulkan swapchain	
+F	f	wasapi-exclusive-buffer		vo	Set buffer duration in exclusive mode	
+F	f	watch-history-path		vo	The path in which to store the watch history	
+F	f	watch-later-dir		vo		
+F	f	watch-later-directory		vo	alias for --watch-later-dir	
+F	f	watch-later-options		vo		
+F	f	watch-later-options-add		vo		
+F	f	watch-later-options-append		vo		
+F	f	watch-later-options-clr		vo		
+F	f	watch-later-options-del		vo		
+F	f	watch-later-options-pre		vo		
+F	f	watch-later-options-remove		vo		
+F	f	watch-later-options-set		vo		
+F	f	watch-later-options-toggle		vo		
+F	f	wayland-app-id		vo	Set the client app id for Wayland-based video output methods	
+F	f	wayland-configure-bounds		vo	Controls whether or not mpv opts into the configure bounds event if sent by the compositor	
+F	f	wayland-content-type		vo	If supported by the compositor, mpv will send a hint using the content-type protocol telling the compositor what type of content is being displayed	
+F	f	wayland-edge-pixels-pointer		vo	Defines the size of an edge border (default: 16) to initiate client side resize events in the wayland contexts with the mouse	
+F	f	wayland-edge-pixels-touch		vo	Defines the size of an edge border (default: 32) to initiate client side resizes events in the wayland contexts with touch events	
+F	f	wayland-internal-vsync		vo	Controls whether to use mpv's internal vsync for Wayland-base video outputs	
+F	f	wayland-present		vo	Enable the use of wayland's presentation time protocol for more accurate frame presentation if it is supported by the compositor	
+F	f	wayland-session		vo	Set the wayland session name for window restoration	
+F	f	wid		vo	This tells mpv to attach to an existing window	
+F	f	window-affinity		vo	Controls the window affinity behavior of mpv	
+F	f	window-corners		vo	Set the preference for window corner rounding	
+F	f	window-dragging		vo	Move the window when clicking on it and moving the mouse pointer	
+F	f	window-maximized		vo	Whether the video window is maximized or not	
+F	f	window-minimized		vo	Whether the video window is minimized or not	
+F	f	window-scale		vo	Resize the video window to a multiple (or fraction) of the video size	
+F	f	write-filename-in-watch-later-config		vo	Prepend the watch later config files with the name of the file they refer to	
+F	f	x11-bypass-compositor		vo	If set to yes, then ask the compositor to unredirect the mpv window	
+F	f	x11-name		vo	Set the window instance name for X11-based video output methods	
+F	f	x11-netwm		vo	(X11 only) Control the use of NetWM protocol features	
+F	f	x11-present		vo	Whether or not to use presentation statistics from X11's presentation extension	
+F	f	x11-wid-title		vo	Whether or not to set the window title when mpv is embedded on X11	
+F	f	xv-adaptor		vo	Select a specific XVideo adapter	
+F	f	xv-buffers		vo	Number of image buffers to use for the internal ringbuffer	
+F	f	xv-ck		vo	Select the source from which the color key is taken	
+F	f	xv-ck-method		vo	Sets the color key drawing method	
+F	f	xv-colorkey		vo	Changes the color key to an RGB value of your choice	
+F	f	xv-port		vo	Select a specific XVideo port	
+F	f	ytdl		vo	Enable the youtube-dl hook-script	
+F	f	ytdl-format		vo	Video format/quality that is directly passed to youtube-dl	
+F	f	ytdl-raw-options		vo	Pass arbitrary options to youtube-dl	
+F	f	ytdl-raw-options-add		vo		
+F	f	ytdl-raw-options-append		vo		
+F	f	ytdl-raw-options-clr		vo		
+F	f	ytdl-raw-options-del		vo		
+F	f	ytdl-raw-options-remove		vo		
+F	f	ytdl-raw-options-set		vo		
+F	f	zimg-dither		vo	Dithering	
+F	f	zimg-fast		vo	Allow optimizations that help with performance, but reduce quality	
+F	f	zimg-scaler		vo	Zimg luma scaler to use	
+F	f	zimg-scaler-chroma		vo	Same as --zimg-scaler, for for chroma interpolation	
+F	f	zimg-scaler-chroma-param-a		vo	Same as --zimg-scaler-param-a, for chroma	
+F	f	zimg-scaler-chroma-param-b		vo	Same as --zimg-scaler-param-b, for chroma	
+F	f	zimg-scaler-param-a		vo	Set scaler parameters	
+F	f	zimg-scaler-param-b		vo	Set scaler parameters	
+F	f	zimg-threads		vo	Set the maximum number of threads to use for scaling	
 N	0	mv		0	move (rename) files
 F	f	backup		v	make a backup of each existing destination file	
 F	f	context	Z		set SELinux security context of destination file to default type	
@@ -52030,6 +53371,9 @@ N	3	clear		0	Clear approved commands from approvals.toml
 F	f	global	g		Clear global approvals	
 F	f	help	h		Print help (see more with '--help')	
 F	f	stale			Clear only stale approvals	
+N	3	list		0	List project commands and their approval status
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
 N	2	create		0	Create configuration file
 F	f	help	h		Print help (see more with '--help')	
 F	f	project			Create project config (.config/wt.toml) instead of user config	
@@ -52085,14 +53429,22 @@ F	f	help	h		Print help (see more with '--help')
 N	3	uninstall		0	Remove shell integration from config files
 F	f	dry-run			Show what would be changed	
 F	f	help	h		Print help (see more with '--help')	
+N	2	show		0	Show configuration files & locations
+F	f	format		v	Output format	textjson
+F	f	full			Run diagnostic checks (CI tools, commit generation, version)	
+F	f	help	h		Print help (see more with '--help')	
 N	2	state		0	Manage internal data and cache
 F	f	help	h		Print help (see more with '--help')	
-N	3	cache		0	
+N	3	cache		0	Regenerable caches
+F	f	help	h		Print help (see more with '--help')	
+F	p	format		v	Output format (text, json) [default: text]	textjson
 N	4	clear		0	Drop all caches
 F	f	help	h		Print help	
 N	4	get		0	Show cache contents
 F	f	help	h		Print help	
-N	3	ci-status		0	
+N	3	ci-status		1	CI status cache
+F	f	help	h		Print help (see more with '--help')	
+F	p	format		v	Output format (text, json) [default: text]	textjson
 N	4	clear		0	Clear CI status cache
 F	f	all			Clear all CI status cache	
 F	f	branch		v	Target branch (defaults to current)	
@@ -52110,19 +53462,28 @@ N	4	get		0	Get the default branch
 F	f	help	h		Print help (see more with '--help')	
 N	4	set		0	Set the default branch
 F	f	help	h		Print help (see more with '--help')	
-N	3	hints		0	
+N	3	get		0	Get all stored state
+F	f	format		v	Output format	tablejson
+F	f	help	h		Print help (see more with '--help')	
+N	3	hints		1	One-time hints shown in this repo
+F	f	help	h		Print help (see more with '--help')	
+F	p	format		v	Output format (text, json) [default: text]	textjson
 N	4	clear		0	Clear hints (re-show on next trigger)
 F	f	help	h		Print help (see more with '--help')	
 N	4	get		0	List hints that have been shown
 F	f	help	h		Print help (see more with '--help')	
-N	3	logs		0	
+N	3	logs		0	Operation and debug logs
+F	f	help	h		Print help (see more with '--help')	
+F	p	format		v	Output format (text, json) [default: text]	textjson
 N	4	clear		0	Clear all log files
 F	f	help	h		Print help	
 N	4	get		0	List all log file paths
 F	f	help	h		Print help (see more with '--help')	
 N	4	profile		0	Performance profile from a trace
 F	f	help	h		Print help (see more with '--help')	
-N	3	marker		0	
+N	3	marker		0	Branch markers
+F	f	help	h		Print help (see more with '--help')	
+F	p	format		v	Output format (text, json) [default: text]	textjson
 N	4	clear		0	Clear marker for a branch
 F	f	all			Clear all markers	
 F	f	branch		v	Target branch (defaults to current)	
@@ -52150,6 +53511,10 @@ F	f	help	h		Print help (see more with '--help')
 N	4	get		0	Get a value
 F	f	branch		v	Target branch (defaults to current)	
 F	f	help	h		Print help (see more with '--help')	
+N	4	list		0	List all keys
+F	f	branch		v	Target branch (defaults to current)	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
 N	4	set		0	Set a value
 F	f	branch		v	Target branch (defaults to current)	
 F	f	help	h		Print help (see more with '--help')	
@@ -52167,19 +53532,116 @@ N	3	clear		0	Clear approved commands from approvals.toml
 F	f	global	g		Clear global approvals	
 F	f	help	h		Print help (see more with '--help')	
 F	f	stale			Clear only stale approvals	
+N	3	list		0	List project commands and their approval status
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
 N	2	run-pipeline		1	Internal: run a serialized pipeline from stdin
 F	f	help	h		Print help	
+N	2	show		0	Show configured hooks
+F	f	expanded			Show expanded commands with current variables	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	1	list		0	List worktrees and their status
+F	f	branches			Include branches without worktrees	
+F	f	format		v	Output format	tablejson
+F	f	full			Show CI status and LLM summaries	
+F	f	help	h		Print help (see more with '--help')	
+F	f	progressive			Show fast info immediately, update with slow info	
+F	f	remotes			Include remote branches	
+N	2	statusline		0	Single-line status for the current worktree
+F	f	format		v	Output format	tablejsonclaude-codeClaude Code statusline mode (reads context from stdin)
+F	f	help	h		Print help (see more with '--help')	
+N	1	merge		0	Merge current branch into the target branch
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-commit			Skip commit and squash	
+F	f	no-ff			Create a merge commit (no fast-forward)	
+F	f	no-hooks			Skip hooks	
+F	f	no-rebase			Skip rebase; require the target to fast-forward to the resulting tip	
+F	f	no-remove			Keep worktree after merge	
+F	f	no-squash			Skip commit squashing	
+F	f	stage		v	What to stage before committing [default: all]	allStage everything: untracked files + unstaged tracked changestrackedStage tracked changes only (like git add -u)noneStage nothing, commit only what's already in the index
+N	1	remove		0	Remove worktree; delete branch if merged
+F	f	force	f		Force worktree removal	
+F	f	force-delete	D		Delete unmerged branches	
+F	f	foreground			Run removal in foreground (block until complete)	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-delete-branch			Keep branch after removal	
+F	f	no-hooks			Skip hooks	
+F	f	reap			Kill processes started in the worktree [experimental]	
 N	1	select		1	Deprecated: use wt switch instead
 F	f	branches			Include branches without worktrees	
 F	f	help	h		Print help (see more with '--help')	
 F	f	remotes			Include remote branches	
 N	1	step		0	Run individual operations
 F	f	help	h		Print help (see more with '--help')	
+N	2	commit		0	Stage and commit with LLM-generated message
+F	f	branch	b	v	Branch to operate on (defaults to current worktree)	
+F	f	dry-run			Preview prompt, command, and generated message without committing	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-hooks			Skip hooks	
+F	f	stage		v	What to stage before committing [default: all]	allStage everything: untracked files + unstaged tracked changestrackedStage tracked changes only (like git add -u)noneStage nothing, commit only what's already in the index
+N	2	copy-ignored		0	Copy gitignored files to another worktree
+F	f	dry-run			Show what would be copied	
+F	f	force			Overwrite existing files in destination	
+F	f	format		v	Output format	textjson
+F	f	from		v	Source worktree branch	
+F	f	help	h		Print help (see more with '--help')	
+F	f	require-include			Require .worktreeinclude to copy anything	
+F	f	to		v	Destination worktree branch	
 N	2	diff		0	Show all changes since branching
 F	f	branch	b	v	Branch to operate on (defaults to current worktree)	
 F	f	help	h		Print help (see more with '--help')	
+N	2	eval		0	Evaluate a template expression
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	2	for-each		0	Run command in each worktree
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	2	promote		0	[experimental] Swap a branch into the main worktree
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	2	prune		0	Remove worktrees and branches merged into the default branch
+F	f	dry-run			Show what would be removed	
+F	f	foreground			Run removal in foreground (block until complete)	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	min-age		v	Skip worktrees and branches younger than this	
+N	2	push		0	Fast-forward target to current branch
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-ff			Create a merge commit (no fast-forward)	
+N	2	rebase		0	Rebase onto target
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	2	relocate		0	[experimental] Move worktrees to expected paths
+F	f	clobber			Backup non-worktree paths at target locations	
+F	f	commit			Commit uncommitted changes before relocating	
+F	f	dry-run			Show what would be moved	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+N	2	squash		0	Squash commits since branching
+F	f	dry-run			Preview prompt, command, and generated message without squashing	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-hooks			Skip hooks	
+F	f	stage		v	What to stage before committing [default: all]	allStage everything: untracked files + unstaged tracked changestrackedStage tracked changes only (like git add -u)noneStage nothing, commit only what's already in the index
 N	2	tether		0	[experimental] Run a command; kill its whole process tree when its worktree is removed
 F	f	help	h		Print help (see more with '--help')	
+N	1	switch		0	Switch to a worktree; create if needed
+F	f	base	b	v	Base branch	
+F	f	branches			Include branches without worktrees	
+F	f	clobber			Remove stale paths at target	
+F	f	create	c		Create a new branch	
+F	f	execute	x	v	Program to run after switch	
+F	f	format		v	Output format	textjson
+F	f	help	h		Print help (see more with '--help')	
+F	f	no-cd			Skip directory change after switching	
+F	f	no-hooks			Skip hooks	
+F	f	prs			Include open PRs/MRs	
+F	f	remotes			Include remote branches	
 N	0	xargs		0	build and execute command lines from standard input
 F	f	arg-file	a	v	read arguments from FILE	
 F	f	delimiter	d	v	items in input stream are separated by CHARACTER	
