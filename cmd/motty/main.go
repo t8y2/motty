@@ -303,6 +303,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.SFTPInput(context); input != nil {
 			return input
 		}
+		if input := state.SFTPTabInput(context); input != nil {
+			return input
+		}
 		if input := state.RemoteToolsInput(context); input != nil {
 			return input
 		}

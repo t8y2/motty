@@ -127,7 +127,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	}
 	tools := toolList[:0]
 	if session.host.isSSH() && !session.isLocal() {
-		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || state.options.OpenContentWindow == nil, style: iconButtonQuiet})
+		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 	}
 	filesStyle := iconButtonQuiet
 	if state.filesPanelShown() {

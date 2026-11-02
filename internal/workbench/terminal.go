@@ -1313,6 +1313,9 @@ func (state *State) copySelection(session *Session) ui.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
+	if state.modal == modalFileProperties {
+		return ui.EventResult{Handled: true}
+	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
@@ -1356,14 +1359,27 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
 		return ui.EventResult{Handled: true}
 	}
-	if result, handled := state.tabStrip.scroll(event); handled {
+	// The assistant may be a drawer over a file tab. Give its painted panel the
+	// wheel first; the file page only sees gestures outside that panel.
+	if result, handled := state.aiScroll(event); handled {
+		return result
+	}
+	tabScroll := &state.tabStrip
+	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
+		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
+		tabScroll = &state.fileTabStrip
+	}
+	if result, handled := tabScroll.scroll(event); handled {
+		return result
+	}
+	if state.fileTabVerticalRailAt(event.X, event.Y) {
+		return ui.EventResult{Handled: true}
+	}
+	if result, handled := state.sftpTabScroll(event); handled {
 		return result
 	}
 	if state.tabOrientation == tabsVertical && pointInRect(event.X, event.Y, state.verticalTabs.bounds) {
 		return ui.EventResult{Handled: true}
-	}
-	if result, handled := state.aiScroll(event); handled {
-		return result
 	}
 	if result, handled := state.scrollMonitor(event); handled {
 		return result

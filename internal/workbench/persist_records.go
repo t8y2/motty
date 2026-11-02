@@ -69,7 +69,9 @@ import (
 // Version 16 preserves the interface font.
 // Version 17 preserves the device-local terminal toolbar position.
 // Version 18 preserves the device-local interface text size.
-const configFormat = 18
+// Version 19 preserves the SFTP transfer layout and custom editor path: an
+// older build's full save would otherwise drop these device-local fields.
+const configFormat = 19
 
 const (
 	kindSetting             = "setting"

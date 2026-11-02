@@ -415,7 +415,7 @@ func (state *State) openLocalExternal(view *sftpView) {
 		err = errors.New(state.messages.SFTPWindow.LocalEditNotFile)
 	}
 	if err == nil {
-		err = state.options.OpenPath(location)
+		err = state.openWithConfiguredEditor(location)
 	}
 	if err != nil {
 		if isExecutablePathError(err) {
