@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -333,6 +334,39 @@ func TestCompletionCatalogStatusBoundsErrorText(t *testing.T) {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
 			t.Fatalf("status contains invisible character %U", r)
 		}
+	}
+}
+
+func TestCompletionRepairSummarySurvivesAnUpToDateCheck(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	loadCompletionBaseline(t, state)
+	queueCompletionUpdate(state, completion.ImportStats{RepairedFiles: 9, SkippedSources: 2})
+	c := &state.completion
+	summary := fmt.Sprintf(state.messages.Completion.RepairSummaryFmt, 9, 2)
+
+	// A later check that installs nothing returns zero stats; the installed
+	// catalog still needed those repairs, so the summary must stay.
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{}
+	state.adoptCompletionUpdate()
+	if state.status != state.messages.Completion.UpToDate {
+		t.Fatalf("status = %q, want the up-to-date message", state.status)
+	}
+	status, err := state.completionCatalogStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, summary) {
+		t.Fatalf("an up-to-date check erased the repair summary: %q", status)
+	}
+
+	// A failed check installs nothing either.
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{err: errors.New("network down")}
+	state.adoptCompletionUpdate()
+	if c.updateStats.RepairedFiles != 9 || c.updateStats.SkippedSources != 2 {
+		t.Fatalf("failed check changed update stats: %+v", c.updateStats)
 	}
 }
 

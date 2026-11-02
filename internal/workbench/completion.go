@@ -299,21 +299,24 @@ func (state *State) adoptCompletionUpdate() {
 			c.cancelUpdate = nil
 		}
 		c.updateErr = result.err
-		c.updateStats = result.stats
 		oldGeneration := c.catalogGeneration
 		state.adoptCompletionCatalog()
-		if result.err == nil && c.catalog != nil {
-			if c.catalogGeneration != oldGeneration {
-				c.catalogNote = nil
-				message := state.messages.Completion
-				if result.stats.RepairedFiles > 0 || result.stats.SkippedSources > 0 {
-					state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, result.stats.RepairedFiles, result.stats.SkippedSources))
-				} else {
-					state.status = completionStatusText(fmt.Sprintf(message.UpdatedFmt, c.catalog.Release))
-				}
+		installed := result.err == nil && c.catalog != nil && c.catalogGeneration != oldGeneration
+		if installed {
+			// A new snapshot replaced the previous one, so its counters
+			// describe what is installed now. A check that installs nothing
+			// (already newest, or failed) keeps the previous summary: the
+			// installed catalog still needed those repairs.
+			c.updateStats = result.stats
+			c.catalogNote = nil
+			message := state.messages.Completion
+			if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedRepairedFmt, c.catalog.Release, c.updateStats.RepairedFiles, c.updateStats.SkippedSources))
 			} else {
-				state.status = state.messages.Completion.UpToDate
+				state.status = completionStatusText(fmt.Sprintf(message.UpdatedFmt, c.catalog.Release))
 			}
+		} else if result.err == nil && c.catalog != nil {
+			state.status = state.messages.Completion.UpToDate
 		}
 	default:
 	}
