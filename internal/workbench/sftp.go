@@ -1241,7 +1241,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPRenamingFmt, view.dialogEntry.Name)
 	case sftpDialogDelete:
 		remotePath := path.Join(view.path, view.dialogEntry.Name)
-		if view.dialogEntry.IsDir() {
+		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() {
+			// A folder is removed with its contents; the worker walks the tree.
+			// A link is only the link: what it points at is not ours to empty.
 			queued = view.worker.RemoveDirectory(remotePath)
 			operation = sftpclient.OperationRemoveDirectory
 		} else {

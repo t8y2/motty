@@ -202,28 +202,66 @@ func TestWorkerRemovesFileOverSFTP(t *testing.T) {
 	requireProtocolError(t, result, os.ErrNotExist)
 }
 
-func TestWorkerRemovesOnlyEmptyDirectoryOverSFTP(t *testing.T) {
+func TestWorkerRemovesDirectoryWithItsContentsOverSFTP(t *testing.T) {
 	worker, root := newProtocolWorker(t)
 	directory := filepath.Join(root, "remove-dir")
-	if err := os.Mkdir(directory, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(directory, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	child := filepath.Join(directory, "child.txt")
-	if err := os.WriteFile(child, []byte("keep nonempty"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "child.txt"), []byte("goes too"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "nested", "inner.txt"), []byte("goes too"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// What a link in the folder points at is not the folder's to delete.
+	kept := filepath.Join(root, "kept.txt")
+	if err := os.WriteFile(kept, []byte("stays"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(kept, filepath.Join(directory, "kept-link")); err != nil {
+		t.Logf("no symbolic link to test with: %v", err)
 	}
 
 	result := requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
-	requireProtocolError(t, result, nil)
-	if err := os.Remove(child); err != nil {
-		t.Fatal(err)
-	}
-	result = requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
 	if result.Err != nil || result.Path != "remove-dir" {
 		t.Fatalf("remove directory result = %+v", result)
 	}
 	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("removed directory still exists: %v", err)
+	}
+	if content, err := os.ReadFile(kept); err != nil || string(content) != "stays" {
+		t.Fatalf("the link's target = %q, %v", content, err)
+	}
+
+	result = requireQueuedResult(t, worker.RemoveDirectory("remove-dir"), worker, OperationRemoveDirectory)
+	requireProtocolError(t, result, os.ErrNotExist)
+}
+
+// A link to a folder is deleted as the link it is: what it points at stays.
+func TestWorkerRemovesALinkToAFolderWithoutFollowingIt(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	kept := filepath.Join(root, "kept-dir")
+	if err := os.Mkdir(kept, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "inside.txt"), []byte("stays"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "kept-link")
+	if err := os.Symlink(kept, link); err != nil {
+		t.Skipf("symbolic links are not available here: %v", err)
+	}
+
+	result := requireQueuedResult(t, worker.RemoveDirectory("kept-link"), worker, OperationRemoveDirectory)
+	if result.Err != nil {
+		t.Fatalf("remove link result = %+v", result)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the link still exists: %v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(kept, "inside.txt")); err != nil || string(content) != "stays" {
+		t.Fatalf("the folder the link pointed at = %q, %v", content, err)
 	}
 }
 

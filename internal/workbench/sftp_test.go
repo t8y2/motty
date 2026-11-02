@@ -31,6 +31,7 @@ type workbenchSFTPRemote struct {
 	readDelay    time.Duration     // how long a listing takes
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
+	removeErr    error             // refuses every removal while set
 }
 
 func (remote *workbenchSFTPRemote) Symlink(target, link string) error {
@@ -82,6 +83,8 @@ func (remote *workbenchSFTPRemote) ReadDir(path string) ([]os.FileInfo, error) {
 	}
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	// A listing is a snapshot: the caller may delete from the folder while it
+	// reads what the folder held, as it does when removing a tree.
 	return append([]os.FileInfo(nil), remote.entries[path]...), nil
 }
 
@@ -304,6 +307,15 @@ func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if remote.removeErr != nil {
+		return remote.removeErr
+	}
+	if _, ok := remote.links[remotePath]; ok {
+		// A link is unlinked; whatever it points at is left alone.
+		delete(remote.links, remotePath)
+		remote.removeEntryLocked(path.Dir(remotePath), path.Base(remotePath))
+		return nil
+	}
 	if _, ok := remote.files[remotePath]; !ok {
 		return os.ErrNotExist
 	}
@@ -315,6 +327,9 @@ func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 func (remote *workbenchSFTPRemote) RemoveDirectory(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if remote.removeErr != nil {
+		return remote.removeErr
+	}
 	children, ok := remote.entries[remotePath]
 	if !ok {
 		return os.ErrNotExist
@@ -978,6 +993,10 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 		t.Fatalf("create error = %q", view.errorText)
 	}
 
+	// A removal the server refuses stays visible instead of passing for done.
+	remote.mu.Lock()
+	remote.removeErr = os.ErrPermission
+	remote.mu.Unlock()
 	clickSFTPRow(t, state, view, "docs")
 	state.Click(hitSFTPDelete)
 	state.Click(hitSFTPDialogSubmit)
@@ -986,7 +1005,65 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	_, stillExists := remote.entries["/home/test/docs"]
 	remote.mu.Unlock()
 	if !stillExists || view.errorText == "" {
-		t.Fatalf("nonempty delete: exists=%v error=%q", stillExists, view.errorText)
+		t.Fatalf("refused delete: exists=%v error=%q", stillExists, view.errorText)
+	}
+}
+
+// A folder is deleted with everything in it: SFTP's own remove refuses a folder
+// that is not empty, so the panel walks the tree. What a link inside points at is
+// left alone.
+func TestSFTPDeletingAFolderTakesItsContents(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	remote.mu.Lock()
+	remote.entries["/home/test/docs"] = append(remote.entries["/home/test/docs"],
+		workbenchFileInfo{name: "deep", mode: os.ModeDir | 0o755, when: time.Unix(1_700_000_400, 0)},
+		workbenchFileInfo{name: "outside", mode: os.ModeSymlink | 0o777, when: time.Unix(1_700_000_600, 0)},
+	)
+	remote.entries["/home/test/docs/deep"] = []os.FileInfo{
+		workbenchFileInfo{name: "inner.txt", size: 3, mode: 0o644, when: time.Unix(1_700_000_500, 0)},
+	}
+	remote.files["/home/test/docs/deep/inner.txt"] = []byte("in\n")
+	if remote.links == nil {
+		remote.links = map[string]string{}
+	}
+	remote.links["/home/test/docs/outside"] = "/home/test/notes.txt"
+	remote.mu.Unlock()
+
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPDelete)
+	if view.dialog != sftpDialogDelete || !view.dialogEntry.IsDir() {
+		t.Fatalf("folder delete dialog = %+v", view)
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	// The description wraps, so the painted lines are read back together.
+	want := fmt.Sprintf(state.messages.SFTPDeleteFolderContentsFmt, "docs")
+	var said strings.Builder
+	for _, painted := range canvas.Texts() {
+		said.WriteString(painted.Value)
+		said.WriteString(" ")
+	}
+	if !strings.Contains(said.String(), want) {
+		t.Fatalf("the confirmation does not say the contents go too: %q in %q", want, said.String())
+	}
+
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "docs") < 0
+	})
+	remote.mu.Lock()
+	_, folder := remote.entries["/home/test/docs"]
+	_, nested := remote.entries["/home/test/docs/deep"]
+	_, inner := remote.files["/home/test/docs/deep/inner.txt"]
+	_, link := remote.links["/home/test/docs/outside"]
+	notes := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if folder || nested || inner || link {
+		t.Fatalf("the folder's contents remain: folder=%v nested=%v file=%v link=%v", folder, nested, inner, link)
+	}
+	if len(notes) == 0 {
+		t.Fatal("the link's target was deleted with the folder")
 	}
 }
 

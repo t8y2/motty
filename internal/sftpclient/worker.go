@@ -262,6 +262,12 @@ type remoteDirectoryRemover interface {
 	RemoveDirectory(path string) error
 }
 
+// remoteLinker reports what a path itself is, rather than what a link at it
+// points to, so a link to a folder is not emptied through the link.
+type remoteLinker interface {
+	Lstat(path string) (os.FileInfo, error)
+}
+
 type remoteChmod interface {
 	Chmod(path string, mode os.FileMode) error
 }
@@ -979,7 +985,7 @@ func (worker *Worker) execute(next request) Result {
 	case OperationRemoveFile:
 		result.Err = removeFile(client, next.remote)
 	case OperationRemoveDirectory:
-		result.Err = removeDirectory(client, next.remote)
+		result.Err = worker.removeDirectory(client, next.remote, generation)
 	case OperationChmod:
 		result.Err = chmod(client, next.remote, next.mode)
 	case OperationSymlink:
@@ -2159,13 +2165,63 @@ func removeFile(client Remote, remotePath string) error {
 	return remover.Remove(remotePath)
 }
 
-func removeDirectory(client Remote, remotePath string) error {
+// maxRemoveDepth bounds the tree a directory removal walks. A server that
+// reported a folder as its own child, or a mount that loops, would otherwise
+// recurse until the stack ran out.
+const maxRemoveDepth = 96
+
+// removeDirectory deletes a folder with everything in it. SFTP's own remove is a
+// plain rmdir and refuses a folder that is not empty, so the tree is walked here:
+// each folder on the way down is listed, its files are removed, its folders are
+// emptied the same way, and the folder itself goes last.
+func (worker *Worker) removeDirectory(client Remote, remotePath string, generation uint64) error {
 	if remotePath == "" {
 		return fmt.Errorf("sftp: remove directory requires a remote path")
+	}
+	// What was asked for may be a link to a folder: a listing of it would be the
+	// listing of the folder it points at, and emptying that is not what the user
+	// chose. Only the link goes.
+	if linker, ok := client.(remoteLinker); ok {
+		if info, err := linker.Lstat(remotePath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return removeFile(client, remotePath)
+		}
 	}
 	remover, ok := client.(remoteDirectoryRemover)
 	if !ok {
 		return fmt.Errorf("sftp: remove directory is not supported by the remote")
+	}
+	return worker.removeTree(client, remotePath, remover, generation, 0)
+}
+
+// removeTree empties one folder and then removes it.
+func (worker *Worker) removeTree(client Remote, remotePath string, remover remoteDirectoryRemover, generation uint64, depth int) error {
+	if depth > maxRemoveDepth {
+		return fmt.Errorf("sftp: %s is nested deeper than %d folders", remotePath, maxRemoveDepth)
+	}
+	infos, err := client.ReadDir(remotePath)
+	if err != nil {
+		// Not a folder after all, or it vanished under us: the server decides.
+		return remover.RemoveDirectory(remotePath)
+	}
+	for _, info := range infos {
+		// A tree of any size is started and stopped by the user, so the walk
+		// asks between entries rather than finishing a folder it no longer wants.
+		if worker.canceled(generation) {
+			return ErrCanceled
+		}
+		child := path.Join(remotePath, info.Name())
+		// A link is removed as a link, never followed: its target is elsewhere.
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			err = worker.removeTree(client, child, remover, generation, depth+1)
+		} else {
+			err = removeFile(client, child)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if worker.canceled(generation) {
+		return ErrCanceled
 	}
 	return remover.RemoveDirectory(remotePath)
 }
