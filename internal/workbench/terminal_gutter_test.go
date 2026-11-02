@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	var canvas ui.Canvas
 	state.paintGrid(&canvas, session, geometry)
 	texts := gutterTexts(&canvas)
-	if !anyContains(texts, "     2 "+want) {
+	if !anyContains(texts, want) || !slices.Contains(texts, "2") {
 		t.Fatalf("no gutter for line 2 in %q", texts)
 	}
 
