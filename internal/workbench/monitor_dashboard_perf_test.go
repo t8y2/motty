@@ -91,6 +91,43 @@ func TestDashboardChartCacheKeepsRenderingAndAccessibilityCurrent(t *testing.T) 
 	}
 }
 
+// A host with dozens of mounts only paints the rows in view. Scrolling to the
+// end must still reach the last one, and skipping rows must not change how tall
+// the page is or how far it scrolls.
+func TestDashboardPaintsOnlyVisibleMountsAndReachesTheLast(t *testing.T) {
+	for _, view := range []struct {
+		name  string
+		width float32
+		page  int
+	}{{"overview-wide", 1800, 0}, {"overview-narrow", 700, 0}, {"device-disks", 1800, 1}} {
+		width := view.width
+		t.Run(view.name, func(t *testing.T) {
+			s := dashboardPerformanceFixture(t, 61)
+			s.dashboardRow(s.dashboardPanel(), "perf-host", int(width)).page = view.page
+			size := ui.Size{Width: width, Height: 1000}
+			var c ui.Canvas
+			s.Paint(&c, size)
+			content := s.dashboard.content
+			if got := paintedDockerDisks(&c); got == 0 || got >= 64 || hasPaintedText(&c, "/last") {
+				t.Fatalf("at the top painted %d of 64 mounts, last painted=%v", got, hasPaintedText(&c, "/last"))
+			}
+
+			s.dashboard.scroll = 1e6
+			c.Reset()
+			s.Paint(&c, size)
+			if !hasPaintedText(&c, "/last") {
+				t.Fatal("the last mount is not reachable by scrolling to the end")
+			}
+			if s.dashboard.content != content {
+				t.Fatalf("content height changed with scrolling: %v then %v", content, s.dashboard.content)
+			}
+			if want := content - s.dashboard.body.Height; s.dashboard.scroll != want {
+				t.Fatalf("scrolled to %v, want the end of the content at %v", s.dashboard.scroll, want)
+			}
+		})
+	}
+}
+
 func BenchmarkDashboardPaint(b *testing.B) {
 	for _, points := range []int{2, 1801} {
 		b.Run(fmt.Sprint(points), func(b *testing.B) {
