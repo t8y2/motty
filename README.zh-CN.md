@@ -79,8 +79,10 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 转发给远端 shell，按主机开关，默认关闭。
 
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
-WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
-进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
+WindTerm、Electerm、Netcatty、Tabby 导入——包括 Tabby 的保险库，输入它的密码即可。
+TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
+进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里，
+也可以用主密码包裹。
 
 <p align="center">
   <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="主机列表，带分组标签和远程桌面标记" /></a>

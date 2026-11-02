@@ -1,13 +1,15 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm, Electerm and Netcatty, into the host fields Motty
-// keeps. It reads files the user chose and never executes, resolves or contacts
-// anything in them.
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty and Tabby, into the host
+// fields Motty keeps. It reads files the user chose and never executes, resolves
+// or contacts anything in them.
 //
 // Only what a connection needs is taken: a name, a folder, an address, a port
 // and a user. Passwords are never imported, whether a client encrypted them with
 // a scheme of its own or, as Electerm does, wrote them into the file in the
 // clear, and a key file path in a session is reported rather than followed,
-// since each client has its own key format.
+// since each client has its own key format. The one exception is Tabby: its
+// vault is encrypted with a passphrase the user can type, so when they do, the
+// secrets it holds are handed back with the sessions (see ParseTabby).
 package sessionimport
 
 import (
@@ -52,6 +54,16 @@ const (
 	Serial
 )
 
+// Auth is how a session was told to authenticate, when the client says.
+type Auth uint8
+
+const (
+	AuthUnset Auth = iota
+	AuthPassword
+	AuthPrivateKey
+	AuthAgent
+)
+
 // Entry is one session. A serial one keeps its device in Host and its line in
 // Line ("9600 8N1") with Flow "rtscts", "xonxoff" or empty.
 type Entry struct {
@@ -64,13 +76,61 @@ type Entry struct {
 	Host  string
 	Port  int // zero when the file named none
 	User  string
+	// Auth, X11, AgentForward and Color are what the client saved besides the
+	// destination; a client that keeps none of them leaves them zero.
+	Auth         Auth
+	X11          bool
+	AgentForward bool
+	Color        string // "#RRGGBB", empty for none
+	// Password is a saved password the client kept encrypted and the user
+	// unlocked (Tabby's vault, or a password Tabby wrote into the file). Empty
+	// when the client kept none, which is every other client.
+	Password string
+	// KeyPath is the private key file the session names, and KeyPassphrase the
+	// passphrase saved for it. A key the client keeps inside its own vault has no
+	// path: KeyID names it there and KeyData holds it once the vault is open.
+	KeyPath       string
+	KeyPassphrase string
+	KeyID         string
+	KeyData       []byte
 	// Source names where the entry came from, for warnings.
 	Source string
+}
+
+// ForwardMode is how a saved port forward carries its traffic.
+type ForwardMode uint8
+
+const (
+	ForwardLocal  ForwardMode = iota + 1 // a local port reaches a remote address
+	ForwardRemote                        // a remote port reaches a local address
+	ForwardSOCKS                         // a local port is a SOCKS5 proxy
+)
+
+// Forward is one saved port forward of a session.
+type Forward struct {
+	Entry int // the index of the session it belongs to
+	Mode  ForwardMode
+	// LocalPort is the port listened on, at this end for a local forward and at
+	// the server's for a remote one.
+	LocalPort       int
+	DestinationHost string
+	DestinationPort int
+}
+
+// Jump is a saved jump route: the session at Target is reached through the one
+// at Via.
+type Jump struct {
+	Target int
+	Via    int
 }
 
 // Result is what a file held.
 type Result struct {
 	Entries []Entry
+	// Jumps and Forwards are the routes and tunnels the sessions saved, by the
+	// index of the entry they belong to.
+	Jumps    []Jump
+	Forwards []Forward
 	// Skipped counts sessions of a kind that is not read (remote desktop, FTP,
 	// and the serial ports of clients whose serial settings are not read).
 	Skipped int
@@ -98,6 +158,7 @@ func (result *Result) add(entry Entry) {
 	entry.Group = clean(entry.Group, maxGroupLength)
 	entry.Host = clean(entry.Host, 255)
 	entry.User = clean(entry.User, 128)
+	entry.Color = cleanColor(entry.Color)
 	if entry.Name == "" {
 		entry.Name = entry.Host
 	}
@@ -107,6 +168,7 @@ func (result *Result) add(entry Entry) {
 			return
 		}
 		entry.User, entry.Port = "", 0
+		entry.Auth, entry.KeyPath, entry.Password, entry.KeyPassphrase = AuthUnset, "", "", ""
 		result.Entries = append(result.Entries, entry)
 		return
 	}
@@ -120,9 +182,38 @@ func (result *Result) add(entry Entry) {
 	result.Entries = append(result.Entries, entry)
 }
 
+// cleanColor keeps a colour a session saved as #RRGGBB, and drops anything else,
+// so a hand-edited file cannot put arbitrary text where a colour is painted.
+func cleanColor(color string) string {
+	color = strings.TrimSpace(color)
+	if len(color) != 7 || color[0] != '#' {
+		return ""
+	}
+	for _, digit := range color[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", digit) {
+			return ""
+		}
+	}
+	return color
+}
+
 func (result *Result) merge(other Result) {
+	base := len(result.Entries)
 	for _, entry := range other.Entries {
 		result.add(entry)
+	}
+	added := len(result.Entries) - base
+	if added == len(other.Entries) {
+		for _, jump := range other.Jumps {
+			result.Jumps = append(result.Jumps, jump)
+		}
+		for _, forward := range other.Forwards {
+			result.Forwards = append(result.Forwards, forward)
+		}
+	} else if added > 0 {
+		// Some sessions were left out, so the indices the routes name no longer
+		// hold: a route that pointed at the wrong server would be worse than none.
+		result.warn("%s: jump routes and port forwards were not read", other.Entries[0].Source)
 	}
 	result.Skipped += other.Skipped
 	result.Keys += other.Keys
@@ -279,6 +370,12 @@ func Parse(client Client, paths []string) (Result, error) {
 			part, err = ParseElecterm(path)
 		case Netcatty:
 			part, err = ParseNetcatty(path)
+		case Tabby:
+			var tabby *TabbyFile
+			tabby, err = ParseTabby(path)
+			if err == nil {
+				part = tabby.Result()
+			}
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -307,6 +404,7 @@ const (
 	WindTerm
 	Electerm
 	Netcatty
+	Tabby
 )
 
 // ---- PuTTY ----

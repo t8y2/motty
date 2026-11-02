@@ -122,6 +122,14 @@ func typeInto(state *State, hit ui.ID, value string) {
 	app.TextEvent{Kind: app.TextInsert, Text: value}.Apply(state.EditorFor(hit))
 }
 
+// retypeInto replaces what a field holds, the way typing over a selected value
+// does: select all, then insert.
+func retypeInto(state *State, hit ui.ID, value string) {
+	editor := state.EditorFor(hit)
+	app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(editor)
+	app.TextEvent{Kind: app.TextInsert, Text: value}.Apply(editor)
+}
+
 func TestHostDialogDeclaresInitialFocusAndFieldEditors(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	var canvas ui.Canvas

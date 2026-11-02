@@ -620,6 +620,7 @@ type State struct {
 	sftpLocalBookmarks     []string
 	transferLeftover       []byte
 	secrets                secretsUI
+	tabby                  tabbyImportUI
 	shareConnections       shareConnectionsPolicy
 	tooltip                components.HoverTooltip
 	selectTypeahead        selectTypeahead
@@ -1132,6 +1133,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		case hitVaultRepeatField:
 			return &state.secrets.repeat
 		}
+	case modalTabbyPassphrase:
+		if hit == hitTabbyPassphraseField {
+			return &state.tabby.passphrase
+		}
 	case modalFontPicker:
 		if hit == hitFontPickerSearch {
 			return &state.fonts.search
@@ -1317,6 +1322,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalImportSessions:
 		state.clickImportSessions(id)
+		return
+	case modalTabbyPassphrase:
+		state.clickTabbyPassphrase(id)
 		return
 	case modalFontPicker:
 		state.clickFontPicker(id)
@@ -2273,6 +2281,10 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if state.modal == modalVaultPassword && event.Key == ui.KeyEnter && !event.Repeat &&
 		(event.Target == hitVaultPasswordField || event.Target == hitVaultRepeatField) {
 		state.submitVaultPassword()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalTabbyPassphrase && event.Key == ui.KeyEnter && !event.Repeat && event.Target == hitTabbyPassphraseField {
+		state.submitTabbyPassphrase()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalOutboundProxy && event.Key == ui.KeyEnter && !event.Repeat &&

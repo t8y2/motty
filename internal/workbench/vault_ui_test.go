@@ -383,13 +383,13 @@ func TestSettingAMasterPasswordFromSettingsLocksTheVault(t *testing.T) {
 	if state.modal != modalVaultPassword || state.secrets.dialogError != fmt.Sprintf(state.messages.VaultPasswordShortFmt, vaultPasswordMinimum) {
 		t.Fatalf("modal %d, error %q", state.modal, state.secrets.dialogError)
 	}
-	typeInto(state, hitVaultPasswordField, "long enough one")
-	typeInto(state, hitVaultRepeatField, "another one")
+	retypeInto(state, hitVaultPasswordField, "long enough one")
+	retypeInto(state, hitVaultRepeatField, "another one")
 	state.Click(hitVaultPasswordSubmit)
 	if state.modal != modalVaultPassword || state.secrets.dialogError != state.messages.VaultPasswordMismatch {
 		t.Fatalf("modal %d, error %q", state.modal, state.secrets.dialogError)
 	}
-	typeInto(state, hitVaultRepeatField, "long enough one")
+	retypeInto(state, hitVaultRepeatField, "long enough one")
 	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitVaultRepeatField})
 	if state.modal != modalNone || !state.secrets.vault.Protected() || state.status != state.messages.VaultPasswordSet {
 		t.Fatalf("modal %d, protected %v, status %q", state.modal, state.secrets.vault.Protected(), state.status)
@@ -423,7 +423,7 @@ func TestRemovingTheMasterPasswordPutsTheKeyBackAndAsksFirst(t *testing.T) {
 		t.Fatalf("modal = %d, want the confirmation", state.modal)
 	}
 	state.Click(hitVaultRemovePasswordCancel)
-	if state.secrets.vault.Protected() {
+	if !state.secrets.vault.Protected() {
 		t.Fatal("cancelling removed the master password")
 	}
 	state.Click(hitSettingsVaultRemovePassword)

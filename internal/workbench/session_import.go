@@ -8,15 +8,22 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/portforward"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
+	"motty/internal/vault"
 	"motty/internal/workbench/icons"
 )
 
-// Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm
-// and Netcatty. The files are read by internal/sessionimport; this file picks them,
-// turns their sessions into hosts and shows what came of it in the same result
-// dialog as an OpenSSH config.
+// Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm,
+// Netcatty and Tabby. The files are read by internal/sessionimport; this file
+// picks them, turns their sessions into hosts and shows what came of it in the
+// same result dialog as an OpenSSH config.
+//
+// A session says more than where it goes: how it authenticated, the key it used,
+// the host it went through, the tunnels it opened. Those are carried over too,
+// except the secrets: a password or a key passphrase a client encrypted is
+// written to Motty's own vault, and only once the user unlocked it.
 
 // sessionImportHits is the place of the controls this file paints.
 var sessionImportHits = tree.Feature("session-import")
@@ -32,6 +39,7 @@ var (
 	hitImportWindTerm        = tree.ID(sessionImportHits, "import-wind-term")
 	hitImportElecterm        = tree.ID(sessionImportHits, "import-electerm")
 	hitImportNetcatty        = tree.ID(sessionImportHits, "import-netcatty")
+	hitImportTabby           = tree.ID(sessionImportHits, "import-tabby")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 )
 
@@ -47,6 +55,8 @@ func importClientName(client sessionimport.Client) string {
 		return "Electerm"
 	case sessionimport.Netcatty:
 		return "Netcatty"
+	case sessionimport.Tabby:
+		return "Tabby"
 	}
 	return "MobaXterm"
 }
@@ -65,6 +75,10 @@ func (state *State) clickImportSessions(id ui.ID) {
 		state.importSessions(sessionimport.Electerm)
 	case hitImportNetcatty:
 		state.importSessions(sessionimport.Netcatty)
+	case hitImportTabby:
+		// Tabby keeps its sessions and its secrets behind one passphrase, so it
+		// asks for it before anything is added (see tabby_import.go).
+		state.importTabby()
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -115,33 +129,291 @@ func (state *State) importSessions(client sessionimport.Client) {
 }
 
 // sessionImportPlan turns sessions into new hosts, leaving out one whose address,
-// user and port a saved host (or an earlier session) already has.
-func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPlan {
+// user and port a saved host (or an earlier session) already has, and carrying
+// over what the client saved beside the destination: the way it authenticated,
+// the key it used, the jump route it went through, the tunnels it opened, and the
+// secrets the user unlocked.
+func (state *State) sessionImportPlan(results ...sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
-	for _, entry := range result.Entries {
-		if entry.Protocol != sessionimport.SSH {
-			state.planStreamImport(&builder.plan, entry)
-			continue
-		}
-		port := uint16(entry.Port)
-		if port == 0 {
-			port = defaultPort
-		}
-		key := connectionKey(entry.Host, entry.User, port)
-		if _, exists := builder.connections[key]; exists {
-			builder.plan.duplicateHosts++
-			continue
-		}
-		host := Host{
-			ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
-			Address: entry.Host, User: entry.User, Port: port,
-		}
-		host.finish()
-		builder.plan.nextHostID++
-		builder.plan.hosts = append(builder.plan.hosts, host)
-		builder.connections[key] = host
+	for _, result := range results {
+		state.planSessionResult(builder, result)
 	}
 	return builder.plan
+}
+
+// planSessionResult adds one file's sessions to the plan, then the routes and
+// tunnels that name them.
+func (state *State) planSessionResult(builder *hostImportBuilder, result sessionimport.Result) {
+	// landed is the host each session became, by its index in the file: a route
+	// and a tunnel name their session that way, and a session that was left out
+	// has none, so what names it is dropped rather than pointed at a neighbour.
+	landed := make([]Host, len(result.Entries))
+	found := make([]bool, len(result.Entries))
+	for index, entry := range result.Entries {
+		host, identity, ok := state.planSessionHost(builder, entry)
+		if !ok {
+			continue
+		}
+		landed[index], found[index] = host, true
+		if entry.Password != "" {
+			builder.addSecret(hostSecretName(host.CatalogID, hostPasswordPart), entry.Password)
+		}
+		if entry.KeyPassphrase != "" && identity != "" {
+			builder.addSecret(passphraseSecretName(identity), entry.KeyPassphrase)
+		}
+	}
+	planSessionRoutes(builder, result, landed, found)
+	planSessionForwards(builder, result, landed, found)
+}
+
+// planSessionHost adds one session to the plan, and answers the host it became
+// and the key file its authentication uses, if the client saved one.
+func (state *State) planSessionHost(builder *hostImportBuilder, entry sessionimport.Entry) (Host, string, bool) {
+	if entry.Protocol != sessionimport.SSH {
+		host, ok := state.planStreamImport(&builder.plan, entry)
+		return host, "", ok
+	}
+	port := uint16(entry.Port)
+	if port == 0 {
+		port = defaultPort
+	}
+	key := connectionKey(entry.Host, entry.User, port)
+	if _, exists := builder.connections[key]; exists {
+		builder.plan.duplicateHosts++
+		return Host{}, "", false
+	}
+	identity, hasKey := state.planSessionIdentity(builder, entry)
+	host := Host{
+		ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+		Address: entry.Host, User: entry.User, Port: port, Color: entry.Color,
+		Auth: importedAuth(entry.Auth), ForwardX11: entry.X11, AgentForward: entry.AgentForward,
+	}
+	// Naming the key is what makes the session offer that key and no other; a key
+	// whose fingerprint cannot be read is still added, and the mode then tries
+	// the imported keys as it does for a host that names none.
+	if hasKey && identity.Fingerprint != "" {
+		host.Identity = identity.Fingerprint
+	}
+	host.finish()
+	builder.plan.nextHostID++
+	builder.plan.hosts = append(builder.plan.hosts, host)
+	builder.connections[key] = host
+	if hasKey {
+		return host, identity.Path, true
+	}
+	return host, "", true
+}
+
+// planSessionIdentity finds the key a session authenticates with: the one the
+// client kept inside its own vault, written out beside the state file so it can
+// be used like any other key, or the file it names.
+func (state *State) planSessionIdentity(builder *hostImportBuilder, entry sessionimport.Entry) (identityRecord, bool) {
+	path := entry.KeyPath
+	if len(entry.KeyData) != 0 {
+		written, err := state.writeImportedKey(entry.KeyID, entry.KeyData)
+		if err != nil {
+			builder.warn(fmt.Sprintf(builder.state.messages.Tools.ImportWarningKeyWriteFmt, entry.Name, err))
+			return identityRecord{}, false
+		}
+		path = written
+	}
+	if path == "" {
+		return identityRecord{}, false
+	}
+	return builder.ensureIdentity(path)
+}
+
+// importedAuth is the authentication a session asked for. A client that names
+// none gets Motty's automatic mode, which is the same "ask the server".
+func importedAuth(auth sessionimport.Auth) hostAuth {
+	switch auth {
+	case sessionimport.AuthPassword:
+		return authPassword
+	case sessionimport.AuthPrivateKey:
+		return authPrivateKey
+	case sessionimport.AuthAgent:
+		return authAgent
+	}
+	return authAutomatic
+}
+
+// planSessionRoutes adds the jump routes the sessions saved. One is dropped, and
+// counted, when one of its two ends was not imported or when it would close a
+// loop: a route through the wrong server is worse than none.
+func planSessionRoutes(builder *hostImportBuilder, result sessionimport.Result, landed []Host, found []bool) {
+	routes := make(map[uint32]uint32, len(builder.plan.proxies)+len(result.Jumps))
+	for _, route := range builder.plan.proxies {
+		routes[route.TargetID] = route.JumpID
+	}
+	dropped := 0
+	for _, jump := range result.Jumps {
+		if !found[jump.Target] || !found[jump.Via] {
+			dropped++
+			continue
+		}
+		target, via := landed[jump.Target].ID, landed[jump.Via].ID
+		if configured, exists := routes[target]; exists {
+			if configured != via {
+				dropped++
+			}
+			continue
+		}
+		if target == via || proxyRouteWouldCycle(routes, target, via) {
+			dropped++
+			continue
+		}
+		routes[target] = via
+		builder.plan.proxies = append(builder.plan.proxies, proxyRecord{
+			ID: builder.plan.nextProxyID, TargetID: target, JumpID: via,
+		})
+		builder.plan.nextProxyID++
+	}
+	if dropped > 0 {
+		builder.warn(fmt.Sprintf(builder.state.messages.Tools.ImportWarningRouteFmt, dropped))
+	}
+}
+
+// planSessionForwards adds the tunnels the sessions saved. One is dropped, and
+// counted, when its session was not imported, when it names no destination, or
+// when the port it listens on is already taken: Motty's tunnels are global, and
+// two clients' sessions often reuse the same port.
+func planSessionForwards(builder *hostImportBuilder, result sessionimport.Result, landed []Host, found []bool) {
+	taken := make(map[uint16]struct{}, len(builder.state.forwards)+len(result.Forwards))
+	for _, forward := range builder.state.forwards {
+		if forward.Mode != portforward.ModeRemote {
+			taken[forward.LocalPort] = struct{}{}
+		}
+	}
+	for _, forward := range builder.plan.forwards {
+		if forward.Mode != portforward.ModeRemote {
+			taken[forward.LocalPort] = struct{}{}
+		}
+	}
+	dropped := 0
+	for _, forward := range result.Forwards {
+		if !found[forward.Entry] || forward.LocalPort < 1 || forward.LocalPort > 65535 {
+			dropped++
+			continue
+		}
+		host := landed[forward.Entry]
+		if !host.isSSH() {
+			dropped++
+			continue
+		}
+		mode := importedForwardMode(forward.Mode)
+		localPort := uint16(forward.LocalPort)
+		if mode != portforward.ModeRemote {
+			if _, used := taken[localPort]; used {
+				dropped++
+				continue
+			}
+		}
+		record := forwardRecord{
+			ID: builder.plan.nextForwardID, Mode: mode, Label: builder.forwardLabel(host, localPort),
+			HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
+			LocalPort: localPort,
+		}
+		if mode != portforward.ModeSOCKS5 {
+			if forward.DestinationHost == "" || forward.DestinationPort < 1 || forward.DestinationPort > 65535 {
+				dropped++
+				continue
+			}
+			record.DestinationHost = forward.DestinationHost
+			record.DestinationPort = uint16(forward.DestinationPort)
+		}
+		if mode != portforward.ModeRemote {
+			taken[localPort] = struct{}{}
+		}
+		builder.plan.nextForwardID++
+		builder.plan.forwards = append(builder.plan.forwards, record)
+	}
+	if dropped > 0 {
+		builder.warn(fmt.Sprintf(builder.state.messages.Tools.ImportWarningForwardFmt, dropped))
+	}
+}
+
+// importedForwardMode is the kind of tunnel Motty opens for one a client saved.
+func importedForwardMode(mode sessionimport.ForwardMode) portforward.Mode {
+	switch mode {
+	case sessionimport.ForwardRemote:
+		return portforward.ModeRemote
+	case sessionimport.ForwardSOCKS:
+		return portforward.ModeSOCKS5
+	}
+	return portforward.ModeLocal
+}
+
+// forwardLabel names an imported tunnel after the host it goes through and the
+// port it listens on, which is what tells two of them apart in the table.
+func (builder *hostImportBuilder) forwardLabel(host Host, port uint16) string {
+	base := fmt.Sprintf("%s %d", host.Label, port)
+	label := base
+	for suffix := 2; builder.forwardLabelTaken(label); suffix++ {
+		label = fmt.Sprintf("%s (%d)", base, suffix)
+	}
+	return label
+}
+
+func (builder *hostImportBuilder) forwardLabelTaken(label string) bool {
+	for _, forward := range builder.state.forwards {
+		if strings.EqualFold(forward.Label, label) {
+			return true
+		}
+	}
+	for _, forward := range builder.plan.forwards {
+		if strings.EqualFold(forward.Label, label) {
+			return true
+		}
+	}
+	return false
+}
+
+// writeImportedSecrets saves what an import unlocked in the vault, in one write
+// so a vault that cannot take one secret takes none. It answers the line that
+// tells the user when that failed, and "" when it did not.
+func (state *State) writeImportedSecrets(changes []vault.Change) string {
+	if len(changes) == 0 {
+		return ""
+	}
+	if state.secrets.vault == nil {
+		return state.messages.Tools.ImportWarningSecretsMissing
+	}
+	if err := state.secrets.vault.Apply(changes); err != nil {
+		return fmt.Sprintf(state.messages.Tools.ImportWarningSecretsFmt, state.vaultErrorText(err))
+	}
+	return ""
+}
+
+// planStreamImport turns a Telnet or serial session into a host, unless the
+// saved hosts or an earlier session already have that destination.
+func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.Entry) (Host, bool) {
+	host := Host{
+		ID: plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+		Address: entry.Host, Port: uint16(entry.Port), Color: entry.Color,
+	}
+	if entry.Protocol == sessionimport.Serial {
+		if !host.applyTransport(savedTransport{Protocol: "serial", Line: entry.Line, Flow: entry.Flow}) {
+			plan.duplicateHosts++ // a line that cannot be used is left out
+			return Host{}, false
+		}
+	} else {
+		host.Protocol = protocolTelnet
+	}
+	host.normalizeEndpoint()
+	host.finish()
+	if state.hostIndexByEndpoint(host) >= 0 {
+		plan.duplicateHosts++
+		return Host{}, false
+	}
+	for _, planned := range plan.hosts {
+		if sameEndpoint(planned, host) {
+			plan.duplicateHosts++
+			return Host{}, false
+		}
+	}
+	plan.nextHostID++
+	plan.hosts = append(plan.hosts, host)
+	return host, true
 }
 
 func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rect) {
@@ -157,6 +429,7 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 		{hitImportWindTerm, "WindTerm"},
 		{hitImportElecterm, "Electerm"},
 		{hitImportNetcatty, "Netcatty"},
+		{hitImportTabby, "Tabby"},
 	}
 	const columns = 2
 	rowHeight := components.BeginButton(nil, theme, ui.ID{}, ui.Rect{}).Large().BoundsHeight()
@@ -187,37 +460,6 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 		components.ButtonAction{ID: hitImportSessionsCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 	)
 	dialog.End()
-}
-
-// planStreamImport turns a Telnet or serial session into a host, unless the
-// saved hosts or an earlier session already have that destination.
-func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.Entry) {
-	host := Host{
-		ID: plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
-		Address: entry.Host, Port: uint16(entry.Port),
-	}
-	if entry.Protocol == sessionimport.Serial {
-		if !host.applyTransport(savedTransport{Protocol: "serial", Line: entry.Line, Flow: entry.Flow}) {
-			plan.duplicateHosts++ // a line that cannot be used is left out
-			return
-		}
-	} else {
-		host.Protocol = protocolTelnet
-	}
-	host.normalizeEndpoint()
-	host.finish()
-	if state.hostIndexByEndpoint(host) >= 0 {
-		plan.duplicateHosts++
-		return
-	}
-	for _, planned := range plan.hosts {
-		if sameEndpoint(planned, host) {
-			plan.duplicateHosts++
-			return
-		}
-	}
-	plan.nextHostID++
-	plan.hosts = append(plan.hosts, host)
 }
 
 // sessionImportHasLoopback reports a session aimed at this computer, which is

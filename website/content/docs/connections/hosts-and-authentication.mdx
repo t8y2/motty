@@ -62,9 +62,14 @@ Hosts can be grouped, tagged and searched.
 
 Open **Import > Import from** and choose the client, then the file it saved.
 Motty takes each session's name, folder, address, port and user; protocols it
-cannot open are counted as skipped. Passwords, key passphrases and key files
-are never imported, so add them to the host afterwards. A host whose address,
-user and port are already saved is left out.
+cannot open are counted as skipped. A host whose address, user and port are
+already saved is left out. What a session saved beside the destination comes
+along when the client wrote it down: the authentication it asked for, X11 and
+agent forwarding, its colour, the private key it used, the jump host it went
+through, and the tunnels it opened. Passwords and key passphrases are the
+exception: only Tabby's are imported, and only once you type the passphrase of
+its vault (see [Tabby's vault](#tabby-s-vault)). For the other clients, add
+them to the host afterwards.
 
 | Client | File to choose |
 | --- | --- |
@@ -75,10 +80,33 @@ user and port are already saved is left out.
 | WindTerm | `user.sessions` in the `terminal` folder of WindTerm's profile. |
 | Electerm | The bookmarks JSON exported from Electerm's bookmark manager. |
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
+| Tabby | `config.yaml` in Tabby's data folder: `~/Library/Application Support/tabby` on macOS, `%APPDATA%\tabby` on Windows, `~/.config/tabby` on Linux. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Motty does not import them and says so after the import; delete the file when
 you are done.
+
+### Tabby's vault
+
+Tabby keeps the passwords, key passphrases and any private key you stored in it
+inside a **vault**: one blob encrypted with a passphrase you set in Tabby. When
+the file has one, the import asks for that passphrase before it adds anything,
+and a wrong one is refused rather than guessed at. Once it opens:
+
+- Passwords and key passphrases go into Motty's own vault, under the host or the
+  key they belong to, so connecting does not ask for them again.
+- A private key kept in Tabby's vault is written to `keys/` beside Motty's
+  configuration and added to the Keychain.
+- Jump hosts become jump routes, and the tunnels a session saved become port
+  forwards.
+
+Dismiss the dialog and only what the file holds in the clear is imported — the
+sessions, their routes and their tunnels — with a line saying the vault was left
+locked. A Tabby configuration that is itself encrypted holds nothing else, so
+dismissing it imports nothing at all.
+
+Tabby before its vault kept passwords in the system keychain, which is not
+Motty's to read; a file with no vault says so after the import.
 
 ## Syncing with your SSH config
 

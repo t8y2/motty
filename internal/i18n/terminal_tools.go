@@ -223,6 +223,23 @@ type ToolsMessages struct {
 	ImportWarningPasswords    string
 	ImportWarningCleartextFmt string // sessions whose file held readable passwords or keys
 	ImportWarningLoopback     string // a session aimed at 127.0.0.1 / localhost
+	// What an import could not carry over: routes, tunnels, a key it could not
+	// write out, and secrets the vault refused.
+	ImportWarningRouteFmt       string // routes left out
+	ImportWarningForwardFmt     string // tunnels left out
+	ImportWarningKeyWriteFmt    string // session name, the error
+	ImportWarningSecretsFmt     string // the error
+	ImportWarningSecretsMissing string
+	// Tabby keeps its sessions and its secrets in a vault the user opens with a
+	// passphrase, so its import is the one that asks for something.
+	ImportTabbyPassphraseTitle  string
+	ImportTabbyPassphraseBody   string
+	ImportTabbyPassphraseLabel  string
+	ImportTabbyPassphraseSubmit string
+	ImportTabbyPassphraseWrong  string
+	ImportTabbyPassphraseEmpty  string
+	ImportTabbyLockedFmt        string // the file's name
+	ImportTabbyNothing          string
 
 	// Broadcast input.
 	BroadcastStart            string

@@ -11,6 +11,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 const maxVisibleHostImportWarnings = 7
@@ -32,9 +33,15 @@ type hostImportPlan struct {
 	proxies        []proxyRecord
 	warnings       []string
 	duplicateHosts int
+	// forwards are the tunnels a session saved, and secrets what the client kept
+	// encrypted and the user unlocked (see the Tabby import). Both are written
+	// once the hosts they belong to have their catalog ids.
+	forwards       []forwardRecord
+	secrets        []vault.Change
 	nextHostID     uint32
 	nextIdentityID uint32
 	nextProxyID    uint32
+	nextForwardID  uint32
 }
 
 type hostConnection struct {
@@ -50,6 +57,7 @@ type hostImportBuilder struct {
 	aliasIDs    map[string]uint32
 	connections map[hostConnection]Host
 	identitySet map[string]struct{}
+	secretSet   map[string]struct{}
 	routes      map[uint32]uint32
 }
 
@@ -79,11 +87,13 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		aliasIDs:    make(map[string]uint32, len(parsed.Hosts)),
 		connections: make(map[hostConnection]Host, len(state.hosts)+len(parsed.Hosts)),
 		identitySet: make(map[string]struct{}, len(state.identities)+len(parsed.Hosts)),
+		secretSet:   make(map[string]struct{}, len(parsed.Hosts)),
 		routes:      make(map[uint32]uint32, len(state.proxies)+len(parsed.Hosts)),
 	}
 	builder.plan.nextHostID = state.nextHostID
 	builder.plan.nextIdentityID = state.nextIdentityID
 	builder.plan.nextProxyID = state.nextProxyID
+	builder.plan.nextForwardID = max(state.nextForwardID, 1)
 	for _, host := range state.hosts {
 		if host.isSSH() {
 			builder.connections[connectionKey(host.Address, host.User, host.Port)] = host
@@ -174,14 +184,44 @@ func (builder *hostImportBuilder) addIdentity(path string) {
 	if _, exists := builder.identitySet[absolute]; exists {
 		return
 	}
+	builder.ensureIdentity(path)
+}
+
+// ensureIdentity adds a key file to the plan once, and answers its record so the
+// host that uses it can name its fingerprint. A key that cannot be read is told
+// and left out, since a host pointed at it would fail to connect.
+func (builder *hostImportBuilder) ensureIdentity(path string) (identityRecord, bool) {
+	absolute, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		absolute = filepath.Clean(path)
+	}
+	for _, record := range builder.plan.identities {
+		if record.Path == absolute {
+			return record, true
+		}
+	}
 	record := inspectIdentity(builder.plan.nextIdentityID, absolute, builder.state.keyMessages())
 	if record.Error != "" {
 		builder.warn(fmt.Sprintf(builder.state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error))
-		return
+		return identityRecord{}, false
 	}
 	builder.plan.nextIdentityID++
 	builder.plan.identities = append(builder.plan.identities, record)
 	builder.identitySet[record.Path] = struct{}{}
+	return record, true
+}
+
+// addSecret keeps one secret for the plan, the first of a name winning, so two
+// sessions of a file that share a key do not write the same passphrase twice.
+func (builder *hostImportBuilder) addSecret(name, value string) {
+	if name == "" || value == "" {
+		return
+	}
+	if _, seen := builder.secretSet[name]; seen {
+		return
+	}
+	builder.secretSet[name] = struct{}{}
+	builder.plan.secrets = append(builder.plan.secrets, vault.Change{Name: name, Value: value})
 }
 
 func (builder *hostImportBuilder) addProxyChain(source sshconfig.Host) {
@@ -292,9 +332,11 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	state.hosts = append(state.hosts, plan.hosts...)
 	state.identities = append(state.identities, plan.identities...)
 	state.proxies = append(state.proxies, plan.proxies...)
+	state.forwards = append(state.forwards, plan.forwards...)
 	state.nextHostID = plan.nextHostID
 	state.nextIdentityID = plan.nextIdentityID
 	state.nextProxyID = plan.nextProxyID
+	state.nextForwardID = plan.nextForwardID
 	if len(plan.hosts) > 0 {
 		state.selectedHostID = plan.hosts[0].ID
 	}
@@ -304,14 +346,21 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	if len(plan.proxies) > 0 {
 		state.selectedProxyID = plan.proxies[len(plan.proxies)-1].ID
 	}
+	if len(plan.forwards) > 0 {
+		state.selectedForwardID = plan.forwards[len(plan.forwards)-1].ID
+	}
 	state.hostDataChanged()
 	state.refreshIdentityCount()
 	state.refreshProxies()
+	state.refreshForwards()
+	if warning := state.writeImportedSecrets(plan.secrets); warning != "" {
+		plan.warnings = append(plan.warnings, warning)
+	}
 
 	state.hostImportResult.set(state.messages, summary, plan.warnings)
 	state.status = summary
 	state.modal = modalHostImportResult
-	if len(plan.hosts)+len(plan.identities)+len(plan.proxies) > 0 {
+	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards) > 0 {
 		state.save()
 	}
 }
