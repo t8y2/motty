@@ -31,6 +31,22 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemNixOS:       {icons.Nixos, ui.RGB(82, 119, 195)},
 	sshconn.SystemGentoo:      {icons.Gentoo, ui.RGB(84, 72, 122)},
 	sshconn.SystemManjaro:     {icons.Manjaro, ui.RGB(53, 191, 92)},
+	// The appliances and the derivatives below carry their brand color, darkened
+	// where white on it would fall under a 3:1 contrast.
+	sshconn.SystemSynology:       {icons.Synology, ui.RGB(76, 82, 88)},
+	sshconn.SystemQNAP:           {icons.Qnap, ui.RGB(12, 46, 130)},
+	sshconn.SystemFnOS:           {icons.Fnos, ui.RGB(51, 116, 219)},
+	sshconn.SystemTrueNAS:        {icons.Truenas, ui.RGB(0, 149, 213)},
+	sshconn.SystemUnraid:         {icons.Unraid, ui.RGB(241, 90, 44)},
+	sshconn.SystemOpenMediaVault: {icons.Openmediavault, ui.RGB(61, 143, 192)},
+	sshconn.SystemProxmox:        {icons.Proxmox, ui.RGB(229, 112, 0)},
+	sshconn.SystemOpenWrt:        {icons.Openwrt, ui.RGB(0, 160, 204)},
+	sshconn.SystemDeepin:         {icons.Deepin, ui.RGB(0, 124, 255)},
+	sshconn.SystemPopOS:          {icons.Popos, ui.RGB(46, 154, 166)},
+	sshconn.SystemZorin:          {icons.Zorin, ui.RGB(14, 134, 198)},
+	sshconn.SystemElementary:     {icons.Elementary, ui.RGB(47, 134, 212)},
+	sshconn.SystemVoid:           {icons.Void, ui.RGB(71, 128, 97)},
+	sshconn.SystemSlackware:      {icons.Slackware, ui.RGB(60, 60, 60)},
 }
 
 // badgeGlyph is one filled glyph of a system's badge: the icon, how far the badge's

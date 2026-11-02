@@ -35,6 +35,20 @@ const (
 	SystemNixOS
 	SystemGentoo
 	SystemManjaro
+	SystemSynology
+	SystemQNAP
+	SystemFnOS
+	SystemTrueNAS
+	SystemUnraid
+	SystemOpenMediaVault
+	SystemProxmox
+	SystemOpenWrt
+	SystemDeepin
+	SystemPopOS
+	SystemZorin
+	SystemElementary
+	SystemVoid
+	SystemSlackware
 )
 
 // systemNames is each system's persisted name. An /etc/os-release ID that has a
@@ -45,6 +59,10 @@ var systemNames = [...]string{
 	SystemCentOS: "centos", SystemRedHat: "rhel", SystemRocky: "rocky", SystemAlma: "almalinux",
 	SystemOpenSUSE: "opensuse", SystemKali: "kali", SystemMint: "linuxmint", SystemRaspberryPi: "raspbian",
 	SystemFreeBSD: "freebsd", SystemNixOS: "nixos", SystemGentoo: "gentoo", SystemManjaro: "manjaro",
+	SystemSynology: "synology", SystemQNAP: "qnap", SystemFnOS: "fnos", SystemTrueNAS: "truenas",
+	SystemUnraid: "unraid", SystemOpenMediaVault: "openmediavault", SystemProxmox: "proxmox",
+	SystemOpenWrt: "openwrt", SystemDeepin: "deepin", SystemPopOS: "popos", SystemZorin: "zorin",
+	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
 }
 
 func (system RemoteSystem) String() string {
@@ -83,9 +101,39 @@ var osReleaseIDs = map[string]RemoteSystem{
 	"opensuse-leap": SystemOpenSUSE, "opensuse-tumbleweed": SystemOpenSUSE, "opensuse-slowroll": SystemOpenSUSE,
 	"rhel": SystemRedHat, "almalinux": SystemAlma, "rocky": SystemRocky, "raspbian": SystemRaspberryPi,
 	"linuxmint": SystemMint, "arch": SystemArch, "archarm": SystemArch,
+	"pop": SystemPopOS, "pop-os": SystemPopOS,
 }
 
-const remoteSystemCommand = `printf 'kernel=%s\n' "$(uname -s 2>/dev/null)"; if [ -r /etc/os-release ]; then . /etc/os-release; printf 'id=%s\n' "$ID"; fi`
+// systemMarkers are the files an appliance or a distribution with no
+// /etc/os-release leaves behind, in the order they are read. A marker says more
+// than an os-release ID: Proxmox VE and OpenMediaVault both report Debian, and a
+// NAS reports only its kernel.
+var systemMarkers = [...]struct {
+	path   string
+	system RemoteSystem
+}{
+	{"/etc.defaults/VERSION", SystemSynology},
+	{"/etc/config/uLinux.conf", SystemQNAP},
+	{"/etc/unraid-version", SystemUnraid},
+	{"/etc/openmediavault", SystemOpenMediaVault},
+	{"/etc/pve", SystemProxmox},
+	{"/etc/slackware-version", SystemSlackware},
+}
+
+// remoteSystemCommand prints the kernel name, the /etc/os-release ID where the
+// host has one, and a line for every marker file that exists. The marker list
+// comes from systemMarkers so the two cannot drift apart.
+var remoteSystemCommand = remoteSystemProbe()
+
+func remoteSystemProbe() string {
+	var markers strings.Builder
+	for _, marker := range systemMarkers {
+		markers.WriteString(" " + marker.path)
+	}
+	return `printf 'kernel=%s\n' "$(uname -s 2>/dev/null)"; ` +
+		`if [ -r /etc/os-release ]; then . /etc/os-release; printf 'id=%s\n' "$ID"; fi; ` +
+		`for marker in` + markers.String() + `; do if [ -e "$marker" ]; then printf 'marker=%s\n' "$marker"; fi; done`
+}
 
 // standardImplementation reports whether the server's identification string
 // names an SSH implementation whose optional protocol behavior is safe to use
@@ -124,9 +172,10 @@ func classifyBanner(banner string) RemoteSystem {
 }
 
 // classifyProbe reads the output of remoteSystemCommand: the kernel name and,
-// where the host has one, the /etc/os-release ID.
+// where the host has one, the /etc/os-release ID, plus a line per marker file.
 func classifyProbe(output string) RemoteSystem {
 	var kernel, id string
+	seen := make(map[string]bool, len(systemMarkers))
 	for _, line := range strings.Split(output, "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok {
@@ -137,6 +186,8 @@ func classifyProbe(output string) RemoteSystem {
 			kernel = strings.ToLower(strings.TrimSpace(value))
 		case "id":
 			id = strings.ToLower(strings.Trim(strings.TrimSpace(value), `"'`))
+		case "marker":
+			seen[strings.TrimSpace(value)] = true
 		}
 	}
 	switch {
@@ -146,6 +197,13 @@ func classifyProbe(output string) RemoteSystem {
 		return SystemFreeBSD
 	case strings.Contains(kernel, "mingw"), strings.Contains(kernel, "cygwin"), strings.Contains(kernel, "msys"), strings.Contains(kernel, "windows"):
 		return SystemWindows
+	}
+	// An appliance's own marker outranks the distribution it borrows its userland
+	// from, which is why the markers are read before the ID.
+	for _, marker := range systemMarkers {
+		if seen[marker.path] {
+			return marker.system
+		}
 	}
 	if id != "" {
 		if system, ok := osReleaseIDs[id]; ok {

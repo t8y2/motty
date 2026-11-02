@@ -1,6 +1,19 @@
 package sshconn
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// TestProbeReadsEveryMarker keeps the shell probe and the marker table in step:
+// a marker added to one and not the other would never be reported.
+func TestProbeReadsEveryMarker(t *testing.T) {
+	for _, marker := range systemMarkers {
+		if !strings.Contains(remoteSystemCommand, " "+marker.path) {
+			t.Errorf("remoteSystemCommand does not look for %s", marker.path)
+		}
+	}
+}
 
 func TestRemoteSystemClassification(t *testing.T) {
 	for _, test := range []struct {
@@ -14,6 +27,21 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Linux\nid=rhel\n", SystemRedHat},
 		{"kernel=Linux\nid=\"almalinux\"\n", SystemAlma},
 		{"kernel=Linux\nid=endeavouros\n", SystemLinux},
+		{"kernel=Linux\nid=fnos\n", SystemFnOS},
+		{"kernel=Linux\nid=openwrt\n", SystemOpenWrt},
+		{"kernel=Linux\nid=deepin\n", SystemDeepin},
+		{"kernel=Linux\nid=pop\n", SystemPopOS},
+		{"kernel=Linux\nid=zorin\n", SystemZorin},
+		{"kernel=Linux\nid=elementary\n", SystemElementary},
+		{"kernel=Linux\nid=void\n", SystemVoid},
+		{"kernel=Linux\nid=truenas\n", SystemTrueNAS},
+		{"kernel=Linux\nmarker=/etc.defaults/VERSION\n", SystemSynology},
+		{"kernel=Linux\nmarker=/etc/config/uLinux.conf\n", SystemQNAP},
+		{"kernel=Linux\nmarker=/etc/unraid-version\n", SystemUnraid},
+		{"kernel=Linux\nmarker=/etc/slackware-version\n", SystemSlackware},
+		// Proxmox VE and OpenMediaVault both report Debian.
+		{"kernel=Linux\nid=debian\nmarker=/etc/pve\n", SystemProxmox},
+		{"kernel=Linux\nid=debian\nmarker=/etc/openmediavault\n", SystemOpenMediaVault},
 		{"kernel=Linux\n", SystemLinux},
 		{"kernel=Darwin\n", SystemDarwin},
 		{"kernel=FreeBSD\n", SystemFreeBSD},
@@ -56,7 +84,7 @@ func TestStandardImplementation(t *testing.T) {
 }
 
 func TestRemoteSystemPersistenceNamesRoundTrip(t *testing.T) {
-	for system := SystemUnknown; system <= SystemManjaro; system++ {
+	for system := SystemLinux; system.String() != ""; system++ {
 		if got := ParseRemoteSystem(system.String()); got != system {
 			t.Errorf("ParseRemoteSystem(%q) = %v, want %v", system.String(), got, system)
 		}
