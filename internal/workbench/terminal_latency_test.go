@@ -241,3 +241,52 @@ func TestLatencyToggleThroughSettings(t *testing.T) {
 		t.Fatal("the settings toggle did not turn the display on")
 	}
 }
+
+// A probe that gets no reply in time is not a broken connection, but it gives no
+// sample either: the reading is kept while it is recent, dropped once it is not,
+// and probing resumes by itself when replies come back.
+func TestLatencyProbeTimeoutKeepsRecentReadingThenDropsIt(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.terminalShowLatency = true
+
+	conn := &mockPingerConn{rtt: 35 * time.Millisecond}
+	session := &Session{ID: 1, conn: conn, phase: sshconn.PhaseConnected}
+	state.maybeProbeLatency(session)
+	waitForLatency(t, session, 1)
+
+	probeAgain := func() {
+		t.Helper()
+		session.rttLastPing = time.Now().Add(-2 * latencyProbeInterval)
+		state.maybeProbeLatency(session)
+		deadline := time.Now().Add(2 * time.Second)
+		for atomic.LoadInt32(&session.rttMeasuring) != 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("probe never finished")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	for _, timeout := range []error{context.DeadlineExceeded, sshconn.ErrPingPending} {
+		conn.err = timeout
+		probeAgain()
+		if atomic.LoadInt32(&session.rttBroken) != 0 {
+			t.Fatalf("%v marked probing as broken", timeout)
+		}
+		if atomic.LoadInt32(&session.rttAvailable) != 1 {
+			t.Fatalf("%v dropped a reading that is still recent", timeout)
+		}
+	}
+
+	atomic.StoreInt64(&session.rttSampledAt, time.Now().Add(-2*latencyStaleAfter).UnixNano())
+	probeAgain()
+	if atomic.LoadInt32(&session.rttAvailable) != 0 {
+		t.Fatal("a reading that stopped being refreshed is still shown")
+	}
+
+	conn.err, conn.rtt = nil, 48*time.Millisecond
+	probeAgain()
+	if got := atomic.LoadInt64(&session.rttMs); got != 48 || atomic.LoadInt32(&session.rttAvailable) != 1 {
+		t.Fatalf("after recovery rttMs = %d available = %d, want 48 and 1", got, atomic.LoadInt32(&session.rttAvailable))
+	}
+}
