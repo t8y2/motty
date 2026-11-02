@@ -75,6 +75,16 @@ func TestFetchCatalogRealCarapaceArchive(t *testing.T) {
 			t.Fatalf("v1.8.2 values = %d, skipped = %d; want 131 and 1312", stats.Values, stats.SkippedValues)
 		}
 	}
+	if builtin, err := Builtin(); err == nil && Newer(release.Tag, builtin.Release) {
+		// The ordinary built-in to next-release step must pass the same checks
+		// the updater applies before installing.
+		if !coversBaseline(catalog, builtin) {
+			t.Fatalf("%s does not cover the built-in %s", release.Tag, builtin.Release)
+		}
+		if err := checkContinuity(catalog, builtin); err != nil {
+			t.Fatalf("%s is refused against the built-in %s: %v", release.Tag, builtin.Release, err)
+		}
+	}
 	if mpv := catalog.Root("mpv"); mpv != nil {
 		if _, ok := catalog.FindFlag(mpv, "--osd-align-y"); !ok {
 			t.Fatal("mpv was imported but its repaired flag is missing")
