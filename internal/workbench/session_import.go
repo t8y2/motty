@@ -107,35 +107,41 @@ func (state *State) importSessions(client sessionimport.Client) {
 		state.showFileReadFailure(fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), err, fmt.Sprintf(state.messages.ActionFeedback.ImportSessionsFailedFmt, importClientName(client)))
 		return
 	}
-	plan := state.sessionImportPlan(result)
+	var warnings []string
 	if result.Keys > 0 {
-		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningKeysFmt, result.Keys))
+		warnings = append(warnings, fmt.Sprintf(m.ImportWarningKeysFmt, result.Keys))
 	}
 	if result.Skipped > 0 {
-		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningSkippedFmt, result.Skipped))
+		warnings = append(warnings, fmt.Sprintf(m.ImportWarningSkippedFmt, result.Skipped))
 	}
 	if sessionImportHasLoopback(result) {
-		plan.warnings = append(plan.warnings, m.ImportWarningLoopback)
+		warnings = append(warnings, m.ImportWarningLoopback)
 	}
-	plan.warnings = append(plan.warnings, result.Warnings...)
+	warnings = append(warnings, result.Warnings...)
 	// A file that holds passwords or keys in the clear is a file to delete, not
 	// one whose encryption scheme kept them back, so it is said in its own words.
 	if result.PlainSecrets > 0 {
-		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningCleartextFmt, result.PlainSecrets))
+		warnings = append(warnings, fmt.Sprintf(m.ImportWarningCleartextFmt, result.PlainSecrets))
 	} else {
-		plan.warnings = append(plan.warnings, m.ImportWarningPasswords)
+		warnings = append(warnings, m.ImportWarningPasswords)
 	}
-	summary := fmt.Sprintf(m.ImportSummaryFmt, len(plan.hosts), importClientName(client), plan.duplicateHosts)
-	state.applyHostImportSummary(plan, summary)
+	// A destination that is already saved is the user's call, so the import
+	// asks before it writes anything (see session_import_conflicts.go).
+	state.beginSessionImport(sessionImportRequest{
+		client: client, results: []sessionimport.Result{result}, warnings: warnings,
+	})
 }
 
 // sessionImportPlan turns sessions into new hosts, leaving out one whose address,
 // user and port a saved host (or an earlier session) already has, and carrying
 // over what the client saved beside the destination: the way it authenticated,
 // the key it used, the jump route it went through, the tunnels it opened, and the
-// secrets the user unlocked.
-func (state *State) sessionImportPlan(results ...sessionimport.Result) hostImportPlan {
+// secrets the user unlocked. overwrite names the saved hosts the user chose to
+// write over; nil asks the question instead of answering it (see
+// session_import_conflicts.go).
+func (state *State) sessionImportPlan(overwrite map[uint32]bool, results ...sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
+	builder.overwrite = overwrite
 	for _, result := range results {
 		state.planSessionResult(builder, result)
 	}
@@ -179,9 +185,8 @@ func (state *State) planSessionHost(builder *hostImportBuilder, entry sessionimp
 		port = defaultPort
 	}
 	key := connectionKey(entry.Host, entry.User, port)
-	if _, exists := builder.connections[key]; exists {
-		builder.plan.duplicateHosts++
-		return Host{}, "", false
+	if existing, exists := builder.connections[key]; exists {
+		return state.planSessionConflict(builder, entry, existing, port)
 	}
 	identity, hasKey := state.planSessionIdentity(builder, entry)
 	host := Host{
@@ -204,6 +209,60 @@ func (state *State) planSessionHost(builder *hostImportBuilder, entry sessionimp
 		return host, identity.Path, true
 	}
 	return host, "", true
+}
+
+// planSessionConflict decides what becomes of a session whose destination a host
+// already has. The same file naming one destination twice is a duplicate and
+// stays silent; a host that is already saved is a question, so the first run of
+// the plan records it, and the run that has the answer either writes over the
+// saved host or leaves it alone.
+func (state *State) planSessionConflict(builder *hostImportBuilder, entry sessionimport.Entry, existing Host, port uint16) (Host, string, bool) {
+	if _, saved := builder.savedHosts[existing.ID]; !saved {
+		builder.plan.duplicateHosts++
+		return Host{}, "", false
+	}
+	if builder.overwrite == nil {
+		// One question per saved host: a file that names it twice is answered
+		// once, and the second entry would land on the same host anyway.
+		for _, conflict := range builder.plan.conflicts {
+			if conflict.existing.ID == existing.ID {
+				return Host{}, "", false
+			}
+		}
+		builder.plan.conflicts = append(builder.plan.conflicts, importConflict{
+			imported: Host{
+				Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+				Address: entry.Host, User: entry.User, Port: port,
+			},
+			existing: existing,
+		})
+		return Host{}, "", false
+	}
+	if !builder.overwrite[existing.ID] {
+		builder.plan.duplicateHosts++
+		return Host{}, "", false
+	}
+	identity, hasKey := state.planSessionIdentity(builder, entry)
+	updated := existing
+	updated.Label = entry.Name
+	updated.Group = strings.ReplaceAll(entry.Group, "/", " / ")
+	updated.Color = entry.Color
+	updated.Auth = importedAuth(entry.Auth)
+	updated.ForwardX11 = entry.X11
+	updated.AgentForward = entry.AgentForward
+	updated.Proxy = importedSessionProxy(builder, entry)
+	// A key the import could not read leaves the saved one in place: pointing
+	// the host at nothing would be worse than what it already had.
+	if hasKey && identity.Fingerprint != "" {
+		updated.Identity = identity.Fingerprint
+	}
+	updated.finish()
+	builder.plan.updates = append(builder.plan.updates, updated)
+	builder.connections[connectionKey(updated.Address, updated.User, updated.Port)] = updated
+	if hasKey {
+		return updated, identity.Path, true
+	}
+	return updated, "", true
 }
 
 // planSessionIdentity finds the key a session authenticates with: the one the

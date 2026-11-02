@@ -299,6 +299,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintSnippetDialog(canvas, viewport)
 	case modalImportSessions:
 		state.paintImportSessionsDialog(canvas, viewport)
+	case modalImportConflicts:
+		state.paintImportConflictsDialog(canvas, viewport)
 	case modalTabbyPassphrase:
 		state.paintTabbyPassphraseDialog(canvas, viewport)
 	case modalFontPicker:

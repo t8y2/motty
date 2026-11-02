@@ -33,6 +33,14 @@ type hostImportPlan struct {
 	proxies        []proxyRecord
 	warnings       []string
 	duplicateHosts int
+	// conflicts are the sessions whose destination a saved host already has,
+	// collected by the first run of the plan so the import can ask what to do
+	// with each before anything is written. A second run, told which saved hosts
+	// to overwrite, turns them into updates or into skipped duplicates.
+	conflicts []importConflict
+	// updates are the saved hosts the user chose to write over: same ids, the
+	// imported settings.
+	updates []Host
 	// forwards are the tunnels a session saved, and secrets what the client kept
 	// encrypted and the user unlocked (see the Tabby import). Both are written
 	// once the hosts they belong to have their catalog ids.
@@ -42,6 +50,12 @@ type hostImportPlan struct {
 	nextIdentityID uint32
 	nextProxyID    uint32
 	nextForwardID  uint32
+}
+
+// importConflict is one session that would land on a host already saved.
+type importConflict struct {
+	imported Host
+	existing Host
 }
 
 type hostConnection struct {
@@ -59,6 +73,14 @@ type hostImportBuilder struct {
 	identitySet map[string]struct{}
 	secretSet   map[string]struct{}
 	routes      map[uint32]uint32
+	// savedHosts are the ids of the hosts already in the catalog, so a session
+	// that meets one can be told from a session that meets its own file's
+	// earlier entry: only the first is a question worth asking.
+	savedHosts map[uint32]struct{}
+	// overwrite is what the user answered for those hosts. Nil means the
+	// question has not been asked yet, which is when conflicts are collected
+	// instead of decided.
+	overwrite map[uint32]bool
 }
 
 func (state *State) importSSHConfig() {
@@ -89,6 +111,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		identitySet: make(map[string]struct{}, len(state.identities)+len(parsed.Hosts)),
 		secretSet:   make(map[string]struct{}, len(parsed.Hosts)),
 		routes:      make(map[uint32]uint32, len(state.proxies)+len(parsed.Hosts)),
+		savedHosts:  make(map[uint32]struct{}, len(state.hosts)),
 	}
 	builder.plan.nextHostID = state.nextHostID
 	builder.plan.nextIdentityID = state.nextIdentityID
@@ -98,6 +121,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		if host.isSSH() {
 			builder.connections[connectionKey(host.Address, host.User, host.Port)] = host
 		}
+		builder.savedHosts[host.ID] = struct{}{}
 	}
 	for _, identity := range state.identities {
 		builder.identitySet[identity.Path] = struct{}{}
@@ -329,6 +353,13 @@ func (state *State) applyHostImport(plan hostImportPlan) {
 
 // applyHostImportSummary adds what a plan found and tells the user in summary.
 func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) {
+	// A host written over keeps its id, so the sessions and tunnels that point
+	// at it keep pointing at it; only what the import brought is replaced.
+	for _, updated := range plan.updates {
+		if index := state.hostIndex(updated.ID); index >= 0 {
+			state.hosts[index] = updated
+		}
+	}
 	state.hosts = append(state.hosts, plan.hosts...)
 	state.identities = append(state.identities, plan.identities...)
 	state.proxies = append(state.proxies, plan.proxies...)
@@ -360,7 +391,7 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	state.hostImportResult.set(state.messages, summary, plan.warnings)
 	state.status = summary
 	state.modal = modalHostImportResult
-	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards) > 0 {
+	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards)+len(plan.updates) > 0 {
 		state.save()
 	}
 }

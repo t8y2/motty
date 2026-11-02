@@ -174,30 +174,23 @@ func (state *State) applyTabbyImport() {
 			warnings = append(warnings, fmt.Sprintf(m.ImportTabbyLockedFmt, filepath.Base(file.Path())))
 		}
 	}
-	plan := state.sessionImportPlan(results...)
 	for _, result := range results {
 		if result.Skipped > 0 {
-			plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningSkippedFmt, result.Skipped))
+			warnings = append(warnings, fmt.Sprintf(m.ImportWarningSkippedFmt, result.Skipped))
 		}
 		if result.PlainSecrets > 0 {
-			plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningCleartextFmt, result.PlainSecrets))
+			warnings = append(warnings, fmt.Sprintf(m.ImportWarningCleartextFmt, result.PlainSecrets))
 		}
 		if sessionImportHasLoopback(result) {
-			plan.warnings = append(plan.warnings, m.ImportWarningLoopback)
+			warnings = append(warnings, m.ImportWarningLoopback)
 		}
-		plan.warnings = append(plan.warnings, result.Warnings...)
+		warnings = append(warnings, result.Warnings...)
 	}
-	plan.warnings = append(plan.warnings, warnings...)
 	// Tabby's keys and passwords are imported rather than reported, so the two
 	// lines that say the opposite for the other clients are not added here.
-	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards) == 0 {
-		state.status = m.ImportTabbyNothing
-		state.hostImportResult.set(state.messages, m.ImportTabbyNothing, plan.warnings)
-		state.modal = modalHostImportResult
-		return
-	}
-	summary := fmt.Sprintf(m.ImportSummaryFmt, len(plan.hosts), importClientName(sessionimport.Tabby), plan.duplicateHosts)
-	state.applyHostImportSummary(plan, summary)
+	state.beginSessionImport(sessionImportRequest{
+		client: sessionimport.Tabby, results: results, warnings: warnings, nothing: m.ImportTabbyNothing,
+	})
 }
 
 func (state *State) paintTabbyPassphraseDialog(canvas *ui.Canvas, viewport ui.Rect) {

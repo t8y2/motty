@@ -230,6 +230,17 @@ type ToolsMessages struct {
 	ImportWarningKeyWriteFmt    string // session name, the error
 	ImportWarningSecretsFmt     string // the error
 	ImportWarningSecretsMissing string
+	// The import met hosts that are already saved. The user decides what happens
+	// to each, and can answer for the ones left at once.
+	ImportConflictTitle           string
+	ImportConflictBodyFmt         string // the session, which one, how many
+	ImportConflictOverwrite       string
+	ImportConflictSkip            string
+	ImportConflictOverwriteAllFmt string // how many are left
+	ImportConflictSkipAllFmt      string // how many are left
+	// The summary of an import that wrote over saved hosts: imported, client,
+	// overwritten, skipped.
+	ImportSummaryOverwriteFmt string
 	// The secrets arrived but the system's secret store refused the key that
 	// opens the vault, which the user allows in the prompt that asked.
 	ImportWarningSecretsDenied string

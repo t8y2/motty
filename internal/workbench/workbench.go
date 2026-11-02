@@ -621,6 +621,7 @@ type State struct {
 	transferLeftover       []byte
 	secrets                secretsUI
 	tabby                  tabbyImportUI
+	imports                sessionImportUI
 	shareConnections       shareConnectionsPolicy
 	tooltip                components.HoverTooltip
 	selectTypeahead        selectTypeahead
@@ -1322,6 +1323,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalImportSessions:
 		state.clickImportSessions(id)
+		return
+	case modalImportConflicts:
+		state.clickImportConflict(id)
 		return
 	case modalTabbyPassphrase:
 		state.clickTabbyPassphrase(id)

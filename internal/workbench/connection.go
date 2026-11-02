@@ -414,6 +414,7 @@ const (
 	modalHighlightRule
 	modalSnippet
 	modalImportSessions
+	modalImportConflicts
 	modalTabbyPassphrase
 	modalFontPicker
 	modalOutboundProxy
