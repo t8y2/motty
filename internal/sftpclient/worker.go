@@ -2213,12 +2213,12 @@ func (worker *Worker) removeTree(client Remote, remotePath string, remover remot
 			// It vanished under us: there is nothing left to remove.
 			return nil
 		}
-		// The folder cannot be read, so what is in it is unknown. Say why; the
-		// server's answer to removing it anyway ("not empty") would hide the
-		// cause. An empty folder that merely cannot be listed still goes.
-		listErr := fmt.Errorf("sftp: cannot list %s: %w", remotePath, err)
+		// The folder cannot be read, so what is in it is unknown. Report why it
+		// could not be listed, not the server's "not empty" to removing it
+		// anyway, and lead with the cause so a status line that cuts the long
+		// path still shows it. An empty folder that merely cannot be listed goes.
 		if removeErr := remover.RemoveDirectory(remotePath); removeErr != nil {
-			return fmt.Errorf("%w (removing it failed too: %w)", listErr, removeErr)
+			return fmt.Errorf("sftp: %w, cannot list %s", err, remotePath)
 		}
 		return nil
 	}
