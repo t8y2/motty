@@ -103,7 +103,9 @@ func SafeInsert(s string) bool {
 // NormalizeText turns untrusted text into the one line that may be shown in the
 // UI or stored in a description. Whitespace and line breaks collapse into single
 // spaces, invisible characters disappear, and the result is bounded to limit
-// runes (zero disables the bound).
+// runes. A positive limit also bounds the input scan to 16 bytes per output
+// rune, so an excessive invisible prefix cannot make UI rendering scan megabytes
+// without producing text. Zero disables both bounds.
 //
 // Dropped rather than spaced: bidirectional overrides, zero-width characters, a
 // byte-order mark and the other Unicode format characters (Cf); the line and
@@ -116,9 +118,21 @@ func NormalizeText(s string, limit int) string {
 		return ""
 	}
 	var b strings.Builder
-	b.Grow(len(s))
+	capacity := len(s)
+	if limit > 0 {
+		capacity = min(capacity, limit)
+	}
+	b.Grow(capacity)
+	scanBytes := len(s)
+	if limit > 0 && limit <= scanBytes/16 {
+		scanBytes = limit * 16
+	}
 	space := false
-	for _, r := range s {
+	runes := 0
+	for index, r := range s {
+		if index >= scanBytes {
+			break
+		}
 		switch {
 		case unicode.Is(unicode.Cf, r), r == '\u2028', r == '\u2029', isVariationSelector(r):
 			continue
@@ -132,18 +146,20 @@ func NormalizeText(s string, limit int) string {
 			continue
 		}
 		if space {
+			if limit > 0 && runes+1 >= limit {
+				break
+			}
 			b.WriteByte(' ')
+			runes++
 			space = false
 		}
 		b.WriteRune(r)
+		runes++
+		if limit > 0 && runes >= limit {
+			break
+		}
 	}
-	out := b.String()
-	if limit > 0 && utf8.RuneCountInString(out) > limit {
-		// Cutting a rune sequence can leave a trailing space, which a second
-		// pass would remove; drop it here so normalization is idempotent.
-		out = strings.TrimRight(string([]rune(out)[:limit]), " ")
-	}
-	return out
+	return b.String()
 }
 
 // isVariationSelector reports the two ranges of invisible variation selectors.

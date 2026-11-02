@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+func TestDecodeRejectsInvalidImportStatistics(t *testing.T) {
+	encoded := string(testCatalog(t).Encode())
+	for _, metadata := range []string{`null`, `{}`, `{"Files":-1}`, `{"RepairedFiles":-1}`, `{"Files":"invalid"}`} {
+		data := strings.Replace(encoded, "\ndigest\t", "\nimport-stats\t"+metadata+"\ndigest\t", 1)
+		if _, err := Decode([]byte(data)); err == nil {
+			t.Errorf("accepted invalid import statistics: %s", metadata)
+		}
+	}
+}
+
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	catalog := testCatalog(t)
 	encoded := catalog.Encode()

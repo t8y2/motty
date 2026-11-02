@@ -2101,6 +2101,7 @@ var chineseCompletion = CompletionMessages{
 	UpdatedFmt:             "命令库已更新到 %s。",
 	UpdatedRepairedFmt:     "命令库已更新到 %s。修复 %d 个、跳过 %d 个上游文件。",
 	RepairSummaryFmt:       "修复 %d 个、跳过 %d 个上游文件",
+	RecoveryStatsUnknown:   "修复与跳过统计未知",
 	CatalogProvenanceFmt:   "%s · %s · %d 个命令 · %d 个选项 · %s",
 	CatalogRepoFmt:         "%s@%s",
 	CatalogOriginBuiltin:   "内置快照",

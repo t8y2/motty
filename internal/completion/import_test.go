@@ -218,6 +218,69 @@ flags:
 	}
 }
 
+func TestImportDoesNotRepairNonPlainScalars(t *testing.T) {
+	for _, value := range []string{`[safe]: text`, `"safe": text`, `'safe': text`, `{description: safe}: text`} {
+		t.Run(value, func(t *testing.T) {
+			files := []SourceFile{
+				{Name: "a/a.yaml", Data: []byte("name: a\n")},
+				{Name: "tool/tool.yaml", Data: []byte("name: tool\nflags:\n  --mode: " + value + "\n")},
+			}
+			catalog, stats := importFiles(t, files, ImportOptions{})
+			if stats.RepairedFiles != 0 || stats.SkippedSources != 1 || catalog.Root("tool") != nil {
+				t.Fatalf("non-plain scalar was guessed into a description: stats=%+v root=%+v", stats, catalog.Root("tool"))
+			}
+		})
+	}
+}
+
+func TestImportDoesNotRepairNonDescriptionFields(t *testing.T) {
+	for _, data := range []string{
+		"name: tool\nrun: echo: hello\n",
+		"name: tool\nrun:\n  --mode: echo: hello\n",
+		"name: tool\ndocumentation:\n  description: example: text\n",
+	} {
+		files := []SourceFile{
+			{Name: "a/a.yaml", Data: []byte("name: a\n")},
+			{Name: "tool/tool.yaml", Data: []byte(data)},
+		}
+		catalog, stats := importFiles(t, files, ImportOptions{})
+		if stats.RepairedFiles != 0 || stats.SkippedSources != 1 || catalog.Root("tool") != nil {
+			t.Fatalf("non-description field was repaired: source=%q stats=%+v", data, stats)
+		}
+	}
+}
+
+func TestImportRepairsSupportedDescriptionPaths(t *testing.T) {
+	for name, source := range map[string]string{
+		"command":         "name: tool\ndescription: example: text\n",
+		"persistent flag": "name: tool\npersistentflags:\n  --mode: example: text\n",
+		"flag list":       "name: tool\nflags:\n  - --mode: example: text\n",
+		"structured flag": "name: tool\nflags:\n  --mode:\n    description: example: text\n",
+		"nested command":  "name: tool\ncommands:\n  - name: child\n    description: example: text\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			catalog, stats := importFiles(t, []SourceFile{{Name: "tool/tool.yaml", Data: []byte(source)}}, ImportOptions{})
+			if stats.RepairedFiles != 1 || stats.SkippedSources != 0 {
+				t.Fatalf("description was not repaired: %+v", stats)
+			}
+			root := catalog.Root("tool")
+			desc := root.Desc
+			if name == "nested command" {
+				desc = catalog.Lookup([]string{"tool", "child"}).Desc
+			} else if name != "command" {
+				flag, ok := catalog.FindFlag(root, "--mode")
+				if !ok {
+					t.Fatal("repaired option is missing")
+				}
+				desc = flag.Desc
+			}
+			if desc != "example: text" {
+				t.Fatalf("description = %q", desc)
+			}
+		})
+	}
+}
+
 func TestImportRepairsEveryDefectLineAndKeepsItsText(t *testing.T) {
 	files := []SourceFile{{Name: "zig/zig.yaml", Data: []byte("name: zig\n")}, {Name: "zig/zig.run.yaml", Data: []byte(`
 name: run [options] [files] [-- args]

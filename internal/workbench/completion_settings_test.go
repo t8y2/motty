@@ -394,11 +394,12 @@ func TestCompletionCatalogStatusShowsProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.completion.catalog = placeholder
+	state.completion.updateStats = completion.ImportStats{}
 	status, err = state.completionCatalogStatus()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := fmt.Sprintf(m.CatalogDescriptionFmt, "v9.9.9", 1, 0); status != want {
+	if want := fmt.Sprintf(m.CatalogDescriptionFmt, "v9.9.9", 1, 0) + " · " + m.RecoveryStatsUnknown; status != want {
 		t.Fatalf("placeholder commit status = %q, want %q", status, want)
 	}
 
@@ -409,6 +410,19 @@ func TestCompletionCatalogStatusShowsProvenance(t *testing.T) {
 	state.completion.catalog = nonhex
 	if status, err = state.completionCatalogStatus(); err != nil || strings.Contains(status, "@") {
 		t.Fatalf("non-hex commit status = %q, %v", status, err)
+	}
+}
+
+func TestCompletionCatalogStatusMarksLegacyStatisticsUnknown(t *testing.T) {
+	w := newCompletionWorld(t)
+	catalog, err := completion.NewCatalog(completion.RepositoryName, "v9.0.0", strings.Repeat("a", 40), "MIT", []*completion.Node{{Token: "tool"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.state.completion.catalog = catalog
+	status, err := w.state.completionCatalogStatus()
+	if err != nil || !strings.Contains(status, "recovery statistics unavailable") {
+		t.Fatalf("legacy catalog did not disclose missing statistics: %q, %v", status, err)
 	}
 }
 
@@ -451,6 +465,20 @@ func TestCompletionCatalogStatusBoundsErrorText(t *testing.T) {
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
 			t.Fatalf("status contains invisible character %U", r)
 		}
+	}
+}
+
+func TestCompletionCatalogStatusBoundsErrorAllocation(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.completion.updateErr = fmt.Errorf("%s", strings.Repeat("bad text ", 300_000))
+	result := testing.Benchmark(func(b *testing.B) {
+		for range b.N {
+			w.state.completionCatalogStatus()
+		}
+	})
+	t.Logf("bounded error status: %s; %s", result.String(), result.MemString())
+	if bytes := result.AllocedBytesPerOp(); bytes > 8192 {
+		t.Fatalf("painting a bounded error status allocated %d bytes", bytes)
 	}
 }
 

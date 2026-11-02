@@ -451,11 +451,11 @@ func (state *State) completionCatalogStatus() (string, error) {
 		return m.Updating, nil
 	}
 	if c.updateErr != nil {
-		return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, c.updateErr)), c.updateErr
+		return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, completionStatusText(c.updateErr.Error()))), c.updateErr
 	}
 	if c.catalog == nil {
 		if c.catalogErr != nil {
-			return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, c.catalogErr)), c.catalogErr
+			return completionStatusText(fmt.Sprintf(m.CheckFailedFmt, completionStatusText(c.catalogErr.Error()))), c.catalogErr
 		}
 		if state.history.suggestOff && !c.updatePending {
 			return m.CatalogOff, nil
@@ -480,10 +480,13 @@ func (state *State) completionCatalogStatus() (string, error) {
 		status += " · " + fmt.Sprintf(m.AuditWarningsFmt, warnings)
 	}
 	if c.catalogNote != nil {
-		status = fmt.Sprintf(m.CacheFailedFmt, status, c.catalogNote)
+		status = fmt.Sprintf(m.CacheFailedFmt, status, completionStatusText(c.catalogNote.Error()))
 	}
 	if c.updateStats.RepairedFiles > 0 || c.updateStats.SkippedSources > 0 {
 		status += " · " + fmt.Sprintf(m.RepairSummaryFmt, c.updateStats.RepairedFiles, c.updateStats.SkippedSources)
+	}
+	if _, known := c.catalog.ImportStats(); !known {
+		status += " · " + m.RecoveryStatsUnknown
 	}
 	if !c.checked.IsZero() {
 		status = fmt.Sprintf(m.CheckedFmt, status, c.checked.Format("2006-01-02 15:04"))

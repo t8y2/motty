@@ -2101,6 +2101,7 @@ var englishCompletion = CompletionMessages{
 	UpdatedFmt:             "Catalog updated to %s.",
 	UpdatedRepairedFmt:     "Catalog updated to %s. Repaired %d and skipped %d upstream files.",
 	RepairSummaryFmt:       "repaired %d and skipped %d upstream files",
+	RecoveryStatsUnknown:   "recovery statistics unavailable",
 	CatalogProvenanceFmt:   "%s · %s · %d commands · %d options · %s",
 	CatalogRepoFmt:         "%s@%s",
 	CatalogOriginBuiltin:   "built-in snapshot",

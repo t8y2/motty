@@ -22,8 +22,8 @@ type CatalogStore struct {
 	catalog    *Catalog
 	generation uint64
 	// stats describe the import that produced catalog; they are stored beside
-	// the generation so every window reads one coherent snapshot. A catalog
-	// loaded from disk or embedded in the binary carries zero stats.
+	// the generation so every window reads one coherent snapshot. Legacy
+	// catalogs without persisted statistics carry zero stats.
 	stats ImportStats
 }
 
@@ -87,7 +87,8 @@ func (store *CatalogStore) load() {
 			current = installed
 		}
 	}
-	store.publish(current, ImportStats{})
+	stats, _ := current.ImportStats()
+	store.publish(current, stats)
 }
 
 func validCatalogVersion(catalog *Catalog) bool {

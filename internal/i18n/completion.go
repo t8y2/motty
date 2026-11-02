@@ -31,6 +31,8 @@ type CompletionMessages struct {
 	UpdatedRepairedFmt string
 	// RepairSummaryFmt is the settings-row fragment for those nonzero counts.
 	RepairSummaryFmt string
+	// RecoveryStatsUnknown identifies legacy snapshots without import counters.
+	RecoveryStatsUnknown string
 	// CatalogProvenanceFmt is the settings row when the catalog commit is a
 	// full hash: release, repo@short-commit, counts and origin.
 	CatalogProvenanceFmt string

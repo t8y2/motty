@@ -78,6 +78,49 @@ func TestNormalizeTextBoundsTheDescription(t *testing.T) {
 	}
 }
 
+func TestNormalizeTextBoundsAllocationForLargeText(t *testing.T) {
+	input := strings.Repeat("bad text ", 300_000)
+	if got := NormalizeText(input, 240); len(got) != 240 {
+		t.Fatalf("normalized length = %d, want 240", len(got))
+	}
+	result := testing.Benchmark(func(b *testing.B) {
+		for range b.N {
+			NormalizeText(input, 240)
+		}
+	})
+	t.Logf("bounded normalization: %s; %s", result.String(), result.MemString())
+	if bytes := result.AllocedBytesPerOp(); bytes > 4096 {
+		t.Fatalf("bounded normalization allocated %d bytes for a 240-rune result", bytes)
+	}
+}
+
+func TestNormalizeTextTruncatesAtRuneBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		limit int
+		want  string
+	}{
+		{"a b", 2, "a"},
+		{"a b", 3, "a b"},
+		{"é 中文", 3, "é 中"},
+		{"a\u202eb", 2, "ab"},
+		{"a\t\tb", 0, "a b"},
+	} {
+		if got := NormalizeText(tc.input, tc.limit); got != tc.want {
+			t.Errorf("NormalizeText(%q, %d) = %q, want %q", tc.input, tc.limit, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeTextBoundsInvisibleInput(t *testing.T) {
+	for _, prefix := range []string{"\u202e", " ", "\x00"} {
+		input := strings.Repeat(prefix, 1_000_000) + "late text"
+		if got := NormalizeText(input, 240); got != "" {
+			t.Errorf("scanned past an excessive invisible prefix %q: %q", prefix, got)
+		}
+	}
+}
+
 func TestSafeValueRejectsDangerousWords(t *testing.T) {
 	for _, value := range []string{
 		"", " leading", "trailing ", "two words", "a\tb", "a\nb",

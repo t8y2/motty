@@ -142,6 +142,32 @@ func TestCatalogStoreUpdateReportsRepairedSources(t *testing.T) {
 	}
 }
 
+func TestCatalogStorePreservesRecoveryStatsAfterRestart(t *testing.T) {
+	store, path := installedStore(t)
+	entries := map[string]string{
+		"repo/LICENSE": "MIT",
+		"repo/man/cmd/tool000/tool000.repair.yaml": "name: repair\nflags:\n  --align: Vertical position (default: top)\n",
+		"repo/man/cmd/tool000/tool000.broken.yaml": "name: broken\nflags: [not-a-map]\n",
+	}
+	for index := 0; index < 200; index++ {
+		name := fmt.Sprintf("tool%03d", index)
+		entries["repo/man/cmd/"+name+"/"+name+".yaml"] = "name: " + name + "\n"
+	}
+	client := storeClientForArchive(t, tarGzipArchive(t, entries), func(*http.Request) string { return "v11.0.0" }, nil)
+	_, _, stats, installed, err := store.Update(context.Background(), client)
+	if err != nil || !installed || stats.RepairedFiles != 1 || stats.SkippedSources != 1 {
+		t.Fatalf("update: installed=%v stats=%+v err=%v", installed, stats, err)
+	}
+	restarted := NewCatalogStore(path)
+	if _, _, note, err := restarted.Load(); err != nil || note != nil {
+		t.Fatalf("restart: note=%v err=%v", note, err)
+	}
+	_, _, loadedStats := restarted.Snapshot()
+	if loadedStats != stats {
+		t.Fatalf("restart lost recovery stats: got %+v, want %+v", loadedStats, stats)
+	}
+}
+
 func TestCatalogStoreConcurrentUpdateCannotRegress(t *testing.T) {
 	store, path := installedStore(t)
 	downloadStarted, finishDownload := make(chan struct{}), make(chan struct{})

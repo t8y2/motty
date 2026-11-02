@@ -245,6 +245,7 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 			}
 		})
 	}
+	catalog.importStats = &stats
 	return catalog, stats, nil
 }
 
@@ -455,6 +456,13 @@ func parseSourceRecovering(data []byte, opts ImportOptions) (yamlCommand, bool, 
 		if !ok {
 			return yamlCommand{}, false, err
 		}
+		repairable, boundErr := repairableDescriptionPrefix(fixed, line, opts)
+		if boundErr != nil {
+			return yamlCommand{}, false, boundErr
+		}
+		if !repairable {
+			return yamlCommand{}, false, err
+		}
 		document = fixed
 	}
 }
@@ -504,10 +512,22 @@ func quoteMappingValue(data []byte, line int) ([]byte, bool) {
 	if colon < 0 {
 		return nil, false
 	}
+	key := strings.TrimPrefix(strings.TrimSpace(string(body[:colon])), "- ")
+	if key != "description" {
+		if _, _, ok := parseFlagSpec(key); !ok {
+			return nil, false
+		}
+	}
 	// Plain scalars strip the separation spaces around the value; doing the
 	// same here keeps the decoded description byte-identical.
 	value := bytes.Trim(body[colon+2:], " \t")
 	if len(value) == 0 {
+		return nil, false
+	}
+	// Quoted scalars, collections, tags and anchors have their own YAML
+	// structure. Wrapping them would guess a different type instead of fixing
+	// the known missing quotes in a plain description.
+	if strings.ContainsRune("'\"[]{}|>&*!#%@`", rune(value[0])) {
 		return nil, false
 	}
 	quoted := bytes.ReplaceAll(value, []byte("'"), []byte("''"))
@@ -521,6 +541,72 @@ func quoteMappingValue(data []byte, line int) ([]byte, bool) {
 	fixed = append(fixed, carriageReturn...)
 	fixed = append(fixed, data[end:]...)
 	return fixed, true
+}
+
+// Parse through the repaired line to establish its YAML path even when later
+// lines still need repair. Ignored fields and non-description values must not
+// become valid merely because their final key resembles an option name.
+func repairableDescriptionPrefix(data []byte, line int, opts ImportOptions) (bool, error) {
+	_, end, ok := lineSpan(data, line)
+	if !ok {
+		return false, nil
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(data[:end], &document); err != nil || len(document.Content) != 1 {
+		return false, nil
+	}
+	root := document.Content[0]
+	if err := checkYAMLSize(root, opts); err != nil {
+		return false, err
+	}
+	return descriptionAtLine(root, line, "command"), nil
+}
+
+func descriptionAtLine(node *yaml.Node, line int, scope string) bool {
+	if node.Kind == yaml.SequenceNode {
+		if scope != "commands" && scope != "flags" {
+			return false
+		}
+		childScope := scope
+		if scope == "commands" {
+			childScope = "command"
+		}
+		for _, child := range node.Content {
+			if descriptionAtLine(child, line, childScope) {
+				return true
+			}
+		}
+		return false
+	}
+	if node.Kind != yaml.MappingNode {
+		return false
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		key, value := node.Content[index].Value, node.Content[index+1]
+		if (scope == "command" || scope == "flag") && key == "description" {
+			if value.Kind == yaml.ScalarNode && value.Line == line {
+				return true
+			}
+		}
+		childScope := ""
+		switch {
+		case scope == "command" && key == "commands":
+			childScope = "commands"
+		case scope == "command" && (key == "flags" || key == "persistentflags"):
+			childScope = "flags"
+		case scope == "flags":
+			if _, _, ok := parseFlagSpec(key); ok {
+				if value.Kind == yaml.ScalarNode && value.Line == line {
+					return true
+				}
+				childScope = "flag"
+			}
+		}
+		if childScope != "" && descriptionAtLine(value, line, childScope) {
+			return true
+		}
+	}
+	return false
 }
 
 // lineSpan returns the byte range of one 1-based line without its newline.

@@ -7,6 +7,7 @@ roots	742
 nodes	6575
 flags	49748
 values	131
+import-stats	{"Files":6652,"Roots":742,"Nodes":6575,"Flags":49748,"Values":131,"SkippedFiles":63,"SkippedCommands":8,"SkippedFlags":69,"SkippedValues":1312,"HiddenFlags":294,"RootlessDirs":4,"RepairedFiles":1,"SkippedSources":0,"AuditWarnings":0}
 digest	bfccee9340642bab314c657c7f25752bc36756b16b03f0240a9227dc7b04a93c
 
 N	0	acpi		0	Shows information from the /proc filesystem
