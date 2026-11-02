@@ -29,12 +29,20 @@ func TestTextScaleStepsTheWholeWindow(t *testing.T) {
 	if metrics.FontSizeM <= ui.DefaultMetrics().FontSizeM || metrics.FontSizeL <= ui.DefaultMetrics().FontSizeL {
 		t.Fatalf("the large step leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
 	}
+	// The theme copies the metrics by value: without a rebuild every framework
+	// component — the settings rows, menus, dialogs — stays at the old size.
+	if state.theme.Metrics.FontSizeM <= ui.DefaultMetrics().FontSizeM {
+		t.Fatalf("the theme did not follow the large step: %v", state.theme.Metrics.FontSizeM)
+	}
 	if barTitleSize <= float32(13) {
 		t.Fatalf("the pane title stays at %v", barTitleSize)
 	}
 	state.Click(hitSettingsTextSmall)
 	if metrics.FontSizeM >= ui.DefaultMetrics().FontSizeM {
 		t.Fatalf("the small step leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
+	}
+	if state.theme.Metrics.FontSizeM >= ui.DefaultMetrics().FontSizeM {
+		t.Fatalf("the theme did not follow the small step: %v", state.theme.Metrics.FontSizeM)
 	}
 	state.Click(hitSettingsTextRegular)
 	if metrics.FontSizeS != ui.DefaultMetrics().FontSizeS || barTitleSize != 13 {
@@ -58,6 +66,9 @@ func TestTextScaleTravelsThroughTheStateFile(t *testing.T) {
 	second := newTestState(t, options)
 	if second.textScale != textScaleSmall || metrics.FontSizeM >= ui.DefaultMetrics().FontSizeM {
 		t.Fatalf("the saved scale came back as %v at size %v", second.textScale, metrics.FontSizeM)
+	}
+	if second.theme.Metrics.FontSizeM >= ui.DefaultMetrics().FontSizeM {
+		t.Fatalf("the restored theme did not follow the saved scale: %v", second.theme.Metrics.FontSizeM)
 	}
 	saved.TextScale = "huge"
 	saved.Version = stateFileVersion

@@ -68,7 +68,8 @@ import (
 // Version 15 preserves the device-local vertical tab grouping switch.
 // Version 16 preserves the interface font.
 // Version 17 preserves the device-local terminal toolbar position.
-const configFormat = 17
+// Version 18 preserves the device-local interface text size.
+const configFormat = 18
 
 const (
 	kindSetting             = "setting"

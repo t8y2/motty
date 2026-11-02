@@ -111,13 +111,17 @@ func textScaleFromString(value string) textScale {
 }
 
 // setTextScale is the user choosing an interface text size: the size tokens are
-// rebuilt at once, and everything that paints follows in the next frame.
+// rebuilt at once, and everything that paints follows in the next frame. The
+// theme is rebuilt too — it copied the metrics by value — so framework
+// components, menus and dialogs follow the choice and not just workbench text.
 func (state *State) setTextScale(scale textScale) bool {
 	if state.textScale == scale {
 		return false
 	}
 	state.textScale = scale
 	applyTextMetrics(scale.factor())
+	state.theme = state.pal.theme()
+	state.invalidateRemoteToolsWindows()
 	return true
 }
 

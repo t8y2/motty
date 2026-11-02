@@ -656,10 +656,12 @@ func (state *State) restoreLocal(saved savedState) {
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.syncNativeAppearance()
-	state.setAppearance(state.resolveAppearance())
-	state.setTerminalFontSize(float32(saved.TerminalFontSize))
+	// The theme setAppearance builds copies the metrics by value, so the saved
+	// text scale must be in effect before it runs.
 	state.textScale = textScaleFromString(saved.TextScale)
 	applyTextMetrics(state.textScale.factor())
+	state.setAppearance(state.resolveAppearance())
+	state.setTerminalFontSize(float32(saved.TerminalFontSize))
 	// Only the choice: what is in effect is decided once the window starts, when
 	// the platform has been asked what it can follow (validateInterfaceFont).
 	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)

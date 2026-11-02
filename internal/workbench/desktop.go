@@ -874,7 +874,12 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 
 	// The picture, clipped to its area. The area behind it is the terminal's
 	// ground, so a picture that does not fill the pane sits on a quiet surface.
+	// The bars lay that ground in their flex stack; a chromeless session drops
+	// the stack, so the ground is painted here instead.
 	area := geometry.area
+	if view.chromeless {
+		canvas.Fill(area, state.ground(state.termPal.terminal))
+	}
 	canvas.Clip(area)
 	if view.width > 0 && view.height > 0 {
 		origin, scale := view.place(area)
@@ -948,11 +953,15 @@ func (state *State) setDesktopChromeless(session *Session, chromeless bool) {
 	}
 	for index := range state.sessions {
 		other := &state.sessions[index]
-		if other.HostID != session.HostID || other.desk == nil {
+		if other.HostID != session.HostID {
 			continue
 		}
+		// The host copy is written even for a session with no view yet (one
+		// waiting at the VNC password prompt), so its openDesktop follows.
 		other.host.Chromeless = chromeless
-		other.desk.chromeless = chromeless
+		if other.desk != nil {
+			other.desk.chromeless = chromeless
+		}
 	}
 	state.save()
 }
