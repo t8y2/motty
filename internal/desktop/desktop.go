@@ -180,18 +180,6 @@ type Session interface {
 	Close() error
 }
 
-// SystemKeyCapture is a Session that can take the system-level chords a host
-// normally keeps for itself (Alt+Tab, the Win key and its chords, Ctrl+Esc)
-// while its picture is the one the user is looking at, and send them to the
-// remote instead. The workbench turns this on together with SetActive; a
-// backend must stop as soon as it is told false, and must not take anything
-// while the window it serves is not the foreground one.
-type SystemKeyCapture interface {
-	// SetSystemKeyCapture says this session's window has the user's keys.
-	// It is called on the thread that runs the platform message loop.
-	SetSystemKeyCapture(capture bool)
-}
-
 // Resizer is a Session whose server changes the desktop's size while the
 // session runs, so that the picture can be kept the size of the pane and shown
 // pixel for pixel, as a window of the remote machine would be.

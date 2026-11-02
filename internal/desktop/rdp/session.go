@@ -57,13 +57,9 @@ type Session struct {
 
 	done chan struct{}
 
-	mu     sync.Mutex
-	err    error
-	closed bool
-	// capture takes the system chords while the picture is the one the user is
-	// looking at. Guarded by mu; its hook runs on the thread that called
-	// SetSystemKeyCapture (the platform message loop).
-	capture *keyCapture
+	mu      sync.Mutex
+	err     error
+	closed  bool
 	remote  string
 	hasText bool
 	// buttons are the pointer buttons the server believes are down, so a change
@@ -361,20 +357,7 @@ func (session *Session) Close() error {
 	session.mu.Lock()
 	session.closed = true
 	session.mu.Unlock()
-	session.stopSystemKeyCapture()
 	return session.client.Close()
-}
-
-// SetSystemKeyCapture implements desktop.SystemKeyCapture. It must be called on
-// the thread that runs the platform message loop: that is the thread the chord
-// capture's hook is installed on and called back through.
-func (session *Session) SetSystemKeyCapture(capture bool) {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	if session.closed {
-		capture = false
-	}
-	session.setSystemKeyCaptureLocked(capture)
 }
 
 // SetActive suppresses the server's picture while nobody sees it, and asks for a

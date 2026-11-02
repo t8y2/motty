@@ -370,6 +370,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}, &canvas)
 	if err == nil {
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
+		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)
 		hub.Add(state, mainWindow.Show)
 		windows.add(state)
 		// The desktop sessions forward the local clipboard; watching it means
