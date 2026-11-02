@@ -1455,7 +1455,7 @@ var englishTools = ToolsMessages{
 	FilesPanelPosition:            "Default panel position",
 	FilesPanelPositionDescription: "Used for new or restored workspaces. The panel header can move it without changing this default.",
 	FilesPanelLeft:                "Left", FilesPanelRight: "Right",
-	FilesWindowOrder:                     "File transfer layout",
+	FilesWindowOrder:                     "Pane order",
 	FilesWindowOrderDescription:          "Controls which side of the two-column file transfer is shown first. All open transfer windows and tabs change immediately.",
 	FilesWindowLocalLeft:                 "This computer on the left",
 	FilesWindowRemoteLeft:                "Server on the left",
