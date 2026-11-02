@@ -17,12 +17,18 @@ const (
 
 	// maxArchiveBytes bounds the compressed archive read during an update.
 	maxArchiveBytes = 64 << 20
-	// maxExpandedBytes bounds the total uncompressed bytes read.
-	maxExpandedBytes = 128 << 20
+	// maxExpandedBytes bounds the total uncompressed bytes read from an archive
+	// stream. Carapace archives are already near 80% of 128 MiB and grow with
+	// every release, so the work bound leaves several releases of headroom;
+	// what is kept in memory is bounded separately by maxSourceBytes.
+	maxExpandedBytes = 512 << 20
 	// maxArchiveMembers bounds the archive members visited.
 	maxArchiveMembers = 20_000
 	// maxSourceFileBytes bounds one YAML file.
 	maxSourceFileBytes = 1 << 20
+	// maxSourceBytes bounds the total source and license bytes kept in memory
+	// for one import, so a 64 MiB gzip bomb cannot allocate the work bound.
+	maxSourceBytes = 128 << 20
 	// maxYAMLDepth bounds nesting inside one YAML document.
 	maxYAMLDepth = 64
 	// maxYAMLNodes bounds the nodes of one YAML document.

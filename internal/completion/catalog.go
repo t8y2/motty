@@ -105,6 +105,10 @@ type Catalog struct {
 	nodeCount  int
 	flagCount  int
 	valueCount int
+
+	// auditWarnings is the number of soft findings the content audit reported
+	// when this catalog was imported or decoded.
+	auditWarnings int
 }
 
 // NewCatalog assembles a catalog from root nodes and derives the lookup index.
@@ -206,6 +210,16 @@ func (c *Catalog) FlagCount() int { return c.flagCount }
 
 // ValueCount reports how many literal option values are available.
 func (c *Catalog) ValueCount() int { return c.valueCount }
+
+// AuditWarnings reports the soft findings of the content audit that accepted
+// this catalog. Hard findings never produce a usable catalog, so they are not
+// counted here.
+func (c *Catalog) AuditWarnings() int {
+	if c == nil {
+		return 0
+	}
+	return c.auditWarnings
+}
 
 // Roots returns the root commands in name order.
 func (c *Catalog) Roots() []*Node { return c.roots }
@@ -417,7 +431,7 @@ func Decode(data []byte) (*Catalog, error) {
 				Token:   fields[2],
 				Aliases: nil,
 				Hidden:  fields[4] == "1",
-				Desc:    fields[5],
+				Desc:    NormalizeText(fields[5], maxDescRunes),
 			}
 			if fields[3] != "" {
 				n.Aliases = strings.Split(fields[3], ",")
@@ -487,11 +501,16 @@ func Decode(data []byte) (*Catalog, error) {
 	if c.nodeCount != nodes || c.flagCount != flags || c.valueCount != values {
 		return nil, errors.New("completion: catalog counts are inconsistent")
 	}
+	report := Audit(c)
+	if err := report.Err(); err != nil {
+		return nil, err
+	}
+	c.auditWarnings = report.SoftCount
 	return c, nil
 }
 
 func decodeFlag(long, short, mods, desc, encodedValues string) (Flag, error) {
-	f := Flag{Long: long, Short: short, Desc: desc}
+	f := Flag{Long: long, Short: short, Desc: NormalizeText(desc, maxDescRunes)}
 	if f.Long == "" && f.Short == "" {
 		return Flag{}, errors.New("flag has neither a long nor a short name")
 	}
@@ -521,7 +540,7 @@ func decodeFlag(long, short, mods, desc, encodedValues string) (Flag, error) {
 			if !SafeValue(text) {
 				return Flag{}, fmt.Errorf("unsafe option value %q", text)
 			}
-			f.Values = append(f.Values, Value{Text: text, Desc: valueDesc})
+			f.Values = append(f.Values, Value{Text: text, Desc: NormalizeText(valueDesc, maxDescRunes)})
 		}
 		if len(f.Values) > maxValuesPerFlag {
 			return Flag{}, errors.New("too many option values")

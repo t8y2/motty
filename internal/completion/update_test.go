@@ -107,6 +107,28 @@ func TestInstallCatalogFailuresPreserveExistingFile(t *testing.T) {
 	}
 }
 
+func TestInstallCatalogUsesPrivatePermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "completion")
+	path := filepath.Join(dir, FileName)
+	if err := InstallCatalog(path, testCatalog(t)); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := directory.Mode().Perm(); mode != 0o700 {
+		t.Fatalf("catalog directory mode = %o, want 700", mode)
+	}
+	file, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := file.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("catalog file mode = %o, want 600", mode)
+	}
+}
+
 func TestLatestCommitResolvesAnAnnotatedTagToACommit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -196,7 +218,15 @@ func TestUpdateClientBoundsRedirects(t *testing.T) {
 		url   string
 		hops  int
 		allow bool
-	}{{"https://codeload.github.com/archive", 1, true}, {"http://example.com", 1, false}, {"https://example.com", 5, false}} {
+	}{
+		{"https://codeload.github.com/archive", 1, true},
+		{"https://api.github.com/repos/carapace-sh/carapace-bin", 1, true},
+		{"https://objects.githubusercontent.com/archive", 1, true},
+		{"http://example.com", 1, false},
+		{"https://evil.example/archive", 1, false},
+		{"https://github.com.evil.example/archive", 1, false},
+		{"https://example.com", 5, false},
+	} {
 		target, err := url.Parse(test.url)
 		if err != nil {
 			t.Fatal(err)

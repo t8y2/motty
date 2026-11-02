@@ -352,3 +352,83 @@ func TestImportAllowsFileAtSizeLimit(t *testing.T) {
 		t.Fatal("source exactly at size limit was rejected")
 	}
 }
+
+// Repair only corrects quoting: everything the importer refuses must still be
+// refused after a repair, and a repaired description is sanitized like any
+// other.
+func TestRepairDoesNotBypassValuePolicy(t *testing.T) {
+	files := []SourceFile{{Name: "tool/tool.yaml", Data: []byte(
+		"name: tool\n" +
+			"flags:\n" +
+			"  --run=: Execute $(id): now\n" +
+			"completion:\n" +
+			"  flag:\n" +
+			"    run:\n" +
+			"      - $(id)\n" +
+			"      - safe\n",
+	)}}
+	catalog, stats := importFiles(t, files, ImportOptions{})
+	if stats.RepairedFiles != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	flag, ok := catalog.FindFlag(catalog.Root("tool"), "--run")
+	if !ok || flag.Desc != "Execute $(id): now" {
+		t.Fatalf("repaired option = %+v, found=%v", flag, ok)
+	}
+	if len(flag.Values) != 1 || flag.Values[0].Text != "safe" {
+		t.Fatalf("values = %+v", flag.Values)
+	}
+	if stats.SkippedValues == 0 {
+		t.Fatal("the repaired file's dynamic value was not counted")
+	}
+}
+
+func TestRepairStillSanitizesDescriptions(t *testing.T) {
+	files := []SourceFile{{Name: "tool/tool.yaml", Data: []byte("name: tool\nflags:\n  --align?: a\u202eb (default: c)\n")}}
+	catalog, stats := importFiles(t, files, ImportOptions{})
+	if stats.RepairedFiles != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	flag, ok := catalog.FindFlag(catalog.Root("tool"), "--align")
+	if !ok || flag.Desc != "ab (default: c)" {
+		t.Fatalf("repaired description = %+v, found=%v", flag, ok)
+	}
+}
+
+func TestRepairDoesNotBypassYAMLLimits(t *testing.T) {
+	files := []SourceFile{{Name: "tool/tool.yaml", Data: []byte("name: tool\nflags:\n  --align?: Vertical (default: top): now\n")}}
+	for name, opts := range map[string]ImportOptions{
+		"node limit":  {MaxYAMLNodes: 5},
+		"depth limit": {MaxYAMLDepth: 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := Import(files, Metadata{Source: "s", Commit: "c", License: "MIT"}, opts); err == nil || !strings.Contains(err.Error(), "tool/tool.yaml") {
+				t.Fatalf("repair bypassed the limit: %v", err)
+			}
+		})
+	}
+}
+
+func TestImportStripsInvisibleCharactersFromDescriptions(t *testing.T) {
+	catalog, _ := importFiles(t, []SourceFile{{Name: "spoof/spoof.yaml", Data: []byte(
+		"name: spoof\n" +
+			"description: run\u202Eevil\n" +
+			"flags:\n" +
+			"  --all=: show\u200Fall\n" +
+			"completion:\n" +
+			"  flag:\n" +
+			"    all:\n" +
+			"      - plain\tvalue\u200Fdesc\n",
+	)}}, ImportOptions{})
+	root := catalog.Root("spoof")
+	if root == nil || root.Desc != "runevil" {
+		t.Fatalf("root description = %+v", root)
+	}
+	flag, ok := catalog.FindFlag(root, "--all")
+	if !ok || flag.Desc != "showall" {
+		t.Fatalf("flag = %+v, found=%v", flag, ok)
+	}
+	if len(flag.Values) != 1 || flag.Values[0].Desc != "valuedesc" {
+		t.Fatalf("value descriptions = %+v", flag.Values)
+	}
+}

@@ -18,15 +18,19 @@ type ArchiveLimits struct {
 	MaxExpanded   int64
 	MaxMembers    int
 	MaxFileBytes  int64
+	// MaxSourceBytes bounds the total of the source and license bytes kept in
+	// memory. It is independent of MaxExpanded, which only bounds the work.
+	MaxSourceBytes int64
 }
 
 // DefaultArchiveLimits returns the limits used for catalog updates.
 func DefaultArchiveLimits() ArchiveLimits {
 	return ArchiveLimits{
-		MaxCompressed: maxArchiveBytes,
-		MaxExpanded:   maxExpandedBytes,
-		MaxMembers:    maxArchiveMembers,
-		MaxFileBytes:  maxSourceFileBytes,
+		MaxCompressed:  maxArchiveBytes,
+		MaxExpanded:    maxExpandedBytes,
+		MaxMembers:     maxArchiveMembers,
+		MaxFileBytes:   maxSourceFileBytes,
+		MaxSourceBytes: maxSourceBytes,
 	}
 }
 
@@ -42,6 +46,9 @@ type SourceArchive struct {
 func ReadSourceArchive(reader io.Reader, limits ArchiveLimits) (*SourceArchive, error) {
 	if limits.MaxCompressed <= 0 {
 		limits = DefaultArchiveLimits()
+	}
+	if limits.MaxSourceBytes <= 0 {
+		limits.MaxSourceBytes = maxSourceBytes
 	}
 	data, err := io.ReadAll(io.LimitReader(reader, limits.MaxCompressed+1))
 	if err != nil {
@@ -62,6 +69,7 @@ func ReadSourceArchive(reader io.Reader, limits ArchiveLimits) (*SourceArchive, 
 	}
 
 	archive := &SourceArchive{}
+	kept := int64(0)
 	expandedStream := &io.LimitedReader{R: stream, N: limits.MaxExpanded + 1}
 	tarReader := tar.NewReader(expandedStream)
 	var expanded int64
@@ -103,6 +111,9 @@ func ReadSourceArchive(reader io.Reader, limits ArchiveLimits) (*SourceArchive, 
 			if archive.Files == nil {
 				archive.Files = make([]SourceFile, 0, 8000)
 			}
+			if kept += header.Size; kept > limits.MaxSourceBytes {
+				return nil, errors.New("completion: archive sources exceed the memory limit")
+			}
 			content := make([]byte, header.Size)
 			if _, err := io.ReadFull(tarReader, content); err != nil {
 				return nil, fmt.Errorf("completion: read %s: %w", name, err)
@@ -111,6 +122,9 @@ func ReadSourceArchive(reader io.Reader, limits ArchiveLimits) (*SourceArchive, 
 			continue
 		}
 		if archive.License == nil {
+			if kept += header.Size; kept > limits.MaxSourceBytes {
+				return nil, errors.New("completion: archive sources exceed the memory limit")
+			}
 			content := make([]byte, header.Size)
 			if _, err := io.ReadFull(tarReader, content); err != nil {
 				return nil, fmt.Errorf("completion: read %s: %w", name, err)

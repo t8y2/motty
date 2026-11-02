@@ -56,6 +56,9 @@ type ImportStats struct {
 	// SkippedSources counts source files that stayed unparsable and were left
 	// out of the catalog instead of failing the whole import.
 	SkippedSources int
+	// AuditWarnings counts soft findings of the content audit. Hard findings
+	// reject the catalog instead of being counted.
+	AuditWarnings int
 }
 
 // ImportOptions bounds one import. Zero values take the package defaults.
@@ -210,6 +213,12 @@ func Import(files []SourceFile, meta Metadata, opts ImportOptions) (*Catalog, Im
 	if catalog.NodeCount() > opts.MaxNodes {
 		return nil, stats, fmt.Errorf("completion: catalog has %d nodes, limit is %d", catalog.NodeCount(), opts.MaxNodes)
 	}
+	report := Audit(catalog)
+	if err := report.Err(); err != nil {
+		return nil, stats, err
+	}
+	catalog.auditWarnings = report.SoftCount
+	stats.AuditWarnings = report.SoftCount
 	stats.Roots = catalog.RootCount()
 	stats.Nodes = catalog.NodeCount()
 	for _, root := range roots {
@@ -550,7 +559,7 @@ func applyCommand(node *Node, command yamlCommand, depth int, stats *ImportStats
 		return errors.New("completion: command nests too deeply")
 	}
 	if node.Desc == "" {
-		node.Desc = normalizeText(command.Description, maxDescRunes)
+		node.Desc = NormalizeText(command.Description, maxDescRunes)
 	}
 	if command.Hidden {
 		node.Hidden = true
@@ -613,7 +622,7 @@ func parseFlagSpecs(specs []flagSpec, stats *ImportStats) ([]Flag, int) {
 			stats.HiddenFlags++
 			continue
 		}
-		flag.Desc = normalizeText(spec.Desc, maxDescRunes)
+		flag.Desc = NormalizeText(spec.Desc, maxDescRunes)
 		flags = append(flags, flag)
 	}
 	return flags, skipped
@@ -757,7 +766,7 @@ func applyValues(node *Node, byFlag map[string][]string, stats *ImportStats) {
 			}
 			value := Value{Text: fields[0]}
 			if len(fields) > 1 {
-				value.Desc = normalizeText(fields[1], maxDescRunes)
+				value.Desc = NormalizeText(fields[1], maxDescRunes)
 			}
 			mergeValues(flag, []Value{value})
 		}

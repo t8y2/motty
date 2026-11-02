@@ -31,6 +31,10 @@ type Candidate struct {
 	Insert string
 	Desc   string
 	Kind   Kind
+	// FromCatalog marks text built from the command catalog. The workbench
+	// revalidates exactly those insertions before typing them; suggestions
+	// learned from the user's own history are not restricted this way.
+	FromCatalog bool
 }
 
 // Result is the answer for one line. Suppressed reports syntax this package
@@ -292,9 +296,10 @@ func addCandidate(result *Result, text, prefix, desc string, kind Kind) {
 		return
 	}
 	result.Candidates = append(result.Candidates, Candidate{
-		Text:   text,
-		Insert: text[len(prefix):],
-		Desc:   desc,
-		Kind:   kind,
+		Text:        text,
+		Insert:      text[len(prefix):],
+		Desc:        desc,
+		Kind:        kind,
+		FromCatalog: true,
 	})
 }

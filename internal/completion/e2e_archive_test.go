@@ -53,9 +53,9 @@ func TestFetchCatalogRealCarapaceArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("importing %s: %v", path, err)
 	}
-	t.Logf("%s: release=%s roots=%d nodes=%d flags=%d values=%d repaired=%d skipped-sources=%d",
+	t.Logf("%s: release=%s roots=%d nodes=%d flags=%d values=%d skipped-values=%d repaired=%d skipped-sources=%d audit-warnings=%d",
 		path, catalog.Release, stats.Roots, stats.Nodes, stats.Flags, stats.Values,
-		stats.RepairedFiles, stats.SkippedSources)
+		stats.SkippedValues, stats.RepairedFiles, stats.SkippedSources, stats.AuditWarnings)
 	if stats.SkippedSources != 0 {
 		t.Fatalf("the reference archive lost %d sources", stats.SkippedSources)
 	}
@@ -64,6 +64,16 @@ func TestFetchCatalogRealCarapaceArchive(t *testing.T) {
 	}
 	if catalog.RootCount() < 700 {
 		t.Fatalf("only %d roots were imported", catalog.RootCount())
+	}
+	if stats.AuditWarnings != 0 || catalog.AuditWarnings() != 0 {
+		t.Fatalf("the reference archive has audit warnings: %d / %d", stats.AuditWarnings, catalog.AuditWarnings())
+	}
+	if release.Tag == "v1.8.2" {
+		// Zero value loss from the tightened literal policy: v1.8.2 has 131
+		// accepted values and the same 1312 dynamic/unsafe values as before.
+		if stats.Values != 131 || stats.SkippedValues != 1312 {
+			t.Fatalf("v1.8.2 values = %d, skipped = %d; want 131 and 1312", stats.Values, stats.SkippedValues)
+		}
 	}
 	if mpv := catalog.Root("mpv"); mpv != nil {
 		if _, ok := catalog.FindFlag(mpv, "--osd-align-y"); !ok {

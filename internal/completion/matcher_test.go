@@ -215,3 +215,15 @@ func TestCompleteOptionalValueDoesNotConsumeNextOption(t *testing.T) {
 		t.Fatalf("attached optional value missing: %v", candidateTexts(result))
 	}
 }
+
+func TestCandidatesAreMarkedAsCatalogText(t *testing.T) {
+	result := Complete(testCatalog(t), "git ")
+	if len(result.Candidates) == 0 {
+		t.Fatal("no candidates")
+	}
+	for _, candidate := range result.Candidates {
+		if !candidate.FromCatalog {
+			t.Errorf("candidate %q is not marked as catalog text", candidate.Text)
+		}
+	}
+}

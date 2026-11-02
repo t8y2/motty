@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,10 +15,49 @@ import (
 	"time"
 )
 
+// testRoots builds count distinct valid root commands. Catalog tests need a
+// baseline above the load floor but otherwise do not care what the commands are.
+func testRoots(count int) []*Node {
+	roots := make([]*Node, count)
+	for index := range roots {
+		token := fmt.Sprintf("tool%03d", index)
+		roots[index] = &Node{Token: token}
+	}
+	return roots
+}
+
+// updateArchive is the release the store tests download: the load floor and the
+// shrink check both compare root counts, so it carries as many roots as the
+// installed baseline.
+func updateArchive(t *testing.T) []byte {
+	t.Helper()
+	entries := map[string]string{"carapace-bin-1.9.0/LICENSE": "MIT"}
+	for index := 0; index < 200; index++ {
+		name := fmt.Sprintf("tool%03d", index)
+		entries["carapace-bin-1.9.0/man/cmd/"+name+"/"+name+".yaml"] = "name: " + name + "\n"
+	}
+	return tarGzipArchive(t, entries)
+}
+
+// repairableUpdateArchive is updateArchive plus one file with the upstream
+// plain-scalar defect.
+func repairableUpdateArchive(t *testing.T) []byte {
+	t.Helper()
+	entries := map[string]string{
+		"carapace-bin-1.9.0/LICENSE":                    "MIT",
+		"carapace-bin-1.9.0/man/cmd/broken/broken.yaml": "name: broken\nflags:\n  --align?: Vertical position (default: top). Details see --align-x\n",
+	}
+	for index := 0; index < 200; index++ {
+		name := fmt.Sprintf("tool%03d", index)
+		entries["carapace-bin-1.9.0/man/cmd/"+name+"/"+name+".yaml"] = "name: " + name + "\n"
+	}
+	return tarGzipArchive(t, entries)
+}
+
 func installedStore(t *testing.T) (*CatalogStore, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), FileName)
-	catalog, err := NewCatalog(RepositoryName, "v10.0.0", "old-commit", "MIT", []*Node{{Token: "tool"}})
+	catalog, err := NewCatalog(RepositoryName, "v10.0.0", "old-commit", "MIT", testRoots(200))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +79,7 @@ func catalogResponse(body []byte) *http.Response {
 
 func storeClient(t *testing.T, latest func(*http.Request) string, download func(*http.Request)) *http.Client {
 	t.Helper()
-	return storeClientForArchive(t, releaseArchive(t), latest, download)
+	return storeClientForArchive(t, updateArchive(t), latest, download)
 }
 
 func storeClientForArchive(t *testing.T, archive []byte, latest func(*http.Request) string, download func(*http.Request)) *http.Client {
@@ -81,7 +121,7 @@ func TestCatalogStoreFirstUpdateLoadsInstalledBaseline(t *testing.T) {
 
 func TestCatalogStoreUpdateReportsRepairedSources(t *testing.T) {
 	store, _ := installedStore(t)
-	client := storeClientForArchive(t, repairableReleaseArchive(t), func(*http.Request) string { return "v11.0.0" }, nil)
+	client := storeClientForArchive(t, repairableUpdateArchive(t), func(*http.Request) string { return "v11.0.0" }, nil)
 	catalog, generation, stats, err := store.Update(context.Background(), client)
 	if err != nil || catalog == nil || generation != 2 {
 		t.Fatalf("update = %v, %d, %v", catalog, generation, err)
@@ -267,7 +307,7 @@ func TestCatalogStoreLoadPrefersNewerBuiltinAndRejectsInvalidVersion(t *testing.
 	for _, version := range []string{"v0.1.0", builtin.Release, "nightly"} {
 		t.Run(version, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), FileName)
-			catalog, err := NewCatalog(RepositoryName, version, "different-commit", "MIT", []*Node{{Token: "tool"}})
+			catalog, err := NewCatalog(RepositoryName, version, "different-commit", "MIT", testRoots(200))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -279,6 +319,25 @@ func TestCatalogStoreLoadPrefersNewerBuiltinAndRejectsInvalidVersion(t *testing.
 				t.Fatalf("load = %p, %d, %v, %v; builtin=%p", loaded, generation, note, err, builtin)
 			}
 		})
+	}
+}
+
+func TestCatalogStoreLoadRejectsAnImprobablySmallInstalledCatalog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	tiny, err := NewCatalog(RepositoryName, "v99.0.0", "deadbeef", "MIT", []*Node{{Token: "tool"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallCatalog(path, tiny); err != nil {
+		t.Fatal(err)
+	}
+	loaded, generation, note, err := NewCatalogStore(path).Load()
+	builtin, builtinErr := Builtin()
+	if builtinErr != nil {
+		t.Fatal(builtinErr)
+	}
+	if err != nil || note == nil || loaded != builtin || generation != 1 {
+		t.Fatalf("load = %p, %d, %v, %v; builtin=%p", loaded, generation, note, err, builtin)
 	}
 }
 

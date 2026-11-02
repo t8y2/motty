@@ -84,7 +84,7 @@ func installCatalog(ctx context.Context, path string, catalog *Catalog) error {
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data := catalog.Encode()
@@ -110,6 +110,13 @@ func installCatalog(ctx context.Context, path string, catalog *Catalog) error {
 		return err
 	}
 	remove = false
+	// Make the replacement durable without letting a crash expose the old
+	// name and the new bytes as different files. Best effort: some filesystems
+	// refuse to fsync a directory.
+	if directory, err := os.Open(dir); err == nil {
+		_ = directory.Sync()
+		directory.Close()
+	}
 	return nil
 }
 
@@ -120,7 +127,7 @@ func writeCatalogFile(file *os.File, data []byte) error {
 	if err := file.Sync(); err != nil {
 		return err
 	}
-	if err := file.Chmod(0o644); err != nil {
+	if err := file.Chmod(0o600); err != nil {
 		return err
 	}
 	return file.Close()
@@ -296,8 +303,28 @@ func readLimited(reader io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// allowedUpdateHosts are the only hosts a redirect may reach. The requests
+// themselves use fixed constants; the allowlist keeps a redirect from handing
+// the catalog download to an unrelated HTTPS host.
+var allowedUpdateHosts = []string{"api.github.com", "codeload.github.com", "github.com"}
+
+// allowedUpdateHost reports whether host is one of GitHub's own download hosts.
+// Release assets on GitHub are served from *.githubusercontent.com.
+func allowedUpdateHost(host string) bool {
+	host = strings.ToLower(host)
+	if strings.HasSuffix(host, ".githubusercontent.com") {
+		return true
+	}
+	for _, allowed := range allowedUpdateHosts {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateClient returns the HTTP client the updater uses: bounded in total
-// time, with no redirect to another scheme and no proxy configuration of its
+// time, redirects only to GitHub over https, and no proxy configuration of its
 // own.
 func UpdateClient() *http.Client {
 	return &http.Client{
@@ -308,6 +335,9 @@ func UpdateClient() *http.Client {
 			}
 			if request.URL.Scheme != "https" {
 				return errors.New("only https downloads are followed")
+			}
+			if !allowedUpdateHost(request.URL.Hostname()) {
+				return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
 			}
 			return nil
 		},

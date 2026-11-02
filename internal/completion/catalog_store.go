@@ -73,6 +73,10 @@ func (store *CatalogStore) load() {
 			}
 		case !validCatalogVersion(installed):
 			store.note = errors.New("the installed catalog has an invalid release")
+		case installed.RootCount() < minimumInstalledRoots(builtin.RootCount()):
+			// A cache file is untrusted input: a tiny catalog that claims a
+			// high version must not silently replace the built-in one.
+			store.note = fmt.Errorf("the installed catalog has only %d commands", installed.RootCount())
 		case Newer(installed.Release, builtin.Release):
 			current = installed
 		}
@@ -83,6 +87,17 @@ func (store *CatalogStore) load() {
 func validCatalogVersion(catalog *Catalog) bool {
 	_, ok := parseVersion(catalog.Release)
 	return ok
+}
+
+// minimumInstalledRoots is the smallest installed catalog the load path trusts;
+// the update path applies the same fifth against the current snapshot. It stays
+// above zero so a test catalog is still a usable baseline.
+func minimumInstalledRoots(builtinRoots int) int {
+	floor := builtinRoots / 5
+	if floor < 1 {
+		floor = 1
+	}
+	return floor
 }
 
 func (store *CatalogStore) publish(catalog *Catalog) {

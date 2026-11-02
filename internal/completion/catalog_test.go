@@ -65,6 +65,15 @@ func TestDecodeRejectsCorruptCatalogs(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsValuesOutsideTheLiteralPolicy(t *testing.T) {
+	encoded := testCatalog(t).Encode()
+	for _, value := range []string{"/tmp/x", "-rf", "--no-preserve-root", "a=b", "https://example.com/x", "@evil"} {
+		if _, err := Decode(resealCatalog(encoded, "json", value)); err == nil {
+			t.Errorf("Decode accepted the unsafe value %q", value)
+		}
+	}
+}
+
 func TestNewCatalogRejectsDuplicates(t *testing.T) {
 	roots := []*Node{{Token: "a"}, {Token: "a"}}
 	if _, err := NewCatalog("s", "r", "c", "MIT", roots); err == nil {
