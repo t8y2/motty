@@ -28,19 +28,14 @@ func validTokenPart(s string) bool {
 // are rejected: the completion never needs to escape anything, and refusing
 // those values keeps it that way.
 //
-// The value alphabet is deliberately narrow. A value is not just a word: a path
-// or a token starting with "-" can change what a command does when the user
-// accepts it, so values start with a letter or digit. The only leading "-" that
-// is kept is a plain negative integer.
+// The alphabet is the one every release since the first has used, so a cache
+// written by an older version still decodes and values such as
+// "application/json", "host:port" or "key=value" stay usable.
 func SafeValue(s string) bool {
 	if s == "" || len(s) > maxValueBytes || !utf8.ValidString(s) {
 		return false
 	}
 	if strings.TrimSpace(s) != s {
-		return false
-	}
-	first, _ := utf8.DecodeRuneInString(s)
-	if !unicode.IsLetter(first) && !unicode.IsDigit(first) && !negativeNumberLiteral(s) {
 		return false
 	}
 	for _, r := range s {
@@ -52,7 +47,7 @@ func SafeValue(s string) bool {
 				return false
 			}
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
-		case strings.ContainsRune("-_.+,", r):
+		case strings.ContainsRune("-_.:@%+,=/", r):
 		default:
 			return false
 		}
@@ -60,45 +55,14 @@ func SafeValue(s string) bool {
 	return true
 }
 
-// negativeNumberLiteral accepts a plain negative integer such as -1, the only
-// spelling allowed to start with a "-".
-func negativeNumberLiteral(s string) bool {
-	if len(s) < 2 || s[0] != '-' {
-		return false
-	}
-	for index := 1; index < len(s); index++ {
-		if s[index] < '0' || s[index] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// SafeInsert reports whether s may be typed as a suffix of catalog text. It is
-// the union of the command/option token alphabet and the literal value alphabet,
-// so both kinds of catalog insertion are accepted, while whitespace, control
-// characters, invisible format characters and shell punctuation are refused.
+// SafeInsert reports whether s may be typed as a suffix of catalog text, which
+// is a fragment of a command or option token or of a literal value. Both use
+// the SafeValue alphabet (a token's alphabet is a subset of it), so there is a
+// single definition of what a catalog may type.
 //
-// The importer validates each token and value already; this check exists as a
-// last defence for text that reached the workbench from a decoded cache.
-func SafeInsert(s string) bool {
-	if s == "" || len(s) > maxValueBytes || !utf8.ValidString(s) {
-		return false
-	}
-	for _, r := range s {
-		switch {
-		case r >= utf8.RuneSelf:
-			if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-				return false
-			}
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-		case strings.ContainsRune("-_.:+@%,", r):
-		default:
-			return false
-		}
-	}
-	return true
-}
+// The importer validates each token and value already; the workbench calls this
+// as a last defence for text that reached it from a decoded cache.
+func SafeInsert(s string) bool { return SafeValue(s) }
 
 // NormalizeText turns untrusted text into the one line that may be shown in the
 // UI or stored in a description. Whitespace and line breaks collapse into single

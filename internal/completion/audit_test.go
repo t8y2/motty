@@ -64,9 +64,9 @@ func TestAuditRejectsPoisonedCatalog(t *testing.T) {
 		"oversized description": catalogWith(t, &Node{Token: "tool",
 			Desc: strings.Repeat("a", maxDescRunes+1)}),
 		"unsafe value": catalogWith(t, &Node{Token: "tool", Flags: []Flag{
-			{Long: "config", Value: true, Values: []Value{{Text: "/tmp/evil"}}}}}),
+			{Long: "config", Value: true, Values: []Value{{Text: "evil;rm"}}}}}),
 		"unsafe flag value": catalogWith(t, &Node{Token: "tool", Flags: []Flag{
-			{Long: "exec", Value: true, Values: []Value{{Text: "-rf"}}}}}),
+			{Long: "exec", Value: true, Values: []Value{{Text: "$(id)"}}}}}),
 		"bad command name": catalogWith(t, &Node{Token: "push;rm"}),
 		"bad alias":        catalogWith(t, &Node{Token: "tool", Aliases: []string{"$(id)"}}),
 		"bad flag name":    catalogWith(t, &Node{Token: "tool", Flags: []Flag{{Long: "a b"}}}),
@@ -145,7 +145,7 @@ func TestDecodeNormalizesPoisonedDescriptions(t *testing.T) {
 		})
 	}
 	t.Run("unsafe value", func(t *testing.T) {
-		poisoned := resealCatalog(encoded, "json\x02machine readable", "/tmp/evil\x02machine readable")
+		poisoned := resealCatalog(encoded, "json\x02machine readable", "evil;rm\x02machine readable")
 		if _, err := Decode(poisoned); err == nil {
 			t.Fatal("Decode accepted an unsafe literal value")
 		}
@@ -177,7 +177,7 @@ func TestImportSanitizesInsteadOfKeepingInvisibleCharacters(t *testing.T) {
 			"completion:\n" +
 			"  flag:\n" +
 			"    all:\n" +
-			"      - /tmp/evil\n" +
+			"      - evil;rm\n" +
 			"      - safe\tvalue\u200Fdesc\n",
 	)}}, ImportOptions{})
 	root := catalog.Root("spoof")

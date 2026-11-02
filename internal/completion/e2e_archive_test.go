@@ -69,8 +69,8 @@ func TestFetchCatalogRealCarapaceArchive(t *testing.T) {
 		t.Fatalf("the reference archive has audit warnings: %d / %d", stats.AuditWarnings, catalog.AuditWarnings())
 	}
 	if release.Tag == "v1.8.2" {
-		// Zero value loss from the tightened literal policy: v1.8.2 has 131
-		// accepted values and the same 1312 dynamic/unsafe values as before.
+		// v1.8.2 has 131 accepted literal values; the 1312 skipped ones are
+		// dynamic completions and values outside the literal alphabet.
 		if stats.Values != 131 || stats.SkippedValues != 1312 {
 			t.Fatalf("v1.8.2 values = %d, skipped = %d; want 131 and 1312", stats.Values, stats.SkippedValues)
 		}

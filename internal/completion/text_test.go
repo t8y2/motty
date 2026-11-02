@@ -124,9 +124,9 @@ func TestNormalizeTextBoundsInvisibleInput(t *testing.T) {
 func TestSafeValueRejectsDangerousWords(t *testing.T) {
 	for _, value := range []string{
 		"", " leading", "trailing ", "two words", "a\tb", "a\nb",
-		"/tmp/x", "/etc/passwd", "-rf", "--no-preserve-root", "a=b",
-		"https://example.com/x", "@evil", "..", "a;b", "a|b", "$(id)",
-		"a/b", "a:b", "a%20b", "-1.5", "-", "🛠",
+		"a;b", "a|b", "a&b", "$(id)", "`id`", "a>b", "a<b", "a*b", "a?b", "a!b",
+		`a"b`, "a'b", `a\b`, "a\u202eb", "a\u00a0b", "🛠", "a\x00b",
+		strings.Repeat("a", maxValueBytes+1),
 	} {
 		if SafeValue(value) {
 			t.Errorf("SafeValue(%q) = true", value)
@@ -134,10 +134,12 @@ func TestSafeValueRejectsDangerousWords(t *testing.T) {
 	}
 }
 
+// Values that earlier releases accepted must stay accepted: an installed cache
+// holding one of them has to keep decoding after an upgrade.
 func TestSafeValueKeepsPlainLiterals(t *testing.T) {
 	for _, value := range []string{
-		"json", "smart-squash", "v1.8.2", "中文", "µs", "-1", "-42",
-		"a_b", "a.b", "a+b", "a,b", "2025", "node18",
+		"json", "smart-squash", "v1.8.2", "中文", "µs", "-1", "a_b", "a.b", "a+b", "a,b",
+		"2025", "node18", "application/json", "host:port", "key=value", "100%", "@scope",
 	} {
 		if !SafeValue(value) {
 			t.Errorf("SafeValue(%q) = false", value)
@@ -145,19 +147,13 @@ func TestSafeValueKeepsPlainLiterals(t *testing.T) {
 	}
 }
 
-func TestSafeInsertAcceptsBothCatalogAlphabets(t *testing.T) {
-	for _, insert := range []string{
-		"stage", "mmit", "--flag", "-v", "a:b", "@scope", "a@b", "a%b",
-		"100%", "v1.8.2", "中文", "-1",
-	} {
+func TestSafeInsertAcceptsTokensAndValues(t *testing.T) {
+	for _, insert := range []string{"stage", "mmit", "--flag", "-v", "a:b", "@scope", "a@b", "100%", "v1.8.2", "中文", "-1", "a/b", "a=b"} {
 		if !SafeInsert(insert) {
 			t.Errorf("SafeInsert(%q) = false", insert)
 		}
 	}
-	for _, insert := range []string{
-		"", " ", "a b", "safe\u202etext", "a\nb", "a;b", "a|b", "$(id)",
-		"a/b", "a=b", "a?b", "a*b", "a!b", "a&b", "a\\b", "a\"b", "a'b", "a\u00a0b",
-	} {
+	for _, insert := range []string{"", " ", "a b", "safe\u202etext", "a\nb", "a;b", "a|b", "$(id)", "a?b", "a*b", "a!b", "a&b", `a\b`, `a"b`, "a'b", "a\u00a0b"} {
 		if SafeInsert(insert) {
 			t.Errorf("SafeInsert(%q) = true", insert)
 		}
