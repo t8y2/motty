@@ -20,7 +20,7 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 	for _, light := range []bool{false, true} {
 		for _, remoteLeft := range []bool{false, true} {
 			t.Run(fmt.Sprintf("light-%t-remote-left-%t", light, remoteLeft), func(t *testing.T) {
-				state, source, w, _ := openSFTPTabFixture(t)
+				state, source, w, _, _ := openSFTPTabFixture(t)
 				source.Title = strings.Repeat("long-host-name-", 12)
 				w.session.Title = source.Title
 				state.rebuildFileTabOptions()
@@ -110,7 +110,7 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 }
 
 func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
-	state, _, w, _ := openSFTPTabFixture(t)
+	state, _, w, _, _ := openSFTPTabFixture(t)
 	entries := make([]sftpclient.Entry, 240)
 	for index := range entries {
 		entries[index] = sftpclient.Entry{

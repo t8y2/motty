@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,9 +13,9 @@ import (
 	"motty/internal/sftpclient"
 )
 
-func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, string) {
+func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, *workbenchSFTPRemote, string) {
 	t.Helper()
-	state, source, _, _ := openTestSFTP(t)
+	state, source, _, remote := openTestSFTP(t)
 	state.sftpOpenMode = sftpOpenTab
 	state.openSFTPWindow(source)
 	w := state.sftpWindows[source.ID]
@@ -32,7 +33,7 @@ func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, string) {
 	waitSFTPTab(t, state, w, func() bool {
 		return !w.view.busy && w.view.lfolder.path == localDir && len(w.view.lfolder.rows) == 1
 	})
-	return state, source, w, localDir
+	return state, source, w, remote, localDir
 }
 
 func waitSFTPTab(t *testing.T, state *State, w *sftpWindow, ready func() bool) {
@@ -49,6 +50,15 @@ func waitSFTPTab(t *testing.T, state *State, w *sftpWindow, ready func() bool) {
 		w.view.busy, w.view.lfolder.path, w.view.path, w.view.errorText)
 }
 
+func transferCompleted(view *sftpView, operation sftpclient.Operation, destination string) bool {
+	for _, transfer := range view.transfers {
+		if transfer.Operation == operation && transfer.Destination == destination && transfer.State == sftpclient.TransferCompleted {
+			return true
+		}
+	}
+	return false
+}
+
 func rowIndexByName(t *testing.T, w *sftpWindow, local bool, name string) int {
 	t.Helper()
 	for index, row := range w.folder(local).rows {
@@ -60,17 +70,8 @@ func rowIndexByName(t *testing.T, w *sftpWindow, local bool, name string) int {
 	return -1
 }
 
-func transferUsesOperation(w *sftpWindow, operation sftpclient.Operation) bool {
-	for _, transfer := range w.view.worker.Transfers(nil) {
-		if transfer.Operation == operation {
-			return true
-		}
-	}
-	return false
-}
-
 func TestSFTPWindowOrderChangesPresentationButKeepsLogicalSides(t *testing.T) {
-	state, _, w, localDir := openSFTPTabFixture(t)
+	state, _, w, remote, localDir := openSFTPTabFixture(t)
 
 	state.sftpWindowOrder = sftpLocalLeft
 	var localLeftCanvas ui.Canvas
@@ -120,16 +121,28 @@ func TestSFTPWindowOrderChangesPresentationButKeepsLogicalSides(t *testing.T) {
 	// Transfer buttons continue to use local-to-remote and remote-to-local
 	// directions even when the remote pane is painted first.
 	w.queueSelection(true)
-	waitSFTPTab(t, state, w, func() bool { return transferUsesOperation(w, sftpclient.OperationUpload) })
-	waitSFTPTab(t, state, w, func() bool { return !w.view.busy })
+	waitSFTPTab(t, state, w, func() bool {
+		return remoteText(remote, "/home/test/local.yml") == "name: local\n" &&
+			transferCompleted(w.view, sftpclient.OperationUpload, "/home/test/local.yml")
+	})
+	waitSFTPTab(t, state, w, func() bool {
+		return !w.view.busy &&
+			w.browse.pending == nil &&
+			!w.view.refreshAfterTransfers &&
+			!sftpTransfersActive(w.view.worker.Transfers(nil))
+	})
 	remoteRow = rowIndexByName(t, w, false, "notes.txt")
 	w.view.sftpFolder.selectRow(remoteRow, 0)
 	w.queueSelection(false)
-	waitSFTPTab(t, state, w, func() bool { return transferUsesOperation(w, sftpclient.OperationDownload) })
+	waitSFTPTab(t, state, w, func() bool {
+		content, err := os.ReadFile(filepath.Join(localDir, "notes.txt"))
+		return err == nil && string(content) == "hello world" &&
+			transferCompleted(w.view, sftpclient.OperationDownload, filepath.Join(localDir, "notes.txt"))
+	})
 }
 
 func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
-	state, source, w, localDir := openSFTPTabFixture(t)
+	state, source, w, remote, localDir := openSFTPTabFixture(t)
 	workspace := state.deck.ActiveWorkspace()
 	if workspace == 0 {
 		t.Fatal("the fixture needs a terminal workspace tab")
@@ -181,13 +194,35 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	var remoteLeftCanvas ui.Canvas
 	state.Paint(&remoteLeftCanvas, ui.Size{Width: 1500, Height: 900})
 	remoteRect := w.ui.list[1]
+	dropX := state.fileManagerRect.X + remoteRect.X + 24
+	dropY := state.fileManagerRect.Y + remoteRect.Y + remoteRect.Height - 12
+	_, remoteDropDir, _, valid := w.dropTarget(
+		dropX-state.fileManagerRect.X,
+		dropY-state.fileManagerRect.Y,
+		true,
+	)
+	if !valid {
+		t.Fatal("the remote pane did not accept the system file drop")
+	}
 	if result := state.FileDrop(ui.FileDropEvent{
-		Phase: ui.FileDropDrop, X: remoteRect.X + 24, Y: remoteRect.Y + remoteRect.Height - 12,
+		Phase: ui.FileDropDrop,
+		X:     dropX,
+		Y:     dropY,
 		Paths: []string{external},
 	}); !result.Handled {
 		t.Fatal("the embedded file manager did not accept a system file drop")
 	}
-	waitSFTPTab(t, state, w, func() bool { return transferUsesOperation(w, sftpclient.OperationUpload) })
+	remoteDropPath := path.Join(remoteDropDir, filepath.Base(external))
+	waitSFTPTab(t, state, w, func() bool {
+		return remoteText(remote, remoteDropPath) == "drop" &&
+			transferCompleted(w.view, sftpclient.OperationUpload, remoteDropPath)
+	})
+	waitSFTPTab(t, state, w, func() bool {
+		return !w.view.busy &&
+			w.browse.pending == nil &&
+			!w.view.refreshAfterTransfers &&
+			!sftpTransfersActive(w.view.worker.Transfers(nil))
+	})
 
 	// Work continues when the terminal tab is in front.
 	state.Click(hitTabList.At(int(workspace)))
@@ -202,8 +237,10 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	localIndex := rowIndexByName(t, w, true, "local.yml")
 	w.view.lfolder.selectRow(localIndex, 0)
 	w.queueSelection(true)
-	waitSFTPTab(t, state, w, func() bool { return transferUsesOperation(w, sftpclient.OperationUpload) })
-	waitSFTPTab(t, state, w, func() bool { return !sftpTransfersActive(w.view.worker.Transfers(nil)) })
+	waitSFTPTab(t, state, w, func() bool {
+		return remoteText(remote, "/home/test/docs/local.yml") == "name: local\n" &&
+			transferCompleted(w.view, sftpclient.OperationUpload, "/home/test/docs/local.yml")
+	})
 	if w.view.path != "/home/test/docs" {
 		t.Fatalf("background transfer replaced the hidden tab's remote folder: %q", w.view.path)
 	}
@@ -236,7 +273,7 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 }
 
 func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
-	state, source, _, _ := openSFTPTabFixture(t)
+	state, source, _, _, _ := openSFTPTabFixture(t)
 	state.setTabOrientation(tabsVertical)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
@@ -296,7 +333,7 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 }
 
 func TestSFTPFileTabIsRuntimeOnlyAndSourceCloseRemovesIt(t *testing.T) {
-	state, source, w, _ := openSFTPTabFixture(t)
+	state, source, w, _, _ := openSFTPTabFixture(t)
 
 	// The state snapshot has no file-tab collection, so saving and reloading a
 	// running tab cannot restore it as a fake connected session.
