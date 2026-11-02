@@ -33,6 +33,8 @@ type workbenchSFTPRemote struct {
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
 	removeErr    error             // refuses every removal while set
+	unreadable   map[string]bool   // folders whose listing is refused
+	onRead       func(dir string)  // runs before a folder is listed, outside the lock
 }
 
 func (remote *workbenchSFTPRemote) Symlink(target, link string) error {
@@ -77,13 +79,19 @@ func (remote *workbenchSFTPRemote) Getwd() (string, error) { return remote.cwd, 
 func (remote *workbenchSFTPRemote) ReadDir(path string) ([]os.FileInfo, error) {
 	remote.mu.Lock()
 	remote.reads = append(remote.reads, path)
-	delay := remote.readDelay
+	delay, onRead := remote.readDelay, remote.onRead
 	remote.mu.Unlock()
+	if onRead != nil {
+		onRead(path)
+	}
 	if delay > 0 {
 		time.Sleep(delay) // a network round trip
 	}
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if remote.unreadable[path] {
+		return nil, os.ErrPermission
+	}
 	// A listing is a snapshot: the caller may delete from the folder while it
 	// reads what the folder held, as it does when removing a tree.
 	return append([]os.FileInfo(nil), remote.entries[path]...), nil
