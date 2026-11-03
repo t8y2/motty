@@ -105,16 +105,17 @@ type savedState struct {
 	CommandSuggestOff          bool                `json:"command_suggest_off,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
-	SessionLogsOff          bool             `json:"session_logs_off,omitempty"`
-	CommandInlineSuggestOff bool             `json:"command_inline_suggest_off,omitempty"`
-	ShortcutVersion         int              `json:"shortcut_version,omitempty"`
-	Shortcuts               []savedShortcut  `json:"shortcuts,omitempty"`
-	Workspace               string           `json:"workspace,omitempty"`
-	ActiveSession           int              `json:"active_session,omitempty"`
-	HostCatalogVersion      int              `json:"host_catalog_version"`
-	Hosts                   []savedHost      `json:"hosts"`
-	HostGroups              []savedHostGroup `json:"host_groups,omitempty"`
-	IdentityFiles           []string         `json:"identity_files,omitempty"`
+	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
+	SessionLogsView         *savedSessionLogsView `json:"session_logs_view,omitempty"`
+	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
+	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
+	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
+	Workspace               string                `json:"workspace,omitempty"`
+	ActiveSession           int                   `json:"active_session,omitempty"`
+	HostCatalogVersion      int                   `json:"host_catalog_version"`
+	Hosts                   []savedHost           `json:"hosts"`
+	HostGroups              []savedHostGroup      `json:"host_groups,omitempty"`
+	IdentityFiles           []string              `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. It belongs to this computer, not to the hosts that sync, so a host
 	// that arrives from another device starts out closed to agents.
@@ -425,6 +426,7 @@ func (state *State) snapshot() savedState {
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		SessionLogsOff:             state.sessionLogsOff,
+		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
 		SFTPParallel:               state.sftpParallel,
 		SFTPKeepTimes:              notifyString(state.sftpKeepTimesOff),
@@ -649,6 +651,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
 	state.sessionLogsOff = saved.SessionLogsOff
+	state.restoreSessionLogsView(saved.SessionLogsView)
 	// The saved editor is read as it is: a value this build does not know stays
 	// unknown rather than becoming another editor.
 	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))
