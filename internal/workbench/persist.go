@@ -185,6 +185,9 @@ type savedHost struct {
 type savedHostGroup struct {
 	Name      string `json:"name"`
 	Collapsed bool   `json:"collapsed,omitempty"`
+	Explicit  bool   `json:"explicit,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
+	Order     int    `json:"order,omitempty"`
 }
 
 type savedForward struct {
@@ -507,7 +510,7 @@ func (state *State) snapshot() savedState {
 	}
 	saved.SFTPLocalBookmarks = slices.Clone(state.sftpLocalBookmarks)
 	for _, group := range state.hostGroups {
-		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded})
+		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 	}
 	for _, identity := range state.identities {
 		saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
@@ -748,7 +751,7 @@ func (state *State) restoreShared(saved savedState) {
 		if state.hostGroupIndex(name) >= 0 {
 			continue
 		}
-		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed})
+		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed, Explicit: entry.Explicit, Pinned: entry.Pinned, Order: max(0, entry.Order)})
 	}
 	state.restoreForwards(saved.Forwards)
 	state.restoreProxies(saved.Proxies)

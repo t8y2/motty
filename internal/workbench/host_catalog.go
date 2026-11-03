@@ -179,7 +179,12 @@ func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) stri
 
 type hostGroup struct {
 	Name     string
+	Label    string
+	Depth    uint8
 	Expanded bool
+	Explicit bool
+	Pinned   bool
+	Order    int
 	Count    string // "(3)": how many hosts, after the name
 	Digits   string // how many hosts, alone, for the filter chip
 }
@@ -195,42 +200,59 @@ type hostTreeRow struct {
 	Kind       hostTreeRowKind
 	GroupIndex int
 	HostIndex  int
+	Depth      uint8
 }
 
 func (state *State) refreshHostGroups() {
 	previous := append([]hostGroup(nil), state.hostGroups...)
 	clear(state.hostGroups)
 	state.hostGroups = state.hostGroups[:0]
-	for _, host := range state.hosts {
-		name := strings.TrimSpace(host.Group)
+	add := func(name string) {
 		if state.hostGroupIndex(name) >= 0 {
-			continue
+			return
 		}
-		expanded := true
+		group := hostGroup{Name: name, Label: hostGroupLeaf(name), Depth: uint8(min(strings.Count(name, "/"), 12)), Expanded: true}
 		for _, group := range previous {
 			if group.Name == name {
-				expanded = group.Expanded
-				break
+				state.hostGroups = append(state.hostGroups, group)
+				return
 			}
 		}
-		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: expanded})
+		state.hostGroups = append(state.hostGroups, group)
+	}
+	for _, group := range previous {
+		if group.Explicit {
+			add(group.Name)
+		}
+	}
+	for _, host := range state.hosts {
+		add(strings.TrimSpace(host.Group))
+	}
+	for index := 0; index < len(state.hostGroups); index++ {
+		path := state.hostGroups[index].Name
+		for {
+			at := strings.LastIndex(path, "/")
+			if at < 0 {
+				break
+			}
+			path = path[:at]
+			add(path)
+		}
+	}
+	byName := make(map[string]hostGroup, len(state.hostGroups))
+	for _, group := range state.hostGroups {
+		byName[group.Name] = group
 	}
 	sort.Slice(state.hostGroups, func(left, right int) bool {
-		if state.hostGroups[left].Name == state.hostGroups[right].Name {
-			return false
-		}
-		if state.hostGroups[left].Name == "" {
-			return true
-		}
-		if state.hostGroups[right].Name == "" {
-			return false
-		}
-		return strings.ToLower(state.hostGroups[left].Name) < strings.ToLower(state.hostGroups[right].Name)
+		return orderedHostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name, byName)
 	})
 	for index := range state.hostGroups {
+		group := &state.hostGroups[index]
+		group.Label = hostGroupLeaf(group.Name)
+		group.Depth = uint8(min(strings.Count(group.Name, "/"), 12))
 		count := 0
 		for _, host := range state.hosts {
-			if strings.TrimSpace(host.Group) == state.hostGroups[index].Name {
+			if hostGroupWithin(strings.TrimSpace(host.Group), group.Name) {
 				count++
 			}
 		}
@@ -242,6 +264,32 @@ func (state *State) refreshHostGroups() {
 		state.hostFilterOn = false
 	}
 	state.rebuildHostTreeRows()
+}
+
+func hostGroupLeaf(path string) string {
+	return path[strings.LastIndex(path, "/")+1:]
+}
+
+func hostGroupWithin(path, parent string) bool {
+	return path == parent || parent != "" && strings.HasPrefix(path, parent+"/")
+}
+
+// Compare one segment at a time so punctuation in a sibling cannot split a subtree.
+func hostGroupLess(left, right string) bool {
+	for {
+		l, lrest, lmore := strings.Cut(left, "/")
+		r, rrest, rmore := strings.Cut(right, "/")
+		if order := strings.Compare(strings.ToLower(l), strings.ToLower(r)); order != 0 {
+			return order < 0
+		}
+		if l != r {
+			return l < r
+		}
+		if !lmore || !rmore {
+			return !lmore && rmore
+		}
+		left, right = lrest, rrest
+	}
 }
 
 func (state *State) hostGroupIndex(name string) int {
@@ -286,33 +334,57 @@ func (state *State) setHostFilter(on bool, group string) {
 
 // inHostFilter is whether a host belongs to what the chips currently show.
 func (state *State) inHostFilter(host Host) bool {
-	return !state.hostFilterOn || strings.TrimSpace(host.Group) == state.hostFilter
+	return !state.hostFilterOn || hostGroupWithin(strings.TrimSpace(host.Group), state.hostFilter)
 }
 
 func (state *State) rebuildHostTreeRows() {
 	state.hostTreeRows = state.hostTreeRows[:0]
 	filtering := strings.TrimSpace(state.visibleQuery) != ""
+	needle := strings.ToLower(strings.TrimSpace(state.visibleQuery))
 	flat := state.hostsFlat()
+	hidden := ""
 	for groupIndex, group := range state.hostGroups {
-		if state.hostFilterOn && group.Name != state.hostFilter {
+		if state.hostFilterOn && !hostGroupWithin(group.Name, state.hostFilter) {
 			continue
 		}
-		first := len(state.hostTreeRows)
-		if !flat {
-			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1})
+		if hidden != "" && hostGroupWithin(group.Name, hidden) {
+			continue
 		}
+		hidden = ""
 		matched := 0
+		for _, hostIndex := range state.visible {
+			if hostGroupWithin(strings.TrimSpace(state.hosts[hostIndex].Group), group.Name) {
+				matched++
+			}
+		}
+		explicit := group.Explicit && (!filtering || strings.Contains(strings.ToLower(group.Name), needle))
+		if !explicit {
+			for _, child := range state.hostGroups {
+				if child.Explicit && hostGroupWithin(child.Name, group.Name) && (!filtering || strings.Contains(strings.ToLower(child.Name), needle)) {
+					explicit = true
+					break
+				}
+			}
+		}
+		if matched == 0 && !explicit {
+			continue
+		}
+		if !flat {
+			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: group.Depth})
+		}
+		if !flat && !group.Expanded && !filtering {
+			hidden = group.Name
+			continue
+		}
 		for _, hostIndex := range state.visible {
 			if strings.TrimSpace(state.hosts[hostIndex].Group) != group.Name {
 				continue
 			}
-			matched++
-			if flat || group.Expanded || filtering {
-				state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex})
+			depth := group.Depth + 1
+			if flat {
+				depth = 0
 			}
-		}
-		if matched == 0 && !flat {
-			state.hostTreeRows = state.hostTreeRows[:first]
+			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex, Depth: depth})
 		}
 	}
 }

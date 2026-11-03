@@ -81,7 +81,7 @@ func (state *State) locateSessionLogHost(id string) {
 		state.search = text.Editor{}
 		state.syncVisible()
 		for i := range state.hostGroups {
-			if state.hostGroups[i].Name == strings.TrimSpace(host.Group) {
+			if hostGroupWithin(strings.TrimSpace(host.Group), state.hostGroups[i].Name) {
 				state.hostGroups[i].Expanded = true
 			}
 		}
