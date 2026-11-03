@@ -1116,6 +1116,15 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitBulkPasswordField {
 			return &state.bulkPassword.editor
 		}
+		if hit == hitBulkUserField {
+			return &state.bulkPassword.user
+		}
+		if hit == hitBulkOTPField {
+			return &state.bulkPassword.otp
+		}
+		if hit == hitBulkPassphraseField {
+			return &state.bulkPassword.passphrase
+		}
 	case modalRenameTab:
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
@@ -2356,7 +2365,8 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitVaultUnlock()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalBulkHostPassword && event.Key == ui.KeyEnter && event.Target == hitBulkPasswordField && !event.Repeat {
+	if state.modal == modalBulkHostPassword && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitBulkUserField || event.Target == hitBulkPasswordField || event.Target == hitBulkOTPField || event.Target == hitBulkPassphraseField) {
 		state.submitBulkHostPassword()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

@@ -80,10 +80,22 @@ Electerm and Netcatty write saved passwords into the export in clear text.
 Motty does not import them and says so after the import; delete the file when
 you are done.
 
-On the Hosts page, select several hosts and choose **Set Password** to save one
-new password for all eligible selections. SSH hosts using a key or agent, and
-Telnet/serial hosts, are skipped. VNC and RDP hosts are eligible. This changes
-Motty's saved credentials, not the passwords on the remote servers.
+On the Hosts page, select hosts and choose **Edit Authentication**. Enable only
+the fields you want to change: SSH username, authentication method (Automatic,
+Password, Private Key or SSH Agent), selected private key, saved password,
+one-time code `otpauth://` URI, key passphrase or agent forwarding. Unchecked fields keep
+each host's existing value. You can also remove saved one-time code seeds or
+host-specific key passphrases explicitly. The dialog shows how many selected
+hosts support the enabled fields; Telnet and serial hosts are skipped. VNC and
+RDP hosts accept a saved password only. Passwords are offered only in Automatic
+or Password mode, and changing to a key or agent does not erase one already
+saved. A pinned private key remains selected if you switch to another method.
+
+A batch key passphrase unlocks the selected encrypted private key without
+changing the key file. It is saved separately for each selected host; other
+hosts using that key continue to use their own saved value or the shared key
+passphrase. Removing a host's override restores the shared fallback. This
+changes Motty's saved authentication, not passwords on the remote servers.
 
 ## Syncing with your SSH config
 

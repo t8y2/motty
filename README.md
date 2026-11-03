@@ -106,8 +106,11 @@ vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
 in a portable copy).
-Several selected hosts can be given the same saved password without changing
-it on the remote servers.
+Selected hosts can have their username, authentication method, private key,
+saved password, one-time code seed, key passphrase and agent forwarding edited
+in one batch. Only enabled fields change. A batch key passphrase is saved per
+selected host, leaving other hosts that share the key alone. Remote passwords
+are not changed.
 
 <p align="center">
   <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="Host list with tags and a remote-desktop host" /></a>

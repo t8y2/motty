@@ -574,7 +574,16 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 		passphrase := ""
 		if status.Attempt == 1 && status.IdentityPath != "" {
 			var err error
-			if passphrase, err = lookup(passphraseSecretName(status.IdentityPath)); err != nil {
+			owner := b.catalog.secretOwner(host, status.Endpoint, status.EndpointRole)
+			encoded, lookupErr := lookup(hostPassphraseSecretName(owner))
+			if lookupErr != nil {
+				return lookupErr
+			}
+			passphrase, _ = decodeHostPassphrase(encoded, status.IdentityPath)
+			if passphrase == "" {
+				passphrase, err = lookup(passphraseSecretName(status.IdentityPath))
+			}
+			if err != nil {
 				return err
 			}
 		}

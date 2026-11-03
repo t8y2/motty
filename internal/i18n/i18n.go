@@ -299,6 +299,15 @@ type Messages struct {
 	BulkPasswordEmpty          string
 	BulkPasswordNoHosts        string
 	BulkPasswordSavedFmt       string
+	BulkAuthNoFields           string
+	BulkAuthNoChanges          string
+	BulkAuthKeyRequired        string
+	BulkAuthMissingHost        string
+	BulkAuthDuplicate          string
+	BulkAuthSavedFmt           string
+	BulkAuthSaveUnavailable    string
+	BulkAuthSaveFailedFmt      string
+	BulkAuthRollbackFailed     string
 	ExportHosts                string
 	ImportCatalog              string
 	ImportMenu                 string

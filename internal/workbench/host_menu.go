@@ -105,7 +105,7 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	if several {
-		rows.add(components.ContextMenuItem{ID: hitHostMenuPassword, Label: messages.BulkPasswordTitle, Icon: icon(iconKey), Disabled: !state.selectedHostsCanSavePassword()})
+		rows.add(components.ContextMenuItem{ID: hitHostMenuPassword, Label: messages.BulkPasswordTitle, Icon: icon(iconKey), Disabled: !state.selectedHostsCanEditAuth()})
 	}
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	width, height := rows.size(canvas, state.contextMenuTheme())

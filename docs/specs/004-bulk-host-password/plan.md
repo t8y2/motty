@@ -1,45 +1,59 @@
-# Bulk Host Password Implementation Plan
+# Batch Host Authentication Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans task by task. Steps use checkbox syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Set one password for selected eligible hosts with one atomic vault mutation.
+**Goal:** Batch-edit explicitly selected authentication fields without changing unselected hosts or shared key passphrases.
 
-**Architecture:** Reuse host checkbox selection and host secret naming. Capture IDs on opening the dialog, show eligible/skipped counts, and apply one list of `vault.Change` on confirmation. No host or config migration is needed.
+**Architecture:** Reuse existing host selection and editor conventions. One batch draft carries opt-in fields; validate all targets, then apply host metadata and vault changes. A host-bound encrypted passphrase override is preferred over the shared key-path secret in every authentication path, with exact key-path binding.
 
-**Tech Stack:** Go 1.26, Viva workbench UI, `internal/vault`.
+**Tech Stack:** Go 1.26, Viva UI, existing `internal/vault`, `internal/otp`, `internal/keyidentity`.
 
 **Spec:** `docs/specs/004-bulk-host-password/spec.md`
 
 ## Global Constraints
 
-- Work on the detached isolated worktree; no automatic commit or push.
-- Never show or log existing/new secret values; no Telnet/serial or key/agent-only SSH mutations.
-- Preserve host metadata and authentication policy; all eligible secrets change together or not at all.
+- Use the existing isolated PR #366 worktree; do not touch the user's main checkout or PR #365.
+- A checked field is the only field changed. Never silently overwrite a shared key-path passphrase, reveal a secret or change a remote server password.
+- Scope includes SSH username, auth policy, identity, password, OTP, agent forwarding and selected-host key passphrase; VNC/RDP retain password support.
+- Keep PR Draft until implementation, verification and CI pass.
 
 ## Review Focus
 
-- Stale/deleted selected host IDs: do not mutate unrelated secrets.
-- Mixed SSH/key/desktop selection: report eligible/skipped counts correctly.
-- Empty password, cancel and no eligible hosts: no vault writes.
-- Vault error after confirmation: no partial replacement.
-- Narrow layout and right-click selection: action remains discoverable and correctly scoped.
+- Selected and unselected hosts share an encrypted key: only selected-host passphrase lookup changes.
+- Password-only and OTP-only edits preserve authentication policy and unrelated credentials.
+- Switching to Key/Agent with a retained old password never offers it in that mode.
+- Duplicate endpoints after username change and unavailable identities reject the batch.
+- Vault/config failure or cancel preserves state; modal inputs are masked and cleared.
 
 ---
 
-### Task 1: Add batch command and dialog
+### Task 1: Host-bound passphrase lookup
 
-**Files:** `internal/workbench/host_management.go`, `internal/workbench/host_menu.go`, `internal/workbench/paint.go`, `internal/workbench/workbench.go`, `internal/i18n/english.go`, `internal/i18n/chinese.go`, `internal/workbench/host_management_test.go`.
+**Files:** `internal/workbench/host_passphrase.go`, `internal/workbench/vault_ui.go`, `internal/workbench/connection.go`, `internal/workbench/host_test_connection.go`, `internal/workbench/agent_mcp.go`, `internal/workbench/host_secret_prefill.go`, `internal/workbench/host_management.go`, `internal/workbench/host_passphrase_test.go`.
 
-**Interfaces:** Reuse `captureHostActionIDs` and `hostPasswordSecretName`. One `vault.Apply([]vault.Change)` commits the replacement.
+**Interfaces:** `hostPassphraseSecretName(catalogID string) string`; `savedPassphraseName(reader passwordReader, owner, path string) string` chooses a matching host override or `passphraseSecretName(path)`. The override payload binds the exact key path and passphrase inside the vault.
 
-- [x] Add tests for mixed selection, capture semantics, counts, cancel, empty password, unavailable vault and restored secrets after restart.
-- [x] Run focused tests and confirm expected failures.
-- [x] Add one masked dialog and a selected-host toolbar/context command with eligibility checks; commit a single vault batch and clear the editor on exit.
-- [x] Run focused tests and the workbench package; inspect narrow-layout hit bounds and input focus.
+- [ ] Write failing tests for selected/unselected lookup, wrong-key binding, rejection cleanup and host deletion.
+- [ ] Run targeted tests red.
+- [ ] Add host-bound encoding and thread lookup through terminal, SFTP, host test and MCP agent paths.
+- [ ] Rerun focused and existing vault/key tests.
 
-### Task 2: Verify and document
+### Task 2: Batch auth draft and validation
 
-**Files:** `website/content/docs/connections/hosts-and-authentication.mdx`, `website/content/docs/connections/hosts-and-authentication.zh.mdx`.
+**Files:** `internal/workbench/host_bulk_password.go`, `internal/workbench/host_bulk_password_test.go`, `internal/workbench/host_management.go`, `internal/i18n/i18n.go`, `internal/i18n/english.go`, `internal/i18n/chinese.go`.
 
-- [x] Document eligibility, skipped hosts and the meaning of replacing a saved password (no remote password change).
-- [x] Run `gofmt`, `go test ./...`, focused race tests and native/headless build; inspect diff and test output before completion claims.
+**Interfaces:** The draft holds explicit apply flags for username/auth/identity/password/OTP/passphrase/agent-forward. Captured host IDs are validated before mutation. `vault.Apply([]vault.Change)` commits all selected secrets in one batch.
+
+- [ ] Write failing tests for opt-in semantics, per-protocol skips, duplicate destinations, invalid OTP/key/passphrase, cancel and locked vault.
+- [ ] Run targeted tests red.
+- [ ] Implement validation, metadata updates and one vault batch with eligible/skipped/error counts.
+- [ ] Rerun targeted tests; inspect no secret text in metadata/result strings.
+
+### Task 3: Batch editor UI and delivery
+
+**Files:** `internal/workbench/host_bulk_password.go`, `internal/workbench/host_menu.go`, `internal/workbench/paint.go`, `internal/workbench/workbench.go`, `internal/workbench/chrome_test.go`, `website/content/docs/connections/hosts-and-authentication.mdx`, `website/content/docs/connections/hosts-and-authentication.zh.mdx`, `README.md`, `README.zh-CN.md`.
+
+- [ ] Add tests for mode/key choice, masked inputs, opt-in toggles, keyboard focus and narrow layout.
+- [ ] Run tests red; replace password-only dialog and update labels/docs.
+- [ ] Run targeted tests green, `go test ./...`, focused `go test -race`, `go vet ./...`, `test -z "$(gofmt -l .)"` and native/headless build.
+- [ ] Review final diff against the Spec, then push to #366 and watch CI before marking ready.

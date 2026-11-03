@@ -1025,7 +1025,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 			case hitMoveHostGroup, hitDeleteHost:
 				actions[i].enabled = enabled
 			case hitBulkHostPassword:
-				actions[i].enabled = state.selectedHostsCanSavePassword()
+				actions[i].enabled = state.selectedHostsCanEditAuth()
 			case hitDashboardAddHosts:
 				actions[i].enabled = state.dashboardCanAddHosts()
 			}

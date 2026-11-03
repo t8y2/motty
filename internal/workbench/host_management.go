@@ -149,10 +149,12 @@ func (state *State) hostSelected(id uint32) bool {
 	return false
 }
 
-func (state *State) selectedHostsCanSavePassword() bool {
+func (state *State) selectedHostsCanEditAuth() bool {
 	for _, id := range state.hostSelections {
-		if host, ok := state.hostByID(id); ok && hostSupportsSavedPassword(host) {
-			return true
+		if host, ok := state.hostByID(id); ok {
+			if host.isSSH() || host.Protocol == protocolVNC || host.Protocol == protocolRDP {
+				return true
+			}
 		}
 	}
 	return false
@@ -304,7 +306,7 @@ func (state *State) submitHostDialog() {
 		state.dialogError = failure
 		return
 	}
-	passphraseChanges, failure := state.hostPassphraseChanges()
+	passphraseChanges, failure := state.hostPassphraseChanges(candidate, source)
 	if failure != "" {
 		state.dialogError = failure
 		return
@@ -462,7 +464,7 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 // host that uses the key and the page itself see the same one. A passphrase that
 // does not open the key is refused here, as there: it would only fail at the
 // next connection.
-func (state *State) hostPassphraseChanges() (changes []vault.Change, failure string) {
+func (state *State) hostPassphraseChanges(host Host, source *Host) (changes []vault.Change, failure string) {
 	typed := state.editor.passphrase.String()
 	if typed == "" || !state.hostAsksKeyPassphrase() {
 		return nil, ""
@@ -479,6 +481,9 @@ func (state *State) hostPassphraseChanges() (changes []vault.Change, failure str
 	clear(secret)
 	if err != nil {
 		return nil, state.messages.KeyPassphraseWrong
+	}
+	if source != nil && savedPassphraseName(state.secrets.vault, source.CatalogID, identity.Path) == hostPassphraseSecretName(source.CatalogID) {
+		return []vault.Change{{Name: hostPassphraseSecretName(host.CatalogID), Value: encodeHostPassphrase(identity.Path, typed)}}, ""
 	}
 	return []vault.Change{{Name: passphraseSecretName(identity.Path), Value: typed}}, ""
 }
@@ -571,7 +576,8 @@ func (state *State) confirmDeleteHosts() {
 			}
 			changes = append(changes,
 				vault.Change{Name: hostSecretName(host.CatalogID, hostPasswordPart), Delete: true},
-				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true})
+				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true},
+				vault.Change{Name: hostPassphraseSecretName(host.CatalogID), Delete: true})
 			if host.Proxy != nil && host.Proxy.kind != sshconn.ProxyNone && host.Proxy.user != "" {
 				changes = append(changes, vault.Change{Name: hostProxyPasswordSecret(host.CatalogID, host.Proxy), Delete: true})
 			}

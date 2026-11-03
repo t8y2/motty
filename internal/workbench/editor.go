@@ -297,9 +297,6 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolSSH {
 		host.Auth, host.Identity = editor.auth, editor.identity
-		if host.Auth != authPrivateKey {
-			host.Identity = ""
-		}
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
 		host.NoHistory = editor.noHistory

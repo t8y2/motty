@@ -86,7 +86,9 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
 WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
-勾选多台主机可批量保存同一个密码，不会修改远端服务器的密码。
+勾选多台主机可批量编辑用户名、认证方式、私钥、保存的密码、验证码种子、私钥口令
+和 Agent 转发；只修改勾选的字段。批量私钥口令按选中主机单独保存，不影响共享
+同一密钥的其他主机，也不会修改远端服务器的密码。
 
 <p align="center">
   <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="主机列表，带分组标签和远程桌面标记" /></a>
