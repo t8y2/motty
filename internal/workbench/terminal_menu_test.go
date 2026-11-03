@@ -50,7 +50,10 @@ func TestTerminalMenuStaysInsideTheWindow(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
-	rightClick(state, session, 1395, 895)
+	// Stay near the lower-right window edge while remaining in terminal
+	// content. The far edge itself belongs to the configurable side rail and
+	// intentionally opens the rail's own menu.
+	rightClick(state, session, 1350, 850)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	last, ok := hitByID(&canvas, hitTerminalMenuFiles)

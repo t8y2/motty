@@ -44,12 +44,8 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 						} else {
 							ordered = append(ordered, m)
 						}
-						if rail, ok := state.terminalSideRailBounds(state.viewport); !ok {
+						if rail, ok := state.terminalSideRailBoundsFor(state.viewport, terminalToolbarRight); !ok {
 							t.Fatal("shared terminal toolbar is missing")
-						} else if state.terminalToolbarPosition == terminalToolbarLeft {
-							if ordered[0].X != rail.X+rail.Width {
-								t.Fatalf("panels do not begin inside the left rail: panels=%v rail=%v", ordered, rail)
-							}
 						} else if ordered[2].X+ordered[2].Width != rail.X {
 							t.Fatalf("panels do not end inside the right rail: panels=%v rail=%v", ordered, rail)
 						}

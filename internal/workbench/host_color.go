@@ -67,23 +67,6 @@ func (state *State) paintHostColorChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	components.BeginColorPicker(canvas, state.Theme(), p.trigger, state.hostPickerOptions(canvas)).PaintTrigger()
 }
 
-// Connection color marks the chrome, never terminal cells or status lights.
-func (state *State) connectionBarColors(session *Session, inactive bool) (ui.Color, ui.Color) {
-	background, border := state.pal.workspace, state.pal.line
-	if session == nil {
-		return background, border
-	}
-	accent := hostAccent(session.host.Color)
-	if accent.Alpha == 0 {
-		return background, border
-	}
-	amount := float32(0.16)
-	if inactive {
-		amount = 0.08
-	}
-	return background.Mix(accent, amount), border.Mix(accent, 0.45)
-}
-
 func tintHostSurface(background ui.Color, color string, amount float32) ui.Color {
 	if accent := hostAccent(color); accent.Alpha > 0 {
 		return background.Mix(accent, amount)

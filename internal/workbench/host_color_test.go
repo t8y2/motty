@@ -102,45 +102,131 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 	}
 }
 
-func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {
+func TestConnectionColorUsesANeutralRailWithAnOrderedMarker(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	s := Session{host: Host{Color: "#ef4444"}}
-	before := state.termPal
-	active, line := state.connectionBarColors(&s, false)
-	inactive, _ := state.connectionBarColors(&s, true)
-	if active == state.pal.workspace || active == inactive || line == state.pal.line {
-		t.Fatal("connection color missing from header")
+	session := Session{ID: 1, host: Host{Color: "#3b82f6"}, term: &terminal{}}
+	bounds := ui.Rect{X: 100, Y: 40, Width: 40, Height: 320}
+	tools := []barTool{{
+		id: hitTerminalConnectionColor, kind: barToolConnectionColor,
+		hint: state.messages.Toolbars.ConnectionColor, height: terminalRailCapsuleHeight,
+	}}
+	var canvas ui.Canvas
+	state.paintTerminalSideRail(&canvas, bounds, &session, tools, nil, state.pal.workspace, state.pal.line, terminalToolbarLeft, true)
+
+	neutralRail, marker, halo := false, false, false
+	for _, rectangle := range canvas.Rectangles() {
+		switch {
+		case rectangle.Bounds == bounds && rectangle.Color == state.pal.workspace:
+			neutralRail = true
+		case rectangle.Color == hostAccent(session.host.Color) &&
+			rectangle.Bounds.Width == terminalRailAccentWidth &&
+			rectangle.Bounds.Height == terminalRailAccentHeight &&
+			rectangle.Bounds.Y >= bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height <= bounds.Y+bounds.Height:
+			marker = true
+		case rectangle.Bounds.Width == terminalRailCapsuleWidth && rectangle.Bounds.Height == terminalRailCapsuleHeight &&
+			rectangle.Bounds.Y >= bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height <= bounds.Y+bounds.Height:
+			halo = true
+		}
 	}
-	if state.termPal != before {
-		t.Fatal("connection color altered terminal palette")
+	if !neutralRail || !marker || !halo {
+		t.Fatalf("tool rail neutral=%v marker=%v halo=%v rects=%+v",
+			neutralRail, marker, halo, canvas.Rectangles())
 	}
-	s.host.Color = ""
-	background, border := state.connectionBarColors(&s, false)
-	if background != state.pal.workspace || border != state.pal.line {
-		t.Fatal("default header changed")
+	if got, want := session.term.rails[terminalToolbarLeft].zones[terminalToolbarDockTop].contentExtent, state.terminalToolbarMetrics().inset*2+terminalRailCapsuleHeight; got != want {
+		t.Fatalf("connection-color rail extent = %v, want compact capsule extent %v", got, want)
 	}
 }
 
-func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
+func TestConnectionColorCapsuleCanBeHiddenWithoutChangingTheRail(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	session := Session{ID: 1, host: Host{Color: "#3b82f6"}, term: &terminal{}}
+	bounds := ui.Rect{X: 100, Y: 40, Width: 40, Height: 320}
+	state.terminalHideConnectionColor = true
+	tools := []barTool{{id: hitTerminalConnectionColor, kind: barToolConnectionColor, hint: state.messages.Toolbars.ConnectionColor}}
+	var canvas ui.Canvas
+	state.paintTerminalSideRail(&canvas, bounds, &session, tools, nil, state.pal.workspace, state.pal.line, terminalToolbarRight, true)
+
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Color == hostAccent(session.host.Color) ||
+			(rectangle.Bounds.Width == terminalRailCapsuleWidth && rectangle.Bounds.Height == terminalRailCapsuleHeight) {
+			t.Fatalf("hidden connection-color marker was painted: %+v", rectangle)
+		}
+	}
+}
+
+func TestConnectionColorMarkerDoesNotReserveSpaceWithoutAHostColor(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	session.host.Color = ""
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Side = terminalToolbarRight.String()
+		entries[index].Zone = terminalToolbarZoneRightTop.String()
+		if entries[index].Key == "connection-color" {
+			entries[index].Side = terminalToolbarLeft.String()
+			entries[index].Zone = terminalToolbarZoneLeftTop.String()
+		}
+	}
+	state.applyTerminalToolbarLayoutChange()
+
+	if occupied, ok := state.terminalToolbarOccupiedSides(); !ok || occupied[terminalToolbarLeft] {
+		t.Fatalf("a colorless connection reserved the left rail: occupied=%v ok=%v", occupied, ok)
+	}
+
+	session.host.Color = "#3b82f6"
+	state.applyTerminalToolbarLayoutChange()
+	if occupied, ok := state.terminalToolbarOccupiedSides(); !ok || !occupied[terminalToolbarLeft] {
+		t.Fatalf("a colored connection did not occupy the left rail: occupied=%v ok=%v", occupied, ok)
+	}
+}
+
+func TestConnectionColorEditRefitsLiveTerminalForARailChange(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Side = terminalToolbarRight.String()
+		entries[index].Zone = terminalToolbarZoneRightTop.String()
+		if entries[index].Key == "connection-color" {
+			entries[index].Side = terminalToolbarLeft.String()
+			entries[index].Zone = terminalToolbarZoneLeftTop.String()
+		}
+	}
+	state.Resize(ui.Size{Width: 1200, Height: 800})
+	state.applyTerminalToolbarLayoutChange()
+	beforeCols, _ := session.term.screen.Size()
+
+	previous := state.hosts[0]
+	updated := previous
+	updated.Color = "#3b82f6"
+	state.replaceHost(0, previous, updated)
+
+	afterCols, _ := session.term.screen.Size()
+	if session.host.Color != updated.Color || afterCols >= beforeCols {
+		t.Fatalf("live terminal was not refit for the new rail: color=%q cols %d -> %d",
+			session.host.Color, beforeCols, afterCols)
+	}
+}
+
+func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	session.host.Color = "#3b82f6"
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	header, _ := state.connectionBarColors(session, false)
-	for _, id := range []ui.ID{contextID(hitSFTPRefresh), hitSFTPOpen} {
+	for _, id := range []ui.ID{contextID(hitSFTPRefresh)} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok {
 			t.Fatal("missing header action", id)
 		}
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
-			if rectangle.Color == header && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
+			if rectangle.Color == state.pal.workspace && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatal("file and terminal headers must share their connection color", id)
+			t.Fatal("file header must stay neutral", id)
 		}
 	}
 	foundTab := false
@@ -185,7 +271,7 @@ func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
 	}
 }
 
-func TestConnectionColorEmptyFilePanelFollowsItsSession(t *testing.T) {
+func TestConnectionColorKeepsEmptyFilePanelNeutral(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	for _, session := range []*Session{nil, {host: Host{Color: "#a855f7"}}, {}} {
 		var canvas ui.Canvas
@@ -194,16 +280,33 @@ func TestConnectionColorEmptyFilePanelFollowsItsSession(t *testing.T) {
 		if !ok {
 			t.Fatal("empty panel has no close action")
 		}
-		background, _ := state.connectionBarColors(session, false)
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
-			if rectangle.Color == background && rectangle.Bounds.Height == infoBarHeight && rectangle.Bounds.X <= button.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= button.Bounds.X+button.Bounds.Width {
+			if rectangle.Color == state.pal.workspace && rectangle.Bounds.Height == infoBarHeight && rectangle.Bounds.X <= button.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= button.Bounds.X+button.Bounds.Width {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatal("empty panel header differs from the connection header")
+			t.Fatal("empty file panel header must stay neutral")
 		}
+	}
+}
+
+func TestConnectionColorKeepsMonitorHeaderNeutral(t *testing.T) {
+	state, session := monitorFixture(t)
+	bounds := ui.Rect{X: 600, Y: 40, Width: 320, Height: 800}
+	var canvas ui.Canvas
+	state.paintMonitor(&canvas, bounds, session)
+	header := ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: infoBarHeight}
+	found := false
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds == header && rectangle.Color == state.pal.workspace {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("monitor header must stay neutral")
 	}
 }
 

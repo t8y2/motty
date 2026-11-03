@@ -71,8 +71,11 @@ import (
 // Version 18 preserves the device-local interface text size.
 // Version 19 preserves the SFTP transfer layout and custom editor path: an
 // older build's full save would otherwise drop these device-local fields.
-// Version 20 preserves the host group explicit, pinned and order metadata.
-const configFormat = 20
+// Version 20 preserves the device-local terminal toolbar size.
+// Version 21 preserves the independent top/bottom docking of both terminal
+// toolbar rails.
+// Version 22 preserves the host group explicit, pinned and order metadata.
+const configFormat = 22
 
 const (
 	kindSetting             = "setting"

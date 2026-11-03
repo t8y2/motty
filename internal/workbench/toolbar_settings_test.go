@@ -17,8 +17,9 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 	}
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		for _, entry := range state.toolbars.entries(group) {
-			if !entry.Enabled {
-				t.Fatal("a default entry was hidden")
+			wantEnabled := entry.Key != "latency"
+			if entry.Enabled != wantEnabled {
+				t.Fatalf("default entry %q enabled=%v, want %v", entry.Key, entry.Enabled, wantEnabled)
 			}
 		}
 		state.openToolbarSettings(group)
@@ -34,7 +35,7 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	var prefs toolbarPreferences
-	prefs.restore(&decoded)
+	prefs.restore(&decoded, terminalToolbarRight)
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		if len(prefs.entries(group)) != len(toolbarCatalog[group]) {
 			t.Fatal("all-off was confused with an absent/default setting")
@@ -56,14 +57,54 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 }
 
 func TestToolbarRestoreIgnoresUnknownAndDuplicateKeys(t *testing.T) {
-	entries := normalizeToolbar(toolbarWindow, []toolbarEntry{{Key: "settings", Enabled: false}, {Key: "settings", Enabled: true}, {Key: "removed-entry", Enabled: true}})
+	entries := normalizeToolbar(toolbarWindow, []toolbarEntry{{Key: "settings", Enabled: false}, {Key: "settings", Enabled: true}, {Key: "removed-entry", Enabled: true}}, terminalToolbarRight)
 	if len(entries) != len(toolbarCatalog[toolbarWindow]) || entries[0].Key != "settings" || entries[0].Enabled {
 		t.Fatal("invalid entries changed a known preference")
 	}
-	for _, entry := range entries[1:] {
-		if !entry.Enabled {
+	for index, entry := range entries {
+		if index > 0 && !entry.Enabled {
 			t.Fatal("new/missing entries should follow current defaults")
 		}
+		if entry.Side != "" {
+			t.Fatalf("window toolbar entry %q persisted a terminal-only side", entry.Key)
+		}
+	}
+}
+
+func TestLegacyTerminalToolbarPositionMigratesToPerActionSides(t *testing.T) {
+	var prefs toolbarPreferences
+	prefs.restore(nil, terminalToolbarLeft)
+	entries := prefs.entries(toolbarTerminal)
+	if len(entries) != len(toolbarCatalog[toolbarTerminal]) {
+		t.Fatalf("migrated terminal toolbar has %d entries, want %d", len(entries), len(toolbarCatalog[toolbarTerminal]))
+	}
+	for _, entry := range entries {
+		if terminalToolbarSideFromString(entry.Side, terminalToolbarRight) != terminalToolbarLeft {
+			t.Fatalf("legacy left toolbar entry %q migrated to %q", entry.Key, entry.Side)
+		}
+	}
+}
+
+func TestLegacyLatencySwitchMigratesAndConnectionColorDefaultsOn(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	saved := savedState{
+		TerminalShowLatency: true,
+		Toolbars: &savedToolbars{Terminal: []toolbarEntry{{
+			Key: "close-pane", Side: terminalToolbarRight.String(), Enabled: false,
+		}}},
+	}
+	state.toolbars.restore(saved.Toolbars, terminalToolbarRight)
+	state.restoreTerminalStatusEntries(saved)
+
+	entries := state.toolbars.entries(toolbarTerminal)
+	if len(entries) < 2 || entries[0].Key != "connection-color" || entries[1].Key != "latency" {
+		t.Fatalf("migrated terminal status order = %+v, want connection color then latency", entries)
+	}
+	if !entries[0].Enabled || !entries[1].Enabled {
+		t.Fatalf("migrated terminal status enabled color=%v latency=%v", entries[0].Enabled, entries[1].Enabled)
+	}
+	if state.terminalHideConnectionColor || !state.terminalShowLatency {
+		t.Fatalf("migrated runtime status colorOff=%v latency=%v", state.terminalHideConnectionColor, state.terminalShowLatency)
 	}
 }
 
@@ -155,7 +196,7 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.toolbars.restore(saved.Toolbars)
+	state.toolbars.restore(saved.Toolbars, terminalToolbarRight)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	for _, pair := range []struct {
@@ -193,6 +234,7 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 		}
 	}
 	want := []string{
+		"connection-color",
 		"close-pane", "broadcast",
 		"split-horizontal", "split-vertical",
 		"record", "export-recording", "save-output", "export-log",
@@ -200,6 +242,108 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("terminal toolbar order = %v, want %v", got, want)
+	}
+}
+
+func TestTerminalToolbarTwoColumnOrderAndVisibilityPersist(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	moveToolbarEntryToSide(state, "connection-color", terminalToolbarLeft, 0)
+	moveToolbarEntryToSide(state, "files", terminalToolbarLeft, 1)
+	moveToolbarEntryToSide(state, "latency", terminalToolbarLeft, 2)
+	state.toggleTerminalStatusEntry("connection-color")
+	state.toggleTerminalStatusEntry("latency")
+	state.save()
+
+	restarted := newTestState(t, options)
+	var left []string
+	for _, entry := range restarted.toolbars.entries(toolbarTerminal) {
+		if terminalToolbarSideFromString(entry.Side, terminalToolbarRight) == terminalToolbarLeft {
+			left = append(left, entry.Key)
+		}
+	}
+	want := []string{"connection-color", "files", "latency"}
+	if !slices.Equal(left, want) {
+		t.Fatalf("saved left column = %v, want %v", left, want)
+	}
+	if !restarted.terminalHideConnectionColor || !restarted.terminalShowLatency {
+		t.Fatalf("saved status entries colorOff=%v latency=%v",
+			restarted.terminalHideConnectionColor, restarted.terminalShowLatency)
+	}
+}
+
+func TestTerminalToolbarDropDoesNotLeaveAKeyboardFocusBackground(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.openToolbarSettings(toolbarTerminal)
+	canvas, _ := paintAt(state, ui.Size{Width: 1200, Height: 900})
+	handle := hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, "connection-color"))
+	hit, ok := hitByID(canvas, handle)
+	if !ok {
+		t.Fatal("connection-color drag handle is missing")
+	}
+	x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+	state.terminalToolbarSettingsPointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Target: handle, Button: ui.PointerButtonPrimary, X: x, Y: y,
+	})
+	drop := state.toolbarEditor.zoneViewport[terminalToolbarZoneLeftBottom]
+	state.terminalToolbarSettingsPointer(ui.PointerEvent{
+		Kind: ui.PointerMove, Target: handle, X: drop.X + 8, Y: drop.Y + 8,
+	})
+	result := state.terminalToolbarSettingsPointer(ui.PointerEvent{
+		Kind: ui.PointerUp, Target: handle, X: drop.X + 8, Y: drop.Y + 8,
+	})
+	if !result.Handled || result.FocusVisible {
+		t.Fatalf("drop result=%+v, want handled without a persistent focus ring", result)
+	}
+}
+
+func TestTerminalToolbarSameZoneDropUsesRemovedIndex(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.openToolbarSettings(toolbarTerminal)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1200, Height: 900})
+
+	keys := state.toolbarEditor.zoneKeys[terminalToolbarZoneRightTop]
+	if len(keys) < 2 || keys[0] != "connection-color" {
+		t.Fatalf("default right-top order = %v", keys)
+	}
+	drag := terminalToolbarDrag{
+		key: keys[0], zone: terminalToolbarZoneRightTop,
+		dropZone: terminalToolbarZoneRightTop, dropIndex: 1, hasDrop: true,
+	}
+	if got := state.toolbarEditor.terminalToolbarDropSlot(drag); got != 0 {
+		t.Fatalf("same-zone slot=%d, want 0 after removing the source", got)
+	}
+	if moveToolbarEntryToZone(state, drag.key, drag.dropZone, 0) {
+		t.Fatal("dropping an item immediately after itself changed the order")
+	}
+}
+
+func TestTerminalToolbarDropIndexUsesPaintedRowMidpoints(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.openToolbarSettings(toolbarTerminal)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1200, Height: 900})
+
+	zone := terminalToolbarZoneRightTop
+	keys := state.toolbarEditor.zoneKeys[zone]
+	if len(keys) < 2 {
+		t.Fatalf("right-top keys=%v", keys)
+	}
+	list := &state.toolbarEditor.zoneLists[zone]
+	first, ok := list.RowBounds(hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, keys[0])))
+	if !ok {
+		t.Fatal("first row has no painted bounds")
+	}
+	if got := state.toolbarEditor.terminalToolbarDropIndex(zone, first.Y+first.Height/2); got != 1 {
+		t.Fatalf("first row midpoint slot=%d, want 1", got)
+	}
+	last, ok := list.RowBounds(hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, keys[len(keys)-1])))
+	if !ok {
+		t.Fatal("last row has no painted bounds")
+	}
+	if got := state.toolbarEditor.terminalToolbarDropIndex(zone, last.Y+last.Height/2); got != len(keys) {
+		t.Fatalf("last row midpoint slot=%d, want append at %d", got, len(keys))
 	}
 }
 

@@ -18,13 +18,18 @@ const (
 
 func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
 	bounds := state.fullWorkspacePixelBounds(size)
-	if _, ok := state.terminalToolbarSession(); !ok {
+	sides, ok := state.terminalToolbarOccupiedSides()
+	if !ok {
 		return bounds
 	}
-	if state.terminalToolbarPosition == terminalToolbarLeft {
-		bounds.X += terminalToolRailExtent
+	extent := state.terminalToolbarMetrics().railExtent
+	if sides[terminalToolbarLeft] {
+		bounds.X += extent
+		bounds.Width = max(bounds.Width-extent, 0)
 	}
-	bounds.Width = max(bounds.Width-terminalToolRailExtent, 0)
+	if sides[terminalToolbarRight] {
+		bounds.Width = max(bounds.Width-extent, 0)
+	}
 	return bounds
 }
 
@@ -43,15 +48,49 @@ func (state *State) fullWorkspacePixelBounds(size ui.Size) ui.Rect {
 	return ui.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
 }
 
-func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
-	if _, ok := state.terminalSideRailSession(); !ok {
+func (state *State) terminalToolbarOccupiedSides() ([2]bool, bool) {
+	sides, ok := state.terminalToolbarConfiguredOccupiedSides()
+	if !ok {
+		return sides, false
+	}
+	if session, ok := state.terminalToolbarSession(); ok {
+		if preview, visible := state.terminalRailDragPreviewSide(session); visible {
+			sides[preview] = true
+		}
+	}
+	return sides, true
+}
+
+// terminalToolbarConfiguredOccupiedSides reports the committed rail layout.
+// A direct-manipulation preview is layered on top by
+// terminalToolbarOccupiedSides so the layout can reserve the revealed rail
+// without changing persisted configuration before the drop.
+func (state *State) terminalToolbarConfiguredOccupiedSides() ([2]bool, bool) {
+	session, ok := state.terminalToolbarSession()
+	if !ok {
+		return [2]bool{}, false
+	}
+	var toolsBuffer [maxBarTools]barTool
+	tools := state.activeTerminalTools(session, &toolsBuffer)
+	var zoneSet terminalToolZoneSet
+	state.splitTerminalTools(tools, &zoneSet)
+	return [2]bool{
+		terminalToolbarRight: len(zoneSet.tools(terminalToolbarZoneRightTop))+len(zoneSet.tools(terminalToolbarZoneRightBottom)) > 0,
+		terminalToolbarLeft:  len(zoneSet.tools(terminalToolbarZoneLeftTop))+len(zoneSet.tools(terminalToolbarZoneLeftBottom)) > 0,
+	}, true
+}
+
+func (state *State) terminalSideRailBoundsFor(size ui.Size, side terminalToolbarSide) (ui.Rect, bool) {
+	sides, ok := state.terminalToolbarOccupiedSides()
+	if !ok || !sides[side] {
 		return ui.Rect{}, false
 	}
 	bounds := state.fullWorkspacePixelBounds(size)
-	bounds.Width = terminalToolRailExtent
-	if state.terminalToolbarPosition == terminalToolbarRight {
-		bounds.X = max(size.Width-terminalToolRailExtent, 0)
+	extent := state.terminalToolbarMetrics().railExtent
+	if side == terminalToolbarRight {
+		bounds.X = max(bounds.X+bounds.Width-extent, 0)
 	}
+	bounds.Width = extent
 	return bounds, true
 }
 
@@ -367,7 +406,7 @@ func (state *State) paintContextSFTP(canvas *ui.Canvas, bounds ui.Rect, session 
 // and close button as the list, then what the panel needs to start.
 func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, session *Session) {
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := state.connectionBarColors(session, false)
+	headerBackground, headerBorder := pal.workspace, pal.line
 	bounds := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
 	canConnect := session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.

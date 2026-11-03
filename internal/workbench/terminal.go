@@ -81,15 +81,9 @@ type terminal struct {
 	commandReporting      bool
 	submittedLines        int
 	blink                 cursorBlink
-	wheelX                float32            // horizontal wheel travel not yet worth a whole cell
-	wheelY                float32            // vertical wheel travel not yet worth a whole cell
-	railScroll            float32            // horizontal or vertical tool-rail offset
-	railViewport          ui.Rect            // last painted, scrollable tool viewport
-	railBounds            ui.Rect            // full painted rail, including its gutter
-	railContentExtent     float32            // full length of the ordered tool rail
-	railIDs               [maxBarTools]ui.ID // ordered controls for roving keyboard focus
-	railEnabled           [maxBarTools]bool  // disabled actions stay visible but leave the keyboard order
-	railCount             int
+	wheelX                float32 // horizontal wheel travel not yet worth a whole cell
+	wheelY                float32 // vertical wheel travel not yet worth a whole cell
+	rails                 [2]terminalRailState
 	barDragging           bool          // the scrollbar thumb is held
 	barGrab               float32       // where on the thumb it was taken
 	barOffset             int           // view offset the scrollbar last saw, to notice the view moving
@@ -158,6 +152,26 @@ type terminal struct {
 	mouseButton        term.MouseEventButton
 	mousePosition      term.Position
 	mousePositionValid bool
+}
+
+type terminalRailZoneState struct {
+	scroll        float32
+	itemOffset    float32
+	viewport      ui.Rect
+	contentExtent float32
+}
+
+type terminalRailState struct {
+	side    terminalToolbarSide
+	bounds  ui.Rect
+	zones   [2]terminalRailZoneState
+	zoneFor [maxBarTools]terminalToolbarDock
+	ids     [maxBarTools]ui.ID
+	enabled [maxBarTools]bool
+	// focusable excludes non-action chips from keyboard traversal.
+	focusable [maxBarTools]bool
+	rects     [maxBarTools]ui.Rect
+	count     int
 }
 
 // accessibleName is the terminal's name for assistive technology.
@@ -1232,46 +1246,52 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 // the shell.
 func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.EventResult, bool) {
 	if session == nil || session.term == nil || session.ID != state.activeSessionID ||
-		event.Modifiers != 0 || event.Release || session.term.railCount == 0 {
+		event.Modifiers != 0 || event.Release {
 		return ui.EventResult{}, false
 	}
-	t := session.term
+	var rail *terminalRailState
 	index := -1
-	for at := 0; at < t.railCount; at++ {
-		if t.railIDs[at] == event.Target {
-			index = at
+	for side := range session.term.rails {
+		candidate := &session.term.rails[side]
+		for at := 0; at < candidate.count; at++ {
+			if candidate.ids[at] == event.Target {
+				rail, index = candidate, at
+				break
+			}
+		}
+		if index >= 0 {
 			break
 		}
 	}
-	if index < 0 {
+	if rail == nil || rail.count == 0 {
 		return ui.EventResult{}, false
 	}
 	next := index
 	switch {
 	case event.Key == ui.KeyUp:
 		for at := index - 1; at >= 0; at-- {
-			if t.railEnabled[at] {
+			if rail.enabled[at] && rail.focusable[at] {
 				next = at
 				break
 			}
 		}
 	case event.Key == ui.KeyDown:
-		for at := index + 1; at < t.railCount; at++ {
-			if t.railEnabled[at] {
+		for at := index + 1; at < rail.count; at++ {
+			if rail.enabled[at] && rail.focusable[at] {
 				next = at
 				break
 			}
 		}
 	case event.Key == ui.KeyHome:
-		for at := 0; at < t.railCount; at++ {
-			if t.railEnabled[at] {
+		for at := 0; at < rail.count; at++ {
+			if rail.enabled[at] && rail.focusable[at] {
 				next = at
 				break
 			}
 		}
 	case event.Key == ui.KeyEnd:
-		for at := t.railCount - 1; at >= 0; at-- {
-			if t.railEnabled[at] {
+		for at := rail.count - 1; at >= 0; at-- {
+			if rail.enabled[at] && rail.focusable[at] {
 				next = at
 				break
 			}
@@ -1279,7 +1299,7 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 	default:
 		return ui.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: next != index, Focus: t.railIDs[next], FocusVisible: true}, true
+	return ui.EventResult{Handled: true, Repaint: next != index, Focus: rail.ids[next], FocusVisible: true}, true
 }
 
 // commandChord handles Command+key while a terminal has the keyboard.

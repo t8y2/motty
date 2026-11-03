@@ -104,6 +104,7 @@ const (
 	iconPaperclip
 	iconImage
 	iconSave
+	iconPipette
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -271,6 +272,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	state.paintVerticalTabs(canvas, size)
 	viewport := state.windowRect()
+	state.paintTerminalToolbarDrag(canvas, viewport)
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
@@ -372,6 +374,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	state.paintAIDialogs(canvas, viewport)
 	state.paintTerminalMenu(canvas, viewport)
+	state.paintTerminalToolbarMenu(canvas, viewport)
 	state.paintTabDrag(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
@@ -1868,6 +1871,7 @@ var lucideIcons = [...]ui.Icon{
 	iconSFTPProfiles:   icons.SftpProfiles,
 	iconFileClock:      icons.FileClock,
 	iconClock:          icons.Clock3,
+	iconPipette:        icons.Pipette,
 }
 
 func paintIcon(canvas *ui.Canvas, kind uint8, bounds ui.Rect, foreground ui.Color) {

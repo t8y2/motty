@@ -165,6 +165,11 @@ type Messages struct {
 	SettingsToolbarPositionDescription     string
 	SettingsToolbarPositionLeft            string
 	SettingsToolbarPositionRight           string
+	SettingsToolbarSize                    string
+	SettingsToolbarSizeDescription         string
+	SettingsToolbarSizeSmall               string
+	SettingsToolbarSizeMedium              string
+	SettingsToolbarSizeLarge               string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string

@@ -61,7 +61,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 		return
 	}
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := state.connectionBarColors(session, false)
+	headerBackground, headerBorder := pal.workspace, pal.line
 	folder, local := view.active(), view.local
 	if folder.pathEditing && !state.sftpPathInput && canvas.Focused() != hitSFTPPath {
 		folder.pathEditing = false
