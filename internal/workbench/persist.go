@@ -33,6 +33,7 @@ type savedState struct {
 	Version                    int                 `json:"version"`
 	Language                   string              `json:"language,omitempty"`
 	Theme                      string              `json:"theme,omitempty"`
+	BackgroundOutputAlerts     bool                `json:"background_output_alerts,omitempty"`
 	TabOrientation             string              `json:"tab_orientation,omitempty"`
 	VerticalTabsAutoHide       bool                `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool                `json:"vertical_tabs_grouping,omitempty"`
@@ -384,6 +385,7 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
@@ -640,6 +642,7 @@ func (state *State) restoreSettings(saved savedState) {
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
+	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)

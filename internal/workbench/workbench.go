@@ -648,7 +648,8 @@ type State struct {
 	terminalCopyOnSelect, terminalRightClickPaste bool
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
-	terminalTabTitle bool
+	terminalTabTitle       bool
+	backgroundOutputAlerts bool
 	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
 	// starts their requests so a repaint never sends network work.

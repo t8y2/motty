@@ -243,7 +243,7 @@ func bashIntegration(report string, forceTrap bool) string {
 	if forceTrap {
 		force = "1"
 	}
-	return bashIntegrationHead + inputEnvironmentFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
+	return bashIntegrationHead + inputEnvironmentFunction + commandFinishedFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
 }
 
 const bashIntegrationHead = `_motty_runtime=$MOTTY_SHELL_DIR
@@ -259,11 +259,20 @@ for _motty_bashrc in /etc/bash.bashrc "$HOME/.bashrc"; do
 done
 `
 
+// Run before user prompt hooks, which may replace the command's exit status.
+// Return that status unchanged so the user's first hook still sees it.
+const commandFinishedFunction = `__motty_command_finished() {
+    local _motty_status=$?
+    printf '\033]133;D;%s__MOTTY_SUFFIX__\007' "$_motty_status"
+    return "$_motty_status"
+}
+`
+
 const bashIntegrationTail = `
 _motty_prompt_marker='\[\e]133;B__MOTTY_SUFFIX__\a\]'
 case $(declare -p PROMPT_COMMAND 2>/dev/null) in
-    'declare -a '*) PROMPT_COMMAND+=(__motty_report) ;;
-    *) PROMPT_COMMAND=${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_report ;;
+    'declare -a '*) PROMPT_COMMAND=(__motty_command_finished "${PROMPT_COMMAND[@]}" __motty_report) ;;
+    *) PROMPT_COMMAND=__motty_command_finished$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_report ;;
 esac
 if (( __MOTTY_FORCE__ == 0 && (BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)) )); then
     PS0=$'\e]133;C__MOTTY_SUFFIX__\a'${PS0-}
@@ -278,7 +287,7 @@ else
     case $(declare -p PROMPT_COMMAND 2>/dev/null) in
         'declare -a '*) ;;
         *)
-            __motty_disarm() { _motty_armed=0; }
+            __motty_disarm() { local _motty_status=$?; _motty_armed=0; return "$_motty_status"; }
             __motty_arm() { _motty_armed=1; }
             __motty_debug() {
                 [[ ${_motty_armed-} == 1 && $BASH_COMMAND != __motty_disarm && -z ${COMP_POINT-} ]] || return 0
@@ -309,12 +318,18 @@ rm -rf -- "$_motty_runtime"
 unset _motty_runtime _motty_profile`
 
 func zshIntegration(report string) string {
-	return inputEnvironmentFunction + report + zshIntegrationTail
+	return inputEnvironmentFunction + commandFinishedFunction + report + zshIntegrationTail
 }
 
 const zshIntegrationTail = `
 _motty_prompt_marker=$'%{\e]133;B__MOTTY_SUFFIX__\a%}'
 typeset -ga precmd_functions
+if (( $+functions[precmd] )); then
+    functions[__motty_user_precmd]=$functions[precmd]
+    precmd() { __motty_command_finished; __motty_user_precmd; }
+else
+    precmd() { __motty_command_finished; return 0; }
+fi
 precmd_functions+=(__motty_report)
 __motty_command_start() { printf '\033]133;C__MOTTY_SUFFIX__\007'; }
 typeset -ga preexec_functions

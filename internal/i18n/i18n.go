@@ -155,6 +155,8 @@ type Messages struct {
 	SettingsInterfaceFontDefault           string
 	SettingsInterfaceFontCurrentFmt        string
 	SettingsInterfaceFontUnsupportedFmt    string
+	SettingsOutputAlerts                   string
+	SettingsOutputAlertsDescription        string
 	SettingsTabOrientation                 string
 	SettingsTabOrientationDescription      string
 	SettingsTabsHorizontal                 string

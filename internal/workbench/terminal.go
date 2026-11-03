@@ -271,6 +271,8 @@ func (t *terminal) syncRemaining() time.Duration {
 }
 
 func (state *State) configureTerminal(session *Session) {
+	session.outputAlert.commandRunning = false
+	session.outputAlert.completionKnown = false
 	if session.term.folderToken == "" {
 		session.term.resetFolderSync()
 	}
@@ -315,9 +317,15 @@ func (state *State) configureTerminal(session *Session) {
 			t.inputGuard.active = t.promptReady
 		}
 	})
+	session.term.screen.SetCommandFinished(func(code int) {
+		if current, ok := state.sessionByIDPointer(sessionID); ok {
+			state.finishBackgroundCommand(current, code)
+		}
+	})
 	session.term.screen.SetCommandStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
+			current.outputAlert.commandRunning = true
 			t.commandReporting = true
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false
@@ -725,6 +733,7 @@ func (state *State) pump(session *Session) {
 		data = state.scanTransfer(session, data)
 	}
 	if len(data) > 0 {
+		state.receiveBackgroundOutput(session)
 		t.recording.append(state.now(), terminalRecordingOutput, data)
 		t.writeRemote(data, state.now())
 		if wasExec {
@@ -768,6 +777,7 @@ func (state *State) pump(session *Session) {
 
 // shellEnded tells the screen the session is over and lets the connection go.
 func (state *State) shellEnded(session *Session) {
+	session.outputAlert.commandRunning = false
 	if state.completion.list.active && state.completion.list.sessionID == session.ID {
 		state.closeCompletionList()
 	}

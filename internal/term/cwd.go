@@ -52,6 +52,10 @@ func (t *Terminal) SetPromptToken(token string) {
 // including commands that readline takes from previously submitted typeahead.
 func (t *Terminal) SetCommandStart(fn func()) { t.commandStartFn = fn }
 
+// SetCommandFinished receives OSC 133 D with a nonnegative exit status.
+// Like the prompt callbacks, it runs during Write and honors SetPromptToken.
+func (t *Terminal) SetCommandFinished(fn func(int)) { t.commandFinishedFn = fn }
+
 // WorkingDirectory is the last directory the shell reported, or false.
 func (t *Terminal) WorkingDirectory() (Cwd, bool) { return t.cwd, t.cwd.Path != "" }
 

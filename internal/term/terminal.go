@@ -188,6 +188,7 @@ type Terminal struct {
 	promptToken        string
 	inputEnvironmentFn func(InputEnvironment)
 	commandStartFn     func()
+	commandFinishedFn  func(int)
 	syncFn             func(bool)
 	cwd                Cwd
 	kittyNotes         []kittyPending // OSC 99 notifications still waiting for chunks

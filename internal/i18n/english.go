@@ -154,6 +154,8 @@ var EnglishMessages = Messages{
 	SettingsInterfaceFontDefault:           "Default",
 	SettingsInterfaceFontCurrentFmt:        "Now: %s. Any installed font can be used.",
 	SettingsInterfaceFontUnsupportedFmt:    "“%s” is not in use: this platform cannot change the interface font.",
+	SettingsOutputAlerts:                   "Background terminal output alerts",
+	SettingsOutputAlertsDescription:        "Color tab titles for unseen output: blue while receiving, green when quiet, yellow on a reported command failure.",
 	SettingsTabOrientation:                 "Tab orientation",
 	SettingsTabOrientationDescription:      "Show session tabs across the top or in the left sidebar.",
 	SettingsTabsHorizontal:                 "Horizontal",

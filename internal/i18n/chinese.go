@@ -154,6 +154,8 @@ var ChineseMessages = Messages{
 	SettingsInterfaceFontDefault:           "默认",
 	SettingsInterfaceFontCurrentFmt:        "当前：%s。可以使用任何已安装的字体。",
 	SettingsInterfaceFontUnsupportedFmt:    "“%s”未生效：当前平台不支持更改界面字体。",
+	SettingsOutputAlerts:                   "后台终端输出提醒",
+	SettingsOutputAlertsDescription:        "通过标签标题提示未查看的输出：蓝色表示输出中，绿色表示输出结束或静默，黄色表示命令报告失败。",
 	SettingsTabOrientation:                 "标签方向",
 	SettingsTabOrientationDescription:      "将会话标签显示在顶部，或垂直排列在左侧栏。",
 	SettingsTabsHorizontal:                 "水平",
