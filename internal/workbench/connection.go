@@ -702,6 +702,7 @@ func (state *State) Wake() {
 			state.stepSelectionScroll(session.term, findNow)
 		}
 	}
+	state.refreshOutputAlerts(nil)
 	state.pumpForwards()
 	state.pumpTransfer()
 	defer state.syncShortcutCapture()

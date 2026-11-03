@@ -121,6 +121,8 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 			ready, commandStarts, output := 0, 0, ""
 			screen.SetPromptReady(func() { ready++ })
 			screen.SetCommandStart(func() { commandStarts++ })
+			lastExit := -1
+			screen.SetCommandFinished(func(code int) { lastExit = code })
 			await := func(want string, predicate func() bool) {
 				t.Helper()
 				deadline := time.Now().Add(8 * time.Second)
@@ -136,6 +138,19 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 				t.Fatalf("waiting for %s: %q", want, output)
 			}
 			await("initial ready prompt", func() bool { return ready > 0 })
+			beforeReady := ready
+			shell.Write([]byte("false\r"))
+			await("failed command status", func() bool { return ready > beforeReady })
+			if lastExit != 1 {
+				t.Fatalf("false exit status = %d; output %q", lastExit, output)
+			}
+			beforeReady = ready
+			shell.Write([]byte("true\r"))
+			await("successful command status", func() bool { return ready > beforeReady })
+			if lastExit != 0 {
+				t.Fatalf("true exit status = %d", lastExit)
+			}
+
 			// Every Bash reports command starts: PS0 from 4.4, a DEBUG trap before.
 			commandReporting := true
 			if commandStarts == 0 {

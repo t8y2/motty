@@ -73,3 +73,24 @@ func TestMalformedWorkingDirectoriesAreRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandFinishedValidatesStatusTokenAndSplitSequences(t *testing.T) {
+	stream := []byte("\x1b]133;D;17;motty=session-token\a")
+	for cut := 0; cut <= len(stream); cut++ {
+		terminal := New(80, 24, 0)
+		terminal.SetPromptToken("session-token")
+		calls := 0
+		terminal.SetCommandFinished(func(code int) {
+			calls++
+			if code != 17 {
+				t.Fatalf("exit code %d", code)
+			}
+		})
+		terminal.Write([]byte("\x1b]133;D;0\a\x1b]133;D;1;motty=foreign\a\x1b]133;D;-1;motty=session-token\a\x1b]133;D;256;motty=session-token\a\x1b]133;D;bad;motty=session-token\a"))
+		terminal.Write(stream[:cut])
+		terminal.Write(stream[cut:])
+		if calls != 1 {
+			t.Fatalf("split %d: %d calls", cut, calls)
+		}
+	}
+}

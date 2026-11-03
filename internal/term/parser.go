@@ -2,6 +2,7 @@ package term
 
 import (
 	"strconv"
+	"strings"
 )
 
 type parseState uint8
@@ -471,6 +472,13 @@ func (t *Terminal) endOSC() {
 		}
 		if string(text) == "C"+suffix && t.commandStartFn != nil {
 			t.commandStartFn()
+		}
+		value := string(text)
+		if t.commandFinishedFn != nil && strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+			status := strings.TrimSuffix(value[2:], suffix)
+			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
+				t.commandFinishedFn(code)
+			}
 		}
 	case 777:
 		t.inputEnvironmentReport(text)

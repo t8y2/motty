@@ -362,6 +362,10 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTabOrientation(tabsHorizontal)
 	case hitSettingsTabsVertical:
 		changed = state.setTabOrientation(tabsVertical)
+	case hitSettingsOutputAlerts:
+		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
+		state.clearOutputAlerts()
+		changed = true
 	case hitSettingsVerticalTabsAutoHide:
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsVerticalTabsGrouping:

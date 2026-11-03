@@ -237,6 +237,9 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 		} else if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
 			session, _ = state.sessionByIDPointer(uint32(pane.SessionID))
 		}
+		if tab.output != outputAlertNone && !tab.compact {
+			state.paintOutputAlertTitle(canvas, tab, strip)
+		}
 		badge := tab.badge.Rect()
 		if session != nil {
 			state.paintHostCatalogIcon(canvas, session.host, badge, tab.background)

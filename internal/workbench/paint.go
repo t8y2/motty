@@ -126,6 +126,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { state.Click(id) })
 	}
+	state.refreshOutputAlerts(canvas)
 	state.syncVisible()
 	state.syncSFTPTabs()
 	state.reveal.beginPaint()
@@ -478,6 +479,9 @@ type windowBar struct {
 
 type barTab struct {
 	badge, light flex.Box
+	title        flex.Box
+	output       outputAlertKind
+	label        string
 	workspace    layoutcore.WorkspaceInfo
 	fileSession  uint32
 	id, closeID  ui.ID
@@ -735,6 +739,8 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	}
 	entry.background = fill
 	label := state.tabLabel(workspace)
+	entry.label = label
+	entry.output = state.workspaceOutputAlert(workspace.ID)
 	tabOptions := ui.HitOptions{Role: ui.RoleTab, Selected: active}
 	if workspace.Locked {
 		tabOptions.Hint = m.TabLockedHint
@@ -764,7 +770,12 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 			return
 		}
 		entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
-		title := f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+		titleColor := foreground
+		if entry.output != outputAlertNone {
+			titleColor.Alpha = 0
+		}
+		title := f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
+		entry.title = title
 		if vertical {
 			title.Grow(1).Basis(0)
 		}
