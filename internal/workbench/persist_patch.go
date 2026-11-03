@@ -98,10 +98,24 @@ func projectRecord(key configstore.Key, raw []byte) ([]byte, error) {
 }
 
 func localPatch(before, after []byte) (configstore.JSONChange, error) {
-	before, err := projectState(before)
+	before, err := projectLocalPatch(before)
 	if err != nil {
 		return configstore.JSONChange{}, err
 	}
-	after, err = projectState(after)
+	after, err = projectLocalPatch(after)
 	return configstore.JSONChange{Before: before, After: after}, err
+}
+
+// Recent connection times use a monotonic merge after the ordinary field patch.
+func projectLocalPatch(raw []byte) ([]byte, error) {
+	projected, err := projectState(raw)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(projected, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "recent_connections")
+	return json.Marshal(fields)
 }

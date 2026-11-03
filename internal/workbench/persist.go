@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -28,6 +29,9 @@ const shortcutSchemaVersion = 1
 // workspace metadata to restore tabs without reconnecting. Run-local numeric
 // IDs are not saved; stable host catalog IDs are.
 type savedState struct {
+	RecentConnectSort bool                 `json:"recent_connect_sort,omitempty"`
+	RecentConnections map[string]time.Time `json:"recent_connections,omitempty"`
+
 	MonitorPanels              []monitoring.Panel  `json:"monitor_panels,omitempty"`
 	MonitorActive              string              `json:"monitor_active,omitempty"`
 	Version                    int                 `json:"version"`
@@ -395,6 +399,8 @@ func (state *State) snapshot() savedState {
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		RecentConnectSort:          state.recentConnectSort,
+		RecentConnections:          maps.Clone(state.recentConnections),
 		SSHAgent:                   savedAgent,
 		SSHAgentPath:               savedAgentPath,
 		TerminalFontSize:           int(state.terminalFontSize),
@@ -680,6 +686,8 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
+	state.recentConnectSort = saved.RecentConnectSort
+	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
 	state.restoreSessionLogsView(saved.SessionLogsView)
 	// The saved editor is read as it is: a value this build does not know stays

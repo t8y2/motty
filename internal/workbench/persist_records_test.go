@@ -18,6 +18,7 @@ import (
 // other, so each must be named here or in the record tables.
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
+		"recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
 		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true,
@@ -61,6 +62,7 @@ func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
 		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},
@@ -297,7 +299,7 @@ func TestOnlyWhatIsSharedBecomesARecord(t *testing.T) {
 	records, _ := store.Records()
 	for _, record := range records {
 		text := string(record.Payload)
-		for _, own := range []string{"zh-CN", "dark", "settings", "id_ed25519", "local-shell", `"collapsed"`} {
+		for _, own := range []string{"zh-CN", "dark", "settings", "id_ed25519", "local-shell", "recent_connect_sort", "recent_connections", `"collapsed"`} {
 			if strings.Contains(text, own) {
 				t.Errorf("%s %s carries %q, which belongs to this device", record.Kind, record.ID, own)
 			}

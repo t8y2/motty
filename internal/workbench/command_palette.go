@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -29,10 +30,12 @@ var (
 )
 
 type commandPaletteEntry struct {
-	label  string
-	detail string // shown after the label, muted (a host's address)
-	search string
-	target ui.ID
+	label       string
+	recency     string
+	recencyHint string
+	detail      string // shown after the label, muted (a host's address)
+	search      string
+	target      ui.ID
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
@@ -177,6 +180,10 @@ func (state *State) refreshCommandPalette() {
 	if palette.filtered && rawQuery == palette.rawQuery {
 		return
 	}
+	if palette.connect && state.recentConnectSort {
+		state.rebuildRecentConnectPicker(rawQuery)
+		return
+	}
 	query := strings.ToLower(rawQuery)
 	palette.rawQuery = rawQuery
 	palette.query = query
@@ -257,6 +264,13 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
+	case hitConnectSortDefault, hitConnectSortRecent:
+		if !state.commandPalette.connect {
+			return
+		}
+		state.recentConnectSort = id == hitConnectSortRecent
+		state.rebuildCommandPalette()
+		state.save()
 	case hitCommandPaletteSearch:
 		return
 	default:
@@ -320,6 +334,22 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	if event.Key == ui.KeyEscape {
 		state.closeCommandPalette()
 		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	if palette.connect {
+		switch event.Target {
+		case hitConnectSortDefault, hitConnectSortRecent:
+			// The switch is a radio group of its own: the arrows move between its
+			// two options, and choosing one puts the keyboard back in the search
+			// field so typing filters the list at once.
+			options := state.connectSortOptions()
+			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
+				state.clickCommandPalette(next)
+				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+			}
+			if event.Key == ui.KeyEnter || event.Key == ui.KeySpace {
+				return ui.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
+			}
+		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
 	_, inItems := event.Target.In(hitCommandPaletteItems)

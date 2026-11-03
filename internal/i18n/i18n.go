@@ -575,8 +575,21 @@ type Messages struct {
 	NewTabAllHosts                string
 	NewTabPickerPlaceholder       string
 	NewTabPickerEmpty             string
-	LabelCloseTab                 string
-	LabelTerminalFmt              string
+
+	NewTabSortDefault    string
+	NewTabSortRecent     string
+	NewTabNeverConnected string
+	NewTabJustNow        string
+	NewTabSecondsAgo     string
+	NewTabMinutesAgo     string
+	NewTabHoursAgo       string
+	NewTabDaysAgo        string
+	NewTabWeeksAgo       string
+	NewTabMonthsAgo      string
+	NewTabYearsAgo       string
+
+	LabelCloseTab    string
+	LabelTerminalFmt string
 	// Names of the window's own minimize, maximize, restore and close buttons,
 	// which Viva draws on Windows and Linux.
 	LabelWindowMinimize string

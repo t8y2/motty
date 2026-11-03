@@ -2,7 +2,10 @@ package workbench
 
 import (
 	"fmt"
+	"motty/internal/sshconn"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/ui"
 )
@@ -178,5 +181,155 @@ func TestNewTabPickerGroupsHostsAndTheWheelSurvivesTheNextPaint(t *testing.T) {
 	after, ok := hitByID(&canvas, hitCommandPaletteItems.At(0))
 	if !ok || after.Label == first.Label {
 		t.Fatalf("the wheel did not change the first row: %q -> %q", first.Label, after.Label)
+	}
+}
+
+func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testing.T) {
+	options := testOptions(t)
+	connection := &fakeConn{}
+	options.Dial = func(sshconn.Config) Connection { return connection }
+	state := newTestState(t, options)
+	host := state.hosts[0]
+	state.Click(hitNewTab)
+	clickPickerRow(t, state, host.Label)
+	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	state.Click(hitNewTab)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var recent ui.ID
+	for _, hit := range canvas.Hits() {
+		if hit.Label == "Recent login" {
+			recent = hit.ID
+		}
+	}
+	if recent.IsZero() {
+		t.Fatal("new-tab picker has no Recent login control")
+	}
+	state.Click(recent)
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	first, ok := hitByID(&canvas, hitCommandPaletteItems.At(1)) // group title precedes the host
+	if !ok || first.Label != host.Label {
+		t.Fatalf("recent first host = %q, want %q", first.Label, host.Label)
+	}
+	// The mode and success survive a restart, then Default restores local first.
+	second := newTestState(t, options)
+	second.Click(hitNewTab)
+	canvas.Reset()
+	second.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	first, ok = hitByID(&canvas, hitCommandPaletteItems.At(1))
+	if !ok || first.Label != host.Label {
+		t.Fatalf("recent after restart = %q, want %q", first.Label, host.Label)
+	}
+	second.Click(hitConnectSortDefault)
+	canvas.Reset()
+	second.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	first, ok = hitByID(&canvas, hitCommandPaletteItems.At(0))
+	if !ok || first.Label != second.messages.LocalTerminal {
+		t.Fatalf("default first = %q", first.Label)
+	}
+}
+
+// pickerRowLabels reads the actual painted rows, including non-selectable headings.
+func pickerRowLabels(state *State) []string {
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var labels []string
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitCommandPaletteItems || hit.ID.Scope() == hitCommandPaletteHeaders {
+			labels = append(labels, hit.Label)
+		}
+	}
+	return labels
+}
+
+func TestRecentPickerFiltersThenGroupsAndKeepsAnOpenListStill(t *testing.T) {
+	world, options := newWorld(t)
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	options.WallNow = func() time.Time { return now }
+	if err := saveState(options.StatePath, savedState{
+		RecentConnectSort: true,
+		Hosts: []savedHost{
+			{ID: "a1", Label: "node A1", Group: "a", Address: "a1.example", Port: 22},
+			{ID: "a2", Label: "node A2", Group: "a", Address: "a2.example", Port: 22},
+			{ID: "b1", Label: "node B1", Group: "b", Address: "b1.example", Port: 22},
+			{ID: "b2", Label: "node B2", Group: "b", Address: "b2.example", Port: 22},
+		},
+		RecentConnections: map[string]time.Time{"a1": now.Add(-time.Minute), "b1": now.Add(-time.Hour), "a2": now.Add(-time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	state.Click(hitNewTab)
+	want := []string{"a", "node A1", "node A2", "b", "node B1", state.messages.LocalTerminal, "b", "node B2"}
+	// Equal timestamps use default order: A2 stays before B1.
+	if got := pickerRowLabels(state); !slices.Equal(got, want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+	// A successful dial while the picker is open must not rebuild or retime it.
+	clickPickerRow(t, state, "node B2")
+	state.Click(hitNewTab)
+	before := pickerRowLabels(state)
+	now = now.Add(48 * time.Hour)
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if got := pickerRowLabels(state); !slices.Equal(got, before) {
+		t.Fatalf("open list moved: %v -> %v", before, got)
+	}
+	state.commandPalette.search.Insert("node")
+	state.refreshCommandPalette()
+	want = []string{"b", "node B2", "a", "node A1", "node A2", "b", "node B1"}
+	if got := pickerRowLabels(state); !slices.Equal(got, want) {
+		t.Fatalf("search rows = %v, want %v", got, want)
+	}
+	state.Click(hitConnectSortDefault)
+	if state.commandPalette.search.String() != "node" {
+		t.Fatal("switch cleared search")
+	}
+	if got := pickerRowLabels(state); !slices.Equal(got, []string{"node A1", "node A2", "node B1", "node B2"}) {
+		t.Fatalf("default search = %v", got)
+	}
+	state.Click(hitConnectSortRecent)
+	result := state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	if !result.Handled || state.modal != modalNone {
+		t.Fatalf("Enter did not select first connection: %+v", result)
+	}
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	if session.host.Label != "node B2" {
+		t.Fatalf("selected %q", session.Title)
+	}
+}
+
+func TestRecentPickerRepeatsGroupHeadingsAfterGlobalSort(t *testing.T) {
+	options := testOptions(t)
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	options.WallNow = func() time.Time { return now }
+	if err := saveState(options.StatePath, savedState{
+		RecentConnectSort: true,
+		Hosts: []savedHost{
+			{ID: "a1", Label: "A1", Group: "prod/a", Address: "a1.example", Port: 22},
+			{ID: "a2", Label: "A2", Group: "prod/a", Address: "a2.example", Port: 22},
+			{ID: "b", Label: "B", Group: "b", Address: "b.example", Port: 22},
+		},
+		RecentConnections: map[string]time.Time{"a1": now, "b": now.Add(-time.Minute), "a2": now.Add(-time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	state.Click(hitNewTab)
+	want := []string{"prod/a", "A1", "b", "B", "prod/a", "A2", state.messages.LocalTerminal}
+	if got := pickerRowLabels(state); !slices.Equal(got, want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+	canvas, texts := paintedTexts(state)
+	for _, want := range []string{"Just now", "1m ago", "1h ago", "Never logged in"} {
+		if !slices.Contains(texts, want) {
+			t.Fatalf("missing %q in %v", want, texts)
+		}
+	}
+	hit, ok := hitByID(canvas, hitCommandPaletteItems.At(1))
+	if !ok || hit.Hint != now.Local().Format("2006-01-02 15:04:05 MST") {
+		t.Fatalf("timestamp hint = %q", hit.Hint)
 	}
 }

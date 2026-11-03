@@ -23,6 +23,9 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		title, placeholder, empty = state.messages.LabelNewTab, state.messages.NewTabPickerPlaceholder, state.messages.NewTabPickerEmpty
 	}
 	layout := dialog.Begin(title, "")
+	if state.commandPalette.connect {
+		state.paintConnectSort(canvas, layout)
+	}
 	value := state.commandPalette.search.String()
 	focused := canvas.Focused() == hitCommandPaletteSearch
 	palette := &state.commandPalette
@@ -65,8 +68,15 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 				// never takes the pointer off the list and flashes the first row.
 				// Rows are not tab stops: the pointer and the arrows are the one
 				// way the selection moves, so Tab keeps its normal traversal.
-				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true}).Children(func() {
-					f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1)
+				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: entry.recencyHint}).Children(func() {
+					if entry.recency == "" {
+						f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1)
+					} else {
+						f.Row().Grow(1).Shrink(1).Gap(8).Items(flex.Center).Children(func() {
+							f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Shrink(1)
+							f.Text(entry.recency).FontSize(metrics.FontSizeS).Color(withAlpha(color, 0.65)).Shrink(0)
+						})
+					}
 					if entry.detail != "" {
 						f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(detailColor).Ellipsis().MaxWidth(layout.Body.Width * 0.45).Shrink(0)
 					}
