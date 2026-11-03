@@ -58,6 +58,7 @@ var (
 	ErrKeystoreNotFound    = errors.New("vault: the key is not in the secret store")
 	ErrKeystoreUnavailable = errors.New("vault: the system has no secret store")
 	ErrKeystoreDenied      = errors.New("vault: the secret store refused access")
+	ErrRollbackFailed      = errors.New("vault: could not restore the previous records")
 )
 
 // Keystore is a store for a small secret: what the data key lives in.
@@ -352,6 +353,66 @@ func (vault *Vault) Set(name, value string) error {
 func (vault *Vault) Apply(changes []Change) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
+	return vault.apply(changes)
+}
+
+// ApplyWithCommit retains the previous encrypted records until commit succeeds.
+// A failed commit restores those records without creating a synced tombstone.
+func (vault *Vault) ApplyWithCommit(changes []Change, commit func() error) error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	return vault.applyWithCommit(changes, commit)
+}
+
+// ApplyMissingWithCommit checks absence under the same lock that writes the
+// vault. A concurrent writer's existing value always wins over the import.
+func (vault *Vault) ApplyMissingWithCommit(changes []Change, commit func(int) error) (int, error) {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	if err := vault.prepare(false); err != nil {
+		return 0, err
+	}
+	plains, err := vault.openAll()
+	if err != nil {
+		return 0, err
+	}
+	existing := make(map[string]bool, len(plains))
+	for _, plain := range plains {
+		if !plain.Deleted {
+			existing[plain.Name] = true
+		}
+	}
+	missing := make([]Change, 0, len(changes))
+	for _, change := range changes {
+		if change.Delete || existing[change.Name] {
+			continue
+		}
+		missing = append(missing, change)
+		existing[change.Name] = true
+	}
+	if err := vault.applyWithCommit(missing, func() error { return commit(len(missing)) }); err != nil {
+		return 0, err
+	}
+	return len(missing), nil
+}
+
+func (vault *Vault) applyWithCommit(changes []Change, commit func() error) error {
+	previous := append([]record(nil), vault.file.Records...)
+	if err := vault.apply(changes); err != nil {
+		return err
+	}
+	if err := commit(); err != nil {
+		if len(changes) > 0 {
+			if restoreErr := vault.write(previous); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: %v", ErrRollbackFailed, restoreErr))
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (vault *Vault) apply(changes []Change) error {
 	if len(changes) == 0 {
 		return nil
 	}

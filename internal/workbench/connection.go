@@ -409,6 +409,8 @@ const (
 	modalDeleteHost
 	modalMoveHostGroup
 	modalHostImportResult
+	modalSessionImportPreview
+	modalMobaEncoding
 	modalNewForward
 	modalNewProxy
 	modalHostKey

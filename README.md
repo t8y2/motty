@@ -112,6 +112,8 @@ vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
 in a portable copy).
+Electerm and Netcatty imports can save readable SSH passwords with explicit
+consent; re-import only fills missing passwords.
 
 <p align="center">
   <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="Host list with tags and a remote-desktop host" /></a>

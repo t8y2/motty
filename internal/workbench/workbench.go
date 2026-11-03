@@ -540,6 +540,8 @@ type State struct {
 	forwardStarts      chan forwardStartResult
 	proxyCountText     string
 	hostImportResult   hostImportResult
+	sessionImport      sessionImportPreview
+	mobaEncoding       mobaEncodingPrompt
 	knownHosts         knownHostsView
 	knownHostsLayout   flex.View
 	settingsRow        flex.View
@@ -1335,6 +1337,12 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalHostImportResult:
 		state.clickHostImportResult(id)
+		return
+	case modalSessionImportPreview:
+		state.clickSessionImportPreview(id)
+		return
+	case modalMobaEncoding:
+		state.clickMobaEncoding(id)
 		return
 	case modalNewForward:
 		state.clickForwardDialog(id)

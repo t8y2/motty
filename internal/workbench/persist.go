@@ -580,23 +580,39 @@ func (state *State) snapshot() savedState {
 // save persists the state. Callers that need to distinguish a write from a
 // skipped save use saveResult.
 func (state *State) save() {
-	_ = state.saveResult()
+	_ = state.saveWithResult()
 }
 
-// saveResult reports whether the snapshot reached the store. A failure is
-// reported in the status line instead of interrupting what the user is doing; a
-// state that started from a file of a newer build never saves, so that file
-// stays as it is and the notice comes back on each change.
+// saveResult reports whether the snapshot reached the store.
 func (state *State) saveResult() bool {
-	defer state.sshSyncFlush()
+	return state.saveWithResult() == nil
+}
+
+// saveWithResult reports why a snapshot did not reach the store, so a caller
+// that staged something beside it can put that back.
+func (state *State) saveWithResult() error {
+	return state.saveWithResultMode(true)
+}
+
+// saveWithResultMode reports whether the snapshot reached the store. A failure
+// is reported in the status line instead of interrupting what the user is
+// doing; a state that started from a file of a newer build never saves, so that
+// file stays as it is and the notice comes back on each change. flushSync is
+// false for a caller that schedules the sync itself.
+func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	defer func() {
+		if flushSync && saveErr == nil {
+			state.sshSyncFlush()
+		}
+	}()
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice
 		}
-		return false
+		return errors.New("configuration was written by a newer build")
 	}
 	if state.config == nil || state.pauseSave > 0 {
-		return false
+		return errors.New("configuration store is unavailable")
 	}
 	snapshot := state.snapshot()
 	// Many actions save after changing only run-local UI state. Comparing the
@@ -605,31 +621,31 @@ func (state *State) saveResult() bool {
 	if state.hasSaved {
 		changes := changedSavedFields(state.lastSaved, snapshot)
 		if len(changes) == 0 {
-			return true
+			return nil
 		}
 		shared, handled, err := writeChangedFields(state.config, state.configBase, state.configDefaults, changes)
 		if handled {
 			if err != nil {
 				state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-				return false
+				return err
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
-			if shared {
+			if shared && flushSync {
 				state.scheduleSync()
 			}
-			return true
+			return nil
 		}
 	}
 	shared, err := writeConfig(state.config, state.configBase, state.configDefaults, snapshot)
 	if err != nil {
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-		return false
+		return err
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
-	if shared {
+	if shared && flushSync {
 		state.scheduleSync()
 	}
-	return true
+	return nil
 }
 
 // restore applies a loaded state at start: its settings and catalog, then the

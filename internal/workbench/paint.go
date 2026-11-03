@@ -321,6 +321,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintSessionLinkDialog(canvas, viewport)
 	case modalHostImportResult:
 		state.paintHostImportResult(canvas, viewport)
+	case modalSessionImportPreview:
+		state.paintSessionImportPreview(canvas, viewport)
+	case modalMobaEncoding:
+		state.paintMobaEncoding(canvas, viewport)
 	case modalNewForward:
 		state.paintForwardDialog(canvas, viewport)
 	case modalNewProxy:

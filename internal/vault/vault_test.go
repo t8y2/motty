@@ -119,6 +119,56 @@ func TestASavedSecretComesBackAfterTheFileIsOpenedAgain(t *testing.T) {
 	}
 }
 
+func TestApplyWithCommitFailureRestoresCiphertextWithoutTombstones(t *testing.T) {
+	vault, path := openVault(t, &memoryKeystore{})
+	stamp := 0
+	vault.SetStamper(func() (string, error) { stamp++; return fmt.Sprintf("%04d", stamp), nil })
+	if err := vault.Set("remote", "untouched"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := vault.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := errors.New("config commit failed")
+	if err := vault.ApplyWithCommit([]Change{{Name: "new", Value: "secret"}}, func() error { return failed }); !errors.Is(err, failed) {
+		t.Fatalf("commit returned %v", err)
+	}
+	after, err := vault.Export()
+	if err != nil || !reflect.DeepEqual(after, before) {
+		t.Fatalf("vault rollback changed synced records: before=%v after=%v err=%v", before, after, err)
+	}
+	reopened, err := Open(path, vault.keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := reopened.Get("new"); err != nil || found {
+		t.Fatalf("new secret remained after rollback: found=%v err=%v", found, err)
+	}
+}
+
+func TestApplyMissingWithCommitKeepsConcurrentWinner(t *testing.T) {
+	vault, _ := openVault(t, &memoryKeystore{})
+	if _, found, err := vault.Get("host"); err != nil || found {
+		t.Fatal("host must start without a secret")
+	}
+	if err := vault.Set("host", "other-window"); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := vault.ApplyMissingWithCommit([]Change{{Name: "host", Value: "imported"}}, func(count int) error {
+		if count != 0 {
+			t.Fatalf("applied %d despite a concurrent winner", count)
+		}
+		return nil
+	})
+	if err != nil || applied != 0 {
+		t.Fatalf("applied=%d err=%v", applied, err)
+	}
+	if value, found, err := vault.Get("host"); err != nil || !found || value != "other-window" {
+		t.Fatal("concurrent secret was overwritten")
+	}
+}
+
 func TestSetReplacesAndDeleteForgets(t *testing.T) {
 	vault, _ := openVault(t, &memoryKeystore{})
 	for _, value := range []string{"one", "two"} {
