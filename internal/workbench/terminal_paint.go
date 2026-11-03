@@ -53,7 +53,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	geometry := terminalLayoutWithChrome(size, state.cellWidth, state.cellHeight, chrome, state.padding())
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
-	barBackground, barBorder := state.connectionBarColors(session, inactive)
+	barBackground, barBorder := state.pal.workspace, state.pal.line
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
 	status, _ := state.sessionStatus(session)
@@ -210,12 +210,13 @@ func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, ses
 		return
 	}
 	fullBounds := bounds
+	metrics := state.terminalToolbarMetrics()
 	session.term.railBounds = bounds
 	canvas.Fill(fullBounds, background)
 	if text, color, ok := state.latencyInfo(session); ok {
-		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: terminalBarToolSize}
+		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: metrics.toolSize}
 		state.paintRailLatency(canvas, text, color, latency, true)
-		top := terminalBarToolSize + 8
+		top := metrics.toolSize + 8
 		bounds.Y += top
 		bounds.Height = max(bounds.Height-top, 0)
 	}
@@ -230,8 +231,9 @@ func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, ses
 
 func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, viewport ui.Rect, tools []barTool, background ui.Color) {
 	t := session.term
+	metrics := state.terminalToolbarMetrics()
 	t.railViewport = viewport
-	t.railContentExtent = terminalRailContentExtent(tools)
+	t.railContentExtent = state.terminalRailContentExtent(tools)
 	viewportExtent := viewport.Height
 	maxScroll := max(t.railContentExtent-viewportExtent, 0)
 	t.railScroll = min(max(t.railScroll, 0), maxScroll)
@@ -240,8 +242,8 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 	// next paint. Pointer hover and wheel scrolling never move focus.
 	for index := range tools {
 		if tools[index].id == canvas.FocusVisible() {
-			start := terminalRailItemStart(tools, index)
-			end := start + terminalBarToolSize
+			start := state.terminalRailItemStart(tools, index)
+			end := start + metrics.toolSize
 			if start-t.railScroll < 0 {
 				t.railScroll = min(start, maxScroll)
 			} else if end-t.railScroll > viewportExtent {
@@ -253,14 +255,14 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 
 	canvas.Clip(viewport)
 	for index := range tools {
-		offset := terminalRailItemStart(tools, index)
+		offset := state.terminalRailItemStart(tools, index)
 		tool := &tools[index]
-		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + offset - t.railScroll, Width: min(terminalBarToolSize, viewport.Width), Height: terminalBarToolSize}
+		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + offset - t.railScroll, Width: min(metrics.toolSize, viewport.Width), Height: metrics.toolSize}
 		if tool.rect.X+tool.rect.Width <= viewport.X || tool.rect.X >= viewport.X+viewport.Width ||
 			tool.rect.Y+tool.rect.Height <= viewport.Y || tool.rect.Y >= viewport.Y+viewport.Height {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, 17)
+		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
 		zone := toolbarDockSideTop
 		if state.terminalToolbarPosition == terminalToolbarLeft {
 			zone = toolbarDockLeftTop
@@ -270,19 +272,20 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 	canvas.Unclip()
 }
 
-func terminalRailContentExtent(tools []barTool) float32 {
+func (state *State) terminalRailContentExtent(tools []barTool) float32 {
 	if len(tools) == 0 {
 		return 8
 	}
-	return terminalRailItemStart(tools, len(tools)-1) + terminalBarToolSize + 4
+	return state.terminalRailItemStart(tools, len(tools)-1) + state.terminalToolbarMetrics().toolSize + 4
 }
 
-func terminalRailItemStart(tools []barTool, index int) float32 {
+func (state *State) terminalRailItemStart(tools []barTool, index int) float32 {
+	metrics := state.terminalToolbarMetrics()
 	start := float32(4)
 	for previous := 0; previous < index; previous++ {
-		start += terminalBarToolSize + terminalBarToolGap
+		start += metrics.toolSize + metrics.gap
 		if tools[previous].groupEnd {
-			start += terminalBarToolGap
+			start += metrics.gap
 		}
 	}
 	return start
@@ -318,7 +321,8 @@ func (state *State) scrollTerminalToolbar(session *Session, event ui.ScrollEvent
 	}
 	t := session.term
 	viewportExtent := t.railViewport.Height
-	delta := event.StepY(terminalBarToolSize + terminalBarToolGap)
+	metrics := state.terminalToolbarMetrics()
+	delta := event.StepY(metrics.toolSize + metrics.gap)
 	maxScroll := max(t.railContentExtent-viewportExtent, 0)
 	next := min(max(t.railScroll+delta, 0), maxScroll)
 	if next == t.railScroll {

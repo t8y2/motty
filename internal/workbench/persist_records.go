@@ -73,7 +73,8 @@ import (
 // older build's full save would otherwise drop these device-local fields.
 // Version 20 preserves the host group explicit, pinned and order metadata.
 // Version 21 preserves toolbar dock zones and mixed-context ordering.
-const configFormat = 21
+// Version 22 preserves the device-local docked toolbar size.
+const configFormat = 22
 
 const (
 	kindSetting             = "setting"

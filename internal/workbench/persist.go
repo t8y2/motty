@@ -60,6 +60,7 @@ type savedState struct {
 	TerminalTabTitle           bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency        bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition    string              `json:"terminal_toolbar_position,omitempty"`
+	TerminalToolbarSize        string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
 	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
@@ -410,6 +411,7 @@ func (state *State) snapshot() savedState {
 		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
+		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
@@ -644,6 +646,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
 	state.toolbars.restore(saved.Toolbars)
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
+	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
 	state.sessionLogsOff = saved.SessionLogsOff
 	// The saved editor is read as it is: a value this build does not know stays

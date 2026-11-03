@@ -100,6 +100,7 @@ func (state *State) clickToolbarDockMenu(id ui.ID) bool {
 	case hitToolbarDockReset:
 		state.toolbars.dock = nil
 		state.toolbars.layouts[toolbarWindow], state.toolbars.layouts[toolbarTerminal] = nil, nil
+		state.terminalToolbarSize = terminalToolbarSmall
 		state.toolbarDockChanged()
 	case hitToolbarDockDismiss:
 	default:

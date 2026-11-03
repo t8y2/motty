@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,6 +19,10 @@ import (
 // This exercises the real pointer/click dispatcher and a local PTY. No SSH
 // server, saved hosts, providers or synthetic terminal output are installed.
 func toolbarDockView(t *testing.T) (*State, *headless.Session, Options) {
+	return toolbarDockViewAtScale(t, 1.5)
+}
+
+func toolbarDockViewAtScale(t *testing.T, scale float64) (*State, *headless.Session, Options) {
 	t.Helper()
 	skipWithoutUnixShell(t)
 	dir := t.TempDir()
@@ -31,12 +36,156 @@ func toolbarDockView(t *testing.T) (*State, *headless.Session, Options) {
 	}
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
-	view, err := headless.Open(app.Config{Width: 1200, Height: 800, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1.5})
+	view, err := headless.Open(app.Config{Width: 1200, Height: 800, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(view.Close)
 	return state, view, options
+}
+
+func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
+	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			state, view, options := toolbarDockViewAtScale(t, scale)
+			state.moveToolbarDockTool(hitSFTPOpen, toolbarDockLeftTop, ui.ID{})
+			state.moveToolbarDockTool(hitTheme, toolbarDockLeftBottom, ui.ID{})
+			state.moveToolbarDockTool(hitConnExport, toolbarDockBottom, ui.ID{})
+			state.moveToolbarDockTool(hitWindowSettings, toolbarDockBottomRight, ui.ID{})
+			wantDock := state.toolbars.snapshot()
+			for _, width := range []int{760, 1200} {
+				previousButtonSize := float32(0)
+				for size := terminalToolbarSmall; size <= terminalToolbarLarge; size++ {
+					state.openToolbarSettings(toolbarTerminal)
+					if err := view.Resize(width, 500); err != nil {
+						t.Fatal(err)
+					}
+					click := func(id ui.ID) {
+						t.Helper()
+						box := dualHit(t, view, id)
+						if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
+							t.Fatal(err)
+						}
+					}
+					ids := [...]ui.ID{hitToolbarSizeSmall, hitToolbarSizeMedium, hitToolbarSizeLarge}
+					click(ids[size])
+					if state.terminalToolbarSize != size {
+						t.Fatalf("size selector did not apply %s", size.String())
+					}
+					click(hitToolbarSettingsClose)
+					metrics := state.terminalToolbarMetrics()
+					workspace := state.baseWorkspacePixelBounds(state.viewport)
+					full := state.fullWorkspacePixelBounds(state.viewport)
+					if workspace.Width != full.Width-2*metrics.railExtent || workspace.Height != full.Height-metrics.railExtent {
+						t.Fatalf("size %s did not reserve both sides and bottom: %+v", size.String(), workspace)
+					}
+					for _, id := range []ui.ID{hitSFTPOpen, hitTheme, hitConnExport, hitWindowSettings} {
+						box := dualHit(t, view, id)
+						if box.Width != metrics.toolSize || box.Height != metrics.toolSize {
+							t.Fatalf("size %s control %v clipped or incorrectly sized: %+v", size.String(), id, box)
+						}
+						if overlap := intersectRect(box, workspace); overlap.Width > 0 && overlap.Height > 0 {
+							t.Fatalf("size %s control %v overlaps terminal: %+v", size.String(), id, box)
+						}
+					}
+					button := dualHit(t, view, hitSFTPOpen)
+					if button.Width <= previousButtonSize {
+						t.Fatal("larger toolbar setting did not enlarge its hit target")
+					}
+					previousButtonSize = button.Width
+					for index := range state.sessions {
+						session := &state.sessions[index]
+						geometry := state.layoutForSession(session.ID)
+						if cols, rows := session.term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
+							t.Fatalf("size %s PTY grid does not match reserved geometry", size.String())
+						}
+					}
+					if !reflect.DeepEqual(state.toolbars.snapshot(), wantDock) {
+						t.Fatal("resizing rewrote mixed-context placement or ordering")
+					}
+					restarted := newTestState(t, options)
+					if restarted.terminalToolbarSize != size || !reflect.DeepEqual(restarted.toolbars.snapshot(), wantDock) {
+						t.Fatal("size or mixed-context layout did not survive restart")
+					}
+				}
+			}
+			state.openToolbarSettings(toolbarTerminal)
+			if err := view.Resize(760, 500); err != nil {
+				t.Fatal(err)
+			}
+			result := state.Key(ui.KeyEvent{Target: hitToolbarSizeLarge, Key: ui.KeyLeft})
+			if !result.Handled || result.Focus != hitToolbarSizeMedium || state.terminalToolbarSize != terminalToolbarMedium {
+				t.Fatalf("size keyboard navigation failed: %+v", result)
+			}
+			if err := view.Resize(760, 500); err != nil {
+				t.Fatal(err)
+			}
+			box := dualHit(t, view, hitToolbarReset)
+			if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if state.terminalToolbarSize != terminalToolbarSmall ||
+				state.toolbarDockZoneFor(toolbarWindow, "theme") != toolbarDockLeftBottom ||
+				state.toolbarDockZoneFor(toolbarWindow, "settings") != toolbarDockBottomRight {
+				t.Fatal("terminal reset did not reset size or disturbed window placements")
+			}
+			state.closeModal()
+			state.setTerminalToolbarSize(terminalToolbarLarge)
+			state.toolbarDock.menu = true
+			state.Click(hitToolbarDockReset)
+			if state.terminalToolbarSize != terminalToolbarSmall {
+				t.Fatal("dock menu reset retained a custom size")
+			}
+		})
+	}
+}
+
+func TestToolbarDockFormat21UpgradePreservesPlacementAndGuardsSize(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.Keystore = &memKeys{}
+	saved := savedState{
+		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
+		TerminalToolbarPosition: "left",
+		Toolbars: &savedToolbars{Dock: []toolbarDockEntry{
+			{toolbarTerminal, "files", toolbarDockLeftBottom},
+			{toolbarWindow, "settings", toolbarDockBottomRight},
+			{toolbarWindow, "theme", toolbarDockLeftBottom},
+		}},
+	}
+	entries, local, err := splitState(saved, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := configstore.Open(options.StatePath, 21)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(configstore.Change{Put: entries, Local: map[string][]byte{localKey: local}}); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if state.terminalToolbarSize != terminalToolbarSmall {
+		t.Fatal("format 21 did not retain historical size")
+	}
+	for _, entry := range saved.Toolbars.Dock {
+		if zone := state.toolbarDockZoneFor(entry.Group, entry.Key); zone != entry.Zone {
+			t.Fatalf("format 21 placement lost for %s: %s", entry.Key, zone)
+		}
+	}
+	want := state.toolbars.snapshot()
+	state.setTerminalToolbarSize(terminalToolbarLarge)
+	restarted := newTestState(t, options)
+	if restarted.terminalToolbarSize != terminalToolbarLarge || !reflect.DeepEqual(restarted.toolbars.snapshot(), want) {
+		t.Fatal("saving size discarded format-21 dock entries or their ordering")
+	}
+	if _, _, err := configstore.ReadOnly(options.StatePath, 21); !errors.Is(err, configstore.ErrTooNew) {
+		t.Fatalf("format-21 writer can discard size: %v", err)
+	}
 }
 
 func toolbarDockShot(t *testing.T, view *headless.Session, name string) {

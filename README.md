@@ -81,6 +81,12 @@ Settings > General also controls visibility, order and position. Placements
 stay on this device, and terminal actions follow the active split. The SFTP
 toolbar keeps its separate visibility and ordering settings.
 
+Settings > General > Terminal toolbar > Customize offers small, medium and large
+sizes for both side rails and the bottom bar, including relocated window actions.
+The choice stays on this device; top-bar icons keep their standard size.
+Connection colors remain on tabs and host markers, while terminal, file and
+monitor headers use neutral backgrounds.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword

@@ -46,10 +46,6 @@ func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
 		return ui.Rect{}, false
 	}
 	bounds := state.toolbarDockSideBounds(size)
-	bounds.Width = terminalToolRailExtent
-	if state.terminalToolbarPosition == terminalToolbarRight {
-		bounds.X = max(size.Width-terminalToolRailExtent, 0)
-	}
 	return bounds, true
 }
 
@@ -365,7 +361,7 @@ func (state *State) paintContextSFTP(canvas *ui.Canvas, bounds ui.Rect, session 
 // and close button as the list, then what the panel needs to start.
 func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, session *Session) {
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := state.connectionBarColors(session, false)
+	headerBackground, headerBorder := pal.workspace, pal.line
 	bounds := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
 	canConnect := session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.

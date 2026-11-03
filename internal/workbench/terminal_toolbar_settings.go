@@ -9,6 +9,68 @@ import (
 
 type terminalToolbarPosition uint8
 
+type terminalToolbarSize uint8
+
+const (
+	terminalToolbarSmall terminalToolbarSize = iota
+	terminalToolbarMedium
+	terminalToolbarLarge
+)
+
+func (size terminalToolbarSize) String() string {
+	switch size {
+	case terminalToolbarMedium:
+		return "medium"
+	case terminalToolbarLarge:
+		return "large"
+	default:
+		return "small"
+	}
+}
+
+func terminalToolbarSizeFromString(value string) terminalToolbarSize {
+	switch strings.TrimSpace(value) {
+	case "medium":
+		return terminalToolbarMedium
+	case "large":
+		return terminalToolbarLarge
+	default:
+		return terminalToolbarSmall
+	}
+}
+
+type terminalToolbarMetrics struct {
+	railExtent, toolSize, gap, iconSize float32
+}
+
+func (state *State) terminalToolbarMetrics() terminalToolbarMetrics {
+	switch state.terminalToolbarSize {
+	case terminalToolbarMedium:
+		return terminalToolbarMetrics{48, 40, 5, 20}
+	case terminalToolbarLarge:
+		return terminalToolbarMetrics{56, 48, 6, 24}
+	default:
+		return terminalToolbarMetrics{terminalToolRailExtent, terminalBarToolSize, terminalBarToolGap, 17}
+	}
+}
+
+func (state *State) settingsToolbarSizeOptions() [3]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitToolbarSizeSmall, Label: state.messages.SettingsToolbarSizeSmall},
+		{ID: hitToolbarSizeMedium, Label: state.messages.SettingsToolbarSizeMedium},
+		{ID: hitToolbarSizeLarge, Label: state.messages.SettingsToolbarSizeLarge},
+	}
+}
+
+func (state *State) setTerminalToolbarSize(size terminalToolbarSize) bool {
+	if state.terminalToolbarSize == size {
+		return false
+	}
+	state.terminalToolbarSize = size
+	state.toolbarDockChanged()
+	return true
+}
+
 const (
 	terminalToolbarRight terminalToolbarPosition = iota
 	terminalToolbarLeft

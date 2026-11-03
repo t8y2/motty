@@ -159,7 +159,7 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 	_, hasTerminal := state.terminalToolbarSession()
 	if includeTerminal && hasTerminal && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
 		// Retain the default rail's latency slot even when all actions are hidden.
-		return terminalToolRailExtent
+		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
 		return 0
@@ -173,7 +173,7 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
 		if ok && state.toolbarVisible(entry.Group, spec.id) {
-			return terminalToolRailExtent
+			return state.terminalToolbarMetrics().railExtent
 		}
 	}
 	return 0
@@ -185,9 +185,10 @@ func (state *State) toolbarDockSideBoundsFor(size ui.Size, left bool) ui.Rect {
 		bounds.X = 0
 	}
 	bounds.Height = max(bounds.Height-state.toolbarDockBottomReserve(state.terminalPage()), 0)
-	bounds.Width = terminalToolRailExtent
+	extent := state.terminalToolbarMetrics().railExtent
+	bounds.Width = extent
 	if !left {
-		bounds.X = max(size.Width-terminalToolRailExtent, 0)
+		bounds.X = max(size.Width-extent, 0)
 	}
 	return bounds
 }
@@ -206,7 +207,7 @@ func (state *State) toolbarDockBottomReserve(includeTerminal bool) float32 {
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
 		if ok && state.toolbarVisible(entry.Group, spec.id) {
-			return terminalToolRailExtent
+			return state.terminalToolbarMetrics().railExtent
 		}
 	}
 	return 0
@@ -216,7 +217,7 @@ func (state *State) toolbarDockBottomBounds(size ui.Size, emptyTarget bool) ui.R
 	bounds := state.fullWorkspacePixelBounds(size)
 	extent := state.toolbarDockBottomReserve(state.terminalPage())
 	if emptyTarget {
-		extent = terminalToolRailExtent
+		extent = state.terminalToolbarMetrics().railExtent
 	}
 	bounds.Y = max(size.Height-extent, windowBarHeight)
 	bounds.Height = min(extent, max(size.Height-windowBarHeight, 0))
@@ -236,7 +237,7 @@ func (state *State) paintToolbarDockBottom(canvas *ui.Canvas, size ui.Size) {
 	canvas.Fill(bounds, state.pal.shell)
 	canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, state.pal.line)
 	viewport := bounds.Inset(ui.All(4))
-	leftExtent, rightExtent := toolbarDockHorizontalExtent(left), toolbarDockHorizontalExtent(right)
+	leftExtent, rightExtent := state.toolbarDockHorizontalExtent(left), state.toolbarDockHorizontalExtent(right)
 	gap := float32(0)
 	if len(left) > 0 && len(right) > 0 {
 		gap = min(12, viewport.Width)
@@ -251,11 +252,12 @@ func (state *State) paintToolbarDockBottom(canvas *ui.Canvas, size ui.Size) {
 	state.paintToolbarDockBottomGroup(canvas, right, toolbarDockBottomRight, rightViewport)
 }
 
-func toolbarDockHorizontalExtent(tools []barTool) float32 {
+func (state *State) toolbarDockHorizontalExtent(tools []barTool) float32 {
 	if len(tools) == 0 {
 		return 0
 	}
-	return float32(len(tools))*(terminalBarToolSize+terminalBarToolGap) - terminalBarToolGap
+	metrics := state.terminalToolbarMetrics()
+	return float32(len(tools))*(metrics.toolSize+metrics.gap) - metrics.gap
 }
 
 func toolbarDockBottomZones(bounds ui.Rect) (ui.Rect, ui.Rect) {
@@ -269,29 +271,30 @@ func toolbarDockBottomZones(bounds ui.Rect) (ui.Rect, ui.Rect) {
 
 func (state *State) paintToolbarDockBottomGroup(canvas *ui.Canvas, tools []barTool, zone toolbarDockZone, viewport ui.Rect) {
 	dock := &state.toolbarDock
+	metrics := state.terminalToolbarMetrics()
 	index := 0
 	if zone == toolbarDockBottomRight {
 		index = 1
 	}
 	dock.bottomViewports[index] = viewport
-	dock.bottomMax[index] = max(toolbarDockHorizontalExtent(tools)-viewport.Width, 0)
+	dock.bottomMax[index] = max(state.toolbarDockHorizontalExtent(tools)-viewport.Width, 0)
 	scroll := &dock.bottomScroll[index]
 	*scroll = min(max(*scroll, 0), dock.bottomMax[index])
 	for i, tool := range tools {
 		if canvas.FocusVisible() == tool.id {
-			start := float32(i) * (terminalBarToolSize + terminalBarToolGap)
-			*scroll = min(max(*scroll, start+terminalBarToolSize-viewport.Width), start)
+			start := float32(i) * (metrics.toolSize + metrics.gap)
+			*scroll = min(max(*scroll, start+metrics.toolSize-viewport.Width), start)
 			*scroll = min(max(*scroll, 0), dock.bottomMax[index])
 		}
 	}
 	canvas.Clip(viewport)
 	for i, tool := range tools {
-		rect := ui.Rect{X: viewport.X + float32(i)*(terminalBarToolSize+terminalBarToolGap) - *scroll, Y: viewport.Y, Width: terminalBarToolSize, Height: terminalBarToolSize}
+		rect := ui.Rect{X: viewport.X + float32(i)*(metrics.toolSize+metrics.gap) - *scroll, Y: viewport.Y, Width: metrics.toolSize, Height: metrics.toolSize}
 		clipped := intersectRect(rect, viewport)
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, 17)
+		state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, metrics.iconSize)
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 	}
 	canvas.Unclip()
@@ -303,6 +306,7 @@ func (state *State) toolbarDockSideReserve() float32 {
 
 func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 	session, terminalVisible := state.terminalSideRailSession()
+	metrics := state.terminalToolbarMetrics()
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
@@ -321,7 +325,7 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 		dock.zones[toolbarDockZoneIndex(bottomZone)] = ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
 		background, border := state.pal.shell, state.pal.line
 		if terminalVisible {
-			background, border = state.connectionBarColors(session, false)
+			background, border = state.pal.workspace, state.pal.line
 			if primary {
 				state.setTerminalRailTools(session, append(top, bottom...))
 				if len(bottom) == 0 {
@@ -340,14 +344,14 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 		if terminalVisible && primary {
 			session.term.railBounds = bounds
 			if text, color, ok := state.latencyInfo(session); ok {
-				state.paintRailLatency(canvas, text, color, ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: terminalBarToolSize}, true)
-				viewport.Y += terminalBarToolSize + 4
-				viewport.Height = max(viewport.Height-terminalBarToolSize-4, 0)
+				state.paintRailLatency(canvas, text, color, ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: metrics.toolSize}, true)
+				viewport.Y += metrics.toolSize + 4
+				viewport.Height = max(viewport.Height-metrics.toolSize-4, 0)
 			}
 		}
-		bottomHeight := min(terminalRailContentExtent(bottom), viewport.Height/2)
+		bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
 		if len(top) == 0 {
-			bottomHeight = min(terminalRailContentExtent(bottom), viewport.Height)
+			bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
 		}
 		if len(bottom) == 0 {
 			bottomHeight = 0
@@ -379,31 +383,32 @@ func toolbarDockSideIndex(zone toolbarDockZone) int {
 
 func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool, zone toolbarDockZone, viewport ui.Rect, background ui.Color, session *Session) {
 	dock := &state.toolbarDock
+	metrics := state.terminalToolbarMetrics()
 	index := toolbarDockSideIndex(zone)
 	dock.sideViewports[index] = viewport
-	maximum := max(terminalRailContentExtent(tools)-viewport.Height, 0)
+	maximum := max(state.terminalRailContentExtent(tools)-viewport.Height, 0)
 	scroll := &dock.sideScroll[index]
 	if index%2 == 0 && session != nil {
 		scroll = &session.term.railScroll
-		session.term.railViewport, session.term.railContentExtent = viewport, terminalRailContentExtent(tools)
+		session.term.railViewport, session.term.railContentExtent = viewport, state.terminalRailContentExtent(tools)
 	}
 	dock.sideMax[index] = maximum
 	*scroll = min(max(*scroll, 0), maximum)
 	for i, tool := range tools {
 		if canvas.FocusVisible() == tool.id {
-			start := terminalRailItemStart(tools, i)
-			*scroll = min(max(*scroll, start+terminalBarToolSize-viewport.Height), start)
+			start := state.terminalRailItemStart(tools, i)
+			*scroll = min(max(*scroll, start+metrics.toolSize-viewport.Height), start)
 			*scroll = min(max(*scroll, 0), maximum)
 		}
 	}
 	canvas.Clip(viewport)
 	for i, tool := range tools {
-		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + terminalRailItemStart(tools, i) - *scroll, Width: viewport.Width, Height: terminalBarToolSize}
+		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + state.terminalRailItemStart(tools, i) - *scroll, Width: viewport.Width, Height: metrics.toolSize}
 		clipped := intersectRect(tool.rect, viewport)
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, 17)
+		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 	}
 	canvas.Unclip()
@@ -661,13 +666,14 @@ func (state *State) toolbarDockScroll(event ui.ScrollEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	dock := &state.toolbarDock
+	metrics := state.terminalToolbarMetrics()
 	for i := range dock.bottomViewports {
 		if !pointInRect(event.X, event.Y, dock.bottomViewports[i]) {
 			continue
 		}
 		delta := event.DeltaX
 		if delta == 0 {
-			delta = event.StepY(terminalBarToolSize + terminalBarToolGap)
+			delta = event.StepY(metrics.toolSize + metrics.gap)
 		}
 		before := dock.bottomScroll[i]
 		dock.bottomScroll[i] = min(max(before+delta, 0), dock.bottomMax[i])
@@ -690,7 +696,7 @@ func (state *State) toolbarDockScroll(event ui.ScrollEvent) ui.EventResult {
 			}
 		}
 		before := *scroll
-		*scroll = min(max(before+event.StepY(terminalBarToolSize+terminalBarToolGap), 0), dock.sideMax[i])
+		*scroll = min(max(before+event.StepY(metrics.toolSize+metrics.gap), 0), dock.sideMax[i])
 		return ui.EventResult{Handled: true, Repaint: *scroll != before}
 	}
 	return ui.EventResult{}
