@@ -144,6 +144,14 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer driver.Close()
+		state.shortcuts.bind(shortcutFind, shortcutChord{Named: ui.KeyF8})
+		if err := driver.Key(ui.KeyF8, 0); err != nil {
+			t.Fatal(err)
+		}
+		if driver.Snapshot().Focused != hitRemoteSearch {
+			t.Fatal("named Find binding did not focus the utility window's search")
+		}
+		state.shortcuts = defaultShortcuts()
 		find := state.shortcuts.chords[shortcutFind]
 		if err := driver.Chord(find.Modifiers, string(find.Key)); err != nil {
 			t.Fatal(err)

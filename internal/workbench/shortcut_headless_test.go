@@ -41,6 +41,76 @@ func TestHeadlessShortcutCaptureClickAndChord(t *testing.T) {
 	}
 }
 
+func TestHeadlessFlexibleShortcutsRecordAndTriggerThroughKeyboard(t *testing.T) {
+	for _, keys := range []string{"alt+j", "shift+enter", "f8", "x", "shift+x", "/", "space", "backspace", "delete"} {
+		t.Run(keys, func(t *testing.T) {
+			state := newTestState(t, freshOptions(t))
+			showShortcutSettings(state)
+			session, err := headless.Open(app.Config{
+				Title: "shortcuts", Width: 1400, Height: 900,
+				Paint: state.Paint, OnPointer: state.Pointer, TextInput: state.TerminalInput,
+				OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+			}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			if err := session.ClickLabel(state.shortcuts.labels[shortcutCommandPalette]); err != nil {
+				t.Fatal(err)
+			}
+			if err := session.Keys(keys); err != nil {
+				t.Fatal(err)
+			}
+			if state.modal != modalNone {
+				t.Fatalf("recording did not finish: modal=%d error=%q", state.modal, state.shortcutError)
+			}
+			if err := session.Keys(keys); err != nil {
+				t.Fatal(err)
+			}
+			if state.modal != modalCommandPalette {
+				t.Fatalf("binding did not trigger the command palette: modal=%d", state.modal)
+			}
+		})
+	}
+}
+
+func TestHeadlessFlexibleShortcutLeavesUnboundKeysWithARealLocalShell(t *testing.T) {
+	state, local := openLocal(t)
+	if _, ok := state.shortcuts.bind(shortcutZoomIn, shortcutChord{Key: 'x'}); !ok {
+		t.Fatal("could not bind X")
+	}
+	view, err := headless.Open(app.Config{
+		Width: 1400, Height: 900, Paint: state.Paint, TextInput: state.TerminalInput,
+		OnKey: state.Key, OnShortcut: state.Shortcut,
+		OnPointer: state.Pointer, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	before := state.terminalFontSize
+	if err := view.Keys("x"); err != nil {
+		t.Fatal(err)
+	}
+	if state.terminalFontSize != before+1 {
+		t.Fatal("the plain X binding did not trigger")
+	}
+	// If X leaked to the real shell this becomes xprintf and never prints the marker.
+	for _, key := range "printf 'shortcut-%s\\n' ok" {
+		name := string(key)
+		if key == ' ' {
+			name = "space"
+		}
+		if err := view.Keys(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	localShellOutput(t, state, local, "shortcut-ok")
+}
+
 // A bound action can be removed from its capture dialog, and the row then reads
 // "—" instead of the chord.
 func TestHeadlessShortcutCanBeDeletedFromTheCaptureDialog(t *testing.T) {
@@ -80,6 +150,59 @@ func TestHeadlessShortcutCanBeDeletedFromTheCaptureDialog(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the deleted shortcut row does not show —")
+	}
+}
+
+func TestHeadlessShortcutCaptureRestoresOnlyItsOwnDefault(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		name := "custom binding"
+		if deleted {
+			name = "deleted binding"
+		}
+		t.Run(name, func(t *testing.T) {
+			options := freshOptions(t)
+			state := newTestState(t, options)
+			showShortcutSettings(state)
+			state.shortcuts.bind(shortcutFind, shortcutChord{Named: ui.KeyF8})
+			if deleted {
+				state.shortcuts.unbind(shortcutFind)
+			}
+			other := shortcutChord{Modifiers: ui.ModifierAlt, Key: 'j'}
+			state.shortcuts.bind(shortcutCompletion, other)
+			state.save()
+			view, err := headless.Open(app.Config{
+				Title: "shortcuts", Width: 1060, Height: 700,
+				Paint: state.Paint, OnPointer: state.Pointer,
+				OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+			}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
+				t.Fatal(err)
+			}
+			var reset ui.Rect
+			for _, hit := range view.Snapshot().Hits {
+				if hit.ID == hitShortcutCaptureReset {
+					reset = hit.Bounds
+				}
+			}
+			if reset.Width == 0 {
+				t.Fatal("the capture dialog has no restore-default button")
+			}
+			if err := view.Click(reset.X+reset.Width/2, reset.Y+reset.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			want := defaultShortcuts().chords[shortcutFind]
+			if state.modal != modalNone || state.shortcuts.chords[shortcutFind] != want || state.shortcutError != "" {
+				t.Fatalf("reset left modal=%d chord=%+v error=%q", state.modal, state.shortcuts.chords[shortcutFind], state.shortcutError)
+			}
+			restored := newTestState(t, options)
+			if restored.shortcuts.chords[shortcutFind] != want || restored.shortcuts.chords[shortcutCompletion] != other {
+				t.Fatalf("restored find=%+v completion=%+v", restored.shortcuts.chords[shortcutFind], restored.shortcuts.chords[shortcutCompletion])
+			}
+		})
 	}
 }
 

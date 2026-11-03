@@ -77,13 +77,128 @@ func TestShortcutCanBeDeletedAndStaysDeletedAcrossRestarts(t *testing.T) {
 	}
 }
 
-func TestDeleteOrBackspaceRemovesTheShortcutBeingCaptured(t *testing.T) {
+func TestDeleteOrBackspaceCanBeBoundAsShortcuts(t *testing.T) {
 	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyBackspace} {
 		state := newTestState(t, freshOptions(t))
 		state.openShortcutCapture(shortcutFind)
 		result := state.Key(ui.KeyEvent{Key: key})
-		if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutFind].valid() {
+		if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutFind] != (shortcutChord{Named: key}) {
 			t.Fatalf("key %v result=%+v modal=%d chord=%+v", key, result, state.modal, state.shortcuts.chords[shortcutFind])
+		}
+	}
+}
+
+func TestFlexibleShortcutsCapturePersistAndKeepConflicts(t *testing.T) {
+	for _, event := range []ui.KeyEvent{
+		{Text: "x"}, {Text: "J", Modifiers: ui.ModifierShift},
+		{Text: "j", Modifiers: ui.ModifierAlt}, {Text: "/"}, {Text: "+"},
+		{Text: ",", Modifiers: ui.ModifierControl}, {Key: ui.KeySpace},
+		{Key: ui.KeyEnter, Modifiers: ui.ModifierShift}, {Key: ui.KeyUp, Modifiers: ui.ModifierAlt},
+		{Key: ui.KeyF1}, {Key: ui.KeyF12}, {Key: ui.KeyEscape, Modifiers: ui.ModifierAlt},
+	} {
+		chord, ok := shortcutChordFromKey(event)
+		if event.Key == ui.KeyUnknown {
+			chord, ok = shortcutChordFromEvent(event)
+		}
+		if !ok {
+			t.Fatalf("event is not a chord: %+v", event)
+		}
+		t.Run(chord.label(), func(t *testing.T) {
+			options := freshOptions(t)
+			state := newTestState(t, options)
+			state.openShortcutCapture(shortcutCommandPalette)
+			result := state.Key(event)
+			if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutCommandPalette] != chord {
+				t.Fatalf("capture result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords[shortcutCommandPalette])
+			}
+			restored := newTestState(t, options)
+			if restored.shortcuts.chords[shortcutCommandPalette] != chord {
+				t.Fatalf("restored chord=%+v, want %+v", restored.shortcuts.chords[shortcutCommandPalette], chord)
+			}
+			restored.openShortcutCapture(shortcutFind)
+			restored.Key(event)
+			if restored.modal != modalShortcutCapture || restored.shortcutError == "" {
+				t.Fatal("duplicate binding was accepted")
+			}
+			restored.clickShortcutCapture(hitShortcutCaptureCancel)
+			if result := restored.Key(event); !result.Handled || restored.modal != modalCommandPalette {
+				t.Fatalf("trigger result=%+v modal=%d", result, restored.modal)
+			}
+		})
+	}
+}
+
+func TestFlexibleShortcutsLeaveTextEditingAndEscCancellationAvailable(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.openShortcutCapture(shortcutFind)
+	before := state.shortcuts.chords[shortcutFind]
+	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	if state.modal != modalNone || state.shortcuts.chords[shortcutFind] != before {
+		t.Fatal("Escape did not cancel recording")
+	}
+	state.shortcuts.bind(shortcutCommandPalette, shortcutChord{Key: 'x'})
+	if result := state.Shortcut(ui.KeyEvent{Target: hitSearch, Text: "x"}); result.Handled || state.modal != modalNone {
+		t.Fatal("a plain shortcut stole input from the host search field")
+	}
+	if chord := (shortcutChord{Key: 'x', Modifiers: ui.ModifierAlt}); chord.validForSnippet() {
+		t.Fatal("application shortcuts unexpectedly changed snippet validation")
+	}
+}
+
+func TestFlexibleShortcutLeavesEmbeddedFileFieldsEditable(t *testing.T) {
+	state, local := openLocal(t)
+	manager := state.newSFTPWindow(local)
+	state.sftpTabs = []*sftpWindow{manager}
+	state.activeSFTPTab, state.activeSection = local.ID, sectionSFTP
+	state.shortcuts.bind(shortcutCommandPalette, shortcutChord{Key: 'x'})
+	manager.view.lfolder.filterOpen = true
+	for _, id := range []ui.ID{sftpWindowPath[0], sftpWindowFilter[0]} {
+		mounted := tree.MountID(sftpWindowMount(manager), id)
+		if !state.shortcutTextInput(mounted) {
+			t.Fatalf("file field %v was not recognized as native input", id)
+		}
+		if result := state.Shortcut(ui.KeyEvent{Text: "x", Target: mounted}); result.Handled || state.modal != modalNone {
+			t.Fatalf("typing in file field %v ran a shortcut: %+v modal=%d", id, result, state.modal)
+		}
+	}
+}
+
+func TestNamedFindBindingFocusesRemoteSearch(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.modal = modalRemoteTools
+	for _, chord := range []shortcutChord{{Named: ui.KeyF8}, {Modifiers: ui.ModifierAlt, Key: 'j'}} {
+		state.shortcuts.bind(shortcutFind, chord)
+		event := ui.KeyEvent{Key: chord.Named, Modifiers: chord.Modifiers}
+		if chord.Key != 0 {
+			event.Text = string(chord.Key)
+		}
+		if result := state.Key(event); !result.Handled || result.Focus != hitRemoteSearch {
+			t.Fatalf("Find did not focus remote search: chord=%+v result=%+v", chord, result)
+		}
+	}
+}
+
+func TestSingleShortcutResetKeepsBindingsWhenItsDefaultIsTaken(t *testing.T) {
+	for _, snippetOwner := range []bool{false, true} {
+		state := newTestState(t, freshOptions(t))
+		custom := shortcutChord{Named: ui.KeyF8}
+		defaultFind := state.shortcuts.chords[shortcutFind]
+		state.shortcuts.bind(shortcutFind, custom)
+		owner := state.shortcutActionLabel(shortcutCompletion)
+		if snippetOwner {
+			owner = "Snippet"
+			state.snippets.list = []snippet{{Name: owner, Command: "pwd", Shortcut: defaultFind}}
+		} else {
+			state.shortcuts.bind(shortcutCompletion, defaultFind)
+		}
+		before := state.shortcuts.chords
+		state.openShortcutCapture(shortcutFind)
+		state.Click(hitShortcutCaptureReset)
+		if state.modal != modalShortcutCapture || !strings.Contains(state.shortcutError, owner) || state.shortcuts.chords != before {
+			t.Fatalf("reset changed a conflicting binding: modal=%d error=%q", state.modal, state.shortcutError)
+		}
+		if snippetOwner && state.snippets.list[0].Shortcut != defaultFind {
+			t.Fatal("reset removed a snippet's binding")
 		}
 	}
 }

@@ -114,6 +114,18 @@ func TestCopyChordCopiesTheAnswerSelection(t *testing.T) {
 	}
 }
 
+func TestNamedCopyBindingCopiesTheAnswerSelection(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	selectAnswerText(t, state, 0, 5)
+	state.shortcuts.bind(shortcutCopy, shortcutChord{Named: ui.KeyF8})
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	result := state.Key(ui.KeyEvent{Key: ui.KeyF8, Target: hitAIAnswerText.At(0)})
+	if !result.Handled || copied != "alpha" {
+		t.Fatalf("named copy binding copied %q, result=%+v", copied, result)
+	}
+}
+
 func TestUserMessageDragSelectsAndCopiesWithoutVisualWraps(t *testing.T) {
 	state, _ := panelState(t, nil)
 	state.ai.open = true
