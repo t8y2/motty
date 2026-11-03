@@ -12,18 +12,19 @@ var tabMenuHits = tree.Feature("tab-menu")
 
 // The tab menu's hit identities: a block of their own, beside the terminal menu's.
 var (
-	hitTabMenuDismiss     = tree.ID(tabMenuHits, "tab-menu-dismiss")
-	hitTabMenuClose       = tree.ID(tabMenuHits, "tab-menu-close")
-	hitTabMenuCloseOthers = tree.ID(tabMenuHits, "tab-menu-close-others")
-	hitTabMenuCloseRight  = tree.ID(tabMenuHits, "tab-menu-close-right")
-	hitTabMenuDuplicate   = tree.ID(tabMenuHits, "tab-menu-duplicate")
-	hitTabMenuCopyAddress = tree.ID(tabMenuHits, "tab-menu-copy-address")
-	hitTabMenuCopyName    = tree.ID(tabMenuHits, "tab-menu-copy-name")
-	hitTabMenuReconnect   = tree.ID(tabMenuHits, "tab-menu-reconnect")
-	hitTabMenuRestart     = tree.ID(tabMenuHits, "tab-menu-restart")
-	hitTabMenuDisconnect  = tree.ID(tabMenuHits, "tab-menu-disconnect")
-	hitTabMenuRename      = tree.ID(tabMenuHits, "tab-menu-rename")
-	hitTabMenuLock        = tree.ID(tabMenuHits, "tab-menu-lock")
+	hitTabMenuDismiss       = tree.ID(tabMenuHits, "tab-menu-dismiss")
+	hitTabMenuClose         = tree.ID(tabMenuHits, "tab-menu-close")
+	hitTabMenuCloseOthers   = tree.ID(tabMenuHits, "tab-menu-close-others")
+	hitTabMenuCloseRight    = tree.ID(tabMenuHits, "tab-menu-close-right")
+	hitTabMenuDuplicate     = tree.ID(tabMenuHits, "tab-menu-duplicate")
+	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
+	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
+	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
+	hitTabMenuRestart       = tree.ID(tabMenuHits, "tab-menu-restart")
+	hitTabMenuDisconnect    = tree.ID(tabMenuHits, "tab-menu-disconnect")
+	hitTabMenuRename        = tree.ID(tabMenuHits, "tab-menu-rename")
+	hitTabMenuLock          = tree.ID(tabMenuHits, "tab-menu-lock")
+	hitTabMenuSaveWorkspace = tree.ID(tabMenuHits, "tab-menu-save-workspace")
 )
 
 // The desktop rows of the menu, below the tab's own: the controls a desktop
@@ -180,6 +181,10 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if disconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
+	if _, temporary := state.temporaryWorkspaceColumns[state.tabMenu.workspace]; temporary {
+		rows.separate()
+		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
+	}
 	width, height := rows.size(canvas, state.contextMenuTheme())
 	bounds := state.popupAt(canvas, viewport, state.tabMenu.at, width, height, 6)
 	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
@@ -275,6 +280,8 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.activateWorkspace(workspace)
 			state.askSessionLink(session, true)
 		}
+	case hitTabMenuSaveWorkspace:
+		state.openWorkspaceSave(workspace)
 	}
 	return true
 }

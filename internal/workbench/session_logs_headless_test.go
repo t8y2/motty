@@ -159,11 +159,13 @@ func hasHitLabel(view *headless.Session, label string) bool {
 	return false
 }
 
-// textAt finds the painted text value at a position, for the icon-alignment
+// textAt finds the painted text value inside a row, for the icon-alignment
 // check between two navigation rows.
-func textAt(texts []ui.Text, value string, maxY float32) (ui.Text, bool) {
+func textAt(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
 	for _, text := range texts {
-		if text.Value == value && text.Bounds.Y <= maxY {
+		if text.Value == value && text.Bounds.X >= row.X && text.Bounds.Y >= row.Y &&
+			text.Bounds.X+text.Bounds.Width <= row.X+row.Width &&
+			text.Bounds.Y+text.Bounds.Height <= row.Y+row.Height {
 			return text, true
 		}
 	}
@@ -209,11 +211,11 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 					if gap := nav.Bounds.Y - monitor.Bounds.Y; gap != 40 {
 						t.Fatalf("the session-log row is %g below Monitor, want the sidebar's 40", gap)
 					}
-					navText, ok := textAt(snapshot.Texts, m.Title, 204)
+					navText, ok := textAt(snapshot.Texts, m.Title, nav.Bounds)
 					if !ok {
 						t.Fatalf("the sidebar row's label is not painted: %+v", snapshot.Texts)
 					}
-					monitorText, ok := textAt(snapshot.Texts, state.messages.Dashboard.Title, 204)
+					monitorText, ok := textAt(snapshot.Texts, state.messages.Dashboard.Title, monitor.Bounds)
 					if !ok {
 						t.Fatal("the monitor row's label is not painted")
 					}

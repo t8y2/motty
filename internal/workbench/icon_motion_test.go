@@ -205,8 +205,8 @@ func TestEveryPaintedNavigationRowPlaysAMotion(t *testing.T) {
 			t.Errorf("the sidebar row %q (%v) does not play a motion", hit.Label, hit.ID)
 		}
 	}
-	if rows < 9 {
-		t.Fatalf("the painted sidebar has %d rows, want the nine page rows", rows)
+	if rows < 10 {
+		t.Fatalf("the painted sidebar has %d rows, want the ten page rows", rows)
 	}
 	for entry := settingsGeneral; entry < settingsCategoryCount; entry++ {
 		if _, ok := iconMotionFor(entry.icon()); !ok {
@@ -236,7 +236,7 @@ func TestIconMotionFollowsWhatTheGlyphStandsFor(t *testing.T) {
 		{"type", []uint8{iconKeyboard}, iconMotionType},
 		{"blink", []uint8{iconBot}, iconMotionBlink},
 		{"plug", []uint8{iconPlug}, iconMotionPlug},
-		{"squash", []uint8{iconNote, iconInfo, iconBug}, iconMotionSquash},
+		{"squash", []uint8{iconColumns2, iconNote, iconInfo, iconBug}, iconMotionSquash},
 	} {
 		for _, icon := range c.icons {
 			got, ok := iconMotionFor(icon)

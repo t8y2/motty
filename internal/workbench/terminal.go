@@ -1316,7 +1316,18 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalFileProperties {
 		return ui.EventResult{Handled: true}
 	}
+	if state.modal == modalNone {
+		if result, handled := state.workspaceArrangementScroll(event); handled {
+			return result
+		}
+	}
 	if result := state.dashboardScroll(event); result.Handled {
+		return result
+	}
+	if result := state.workspaceDraftScroll(event); result.Handled {
+		return result
+	}
+	if result := state.scrollWorkspaceLibrary(event); result.Handled {
 		return result
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {

@@ -230,6 +230,8 @@ type ToolsMessages struct {
 	StatusBroadcastOnFmt      string
 	StatusBroadcastOff        string
 	StatusBroadcastNeedsSplit string
+	StatusBroadcastWait       string
+	StatusBroadcastNeedsTwo   string
 
 	// Telnet and serial hosts.
 	ProtocolSSH            string

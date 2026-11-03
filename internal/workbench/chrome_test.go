@@ -34,7 +34,7 @@ func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 	// Every painted hit is one the state handles; none is a decoration waiting
 	// for a feature.
 	wanted := map[ui.ID]bool{
-		hitHosts: true, hitKeychain: true, hitProxies: true, hitPortForwarding: true,
+		hitHosts: true, hitWorkspaces: true, hitKeychain: true, hitProxies: true, hitPortForwarding: true,
 		hitKnownHosts: true, hitSnippets: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
 		hitAddHost: true, hitHostFilterAll: true, hitImportMenu: true, hitTheme: true, hitHome: true, hitNewTab: true,
 		hitGitHub: true,

@@ -19,6 +19,7 @@ import (
 // embeds one; its methods are the State's own.
 type hostCatalog struct {
 	hosts      []Host
+	templates  []WorkspaceTemplate
 	proxies    []proxyRecord
 	identities []identityRecord
 	// proxy is the outbound proxy every host inherits unless it names its own.

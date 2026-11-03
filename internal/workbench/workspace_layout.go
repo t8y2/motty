@@ -197,6 +197,9 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	if !state.deck.ActivateWorkspace(id) {
 		return false
 	}
+	state.clearBroadcast()
+	state.workspaceHeaderMenu = workspaceHeaderMenuNone
+	state.workspaceCardDrag = workspaceCardDrag{}
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
 	state.syncMonitorTarget()
@@ -206,6 +209,12 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 		state.fitSFTP(state.viewport)
 	}
 	return true
+}
+
+// leaveTerminalSection stops broadcasting when the terminal page is left by a
+// path that changes the section directly.
+func (state *State) leaveTerminalSection() {
+	state.clearBroadcast()
 }
 
 // cycleWorkspace moves to the tab delta places along the tab bar, wrapping at

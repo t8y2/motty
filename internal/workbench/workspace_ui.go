@@ -70,6 +70,10 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	}
 	bounds.Width = max(0, bounds.Width-monitor)
 	bounds.Width = max(0, bounds.Width-state.aiReserve(workspaceID, size))
+	if state.workspaceManaged(workspaceID) {
+		bounds.Y += workspaceHeaderHeight
+		bounds.Height = max(0, bounds.Height-workspaceHeaderHeight)
+	}
 	return bounds
 }
 
@@ -117,7 +121,12 @@ func (state *State) refreshWorkspaceViews() bool {
 
 func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	state.refreshWorkspaceViews()
+	state.workspacePaneTools.count = 0
 	frame := state.workspacePixelBounds(size)
+	headerOpen := state.paintWorkspaceHeader(canvas, size)
+	if !headerOpen {
+		state.workspaceHeaderMenu = workspaceHeaderMenuNone
+	}
 	if len(state.panes) == 0 {
 		state.paintEmptyWorkspace(canvas, frame)
 		state.paintContextPanel(canvas, size, frame)
@@ -690,11 +699,33 @@ func (state *State) activateRelativePane(delta int) bool {
 }
 
 func (state *State) splitActivePane(axis layoutcore.Axis) bool {
+	_, ok := state.activePaneSplitBounds(axis)
+	if !ok {
+		return false
+	}
+	workspaceID := state.deck.ActiveWorkspace()
+	activePane := state.deck.ActivePane(workspaceID)
+	if _, err := state.deck.Split(workspaceID, activePane, axis); err != nil {
+		return false
+	}
+	state.syncActiveSession()
+	state.refreshWorkspaceViews()
+	state.fitWorkspaceTerminals(workspaceID)
+	state.fitSFTP(state.viewport)
+	return true
+}
+
+func (state *State) canSplitActivePane(axis layoutcore.Axis) bool {
+	_, ok := state.activePaneSplitBounds(axis)
+	return ok
+}
+
+func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (ui.Rect, bool) {
 	state.refreshWorkspaceViews()
 	workspaceID := state.deck.ActiveWorkspace()
 	activePane := state.deck.ActivePane(workspaceID)
 	if workspaceID == 0 || activePane == 0 || len(state.panes) >= layoutcore.MaxPanes {
-		return false
+		return ui.Rect{}, false
 	}
 	var active Pane
 	found := false
@@ -706,21 +737,14 @@ func (state *State) splitActivePane(axis layoutcore.Axis) bool {
 		}
 	}
 	if !found {
-		return false
+		return ui.Rect{}, false
 	}
 	bounds := pixelBounds(state.workspacePixelBounds(state.viewport), active.Bounds)
 	if axis == layoutcore.Horizontal && bounds.Width < minPaneWidth*2+1 ||
 		axis == layoutcore.Vertical && bounds.Height < minPaneHeight*2+1 {
-		return false
+		return ui.Rect{}, false
 	}
-	if _, err := state.deck.Split(workspaceID, activePane, axis); err != nil {
-		return false
-	}
-	state.syncActiveSession()
-	state.refreshWorkspaceViews()
-	state.fitWorkspaceTerminals(workspaceID)
-	state.fitSFTP(state.viewport)
-	return true
+	return bounds, true
 }
 
 // splitWithCurrentHost splits the active pane and opens the same host in the

@@ -135,10 +135,14 @@ func (state *State) SetShortcutCapture(capture func(bool) error) {
 // and the live sessions in them. Nothing in it is closed or copied; the sessions
 // are the ones the user was working in.
 type tabPayload struct {
-	title     string
-	dto       layoutcore.WorkspaceDTO
-	sessions  []Session
-	transfers []transferEntry
+	title         string
+	dto           layoutcore.WorkspaceDTO
+	sessions      []Session
+	transfers     []transferEntry
+	managed       bool
+	managedCols   uint8
+	temporaryCols uint8
+	temporary     bool
 }
 
 // detachWorkspace takes a tab out of this window without ending its sessions.
@@ -157,6 +161,8 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		}
 	}
 	payload := &tabPayload{title: dto.Title, dto: dto}
+	payload.managedCols, payload.managed = state.managedWorkspaceColumns[id]
+	payload.temporaryCols, payload.temporary = state.temporaryWorkspaceColumns[id]
 	for _, pane := range dto.Panes {
 		if pane.SessionID == 0 {
 			continue
@@ -190,6 +196,8 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		}
 	}
 	_, _ = state.deck.RemoveWorkspace(id, nil)
+	delete(state.temporaryWorkspaceColumns, id)
+	delete(state.managedWorkspaceColumns, id)
 	kept := state.sessions[:0]
 	for _, session := range state.sessions {
 		if !payloadHolds(payload, session.ID) {
@@ -282,16 +290,33 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		return false
 	}
 	if docking {
+		destinationIdentity := state.workspaceIdentity(dockInto)
+		sourceIdentity := workspaceIdentity{
+			managed:          payload.managed,
+			managedColumns:   payload.managedCols,
+			temporary:        payload.temporary,
+			temporaryColumns: payload.temporaryCols,
+		}
 		if _, err := state.deck.Dock(dockInto, id, drop.pane, drop.edge.axis(), drop.edge.placement()); err != nil {
 			_, _ = state.deck.RemoveWorkspace(id, nil)
 			state.deck.ActivateWorkspace(dockInto)
+			delete(state.temporaryWorkspaceColumns, id)
+			delete(state.managedWorkspaceColumns, id)
 			keep := len(state.sessions) - len(added)
 			clear(state.sessions[keep:])
 			state.sessions = state.sessions[:keep]
 			state.nextSessionID -= uint32(len(added))
 			return false
 		}
+		state.restoreWorkspaceIdentity(dockInto, mergeWorkspaceIdentities(destinationIdentity, sourceIdentity))
 		id = dockInto
+	} else {
+		state.restoreWorkspaceIdentity(id, workspaceIdentity{
+			managed:          payload.managed,
+			managedColumns:   payload.managedCols,
+			temporary:        payload.temporary,
+			temporaryColumns: payload.temporaryCols,
+		})
 	}
 	for _, sessionID := range added {
 		if moved, ok := state.sessionByIDPointer(sessionID); ok {
@@ -310,6 +335,57 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		state.options.Invalidate()
 	}
 	return true
+}
+
+// workspaceIdentity is the in-memory metadata attached to one workspace tab.
+type workspaceIdentity struct {
+	managed          bool
+	managedColumns   uint8
+	temporary        bool
+	temporaryColumns uint8
+}
+
+func (state *State) workspaceIdentity(id layoutcore.WorkspaceID) workspaceIdentity {
+	columns, managed := state.managedWorkspaceColumns[id]
+	temporaryColumns, temporary := state.temporaryWorkspaceColumns[id]
+	return workspaceIdentity{
+		managed: managed, managedColumns: columns,
+		temporary: temporary, temporaryColumns: temporaryColumns,
+	}
+}
+
+func (state *State) restoreWorkspaceIdentity(id layoutcore.WorkspaceID, identity workspaceIdentity) {
+	delete(state.managedWorkspaceColumns, id)
+	delete(state.temporaryWorkspaceColumns, id)
+	if identity.managed {
+		state.managedWorkspaceColumns[id] = identity.managedColumns
+	}
+	if identity.temporary {
+		state.temporaryWorkspaceColumns[id] = identity.temporaryColumns
+	}
+}
+
+// mergeWorkspaceIdentities keeps the destination's managed layout when it has
+// one. A temporary source keeps the saved-template action after the dock.
+func mergeWorkspaceIdentities(destination, source workspaceIdentity) workspaceIdentity {
+	result := destination
+	if !result.managed && source.managed {
+		result.managed, result.managedColumns = true, source.managedColumns
+	}
+	if source.temporary || destination.temporary {
+		result.temporary = true
+		if !result.managed {
+			result.managed = true
+			switch {
+			case destination.temporary && destination.temporaryColumns != 0:
+				result.managedColumns = destination.temporaryColumns
+			case source.temporary && source.temporaryColumns != 0:
+				result.managedColumns = source.temporaryColumns
+			}
+		}
+		result.temporaryColumns = result.managedColumns
+	}
+	return result
 }
 
 func combineLogBarriers(previous, current <-chan struct{}) <-chan struct{} {

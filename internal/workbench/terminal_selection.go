@@ -366,6 +366,16 @@ func terminalMouseModifiers(modifiers ui.Modifiers) term.MouseModifiers {
 
 func (state *State) terminalPositionAt(session *Session, viewport ui.Size, x, y float32) term.Position {
 	geometry := state.terminalLayoutForEvent(session.ID, viewport)
+	terminal := session.term
+	if terminal == nil {
+		return term.Position{}
+	}
+	// The visible grid can lead the buffer's resize while a window changes.
+	// Clamp against both so a click in the painted pane stays in the screen.
+	cols, rows := terminal.screen.Size()
+	if cols <= 0 || rows <= 0 || geometry.cols <= 0 || geometry.rows <= 0 {
+		return term.Position{}
+	}
 	column, row := 0, 0
 	if state.cellWidth > 0 {
 		column = int(math.Floor(float64((x - geometry.left) / state.cellWidth)))
@@ -373,5 +383,8 @@ func (state *State) terminalPositionAt(session *Session, viewport ui.Size, x, y 
 	if state.cellHeight > 0 {
 		row = int(math.Floor(float64((y - geometry.top) / state.cellHeight)))
 	}
-	return term.Position{Row: min(max(row, 0), geometry.rows-1), Column: min(max(column, 0), geometry.cols-1)}
+	return term.Position{
+		Row:    min(max(row, 0), min(geometry.rows, rows)-1),
+		Column: min(max(column, 0), min(geometry.cols, cols)-1),
+	}
 }
