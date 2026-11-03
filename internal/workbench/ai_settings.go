@@ -185,10 +185,13 @@ type aiSettingsUI struct {
 	page       int    // page of that provider's models
 	modelInput text.Editor
 
-	probeResults     map[string]map[string]probe.Result
-	probeCancel      context.CancelFunc
-	probingProvider  string
-	probingModel     string
+	probeResults    map[string]map[string]probe.Result
+	probeCancel     context.CancelFunc
+	probingProvider string
+	probingModel    string
+	// probeSeq is the run a result belongs to: a probe started later makes the
+	// results of the one it replaced arrive stale and get dropped.
+	probeSeq         uint64
 	probeProgress    [2]int
 	probeConcurrency int
 	probeTimeout     time.Duration
@@ -493,6 +496,9 @@ func (state *State) aiDialogClick(id ui.ID) {
 		case hitAISetFormClose, hitAISetFormCancel:
 			state.aiCloseDialog()
 		case hitAISetProbeStart:
+			// A probe already running is replaced, not treated as the cancel
+			// the probe-all button means.
+			state.aiCancelProbe()
 			state.aiCloseDialog()
 			state.aiProbeAllModels()
 		case hitAISetProbeConc1:
@@ -1144,6 +1150,12 @@ func (state *State) aiAddModel() {
 		cfg.modelErr = state.messages.AISettings.ErrModelName
 		return
 	}
+	// The list shows the models that can chat, so a name it would hide cannot be
+	// added either; otherwise the model would vanish the moment it was saved.
+	if !probe.IsChatOrReasoningModel(name) {
+		cfg.modelErr = state.messages.AISettings.ErrModelNotChat
+		return
+	}
 	cfg.modelErr = ""
 	db, err := state.aiStore()
 	if err != nil {
@@ -1260,7 +1272,10 @@ func (state *State) aiFetchDone(fetch *aiFetch, names []string, err error, key s
 				merged[index].Enabled = old.Enabled
 			}
 		}
-		if !seen[old.Name] && (old.Enabled || state.aiIsDefault(old.ProviderID, old.Name)) && probe.IsChatOrReasoningModel(old.Name) {
+		// What the user chose stays stored even when the list no longer shows
+		// it: a non-chat model saved by an earlier version is hidden from the
+		// list, not deleted from the database here.
+		if !seen[old.Name] && (old.Enabled || state.aiIsDefault(old.ProviderID, old.Name)) {
 			merged = append(merged, old)
 		}
 	}
@@ -1286,25 +1301,16 @@ func (state *State) aiFetchDone(fetch *aiFetch, names []string, err error, key s
 	state.aiWrote()
 }
 
-// firstChatModel is the first of names that is not obviously for something
-// other than chat; "" when there is none.
+// firstChatModel is the first of names the model list would keep; "" when there
+// is none. It shares probe's classification with the list, so a name that is
+// offered is a name that can become the default.
 func firstChatModel(names []string) string {
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		lower := strings.ToLower(name)
-		if name == "" {
+		if name == "" || !probe.IsChatOrReasoningModel(name) {
 			continue
 		}
-		other := false
-		for _, word := range [...]string{"embed", "whisper", "tts", "dall-e", "moderation", "image", "audio", "realtime", "rerank", "transcribe", "babbage", "davinci"} {
-			if strings.Contains(lower, word) {
-				other = true
-				break
-			}
-		}
-		if !other {
-			return name
-		}
+		return name
 	}
 	return ""
 }
@@ -1437,7 +1443,7 @@ func (state *State) aiProbeTimeoutOptions() [4]components.SegmentOption {
 
 func (state *State) aiProbeSingleModel(row int) {
 	provider, model, ok := state.aiModelOnPage(row)
-	if !ok {
+	if !ok || store.IsCLIKind(provider.Kind) {
 		return
 	}
 	cfg := &state.ai.cfg
@@ -1453,6 +1459,8 @@ func (state *State) aiProbeSingleModel(row int) {
 	cfg.probeCancel = cancel
 	cfg.probingProvider = provider.ID
 	cfg.probingModel = model.Name
+	cfg.probeSeq++
+	seq := cfg.probeSeq
 	timeout := state.aiProbeTimeout()
 	state.aiSetProbeResult(provider.ID, model.Name, probe.Result{Status: probe.StatusRunning, Timestamp: time.Now()})
 	state.aiSettingsChanged()
@@ -1460,6 +1468,9 @@ func (state *State) aiProbeSingleModel(row int) {
 	go func() {
 		res := probe.ProbeModel(ctx, provider, model.Name, client, timeout)
 		state.aiPost(func(s *State) {
+			if s.ai.cfg.probeSeq != seq {
+				return
+			}
 			s.aiSetProbeResult(provider.ID, model.Name, res)
 			if res.Status == probe.StatusFailed && res.Error != "" {
 				s.ai.cfg.modelErr = fmt.Sprintf("%s: %s", model.Name, res.Error)
@@ -1482,7 +1493,7 @@ func (state *State) aiProbeAllModels() {
 		return
 	}
 	provider, ok := state.aiSelectedProvider()
-	if !ok {
+	if !ok || store.IsCLIKind(provider.Kind) {
 		return
 	}
 	provider, ready := state.aiKeyedProvider(provider, state.aiProbeAllModels)
@@ -1498,6 +1509,8 @@ func (state *State) aiProbeAllModels() {
 	cfg.probeCancel = cancel
 	cfg.probingProvider = provider.ID
 	cfg.probingModel = ""
+	cfg.probeSeq++
+	seq := cfg.probeSeq
 	cfg.probeProgress = [2]int{0, len(models)}
 	timeout := state.aiProbeTimeout()
 	concurrency := state.aiProbeConcurrency()
@@ -1529,6 +1542,9 @@ func (state *State) aiProbeAllModels() {
 					}
 					res := probe.ProbeModel(ctx, provider, j.model.Name, client, timeout)
 					state.aiPost(func(s *State) {
+						if s.ai.cfg.probeSeq != seq {
+							return
+						}
 						s.aiSetProbeResult(provider.ID, j.model.Name, res)
 						s.ai.cfg.probeProgress[0]++
 						s.aiSettingsChanged()
@@ -1543,6 +1559,9 @@ func (state *State) aiProbeAllModels() {
 		}
 
 		state.aiPost(func(s *State) {
+			if s.ai.cfg.probeSeq != seq {
+				return
+			}
 			if s.ai.cfg.probeCancel != nil && s.ai.cfg.probingModel == "" {
 				s.ai.cfg.probeCancel = nil
 				s.ai.cfg.probingProvider = ""

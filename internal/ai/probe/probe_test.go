@@ -148,6 +148,13 @@ func TestProbeOllama(t *testing.T) {
 	if resFail.Status != StatusFailed {
 		t.Errorf("expected StatusFailed for not-exist, got %v", resFail.Status)
 	}
+
+	// The preset names the OpenAI-compatible path, which the native API does
+	// not live under: the probe still reaches the server root.
+	preset := store.Provider{Name: "Ollama", BaseURL: ts.URL + "/v1"}
+	if res := ProbeModel(context.Background(), preset, "llama3:latest", nil, 0); res.Status != StatusSuccess {
+		t.Errorf("the preset address probed %v (err: %s), want success", res.Status, res.Error)
+	}
 }
 
 func TestProbeEmbedding(t *testing.T) {

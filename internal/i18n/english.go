@@ -1113,6 +1113,7 @@ var englishAISettings = AISettingsMessages{
 	ErrFormKey:               "The official endpoint needs an API key.",
 	ErrFormSaveFmt:           "Could not save: %s",
 	ErrModelName:             "A model name has no spaces.",
+	ErrModelNotChat:          "Only models that can chat or reason are listed.",
 	CLIPath:                  "CLI executable path",
 	CLIPathDefault:           "Automatic (local PATH)",
 	CLIPathDetected:          "Automatically found; unchanged keeps automatic lookup.",

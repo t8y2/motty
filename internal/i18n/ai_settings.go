@@ -58,6 +58,7 @@ type AISettingsMessages struct {
 	ErrFormKey               string
 	ErrFormSaveFmt           string
 	ErrModelName             string
+	ErrModelNotChat          string
 	CLIPath                  string
 	CLIPathDefault           string
 	CLIPathDetected          string

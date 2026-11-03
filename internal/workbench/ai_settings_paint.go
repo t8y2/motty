@@ -288,9 +288,14 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if cfg.probeCancel != nil && cfg.probingProvider == provider.ID && cfg.probingModel == "" {
 			probeLabel = m.ModelsProbeCancel
 		}
+		// A CLI provider answers through its own session, so it has no endpoint
+		// to probe: the buttons are not offered at all.
+		probeable := !store.IsCLIKind(provider.Kind)
 		page.aiFrame(settingsRowHeight, fmt.Sprintf(m.ModelsOfFmt, provider.Name), description, pal.muted, func() {
 			f.Row().Gap(8).Items(flex.Center).Shrink(0).Children(func() {
-				page.button(hitAISetModelProbeAll, probeLabel, aiButtonOutline, total == 0)
+				if probeable {
+					page.button(hitAISetModelProbeAll, probeLabel, aiButtonOutline, total == 0)
+				}
 				page.button(hitAISetFetchModels, fetchLabel, aiButtonOutline, false)
 			})
 		})
@@ -343,7 +348,9 @@ func (state *State) paintAIModels(page *settingsPage) {
 				})
 
 				// Probe badge or button (fixed-width column for neat vertical alignment)
-				if isProbing {
+				if !probeable {
+					f.Row().Width(probeColWidth).Shrink(0)
+				} else if isProbing {
 					f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
 						f.Text(m.ModelProbing).FontSize(metrics.FontSizeS).Color(pal.muted)
 					})

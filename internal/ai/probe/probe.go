@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -225,11 +226,7 @@ func ProbeModel(ctx context.Context, provider store.Provider, modelName string, 
 
 func probeOllama(ctx context.Context, provider store.Provider, modelName string, timeout time.Duration) (time.Duration, error) {
 	start := time.Now()
-	base := strings.TrimRight(provider.BaseURL, "/")
-	if base == "" {
-		base = "http://localhost:11434"
-	}
-	url := base + "/api/show"
+	url := ollamaAPIBase(provider.BaseURL) + "/api/show"
 	bodyBytes, _ := json.Marshal(map[string]string{"name": modelName})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -251,6 +248,21 @@ func probeOllama(ctx context.Context, provider store.Provider, modelName string,
 		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 	return time.Since(start), nil
+}
+
+// ollamaAPIBase is the server root of an Ollama endpoint. The presets name it
+// with the OpenAI-compatible path (/v1), which its native API does not live
+// under, so the scheme and host are kept and everything below them dropped.
+func ollamaAPIBase(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		return "http://localhost:11434"
+	}
+	parsed, err := neturl.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return base
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func probeEmbedding(ctx context.Context, provider store.Provider, modelName string, timeout time.Duration) (time.Duration, error) {

@@ -689,6 +689,20 @@ func TestAIDefaultModelIsWhatTheEngineUses(t *testing.T) {
 	}
 }
 
+func TestAIModelsThatAreNotForChatCannotBeAddedByName(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	provider := world.addOpenAI(t, "Local", "http://127.0.0.1:11434/v1", "")
+	world.typeInto(t, hitAISetModelInput, "text-embedding-3-small")
+	state.Click(hitAISetModelAdd)
+	if want := state.messages.AISettings.ErrModelNotChat; state.ai.cfg.modelErr != want {
+		t.Fatalf("modelErr = %q, want %q", state.ai.cfg.modelErr, want)
+	}
+	if got := state.aiModelList(provider.ID); len(got) != 0 {
+		t.Fatalf("a model the list hides was stored anyway: %v", got)
+	}
+}
+
 func TestAIModelsCanBeAddedByNameAndPaged(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
@@ -944,7 +958,7 @@ func TestAISettingsPaintInBothLanguages(t *testing.T) {
 }
 
 func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
-	world := newSettingsWorld(t, newLister("text-embedding-m")) // not for chat, so it does not become the default and stays switchable
+	world := newSettingsWorld(t, newLister("chat-a", "chat-b")) // the first is the default, the second stays switchable
 	state := world.state
 	world.addOpenAI(t, "Work", "", "k")
 	state.Click(hitAISetFetchModels)
@@ -958,7 +972,7 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	}
 	want := []ui.ID{
 		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
-		hitAISetFetchModels, hitAISetModelUse.At(0), hitAISetModelSwitch.At(0), hitAISetModelInput, hitAISetModelAdd,
+		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
 		hitAISetRiskLow, hitAISetSteps12, hitAISetContext60, hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
 	}
 	position := -1
@@ -1092,8 +1106,10 @@ func TestAISavingAProviderListsItsModelsAndPicksAUsableDefault(t *testing.T) {
 	if err != nil || model != "chat-a" || provider.Name != "Work" {
 		t.Fatalf("assistant model after saving = %q %v, want chat-a", model, err)
 	}
-	if total, enabled := state.aiModelsOf(provider.ID); total != 3 || enabled != 1 {
-		t.Fatalf("models = %d, enabled = %d, want 3 and only the default", total, enabled)
+	// The embedding model the provider lists is not one to chat with: it stays
+	// out of the list, so two models are offered and only the default is on.
+	if total, enabled := state.aiModelsOf(provider.ID); total != 2 || enabled != 1 {
+		t.Fatalf("models = %d, enabled = %d, want 2 and only the default", total, enabled)
 	}
 
 	// Saving again with nothing that changes how the provider is reached lists nothing.

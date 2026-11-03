@@ -1113,6 +1113,7 @@ var chineseAISettings = AISettingsMessages{
 	ErrFormKey:               "使用官方地址需要填写 API 密钥。",
 	ErrFormSaveFmt:           "无法保存：%s",
 	ErrModelName:             "模型名称不能包含空格。",
+	ErrModelNotChat:          "只显示可用于对话或推理的模型。",
 	CLIPath:                  "CLI 可执行文件路径",
 	CLIPathDefault:           "自动查找（本机 PATH）",
 	CLIPathDetected:          "已自动找到；未修改将继续自动查找。",
