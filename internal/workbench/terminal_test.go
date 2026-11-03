@@ -403,14 +403,14 @@ func TestCommandChordsDriveTheTabs(t *testing.T) {
 			t.Fatal("a missing tab changed the selection")
 		}
 	}
-	key(state, 1, ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "t"})
-	if state.activeSection != sectionHosts {
-		t.Fatal("Command+T did not open the host list")
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "t"})
+	if state.modal != modalCommandPalette || !state.commandPalette.connect {
+		t.Fatal("new-tab shortcut did not open the connection picker")
 	}
-	state.activeSection = sectionTerminal
-	key(state, 1, ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "w"})
+	state.Click(hitCommandPaletteClose)
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "w"})
 	if len(state.sessions) != 1 || state.activeSessionID != first {
-		t.Fatalf("Command+W left sessions=%d active=%d", len(state.sessions), state.activeSessionID)
+		t.Fatalf("close-tab shortcut left sessions=%d active=%d", len(state.sessions), state.activeSessionID)
 	}
 }
 

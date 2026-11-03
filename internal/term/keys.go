@@ -14,7 +14,7 @@ import (
 // apart from the line edits, which send the Control chord they stand for).
 func EncodeKey(key ui.Key, modifiers ui.Modifiers, text string, appCursorKeys bool) []byte {
 	if modifiers&ui.ModifierMeta != 0 {
-		letter, ok := commandLineEdit(key, modifiers)
+		letter, ok := CommandLineEdit(key, modifiers)
 		if !ok {
 			return nil
 		}
@@ -128,12 +128,12 @@ func EncodeKey(key ui.Key, modifiers ui.Modifiers, text string, appCursorKeys bo
 	return prefix([]byte(string(character)))
 }
 
-// commandLineEdit is the letter of the Control chord that Command+Left,
+// CommandLineEdit is the letter of the Control chord that Command+Left,
 // Command+Right and Command+Backspace stand for: Ctrl+A and Ctrl+E move to the
 // start and the end of the line, Ctrl+U deletes back to its start. Shells and
 // full-screen programs understand them without any setup, unlike Home and End.
 // Any other chord, one with a further modifier included, is not a line edit.
-func commandLineEdit(key ui.Key, modifiers ui.Modifiers) (string, bool) {
+func CommandLineEdit(key ui.Key, modifiers ui.Modifiers) (string, bool) {
 	if modifiers != ui.ModifierMeta {
 		return "", false
 	}
@@ -146,13 +146,6 @@ func commandLineEdit(key ui.Key, modifiers ui.Modifiers) (string, bool) {
 		return "u", true
 	}
 	return "", false
-}
-
-// IsCommandLineEdit reports whether key with modifiers is a Command chord that
-// edits the command line and so goes to the program rather than the application.
-func IsCommandLineEdit(key ui.Key, modifiers ui.Modifiers) bool {
-	_, ok := commandLineEdit(key, modifiers)
-	return ok
 }
 
 // functionNumbers are the tilde-sequence numbers of F5-F12.
