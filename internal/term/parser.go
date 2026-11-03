@@ -3,6 +3,7 @@ package term
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type parseState uint8
@@ -62,6 +63,14 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	}
 	for i := 0; i < len(p); {
 		if t.state == stGround && t.utf8n == 0 && t.charsets[t.gl] == charsetASCII {
+			// The run check stays ahead of the scan: behind it, the scan's
+			// hot path cost 7% more on a redraw of short runs.
+			if p[i] >= 0x80 {
+				if n := t.textRun(p[i:]); n > 0 {
+					i += n
+					continue
+				}
+			}
 			j := i
 			for j < len(p) && p[j] >= 0x20 && p[j] < 0x7F {
 				j++
@@ -83,6 +92,37 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	}
 	t.version++
 	return len(p), nil
+}
+
+// textRun writes the non-ASCII text at the start of p and returns how many
+// bytes it took, or zero when the sequence cannot be completed from p. A run
+// ends at a control character and at the end of p; the rest is the state
+// machine's, so a character split across writes still carries over.
+func (t *Terminal) textRun(p []byte) int {
+	t.runBuf = t.runBuf[:0]
+	n := 0
+	for n < len(p) && len(t.runBuf) < maxTextRun {
+		b := p[n]
+		if b >= 0x20 && b < 0x7F {
+			t.runBuf = append(t.runBuf, rune(b))
+			n++
+			continue
+		}
+		if b < 0x20 || b == 0x7F {
+			break
+		}
+		r, size := utf8.DecodeRune(p[n:])
+		if r == utf8.RuneError && size <= 1 {
+			break
+		}
+		t.runBuf = append(t.runBuf, r)
+		n += size
+	}
+	if n == 0 {
+		return 0
+	}
+	t.printRunes(t.runBuf)
+	return n
 }
 
 // inString reports whether the parser is inside a control string, whose payload

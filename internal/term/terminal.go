@@ -11,6 +11,7 @@ const (
 	maxOSC             = 4096 // bytes of one OSC string; longer ones are ignored whole (but see oscPrefixLimits)
 	maxHyperlinkTarget = 2048 // bytes retained for one OSC 8 target
 	maxHyperlinks      = 8192 // live target slots per terminal; oldest tokens expire after this
+	maxTextRun         = 4096 // runes decoded for one text run, which bounds its buffer
 )
 
 // DefaultScrollback is the number of lines kept above the screen.
@@ -99,6 +100,11 @@ type pen struct {
 	fg, bg    Color
 	attr      Attr
 	hyperlink uint32
+}
+
+// cell returns a cell painted with the pen's colors and attributes.
+func (p pen) cell() Cell {
+	return Cell{FG: p.fg, BG: p.bg, Attr: p.attr}
 }
 
 // charset is a G0-G3 designation.
@@ -195,7 +201,8 @@ type Terminal struct {
 	defFG, defBG       [3]uint8
 	haveDefaults       bool
 
-	lastRune rune // for REP
+	lastRune rune   // for REP
+	runBuf   []rune // text decoded for the run path, reused across writes
 	nextID   uint64
 	version  uint64
 	reflow   reflow
