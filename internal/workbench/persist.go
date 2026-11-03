@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/sshconn"
@@ -611,6 +612,47 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 			state.sshSyncFlush()
 		}
 	}()
+	previous := state.status
+	err := state.persistSnapshot(flushSync)
+	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying {
+		return err
+	}
+	// Another window changed what this save was built on. Its shared records win,
+	// as the conflict said; this window's device-local changes — its open
+	// sessions, its settings, the time it just recorded — still go in, so a
+	// window that read the store a moment ago is not refused until it restarts.
+	state.saveRetrying = true
+	reloadErr := state.refreshShared()
+	state.saveRetrying = false
+	if reloadErr != nil {
+		return err
+	}
+	if _, local, err := state.config.Load(); err == nil {
+		state.configBase.local = local[localKey]
+	}
+	snapshot := state.snapshot()
+	entries, local, err := splitState(snapshot, state.configBase, state.configDefaults)
+	if err != nil {
+		return err
+	}
+	localValues, err := routeLocalState(state.configBase, local)
+	if err != nil {
+		return err
+	}
+	// The refreshed base already holds every shared record, so this writes the
+	// local document alone and keeps the base it was built on.
+	if _, err := writeEntries(state.config, state.configBase, entries, localValues); err != nil {
+		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
+		return err
+	}
+	state.lastSaved, state.hasSaved = snapshot, true
+	state.status = previous
+	return nil
+}
+
+// persistSnapshot writes what changed since the last save and reports why it
+// could not be written.
+func (state *State) persistSnapshot(flushSync bool) error {
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice

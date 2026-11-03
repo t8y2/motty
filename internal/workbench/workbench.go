@@ -451,6 +451,9 @@ type State struct {
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
 	saveBlocked bool
+	// saveRetrying is set while a conflicted save refreshes and retries, so the
+	// refresh's own save does not start a second round.
+	saveRetrying bool
 	// config is the store the configuration lives in, and configBase what this
 	// window last read from or wrote to it.
 	config         *configstore.Store

@@ -53,6 +53,61 @@ func freshOptions(t testing.TB) Options {
 	}
 }
 
+func TestTwoWindowsSavingSideBySideBothPersist(t *testing.T) {
+	_, options := newWorld(t)
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.terminalFontSize = 15
+	first.save()
+	// The second window read the store before the first one wrote it.
+	second.terminalFontSize = 16
+	second.save()
+	if strings.Contains(second.status, "Could not save") {
+		t.Fatalf("the second window could not save: %q", second.status)
+	}
+	restarted := newTestState(t, options)
+	if int(restarted.terminalFontSize) != 16 {
+		t.Fatalf("terminalFontSize after restart = %v, want 16", restarted.terminalFontSize)
+	}
+}
+
+func TestAStaleWindowDoesNotOverwriteTheOtherWindowsSharedEdit(t *testing.T) {
+	_, options := newWorld(t)
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.hosts[0].Label = "Edited elsewhere"
+	first.save()
+	// The second window still holds the old label; its own save must not put it
+	// back, and its device-local choice must still be stored.
+	second.terminalFontSize = 17
+	second.save()
+	restarted := newTestState(t, options)
+	if restarted.hosts[0].Label != "Edited elsewhere" {
+		t.Fatalf("a stale window overwrote the shared host: %q", restarted.hosts[0].Label)
+	}
+	if int(restarted.terminalFontSize) != 17 {
+		t.Fatalf("the stale window's own change was lost: %v", restarted.terminalFontSize)
+	}
+}
+
+func TestAStaleWindowKeepsTheTimesBothWindowsRecorded(t *testing.T) {
+	_, options := newWorld(t)
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	options.WallNow = func() time.Time { return now }
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.rememberRecentConnection(&Session{host: first.hosts[0], recordRecent: true})
+	now = now.Add(time.Hour)
+	// The second window read the store before the first one recorded its success.
+	second.rememberRecentConnection(&Session{host: second.hosts[1], recordRecent: true})
+	restarted := newTestState(t, options)
+	for _, id := range []string{first.hosts[0].CatalogID, second.hosts[1].CatalogID} {
+		if _, ok := restarted.recentConnections[id]; !ok {
+			t.Fatalf("recent time for %s missing: %v", id, restarted.recentConnections)
+		}
+	}
+}
+
 func TestFirstRunHasNoInventedHosts(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	if len(state.hosts) != 0 || state.selectedHostID != 0 {

@@ -281,6 +281,15 @@ func unionLines(remote, local string) string {
 // reloadShared brings the window's shared data up to date with the store, after
 // records came in from another computer. What is open keeps running.
 func (state *State) reloadShared() error {
+	if err := state.refreshShared(); err != nil {
+		return err
+	}
+	state.save() // what was here and never recorded (a provider of the assistant, say)
+	return nil
+}
+
+// refreshShared replaces the shared data with the store's without writing back.
+func (state *State) refreshShared() error {
 	entries, _, err := state.config.Load()
 	if err != nil {
 		return err
@@ -301,7 +310,6 @@ func (state *State) reloadShared() error {
 	state.configBase = base
 	state.hostDataChanged()
 	state.rebuildTabOptions()
-	state.save() // what was here and never recorded (a provider of the assistant, say)
 	return nil
 }
 
