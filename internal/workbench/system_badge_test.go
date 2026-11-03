@@ -79,10 +79,19 @@ func TestBadgeGlyphsAreCentered(t *testing.T) {
 }
 
 // glyphBounds is the extent of a glyph's geometry, in its own view-box units.
+// A glyph that carries fill colors keeps its paths in layers, so the layers are
+// where the geometry is read from.
 func glyphBounds(icon ui.Icon) (minX, minY, maxX, maxY float32) {
 	minX, minY, maxX, maxY = 0, 0, 0, 0
 	first := true
-	for _, command := range icon.Commands {
+	commands := icon.Commands
+	if len(icon.Layers) > 0 {
+		commands = nil
+		for _, layer := range icon.Layers {
+			commands = append(commands, layer.Commands...)
+		}
+	}
+	for _, command := range commands {
 		if command.Kind == ui.PathCommandClose {
 			continue
 		}

@@ -51,6 +51,11 @@ const (
 	SystemElementary
 	SystemVoid
 	SystemSlackware
+	SystemAnolis
+	SystemTencentOS
+	SystemAmazonLinux
+	SystemAzureLinux
+	SystemOracleLinux
 )
 
 // systemNames is each system's persisted name. An /etc/os-release ID that has a
@@ -66,6 +71,8 @@ var systemNames = [...]string{
 	SystemOpenWrt: "openwrt", SystemDeepin: "deepin", SystemUOS: "uos", SystemKylin: "kylin",
 	SystemPopOS: "popos", SystemZorin: "zorin",
 	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
+	SystemAnolis: "anolis", SystemTencentOS: "tencentos", SystemAmazonLinux: "amazonlinux",
+	SystemAzureLinux: "azurelinux", SystemOracleLinux: "oraclelinux",
 }
 
 func (system RemoteSystem) String() string {
@@ -109,6 +116,10 @@ var osReleaseIDs = map[string]RemoteSystem{
 	// some of them rewrite the ID to match. They all show the OpenWrt badge:
 	// there is no separate badge for a fork of a firmware.
 	"qwrt": SystemOpenWrt, "immortalwrt": SystemOpenWrt, "lede": SystemOpenWrt,
+	// The cloud vendors name their own systems with abbreviations that are not
+	// what anyone calls them, so the ID needs an entry to reach the badge.
+	"amzn": SystemAmazonLinux, "ol": SystemOracleLinux, "mariner": SystemAzureLinux,
+	"tlinux": SystemTencentOS,
 }
 
 // systemMarkers are the files an appliance or a distribution with no
