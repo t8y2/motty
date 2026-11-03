@@ -10,18 +10,9 @@ import (
 	"motty/internal/sshconn"
 )
 
-const proxyHostPageSize = 6
-
-// proxyHostPage is the page of hosts that holds id, so opening a select shows
-// its selected row instead of its first page.
-func proxyHostPage(hosts []Host, id uint32) int {
-	for index, host := range hosts {
-		if host.ID == id {
-			return index / proxyHostPageSize * proxyHostPageSize
-		}
-	}
-	return 0
-}
+// proxyHostVisible is how many host rows the jump/target select shows before
+// MenuScroll takes the wheel.
+const proxyHostVisible = 6
 
 type proxyRecord struct {
 	ID       uint32
@@ -56,14 +47,12 @@ func (route proxyRecord) relayCommand() string {
 }
 
 type proxyEditor struct {
-	targetID     uint32
-	jumpID       uint32
-	targetOpen   bool
-	jumpOpen     bool
-	targetOffset int
-	jumpOffset   int
-	viaShell     bool
-	relay        text.Editor
+	targetID   uint32
+	jumpID     uint32
+	targetOpen bool
+	jumpOpen   bool
+	viaShell   bool
+	relay      text.Editor
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
@@ -149,22 +138,6 @@ func (state *State) clickProxyDialog(id ui.ID) {
 		case id == hitProxyTargetDismiss || id == hitProxyJumpDismiss:
 			state.proxyEditor.targetOpen = false
 			state.proxyEditor.jumpOpen = false
-		case id == hitProxyTargetScrollUp:
-			if state.proxyEditor.targetOffset > 0 {
-				state.proxyEditor.targetOffset--
-			}
-		case id == hitProxyTargetScrollDown:
-			if state.proxyEditor.targetOffset+proxyHostPageSize < len(state.hosts) {
-				state.proxyEditor.targetOffset++
-			}
-		case id == hitProxyJumpScrollUp:
-			if state.proxyEditor.jumpOffset > 0 {
-				state.proxyEditor.jumpOffset--
-			}
-		case id == hitProxyJumpScrollDown:
-			if state.proxyEditor.jumpOffset+proxyHostPageSize < len(state.hosts) {
-				state.proxyEditor.jumpOffset++
-			}
 		case id.Scope() == hitProxyJumpItemList:
 			hostID := uint32(item(id))
 			if _, ok := state.hostByID(hostID); ok {
@@ -195,10 +168,8 @@ func (state *State) clickProxyDialog(id ui.ID) {
 		state.status = state.messages.StatusEditCanceled
 	case hitProxyDialogTarget:
 		state.proxyEditor.targetOpen = true
-		state.proxyEditor.targetOffset = proxyHostPage(state.hosts, state.proxyEditor.targetID)
 	case hitProxyDialogJump:
 		state.proxyEditor.jumpOpen = true
-		state.proxyEditor.jumpOffset = proxyHostPage(state.hosts, state.proxyEditor.jumpID)
 	case hitProxyDialogViaShell:
 		state.proxyEditor.viaShell = !state.proxyEditor.viaShell
 	case hitProxyDialogSubmit:
