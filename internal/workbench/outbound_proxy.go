@@ -42,7 +42,6 @@ var (
 	hitOutboundProxySubmit    = tree.ID(outboundProxyHits, "outbound-proxy-submit")
 	hitOutboundProxyCancel    = tree.ID(outboundProxyHits, "outbound-proxy-cancel")
 	hitOutboundProxyClose     = tree.ID(outboundProxyHits, "outbound-proxy-close")
-	hitOutboundProxyDismiss   = tree.ID(outboundProxyHits, "outbound-proxy-dismiss")
 )
 
 const (
@@ -379,7 +378,7 @@ func (state *State) clickOutboundProxy(id ui.ID) {
 		}
 	case hitOutboundProxySubmit:
 		state.submitOutboundProxy()
-	case hitOutboundProxyCancel, hitOutboundProxyClose, hitOutboundProxyDismiss:
+	case hitOutboundProxyCancel, hitOutboundProxyClose:
 		if form.forHost {
 			state.modal = modalNewHost
 		} else {
@@ -482,9 +481,10 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 			description = m.HostProxyCommandConfirm
 		}
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitOutboundProxyDismiss, CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
+		CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
 		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(312, form.dialogError), // the kind and four fields
 	})
 	layout := dialog.Begin(title, description)

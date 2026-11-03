@@ -1994,9 +1994,10 @@ func (state *State) paintDeleteHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 }
 
 func (state *State) paintMoveHostGroupDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
+		CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
 		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
 	})
 	layout := dialog.Begin(state.messages.MoveGroupTitle, "")

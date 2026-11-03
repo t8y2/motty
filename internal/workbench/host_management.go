@@ -596,7 +596,7 @@ func containsHostID(ids []uint32, id uint32) bool {
 
 func (state *State) clickMoveHostGroupDialog(id ui.ID) {
 	switch id {
-	case hitMoveGroupDismiss, hitMoveGroupClose, hitMoveGroupCancel:
+	case hitMoveGroupClose, hitMoveGroupCancel:
 		state.modal = modalNone
 		state.dialogError = ""
 	case hitMoveGroupSubmit:

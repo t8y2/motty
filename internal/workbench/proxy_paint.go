@@ -80,8 +80,9 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	messages, theme := state.messages, state.Theme()
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitProxyDialogDismiss, CloseID: hitProxyDialogClose,
+		Layer: dialogLayer, Scope: dialogScope, CloseID: hitProxyDialogClose,
 		InitialFocusID: hitProxyDialogTarget, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
 	})
 	layout := dialog.Begin(messages.ProxyDialogTitle, "")

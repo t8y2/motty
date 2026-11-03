@@ -43,8 +43,9 @@ func (state *State) paintAICLIProviderForm(canvas *ui.Canvas, viewport ui.Rect) 
 	if hint != "" {
 		pathHeight, height = 88, height+28
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose,
+		Layer: dialogLayer, Scope: dialogScope, CloseID: hitAISetFormClose,
 		InitialFocusID: hitAISetFormName, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(height, cfg.formErr),
 	})
 	layout := dialog.Begin(title, m.CLIFormDescription)
