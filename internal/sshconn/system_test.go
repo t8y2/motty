@@ -1,17 +1,33 @@
 package sshconn
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
 
-// TestProbeReadsEveryMarker keeps the shell probe and the marker table in step:
-// a marker added to one and not the other would never be reported.
+// TestProbeReadsEveryMarker keeps the shell probe and the marker table in step in
+// both directions and in order: a marker added to one and not the other would
+// never be reported, one still probed after leaving the table would be read and
+// ignored, and the table's order is the precedence an ambiguous host is read with.
 func TestProbeReadsEveryMarker(t *testing.T) {
+	const prefix, suffix = "for marker in", "; do"
+	start := strings.Index(remoteSystemCommand, prefix)
+	if start < 0 {
+		t.Fatalf("remoteSystemCommand has no marker loop")
+	}
+	start += len(prefix)
+	end := strings.Index(remoteSystemCommand[start:], suffix)
+	if end < 0 {
+		t.Fatalf("remoteSystemCommand's marker loop has no %q", suffix)
+	}
+	probed := strings.Fields(remoteSystemCommand[start : start+end])
+	listed := make([]string, 0, len(systemMarkers))
 	for _, marker := range systemMarkers {
-		if !strings.Contains(remoteSystemCommand, " "+marker.path) {
-			t.Errorf("remoteSystemCommand does not look for %s", marker.path)
-		}
+		listed = append(listed, marker.path)
+	}
+	if !slices.Equal(probed, listed) {
+		t.Fatalf("the probe reads %v, the table lists %v", probed, listed)
 	}
 }
 
@@ -100,7 +116,15 @@ func TestStandardImplementation(t *testing.T) {
 }
 
 func TestRemoteSystemPersistenceNamesRoundTrip(t *testing.T) {
-	for system := SystemLinux; system.String() != ""; system++ {
+	// Bounded by the table rather than by a name coming back empty, and each name is
+	// checked before it is parsed: an empty name is what SystemUnknown's is, so it
+	// would parse back to the missing system and a name lost in the middle would
+	// otherwise end the loop and skip every system after it.
+	for system := SystemLinux; system < RemoteSystem(len(systemNames)); system++ {
+		if system.String() == "" {
+			t.Errorf("system %d has no persistence name", int(system))
+			continue
+		}
 		if got := ParseRemoteSystem(system.String()); got != system {
 			t.Errorf("ParseRemoteSystem(%q) = %v, want %v", system.String(), got, system)
 		}
