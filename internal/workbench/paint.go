@@ -367,6 +367,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintTabDrag(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
+	state.paintHostGroupActions(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
 	state.paintSFTPMenu(canvas, viewport)
@@ -946,6 +947,8 @@ func (state *State) paintHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 	state.hostsContent = 0
 	switch {
+	case len(state.hostTreeRows) > 0:
+		state.paintHostTable(canvas, list)
 	case len(state.hosts) == 0:
 		state.paintEmptyHosts(canvas, bounds)
 	case len(state.visible) == 0:
@@ -1483,6 +1486,12 @@ func (state *State) sessionStatus(session *Session) (string, ui.Color) {
 
 func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	pal := state.pal
+	if cap(state.groupActions.rows) < len(state.hostGroups) {
+		state.groupActions.rows = make([]ui.Rect, len(state.hostGroups))
+	} else {
+		state.groupActions.rows = state.groupActions.rows[:len(state.hostGroups)]
+		clear(state.groupActions.rows)
+	}
 	// The list scrolls under the toolbar: the tree starts above its window by the
 	// scrolled distance, and the clip keeps what is out of the window out of sight
 	// and out of reach.
@@ -1496,6 +1505,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	canvas.Clip(treeBounds)
 	if state.hostView == hostViewGrid {
 		state.paintHostGrid(canvas, treeBounds)
+		state.paintHostGroupDrop(canvas)
 		canvas.Unclip()
 		return
 	}
@@ -1510,28 +1520,36 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			tree = tree.RowHeight(hostGroupRowHeight)
 			row := tree.Item(components.TreeItem{
 				ID: hitHostGroupRowList.At(entry.GroupIndex), DisclosureID: hitHostGroupOpenList.At(entry.GroupIndex),
-				Label: state.hostGroupLabel(group), Branch: true, Expanded: group.Expanded || filtering,
+				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
 			})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				return
 			}
-			f := state.chrome.hostRow.Begin(canvas, state.Theme(), row.Content)
+			content := row.Content
+			content.Width = max(0, content.Width-38)
+			f := state.chrome.hostRow.Begin(canvas, state.Theme(), content)
 			f.Row().Fill().PadSides(0, 0, 0, 2).Gap(6).Items(flex.Center).Children(func() {
-				f.Text(state.hostGroupLabel(group)).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23)
+				if group.Pinned {
+					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
+				}
+				label := group.Label
+				if group.Name == "" {
+					label = state.messages.HostGroupDefault
+				}
+				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
 				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(21)
 			})
 			f.End()
+			state.hostGroupRowEvents(canvas, hitHostGroupRowList.At(entry.GroupIndex), entry.GroupIndex, row.Bounds)
 		case hostTreeHost:
 			host := state.hosts[entry.HostIndex]
 			id := hitHostList.At(int(host.ID))
 			tree = tree.RowHeight(hostRowHeight)
-			depth := uint8(1)
-			if state.hostsFlat() {
-				depth = 0
-			}
-			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: depth, Selected: host.ID == state.selectedHostID})
+			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				return
 			}
@@ -1539,6 +1557,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			state.hostRowEvents(canvas, id, host)
 		}
 	}
+	state.paintHostGroupDrop(canvas)
 	canvas.Unclip()
 }
 
@@ -1992,31 +2011,52 @@ func (state *State) paintDeleteHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 }
 
 func (state *State) paintMoveHostGroupDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	if state.groupActions.op == hostGroupDelete {
+		state.paintHostGroupDeleteDialog(canvas, viewport)
+		return
+	}
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
+		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 90,
 	})
-	layout := dialog.Begin(state.messages.MoveGroupTitle, "")
+	title, submit, label := state.messages.MoveGroupTitle, state.messages.MoveGroupSubmit, state.messages.MoveGroupField
+	switch state.groupActions.op {
+	case hostGroupRename:
+		title, submit, label = state.messages.HostGroupActions.Rename, state.messages.HostGroupActions.Save, state.messages.HostGroupActions.Name
+	case hostGroupCreateChild:
+		title, submit, label = state.messages.HostGroupActions.NewChild, state.messages.HostGroupActions.Create, state.messages.HostGroupActions.Name
+	case hostGroupRelocate:
+		title, submit, label = state.messages.HostGroupActions.Move, state.messages.MoveGroupSubmit, state.messages.HostGroupActions.Parent
+	}
+	description := ""
+	if state.groupActions.op != hostGroupMoveHosts {
+		description = elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, ui.WeightRegular, dialog.Layout("").Header.Width)
+	}
+	layout := dialog.Begin(title, description)
 	var slot flex.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
+	f.Column().Fill().Children(func() { slot = f.Slot().Height(90) })
 	f.End()
 	field := components.BeginField(canvas, state.Theme(), slot.Rect()).For(hitMoveGroupField)
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
-	content := field.Paint(state.messages.MoveGroupField, "", state.dialogError)
+	content := field.Paint(label, "", state.dialogError)
 	value := state.hostGroupEditor.String()
 	focused := canvas.Focused() == hitMoveGroupField
 	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-		ID: hitMoveGroupField, Label: state.messages.MoveGroupField, Value: value,
-		Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
-	})
+	if state.groupActions.op == hostGroupRelocate {
+		state.paintHostGroupParentSelect(canvas, content, viewport)
+	} else {
+		components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
+			ID: hitMoveGroupField, Label: label, Value: value,
+			Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+		})
+	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitMoveGroupCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMoveGroupSubmit, Label: state.messages.MoveGroupSubmit},
+		components.ButtonAction{ID: hitMoveGroupSubmit, Label: submit},
 	)
 	dialog.End()
 }

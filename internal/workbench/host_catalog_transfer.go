@@ -23,7 +23,7 @@ var errHostCatalogTooNew = errors.New("unsupported catalog version")
 
 func (state *State) exportHostCatalog() {
 	hosts := state.exportedHosts()
-	if len(hosts) == 0 {
+	if len(hosts) == 0 && len(state.hostGroups) == 0 {
 		return
 	}
 	path, err := state.options.SaveFile(app.SaveFileOptions{
@@ -47,8 +47,8 @@ func (state *State) exportHostCatalog() {
 		document.Hosts = append(document.Hosts, savedHostFromHost(host))
 	}
 	for _, group := range state.hostGroups {
-		if catalogContainsGroup(hosts, group.Name) {
-			document.Groups = append(document.Groups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded})
+		if len(state.hostSelections) == 0 || catalogContainsGroup(hosts, group.Name) {
+			document.Groups = append(document.Groups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 		}
 	}
 	data, err := json.MarshalIndent(document, "", "  ")
@@ -87,7 +87,7 @@ func savedHostFromHost(host Host) savedHost {
 
 func catalogContainsGroup(hosts []Host, name string) bool {
 	for _, host := range hosts {
-		if strings.TrimSpace(host.Group) == name {
+		if hostGroupWithin(strings.TrimSpace(host.Group), name) {
 			return true
 		}
 	}
@@ -117,7 +117,7 @@ func (state *State) importHostCatalog() {
 	}
 	added, duplicates := state.applyHostCatalog(document)
 	state.status = fmt.Sprintf(state.messages.HostCatalogImportedFmt, added, duplicates)
-	if added > 0 {
+	if added > 0 || len(document.Groups) > 0 {
 		state.save()
 	}
 }
@@ -152,8 +152,10 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 	}
 	for _, group := range document.Groups {
 		name := strings.TrimSpace(group.Name)
-		if state.hostGroupIndex(name) < 0 {
-			state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !group.Collapsed})
+		if index := state.hostGroupIndex(name); index >= 0 {
+			state.hostGroups[index].Explicit = state.hostGroups[index].Explicit || group.Explicit
+		} else {
+			state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !group.Collapsed, Explicit: group.Explicit, Pinned: group.Pinned, Order: max(0, group.Order)})
 		}
 	}
 	for _, entry := range document.Hosts {
@@ -172,7 +174,7 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		state.selectedHostID = host.ID
 		added++
 	}
-	if added > 0 {
+	if added > 0 || len(document.Groups) > 0 {
 		state.hostDataChanged()
 	}
 	return added, duplicates

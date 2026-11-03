@@ -191,7 +191,13 @@ func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 // paintHostGridHeader draws the row that opens or closes a group of cards.
 func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int) {
 	pal, group := state.pal, state.hostGroups[groupIndex]
-	label := state.hostGroupLabel(group)
+	row := header
+	header.X += float32(group.Depth) * 22
+	header.Width = max(0, header.Width-float32(group.Depth)*22-38)
+	label := group.Label
+	if group.Name == "" {
+		label = state.messages.HostGroupDefault
+	}
 	chevron := iconChevronRight
 	if group.Expanded || state.visibleQuery != "" {
 		chevron = iconChevronDown
@@ -203,13 +209,17 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 		HitWith(hitHostGroupOpenList.At(groupIndex), label, ui.HitOptions{Role: ui.RoleButton, Expanded: group.Expanded}).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)
-			f.Row().Gap(6).Items(flex.Center).Children(func() {
-				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23)
+			f.Row().Grow(1).Basis(0).Gap(6).Items(flex.Center).Children(func() {
+				if group.Pinned {
+					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
+				}
+				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
 				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(21)
 			})
 		})
 	f.End()
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
+	state.hostGroupRowEvents(canvas, hitHostGroupOpenList.At(groupIndex), groupIndex, row)
 }
 
 func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
