@@ -74,7 +74,7 @@ func (state *State) clickShortcutCapture(id ui.ID) {
 	switch id {
 	case hitShortcutCaptureDelete:
 		state.clearShortcut(state.shortcutCapture)
-	case hitShortcutCaptureDismiss, hitShortcutCaptureCancel:
+	case hitShortcutCaptureDismiss, hitShortcutCaptureClose, hitShortcutCaptureCancel:
 		state.modal = modalNone
 		state.shortcutCapture = shortcutNone
 		state.shortcutError = ""
@@ -134,7 +134,7 @@ func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Re
 	}
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureDismiss,
+		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureClose,
 		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(messages.ShortcutsCaptureTitle, messages.ShortcutsCaptureDescription)

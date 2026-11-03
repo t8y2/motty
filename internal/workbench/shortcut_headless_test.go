@@ -83,6 +83,54 @@ func TestHeadlessShortcutCanBeDeletedFromTheCaptureDialog(t *testing.T) {
 	}
 }
 
+// The backdrop and the close button are different controls: hovering the area
+// outside the dialog must not paint the close button as hovered.
+func TestHeadlessShortcutCaptureCloseHoversOnlyOnItself(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	showShortcutSettings(state)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	if err := session.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
+		t.Fatal(err)
+	}
+	var close ui.Rect
+	for _, hit := range session.Snapshot().Hits {
+		if hit.ID == hitShortcutCaptureClose {
+			close = hit.Bounds
+		}
+	}
+	if close.Width == 0 {
+		t.Fatal("the capture dialog has no close button")
+	}
+	if err := session.Move(20, 20); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.Snapshot().Hovered; got != hitShortcutCaptureDismiss {
+		t.Fatalf("the pointer outside the dialog hovers %v, want the dismiss backdrop", got)
+	}
+	center := ui.Point{X: close.X + close.Width/2, Y: close.Y + close.Height/2}
+	if err := session.Move(center.X, center.Y); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.Snapshot().Hovered; got != hitShortcutCaptureClose {
+		t.Fatalf("the pointer on the close button hovers %v, want the close button", got)
+	}
+	if err := session.Click(center.X, center.Y); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.shortcutCapture != shortcutNone {
+		t.Fatalf("close left modal=%d action=%d", state.modal, state.shortcutCapture)
+	}
+}
+
 // Reset defaults is a page-wide action in the header, above the rows, and it
 // still restores a shortcut the user removed.
 func TestHeadlessShortcutResetLivesInThePageHeader(t *testing.T) {
