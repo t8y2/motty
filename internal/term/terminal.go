@@ -500,7 +500,7 @@ func (t *Terminal) resetState() {
 	// or editor that did not ask for the mouse still scrolls with the wheel. A
 	// program turns it off with 1007 reset.
 	t.modes = Modes{CursorVisible: true, Autowrap: true, AlternateScroll: true}
-	t.resetKeyboard()
+	t.ResetKeyboard()
 	t.tabs = defaultTabs(t.cols, nil)
 	t.version++
 }

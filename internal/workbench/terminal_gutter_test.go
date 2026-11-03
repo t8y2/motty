@@ -72,7 +72,7 @@ func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-	if copied := state.Key(ui.KeyEvent{Target: hit, Modifiers: ui.ModifierMeta, Text: "c"}).ClipboardText; copied != "pha be" {
+	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText; copied != "pha be" {
 		t.Fatalf("copied %q", copied)
 	}
 }

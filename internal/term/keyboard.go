@@ -19,8 +19,10 @@ const kittyMaxStack = 32
 // screen: the value the program would get from CSI ? u.
 func (t *Terminal) KeyboardFlags() uint32 { return t.scr.kittyFlags }
 
-// resetKeyboard drops both screens' kitty keyboard modes and stacks.
-func (t *Terminal) resetKeyboard() {
+// ResetKeyboard drops both screens' kitty keyboard modes and stacks. A screen
+// keeps them across a reconnect, so a new shell must start from the terminal's
+// defaults instead of inheriting a program's negotiation.
+func (t *Terminal) ResetKeyboard() {
 	for _, screen := range []*screen{&t.main, &t.alt} {
 		screen.kittyFlags = 0
 		screen.kittyStack = screen.kittyStack[:0]
@@ -78,14 +80,9 @@ func (t *Terminal) kittyPop(count int) {
 // EncodeKeyEvent turns one key event into the bytes a program reading the
 // terminal expects. flags is the active screen's kitty keyboard enhancement
 // flags; with no flags it is exactly EncodeKey.
+// Application shortcut ownership is decided by the caller, not the encoder.
 func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte {
 	flags &= kittySupportedFlags
-	// A line edit is the Control chord it stands for, so the program gets what
-	// that chord sends in its keyboard mode: a control character, or the kitty
-	// escape code of a program that reports every key.
-	if letter, ok := commandLineEdit(event.Key, event.Modifiers); ok {
-		event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
-	}
 	if flags == 0 {
 		if event.Release {
 			return nil
@@ -96,11 +93,6 @@ func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte 
 			return []byte(event.Typed)
 		}
 		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
-	}
-	// Command chords belong to the application, as they do in legacy mode.
-	// A Command modifier key itself is a key event when all keys are reported.
-	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
-		return nil
 	}
 	if event.Key.IsModifier() && flags&8 == 0 {
 		return nil
@@ -123,7 +115,7 @@ func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte 
 	// them after a program that changed the mode exits. With Shift, Alt or
 	// Control they have no legacy form to preserve, and programs such as Codex
 	// tell Shift+Enter (newline) from Enter (submit) only by its escape code.
-	plain := event.Modifiers&(ui.ModifierShift|ui.ModifierAlt|ui.ModifierControl) == 0
+	plain := event.Modifiers&(ui.ModifierShift|ui.ModifierAlt|ui.ModifierControl|ui.ModifierMeta) == 0
 	exception := plain && (event.Key == ui.KeyEnter || event.Key == ui.KeyTab || event.Key == ui.KeyBackspace)
 	if namedOK && exception && flags&8 == 0 {
 		if event.Release {
@@ -131,10 +123,6 @@ func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte 
 		}
 		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
 	}
-	if !namedOK && event.Release && flags&8 == 0 {
-		return nil
-	}
-
 	csiu := kittyUsesCSI(event, flags, namedOK, exception)
 	eventType, includeEvent := 1, flags&2 != 0
 	if includeEvent && event.Release {
@@ -187,7 +175,7 @@ func EncodeKeyEvent(event ui.KeyEvent, flags uint32, appCursorKeys bool) []byte 
 // kittyUsesCSI reports whether a key event must use the kitty escape form
 // rather than legacy bytes.
 func kittyUsesCSI(event ui.KeyEvent, flags uint32, named, exception bool) bool {
-	if flags&8 != 0 {
+	if flags&8 != 0 || event.Modifiers&ui.ModifierMeta != 0 {
 		return true
 	}
 	if named {

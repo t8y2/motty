@@ -7,6 +7,23 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
+// A reconnect keeps the screen but not the old program: the flags a program
+// pushed for its shell must not be inherited by the next one.
+func TestResetKeyboardDropsTheModesAndStacksOfBothScreens(t *testing.T) {
+	term := newTerm(20, 3)
+	feed(term, "\x1b[=1u\x1b[>2u\x1b[>4u")
+	if term.KeyboardFlags() != 4 || len(term.scr.kittyStack) != 2 {
+		t.Fatalf("flags=%d stack=%d before the reset", term.KeyboardFlags(), len(term.scr.kittyStack))
+	}
+	feed(term, "\x1b[?1049h\x1b[=8u")
+	term.ResetKeyboard()
+	for _, screen := range []*screen{&term.main, &term.alt} {
+		if screen.kittyFlags != 0 || len(screen.kittyStack) != 0 {
+			t.Fatalf("screen kept flags=%d stack=%d", screen.kittyFlags, len(screen.kittyStack))
+		}
+	}
+}
+
 func TestKittyKeyboardFlagsPerScreenAndStack(t *testing.T) {
 	term := newTerm(20, 3)
 	var replies []string
@@ -88,19 +105,24 @@ func TestEncodeKeyEventFollowsKittyProtocol(t *testing.T) {
 		{"associated text", ui.KeyEvent{Text: "x", Typed: "x"}, 8 | 16, "\x1b[120;1;120u"},
 		{"shift modifier key", ui.KeyEvent{Key: ui.KeyShiftLeft, Modifiers: ui.ModifierShift}, 8, "\x1b[57441;2u"},
 		{"meta modifier key", ui.KeyEvent{Key: ui.KeyMetaLeft, Modifiers: ui.ModifierMeta}, 8, "\x1b[57444;9u"},
-		{"command chord stays local", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "x"}, 8, ""},
+		{"command chord", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "x"}, 8, "\x1b[120;9u"},
+		{"command chord disambiguation", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "x"}, 1, "\x1b[120;9u"},
+		{"command press with event types", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "j"}, 1 | 2, "\x1b[106;9:1u"},
+		{"command release with event types", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "j", Release: true}, 1 | 2, "\x1b[106;9:3u"},
+		{"command enter", ui.KeyEvent{Key: ui.KeyEnter, Modifiers: ui.ModifierMeta}, 1, "\x1b[13;9u"},
+		{"legacy command chord", ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "x"}, 0, ""},
 		{"legacy command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 0, "\x01"},
 		{"legacy command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 0, ""},
-		{"kitty command left is control a", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 1, "\x1b[97;5u"},
-		{"kitty command right is control e", ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierMeta}, 1 | 4, "\x1b[101;5u"},
-		{"kitty command backspace is control u", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta, Repeat: true}, 1 | 2, "\x1b[117;5:2u"},
-		{"kitty command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 1 | 2, ""},
-		{"kitty command shift left stays local", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 1, ""},
-		{"all keys command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8, "\x1b[97;5u"},
-		{"all keys command backspace", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta}, 8, "\x1b[117;5u"},
-		{"all keys command left press", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8 | 2, "\x1b[97;5:1u"},
-		{"all keys command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 8 | 2, "\x1b[97;5:3u"},
-		{"all keys command shift left stays local", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 8, ""},
+		{"kitty command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 1, "\x1b[1;9D"},
+		{"kitty command right", ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierMeta}, 1 | 4, "\x1b[1;9C"},
+		{"kitty command backspace repeat", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta, Repeat: true}, 1 | 2, "\x1b[127;9:2u"},
+		{"kitty command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 1 | 2, "\x1b[1;9:3D"},
+		{"kitty command shift left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 1, "\x1b[1;10D"},
+		{"all keys command left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8, "\x1b[1;9D"},
+		{"all keys command backspace", ui.KeyEvent{Key: ui.KeyBackspace, Modifiers: ui.ModifierMeta}, 8, "\x1b[127;9u"},
+		{"all keys command left press", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta}, 8 | 2, "\x1b[1;9:1D"},
+		{"all keys command left release", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta, Release: true}, 8 | 2, "\x1b[1;9:3D"},
+		{"all keys command shift left", ui.KeyEvent{Key: ui.KeyLeft, Modifiers: ui.ModifierMeta | ui.ModifierShift}, 8, "\x1b[1;10D"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

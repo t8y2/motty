@@ -15,9 +15,8 @@ import (
 // application chords, so a Mac user could not jump to either end of the command
 // line or clear it. On macOS they now reach the program as the Control chords
 // they stand for (Ctrl+A, Ctrl+E, Ctrl+U), in whichever keyboard mode the
-// program is in, full-screen programs included. Elsewhere Meta is the Super or
-// Windows key and the chords stay local, as do the chords that drive tabs and
-// copying.
+// program is in, full-screen programs included. Other Command chords use Super
+// encoding only after kitty negotiation, including on non-macOS platforms.
 func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 	const alternateScreen = "\x1b[?1049h"
 	legacy := [3]string{"\x01", "\x05", "\x15"}
@@ -62,8 +61,19 @@ func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := test.want
+			eventType := ""
+			if test.flags&2 != 0 {
+				eventType = ":1"
+			}
 			if defaultShortcutModifier() != ui.ModifierMeta {
-				want = [3]string{} // no Command key: the chords stay local
+				want = [3]string{}
+				if test.flags != 0 {
+					want = [3]string{
+						fmt.Sprintf("\x1b[1;9%sD", eventType),
+						fmt.Sprintf("\x1b[1;9%sC", eventType),
+						fmt.Sprintf("\x1b[127;9%su", eventType),
+					}
+				}
 			}
 			for i, chord := range []string{"cmd+left", "cmd+right", "cmd+backspace"} {
 				shell.input = nil
@@ -74,14 +84,23 @@ func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 					t.Errorf("%s sent %q, want %q", chord, got, want[i])
 				}
 			}
-			// Further modifiers and other keys are not line edits: nothing is sent.
-			for _, chord := range []string{"cmd+shift+left", "cmd+alt+backspace", "cmd+up", "cmd+delete"} {
+			// These are not line edits; kitty receives the original Super chords.
+			for _, key := range []struct{ chord, kitty string }{
+				{"cmd+shift+left", "\x1b[1;10%sD"},
+				{"cmd+alt+backspace", "\x1b[127;11%su"},
+				{"cmd+up", "\x1b[1;9%sA"},
+				{"cmd+delete", "\x1b[3;9%s~"},
+			} {
 				shell.input = nil
-				if err := session.Keys(chord); err != nil {
-					t.Fatalf("%s: %v", chord, err)
+				if err := session.Keys(key.chord); err != nil {
+					t.Fatalf("%s: %v", key.chord, err)
 				}
-				if got := string(shell.input); got != "" {
-					t.Errorf("%s sent %q, want nothing", chord, got)
+				want := ""
+				if test.flags != 0 {
+					want = fmt.Sprintf(key.kitty, eventType)
+				}
+				if got := string(shell.input); got != want {
+					t.Errorf("%s sent %q, want %q", key.chord, got, want)
 				}
 			}
 		})
