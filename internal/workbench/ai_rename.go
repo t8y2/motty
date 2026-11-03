@@ -33,7 +33,7 @@ func (state *State) openAIRename(index int) {
 
 func (state *State) clickAIRenameDialog(id ui.ID) {
 	switch id {
-	case hitAIRenameDismiss, hitAIRenameClose, hitAIRenameCancel:
+	case hitAIRenameClose, hitAIRenameCancel:
 		state.modal = modalNone
 		state.dialogError = ""
 	case hitAIRenameSubmit:
@@ -71,9 +71,10 @@ func (state *State) aiRenameKey(event ui.KeyEvent) (ui.EventResult, bool) {
 
 func (state *State) paintAIRenameDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	m := state.messages.AIPanel
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitAIRenameDismiss, CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
+		CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
 		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
 	})
 	layout := dialog.Begin(m.RenameTitle, "")

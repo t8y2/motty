@@ -66,7 +66,6 @@ var (
 	hitAIHistoryOpen     = tree.Sub(aiPanelHits, tree.Name("ai-history-open"))   // saved conversations, to open
 	hitAIHistoryDelete   = tree.Sub(aiPanelHits, tree.Name("ai-history-delete")) // and to delete
 	hitAIHistoryRename   = tree.Sub(aiPanelHits, tree.Name("ai-history-rename")) // and to rename
-	hitAIRenameDismiss   = tree.ID(aiPanelHits, "ai-rename-dismiss")
 	hitAIRenameClose     = tree.ID(aiPanelHits, "ai-rename-close")
 	hitAIRenameCancel    = tree.ID(aiPanelHits, "ai-rename-cancel")
 	hitAIRenameSubmit    = tree.ID(aiPanelHits, "ai-rename-submit")

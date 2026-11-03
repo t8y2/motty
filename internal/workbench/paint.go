@@ -1881,10 +1881,12 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	case hostDialogCopy:
 		title, submit = m.CopyHostTitle, m.AddHost
 	}
+	// Not a menu: a press on the dimmed area beside the form does nothing, so a
+	// half-filled form is not lost by a click beside it. Escape, the close button
+	// and Cancel still cancel it.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer:          dialogLayer,
 		Scope:          dialogScope,
-		DismissID:      hitDialogDismiss,
 		CloseID:        hitDialogClose,
 		InitialFocusID: hitDialogLabel,
 		ContentSize:    ui.Size{Width: 680},
@@ -2015,9 +2017,10 @@ func (state *State) paintMoveHostGroupDialog(canvas *ui.Canvas, viewport ui.Rect
 		state.paintHostGroupDeleteDialog(canvas, viewport)
 		return
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
+		CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
 		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 90,
 	})
 	title, submit, label := state.messages.MoveGroupTitle, state.messages.MoveGroupSubmit, state.messages.MoveGroupField

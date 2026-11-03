@@ -35,11 +35,10 @@ var (
 
 // The rename dialog's identities, after the menu's.
 var (
-	hitTabRenameDismiss = tree.ID(tabMenuHits, "tab-rename-dismiss")
-	hitTabRenameClose   = tree.ID(tabMenuHits, "tab-rename-close")
-	hitTabRenameCancel  = tree.ID(tabMenuHits, "tab-rename-cancel")
-	hitTabRenameSubmit  = tree.ID(tabMenuHits, "tab-rename-submit")
-	hitTabRenameField   = tree.ID(tabMenuHits, "tab-rename-field")
+	hitTabRenameClose  = tree.ID(tabMenuHits, "tab-rename-close")
+	hitTabRenameCancel = tree.ID(tabMenuHits, "tab-rename-cancel")
+	hitTabRenameSubmit = tree.ID(tabMenuHits, "tab-rename-submit")
+	hitTabRenameField  = tree.ID(tabMenuHits, "tab-rename-field")
 )
 
 // The confirmation before closing several tabs at once.

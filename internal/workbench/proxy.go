@@ -133,7 +133,7 @@ func (state *State) openProxyDialog() {
 func (state *State) clickProxyDialog(id ui.ID) {
 	if state.proxyEditor.targetOpen || state.proxyEditor.jumpOpen {
 		switch {
-		case id == hitProxyDialogDismiss || id == hitProxyDialogClose || id == hitProxyDialogCancel:
+		case id == hitProxyDialogClose || id == hitProxyDialogCancel:
 			state.closeProxyDialog()
 			state.status = state.messages.StatusEditCanceled
 		case id == hitProxyDialogSubmit:
@@ -190,7 +190,7 @@ func (state *State) clickProxyDialog(id ui.ID) {
 		return
 	}
 	switch id {
-	case hitProxyDialogDismiss, hitProxyDialogClose, hitProxyDialogCancel:
+	case hitProxyDialogClose, hitProxyDialogCancel:
 		state.closeProxyDialog()
 		state.status = state.messages.StatusEditCanceled
 	case hitProxyDialogTarget:

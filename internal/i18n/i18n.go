@@ -262,6 +262,7 @@ type Messages struct {
 	SettingsTerminalClipboardAllow       string
 	SettingsShortcuts                    string
 	ShortcutsReset                       string
+	ShortcutsDelete                      string
 	ShortcutsCaptureTitle                string
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string

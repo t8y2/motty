@@ -67,7 +67,6 @@ var (
 	hitHostImportDone          = tree.ID(shellHits, "host-import-done")
 	hitGitHub                  = tree.ID(shellHits, "github")
 	hitTheme                   = tree.ID(shellHits, "theme")
-	hitDialogDismiss           = tree.ID(shellHits, "dialog-dismiss")
 	hitDialogClose             = tree.ID(shellHits, "dialog-close")
 	hitDialogCancel            = tree.ID(shellHits, "dialog-cancel")
 	hitDialogSubmit            = tree.ID(shellHits, "dialog-submit")
@@ -119,7 +118,9 @@ var (
 	hitClipboardAlways         = tree.ID(shellHits, "clipboard-always")
 	hitShortcutReset           = tree.ID(shellHits, "shortcut-reset")
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
+	hitShortcutCaptureClose    = tree.ID(shellHits, "shortcut-capture-close")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
+	hitShortcutCaptureDelete   = tree.ID(shellHits, "shortcut-capture-delete")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
@@ -164,7 +165,6 @@ var (
 	hitForwardAdd                   = tree.ID(forwardsHits, "forward-add")
 	hitForwardRemove                = tree.ID(forwardsHits, "forward-remove")
 	hitForwardStartStop             = tree.ID(forwardsHits, "forward-start-stop")
-	hitForwardDialogDismiss         = tree.ID(forwardsHits, "forward-dialog-dismiss")
 	hitForwardDialogClose           = tree.ID(forwardsHits, "forward-dialog-close")
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
@@ -254,7 +254,6 @@ var (
 	hitProxyAdd              = tree.ID(proxiesHits, "proxy-add")
 	hitProxyStartStop        = tree.ID(proxiesHits, "proxy-start-stop")
 	hitProxyRemove           = tree.ID(proxiesHits, "proxy-remove")
-	hitProxyDialogDismiss    = tree.ID(proxiesHits, "proxy-dialog-dismiss")
 	hitProxyDialogClose      = tree.ID(proxiesHits, "proxy-dialog-close")
 	hitProxyDialogCancel     = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit     = tree.ID(proxiesHits, "proxy-dialog-submit")
@@ -306,7 +305,6 @@ var (
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
-	hitSFTPDialogDismiss   = tree.ID(sftpHits, "sftp-dialog-dismiss")
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -1744,7 +1742,7 @@ func (state *State) clickHostDialog(id ui.ID) {
 		return
 	}
 	switch id {
-	case hitDialogDismiss, hitDialogClose, hitDialogCancel:
+	case hitDialogClose, hitDialogCancel:
 		state.cancelHostTest()
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.modal = modalNone
@@ -2232,9 +2230,15 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.snippets.capturing = false
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalShortcutCapture && event.Key == ui.KeyEscape && !event.Repeat {
-		state.clickShortcutCapture(hitShortcutCaptureCancel)
-		return ui.EventResult{Handled: true, Repaint: true}
+	if state.modal == modalShortcutCapture && !event.Repeat {
+		if event.Key == ui.KeyEscape {
+			state.clickShortcutCapture(hitShortcutCaptureCancel)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		if event.Modifiers == 0 && (event.Key == ui.KeyDelete || event.Key == ui.KeyBackspace) {
+			state.clickShortcutCapture(hitShortcutCaptureDelete)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result

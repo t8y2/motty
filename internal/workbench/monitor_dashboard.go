@@ -580,7 +580,7 @@ func (s *State) clickDashboard(id ui.ID) bool {
 			}
 		case id == hitDashboardDialogSave:
 			s.submitDashboard()
-		case id == hitDashboardDialogCancel || id == hitDashboardDismiss:
+		case id == hitDashboardDialogCancel:
 			s.closeModal()
 			s.showNextPrompt()
 		case id.Scope() == hitDashboardHostList:

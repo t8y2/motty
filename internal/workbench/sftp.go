@@ -1221,7 +1221,7 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 
 func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
 	switch id {
-	case hitSFTPDialogDismiss, hitSFTPDialogClose, hitSFTPDialogCancel:
+	case hitSFTPDialogClose, hitSFTPDialogCancel:
 		state.closeSFTPDialog(view)
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)
