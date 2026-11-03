@@ -39,9 +39,8 @@ func (t *Terminal) printASCII(run []byte) {
 }
 
 // fillASCII writes a whole run of printable ASCII in one pass when nothing in
-// its way needs per-cell handling: no pending wrap, insert mode, marks,
-// hyperlink or double-width halves. It returns false when the caller must take
-// the general path.
+// its way needs per-cell handling: no pending wrap, insert mode, marks or
+// hyperlink. It returns false when the caller must take the general path.
 func (t *Terminal) fillASCII(l *line, run []byte) bool {
 	if len(run) == 0 || !t.canWrite(l) {
 		return false
@@ -50,17 +49,14 @@ func (t *Terminal) fillASCII(l *line, run []byte) bool {
 	if end > t.cols {
 		return false
 	}
-	for _, cell := range l.cells[t.cx:end] {
-		if cell.Attr&(WideHead|WideTail) != 0 {
-			return false
-		}
-	}
 	cell := t.pen.cell()
 	cells := l.span(t.cx, len(run))
 	for index, value := range run {
 		cell.R = rune(value)
 		cells[index] = cell
 	}
+	t.repairWide(l, t.cx-1)
+	t.repairWide(l, end)
 	t.advance(l, end, rune(run[len(run)-1]))
 	return true
 }
