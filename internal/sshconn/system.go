@@ -135,6 +135,9 @@ var systemMarkers = [...]struct {
 	{"/etc/unraid-version", SystemUnraid},
 	{"/etc/openmediavault", SystemOpenMediaVault},
 	{"/etc/pve", SystemProxmox},
+	// fnOS keeps its own tree under /usr/trim and reports plain Debian in
+	// /etc/os-release, so the ID alone would badge it as Debian.
+	{"/usr/trim", SystemFnOS},
 	// A router firmware is OpenWrt whatever its /etc/os-release says, and some
 	// forks ship an os-release without an ID at all. This file is the one every
 	// OpenWrt build writes.

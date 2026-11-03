@@ -52,6 +52,8 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Linux\nmarker=/etc/config/uLinux.conf\n", SystemQNAP},
 		{"kernel=Linux\nmarker=/etc/unraid-version\n", SystemUnraid},
 		{"kernel=Linux\nmarker=/etc/slackware-version\n", SystemSlackware},
+		// fnOS ships Debian's os-release unchanged; /usr/trim is its own tree.
+		{"kernel=Linux\nid=debian\nmarker=/usr/trim\n", SystemFnOS},
 		// Proxmox VE and OpenMediaVault both report Debian.
 		{"kernel=Linux\nid=debian\nmarker=/etc/pve\n", SystemProxmox},
 		{"kernel=Linux\nid=debian\nmarker=/etc/openmediavault\n", SystemOpenMediaVault},
