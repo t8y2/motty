@@ -1862,10 +1862,12 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	case hostDialogCopy:
 		title, submit = m.CopyHostTitle, m.AddHost
 	}
+	// Not a menu: a press on the dimmed area beside the form does nothing, so a
+	// half-filled form is not lost by a click beside it. Escape, the close button
+	// and Cancel still cancel it.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer:          dialogLayer,
 		Scope:          dialogScope,
-		DismissID:      hitDialogDismiss,
 		CloseID:        hitDialogClose,
 		InitialFocusID: hitDialogLabel,
 		ContentSize:    ui.Size{Width: 680},

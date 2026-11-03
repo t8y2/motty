@@ -143,3 +143,40 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 		})
 	}
 }
+
+// The New Host dialog is a form, not a menu: a press on the scrim must not throw
+// away what was typed into it. Canceling stays explicit, through Cancel, the
+// close button or Escape.
+func TestHostDialogKeepsTypedContentWhenPressedOutside(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitAddHost)
+	typeInto(state, hitDialogLabel, "staging-web")
+	typeInto(state, hitDialogAddress, "10.0.0.7")
+	driver := modalEventDriver(t, state)
+	var form ui.Rect
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == hitHostFormViewport {
+			form = hit.Bounds
+			break
+		}
+	}
+	if form.Width == 0 {
+		t.Fatal("the open dialog has no form viewport")
+	}
+	// A press on the scrim, beside the form and inside the window.
+	if err := driver.Click(max(form.X-24, 4), form.Y+form.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNewHost {
+		t.Fatal("a press outside the New Host form closed it")
+	}
+	if got := state.editor.value(fieldLabel); got != "staging-web" {
+		t.Fatalf("a press outside the New Host form lost the typed label: %q", got)
+	}
+	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.status != state.messages.StatusEditCanceled {
+		t.Fatal("Escape did not cancel the New Host form")
+	}
+}

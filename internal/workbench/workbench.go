@@ -67,7 +67,6 @@ var (
 	hitHostImportDone          = tree.ID(shellHits, "host-import-done")
 	hitGitHub                  = tree.ID(shellHits, "github")
 	hitTheme                   = tree.ID(shellHits, "theme")
-	hitDialogDismiss           = tree.ID(shellHits, "dialog-dismiss")
 	hitDialogClose             = tree.ID(shellHits, "dialog-close")
 	hitDialogCancel            = tree.ID(shellHits, "dialog-cancel")
 	hitDialogSubmit            = tree.ID(shellHits, "dialog-submit")
@@ -1743,7 +1742,7 @@ func (state *State) clickHostDialog(id ui.ID) {
 		return
 	}
 	switch id {
-	case hitDialogDismiss, hitDialogClose, hitDialogCancel:
+	case hitDialogClose, hitDialogCancel:
 		state.cancelHostTest()
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.modal = modalNone
