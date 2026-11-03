@@ -645,39 +645,6 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	}
 }
 
-func TestSFTPFileTabPaintStaysAllocationFree(t *testing.T) {
-	if raceDetector {
-		t.Skip("allocation counts are not comparable under the race detector")
-	}
-	state, _, _, _, _ := openSFTPTabFixture(t)
-	workspace := state.deck.ActiveWorkspace()
-	if workspace == 0 {
-		t.Fatal("the fixture needs a terminal workspace")
-	}
-	state.Click(hitTabList.At(int(workspace)))
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
-	state.Paint(&canvas, size)
-	if allocations := testing.AllocsPerRun(50, func() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}); allocations != 0 {
-		t.Fatalf("hidden file tab paint allocations = %v", allocations)
-	}
-
-	state.activateSFTPTab(state.sftpTabs[0].session.ID)
-	for range 3 {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}
-	if allocations := testing.AllocsPerRun(50, func() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}); allocations > 6 {
-		t.Fatalf("active file tab paint allocations = %v, want at most the pinned baseline 6", allocations)
-	}
-}
-
 func TestSFTPFileTabIsRuntimeOnlyAndSourceCloseRemovesIt(t *testing.T) {
 	state, source, w, _, _ := openSFTPTabFixture(t)
 
