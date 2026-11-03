@@ -50,7 +50,7 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemVoid:           {icons.Void, ui.RGB(71, 128, 97)},
 	sshconn.SystemSlackware:      {icons.Slackware, ui.RGB(60, 60, 60)},
 	// A vendor's own distribution carries the vendor's mark and color.
-	sshconn.SystemAnolis:      {icons.Anolis, ui.RGB(41, 138, 67)},
+	sshconn.SystemAnolis:      {icons.Anolis, ui.RGB(78, 154, 39)},
 	sshconn.SystemTencentOS:   {icons.Tencentos, ui.RGB(0, 82, 217)},
 	sshconn.SystemAmazonLinux: {icons.Amazonlinux, ui.RGB(35, 47, 62)},
 	sshconn.SystemAzureLinux:  {icons.Azurelinux, ui.RGB(0, 120, 212)},
