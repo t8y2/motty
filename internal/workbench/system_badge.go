@@ -97,7 +97,13 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 		}}, true
 	}
 	if badge, ok := distroBadges[system]; ok {
-		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, 0.16, white}}}, true
+		// VMware's mark is a monogram two and a half times wider than it is tall,
+		// so the square-mark inset would leave it a few pixels high.
+		inset := float32(0.16)
+		if system == sshconn.SystemESXi {
+			inset = 0.10
+		}
+		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, inset, white}}}, true
 	}
 	return badgeArt{}, false
 }
