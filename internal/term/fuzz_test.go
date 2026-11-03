@@ -72,6 +72,11 @@ func checkLine(t testing.TB, l *line, cols int) {
 		if l.cells[x] != (Cell{}) {
 			t.Fatalf("cell %d past used %d is not blank: %+v", x, l.used, l.cells[x])
 		}
+		// pushHistory trims on a blank cell and an empty link slot, so a link
+		// left past used would be trimmed away without this check.
+		if l.hyperlinkAt(x) != 0 {
+			t.Fatalf("hyperlink %d past used %d is set", x, l.used)
+		}
 	}
 	for x, c := range l.cells {
 		if c.Attr&WideHead != 0 {

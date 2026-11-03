@@ -569,6 +569,8 @@ func (t *Terminal) recycle(l *line) *line {
 		to = 0
 	} else {
 		if t.cols > len(l.cells) {
+			// The row grew back over a width it had before: the cells the
+			// shorter slice never covered can still hold its old content.
 			to = t.cols
 		}
 		l.cells = l.cells[:t.cols]
