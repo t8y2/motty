@@ -2168,7 +2168,7 @@ var chineseAbout = AboutMessages{
 	QQDescription:      "群号 1131573299：提问、反馈和闲聊。",
 	WeChat:             "微信群",
 	WeChatDescription:  "点开腾讯文档，扫码加入。",
-	Discord:            "Discord 服务器",
+	Discord:            "Discord 交流群",
 	DiscordDescription: "和开发者、用户实时聊天。",
 	Issues:             "问题反馈",
 	IssuesDescription:  "在 GitHub 上报告 Bug 或提功能建议。",

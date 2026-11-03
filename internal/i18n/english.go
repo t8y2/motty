@@ -2168,7 +2168,7 @@ var englishAbout = AboutMessages{
 	QQDescription:      "Group 1131573299: questions, feedback and chat.",
 	WeChat:             "WeChat group",
 	WeChatDescription:  "Open the Tencent Doc and scan the QR code to join.",
-	Discord:            "Discord server",
+	Discord:            "Discord group",
 	DiscordDescription: "Real-time chat with the people building and using Motty.",
 	Issues:             "Report an issue",
 	IssuesDescription:  "Bug reports and feature requests on GitHub.",
