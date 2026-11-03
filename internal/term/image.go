@@ -97,15 +97,29 @@ func (t *Terminal) ImageRow(lineID uint64) (int, bool) {
 	top := t.histCount - t.view
 	for index := 0; index < t.histCount; index++ {
 		if t.histAt(index).id == lineID {
-			return index - top, true
+			return t.imageViewRow(index, top)
 		}
 	}
 	for row, line := range t.main.lines {
 		if line.id == lineID {
-			return t.histCount + row - top, true
+			return t.imageViewRow(t.histCount+row, top)
 		}
 	}
 	return 0, false
+}
+
+// imageViewRow is the view row of the image anchored on buffer row index, whose
+// window starts at top. A row of the window is where a fold put it, and a hidden
+// one has no row: its image goes with it. A row above the window stays the
+// negative offset from the window, which is only right while no fold lies
+// between the two; an image that tall past a fold is not worth a walk of the
+// history to place exactly.
+func (t *Terminal) imageViewRow(index, top int) (int, bool) {
+	if index < top || t.identity() {
+		return index - top, true
+	}
+	row := t.displayRow(index - top)
+	return row, row >= 0
 }
 
 func (t *Terminal) acceptImage(pixels []byte, width, height int, protocolID uint32) *storedImage {

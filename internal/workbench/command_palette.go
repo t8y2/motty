@@ -118,6 +118,7 @@ func (state *State) rebuildCommandPalette() {
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil && state.remoteToolsOffered(session) {
 			palette.add(messages.Tools.RemoteMenu, hitRemoteToolsOpen)
 		}
+		state.foldPaletteEntries(palette)
 		palette.add(messages.History.Title, hitHistoryOpen)
 		palette.add(messages.Completion.Title, hitCompletionOpen)
 		palette.add(messages.ConnRetry, hitConnRetry)

@@ -71,8 +71,14 @@ func main() {
 		}
 		allowedTargets = append(allowedTargets, directTarget{requested: target, dial: target})
 	}
+	banner := "SSH-2.0-GopE2E"
+	if value := os.Getenv("E2E_BANNER"); value != "" {
+		// A banner the client takes for a standard server, which is the only kind
+		// it starts its shell integration on.
+		banner = value
+	}
 	config := &ssh.ServerConfig{
-		ServerVersion: "SSH-2.0-GopE2E",
+		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
 				return nil, nil

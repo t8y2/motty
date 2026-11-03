@@ -51,3 +51,32 @@ func TestNoClockRecordsNothing(t *testing.T) {
 		t.Fatalf("written = %d without a clock", got)
 	}
 }
+
+func TestContinuationRowsKnowTheLineTheyContinue(t *testing.T) {
+	screen := New(10, 4, 100)
+	// 25 characters at 10 columns take three rows: two that carry the line on
+	// and the one it ends on.
+	screen.Write([]byte("abcdefghijklmnopqrstuvwxy\r\n"))
+	for row, want := range []bool{false, true, true, false} {
+		if got := screen.ContinuesAbove(row); got != want {
+			t.Fatalf("row %d continues = %v, want %v (%q)", row, got, want, screen.RowText(row))
+		}
+	}
+}
+
+func TestContinuationSurvivesScrollingTheLineOffTheTop(t *testing.T) {
+	screen := New(10, 3, 100)
+	// The line wraps into three rows and the newline scrolls the first of them
+	// into the history, so the view starts in the middle of the line.
+	screen.Write([]byte("abcdefghijklmnopqrstuvwxy\r\n"))
+	if screen.Scrollback() != 1 || screen.RowText(0) != "klmnopqrst" {
+		t.Fatalf("view starts at %q after %d history lines", screen.RowText(0), screen.Scrollback())
+	}
+	// The view starts in the middle of the line: its first two rows continue it,
+	// the third ends it.
+	for row, want := range []bool{true, true, false} {
+		if got := screen.ContinuesAbove(row); got != want {
+			t.Fatalf("row %d continues = %v, want %v (%q)", row, got, want, screen.RowText(row))
+		}
+	}
+}

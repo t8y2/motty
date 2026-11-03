@@ -459,19 +459,7 @@ func (t *Terminal) endOSC() {
 	case 99:
 		t.osc99(text)
 	case 133:
-		suffix := ""
-		if t.promptToken != "" {
-			suffix = ";motty=" + t.promptToken
-		}
-		if string(text) == "A"+suffix && t.promptStartFn != nil {
-			t.promptStartFn()
-		}
-		if string(text) == "B"+suffix && t.promptReadyFn != nil {
-			t.promptReadyFn()
-		}
-		if string(text) == "C"+suffix && t.commandStartFn != nil {
-			t.commandStartFn()
-		}
+		t.osc133(text)
 	case 777:
 		t.inputEnvironmentReport(text)
 		t.osc777(text)

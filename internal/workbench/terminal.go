@@ -107,7 +107,9 @@ type terminal struct {
 	cache      rowCache
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
-	rowIDs    []uint64
+	rowIDs []uint64
+	// foldBoxes are the fold boxes the gutter painted in the frame in progress.
+	foldBoxes []foldBox
 	selection terminalSelection
 	find      terminalFind
 	links     terminalLinks
@@ -727,6 +729,7 @@ func (state *State) pump(session *Session) {
 	if len(data) > 0 {
 		t.recording.append(state.now(), terminalRecordingOutput, data)
 		t.writeRemote(data, state.now())
+		state.growGutterNumbers(session)
 		if wasExec {
 			t.markAIBlock(t.exec == nil)
 		}

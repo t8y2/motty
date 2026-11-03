@@ -155,9 +155,14 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 	r := &t.reflow
 	r.cells, r.links, r.marks, r.run = r.cells[:0], r.links[:0], r.marks[:0], r.run[:0]
 	linked := false
+	// The shell's markers are about the logical line, not the row of it they
+	// happened to fall on: the prompt a wrapped command starts, the output a
+	// wrapped line starts. They are put on the first row of whatever it becomes.
+	var marks lineMark
 	for index := first; index <= last; index++ {
 		l := t.mainLine(index)
 		r.run = append(r.run, l)
+		marks |= l.mark
 		width := l.contentWidth()
 		base := len(r.cells)
 		for i := range anchors {
@@ -239,6 +244,10 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 			}
 		}
 		l.wrapped = k < len(r.ends)-1
+		l.mark = 0
+		if k == 0 {
+			l.mark = marks
+		}
 		for i := range anchors {
 			if a := &anchors[i]; a.inRun && !a.moved && (a.offset < to || k == len(r.ends)-1) {
 				a.index, a.col, a.moved = len(r.lines), min(max(a.offset-from, 0), t.cols-1), true

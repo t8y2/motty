@@ -296,6 +296,10 @@ func (t *Terminal) eraseDisplay(mode int) {
 	case 2:
 		for _, l := range lines {
 			t.eraseLine2(l)
+			// Wiping the whole display takes the shell's command blocks with
+			// it; erasing part of a row does not, because a prompt that
+			// redraws itself in place is still the prompt of its command.
+			l.mark = 0
 		}
 	case 3:
 		t.clearHistory()

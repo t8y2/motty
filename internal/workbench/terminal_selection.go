@@ -328,6 +328,13 @@ func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent
 }
 
 func (terminal *terminal) sendMouse(event term.MouseEvent) bool {
+	// The application knows only its own screen: a fold moves rows about in the
+	// view, so the row the pointer is on is mapped back before it is reported.
+	row, ok := terminal.screen.ScreenRow(event.Row)
+	if !ok {
+		return false
+	}
+	event.Row = row
 	report, ok := term.AppendMouse(terminal.mouseReport[:0], terminal.screen.Modes(), event)
 	if !ok {
 		return false

@@ -1,0 +1,136 @@
+# End to end: folding a command's output in the line gutter. The fold boxes come
+# from the shell integration's OSC 133 markers, so the loopback SSH fixture has to
+# be started with E2E_ALLOW_EXEC=1 and a login shell Motty can inject into
+# (E2E_LOGIN_SHELL=/bin/zsh or a Bash path), on a clean HOME:
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-blocks .)
+#   HOME=$(mktemp -d) E2E_ALLOW_EXEC=1 E2E_LOGIN_SHELL=/bin/zsh /tmp/e2esshd-blocks 2396 &
+#   go build -tags vivahead,dev -o /tmp/motty-head-blocks ./cmd/motty
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-blocks \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/command_blocks_e2e.txt
+#
+# Expected, read from the output: `hits` lists a "Fold command output" button for
+# each command that printed something and none after clear; folding hides the
+# output but never the command line, the alternate screen shows what vim drew
+# with the gutter on, and turning the gutter off opens every fold.
+
+click "Settings"
+click "Terminal"
+settle 300
+scroll 800 500 0 600
+settle 300
+click "Both"
+settle 300
+click "Hosts"
+click "Search"
+type tester@127.0.0.1:2396
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@" 10000
+settle 800
+
+# Two commands that print; the second is long enough to be worth folding.
+type echo hello-block
+key enter
+settle 600
+type seq 101 140
+key enter
+settle 800
+shot /tmp/motty-pr-shots/336fix/01-two-blocks-open.png
+hits
+
+# Fold the latest block: its output goes, its command line stays, the numbers
+# after it keep counting from where the output ended.
+click "Fold command output"
+settle 400
+shot /tmp/motty-pr-shots/336fix/02-latest-folded.png
+texts 140
+texts "seq 101 140"
+click "Unfold command output"
+settle 400
+texts 140
+
+# A double click on the box is one toggle, not two.
+dblclick "Fold command output"
+settle 400
+texts 140
+click "Unfold command output"
+settle 300
+
+# A long command wraps in a narrow window; folding its block keeps the tail.
+resize 700 800
+settle 600
+type echo aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeeeeeeeeffffffffffgggggggggghhhhhhhhhhiiiiiiiiiijjjjjjjjjj
+key enter
+settle 800
+click "Fold command output"
+settle 400
+shot /tmp/motty-pr-shots/336fix/03-wrapped-command-folded.png
+texts jjjjjjjjjj
+click "Unfold command output"
+settle 300
+shot /tmp/motty-pr-shots/336fix/04-wrapped-command-open.png
+
+# Resize with a fold shut: back to the wide window and narrow again.
+click "Fold command output"
+settle 300
+resize 1400 900
+settle 600
+shot /tmp/motty-pr-shots/336fix/05-after-widen-still-folded.png
+hits
+resize 560 800
+settle 600
+shot /tmp/motty-pr-shots/336fix/06-after-narrow-still-folded.png
+resize 1400 900
+settle 600
+
+# clear takes every block with it: no box is left on rows with no command.
+type clear
+key enter
+settle 800
+type seq 1 6
+key enter
+settle 800
+shot /tmp/motty-pr-shots/336fix/07-after-clear.png
+hits
+
+# A full-screen program over scrollback shows what it drew.
+type seq 1 300
+key enter
+settle 1000
+type vim
+key enter
+settle 1500
+type ihello-from-vim
+settle 600
+shot /tmp/motty-pr-shots/336fix/08-vim-over-scrollback.png
+texts hello-from-vim
+key escape
+type :q!
+key enter
+settle 1000
+shot /tmp/motty-pr-shots/336fix/09-after-vim.png
+
+# Turning the gutter off opens whatever was folded.
+type seq 501 520
+key enter
+settle 800
+click "Fold command output"
+settle 300
+texts 520
+shot /tmp/motty-pr-shots/336fix/10-folded-before-gutter-off.png
+click "Settings"
+click "Terminal"
+settle 300
+scroll 800 500 0 600
+settle 300
+click "Off"
+settle 300
+click "127.0.0.1:2396"
+settle 600
+shot /tmp/motty-pr-shots/336fix/11-gutter-off.png
+texts 520

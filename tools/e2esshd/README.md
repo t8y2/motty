@@ -24,7 +24,7 @@ The terminal resource-monitor fixture accepts only the fixed
 network counters, a reading every 200 ms until the client closes the session; arbitrary exec requests are rejected unless the server is started with `E2E_ALLOW_EXEC=1`, which runs them with `/bin/sh -c` (for checking features that run a command on the server).
 This permits one instance to act as a jump host for another local fixture:
 
-With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a pty, as sshd does, which is how Motty starts its folder-reporting shell. `E2E_LOGIN_SHELL=/path/to/bash` makes that shell the account's login shell: `$SHELL` names it for the client's probe, and a plain shell request starts it too. Use it to check Bash versions older than the system's.
+With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a pty, as sshd does, which is how Motty starts its folder-reporting shell. `E2E_LOGIN_SHELL=/path/to/bash` makes that shell the account's login shell: `$SHELL` names it for the client's probe, and a plain shell request starts it too. Use it to check Bash versions older than the system's. The client starts that integration only on a server whose banner names a standard implementation, so also set `E2E_BANNER=SSH-2.0-OpenSSH_9.9`.
 
 `E2E_NO_SFTP=1` makes it a server without an SFTP subsystem: the subsystem request is refused and the only commands accepted are the `scp -f`/`scp -t` source and sink and the fixed listing, `mkdir`, `rm`, `rmdir`, `mv`, `chmod` and `ln` commands of Motty's SCP backend, matched by exact shape, run without a shell and confined to the fixture root (see `tools/e2e/scp_e2e.txt`).
 

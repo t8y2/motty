@@ -84,6 +84,9 @@ type line struct {
 	version    uint32
 	used       int // one past the last column written since the line was recycled
 	wrapped    bool
+	// mark records where the shell's OSC 133 prompt markers fell; see fold.go.
+	// It travels with the line through the history and a reflow.
+	mark lineMark
 }
 
 // Row is a read-only view of one visible row. Its slices are valid until the
