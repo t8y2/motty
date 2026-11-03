@@ -559,16 +559,23 @@ func (t *Terminal) allocLine() *line { return t.recycle(&line{}) }
 // recycle turns l into a fresh blank line of the current width, reusing its
 // storage. Giving it a new ID keeps caches built from the old content honest.
 func (t *Terminal) recycle(l *line) *line {
+	// A recycled row is written from column zero again, so it only has to lose
+	// what it wrote: the cells past used are blank already. They can hold stale
+	// cells when the row grows back over a width it had before, so the cells a
+	// shorter slice never covered are cleared too.
+	to := l.used
 	if cap(l.cells) < t.cols {
 		l.cells = make([]Cell, t.cols)
+		to = 0
 	} else {
+		if t.cols > len(l.cells) {
+			to = t.cols
+		}
 		l.cells = l.cells[:t.cols]
 	}
-	// A recycled row is written from column zero again, so it starts out blank
-	// up to there. The runtime zeroes a row faster than the blank-cell loop can
-	// store it.
+	// The runtime zeroes cells faster than the blank-cell loop can store them.
 	if blank := t.blankCell(); blank == (Cell{}) {
-		clear(l.cells)
+		clear(l.cells[:to])
 		l.used = 0
 	} else {
 		l.fill(0, len(l.cells), blank)
