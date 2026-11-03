@@ -127,6 +127,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.syncVisible()
 	state.syncSFTPTabs()
 	state.reveal.beginPaint()
+	state.toolbarDock.count = 0
+	state.toolbarDock.zones = [7]ui.Rect{}
+	state.toolbarDock.bottomViewports = [2]ui.Rect{}
+	state.toolbarDock.sideViewports = [4]ui.Rect{}
 	state.contextRect = ui.Rect{}
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
 	state.verticalTabs.bounds, state.verticalTabs.slot = ui.Rect{}, flex.Box{}
@@ -199,6 +203,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
 		cardRight = reserve
 	}
+	cardRight += state.toolbarDockSideReserveFor(false, false)
 	f := chrome.window.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	root := f.Column().Fill()
 	if !picture {
@@ -207,7 +212,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	root.Children(func() {
 		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
 		if !fullPage {
-			f.Row().Grow(1).Children(func() {
+			f.Row().Grow(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
+				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
 				state.declareNavigation(f)
 				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
 					Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
@@ -261,6 +267,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		canvas.Unclip()
 		state.paintAIPanel(canvas, size)
 	}
+	if !terminal {
+		state.paintToolbarDockSide(canvas, size)
+	}
+	state.paintToolbarDockBottom(canvas, size)
 	state.paintVerticalTabs(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
@@ -365,6 +375,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintAIDialogs(canvas, viewport)
 	state.paintTerminalMenu(canvas, viewport)
 	state.paintTabDrag(canvas, viewport)
+	state.paintToolbarDockDrag(canvas)
+	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
@@ -398,10 +410,12 @@ func (state *State) fileManagerPixelBounds(size ui.Size) ui.Rect {
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
 		right = reserve
 	}
+	left += state.toolbarDockSideReserveFor(true, false)
+	right += state.toolbarDockSideReserveFor(false, false)
 	return ui.Rect{
 		X: left, Y: windowBarHeight,
 		Width:  max(size.Width-left-right, 0),
-		Height: max(size.Height-windowBarHeight, 0),
+		Height: max(size.Height-windowBarHeight-state.toolbarDockBottomReserve(false), 0),
 	}
 }
 
@@ -500,15 +514,11 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, trailing := app.TitlebarInsets()
-	themeIcon, themeLabel := iconSun, m.LabelThemeToLight
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {
 			visibleFileTabs++
 		}
-	}
-	if state.appearance == appearanceLight {
-		themeIcon, themeLabel = iconMoon, m.LabelThemeToDark
 	}
 	bar.tabs = bar.tabs[:0]
 	if probe {
@@ -661,34 +671,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 				chrome.probeArea = area
 			}
 		})
-		f.Row().Shrink(0).MarginSides(0, 0, 0, 10).Gap(2).Children(func() {
-			bar.transfers, bar.assistant = flex.Box{}, flex.Box{}
-			transferLabel := m.Transfers.Title
-			if state.transfers.buttonLabel != "" {
-				transferLabel = state.transfers.buttonLabel
-			}
-			for _, entry := range state.toolbars.entries(toolbarWindow) {
-				if !entry.Enabled {
-					continue
-				}
-				spec, _ := toolbarSpecFor(toolbarWindow, entry.Key)
-				switch spec.id {
-				case hitTransferCenter:
-					bar.transfers = state.barButton(f, probe, spec.id, spec.icon, transferLabel)
-				case hitAIToggle:
-					bar.assistant = f.Slot().Size(barButtonSize, barButtonSize)
-				case hitTheme:
-					state.barButton(f, probe, spec.id, themeIcon, themeLabel)
-				case hitWindowLocalTerminal:
-					state.barButton(f, probe, spec.id, spec.icon, state.toolbarLabel(spec.id))
-					if !probe {
-						state.openLocalShellPickerOn(f.Canvas(), spec.id, false)
-					}
-				default:
-					state.barButton(f, probe, spec.id, spec.icon, state.toolbarLabel(spec.id))
-				}
-			}
-		})
+		state.declareToolbarDockTop(f, probe)
 	})
 }
 
@@ -807,20 +790,7 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	bar := &state.chrome.bar
 	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
-	if state.toolbarVisible(toolbarWindow, hitAIToggle) {
-		state.paintAIBarButton(canvas, state.chrome.bar.assistant.Rect().X)
-	}
-	state.paintTransferBadge(canvas)
-}
-
-// paintBarButton is a square icon button of the window bar whose left edge is at x,
-// for a caller that has its own place for one (the assistant's).
-func (state *State) paintBarButton(canvas *ui.Canvas, id ui.ID, x float32, icon uint8, label string) {
-	f := state.chrome.widget.Begin(canvas, state.Theme(), ui.Rect{X: x, Width: barButtonSize, Height: windowBarHeight})
-	f.Column().Fill().Center().Children(func() {
-		state.barButton(f, false, id, icon, label)
-	})
-	f.End()
+	state.paintToolbarDockTop(canvas)
 }
 
 // elide shortens text to fit width, ending it with an ellipsis. Weight is the

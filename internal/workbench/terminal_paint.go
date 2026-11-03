@@ -29,7 +29,7 @@ type barTool struct {
 // maxBarTools is how many tools the shared rail can hold: transfer, Files, save
 // output, export log, export recording, record, the resource monitor, remote
 // tools, close, the two splits and broadcast.
-const maxBarTools = 14
+const maxBarTools = 32 // includes relocated window actions
 
 const (
 	terminalToolRailExtent = float32(40)
@@ -200,19 +200,7 @@ func (state *State) clearTerminalRail(session *Session) {
 // paintWorkspaceSideRail paints the one shared rail at the workspace's outer
 // edge. The active split supplies both the tools and the state they act on.
 func (state *State) paintWorkspaceSideRail(canvas *ui.Canvas, size ui.Size) {
-	session, ok := state.terminalSideRailSession()
-	if !ok {
-		return
-	}
-	bounds, ok := state.terminalSideRailBounds(size)
-	if !ok {
-		return
-	}
-	var toolList [maxBarTools]barTool
-	tools := state.activeTerminalTools(session, &toolList)
-	state.setTerminalRailTools(session, tools)
-	background, border := state.connectionBarColors(session, false)
-	state.paintTerminalSideRail(canvas, bounds, session, tools, background, border, state.terminalToolbarPosition == terminalToolbarLeft)
+	state.paintToolbarDockSide(canvas, size)
 }
 
 // paintTerminalSideRail draws the vertical tool rail. Latency occupies the
@@ -273,6 +261,11 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 			continue
 		}
 		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, 17)
+		zone := toolbarDockSideTop
+		if state.terminalToolbarPosition == terminalToolbarLeft {
+			zone = toolbarDockLeftTop
+		}
+		state.registerToolbarDockTool(canvas, *tool, zone, intersectRect(tool.rect, viewport))
 	}
 	canvas.Unclip()
 }

@@ -18,6 +18,7 @@ var (
 	hitToolbarScroll          = tree.ID(toolbarSettingsHits, "scroll")
 	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 	hitToolbarToggles         = tree.Sub(toolbarSettingsHits, tree.Name("toggle"))
+	hitToolbarPositions       = tree.Sub(toolbarSettingsHits, tree.Name("position"))
 )
 
 type toolbarSettingsUI struct {
@@ -87,7 +88,32 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 		return
 	case id == hitToolbarReset:
 		state.toolbars.layouts[editor.group] = nil
+		state.resetToolbarDockGroup(editor.group)
 		editor.list.Cancel()
+	case id.Scope() == hitToolbarPositions && editor.group <= toolbarTerminal:
+		index := item(id)
+		for _, spec := range toolbarCatalog[editor.group] {
+			if toolbarEntryIndex(editor.group, spec.key) != index {
+				continue
+			}
+			zone := state.toolbarDockZoneFor(editor.group, spec.key)
+			next := toolbarDockSideTop
+			if zone == toolbarDockSideTop {
+				next = toolbarDockSideBottom
+			} else if zone == toolbarDockSideBottom {
+				next = toolbarDockBottom
+			} else if zone == toolbarDockBottom {
+				next = toolbarDockBottomRight
+			} else if zone == toolbarDockBottomRight {
+				next = toolbarDockLeftTop
+			} else if zone == toolbarDockLeftTop {
+				next = toolbarDockLeftBottom
+			} else if zone == toolbarDockLeftBottom {
+				next = toolbarDockTop
+			}
+			state.moveToolbarDockTool(spec.id, next, ui.ID{})
+			return
+		}
 	case id == hitToolbarEnableAll || id == hitToolbarDisableAll:
 		entries := state.toolbars.customize(editor.group)
 		for i := range entries {
@@ -110,7 +136,7 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 	default:
 		return
 	}
-	state.save()
+	state.toolbarDockChanged()
 }
 
 func (state *State) moveToolbarEntry(move components.ReorderMove) {
@@ -129,10 +155,11 @@ func (state *State) moveToolbarEntry(move components.ReorderMove) {
 		copy(entries[move.To+1:move.From+1], entries[move.To:move.From])
 	}
 	entries[move.To] = entry
+	state.reorderToolbarDockGroup(editor.group)
 	// Keep the row the move landed on in view. The list knows the row geometry
 	// and the viewport it was painted in, so the caller keeps no stride here.
 	editor.scroll = max(editor.scroll+editor.list.RevealScroll(move.To), 0)
-	state.save()
+	state.toolbarDockChanged()
 }
 
 func (state *State) toolbarSettingsPointer(event ui.PointerEvent) ui.EventResult {
@@ -221,7 +248,14 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		canvas.DrawIcon(lucideIcons[spec.icon], ui.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
 		caption := ui.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
+		if editor.group <= toolbarTerminal {
+			caption.Width = max(caption.Width-100, 0)
+		}
 		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, ui.WeightRegular, caption.Width), caption, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
+		if editor.group <= toolbarTerminal {
+			zone := state.toolbarDockZoneFor(editor.group, entry.Key)
+			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 150, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 98, Height: 28}).Outline(state.toolbarDockZoneLabel(zone))
+		}
 		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, entry.Enabled).Label(label).Paint()
 	}
 	list.End()
