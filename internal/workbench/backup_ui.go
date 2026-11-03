@@ -172,7 +172,7 @@ func (state *State) backupDocument() (backup.Document, error) {
 	if err != nil {
 		return backup.Document{}, err
 	}
-	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Records: records}
+	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
 		document.KnownHosts = string(data)
 	}
@@ -250,28 +250,59 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		return 0, vault.ErrNeedsConversion
 	}
 
-	if data, readErr := os.ReadFile(state.options.StatePath); readErr == nil {
-		if err := keepBeforeRestore(state.options.StatePath, data); err != nil {
-			return 0, err
-		}
+	if _, refused := holdableRecords(document.Records); refused > 0 {
+		return 0, backup.ErrNotBackup
 	}
 	var entries []configstore.Entry
+	seen := map[configstore.Key]bool{}
+	hasCLICollection := false
 	for _, record := range document.Records {
+		hasCLICollection = hasCLICollection || record.Kind == kindAICLIProvider
+		key := configstore.Key{Kind: record.Kind, ID: record.ID}
+		if seen[key] {
+			return 0, backup.ErrNotBackup
+		}
+		seen[key] = true
 		if !record.Deleted {
 			entries = append(entries, configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload})
 		}
 	}
-	incoming, _, err := joinState(entries, state.configBase.local)
+	_, _, err = joinState(entries, state.configBase.local)
 	if err != nil {
 		return 0, backup.ErrNotBackup
 	}
-	if incoming.AIProviders == nil && state.recordedProviders(kindAIProvider) > 0 {
-		incoming.AIProviders = &[]savedAIProvider{} // a restore replaces what was recorded
+	data, err := state.config.Snapshot()
+	if err != nil {
+		return 0, err
 	}
-	state.restoreShared(incoming)
-	state.hostDataChanged()
-	state.rebuildTabOptions()
-	state.save()
+	if err := keepBeforeRestore(state.options.StatePath, data); err != nil {
+		return 0, err
+	}
+	current, _, err := state.config.Load()
+	if err != nil {
+		return 0, err
+	}
+	live := map[configstore.Key]bool{}
+	for _, entry := range entries {
+		live[configstore.Key{Kind: entry.Kind, ID: entry.ID}] = true
+	}
+	change := configstore.Change{Writer: configWriter(), Put: entries}
+	for _, entry := range current {
+		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
+		if key.Kind == kindAICLIProvider && !hasCLICollection {
+			continue // legacy backups predate the independent CLI collection
+		}
+		if !live[key] {
+			change.Delete = append(change.Delete, key)
+		}
+	}
+	if _, err := state.config.Commit(change); err != nil {
+		return 0, err
+	}
+	if err := state.reloadShared(); err != nil {
+		return 0, &partialRestoreError{fmt.Sprintf(m.BackupFailedFmt, err)}
+	}
+	state.reloadOtherWindows()
 
 	var incomplete error
 	if err := state.mergeKnownHosts(document.KnownHosts); err != nil {

@@ -41,18 +41,25 @@ func instanceID(dataDir string) string {
 // symbolic links resolved. A directory that does not exist yet keeps its
 // cleaned absolute path as its identity.
 func claimInstanceID(dataDir string) (string, error) {
-	if dataDir == "" {
+	if dataDir == "" && !buildinfo.Development {
 		return applicationID, nil
+	}
+	if dataDir == "" {
+		var err error
+		dataDir, err = defaultDataDir()
+		if err != nil {
+			return "", err
+		}
 	}
 	canonical, err := canonicalPath(dataDir)
 	if err != nil {
 		return "", err
 	}
-	defaultDir, err := defaultDataDir()
+	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	defaultCanonical, err := canonicalPath(defaultDir)
+	defaultCanonical, err := canonicalPath(filepath.Join(configDir, "motty"))
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +74,7 @@ func defaultDataDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "motty"), nil
+	return filepath.Join(dir, buildinfo.DataName), nil
 }
 
 func canonicalPath(path string) (string, error) {

@@ -18,6 +18,7 @@ import (
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
+	"motty/internal/buildinfo"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
@@ -73,7 +74,7 @@ func (options AgentOptions) withDefaults() AgentOptions {
 		if err != nil {
 			dir = os.TempDir()
 		}
-		options.KnownHostsPath = filepath.Join(dir, "motty", "known_hosts")
+		options.KnownHostsPath = filepath.Join(dir, buildinfo.DataName, "known_hosts")
 	}
 	dir := filepath.Dir(options.KnownHostsPath)
 	if options.StatePath == "" {

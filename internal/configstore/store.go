@@ -31,6 +31,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -106,10 +107,20 @@ type Record struct {
 // Change is what the application wants stored: records that now exist, records
 // that no longer do, and values of this device. Only differences are written.
 type Change struct {
+	// Writer identifies the program making the edit, for diagnosis only.
+	Writer string
 	Put    []Entry
 	Delete []Key
+	Patch  []PatchEntry
+	// Expected guards replacements and deletions against concurrent edits.
+	// A nil payload requires that the record is absent or deleted.
+	Expected map[Key][]byte
 	// Local sets values of this device; an empty value removes the key.
-	Local map[string][]byte
+	Local      map[string][]byte
+	LocalPatch map[string]JSONChange
+	// ExpectedLocal guards an explicit replacement, such as recovery of a
+	// malformed workspace, without disabling protection for other local keys.
+	ExpectedLocal map[string][]byte
 }
 
 // Store is the open database. It is safe for concurrent use.
@@ -164,8 +175,8 @@ func OpenShared(path string, format int) (*Store, error) {
 	return store, nil
 }
 
-// Open opens or creates the store at path. Format is the version of the
-// payloads this build writes; a store written with a newer one is ErrTooNew.
+// Open opens or creates the store at path. Format is the reader/writer
+// compatibility epoch; a store requiring a higher epoch is ErrTooNew.
 func Open(path string, format int) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("config store: bad database path")
@@ -339,6 +350,63 @@ func setMeta(ctx context.Context, tx *sql.Tx, key, value string) error {
 	return nil
 }
 
+func (s *Store) checkWritable(ctx context.Context, tx *sql.Tx) error {
+	var schema int
+	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&schema); err != nil {
+		return err
+	}
+	if schema > schemaVersion {
+		return &TooNewError{Found: fmt.Sprintf("schema %d", schema), Supported: fmt.Sprintf("schema %d", schemaVersion)}
+	}
+	text, err := metaValue(ctx, tx, "format")
+	if err != nil {
+		return err
+	}
+	format, err := strconv.Atoi(text)
+	if err != nil || format < 0 {
+		return ErrCorrupt
+	}
+	if format > s.format {
+		return &TooNewError{Found: fmt.Sprintf("format %d", format), Supported: fmt.Sprintf("format %d", s.format)}
+	}
+	return nil
+}
+
+func (s *Store) prepareWrite(ctx context.Context, tx *sql.Tx) error {
+	if err := s.checkWritable(ctx, tx); err != nil {
+		return err
+	}
+	text, err := metaValue(ctx, tx, "clock")
+	if err != nil {
+		return err
+	}
+	other := s.clock
+	other.load(text)
+	if other.wall > s.clock.wall || other.wall == s.clock.wall && other.counter > s.clock.counter {
+		s.clock = other
+	}
+	return nil
+}
+
+// Snapshot returns a transactionally consistent SQLite image, including opaque
+// records and device values. Copying an open database file directly is unsafe.
+func (s *Store) Snapshot() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	file, err := os.CreateTemp("", "motty-config-snapshot-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(file.Name())
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := s.db.Exec(`VACUUM main INTO ?`, file.Name()); err != nil {
+		return nil, fmt.Errorf("config store: snapshot: %w", err)
+	}
+	return os.ReadFile(file.Name())
+}
+
 // Close releases the database. A store from OpenShared is released when its last
 // holder closes it.
 func (s *Store) Close() error {
@@ -357,7 +425,7 @@ func (s *Store) Close() error {
 // Device is the id this store puts into the stamps it issues.
 func (s *Store) Device() string { return s.clock.device }
 
-// Format is the payload version the store was opened with.
+// Format is the reader/writer compatibility epoch the store was opened with.
 func (s *Store) Format() int { return s.format }
 
 // Load returns every live record and this device's own values.
@@ -549,7 +617,58 @@ func (s *Store) Commit(change Change) (written int, err error) {
 			written = 0
 		}
 	}()
+	if err := s.prepareWrite(ctx, tx); err != nil {
+		return 0, err
+	}
+	for key, expected := range change.Expected {
+		_, deleted, payload, found, err := existing(ctx, tx, key.Kind, key.ID)
+		if err != nil {
+			return 0, err
+		}
+		if !found || deleted {
+			payload = nil
+		}
+		if !sameJSON(payload, expected) {
+			return 0, fmt.Errorf("%s %s: %w", key.Kind, key.ID, ErrConflict)
+		}
+	}
 	now := s.now()
+	for key, expected := range change.ExpectedLocal {
+		var current []byte
+		err := tx.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&current)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		if !bytes.Equal(current, expected) {
+			return 0, fmt.Errorf("%s: %w", key, ErrConflict)
+		}
+	}
+	for _, patch := range change.Patch {
+		if !validName(patch.Kind) || !validName(patch.ID) || !json.Valid(patch.Before) || !json.Valid(patch.After) {
+			return 0, errors.New("config store: invalid record patch")
+		}
+		_, deleted, current, found, err := existing(ctx, tx, patch.Kind, patch.ID)
+		if err != nil {
+			return 0, err
+		}
+		if !found || deleted {
+			return 0, fmt.Errorf("%s %s: %w", patch.Kind, patch.ID, ErrConflict)
+		}
+		payload, err := patchJSON(current, patch.Before, patch.After)
+		if err != nil {
+			return 0, fmt.Errorf("%s %s: %w", patch.Kind, patch.ID, err)
+		}
+		if len(payload) > MaxPayload {
+			return 0, fmt.Errorf("config store: %s %s is too large", patch.Kind, patch.ID)
+		}
+		if sameJSON(current, payload) {
+			continue
+		}
+		if err := writeRecord(ctx, tx, Record{Kind: patch.Kind, ID: patch.ID, Stamp: s.clock.next(now), Payload: payload}); err != nil {
+			return 0, err
+		}
+		written++
+	}
 	for _, entry := range change.Put {
 		_, deleted, payload, found, err := existing(ctx, tx, entry.Kind, entry.ID)
 		if err != nil {
@@ -590,8 +709,32 @@ func (s *Store) Commit(change Change) (written int, err error) {
 			return 0, fmt.Errorf("config store: write %s: %w", key, err)
 		}
 	}
+	for key, patch := range change.LocalPatch {
+		if !validName(key) || !json.Valid(patch.Before) || !json.Valid(patch.After) {
+			return 0, errors.New("config store: invalid local patch")
+		}
+		var current []byte
+		err := tx.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			current = []byte("{}")
+		} else if err != nil {
+			return 0, fmt.Errorf("config store: read %s: %w", key, err)
+		}
+		value, err := patchJSON(current, patch.Before, patch.After)
+		if err != nil {
+			return 0, fmt.Errorf("%s: %w", key, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO local(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
+			return 0, fmt.Errorf("config store: write %s: %w", key, err)
+		}
+	}
 	if written > 0 {
 		if err := setMeta(ctx, tx, "clock", s.clock.String()); err != nil {
+			return 0, err
+		}
+	}
+	if change.Writer != "" {
+		if err := setMeta(ctx, tx, "writer", change.Writer); err != nil {
 			return 0, err
 		}
 	}
@@ -630,6 +773,9 @@ func (s *Store) Merge(received []Record) (result MergeResult, err error) {
 			result = MergeResult{}
 		}
 	}()
+	if err := s.prepareWrite(ctx, tx); err != nil {
+		return MergeResult{}, err
+	}
 	limit := s.now().Add(MaxFuture)
 	for _, record := range received {
 		if !validName(record.Kind) || !validName(record.ID) || !record.Stamp.valid() ||
@@ -689,13 +835,24 @@ func (s *Store) Newer(received []Record) ([]Record, error) {
 // hear of the deletion. A device that stays away longer than that may bring a
 // deleted record back.
 func (s *Store) Prune(keep time.Duration) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := s.checkWritable(ctx, tx); err != nil {
+		return 0, err
+	}
 	cutoff := CutoffStamp(s.now().Add(-keep))
-	result, err := s.db.ExecContext(context.Background(), `DELETE FROM records WHERE deleted=1 AND stamp < ?`, string(cutoff))
+	result, err := tx.ExecContext(ctx, `DELETE FROM records WHERE deleted=1 AND stamp < ?`, string(cutoff))
 	if err != nil {
 		return 0, fmt.Errorf("config store: prune: %w", err)
 	}
 	count, _ := result.RowsAffected()
-	return int(count), nil
+	return int(count), tx.Commit()
 }
 
 // NextStamp issues a stamp later than every one this store has issued or seen,
@@ -704,9 +861,22 @@ func (s *Store) Prune(keep time.Duration) (int, error) {
 func (s *Store) NextStamp() (Stamp, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
 	saved := s.clock
+	if err := s.prepareWrite(ctx, tx); err != nil {
+		return "", err
+	}
 	stamp := s.clock.next(s.now())
-	if err := s.saveClock(); err != nil {
+	if err := setMeta(ctx, tx, "clock", s.clock.String()); err != nil {
+		s.clock = saved
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
 		s.clock = saved
 		return "", err
 	}
@@ -748,6 +918,9 @@ func (s *Store) saveClock() error {
 		return fmt.Errorf("config store: %w", err)
 	}
 	defer tx.Rollback()
+	if err := s.prepareWrite(context.Background(), tx); err != nil {
+		return err
+	}
 	if err := setMeta(context.Background(), tx, "clock", s.clock.String()); err != nil {
 		return err
 	}

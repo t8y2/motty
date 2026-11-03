@@ -17,6 +17,7 @@ import (
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
+	"motty/internal/buildinfo"
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -308,7 +309,7 @@ func (options Options) withDefaults() Options {
 		if err != nil {
 			dir = os.TempDir()
 		}
-		options.KnownHostsPath = filepath.Join(dir, "motty", "known_hosts")
+		options.KnownHostsPath = filepath.Join(dir, buildinfo.DataName, "known_hosts")
 	}
 	if options.StatePath == "" {
 		options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")

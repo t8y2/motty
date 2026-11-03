@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/vivaui/viva/app"
+	"motty/internal/buildinfo"
 	"motty/internal/vault"
 )
 
@@ -13,16 +14,23 @@ import (
 type systemKeystore struct{}
 
 func (systemKeystore) Store(service, account string, secret []byte) error {
-	return keystoreError(app.StoreSecret(service, account, secret))
+	return keystoreError(app.StoreSecret(keyService(service), account, secret))
 }
 
 func (systemKeystore) Load(service, account string) ([]byte, error) {
-	secret, err := app.LoadSecret(service, account)
+	secret, err := app.LoadSecret(keyService(service), account)
 	return secret, keystoreError(err)
 }
 
 func (systemKeystore) Delete(service, account string) error {
-	return keystoreError(app.DeleteSecret(service, account))
+	return keystoreError(app.DeleteSecret(keyService(service), account))
+}
+
+func keyService(service string) string {
+	if buildinfo.Development {
+		return service + " development"
+	}
+	return service
 }
 
 // defaultKeystore keeps the data key of the vault at path in the system's secret

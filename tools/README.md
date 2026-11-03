@@ -21,13 +21,18 @@ Run the first two from the repository root.
 
 ## Development launch and signing
 
-Use `make run` for one build and `make dev` for the edit loop. The development
-build shares the default data directory, hosts, settings, AI configuration and
-vault with the release build, but keeps its own workspace record. Quit the
-running copy completely before switching builds, including a copy hidden in the
-tray. The build types use the same single-instance claim; do not run them as two
-writers against one data directory, and do not expect live cross-process
-refresh.
+Use `make run` for one build and `make dev` for the edit loop. Development uses
+the platform's `motty-dev` directory and a separate system-secret namespace;
+release continues to use `motty`. Each default directory has its own
+single-instance claim. An explicit `MOTTY_DATA_DIR` still wins, but two copies
+pointing at the same directory share a claim, not live cross-process refresh.
+The old `development_workspace` record remains readable for existing profiles.
+
+Development starts empty, with no cloud backend configured. To seed it, export
+an encrypted backup from release and explicitly restore it in development.
+That imports shared data and saved passwords, but not production cloud logins
+or workspace state. Use a separate cloud destination for development. Directory
+overrides within one variant do not create extra system-secret namespaces.
 
 On macOS, the standard entry initializes a private self-signed identity and
 private Keychain under
@@ -45,7 +50,7 @@ warning. `go run -tags dev ./cmd/motty` bypasses these helpers; `go run
 
 The helper preserves incomplete, expired, mismatched or interrupted signing
 material for manual repair. Do not delete the identity directory or rotate the
-shared vault key to avoid an authorization prompt. Inspect the reported path and
+vault key to avoid an authorization prompt. Inspect the reported path and
 configuration first; the integration test never reads the real `motty vault`
 item, data key or release certificate. Run the real-keychain check only when
 explicitly intended:
@@ -62,6 +67,51 @@ bash -n tools/dev.sh tools/dev_launch.sh tools/macos_dev_signing.sh \
 bash tools/dev_launch_test.sh
 bash tools/macos_dev_signing_test.sh
 bash tools/dev_script_test.sh
+```
+
+## Storage compatibility
+
+`PRAGMA user_version` describes SQLite tables. `meta.format` and the encrypted
+backup's `format` are the minimum reader/writer compatibility epoch, not a
+feature counter. Epoch 23 excludes earlier, lossy whole-object writers.
+`meta.writer` and a backup's `writer` identify the editing application and do
+not prevent a compatible application from reading it.
+
+Adding optional object fields does not raise the epoch when their absence keeps
+the old meaning. The workbench projects its typed DTOs before and after an edit;
+the store applies only that difference to the latest JSON in a transaction.
+Unknown object fields, nested fields, envelopes and record kinds survive.
+Missing, null and explicit clearing remain distinct. Disjoint concurrent edits
+merge; competing edits of the same value fail and roll back the whole change.
+Reload before retrying a conflicting edit. No background worker or polling is
+needed.
+
+Arrays are atomic values, not positional object patches. An unchanged array
+retains all its raw data. A changed array with unread fields or concurrent edits
+is rejected rather than guessed at by index. Changes to array element schemas,
+existing value meanings, required fields, credential ownership or protocol
+invariants need a compatibility review and, when incompatible, a new epoch.
+Do not claim arbitrary downgrade compatibility.
+
+Opening a pre-23 database makes a one-time compatibility transition without
+rewriting its records. Existing old binaries cannot be retrofitted: use a build
+that supports the current epoch, never lower the stored number. Already-open
+compatible writers recheck the epoch inside writes, so a later incompatible
+upgrade cannot be overwritten by a stale connection.
+
+Backup restoration stores raw records rather than round-tripping them through
+UI structs. Before replacement it creates a consistent SQLite snapshot in
+`config.db.before-restore`, preserving prior safety copies. Unknown records and
+fields also survive cloud round trips; sync retains its record-level
+last-writer-wins conflict policy. Backups deliberately exclude cloud credentials
+and device workspace state. Data migrations that become irreversible must add
+their own pre-migration snapshot and rollback procedure.
+
+Focused checks:
+
+```sh
+go test ./internal/configstore ./internal/workbench -run 'Test(JSONChange|PatchTransaction|OpenWriter|SnapshotReopens|Compatible|CompatibilityEpoch)' -count=1
+go test -tags dev ./cmd/motty ./internal/workbench -run 'Test(Development|Claim|Compatible|CompatibilityEpoch)' -count=1
 ```
 
 ## End-to-end

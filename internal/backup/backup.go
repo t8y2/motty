@@ -28,8 +28,10 @@ type Document struct {
 	Created time.Time `json:"created"`
 	// Device is the computer that made it.
 	Device string `json:"device,omitempty"`
-	// Format is the version of the record payloads in it.
+	// Format is the minimum reader/writer compatibility epoch of the records.
 	Format int `json:"format,omitempty"`
+	// Writer is informational; a newer application version alone is compatible.
+	Writer string `json:"writer,omitempty"`
 	// Records are the hosts, settings and the rest of the shared configuration,
 	// deleted ones included as tombstones.
 	Records []configstore.Record `json:"records"`

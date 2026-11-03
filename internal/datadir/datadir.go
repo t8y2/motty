@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"motty/internal/buildinfo"
 )
 
 // Variable names the environment variable that moves everything the application
@@ -20,7 +22,7 @@ const Variable = "MOTTY_DATA_DIR"
 // PortableName is the folder beside the executable that makes a copy portable.
 // The name is specific on purpose: a program unpacked into Downloads or Desktop
 // must not take over an unrelated "data" folder that happens to be there.
-const PortableName = "motty-data"
+const PortableName = buildinfo.DataName + "-data"
 
 // Location is where the data lives and why.
 type Location struct {

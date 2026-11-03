@@ -45,7 +45,7 @@ func TestClaimIdentityCanonicalizesDataDirectories(t *testing.T) {
 		t.Fatal("the relative path was not anchored to the working directory")
 	}
 
-	if got, err := claimInstanceID(""); err != nil || got != applicationID {
+	if got, err := claimInstanceID(""); err != nil || (got == applicationID) == buildinfo.Development {
 		t.Fatalf("default id %q, %v", got, err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -56,7 +56,11 @@ func TestClaimIdentityCanonicalizesDataDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := claimInstanceID(defaultDir); err != nil || got != applicationID {
+	implicit, err := claimInstanceID("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := claimInstanceID(defaultDir); err != nil || got != implicit {
 		t.Fatalf("explicit default id %q, %v", got, err)
 	}
 	explicit, err := claimInstanceID(filepath.Join(dir, "new", "nested"))
