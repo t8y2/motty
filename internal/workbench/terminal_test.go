@@ -638,3 +638,33 @@ func TestLoginTerminalAnswersColorQueries(t *testing.T) {
 		t.Fatalf("dark: the login terminal answered %q, want %q", got, want)
 	}
 }
+
+func TestTerminalEscapeWithOpenSFTPDoesNotCloseSFTP(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	state.openSFTP(session)
+	if session.files == nil {
+		t.Fatal("SFTP panel failed to open")
+	}
+
+	shell.input = nil
+	result := key(state, 0, ui.KeyEvent{Key: ui.KeyEscape})
+	if !result.Handled {
+		t.Fatal("Escape in terminal was not handled")
+	}
+	if session.files == nil {
+		t.Fatal("Escape in terminal closed the SFTP panel")
+	}
+	if got := string(shell.input); got != "\x1b" {
+		t.Fatalf("shell input = %q, want Escape (\\x1b)", got)
+	}
+
+	// Pressing Escape while focused inside the SFTP panel should still close it.
+	result = state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitSFTPEntryList.At(0)})
+	if !result.Handled {
+		t.Fatal("Escape inside SFTP panel was not handled")
+	}
+	if session.files != nil {
+		t.Fatal("Escape inside SFTP panel did not close the panel")
+	}
+}

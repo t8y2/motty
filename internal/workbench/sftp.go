@@ -1716,6 +1716,9 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		return ui.EventResult{}, false
 	}
+	if state.terminalSession(event.Target) != nil {
+		return ui.EventResult{}, false
+	}
 	switch event.Key {
 	case ui.KeyEscape:
 		if folder := view.active(); folder.filterOpen && event.Target == hitSFTPFilter {
@@ -1738,8 +1741,10 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			view.bookmarksOpen = false
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
-		state.clickSFTP(hitSFTPClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		if tree.Within(event.Target.Scope(), sftpHits) || event.Target.IsZero() {
+			state.clickSFTP(hitSFTPClose)
+			return ui.EventResult{Handled: true, Repaint: true}, true
+		}
 	case ui.KeyEnter:
 		if event.Target.Scope() == hitSFTPEntryList {
 			folder := view.active()
