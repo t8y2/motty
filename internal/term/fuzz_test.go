@@ -65,6 +65,14 @@ func checkLine(t testing.TB, l *line, cols int) {
 	if l.hyperlinks != nil && len(*l.hyperlinks) != len(l.cells) {
 		t.Fatalf("%d hyperlink cells for %d text cells", len(*l.hyperlinks), len(l.cells))
 	}
+	if l.used < 0 || l.used > len(l.cells) {
+		t.Fatalf("used %d outside %d cells", l.used, len(l.cells))
+	}
+	for x := l.used; x < len(l.cells); x++ {
+		if l.cells[x] != (Cell{}) {
+			t.Fatalf("cell %d past used %d is not blank: %+v", x, l.used, l.cells[x])
+		}
+	}
 	for x, c := range l.cells {
 		if c.Attr&WideHead != 0 {
 			if x+1 >= len(l.cells) || l.cells[x+1].Attr&WideTail == 0 {

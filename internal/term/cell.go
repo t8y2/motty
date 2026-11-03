@@ -82,6 +82,7 @@ type line struct {
 	id         uint64
 	at         int64 // unix seconds of the first write; 0 when unrecorded
 	version    uint32
+	used       int // one past the last column written since the line was recycled
 	wrapped    bool
 }
 
