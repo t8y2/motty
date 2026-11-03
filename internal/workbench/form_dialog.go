@@ -52,10 +52,13 @@ type formDialog struct {
 	// the label, explanation and saved value; other forms have no checkbox.
 	checkLabel, checkDescription string
 	checked                      bool
-	fields                       [maxFormFields]formField
-	count                        int
-	dialogError                  string
-	run                          func(*State, *formDialog) string
+	// checkFirst puts the checkbox above the fields instead of under them, for a
+	// choice that decides what the fields then ask for.
+	checkFirst  bool
+	fields      [maxFormFields]formField
+	count       int
+	dialogError string
+	run         func(*State, *formDialog) string
 	// cancel, if set, runs instead of closing when the user cancels; a form that
 	// stands between two screens uses it to go back.
 	cancel func(*State)
@@ -202,10 +205,10 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	var checkbox flex.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(4, 4, 0, 4).Children(func() {
-		for index := 0; index < form.count; index++ {
-			slots[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
-		}
-		if form.checkLabel != "" {
+		placeCheck := func() {
+			if form.checkLabel == "" {
+				return
+			}
 			f.Column().Height(72).Gap(2).PadSides(8, 0, 4, 0).Children(func() {
 				checkbox = f.Row().Height(24).Items(flex.Center)
 				checkbox.Children(func() {
@@ -214,6 +217,15 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 				})
 				f.Paragraph(form.checkDescription, 2).FontSize(metrics.FontSizeS).LineHeight(16).Color(state.pal.muted).MarginSides(0, 0, 0, 28)
 			})
+		}
+		if form.checkFirst {
+			placeCheck()
+		}
+		for index := 0; index < form.count; index++ {
+			slots[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
+		}
+		if !form.checkFirst {
+			placeCheck()
 		}
 		state.problemLine(f, form.dialogError)
 		if form.dialogError == "" && form.testNote != "" {

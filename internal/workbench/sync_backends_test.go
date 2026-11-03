@@ -300,7 +300,7 @@ func TestChoosingAnotherServiceReplacesTheFirstAndForgetsItsPassword(t *testing.
 	if _, found, _ := state.secrets.vault.Get(webdavPasswordSecret); found {
 		t.Fatal("the WebDAV password stayed after switching")
 	}
-	document, err := state.backupDocument()
+	document, _, err := state.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -126,7 +126,7 @@ func TestCompatibleWriterPreservesFutureFieldsAcrossFullAndIncrementalSaves(t *t
 
 func TestCompatibleBackupRestoreAndSyncPreserveRawRecords(t *testing.T) {
 	source := futureConfigState(t, configFormat)
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestCompatibleBackupRestoreAndSyncPreserveRawRecords(t *testing.T) {
 	}
 	target.hosts[0].Label = "Restored"
 	target.save()
-	outgoing, err := target.backupDocument()
+	outgoing, _, err := target.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestDevelopmentProfileDoesNotImportProductionSyncOrCredentials(t *testing.T
 	}
 	source := futureConfigState(t, configFormat)
 	source.sync.url, source.sync.user, source.sync.path = "https://production.invalid", "user", "backup"
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

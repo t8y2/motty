@@ -100,3 +100,51 @@ func TestAShortPasswordIsRefusedAtSealing(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestPrivateKeysRideInTheBackupWhenItCarriesThem(t *testing.T) {
+	document := sample()
+	document.Keys = []Key{{
+		Fingerprint: "SHA256:abc123", Name: "id_ed25519", Path: "/home/me/.ssh/id_ed25519",
+		Data: []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"),
+	}}
+	sealed, err := Seal(document, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sealed, []byte("OPENSSH PRIVATE KEY")) {
+		t.Fatal("the sealed file shows the key")
+	}
+	opened, err := Open(sealed, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(opened.Keys, document.Keys) {
+		t.Fatalf("keys after opening: %+v", opened.Keys)
+	}
+}
+
+func TestAKeyThatNamesAPathOrRepeatsAnotherIsNotABackup(t *testing.T) {
+	good := Key{Fingerprint: "SHA256:abc123", Name: "id_ed25519", Data: []byte("key")}
+	for name, key := range map[string]Key{
+		"a path":   {Fingerprint: "SHA256:abc123", Name: "../id_ed25519", Data: []byte("key")},
+		"no name":  {Fingerprint: "SHA256:abc123", Data: []byte("key")},
+		"no print": {Name: "id_ed25519", Data: []byte("key")},
+		"no data":  {Fingerprint: "SHA256:abc123", Name: "id_ed25519"},
+		"too big":  {Fingerprint: "SHA256:abc123", Name: "id_ed25519", Data: make([]byte, MaxKeySize+1)},
+		"twice":    good,
+	} {
+		document := sample()
+		if name == "twice" {
+			document.Keys = []Key{good, good}
+		} else {
+			document.Keys = []Key{key}
+		}
+		sealed, err := Seal(document, "correct horse")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(sealed, "correct horse"); !errors.Is(err, ErrNotBackup) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

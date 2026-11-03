@@ -105,7 +105,10 @@ type savedState struct {
 	CommandSuggestOff          bool                `json:"command_suggest_off,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
-	SessionLogsOff          bool             `json:"session_logs_off,omitempty"`
+	SessionLogsOff bool `json:"session_logs_off,omitempty"`
+	// BackupKeys carries private key files in backups and sync. It belongs to
+	// this computer: another one decides for itself what leaves it.
+	BackupKeys              bool             `json:"backup_keys,omitempty"`
 	CommandInlineSuggestOff bool             `json:"command_inline_suggest_off,omitempty"`
 	ShortcutVersion         int              `json:"shortcut_version,omitempty"`
 	Shortcuts               []savedShortcut  `json:"shortcuts,omitempty"`
@@ -425,6 +428,7 @@ func (state *State) snapshot() savedState {
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		SessionLogsOff:             state.sessionLogsOff,
+		BackupKeys:                 state.backupKeys,
 		CommandInlineSuggestOff:    state.history.inlineOff,
 		SFTPParallel:               state.sftpParallel,
 		SFTPKeepTimes:              notifyString(state.sftpKeepTimesOff),
@@ -649,6 +653,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
 	state.sessionLogsOff = saved.SessionLogsOff
+	state.backupKeys = saved.BackupKeys
 	// The saved editor is read as it is: a value this build does not know stays
 	// unknown rather than becoming another editor.
 	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))

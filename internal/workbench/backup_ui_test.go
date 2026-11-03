@@ -131,7 +131,7 @@ func TestABackupDoesNotCarryTheLoginsToTheBackupItself(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	document, err := state.backupDocument()
+	document, _, err := state.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

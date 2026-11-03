@@ -725,6 +725,10 @@ type State struct {
 	// that started against the old one can tell its result no longer belongs here.
 	syncEpoch  uint32
 	closeAsked bool
+	// backupKeys carries the private key files in backups and sync. It is off
+	// until the user asks: a key file is a credential in its own right, and a
+	// backup leaves this computer.
+	backupKeys bool
 	sync       syncState
 	sshSync    sshSyncState
 	remote     remoteToolsView

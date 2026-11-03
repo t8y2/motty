@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -125,6 +126,10 @@ func (state *State) syncDone(tag, created string) {
 	}
 	state.save()
 	state.status = state.messages.Tools.SyncDone
+	if state.sync.keysFailed > 0 {
+		state.status = fmt.Sprintf(state.messages.Tools.SyncDoneKeysFailedFmt, state.sync.keysFailed)
+		state.sync.keysFailed = 0
+	}
 	if state.sync.again {
 		state.sync.again = false
 		state.scheduleSync()
@@ -228,11 +233,22 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	}
 	local.Secrets = unionSecrets(local.Secrets, received)
 
+	// Private keys are each computer's own choice. One that has them off writes
+	// none of what arrives, but still passes on what the server holds: otherwise
+	// a computer that never turned it on would erase the keys another one synced.
+	if state.backupKeys {
+		_, state.sync.keysFailed = state.applyBackupKeys(remote.Keys, opened)
+		mine, _ := state.backupKeyFiles()
+		local.Keys = unionBackupKeys(mine, remote.Keys)
+	} else {
+		local.Keys = remote.Keys
+	}
+
 	newer, err := state.config.Newer(remote.Records)
 	if err != nil {
 		return nil, err
 	}
-	if !missing && len(newer) == 0 && !secretsNewer(local.Secrets, remote.Secrets) && !hasNewLines(local.KnownHosts, remote.KnownHosts) {
+	if !missing && len(newer) == 0 && !secretsNewer(local.Secrets, remote.Secrets) && !hasNewLines(local.KnownHosts, remote.KnownHosts) && sameBackupKeys(local.Keys, remote.Keys) {
 		return nil, nil
 	}
 	return &local, nil

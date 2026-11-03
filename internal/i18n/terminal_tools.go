@@ -538,6 +538,12 @@ type ToolsMessages struct {
 	BackupRestore                   string
 	BackupExportTitle               string
 	BackupExportDialogDescription   string
+	BackupKeys                      string
+	BackupKeysDescription           string
+	BackupKeysExportDescription     string
+	BackupSavedKeysLeftOutFmt       string
+	BackupKeysFailedFmt             string
+	SyncDoneKeysFailedFmt           string
 	BackupPassword                  string
 	BackupPasswordConfirm           string
 	BackupPasswordPlaceholder       string
