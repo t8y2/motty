@@ -208,7 +208,12 @@ module in `go.mod`.
 
 TLS (1.0-1.3; TLS 1.2 for CredSSP) with NLA (CredSSP + NTLMv2) preferred, TLS
 without NLA if the server allows it; standard RDP Security (RC4 without TLS) is
-refused. Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
+refused. NLA starts with SPNEGO; if token negotiation fails before credentials
+are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
+as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
+NTLMv2 MIC/channel binding and CredSSP public-key verification. After sending an
+Authenticate message, failures stop automatic retries and TLS-only fallback.
+Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
 pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
 fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
 remote layout decides characters; Shift is added where the character needs it,

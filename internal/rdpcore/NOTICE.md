@@ -37,6 +37,12 @@ Changed:
   `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
   credentials were sent counts as a refusal). Upstream made 14 logon attempts for
   one wrong password, which locks an account out.
+* CredSSP can reconnect once with raw NTLM tokens when SPNEGO negotiation fails
+  before credentials are sent, for older WinPR servers. Raw NTLM keeps TLS,
+  NTLMv2 MIC/channel binding and public-key verification, but does not consume
+  SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
+  write stop probing and TLS-only fallback; protocol errors remain distinct
+  from credential refusals so the UI does not discard a saved password for them.
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.
