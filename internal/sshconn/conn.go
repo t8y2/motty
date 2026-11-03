@@ -640,6 +640,7 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 	conn.status.ServerVersion = ""
 	conn.status.Method = ""
 	conn.status.System = SystemUnknown
+	conn.status.SystemProvisional = false
 	conn.status.Skipped = nil
 	conn.status.Err = nil
 	conn.mu.Unlock()
