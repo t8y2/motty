@@ -105,3 +105,26 @@ func TestSnippetFormSavesWhenTheMarkedRangeIsEmpty(t *testing.T) {
 		t.Fatal("an empty marked range blocked the save")
 	}
 }
+
+// A composition interrupted by a click on the other field must not keep the
+// dialog blocked: the input method drops its marked text there, and the editor
+// has to let go of it too.
+func TestSnippetFormSavesAfterAnInterruptedComposition(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.openSnippetDialog(-1)
+	state.snippets.name.Insert("deploy")
+	state.snippets.command.Insert("make deploy")
+	state.snippets.name.SetMarkedText("部署", text.Range{End: 2})
+
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitSnippetCommand})
+	if _, composing := state.snippets.name.Composition(); composing {
+		t.Fatal("the abandoned field still composes")
+	}
+	state.Key(ui.KeyEvent{Target: hitSnippetCommand, Key: ui.KeyEnter})
+	if state.modal != modalNone || len(state.snippets.list) != 1 {
+		t.Fatal("an interrupted composition blocked the save")
+	}
+	if got := state.snippets.list[0]; got.Name != "deploy部署" {
+		t.Fatalf("name = %q, want the text the user saw", got.Name)
+	}
+}

@@ -2036,7 +2036,10 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
-	if state.modal == modalSnippet && event.Kind == ui.PointerDown && event.Target == hitSnippetSubmit {
+	if state.modal == modalSnippet && event.Kind == ui.PointerDown {
+		state.snippets.abandonOther(event.Target)
+	}
+	if state.modal == modalSnippet && event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) && event.Target == hitSnippetSubmit {
 		if target := state.snippets.composingTarget(); !target.IsZero() {
 			// Keep the composition and its field focused; swallowing this press
 			// prevents the focus change from committing the preedit before Save.

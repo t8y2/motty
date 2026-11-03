@@ -218,6 +218,19 @@ func (form *snippetsUI) composing() bool {
 	return form.composingTarget() != ui.ID{}
 }
 
+// abandonOther ends the composition of the field the pointer is leaving. The
+// input method drops its marked text when the text input moves; the editor has
+// to drop it too, or the field the user left keeps composing and blocks every
+// later save. Unmark keeps the text, which is what the user already sees.
+func (form *snippetsUI) abandonOther(target ui.ID) {
+	switch target {
+	case hitSnippetName:
+		form.command.Unmark()
+	case hitSnippetCommand:
+		form.name.Unmark()
+	}
+}
+
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
 	if form.composing() {
