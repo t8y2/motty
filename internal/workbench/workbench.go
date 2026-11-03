@@ -109,9 +109,6 @@ var (
 	hitPaneSplitHorizontal     = tree.ID(shellHits, "pane-split-horizontal")
 	hitPaneSplitVertical       = tree.ID(shellHits, "pane-split-vertical")
 	hitPaneClose               = tree.ID(shellHits, "pane-close")
-	hitTerminalConnectionColor = tree.ID(shellHits, "terminal-connection-color")
-	hitTerminalLatency         = tree.ID(shellHits, "terminal-latency")
-	hitTerminalToolbarDrag     = tree.Sub(shellHits, tree.Name("terminal-toolbar-drag"))
 	hitPaneChooseHost          = tree.ID(shellHits, "pane-choose-host")
 	hitContextDivider          = tree.ID(shellHits, "context-divider")
 	hitClipboardDismiss        = tree.ID(shellHits, "clipboard-dismiss")
@@ -199,6 +196,8 @@ var (
 	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
 	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
 	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
 	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
@@ -234,6 +233,7 @@ var (
 	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
+	hitSettingsLatencyToggle    = tree.ID(settingsHits, "settings-latency")
 	hitSettingsLinkPlainClick   = tree.ID(settingsHits, "settings-link-plain-click")
 	hitSettingsClipboardAsk     = tree.ID(settingsHits, "settings-clipboard-ask")
 	hitSettingsClipboardAllow   = tree.ID(settingsHits, "settings-clipboard-allow")
@@ -329,27 +329,22 @@ var (
 var hitRemoteStats = tree.ID(shellHits, "remote-stats") // The terminal's context menu owns a fixed range too: it is painted by the
 // window, over every pane, for the session that raised it.
 var (
-	hitTerminalMenuDismiss        = tree.ID(terminalMenuHits, "terminal-menu-dismiss")
-	hitTerminalMenuCopy           = tree.ID(terminalMenuHits, "terminal-menu-copy")
-	hitTerminalMenuPaste          = tree.ID(terminalMenuHits, "terminal-menu-paste")
-	hitTerminalMenuSelectAll      = tree.ID(terminalMenuHits, "terminal-menu-select-all")
-	hitTerminalMenuClearScreen    = tree.ID(terminalMenuHits, "terminal-menu-clear-screen")
-	hitTerminalMenuClear          = tree.ID(terminalMenuHits, "terminal-menu-clear")
-	hitTerminalMenuSplitRight     = tree.ID(terminalMenuHits, "terminal-menu-split-right")
-	hitTerminalMenuSplitDown      = tree.ID(terminalMenuHits, "terminal-menu-split-down")
-	hitTerminalMenuClosePane      = tree.ID(terminalMenuHits, "terminal-menu-close-pane")
-	hitTerminalMenuFiles          = tree.ID(terminalMenuHits, "terminal-menu-files")
-	hitTerminalMenuStats          = tree.ID(terminalMenuHits, "terminal-menu-stats")
-	hitLocalTerminal              = tree.ID(terminalMenuHits, "local-terminal")
-	hitTerminalMenuReconnect      = tree.ID(terminalMenuHits, "terminal-menu-reconnect")
-	hitTerminalMenuRestart        = tree.ID(terminalMenuHits, "terminal-menu-restart")
-	hitTerminalMenuDisconnect     = tree.ID(terminalMenuHits, "terminal-menu-disconnect")
-	hitTerminalMenuTransfer       = tree.ID(terminalMenuHits, "terminal-menu-transfer")
-	hitTerminalToolbarMenuDismiss = tree.ID(terminalMenuHits, "terminal-toolbar-menu-dismiss")
-	hitTerminalToolbarMenuSmall   = tree.ID(terminalMenuHits, "terminal-toolbar-menu-small")
-	hitTerminalToolbarMenuMedium  = tree.ID(terminalMenuHits, "terminal-toolbar-menu-medium")
-	hitTerminalToolbarMenuLarge   = tree.ID(terminalMenuHits, "terminal-toolbar-menu-large")
-	hitTerminalToolbarMenuReset   = tree.ID(terminalMenuHits, "terminal-toolbar-menu-reset")
+	hitTerminalMenuDismiss     = tree.ID(terminalMenuHits, "terminal-menu-dismiss")
+	hitTerminalMenuCopy        = tree.ID(terminalMenuHits, "terminal-menu-copy")
+	hitTerminalMenuPaste       = tree.ID(terminalMenuHits, "terminal-menu-paste")
+	hitTerminalMenuSelectAll   = tree.ID(terminalMenuHits, "terminal-menu-select-all")
+	hitTerminalMenuClearScreen = tree.ID(terminalMenuHits, "terminal-menu-clear-screen")
+	hitTerminalMenuClear       = tree.ID(terminalMenuHits, "terminal-menu-clear")
+	hitTerminalMenuSplitRight  = tree.ID(terminalMenuHits, "terminal-menu-split-right")
+	hitTerminalMenuSplitDown   = tree.ID(terminalMenuHits, "terminal-menu-split-down")
+	hitTerminalMenuClosePane   = tree.ID(terminalMenuHits, "terminal-menu-close-pane")
+	hitTerminalMenuFiles       = tree.ID(terminalMenuHits, "terminal-menu-files")
+	hitTerminalMenuStats       = tree.ID(terminalMenuHits, "terminal-menu-stats")
+	hitLocalTerminal           = tree.ID(terminalMenuHits, "local-terminal")
+	hitTerminalMenuReconnect   = tree.ID(terminalMenuHits, "terminal-menu-reconnect")
+	hitTerminalMenuRestart     = tree.ID(terminalMenuHits, "terminal-menu-restart")
+	hitTerminalMenuDisconnect  = tree.ID(terminalMenuHits, "terminal-menu-disconnect")
+	hitTerminalMenuTransfer    = tree.ID(terminalMenuHits, "terminal-menu-transfer")
 )
 
 // The saved-passwords dialogs, and the boxes that offer to save.
@@ -467,83 +462,82 @@ type State struct {
 	// starting is set while the window is being made, before it has read the
 	// assistant's database; pauseSave holds saving off while the window
 	// is bringing in records that are already stored.
-	starting            bool
-	pauseSave           int
-	stateNotice         stateNotice
-	stateFileOutcome    string // how the saved state was read at start, for diagnostics
-	sessions            []Session
-	tabOptions          []components.TabOption
-	workspaceTabs       []layoutcore.WorkspaceInfo
-	tabStrip            tabStrip
-	tabOrientation      tabOrientation
-	verticalTabs        verticalTabs
-	tabMenu             tabMenu
-	hostMenu            hostMenu
-	localShellPicker    localShellPicker
-	snippetMenu         snippetMenu
-	sftpMenu            sftpMenu
-	fileProperties      sftpFileProperties
-	popups              popupMenus
-	selectedHostID      uint32
-	hostRevealID        uint32
-	activeSessionID     uint32
-	nextSessionID       uint32
-	nextHostID          uint32
-	nextIdentityID      uint32
-	nextForwardID       uint32
-	nextForwardStartID  uint64
-	nextProxyID         uint32
-	forwards            []forwardRecord
-	selectedIdentityID  uint32
-	selectedForwardID   uint32
-	selectedProxyID     uint32
-	activeSection       uint8
-	hostFilterOn        bool   // only the group named hostFilter is listed
-	hostFilter          string // a group name; empty is the unnamed bucket
-	hostFilterMenu      bool   // the chips that did not fit, as a menu
-	hostFilterHidden    int    // the first group whose chip is in that menu
-	filterMoreButton    ui.Rect
-	hostTotalDigits     string
-	groupMenu           groupMenuAnchor // where the Move group picker opens
-	hostSelectionText   string
-	hostSelections      []uint32
-	hostActionIDs       []uint32
-	hostGroups          []hostGroup
-	hostTreeRows        []hostTreeRow
-	hostsScroll         float32
-	tabDrag             tabDrag
-	foreign             tabDrag // another window's tab being dragged over this one
-	frame               func() (ui.Rect, bool)
-	windowVisible       func() bool
-	systemKeys          systemKeyCapture
-	winChrome           windowChrome
-	hostView            hostViewMode
-	bg                  backgroundState
-	hostsContent        float32
-	hostGroupMenu       bool
-	importMenu          bool
-	hostsBounds         ui.Rect // the hosts page as last painted; the menus anchor to it
-	terminalMenu        terminalMenu
-	terminalToolbarMenu terminalToolbarMenu
-	hostGroupEditor     text.Editor
-	groupActions        hostGroupActions
-	tabRename           tabRename
-	tabsClose           tabsClose
-	sessionLink         sessionLink
-	hostDialogMode      hostDialogMode
-	hostDialogID        uint32
-	ruleDelete          ruleDelete
-	hostTest            hostTest
-	hostDialogText      string
-	identityCountText   string
-	forwardCountText    string
-	forwardStarts       chan forwardStartResult
-	proxyCountText      string
-	hostImportResult    hostImportResult
-	knownHosts          knownHostsView
-	knownHostsLayout    flex.View
-	settingsRow         flex.View
-	partLayout          flex.View // a dialog body, a host card or a group header: one at a time
+	starting           bool
+	pauseSave          int
+	stateNotice        stateNotice
+	stateFileOutcome   string // how the saved state was read at start, for diagnostics
+	sessions           []Session
+	tabOptions         []components.TabOption
+	workspaceTabs      []layoutcore.WorkspaceInfo
+	tabStrip           tabStrip
+	tabOrientation     tabOrientation
+	verticalTabs       verticalTabs
+	tabMenu            tabMenu
+	hostMenu           hostMenu
+	localShellPicker   localShellPicker
+	snippetMenu        snippetMenu
+	sftpMenu           sftpMenu
+	fileProperties     sftpFileProperties
+	popups             popupMenus
+	selectedHostID     uint32
+	hostRevealID       uint32
+	activeSessionID    uint32
+	nextSessionID      uint32
+	nextHostID         uint32
+	nextIdentityID     uint32
+	nextForwardID      uint32
+	nextForwardStartID uint64
+	nextProxyID        uint32
+	forwards           []forwardRecord
+	selectedIdentityID uint32
+	selectedForwardID  uint32
+	selectedProxyID    uint32
+	activeSection      uint8
+	hostFilterOn       bool   // only the group named hostFilter is listed
+	hostFilter         string // a group name; empty is the unnamed bucket
+	hostFilterMenu     bool   // the chips that did not fit, as a menu
+	hostFilterHidden   int    // the first group whose chip is in that menu
+	filterMoreButton   ui.Rect
+	hostTotalDigits    string
+	groupMenu          groupMenuAnchor // where the Move group picker opens
+	hostSelectionText  string
+	hostSelections     []uint32
+	hostActionIDs      []uint32
+	hostGroups         []hostGroup
+	hostTreeRows       []hostTreeRow
+	hostsScroll        float32
+	tabDrag            tabDrag
+	foreign            tabDrag // another window's tab being dragged over this one
+	frame              func() (ui.Rect, bool)
+	windowVisible      func() bool
+	systemKeys         systemKeyCapture
+	winChrome          windowChrome
+	hostView           hostViewMode
+	bg                 backgroundState
+	hostsContent       float32
+	hostGroupMenu      bool
+	importMenu         bool
+	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
+	terminalMenu       terminalMenu
+	hostGroupEditor    text.Editor
+	groupActions       hostGroupActions
+	tabRename          tabRename
+	tabsClose          tabsClose
+	sessionLink        sessionLink
+	hostDialogMode     hostDialogMode
+	hostDialogID       uint32
+	ruleDelete         ruleDelete
+	hostTest           hostTest
+	hostDialogText     string
+	identityCountText  string
+	forwardCountText   string
+	forwardStarts      chan forwardStartResult
+	proxyCountText     string
+	hostImportResult   hostImportResult
+	knownHosts         knownHostsView
+	knownHostsLayout   flex.View
+	settingsRow        flex.View
+	partLayout         flex.View // a dialog body, a host card or a group header: one at a time
 
 	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout flex.View // the Port Forwarding and Proxies pages and their dialogs
 	chrome                                                             chromeLayout
@@ -658,12 +652,10 @@ type State struct {
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
 	latencyProbe        []uint32
-	// terminalHideConnectionColor removes the compact connection-color marker
-	// from the terminal toolbar. Its zero value keeps the marker visible.
-	terminalHideConnectionColor bool
-	// terminalToolbarSize changes both the reserved rail width and its controls.
-	// Its zero value keeps the historical small rail.
-	terminalToolbarSize terminalToolbarSize
+	// The shared terminal tool rail is a device-local presentation choice.
+	// Its zero value keeps the historical right-edge placement.
+	terminalToolbarPosition terminalToolbarPosition
+	terminalToolbarSize     terminalToolbarSize
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
@@ -676,11 +668,8 @@ type State struct {
 	settings         settingsUI
 	toolbars         toolbarPreferences
 	toolbarEditor    toolbarSettingsUI
+	toolbarDock      toolbarDockUI
 	sftpColumnEditor sftpColumnSettingsUI
-	// terminalToolbarDrag is the direct-manipulation gesture on a terminal
-	// rail. The settings dialog remains the full configuration surface; this
-	// shares its persisted side/order model.
-	terminalToolbarDrag terminalToolbarRailDrag
 
 	// area: settings
 	settingsPage flex.View // the whole settings workspace
@@ -1385,7 +1374,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickShortcutCapture(id)
 		return
 	}
-	if state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTerminalToolbarMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -1898,10 +1887,7 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
-	if result, handled := state.terminalToolbarMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := state.terminalRailDragPointer(event); handled {
+	if result := state.toolbarDockPointer(event); result.Handled {
 		return result
 	}
 	if result, handled := state.dashboardPointer(event); handled {
@@ -2154,6 +2140,9 @@ func fieldForDialogHit(id ui.ID) hostField {
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockKey(event); result.Handled {
+		return result
+	}
 	if result, handled := state.desktopFullscreenKey(event); handled {
 		return result
 	}
@@ -2188,9 +2177,6 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
-	if result, handled := state.terminalRailDragKey(event); handled {
-		return result
-	}
 	if result, handled := state.terminalInputKey(event); handled {
 		return result
 	}
@@ -2237,10 +2223,6 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if state.terminalMenu.open && event.Key == ui.KeyEscape {
 		state.terminalMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}
-	}
-	if state.terminalToolbarMenu.open && event.Key == ui.KeyEscape {
-		state.terminalToolbarMenu.open = false
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.menuKey(event); handled {

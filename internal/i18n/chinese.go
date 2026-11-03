@@ -164,8 +164,7 @@ var ChineseMessages = Messages{
 	SettingsToolbarPositionDescription:     "选择工作区共用终端工具栏的位置；操作始终跟随当前激活分屏。",
 	SettingsToolbarPositionLeft:            "左侧",
 	SettingsToolbarPositionRight:           "右侧",
-	SettingsToolbarSize:                    "终端工具栏大小",
-	SettingsToolbarSizeDescription:         "调整终端侧边工具栏的宽度、按钮和图标尺寸，便于高频操作。",
+	SettingsToolbarSize:                    "侧边与底部工具栏大小",
 	SettingsToolbarSizeSmall:               "小",
 	SettingsToolbarSizeMedium:              "中",
 	SettingsToolbarSizeLarge:               "大",
@@ -1340,7 +1339,7 @@ var chineseTools = ToolsMessages{
 	TabTitleRow:                "标签页跟随终端标题",
 	TabTitleDescription:        "标签页显示程序设置的标题，例如 tmux 的会话与窗口名。手动重命名过的标签页保持原名。",
 	LatencyRow:                 "显示延迟",
-	LatencyDescription:         "显示 SSH 终端侧边工具栏与 RDP 桌面状态区中的网络 RTT 往返延迟（小于100ms绿色，小于200ms黄色，大于等于200ms红色）。RDP 测量值由服务端报告。",
+	LatencyDescription:         "显示 SSH 终端和 RDP 桌面的网络 RTT 往返延迟（小于100ms绿色，小于200ms黄色，大于等于200ms红色）。RDP 测量值由服务端报告。",
 
 	FontChoose:              "选择",
 	FontCurrentFmt:          "当前：%s。可以使用任何已安装的等宽字体。",
@@ -2175,11 +2174,14 @@ var chineseAbout = AboutMessages{
 
 var chineseToolbars = ToolbarMessages{
 	Window: "窗口工具栏", Terminal: "终端工具栏", SFTP: "SFTP 工具栏",
-	Description: "自定义图标入口的显示和顺序。", Customize: "自定义", Hint: "拖动左侧手柄调整顺序，聚焦手柄后也可使用上下方向键移动。修改即时生效。", TerminalHint: "拖动左侧手柄调整顺序，或拖到左上、左下、右上、右下；聚焦手柄后可按左右方向键切换左右侧，按 Page Up / Page Down 切换上下分区。修改即时生效。", EnabledFmt: "已开启 %d / %d 项",
+	Description: "自定义图标入口的显示、位置和顺序。", Customize: "自定义", Hint: "拖动手柄或用方向键排序；点击位置切换停靠区域。修改即时生效。", EnabledFmt: "已开启 %d / %d 项",
 	EnableAll: "全部开启", DisableAll: "全部关闭", Reset: "恢复默认", Close: "完成",
 	DragFmt: "调整 %s 的顺序", LocalRemote: "切换本机 / 服务器", PanelSide: "切换面板左右位置",
-	Size: "大小", ConnectionColor: "连接色胶囊", Latency: "显示延迟", Left: "左栏", Right: "右栏", EmptyColumn: "拖动条目到这里",
-	LeftTop: "左上", LeftBottom: "左下", RightTop: "右上", RightBottom: "右下",
+	MoveTop: "移到顶部", MoveSideTop: "移到右侧上组", MoveSideBottom: "移到右侧下组",
+	MoveBottom: "移到底部左组", Bottom: "底部左组",
+	MoveBottomRight: "移到底部右组", BottomRight: "底部右组",
+	MoveLeftTop: "移到左侧上组", MoveLeftBottom: "移到左侧下组", LeftTop: "左侧上组", LeftBottom: "左侧下组",
+	Top: "顶部", SideTop: "右侧上组", SideBottom: "右侧下组", Hide: "隐藏图标", More: "更多工具", ResetLayout: "恢复工具栏默认布局",
 }
 
 var chineseCompletion = CompletionMessages{

@@ -73,6 +73,20 @@ servers, stay separate. Grouping only changes the vertical list: it never merges
 or disconnects sessions, and turning it off or returning to horizontal mode
 restores the original order.
 
+Window and terminal toolbar icons can be dragged to the top, either side's
+upper or lower group, or either end of the bottom bar. A drop commits on release;
+Escape or dropping outside a dock keeps the layout unchanged. Right-click an
+icon to move or hide it, customize the toolbar, or restore its default layout.
+Settings > General also controls visibility, order and position. Placements
+stay on this device, and terminal actions follow the active split. The SFTP
+toolbar keeps its separate visibility and ordering settings.
+
+Settings > General > Terminal toolbar > Customize offers small, medium and large
+sizes for both side rails and the bottom bar, including relocated window actions.
+The choice stays on this device; top-bar icons keep their standard size.
+Connection colors remain on tabs and host markers, while terminal, file and
+monitor headers use neutral backgrounds.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword

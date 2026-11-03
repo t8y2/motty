@@ -56,21 +56,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				first := hitToolbarHandles.At(toolbarEntryIndex(group, original))
 				lastEntries := state.toolbars.entries(group)
 				last := hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[len(lastEntries)-1].Key))
-				firstHit, firstOK := hitByIDSnapshot(view.Snapshot().Hits, first)
-				if !firstOK {
-					t.Fatalf("group %d first handle %v is missing", group, first)
-				}
-				a := firstHit.Bounds
-				var b ui.Rect
-				if group == toolbarTerminal {
-					b = state.toolbarEditor.zoneViewport[terminalToolbarZoneLeftBottom]
-				} else {
-					lastHit, lastOK := hitByIDSnapshot(view.Snapshot().Hits, last)
-					if !lastOK {
-						t.Fatalf("group %d last handle %v is missing", group, last)
-					}
-					b = lastHit.Bounds
-				}
+				a, b := dualHit(t, view, first), dualHit(t, view, last)
 				x, y := a.X+a.Width/2, a.Y+a.Height/2
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
@@ -84,11 +70,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
-				dragging := state.toolbarEditor.list.Dragging()
-				for zone := range state.toolbarEditor.zoneLists {
-					dragging = dragging || state.toolbarEditor.zoneLists[zone].Dragging()
-				}
-				if dragging || state.toolbars.entries(group)[0].Key != original {
+				if state.toolbarEditor.list.Dragging() || state.toolbars.entries(group)[0].Key != original {
 					t.Fatal("losing pointer capture retained or committed an interrupted drag")
 				}
 				if err := view.Press(x, y); err != nil {
@@ -104,12 +86,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					t.Fatal(err)
 				}
 				entries := state.toolbars.entries(group)
-				if group == toolbarTerminal {
-					spec, _ := toolbarSpecFor(toolbarTerminal, original)
-					if state.terminalToolbarZoneFor(spec.id) != terminalToolbarZoneLeftBottom {
-						t.Fatalf("terminal entry %q did not move to the left-bottom column: %+v", original, entries)
-					}
-				} else if entries[len(entries)-1].Key != original {
+				if entries[len(entries)-1].Key != original {
 					t.Fatalf("group %d did not reorder on drop: %+v", group, entries)
 				}
 				if err := view.Keys("Home"); err != nil {
@@ -119,14 +96,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					t.Fatal("keyboard could not move the focused entry back")
 				}
 				index := toolbarEntryIndex(group, original)
-				switchID := hitToolbarToggles.At(index)
-				switch original {
-				case "connection-color":
-					switchID = hitToolbarConnectionColor
-				case "latency":
-					switchID = hitToolbarLatency
-				}
-				click(switchID)
+				click(hitToolbarToggles.At(index))
 				if state.toolbars.entries(group)[0].Enabled {
 					t.Fatal("switch failed to disable the entry")
 				}

@@ -674,6 +674,7 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 
 func TestSectionAIDrawerUsesTheWidthWithoutTheBackgroundTerminalRail(t *testing.T) {
 	state, _ := panelState(t, nil)
+	state.terminalToolbarPosition = terminalToolbarRight
 	state.activeSection = sectionSettings
 	state.ai.open = true
 

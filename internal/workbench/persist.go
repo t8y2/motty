@@ -61,8 +61,6 @@ type savedState struct {
 	TerminalShowLatency        bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition    string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize        string              `json:"terminal_toolbar_size,omitempty"`
-	TerminalToolbarLeftDock    string              `json:"terminal_toolbar_left_dock,omitempty"`  // legacy: migrate to per-entry zones
-	TerminalToolbarRightDock   string              `json:"terminal_toolbar_right_dock,omitempty"` // legacy: migrate to per-entry zones
 	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
 	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
@@ -412,6 +410,7 @@ func (state *State) snapshot() savedState {
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
+		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
@@ -645,9 +644,9 @@ func (state *State) restoreLocal(saved savedState) {
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
-	state.toolbars.restore(saved.Toolbars, terminalToolbarSideFromString(saved.TerminalToolbarPosition, terminalToolbarRight))
+	state.toolbars.restore(saved.Toolbars)
+	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
-	state.restoreLegacyTerminalToolbarDocks(saved)
 	state.localShell = saved.LocalShell
 	state.sessionLogsOff = saved.SessionLogsOff
 	// The saved editor is read as it is: a value this build does not know stays
@@ -719,7 +718,6 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
 	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency
-	state.restoreTerminalStatusEntries(saved)
 	state.terminalBellOff = saved.TerminalBellOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {

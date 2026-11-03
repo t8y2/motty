@@ -9,31 +9,22 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/configstore"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
 
-func setAllTerminalToolbarSides(state *State, side terminalToolbarSide) {
-	entries := state.toolbars.customize(toolbarTerminal)
-	for index := range entries {
-		entries[index].Side = side.String()
-		entries[index].Zone = terminalToolbarZoneFromParts(side, terminalToolbarDockTop).String()
-	}
-}
-
-func TestTerminalToolbarsStayAtWorkspaceOuterEdges(t *testing.T) {
-	for _, side := range []terminalToolbarSide{terminalToolbarLeft, terminalToolbarRight} {
-		t.Run(side.String(), func(t *testing.T) {
+func TestSharedTerminalToolbarStaysAtWorkspaceOuterEdge(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
 			state, _ := monitorFixture(t)
 			session := &state.sessions[0]
-			setAllTerminalToolbarSides(state, side)
+			state.terminalToolbarPosition = position
 			id := state.deck.ActiveWorkspace()
 			context, _ := state.deck.Context(id)
 			context.MonitorOpen = true
 			context.MonitorWidth = 320
-			context.MonitorLeft = side == terminalToolbarLeft
+			context.MonitorLeft = position == terminalToolbarLeft
 			context.Open = false
 			if err := state.deck.SetContext(id, context); err != nil {
 				t.Fatal(err)
@@ -45,20 +36,19 @@ func TestTerminalToolbarsStayAtWorkspaceOuterEdges(t *testing.T) {
 
 			rail, ok := hitByID(&canvas, hitSFTPOpen)
 			if !ok || rail.Bounds.Width != terminalBarToolSize {
-				t.Fatalf("%s rail Files control=%+v, %v", side, rail.Bounds, ok)
+				t.Fatalf("%s rail Files control=%+v, %v", position, rail.Bounds, ok)
 			}
 			full := state.fullWorkspacePixelBounds(size)
 			inner := state.baseWorkspacePixelBounds(size)
 			terminal := state.layoutForSession(session.ID).area
-			bar, ok := state.terminalSideRailBoundsFor(size, side)
+			bar, ok := state.terminalSideRailBounds(size)
 			if !ok {
-				t.Fatal("toolbar bounds are missing")
+				t.Fatal("shared toolbar bounds are missing")
 			}
-			viewport := session.term.rails[side].zones[terminalToolbarDockTop].viewport
-			switch side {
+			switch position {
 			case terminalToolbarLeft:
-				if viewport.X != full.X+4 {
-					t.Fatalf("left rail viewport x=%v, want outer x=%v", viewport.X, full.X+4)
+				if session.term.railViewport.X != full.X+4 {
+					t.Fatalf("left rail viewport x=%v, want outer x=%v", session.term.railViewport.X, full.X+4)
 				}
 				if state.monitorRect.X < bar.X+bar.Width {
 					t.Fatalf("left monitor=%+v overlaps outer rail=%+v", state.monitorRect, bar)
@@ -71,8 +61,8 @@ func TestTerminalToolbarsStayAtWorkspaceOuterEdges(t *testing.T) {
 				}
 			case terminalToolbarRight:
 				wantX := full.X + full.Width - terminalToolRailExtent
-				if viewport.X+viewport.Width != wantX+terminalToolRailExtent-4 {
-					t.Fatalf("right rail viewport=%+v, want its gutter at outer x=%v", viewport, wantX)
+				if session.term.railViewport.X+session.term.railViewport.Width != wantX+terminalToolRailExtent-4 {
+					t.Fatalf("right rail viewport=%+v, want its gutter at outer x=%v", session.term.railViewport, wantX)
 				}
 				if state.monitorRect.X+state.monitorRect.Width > bar.X {
 					t.Fatalf("right monitor=%+v overlaps outer rail=%+v", state.monitorRect, bar)
@@ -88,133 +78,6 @@ func TestTerminalToolbarsStayAtWorkspaceOuterEdges(t *testing.T) {
 	}
 }
 
-func TestTerminalToolbarSizeChangesRailAndControlGeometry(t *testing.T) {
-	state, _ := monitorFixture(t)
-	session := &state.sessions[0]
-	size := ui.Size{Width: 1200, Height: 800}
-	state.Resize(size)
-	for _, test := range []struct {
-		size   terminalToolbarSize
-		extent float32
-		tool   float32
-		icon   float32
-	}{
-		{terminalToolbarSmall, 40, 32, 17},
-		{terminalToolbarMedium, 48, 40, 20},
-		{terminalToolbarLarge, 56, 48, 24},
-	} {
-		t.Run(test.size.String(), func(t *testing.T) {
-			state.terminalToolbarSize = test.size
-			rail, ok := state.terminalSideRailBoundsFor(size, terminalToolbarRight)
-			if !ok || rail.Width != test.extent {
-				t.Fatalf("rail bounds=%+v found=%v, want width %v", rail, ok, test.extent)
-			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, size)
-			metrics := state.terminalToolbarMetrics()
-			if metrics.railExtent != test.extent || metrics.toolSize != test.tool ||
-				metrics.iconSize != test.icon {
-				t.Fatalf("metrics=%+v", metrics)
-			}
-			viewport := session.term.rails[terminalToolbarRight].zones[terminalToolbarDockTop].viewport
-			if viewport.Width != test.tool {
-				t.Fatalf("rail viewport=%+v, want tool width %v", viewport, test.tool)
-			}
-		})
-	}
-}
-
-func TestTerminalToolbarZonesAnchorControlsIndependently(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	setAllTerminalToolbarSides(state, terminalToolbarLeft)
-	size := ui.Size{Width: 1200, Height: 1000}
-	state.Resize(size)
-
-	var canvas ui.Canvas
-	state.Paint(&canvas, size)
-	topFiles, ok := hitByID(&canvas, hitSFTPOpen)
-	if !ok {
-		t.Fatal("files control is missing from the top zone")
-	}
-	if !moveToolbarEntryToZone(state, "files", terminalToolbarZoneLeftBottom, 0) {
-		t.Fatal("moving files to the bottom-left zone was not reported")
-	}
-	canvas.Reset()
-	state.Paint(&canvas, size)
-
-	bottomFiles, ok := hitByID(&canvas, hitSFTPOpen)
-	if !ok {
-		t.Fatal("files control is missing from the bottom zone")
-	}
-	if bottomFiles.Bounds.Y <= topFiles.Bounds.Y {
-		t.Fatalf("bottom-zone files control y=%v did not move below top-zone y=%v", bottomFiles.Bounds.Y, topFiles.Bounds.Y)
-	}
-	zone := state.sessions[0].term.rails[terminalToolbarLeft].zones[terminalToolbarDockBottom]
-	if zone.contentExtent > zone.viewport.Height {
-		t.Fatalf("fixture unexpectedly overflows: content=%v viewport=%v", zone.contentExtent, zone.viewport.Height)
-	}
-	wantBottom := zone.viewport.Y + zone.viewport.Height - state.terminalToolbarMetrics().inset
-	if bottomFiles.Bounds.Y+bottomFiles.Bounds.Height != wantBottom {
-		t.Fatalf("bottom-zone files control bottom=%v, want %v", bottomFiles.Bounds.Y+bottomFiles.Bounds.Height, wantBottom)
-	}
-}
-
-func TestTerminalToolbarUsesTwoIndependentRailsAndOmitsAnEmptySide(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	state.sessions[0].host.Color = "#3b82f6"
-	size := ui.Size{Width: 1200, Height: 800}
-	state.Resize(size)
-
-	occupied, ok := state.terminalToolbarOccupiedSides()
-	if !ok || occupied[terminalToolbarLeft] || !occupied[terminalToolbarRight] {
-		t.Fatalf("default toolbar sides = %v, want right only", occupied)
-	}
-	if _, ok := state.terminalSideRailBoundsFor(size, terminalToolbarLeft); ok {
-		t.Fatal("an empty left rail reserved space")
-	}
-	full, inner := state.fullWorkspacePixelBounds(size), state.baseWorkspacePixelBounds(size)
-	extent := state.terminalToolbarMetrics().railExtent
-	if inner.X != full.X || inner.X+inner.Width != full.X+full.Width-extent {
-		t.Fatalf("right-only workspace=%+v full=%+v extent=%v", inner, full, extent)
-	}
-
-	entries := state.toolbars.customize(toolbarTerminal)
-	split := len(entries) / 2
-	for index := range entries {
-		side := terminalToolbarRight
-		if index < split {
-			side = terminalToolbarLeft
-		}
-		entries[index].Side = side.String()
-		entries[index].Zone = terminalToolbarZoneFromParts(side, terminalToolbarDockTop).String()
-	}
-	state.applyTerminalToolbarLayoutChange()
-
-	occupied, ok = state.terminalToolbarOccupiedSides()
-	if !ok || !occupied[terminalToolbarLeft] || !occupied[terminalToolbarRight] {
-		t.Fatalf("split toolbar sides = %v, want both", occupied)
-	}
-	left, leftOK := state.terminalSideRailBoundsFor(size, terminalToolbarLeft)
-	right, rightOK := state.terminalSideRailBoundsFor(size, terminalToolbarRight)
-	if !leftOK || !rightOK || left.X != full.X || right.X+right.Width != full.X+full.Width {
-		t.Fatalf("rail bounds left=%+v/%v right=%+v/%v full=%+v", left, leftOK, right, rightOK, full)
-	}
-	inner = state.baseWorkspacePixelBounds(size)
-	occupied, ok = state.terminalToolbarOccupiedSides()
-	if inner.X != full.X+extent || inner.Width != full.Width-2*extent {
-		t.Fatalf("two-sided workspace=%+v full=%+v extent=%v occupied=%v/%v", inner, full, extent, occupied, ok)
-	}
-
-	var canvas ui.Canvas
-	state.Paint(&canvas, size)
-	if state.sessions[0].term.rails[terminalToolbarLeft].count == 0 ||
-		state.sessions[0].term.rails[terminalToolbarRight].count == 0 {
-		t.Fatalf("rail counts left=%d right=%d",
-			state.sessions[0].term.rails[terminalToolbarLeft].count,
-			state.sessions[0].term.rails[terminalToolbarRight].count)
-	}
-}
-
 func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
@@ -225,6 +88,7 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 	first, second := &state.sessions[0], &state.sessions[1]
 	first.term.live, second.term.live = true, true
 	first.term.recording.active, second.term.recording.active = true, false
+	state.terminalToolbarPosition = terminalToolbarRight
 	size := ui.Size{Width: 1200, Height: 800}
 
 	assertRecordHint := func(session *Session) {
@@ -245,8 +109,8 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 		if record.Hint != want {
 			t.Fatalf("active session %d record hint=%q, want %q", session.ID, record.Hint, want)
 		}
-		if session.term.rails[terminalToolbarRight].count == 0 {
-			t.Fatal("active session does not own the toolbar")
+		if session.term.railCount == 0 {
+			t.Fatal("active session does not own the shared rail")
 		}
 	}
 
@@ -256,8 +120,6 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 
 func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	state.hosts[0].Color = "#ef4444"
-	state.hosts[1].Color = "#3b82f6"
 	openHost(state)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
 	if len(state.sessions) < 2 {
@@ -288,7 +150,7 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 			title = session.Address
 		}
 		status, _ := state.sessionStatus(session)
-		foundTitle, foundStatus, neutralBackground := false, false, false
+		foundTitle, foundStatus := false, false
 		for _, text := range canvas.Texts() {
 			if text.Bounds.Y < bounds.Y || text.Bounds.Y >= bounds.Y+infoBarHeight ||
 				text.Bounds.X < bounds.X || text.Bounds.X >= bounds.X+bounds.Width {
@@ -297,20 +159,9 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 			foundTitle = foundTitle || text.Value == title
 			foundStatus = foundStatus || text.Value == status
 		}
-		for _, rectangle := range canvas.Rectangles() {
-			if rectangle.Color == state.pal.workspace &&
-				rectangle.Bounds.X <= bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= bounds.X+bounds.Width &&
-				rectangle.Bounds.Y <= bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= bounds.Y+infoBarHeight {
-				neutralBackground = true
-				break
-			}
-		}
 		if !foundTitle || !foundStatus {
 			t.Fatalf("active session %d title=%q found=%v status=%q found=%v in pane bar %+v",
 				session.ID, title, foundTitle, status, foundStatus, bounds)
-		}
-		if !neutralBackground {
-			t.Fatalf("active session %d split bar is not neutral", session.ID)
 		}
 	}
 
@@ -597,11 +448,11 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 	}
 }
 
-func TestSharedTerminalToolbarPlacesLatencyAsAnOrderedEntry(t *testing.T) {
+func TestSharedTerminalToolbarPlacesLatencyBeforeActions(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
-	state.toolbars.setTerminalEntryEnabled("latency", true)
-	state.syncTerminalStatusEntries()
+	state.terminalShowLatency = true
+	state.terminalToolbarPosition = terminalToolbarRight
 	atomic.StoreInt64(&session.rttMs, 42)
 	atomic.StoreInt32(&session.rttAvailable, 1)
 	size := ui.Size{Width: 1200, Height: 800}
@@ -609,24 +460,23 @@ func TestSharedTerminalToolbarPlacesLatencyAsAnOrderedEntry(t *testing.T) {
 
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
-	files, ok := hitByID(&canvas, hitSFTPOpen)
+	first, ok := hitByID(&canvas, hitPaneSplitHorizontal)
 	if !ok {
-		t.Fatal("files action is missing")
+		t.Fatal("first split control is missing")
 	}
-	var latency ui.Text
+	wantTop := session.term.railViewport.Y + 4
+	if first.Bounds.Y != wantTop || first.Bounds.Width != terminalBarToolSize {
+		t.Fatalf("first action = %+v, want %vpx high below latency at y=%v", first.Bounds, terminalBarToolSize, wantTop)
+	}
 	found := false
 	for _, text := range canvas.Texts() {
 		if text.Value == "42ms" {
-			latency = text
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("latency is not painted in the ordered rail")
-	}
-	if latency.Bounds.Y >= files.Bounds.Y {
-		t.Fatalf("latency=%+v is not ordered before files=%+v", latency.Bounds, files.Bounds)
+		t.Fatal("latency is not painted above the action rail")
 	}
 }
 
@@ -698,16 +548,16 @@ func TestSharedSidePanelsFollowActiveSplit(t *testing.T) {
 }
 
 func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
-	for _, side := range []terminalToolbarSide{terminalToolbarLeft, terminalToolbarRight} {
-		t.Run(side.String(), func(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
 			state, session, _, _ := openTestSFTP(t)
-			setAllTerminalToolbarSides(state, side)
+			state.terminalToolbarPosition = position
 			state.ai.open = true
 			state.ai.panelWidth = 280
 			workspace := state.deck.ActiveWorkspace()
 			context, _ := state.deck.Context(workspace)
 			context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, true, layoutcore.ContextRight
-			context.MonitorOpen, context.MonitorLeft = true, side == terminalToolbarLeft
+			context.MonitorOpen, context.MonitorLeft = true, position == terminalToolbarLeft
 			if err := state.deck.SetContext(workspace, context); err != nil {
 				t.Fatal(err)
 			}
@@ -717,12 +567,12 @@ func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
 
 			var canvas ui.Canvas
 			state.Paint(&canvas, size)
-			rail, ok := state.terminalSideRailBoundsFor(size, side)
+			rail, ok := state.terminalSideRailBounds(size)
 			if !ok {
 				t.Fatal("shared toolbar bounds are missing")
 			}
 			full := state.fullWorkspacePixelBounds(size)
-			if side == terminalToolbarLeft {
+			if position == terminalToolbarLeft {
 				if rail.X != full.X {
 					t.Fatalf("left rail x=%v, want outer-%v", rail.X, full.X)
 				}
@@ -752,23 +602,22 @@ func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
 func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
-	setAllTerminalToolbarSides(state, terminalToolbarLeft)
+	state.terminalToolbarPosition = terminalToolbarLeft
 	size := ui.Size{Width: 900, Height: 300}
 	state.Resize(size)
 
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
-	rail := &session.term.rails[terminalToolbarLeft]
-	zone := &rail.zones[terminalToolbarDockTop]
-	if rail.count < 3 || zone.contentExtent <= zone.viewport.Height {
-		t.Fatalf("fixture does not overflow: count=%d content=%v viewport=%v", rail.count, zone.contentExtent, zone.viewport)
+	term := session.term
+	if term.railCount < 3 || term.railContentExtent <= term.railViewport.Height {
+		t.Fatalf("fixture does not overflow: count=%d content=%v viewport=%v", term.railCount, term.railContentExtent, term.railViewport)
 	}
-	lastID := rail.ids[rail.count-1]
+	lastID := term.railIDs[term.railCount-1]
 	if _, visible := hitByID(&canvas, lastID); visible {
 		t.Fatal("the final control unexpectedly begins in the visible rail")
 	}
 
-	target := rail.ids[0]
+	target := term.railIDs[0]
 	for target != lastID {
 		result := state.Key(ui.KeyEvent{Target: target, Key: ui.KeyDown})
 		if !result.Handled || result.Focus.IsZero() || result.Focus == target {
@@ -780,7 +629,7 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 	canvas.Reset()
 	canvas.SetInteraction(ui.ID{}, ui.ID{}, lastID, true)
 	state.Paint(&canvas, size)
-	if zone.scroll <= 0 {
+	if term.railScroll <= 0 {
 		t.Fatal("keyboard focus did not scroll the overflowed shared rail")
 	}
 	if _, visible := hitByID(&canvas, lastID); !visible {
@@ -796,55 +645,54 @@ func TestSharedTerminalToolbarKeyboardNavigationSkipsDisabledActions(t *testing.
 
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
-	rail := &session.term.rails[terminalToolbarRight]
+	term := session.term
 	disabled := -1
-	for index := 0; index < rail.count; index++ {
-		if !rail.enabled[index] {
+	for index := 0; index < term.railCount; index++ {
+		if !term.railEnabled[index] {
 			disabled = index
 			break
 		}
 	}
-	if disabled <= 0 || disabled >= rail.count-1 {
-		t.Fatalf("fixture has no usable disabled action: count=%d disabled=%d", rail.count, disabled)
+	if disabled <= 0 || disabled >= term.railCount-1 {
+		t.Fatalf("fixture has no usable disabled action: count=%d disabled=%d", term.railCount, disabled)
 	}
 	before, after := disabled-1, disabled+1
-	for before >= 0 && !rail.enabled[before] {
+	for before >= 0 && !term.railEnabled[before] {
 		before--
 	}
-	for after < rail.count && !rail.enabled[after] {
+	for after < term.railCount && !term.railEnabled[after] {
 		after++
 	}
-	if before < 0 || after >= rail.count {
+	if before < 0 || after >= term.railCount {
 		t.Fatalf("disabled action is not between enabled actions: before=%d disabled=%d after=%d", before, disabled, after)
 	}
 
-	result, handled := state.terminalToolbarKey(session, ui.KeyEvent{Target: rail.ids[before], Key: ui.KeyDown})
-	if !handled || !result.Handled || result.Focus != rail.ids[after] {
-		t.Fatalf("Down across disabled action = %+v handled=%v, want focus %v", result, handled, rail.ids[after])
+	result, handled := state.terminalToolbarKey(session, ui.KeyEvent{Target: term.railIDs[before], Key: ui.KeyDown})
+	if !handled || !result.Handled || result.Focus != term.railIDs[after] {
+		t.Fatalf("Down across disabled action = %+v handled=%v, want focus %v", result, handled, term.railIDs[after])
 	}
-	result, handled = state.terminalToolbarKey(session, ui.KeyEvent{Target: rail.ids[after], Key: ui.KeyUp})
-	if !handled || !result.Handled || result.Focus != rail.ids[before] {
-		t.Fatalf("Up across disabled action = %+v handled=%v, want focus %v", result, handled, rail.ids[before])
+	result, handled = state.terminalToolbarKey(session, ui.KeyEvent{Target: term.railIDs[after], Key: ui.KeyUp})
+	if !handled || !result.Handled || result.Focus != term.railIDs[before] {
+		t.Fatalf("Up across disabled action = %+v handled=%v, want focus %v", result, handled, term.railIDs[before])
 	}
 }
 
 func TestWheelOverSharedTerminalToolbarDoesNotScrollTerminalHistory(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
+	state.terminalToolbarPosition = terminalToolbarRight
 	size := ui.Size{Width: 900, Height: 300}
 	state.Resize(size)
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
-	railState := &session.term.rails[terminalToolbarRight]
-	zone := &railState.zones[terminalToolbarDockTop]
-	if zone.contentExtent <= zone.viewport.Height {
+	if session.term.railContentExtent <= session.term.railViewport.Height {
 		t.Fatal("fixture does not overflow")
 	}
 	before := session.term.screen.ViewOffset()
-	rail := zone.viewport
+	rail := session.term.railViewport
 	result := state.scroll(ui.ScrollEvent{X: rail.X + 2, Y: rail.Y + 2, DeltaY: 1})
-	if !result.Handled || zone.scroll <= 0 {
-		t.Fatalf("wheel result=%+v offset=%v", result, zone.scroll)
+	if !result.Handled || session.term.railScroll <= 0 {
+		t.Fatalf("wheel result=%+v offset=%v", result, session.term.railScroll)
 	}
 	if session.term.screen.ViewOffset() != before {
 		t.Fatal("wheel over the shared rail moved terminal history")
@@ -852,11 +700,11 @@ func TestWheelOverSharedTerminalToolbarDoesNotScrollTerminalHistory(t *testing.T
 }
 
 func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
-	for _, side := range []terminalToolbarSide{terminalToolbarLeft, terminalToolbarRight} {
-		t.Run(side.String(), func(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
 			state, _, _, _ := liveSession(t)
 			session := &state.sessions[0]
-			setAllTerminalToolbarSides(state, side)
+			state.terminalToolbarPosition = position
 			size := ui.Size{Width: 900, Height: 300}
 			state.Resize(size)
 			for line := 0; line < 80; line++ {
@@ -864,20 +712,18 @@ func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
 			}
 			var canvas ui.Canvas
 			state.Paint(&canvas, size)
-			railState := &session.term.rails[side]
-			zone := &railState.zones[terminalToolbarDockTop]
-			if zone.contentExtent <= zone.viewport.Height {
+			if session.term.railContentExtent <= session.term.railViewport.Height {
 				t.Fatal("fixture does not overflow")
 			}
 			before := session.term.screen.ViewOffset()
-			rail := railState.bounds
+			rail := session.term.railBounds
 			x := rail.X + 1
-			if side == terminalToolbarRight {
+			if position == terminalToolbarRight {
 				x = rail.X + rail.Width - 1
 			}
 			result := state.scroll(ui.ScrollEvent{X: x, Y: rail.Y + 2, DeltaY: 1})
-			if !result.Handled || zone.scroll <= 0 {
-				t.Fatalf("gutter wheel result=%+v offset=%v", result, zone.scroll)
+			if !result.Handled || session.term.railScroll <= 0 {
+				t.Fatalf("gutter wheel result=%+v offset=%v", result, session.term.railScroll)
 			}
 			if session.term.screen.ViewOffset() != before {
 				t.Fatal("wheel over the rail gutter moved terminal history")
@@ -914,290 +760,22 @@ func TestActivatingTerminalWorkspaceFitsShellToSharedRail(t *testing.T) {
 	}
 }
 
-func TestTerminalToolbarSidesPersistPerActionAndInvalidValuesFallBackToRight(t *testing.T) {
+func TestTerminalToolbarPositionPersistsAndInvalidValuesFallBackToRight(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
-	entries := state.toolbars.customize(toolbarTerminal)
-	entries[0].Side = terminalToolbarLeft.String()
+	if !state.setTerminalToolbarPosition(terminalToolbarLeft) {
+		t.Fatal("changing the toolbar position was not reported")
+	}
 	state.save()
 	saved, _, err := loadState(options.StatePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Toolbars == nil || len(saved.Toolbars.Terminal) == 0 ||
-		saved.Toolbars.Terminal[0].Side != terminalToolbarLeft.String() {
-		t.Fatalf("saved terminal toolbar = %+v, want first action on the left", saved.Toolbars)
+	if saved.TerminalToolbarPosition != terminalToolbarLeft.String() {
+		t.Fatalf("saved toolbar position = %q, want %q", saved.TerminalToolbarPosition, terminalToolbarLeft.String())
 	}
-	if got := terminalToolbarSideFromString("top", terminalToolbarRight); got != terminalToolbarRight {
+	if got := terminalToolbarPositionFromString("top"); got != terminalToolbarRight {
 		t.Fatalf("unknown saved position became %v, want right", got)
-	}
-}
-
-func TestTerminalToolbarSizePersistsAndInvalidValuesFallBackToSmall(t *testing.T) {
-	options := testOptions(t)
-	state := newTestState(t, options)
-	if state.terminalToolbarSize != terminalToolbarSmall {
-		t.Fatalf("default toolbar size = %v, want small", state.terminalToolbarSize)
-	}
-	if !state.setTerminalToolbarSize(terminalToolbarLarge) {
-		t.Fatal("changing the toolbar size was not reported")
-	}
-	state.save()
-	saved, _, err := loadState(options.StatePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved.TerminalToolbarSize != terminalToolbarLarge.String() {
-		t.Fatalf("saved toolbar size = %q, want %q", saved.TerminalToolbarSize, terminalToolbarLarge.String())
-	}
-	if got := terminalToolbarSizeFromString("huge"); got != terminalToolbarSmall {
-		t.Fatalf("unknown saved size became %v, want small", got)
-	}
-}
-
-func TestTerminalToolbarZonesPersistPerControlAndInvalidValuesFallBackToTop(t *testing.T) {
-	options := testOptions(t)
-	state := newTestState(t, options)
-	if !moveToolbarEntryToZone(state, "files", terminalToolbarZoneLeftBottom, 0) {
-		t.Fatal("left-bottom zone change was not reported")
-	}
-	if !moveToolbarEntryToZone(state, "latency", terminalToolbarZoneRightBottom, 0) {
-		t.Fatal("right-bottom zone change was not reported")
-	}
-	state.save()
-	saved, _, err := loadState(options.StatePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	savedZones := map[string]string{}
-	if saved.Toolbars != nil {
-		for _, entry := range saved.Toolbars.Terminal {
-			savedZones[entry.Key] = entry.Zone
-		}
-	}
-	if savedZones["files"] != terminalToolbarZoneLeftBottom.String() ||
-		savedZones["latency"] != terminalToolbarZoneRightBottom.String() ||
-		savedZones["close-pane"] != terminalToolbarZoneRightTop.String() {
-		t.Fatalf("saved zones = %v", savedZones)
-	}
-	restarted := newTestState(t, options)
-	if restarted.terminalToolbarZoneFor(hitSFTPOpen) != terminalToolbarZoneLeftBottom ||
-		restarted.terminalToolbarZoneFor(hitTerminalLatency) != terminalToolbarZoneRightBottom ||
-		restarted.terminalToolbarZoneFor(hitPaneClose) != terminalToolbarZoneRightTop {
-		t.Fatal("per-control zones did not survive restart")
-	}
-	if zone, ok := terminalToolbarZoneFromString("sideways"); ok || zone != terminalToolbarZoneRightTop {
-		t.Fatalf("unknown saved zone became %v/%v, want invalid then right-top", zone, ok)
-	}
-}
-
-func TestTerminalConnectionColorTogglePersists(t *testing.T) {
-	options := testOptions(t)
-	state := newTestState(t, options)
-	state.openToolbarSettings(toolbarTerminal)
-	state.Click(hitToolbarConnectionColor)
-	if !state.terminalHideConnectionColor {
-		t.Fatal("connection-color switch did not hide the capsule")
-	}
-	restarted := newTestState(t, options)
-	if !restarted.terminalHideConnectionColor {
-		t.Fatal("connection-color switch did not survive restart")
-	}
-}
-
-func TestFormat19StateDefaultsTerminalToolbarSize(t *testing.T) {
-	options := freshOptions(t)
-	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
-	options.Keystore = &memKeys{}
-	store, err := configstore.Open(options.StatePath, 19)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, local, err := splitState(savedState{
-		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion,
-		ShortcutVersion: shortcutSchemaVersion,
-	}, newConfigBase(), nil)
-	if err != nil {
-		store.Close()
-		t.Fatal(err)
-	}
-	if _, err := store.Commit(configstore.Change{
-		Put: entries, Local: map[string][]byte{localKey: local},
-	}); err != nil {
-		store.Close()
-		t.Fatal(err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	restored := newTestState(t, options)
-	if restored.terminalToolbarSize != terminalToolbarSmall {
-		t.Fatalf("format 19 toolbar size = %v, want small", restored.terminalToolbarSize)
-	}
-}
-
-func TestFormat20StateDefaultsTerminalToolbarZonesToRightTop(t *testing.T) {
-	options := freshOptions(t)
-	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
-	options.Keystore = &memKeys{}
-	store, err := configstore.Open(options.StatePath, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, local, err := splitState(savedState{
-		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion,
-		ShortcutVersion: shortcutSchemaVersion,
-	}, newConfigBase(), nil)
-	if err != nil {
-		store.Close()
-		t.Fatal(err)
-	}
-	if _, err := store.Commit(configstore.Change{
-		Put: entries, Local: map[string][]byte{localKey: local},
-	}); err != nil {
-		store.Close()
-		t.Fatal(err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	restored := newTestState(t, options)
-	for _, entry := range restored.toolbars.entries(toolbarTerminal) {
-		if zone := terminalToolbarZoneForEntry(entry, terminalToolbarRight); zone != terminalToolbarZoneRightTop {
-			t.Fatalf("format 20 entry %q zone=%v, want right-top", entry.Key, zone)
-		}
-	}
-}
-
-func TestLegacyDockMigrationPreservesValidPerControlZones(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	savedToolbars := &savedToolbars{Terminal: []toolbarEntry{
-		{Key: "latency", Enabled: true, Side: "right", Zone: terminalToolbarZoneRightBottom.String()},
-		{Key: "files", Enabled: true, Side: "left", Zone: terminalToolbarZoneLeftBottom.String()},
-		{Key: "record", Enabled: true, Side: "left"},
-	}}
-	state.toolbars.restore(savedToolbars, terminalToolbarRight)
-	state.restoreLegacyTerminalToolbarDocks(savedState{
-		Toolbars:                 savedToolbars,
-		TerminalToolbarLeftDock:  terminalToolbarDockTop.String(),
-		TerminalToolbarRightDock: terminalToolbarDockBottom.String(),
-	})
-
-	if got := state.terminalToolbarZoneFor(hitTerminalLatency); got != terminalToolbarZoneRightBottom {
-		t.Fatalf("valid right-bottom zone migrated to %v", got)
-	}
-	if got := state.terminalToolbarZoneFor(hitSFTPOpen); got != terminalToolbarZoneLeftBottom {
-		t.Fatalf("valid left-bottom zone migrated to %v", got)
-	}
-	if got := state.terminalToolbarZoneFor(hitTerminalRecord); got != terminalToolbarZoneLeftTop {
-		t.Fatalf("legacy left dock became %v, want left-top", got)
-	}
-	if got := state.terminalToolbarZoneFor(hitPaneClose); got != terminalToolbarZoneRightBottom {
-		t.Fatalf("legacy right dock became %v, want right-bottom", got)
-	}
-}
-
-func TestTerminalToolbarLoneQuadrantUsesTheFullShortRail(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	size := ui.Size{Width: 760, Height: 500}
-	state.Resize(size)
-
-	var canvas ui.Canvas
-	state.Paint(&canvas, size)
-	rail := state.sessions[0].term.rails[terminalToolbarRight]
-	if rail.zones[terminalToolbarDockBottom].viewport.Height != 0 {
-		t.Fatalf("empty bottom viewport has height %v", rail.zones[terminalToolbarDockBottom].viewport.Height)
-	}
-	if rail.zones[terminalToolbarDockTop].viewport.Height < 400 {
-		t.Fatalf("lone top quadrant height=%v, want the usable rail height", rail.zones[terminalToolbarDockTop].viewport.Height)
-	}
-	if _, ok := hitByID(&canvas, hitTerminalRecord); !ok {
-		t.Fatal("record control is unreachable in a short, single-quadrant rail")
-	}
-
-	entries := state.toolbars.customize(toolbarTerminal)
-	for index := range entries {
-		entries[index].Side = terminalToolbarRight.String()
-		entries[index].Zone = terminalToolbarZoneRightBottom.String()
-	}
-	state.applyTerminalToolbarLayoutChange()
-	canvas.Reset()
-	state.Paint(&canvas, size)
-	rail = state.sessions[0].term.rails[terminalToolbarRight]
-	if rail.zones[terminalToolbarDockTop].viewport.Height != 0 {
-		t.Fatalf("empty top viewport has height %v", rail.zones[terminalToolbarDockTop].viewport.Height)
-	}
-	if rail.zones[terminalToolbarDockBottom].viewport.Height < 400 {
-		t.Fatalf("lone bottom quadrant height=%v, want the usable rail height", rail.zones[terminalToolbarDockBottom].viewport.Height)
-	}
-}
-
-func TestTerminalToolbarLatencyWithoutASampleUsesAVisiblePlaceholder(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	entries := state.toolbars.customize(toolbarTerminal)
-	for index := range entries {
-		entries[index].Enabled = entries[index].Key == "latency"
-	}
-	state.syncTerminalStatusEntries()
-	size := ui.Size{Width: 900, Height: 700}
-	state.Resize(size)
-
-	canvas, texts := paintAt(state, size)
-	handle := terminalToolbarDragHandle(hitTerminalLatency)
-	if _, ok := hitByID(canvas, handle); !ok {
-		var painted []ui.ID
-		for _, hit := range canvas.Hits() {
-			if hit.ID.Scope() == hitTerminalToolbarDrag {
-				painted = append(painted, hit.ID)
-			}
-		}
-		t.Fatalf("latency placeholder is not draggable; painted handles=%v want=%v", painted, handle)
-	}
-	found := false
-	for _, value := range texts {
-		found = found || value == "—"
-	}
-	if !found {
-		t.Fatal("latency placeholder was painted as an invisible empty slot")
-	}
-}
-
-func TestTerminalToolbarFourColumnsNavigateAndPaint(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	state.openToolbarSettings(toolbarTerminal)
-
-	key := state.toolbars.entries(toolbarTerminal)[0].Key
-	handle := hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, key))
-	spec, _ := toolbarSpecFor(toolbarTerminal, key)
-	result := state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyLeft})
-	if !result.Handled || state.terminalToolbarZoneFor(spec.id) != terminalToolbarZoneLeftTop {
-		t.Fatalf("left keyboard result=%+v zone=%v", result, state.terminalToolbarZoneFor(spec.id))
-	}
-	result = state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyRight})
-	if !result.Handled || state.terminalToolbarZoneFor(spec.id) != terminalToolbarZoneRightTop {
-		t.Fatalf("right keyboard result=%+v zone=%v", result, state.terminalToolbarZoneFor(spec.id))
-	}
-	result = state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyPageDown})
-	if !result.Handled || state.terminalToolbarZoneFor(spec.id) != terminalToolbarZoneRightBottom {
-		t.Fatalf("page down keyboard result=%+v zone=%v", result, state.terminalToolbarZoneFor(spec.id))
-	}
-	result = state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyLeft})
-	if !result.Handled || state.terminalToolbarZoneFor(spec.id) != terminalToolbarZoneLeftBottom {
-		t.Fatalf("left-bottom keyboard result=%+v zone=%v", result, state.terminalToolbarZoneFor(spec.id))
-	}
-
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1200, Height: 900})
-	for zone := range state.toolbarEditor.zoneViewport {
-		viewport := state.toolbarEditor.zoneViewport[zone]
-		if viewport.Width <= 0 || viewport.Height <= 0 {
-			t.Fatalf("zone %d viewport=%+v", zone, viewport)
-		}
-		if zone > 0 && viewport.X <= state.toolbarEditor.zoneViewport[zone-1].X {
-			t.Fatalf("zone %d x=%v is not after zone %d x=%v", zone, viewport.X, zone-1, state.toolbarEditor.zoneViewport[zone-1].X)
-		}
 	}
 }
 
@@ -1205,48 +783,31 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
 	state.activeSection = sectionSettings
-	session.term.rails[terminalToolbarRight].zones[terminalToolbarDockTop].scroll = 90
-	state.openToolbarSettings(toolbarTerminal)
+	session.term.railScroll = 90
 
-	state.Click(hitToolbarSizeMedium)
-	if state.terminalToolbarSize != terminalToolbarMedium || session.term.rails[terminalToolbarRight].zones[terminalToolbarDockTop].scroll != 0 {
-		t.Fatalf("size=%v scroll=%v after immediate setting", state.terminalToolbarSize, session.term.rails[terminalToolbarRight].zones[terminalToolbarDockTop].scroll)
+	if !state.clickSettings(hitSettingsToolbarLeft) {
+		t.Fatal("toolbar position setting was not handled")
+	}
+	if state.terminalToolbarPosition != terminalToolbarLeft || session.term.railScroll != 0 {
+		t.Fatalf("position=%v scroll=%v after immediate setting", state.terminalToolbarPosition, session.term.railScroll)
 	}
 	geometry := state.layoutForSession(session.ID)
 	if cols, rows := session.term.screen.Size(); cols != geometry.cols || rows != geometry.rows {
-		t.Fatalf("background terminal screen=%dx%d geometry=%dx%d after toolbar size", cols, rows, geometry.cols, geometry.rows)
+		t.Fatalf("background terminal screen=%dx%d geometry=%dx%d after toolbar setting", cols, rows, geometry.cols, geometry.rows)
 	}
 
-	result := state.toolbarSettingsKey(ui.KeyEvent{Target: hitToolbarSizeSmall, Key: ui.KeyRight})
-	if !result.Handled || result.Focus != hitToolbarSizeMedium || state.terminalToolbarSize != terminalToolbarMedium {
-		t.Fatalf("size keyboard result=%+v size=%v", result, state.terminalToolbarSize)
-	}
-
-	key := state.toolbars.entries(toolbarTerminal)[0].Key
-	handle := hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, key))
-	result = state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyLeft})
-	spec, _ := toolbarSpecFor(toolbarTerminal, key)
-	if !result.Handled || result.Focus != handle || state.terminalToolbarSideFor(spec.id) != terminalToolbarLeft {
-		t.Fatalf("side keyboard result=%+v key=%q", result, key)
-	}
-	result = state.toolbarSettingsKey(ui.KeyEvent{Target: handle, Key: ui.KeyRight})
-	if !result.Handled || state.terminalToolbarSideFor(spec.id) != terminalToolbarRight {
-		t.Fatalf("side keyboard return result=%+v key=%q", result, key)
-	}
-
-	state.Click(hitToolbarConnectionColor)
-	state.Click(hitToolbarLatency)
-	if !state.terminalHideConnectionColor || !state.terminalShowLatency {
-		t.Fatalf("toolbar visibility switches colorOff=%v latency=%v", state.terminalHideConnectionColor, state.terminalShowLatency)
+	result, handled := state.settingsKey(ui.KeyEvent{Target: hitSettingsToolbarLeft, Key: ui.KeyRight})
+	if !handled || !result.Handled || result.Focus != hitSettingsToolbarRight || state.terminalToolbarPosition != terminalToolbarRight {
+		t.Fatalf("position keyboard result=%+v handled=%v position=%v", result, handled, state.terminalToolbarPosition)
 	}
 }
 
 func TestTerminalFindRemovesTheSharedRailWhileSearching(t *testing.T) {
-	for _, side := range []terminalToolbarSide{terminalToolbarLeft, terminalToolbarRight} {
-		t.Run(side.String(), func(t *testing.T) {
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
 			state, _, _, _ := liveSession(t)
 			session := &state.sessions[0]
-			setAllTerminalToolbarSides(state, side)
+			state.terminalToolbarPosition = position
 			size := ui.Size{Width: 900, Height: 700}
 			state.Resize(size)
 

@@ -166,7 +166,6 @@ type Messages struct {
 	SettingsToolbarPositionLeft            string
 	SettingsToolbarPositionRight           string
 	SettingsToolbarSize                    string
-	SettingsToolbarSizeDescription         string
 	SettingsToolbarSizeSmall               string
 	SettingsToolbarSizeMedium              string
 	SettingsToolbarSizeLarge               string

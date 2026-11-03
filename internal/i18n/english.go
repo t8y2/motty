@@ -164,8 +164,7 @@ var EnglishMessages = Messages{
 	SettingsToolbarPositionDescription:     "Choose the workspace toolbar edge. Its actions follow the active split pane.",
 	SettingsToolbarPositionLeft:            "Left",
 	SettingsToolbarPositionRight:           "Right",
-	SettingsToolbarSize:                    "Terminal toolbar size",
-	SettingsToolbarSizeDescription:         "Adjust the rail width, buttons and icons for frequent terminal actions.",
+	SettingsToolbarSize:                    "Docked toolbar size",
 	SettingsToolbarSizeSmall:               "Small",
 	SettingsToolbarSizeMedium:              "Medium",
 	SettingsToolbarSizeLarge:               "Large",
@@ -1340,7 +1339,7 @@ var englishTools = ToolsMessages{
 	TabTitleRow:                "Tab title follows terminal",
 	TabTitleDescription:        "Shows the title a program sets, such as tmux's session and window, on the tab. Tabs you renamed keep their name.",
 	LatencyRow:                 "Show latency",
-	LatencyDescription:         "Show network RTT in the SSH terminal side toolbar and the RDP desktop status area (<100ms green, <200ms yellow, >=200ms red). RDP measurements are supplied by the server.",
+	LatencyDescription:         "Show network RTT for SSH terminals and RDP desktops (<100ms green, <200ms yellow, >=200ms red). RDP measurements are supplied by the server.",
 
 	FontChoose:              "Choose",
 	FontCurrentFmt:          "Now: %s. Any installed fixed-pitch font can be used.",
@@ -2175,11 +2174,14 @@ var englishAbout = AboutMessages{
 
 var englishToolbars = ToolbarMessages{
 	Window: "Window toolbar", Terminal: "Terminal toolbar", SFTP: "SFTP toolbar",
-	Description: "Customize which shortcuts are shown and their order.", Customize: "Customize", Hint: "Drag the left handle to reorder items. With a handle focused, use the up and down arrow keys to move an item. Changes apply immediately.", TerminalHint: "Drag the left handle to reorder items, or move them between the top-left, bottom-left, top-right, and bottom-right quadrants. With a handle focused, use Left/Right to switch sides and Page Up/Page Down to switch top/bottom. Changes apply immediately.", EnabledFmt: "%d / %d enabled",
+	Description: "Customize shortcut visibility, placement and order.", Customize: "Customize", Hint: "Drag a handle or use arrow keys to reorder. Click a position to change the dock area. Changes apply immediately.", EnabledFmt: "%d / %d enabled",
 	EnableAll: "Enable all", DisableAll: "Disable all", Reset: "Restore defaults", Close: "Done",
 	DragFmt: "Reorder %s", LocalRemote: "Switch local / remote files", PanelSide: "Move panel left / right",
-	Size: "Size", ConnectionColor: "Connection color capsule", Latency: "Show latency", Left: "Left", Right: "Right", EmptyColumn: "Drag an item here",
-	LeftTop: "Top left", LeftBottom: "Bottom left", RightTop: "Top right", RightBottom: "Bottom right",
+	MoveTop: "Move to top", MoveSideTop: "Move to right (upper)", MoveSideBottom: "Move to right (lower)",
+	MoveBottom: "Move to bottom (left)", Bottom: "Bottom (left)",
+	MoveBottomRight: "Move to bottom (right)", BottomRight: "Bottom (right)",
+	MoveLeftTop: "Move to left (upper)", MoveLeftBottom: "Move to left (lower)", LeftTop: "Left (upper)", LeftBottom: "Left (lower)",
+	Top: "Top", SideTop: "Right (upper)", SideBottom: "Right (lower)", Hide: "Hide icon", More: "More tools", ResetLayout: "Restore toolbar layout",
 }
 
 var englishCompletion = CompletionMessages{

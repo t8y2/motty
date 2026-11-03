@@ -16,49 +16,27 @@ import (
 const spinnerStep = 125 * time.Millisecond
 
 // barTool is one icon button on the right of an active pane's bar.
-type barToolKind uint8
-
-const (
-	barToolAction barToolKind = iota
-	barToolConnectionColor
-	barToolLatency
-)
-
 type barTool struct {
 	id       ui.ID
 	icon     uint8
-	kind     barToolKind
 	hint     string
 	disabled bool
 	style    iconButtonStyle
 	groupEnd bool // the group of pane controls ends here: a wider gap follows
-	height   float32
 	rect     ui.Rect
 }
 
-func (tool barTool) focusable() bool { return tool.kind == barToolAction }
-
-func (tool barTool) railHeight(defaultHeight float32) float32 {
-	if tool.height > 0 {
-		return tool.height
-	}
-	return defaultHeight
-}
-
-// maxBarTools leaves room for every action plus the two configurable status
-// items in the terminal toolbar catalog.
-const maxBarTools = 16
+// maxBarTools is how many tools the shared rail can hold: transfer, Files, save
+// output, export log, export recording, record, the resource monitor, remote
+// tools, close, the two splits and broadcast.
+const maxBarTools = 32 // includes relocated window actions
 
 const (
-	terminalToolRailExtent    = float32(40)
-	barToolSize               = float32(24)
-	barToolGap                = float32(4)
-	terminalBarToolSize       = float32(32)
-	terminalBarToolGap        = float32(4)
-	terminalRailAccentWidth   = float32(18)
-	terminalRailAccentHeight  = float32(5)
-	terminalRailCapsuleWidth  = float32(24)
-	terminalRailCapsuleHeight = float32(10)
+	terminalToolRailExtent = float32(40)
+	barToolSize            = float32(24)
+	barToolGap             = float32(4)
+	terminalBarToolSize    = float32(32)
+	terminalBarToolGap     = float32(4)
 )
 
 // paintTerminalPage draws a session. Active panes get a configurable tool rail
@@ -75,9 +53,6 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	geometry := terminalLayoutWithChrome(size, state.cellWidth, state.cellHeight, chrome, state.padding())
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
-	// A split pane keeps the same neutral chrome in every tab. Connection
-	// identity stays on the workspace tab and the rail marker instead of
-	// painting another large tinted surface around the terminal.
 	barBackground, barBorder := state.pal.workspace, state.pal.line
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
@@ -151,15 +126,6 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		return nil
 	}
 	tools := toolList[:0]
-	if accent := hostAccent(session.host.Color); !state.terminalHideConnectionColor && accent.Alpha > 0 {
-		tools = append(tools, barTool{
-			id: hitTerminalConnectionColor, icon: iconPipette, kind: barToolConnectionColor,
-			hint: state.messages.Toolbars.ConnectionColor, height: terminalRailCapsuleHeight,
-		})
-	}
-	tools = append(tools, barTool{
-		id: hitTerminalLatency, icon: iconClock, kind: barToolLatency, hint: state.messages.Toolbars.Latency,
-	})
 	if session.host.isSSH() && !session.isLocal() {
 		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 	}
@@ -209,48 +175,14 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	return ordered
 }
 
-type terminalToolZoneSet struct {
-	zones [4]struct {
-		tools [maxBarTools]barTool
-		count int
-	}
-}
-
-func (set *terminalToolZoneSet) tools(zone terminalToolbarZone) []barTool {
-	return set.zones[zone].tools[:set.zones[zone].count]
-}
-
-func (state *State) splitTerminalTools(tools []barTool, set *terminalToolZoneSet) {
-	for _, tool := range tools {
-		zone := int(state.terminalToolbarZoneFor(tool.id))
-		count := set.zones[zone].count
-		if count >= maxBarTools {
-			continue
-		}
-		set.zones[zone].tools[count] = tool
-		set.zones[zone].count++
-	}
-}
-
-func (state *State) setTerminalRailTools(session *Session, zones *terminalToolZoneSet) {
+func (state *State) setTerminalRailTools(session *Session, tools []barTool) {
 	if session == nil || session.term == nil {
 		return
 	}
-	for side := range session.term.rails {
-		rail := &session.term.rails[side]
-		rail.side = terminalToolbarSide(side)
-		rail.count = 0
-		for _, dock := range []terminalToolbarDock{terminalToolbarDockTop, terminalToolbarDockBottom} {
-			tools := zones.tools(terminalToolbarZoneFromParts(terminalToolbarSide(side), dock))
-			for index := 0; index < len(tools); index++ {
-				at := rail.count
-				rail.ids[at] = tools[index].id
-				rail.enabled[at] = !tools[index].disabled
-				rail.focusable[at] = tools[index].focusable()
-				rail.zoneFor[at] = dock
-				rail.count++
-			}
-		}
+	session.term.railCount = min(len(tools), maxBarTools)
+	for index := 0; index < session.term.railCount; index++ {
+		session.term.railIDs[index] = tools[index].id
+		session.term.railEnabled[index] = !tools[index].disabled
 	}
 }
 
@@ -258,217 +190,64 @@ func (state *State) clearTerminalRail(session *Session) {
 	if session == nil || session.term == nil {
 		return
 	}
-	for side := range session.term.rails {
-		session.term.rails[side] = terminalRailState{}
-	}
+	session.term.railCount = 0
+	session.term.railEnabled = [maxBarTools]bool{}
+	session.term.railViewport = ui.Rect{}
+	session.term.railBounds = ui.Rect{}
+	session.term.railContentExtent = 0
 }
 
-// paintWorkspaceSideRail paints the configured left and right rails at the
-// workspace's outer edges. The active split supplies the tools and state for
-// both rails.
+// paintWorkspaceSideRail paints the one shared rail at the workspace's outer
+// edge. The active split supplies both the tools and the state they act on.
 func (state *State) paintWorkspaceSideRail(canvas *ui.Canvas, size ui.Size) {
-	session, ok := state.terminalSideRailSession()
-	if !ok {
-		return
-	}
-	var toolList [maxBarTools]barTool
-	tools := state.activeTerminalTools(session, &toolList)
-	var zoneSet terminalToolZoneSet
-	state.splitTerminalTools(tools, &zoneSet)
-	state.setTerminalRailTools(session, &zoneSet)
-	// The rail remains neutral so the connection color is a single compact
-	// identity marker rather than a second full-height tinted surface.
-	background, border := state.pal.workspace, state.pal.line
-	primary := terminalToolbarRight
-	if len(zoneSet.tools(terminalToolbarZoneLeftTop))+len(zoneSet.tools(terminalToolbarZoneLeftBottom)) > 0 {
-		primary = terminalToolbarLeft
-	}
-	for _, side := range []terminalToolbarSide{terminalToolbarLeft, terminalToolbarRight} {
-		topTools := zoneSet.tools(terminalToolbarZoneFromParts(side, terminalToolbarDockTop))
-		bottomTools := zoneSet.tools(terminalToolbarZoneFromParts(side, terminalToolbarDockBottom))
-		target := state.terminalRailDragTargets(session, side)
-		if len(topTools) == 0 && len(bottomTools) == 0 && !target {
-			continue
-		}
-		bounds, ok := state.terminalSideRailBoundsFor(size, side)
-		if !ok {
-			continue
-		}
-		state.paintTerminalSideRail(canvas, bounds, session, topTools, bottomTools, background, border, side, side == primary)
-	}
+	state.paintToolbarDockSide(canvas, size)
 }
 
-// paintTerminalSideRail draws the top and bottom docking zones on one edge.
-// Each zone owns its scroll position so a crowded quadrant never moves the
-// controls in the other quadrant.
-func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, session *Session, topTools, bottomTools []barTool, background, border ui.Color, side terminalToolbarSide, _ bool) {
+// paintTerminalSideRail draws the vertical tool rail. Latency occupies the
+// first compact slot, followed by the scrollable actions.
+func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, session *Session, tools []barTool, background, border ui.Color, left bool) {
 	if bounds.Width <= 0 || bounds.Height <= 0 || session.term == nil {
 		return
 	}
-	metrics := state.terminalToolbarMetrics()
 	fullBounds := bounds
-	rail := &session.term.rails[side]
-	rail.side = side
-	rail.bounds = bounds
+	metrics := state.terminalToolbarMetrics()
+	session.term.railBounds = bounds
 	canvas.Fill(fullBounds, background)
-	viewport := ui.Rect{X: bounds.X + metrics.inset, Y: bounds.Y + metrics.inset, Width: max(bounds.Width-metrics.inset*2, 0), Height: max(bounds.Height-metrics.inset*2, 0)}
-	zoneViewports := terminalRailZoneViewports(
-		viewport, topTools, bottomTools,
-		state.terminalRailDragTarget(session, side, terminalToolbarDockTop),
-		state.terminalRailDragTarget(session, side, terminalToolbarDockBottom),
-		metrics,
-	)
-	zoneTools := [2][]barTool{topTools, bottomTools}
-	for _, dock := range []terminalToolbarDock{terminalToolbarDockTop, terminalToolbarDockBottom} {
-		target := state.terminalRailDragTarget(session, side, dock)
-		if !target {
-			continue
-		}
-		zoneViewport := zoneViewports[dock]
-		canvas.Fill(zoneViewport, withAlpha(state.pal.accent, 0.045))
-		border = withAlpha(state.pal.accent, 0.55)
-		if len(zoneTools[dock]) == 0 {
-			lane := ui.Rect{
-				X: zoneViewport.X, Y: zoneViewport.Y,
-				Width:  min(metrics.toolSize, zoneViewport.Width),
-				Height: min(max(metrics.toolSize*2, 56), zoneViewport.Height),
-			}
-			canvas.Rounded(lane, radius.control, withAlpha(state.pal.accent, 0.10))
-		}
+	if text, color, ok := state.latencyInfo(session); ok {
+		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: metrics.toolSize}
+		state.paintRailLatency(canvas, text, color, latency, true)
+		top := metrics.toolSize + 8
+		bounds.Y += top
+		bounds.Height = max(bounds.Height-top, 0)
 	}
-	state.paintTerminalRailTools(canvas, session, rail, terminalToolbarDockTop, zoneViewports[terminalToolbarDockTop], 0, topTools, background, metrics)
-	state.paintTerminalRailTools(canvas, session, rail, terminalToolbarDockBottom, zoneViewports[terminalToolbarDockBottom], len(topTools), bottomTools, background, metrics)
+	viewport := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: max(bounds.Width-8, 0), Height: max(bounds.Height-8, 0)}
+	state.paintTerminalRailTools(canvas, session, viewport, tools, background)
 	x := bounds.X
-	if side == terminalToolbarLeft {
+	if left {
 		x += bounds.Width - 1
 	}
 	canvas.Fill(ui.Rect{X: x, Y: fullBounds.Y, Width: 1, Height: fullBounds.Height}, border)
 }
 
-// terminalRailZoneViewports gives an otherwise empty quadrant no height. A
-// lone top or bottom group can use the whole rail, preserving the pre-quadrant
-// behavior for default layouts in short windows. When both quadrants contain
-// controls, each is sized to its content if possible and shares the viewport
-// when both overflow. During a drag, an empty destination keeps enough height
-// to expose its drop lane.
-func terminalRailZoneViewports(viewport ui.Rect, topTools, bottomTools []barTool, topTarget, bottomTarget bool, metrics terminalToolbarMetrics) [2]ui.Rect {
-	var result [2]ui.Rect
-	topPresent := len(topTools) > 0 || topTarget
-	bottomPresent := len(bottomTools) > 0 || bottomTarget
-	if !topPresent && !bottomPresent {
-		return result
-	}
-	if topPresent && !bottomPresent {
-		result[terminalToolbarDockTop] = viewport
-		return result
-	}
-	if bottomPresent && !topPresent {
-		result[terminalToolbarDockBottom] = viewport
-		return result
-	}
-
-	const zoneGap = float32(8)
-	available := max(viewport.Height-zoneGap, 0)
-	topRequested := terminalRailContentExtent(topTools, metrics)
-	bottomRequested := terminalRailContentExtent(bottomTools, metrics)
-	previewExtent := min(max(metrics.toolSize*2, 56), available)
-	if topTarget && len(topTools) == 0 {
-		topRequested = max(topRequested, previewExtent)
-	}
-	if bottomTarget && len(bottomTools) == 0 {
-		bottomRequested = max(bottomRequested, previewExtent)
-	}
-	if topRequested+bottomRequested <= available {
-		result[terminalToolbarDockTop] = ui.Rect{
-			X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: topRequested,
-		}
-		result[terminalToolbarDockBottom] = ui.Rect{
-			X: viewport.X, Y: viewport.Y + viewport.Height - bottomRequested,
-			Width: viewport.Width, Height: bottomRequested,
-		}
-		return result
-	}
-
-	minZoneExtent := min(metrics.toolSize+metrics.inset*2, available/2)
-	topMinimum := min(topRequested, minZoneExtent)
-	bottomMinimum := min(bottomRequested, minZoneExtent)
-	if topTarget && len(topTools) == 0 {
-		topMinimum = min(topRequested, available)
-	}
-	if bottomTarget && len(bottomTools) == 0 {
-		bottomMinimum = min(bottomRequested, available)
-	}
-	if topMinimum+bottomMinimum > available {
-		total := topMinimum + bottomMinimum
-		if total <= 0 {
-			topMinimum, bottomMinimum = available/2, available/2
-		} else {
-			topMinimum = available * topMinimum / total
-			bottomMinimum = available - topMinimum
-		}
-	}
-
-	topExtra, bottomExtra := topRequested-topMinimum, bottomRequested-bottomMinimum
-	extraAvailable := max(available-topMinimum-bottomMinimum, 0)
-	extraTotal := topExtra + bottomExtra
-	topHeight, bottomHeight := topRequested, bottomRequested
-	if extraTotal > 0 {
-		topHeight = topMinimum + extraAvailable*topExtra/extraTotal
-		bottomHeight = bottomMinimum + extraAvailable*bottomExtra/extraTotal
-	} else {
-		topHeight, bottomHeight = topMinimum, bottomMinimum
-	}
-	bottomHeight = min(bottomHeight, available)
-	topHeight = min(topHeight, max(available-bottomHeight, 0))
-	result[terminalToolbarDockTop] = ui.Rect{
-		X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: topHeight,
-	}
-	result[terminalToolbarDockBottom] = ui.Rect{
-		X: viewport.X, Y: viewport.Y + viewport.Height - bottomHeight,
-		Width: viewport.Width, Height: bottomHeight,
-	}
-	return result
-}
-
-func paintTerminalRailAccentMarker(canvas *ui.Canvas, bounds ui.Rect, accent ui.Color) {
-	centerX := bounds.X + bounds.Width/2
-	centerY := bounds.Y + bounds.Height/2
-	canvas.Rounded(ui.Rect{
-		X:      centerX - terminalRailCapsuleWidth/2,
-		Y:      centerY - terminalRailCapsuleHeight/2,
-		Width:  terminalRailCapsuleWidth,
-		Height: terminalRailCapsuleHeight,
-	}, terminalRailCapsuleHeight/2, withAlpha(accent, 0.16))
-	canvas.Rounded(ui.Rect{
-		X:      centerX - terminalRailAccentWidth/2,
-		Y:      centerY - terminalRailAccentHeight/2,
-		Width:  terminalRailAccentWidth,
-		Height: terminalRailAccentHeight,
-	}, terminalRailAccentHeight/2, accent)
-}
-
-func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, rail *terminalRailState, dock terminalToolbarDock, viewport ui.Rect, rectOffset int, tools []barTool, background ui.Color, metrics terminalToolbarMetrics) {
-	zone := &rail.zones[dock]
-	zone.viewport = viewport
-	zone.contentExtent = terminalRailContentExtent(tools, metrics)
+func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, viewport ui.Rect, tools []barTool, background ui.Color) {
+	t := session.term
+	metrics := state.terminalToolbarMetrics()
+	t.railViewport = viewport
+	t.railContentExtent = state.terminalRailContentExtent(tools)
 	viewportExtent := viewport.Height
-	maxScroll := max(zone.contentExtent-viewportExtent, 0)
-	zone.scroll = min(max(zone.scroll, 0), maxScroll)
-	zone.itemOffset = 0
-	if dock == terminalToolbarDockBottom {
-		zone.itemOffset = max(viewportExtent-zone.contentExtent, 0)
-	}
+	maxScroll := max(t.railContentExtent-viewportExtent, 0)
+	t.railScroll = min(max(t.railScroll, 0), maxScroll)
 
 	// A keyboard move to a tool outside the viewport brings it into view on the
 	// next paint. Pointer hover and wheel scrolling never move focus.
 	for index := range tools {
 		if tools[index].id == canvas.FocusVisible() {
-			start := terminalRailItemStart(tools, index, metrics)
-			end := start + tools[index].railHeight(metrics.toolSize)
-			if start-zone.scroll < 0 {
-				zone.scroll = min(start, maxScroll)
-			} else if end-zone.scroll > viewportExtent {
-				zone.scroll = min(end-viewportExtent, maxScroll)
+			start := state.terminalRailItemStart(tools, index)
+			end := start + metrics.toolSize
+			if start-t.railScroll < 0 {
+				t.railScroll = min(start, maxScroll)
+			} else if end-t.railScroll > viewportExtent {
+				t.railScroll = min(end-viewportExtent, maxScroll)
 			}
 			break
 		}
@@ -476,68 +255,37 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 
 	canvas.Clip(viewport)
 	for index := range tools {
-		itemStart := terminalRailItemStart(tools, index, metrics)
+		offset := state.terminalRailItemStart(tools, index)
 		tool := &tools[index]
-		tool.rect = ui.Rect{
-			X: viewport.X, Y: viewport.Y + zone.itemOffset + itemStart - zone.scroll,
-			Width: min(metrics.toolSize, viewport.Width), Height: tool.railHeight(metrics.toolSize),
-		}
-		rail.rects[rectOffset+index] = tool.rect
+		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + offset - t.railScroll, Width: min(metrics.toolSize, viewport.Width), Height: metrics.toolSize}
 		if tool.rect.X+tool.rect.Width <= viewport.X || tool.rect.X >= viewport.X+viewport.Width ||
 			tool.rect.Y+tool.rect.Height <= viewport.Y || tool.rect.Y >= viewport.Y+viewport.Height {
 			continue
 		}
-		if state.terminalRailDragSource(session, tool.id) {
-			state.paintTerminalRailDragSource(canvas, *tool, metrics)
-			continue
+		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
+		zone := toolbarDockSideTop
+		if state.terminalToolbarPosition == terminalToolbarLeft {
+			zone = toolbarDockLeftTop
 		}
-		switch tool.kind {
-		case barToolConnectionColor:
-			if accent := hostAccent(session.host.Color); !state.terminalHideConnectionColor && accent.Alpha > 0 {
-				paintTerminalRailAccentMarker(canvas, tool.rect, accent)
-				canvas.ContainerWithOptions(tool.rect, ui.RoleStatus, tool.hint, ui.HitOptions{Value: tool.hint})
-			}
-		case barToolLatency:
-			if text, color, ok := state.latencyInfo(session); ok {
-				state.paintRailLatency(canvas, text, color, tool.rect, true)
-			} else {
-				// Keeping a visible placeholder makes the configurable item
-				// draggable before the first RTT sample arrives and prevents a
-				// latency-only rail from appearing as an unexplained blank side.
-				state.paintRailLatency(canvas, "—", state.pal.muted, tool.rect, true)
-			}
-		default:
-			state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
-		}
-		// Status chips have no button target of their own, and disabled buttons
-		// deliberately skip pointer presses. Both still need a stable drag hit:
-		// this transparent layer keeps them reorderable without enabling their
-		// underlying action or adding another keyboard stop.
-		if tool.disabled || tool.kind != barToolAction {
-			if id := terminalToolbarDragHandle(tool.id); !id.IsZero() {
-				canvas.HitWithOptions(id, tool.rect, tool.hint, ui.HitOptions{
-					Role: ui.RoleButton, Cursor: ui.PointerCursorHand, SkipFocus: true,
-				})
-			}
-		}
+		state.registerToolbarDockTool(canvas, *tool, zone, intersectRect(tool.rect, viewport))
 	}
 	canvas.Unclip()
 }
 
-func terminalRailContentExtent(tools []barTool, metrics terminalToolbarMetrics) float32 {
+func (state *State) terminalRailContentExtent(tools []barTool) float32 {
 	if len(tools) == 0 {
-		return metrics.inset * 2
+		return 8
 	}
-	last := len(tools) - 1
-	return terminalRailItemStart(tools, last, metrics) + tools[last].railHeight(metrics.toolSize) + metrics.inset
+	return state.terminalRailItemStart(tools, len(tools)-1) + state.terminalToolbarMetrics().toolSize + 4
 }
 
-func terminalRailItemStart(tools []barTool, index int, metrics terminalToolbarMetrics) float32 {
-	start := metrics.inset
+func (state *State) terminalRailItemStart(tools []barTool, index int) float32 {
+	metrics := state.terminalToolbarMetrics()
+	start := float32(4)
 	for previous := 0; previous < index; previous++ {
-		start += tools[previous].railHeight(metrics.toolSize) + metrics.toolGap
+		start += metrics.toolSize + metrics.gap
 		if tools[previous].groupEnd {
-			start += metrics.toolGap
+			start += metrics.gap
 		}
 	}
 	return start
@@ -566,36 +314,22 @@ func (state *State) paintRailLabelCenter(canvas *ui.Canvas, text string, bounds 
 }
 
 func (state *State) scrollTerminalToolbar(session *Session, event ui.ScrollEvent) (ui.EventResult, bool) {
-	if session == nil || session.term == nil {
+	if session == nil || session.term == nil ||
+		session.term.railBounds.Width <= 0 || session.term.railBounds.Height <= 0 ||
+		!pointInRect(event.X, event.Y, session.term.railBounds) {
 		return ui.EventResult{}, false
 	}
+	t := session.term
+	viewportExtent := t.railViewport.Height
 	metrics := state.terminalToolbarMetrics()
-	delta := event.StepY(metrics.toolSize + metrics.toolGap)
-	for side := range session.term.rails {
-		rail := &session.term.rails[side]
-		if rail.bounds.Width <= 0 || rail.bounds.Height <= 0 || !pointInRect(event.X, event.Y, rail.bounds) {
-			continue
-		}
-		dock := terminalToolbarDockTop
-		if !pointInRect(event.X, event.Y, rail.zones[dock].viewport) {
-			if pointInRect(event.X, event.Y, rail.zones[terminalToolbarDockBottom].viewport) {
-				dock = terminalToolbarDockBottom
-			} else if event.Y >= rail.bounds.Y+rail.bounds.Height/2 {
-				// The insets and the splitter belong to the nearest half of
-				// the rail. Wheel input there must not leak to terminal history.
-				dock = terminalToolbarDockBottom
-			}
-		}
-		zone := &rail.zones[dock]
-		maxScroll := max(zone.contentExtent-zone.viewport.Height, 0)
-		next := min(max(zone.scroll+delta, 0), maxScroll)
-		if next == zone.scroll {
-			return ui.EventResult{Handled: true}, true
-		}
-		zone.scroll = next
-		return ui.EventResult{Handled: true, Repaint: true}, true
+	delta := event.StepY(metrics.toolSize + metrics.gap)
+	maxScroll := max(t.railContentExtent-viewportExtent, 0)
+	next := min(max(t.railScroll+delta, 0), maxScroll)
+	if next == t.railScroll {
+		return ui.EventResult{Handled: true}, true
 	}
-	return ui.EventResult{}, false
+	t.railScroll = next
+	return ui.EventResult{Handled: true, Repaint: true}, true
 }
 
 // paintAIMarking draws the strip that says this line's command was started by

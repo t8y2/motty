@@ -99,6 +99,9 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsTabTitle:
 		state.terminalTabTitle = !state.terminalTabTitle
 		state.save()
+	case id == hitSettingsLatencyToggle:
+		state.terminalShowLatency = !state.terminalShowLatency
+		state.save()
 	case id == hitSettingsRightClickPaste:
 		state.terminalRightClickPaste = !state.terminalRightClickPaste
 		state.save()

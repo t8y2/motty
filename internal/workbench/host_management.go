@@ -370,7 +370,6 @@ func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...s
 // the lists that show it.
 func (state *State) replaceHost(index int, previous, updated Host) {
 	state.hosts[index] = updated
-	colorChanged := previous.Color != updated.Color
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if session.HostID != updated.ID {
@@ -393,12 +392,6 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 		forward.HostAddress = updated.Address
 		forward.HostUser = updated.User
 		forward.HostPort = updated.Port
-	}
-	if colorChanged {
-		// The connection-color marker can change which rails are occupied.
-		// Refit live panes immediately so their PTY grid follows the new
-		// workspace bounds instead of waiting for an unrelated resize.
-		state.applyTerminalToolbarLayoutChange()
 	}
 	state.rebuildTabOptions()
 	state.refreshForwards()

@@ -39,7 +39,7 @@ func TestHeadlessTerminalRecordingExportsReplayableShellIO(t *testing.T) {
 	}
 	defer session.Close()
 
-	if err := session.ClickLabel(state.messages.TipRecordStart); err != nil {
+	if err := session.ClickLabel(state.messages.RecordingStart); err != nil {
 		t.Fatal(err)
 	}
 	terminalLabel := fmt.Sprintf(state.messages.LabelTerminalFmt, state.sessions[0].Address)
@@ -52,8 +52,8 @@ func TestHeadlessTerminalRecordingExportsReplayableShellIO(t *testing.T) {
 	now += 25 * time.Millisecond
 	shell.say("headless output\r\n")
 	state.Wake()
-	if err := session.ClickLabel(state.messages.TipRecordStop); err != nil {
-		t.Fatalf("%v (recording active=%v)", err, state.sessions[0].term.recording.active)
+	if err := session.ClickLabel(state.messages.RecordingStop); err != nil {
+		t.Fatal(err)
 	}
 
 	path := filepath.Join(t.TempDir(), "headless.mottyrec")

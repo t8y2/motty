@@ -32,9 +32,8 @@ func TestLatencyToggleAndPersistence(t *testing.T) {
 		t.Fatal("expected terminalShowLatency to be false by default")
 	}
 
-	// 点击终端工具栏里的切换开关
-	state.openToolbarSettings(toolbarTerminal)
-	state.Click(hitToolbarLatency)
+	// 点击设置中的切换开关
+	state.Click(hitSettingsLatencyToggle)
 	if !state.terminalShowLatency {
 		t.Fatal("expected terminalShowLatency to be true after click")
 	}
@@ -46,8 +45,7 @@ func TestLatencyToggleAndPersistence(t *testing.T) {
 	}
 
 	// 再次点击关闭
-	restarted.openToolbarSettings(toolbarTerminal)
-	restarted.Click(hitToolbarLatency)
+	restarted.Click(hitSettingsLatencyToggle)
 	if restarted.terminalShowLatency {
 		t.Fatal("expected terminalShowLatency to be false after second click")
 	}
@@ -225,22 +223,22 @@ func waitForLatencyBroken(t *testing.T, session *Session) {
 	t.Fatal("latency probe did not stop after a failure")
 }
 
-func TestLatencyToggleThroughTerminalToolbarSettings(t *testing.T) {
+func TestLatencyToggleThroughSettings(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	state.openToolbarSettings(toolbarTerminal)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
 	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 900, Height: 700})
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1600})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
 	}
-	if !contains(state.toolbarEditor.handleLabels, state.messages.Toolbars.Latency) ||
-		!hasHit(&canvas, hitToolbarLatency) {
-		t.Fatalf("toolbar setting is not shown: %v", texts)
+	if !contains(texts, state.messages.Tools.LatencyRow) || !hasHit(&canvas, hitSettingsLatencyToggle) {
+		t.Fatalf("setting is not shown: %v", texts)
 	}
-	state.Click(hitToolbarLatency)
+	state.Click(hitSettingsLatencyToggle)
 	if !state.terminalShowLatency {
-		t.Fatal("the toolbar toggle did not turn the display on")
+		t.Fatal("the settings toggle did not turn the display on")
 	}
 }
 

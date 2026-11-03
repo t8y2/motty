@@ -263,6 +263,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	case appearancePinnedLight:
 		selectedAppearance = hitSettingsAppearanceLight
 	}
+	toolbarPosition := state.settingsToolbarPositionOptions()
+	selectedToolbarPosition := hitSettingsToolbarRight
+	if state.terminalToolbarPosition == terminalToolbarLeft {
+		selectedToolbarPosition = hitSettingsToolbarLeft
+	}
 	page.groups(func() {
 		page.group("", func() {
 			page.row(messages.SettingsLanguage, "", language[:], selectedLanguage)
@@ -276,6 +281,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				selectedTextSize = hitSettingsTextLarge
 			}
 			page.row(messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], selectedTextSize)
+			page.row(messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, toolbarPosition[:], selectedToolbarPosition)
 			tabs := state.settingsTabOrientationOptions()
 			selectedTabs := hitSettingsTabsHorizontal
 			if state.tabOrientation == tabsVertical {
@@ -373,6 +379,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)
 			page.toggleRow(state.messages.Tools.BellRow, state.messages.Tools.BellDescription, !state.terminalBellOff, hitSettingsBellToggle)
 			page.toggleRow(state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, state.terminalTabTitle, hitSettingsTabTitle)
+			page.toggleRow(state.messages.Tools.LatencyRow, state.messages.Tools.LatencyDescription, state.terminalShowLatency, hitSettingsLatencyToggle)
 			page.toggleRow(state.messages.Tools.PasteImageRow, state.messages.Tools.PasteImageDescription, !state.pasteImageOff, hitSettingsPasteImageToggle)
 			page.toggleRow(state.messages.Tools.NotifyRow, state.messages.Tools.NotifyDescription, !state.notifyOff, hitSettingsNotifyToggle)
 			state.paintLocalShellSetting(page)
