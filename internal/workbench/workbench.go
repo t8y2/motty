@@ -623,6 +623,8 @@ type State struct {
 	networkProxy        networkProxyMode
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
+	recentConnectSort   bool
+	recentConnections   map[string]time.Time
 	localShell          string // executable on this computer; empty uses the platform default
 	localShellMenu      localShellSelect
 	editorMenu          editorSelect

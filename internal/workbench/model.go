@@ -104,11 +104,12 @@ type Session struct {
 	jumpPath string
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
-	proxyRoute string
-	endpoint   sshconn.Endpoint
-	role       sshconn.EndpointRole
-	conn       Connection
-	shared     bool // conn is a tab on another tab's connection
+	proxyRoute   string
+	endpoint     sshconn.Endpoint
+	role         sshconn.EndpointRole
+	conn         Connection
+	recordRecent bool // this user dial may update its recent success once
+	shared       bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.
 	containerCommand string
 	// avoidShare makes the next connection a fresh one: the server refused one

@@ -87,6 +87,8 @@ func (state *State) connectRestoredSessions() {
 		if dialed == maxAutoRestoreConnections {
 			break
 		}
+		// Mark the origin before dialing: a local shell can succeed synchronously.
+		session.autoRestore = true
 		state.reconnect(session)
 		session.autoRestore = true
 		dialed++

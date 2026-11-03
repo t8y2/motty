@@ -636,6 +636,9 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		state.describe(session)
 		return
 	}
+	if session.isLocal() {
+		state.rememberRecentConnection(session)
+	}
 	t.shell = shell
 	t.shellOpened = state.now()
 	state.submitSessionLogEvent(session, sessionlog.EventShellOpened, 0)
