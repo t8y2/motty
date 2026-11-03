@@ -384,33 +384,77 @@ func (state *State) revealSFTPSearchResult(view *sftpView, folder *sftpFolder, i
 	}
 	// The result is in another folder; the search is over, and a new one starts
 	// from wherever the person goes next.
+	state.revealSFTPEntry(view, folder, sftpReveal{dir: target, name: name})
+}
+
+// revealSFTPEntry goes to the folder of a reveal and selects its entry once the
+// folder is listed. The filter is cleared first: what it hid could be the entry.
+func (state *State) revealSFTPEntry(view *sftpView, folder *sftpFolder, reveal sftpReveal) {
 	folder.clearFilter()
 	stopSFTPSearch(folder)
 	state.applySFTPFilter(view, folder, false)
-	folder.reveal = sftpReveal{dir: target, name: name}
-	if local {
-		_ = state.navigateLocalDirectory(view, target)
+	folder.reveal = reveal
+	if folder == &view.lfolder {
+		_ = state.navigateLocalDirectory(view, reveal.dir)
 	} else {
-		state.navigateSFTPDirectory(view, target)
+		state.navigateSFTPDirectory(view, reveal.dir)
 	}
 	// A navigation that was not started leaves nothing behind to claim it.
 	folder.reveal = sftpReveal{}
 }
 
-// sftpReveal is the entry to select once the folder a result led to is listed.
+// sftpReveal is the entry to select once the folder a search result or a
+// terminal link led to is listed. download asks for it to be downloaded then;
+// search, for a name that may be in a folder further down, asks for the
+// subfolders to be searched for it when it is not in this one.
 type sftpReveal struct {
-	dir, name string
+	dir, name        string
+	download, search bool
 }
 
-// applyReveal selects the entry a search result led to, when the listing that
-// arrived is the folder it is in, and brings it into view.
-func (folder *sftpFolder) applyReveal(reveal sftpReveal) {
+// sftpRevealed is what a reveal came to when its folder was listed, kept until
+// the listing has written the panel's status (see settleReveal).
+type sftpRevealed struct {
+	sftpReveal
+	found, local bool
+}
+
+// applyReveal selects the entry a reveal is for, when the listing that arrived
+// is the folder it is in, and brings it into view. It reports whether the
+// listing was that folder, and whether the entry was in it.
+func (folder *sftpFolder) applyReveal(reveal sftpReveal) (landed, found bool) {
 	if reveal.name == "" || reveal.dir != folder.path {
-		return
+		return false, false
 	}
 	index := sftpRowNameIndex(folder.rows, reveal.name)
 	if index < 0 {
-		return
+		return true, false
 	}
 	folder.restorePlace(sftpPlace{current: reveal.name, anchor: reveal.name, selected: []string{reveal.name}, first: index - folder.visibleRows/2})
+	return true, true
+}
+
+// settleReveal finishes a reveal once its listing has written the panel's
+// status: it says so when the entry was not in its folder, and starts the
+// download that was asked for, as the panel's Download would.
+func (state *State) settleReveal(view *sftpView) {
+	revealed := view.revealed
+	if revealed.name == "" {
+		return
+	}
+	view.revealed = sftpRevealed{}
+	folder := &view.sftpFolder
+	if revealed.local {
+		folder = &view.lfolder
+	}
+	switch {
+	case !revealed.found && revealed.search && sftpSearchAvailable(view, revealed.local):
+		folder.setFilter(revealed.name)
+		folder.filterOpen, folder.deep = true, true
+		state.applySFTPFilter(view, folder, false)
+	case !revealed.found:
+		view.status = fmt.Sprintf(state.messages.Tools.FilesRevealMissingFmt, revealed.name)
+	case revealed.download && !revealed.local:
+		state.downloadSFTP(view)
+	}
 }

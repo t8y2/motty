@@ -181,8 +181,15 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			changed = selection.clear() || changed
 			if event.Kind == ui.PointerUp && linksEnabled && event.Button == ui.PointerButtonPrimary {
 				var linkChanged bool
+				pressed := terminal.links.pressing
 				target, open, linkChanged = terminal.links.release(terminal.screen, linkPosition)
 				changed = changed || linkChanged
+				// Underlined text that names a file stands in for the link a
+				// program could not make; only the modifier click takes it, as a
+				// plain click on underlined text may mean nothing of the kind.
+				if !pressed && event.Modifiers == defaultShortcutModifier() && state.openUnderlinedFile(session, position) {
+					changed = true
+				}
 			}
 		} else {
 			changed = terminal.links.clear() || changed

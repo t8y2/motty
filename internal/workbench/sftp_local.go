@@ -302,6 +302,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	if listing.navigation.id != 0 && listing.navigation.id != view.lfolder.navigation.id {
 		return
 	}
+	defer state.settleReveal(view)
 	if view.detached != nil {
 		view.detached.pendingLocal = ""
 	}

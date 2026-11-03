@@ -179,6 +179,9 @@ type sftpView struct {
 	terminalPath          string // an explicit navigation, never a shell report or background refresh
 	terminalPromptVersion uint64
 	terminalSyncSkipped   bool
+
+	// revealed is what the latest reveal came to, until settleReveal reads it.
+	revealed sftpRevealed
 }
 
 // sftpListing is one folder as it was last read.
@@ -895,6 +898,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 	if nav.id != 0 && nav.id != view.navigation.id {
 		return
 	}
+	defer state.settleReveal(view)
 	place, restore := view.sftpFolder.acceptNavigation(remotePath, nav)
 	view.acceptedListID = listID
 	view.preparingID = 0

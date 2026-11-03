@@ -1002,6 +1002,30 @@ func TestTokenAtIsTheRunOfTextUnderACellWithoutWrappingPunctuation(t *testing.T)
 	}
 }
 
+func TestUnderlinedTextAtIsTheUnderlinedRunInOneColourAcrossWraps(t *testing.T) {
+	screen := New(20, 4, 0)
+	// An underlined name with spaces and wide characters, soft-wrapped onto the
+	// next row, then text in the same colour that is not underlined, then an
+	// underlined word in another colour right after it.
+	screen.Write([]byte("Done: \x1b[4;34mWorld Models 总结.md\x1b[24m。\x1b[4;31mnext\x1b[0m\r\n"))
+	for _, test := range []struct {
+		row, column int
+		want        string
+	}{
+		{0, 6, "World Models 总结.md"},  // its first cell
+		{0, 12, "World Models 总结.md"}, // the space inside it
+		{1, 0, "World Models 总结.md"},  // past the wrap
+		{0, 0, ""},                    // not underlined
+	} {
+		if got := screen.UnderlinedTextAt(Position{Row: test.row, Column: test.column}); got != test.want {
+			t.Errorf("UnderlinedTextAt(%d, %d) = %q, want %q", test.row, test.column, got, test.want)
+		}
+	}
+	if got := screen.UnderlinedTextAt(Position{Row: 1, Column: 10}); got != "next" {
+		t.Errorf("a run in another colour = %q", got)
+	}
+}
+
 func TestALongPlainASCIITextRunKeepsItsCellsAndColor(t *testing.T) {
 	term := New(200, 3, 0)
 	text := strings.Repeat("x", 150)

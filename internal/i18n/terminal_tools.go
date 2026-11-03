@@ -329,6 +329,7 @@ type ToolsMessages struct {
 	FilesSearchUnavailableFmt       string // the error
 	FilesSearchSearching            string
 	FilesSearchNoMatches            string
+	FilesRevealMissingFmt           string
 	FilesKeepTimes                  string
 	FilesKeepTimesDescription       string
 	FilesFollow                     string
@@ -479,6 +480,7 @@ type ToolsMessages struct {
 	ActionFilesFmt                  string
 	ActionExtractFmt                string
 	ActionCopyFmt                   string
+	ActionDownloadFmt               string
 	DiagnosticsRow                  string
 	DiagnosticsDescription          string
 	DiagnosticsExport               string

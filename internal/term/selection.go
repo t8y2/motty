@@ -243,3 +243,109 @@ func (t *Terminal) TokenAt(position Position) string {
 	text = strings.TrimLeft(text, "([{<\"'`")
 	return strings.TrimRight(text, ")]}>\"'`,;:!?.")
 }
+
+// maxUnderlinedRun bounds how many cells UnderlinedTextAt walks either way.
+const maxUnderlinedRun = 1024
+
+// UnderlinedTextAt returns the run of underlined text in one colour around a
+// visible cell: how a program marks a link it could not make a real one, as a
+// coding agent that thinks the terminal has no hyperlinks still underlines the
+// file name it would have linked. Unlike TokenAt the run may hold spaces, and it
+// follows soft wraps onto the rows before and after. It is empty when the cell
+// is not underlined.
+func (t *Terminal) UnderlinedTextAt(position Position) string {
+	position = t.clampPosition(position)
+	rows := make(map[int][]Cell, 3)
+	cells := func(row int) []Cell {
+		found, ok := rows[row]
+		if !ok {
+			found = t.Row(row).Cells
+			rows[row] = found
+		}
+		return found
+	}
+	start := cells(position.Row)
+	if position.Column >= len(start) {
+		return ""
+	}
+	mark := start[position.Column]
+	if mark.Attr&WideTail != 0 && position.Column > 0 {
+		mark = start[position.Column-1]
+	}
+	if mark.Attr&Underline == 0 || mark.R == 0 {
+		return ""
+	}
+	// A wide character's tail holds no character of its own and goes with it.
+	same := func(at Position) bool {
+		row := cells(at.Row)
+		if at.Column < 0 || at.Column >= len(row) {
+			return false
+		}
+		cell := row[at.Column]
+		return cell.Attr&WideTail != 0 || cell.R != 0 && cell.Attr&Underline != 0 && cell.FG == mark.FG
+	}
+	// A row that wraps early, before a wide character that did not fit, ends
+	// in blank cells; the run goes on after its last character.
+	lastCell := func(row int) int {
+		line := cells(row)
+		for column := min(len(line), t.cols) - 1; column >= 0; column-- {
+			if line[column].R != 0 || line[column].Attr&WideTail != 0 {
+				return column
+			}
+		}
+		return -1
+	}
+	wraps := func(row int) bool { return t.Row(row).Wrapped }
+	first, last := position, position
+	for steps := 0; steps < maxUnderlinedRun; steps++ {
+		previous := Position{Row: first.Row, Column: first.Column - 1}
+		if previous.Column < 0 {
+			if previous.Row == 0 || !wraps(previous.Row-1) {
+				break
+			}
+			previous = Position{Row: previous.Row - 1, Column: lastCell(previous.Row - 1)}
+		}
+		if !same(previous) {
+			break
+		}
+		first = previous
+	}
+	for steps := 0; steps < maxUnderlinedRun; steps++ {
+		next := Position{Row: last.Row, Column: last.Column + 1}
+		if next.Column >= t.cols || next.Column > lastCell(last.Row) && wraps(last.Row) {
+			if next.Row+1 >= t.rows || !wraps(last.Row) {
+				break
+			}
+			next = Position{Row: next.Row + 1, Column: 0}
+		}
+		if !same(next) {
+			break
+		}
+		last = next
+	}
+	// The text is read from the cells rather than as a selection would copy it,
+	// which drops the blanks at the end of a wrapped row: a space where the row
+	// wrapped is still part of a name.
+	var text strings.Builder
+	for row := first.Row; row <= last.Row; row++ {
+		from, to := 0, lastCell(row)
+		if row == first.Row {
+			from = first.Column
+		}
+		if row == last.Row {
+			to = last.Column
+		}
+		marks := t.Row(row).Marks
+		for column, line := from, cells(row); column <= to && column < len(line); column++ {
+			if cell := line[column]; cell.Attr&WideTail == 0 && cell.R != 0 {
+				text.WriteRune(cell.R)
+			}
+			for _, mark := range marks {
+				if int(mark.Col) == column {
+					text.WriteRune(mark.R)
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(text.String())
+}

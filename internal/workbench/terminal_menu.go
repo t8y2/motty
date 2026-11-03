@@ -71,7 +71,15 @@ func (state *State) offerActionsAt(session *Session, position term.Position) {
 	if !session.isLocal() {
 		user = session.host.User
 	}
-	for _, item := range classifyToken(session.term.screen.TokenAt(position), user) {
+	// A link says what it points at; plain text is read for what it looks like.
+	found := classifyToken(session.term.screen.TokenAt(position), user)
+	if link, ok := session.term.screen.LinksAt(terminalLinkPosition(session.term.screen, position)); ok {
+		found = state.linkActions(session, link.Target)
+	} else if name, ok := underlinedFileTarget(session, position); ok {
+		base := path.Base(filepath.ToSlash(name))
+		found = []detected{{kind: actionFiles, target: name, label: base, search: true}, {kind: actionDownload, target: name, label: base}, {kind: actionCopy, target: name, label: name}}
+	}
+	for _, item := range found {
 		if menu.count == maxMenuActions {
 			break
 		}
@@ -87,7 +95,9 @@ func (state *State) offerActionsAt(session *Session, position term.Position) {
 func (state *State) actionAvailable(session *Session, item detected) bool {
 	switch item.kind {
 	case actionFiles:
-		return session.isLocal() || session.conn != nil && session.hasServer()
+		return state.filesReachable(session)
+	case actionDownload:
+		return !session.isLocal() && state.filesReachable(session)
 	case actionExtract:
 		return session.term.shell != nil && session.host.System != sshconn.SystemWindows && !(session.isLocal() && runtime.GOOS == "windows")
 	}
@@ -109,6 +119,8 @@ func (state *State) actionLabel(item detected) string {
 		format = m.ActionBrowserFmt
 	case actionFiles:
 		format = m.ActionFilesFmt
+	case actionDownload:
+		format = m.ActionDownloadFmt
 	case actionExtract:
 		format = m.ActionExtractFmt
 	}
@@ -138,30 +150,56 @@ func (state *State) runAction(session *Session, item detected) {
 			state.status = err.Error()
 		}
 	case actionFiles:
-		state.showInFiles(session, item.target)
+		state.showInFiles(session, item.target, sftpReveal{search: item.search})
+	case actionDownload:
+		state.showInFiles(session, item.target, sftpReveal{download: true})
 	case actionExtract:
 		// Typed, not run: the user reads the line and presses Enter.
 		state.typed(session, []byte(item.target))
 	}
 }
 
-// showInFiles opens the file panel on the folder that holds a path.
-func (state *State) showInFiles(session *Session, target string) {
-	dir := path.Dir(target)
-	if strings.HasSuffix(target, "/") {
-		dir = path.Clean(target)
-	}
+// showInFiles opens the file panel on the folder that holds a path and selects
+// the path there. how says what else to do once it is listed: download it, or
+// search the subfolders for its name when it is not there. A path that ends in
+// a slash is a folder to open rather than an entry to select.
+func (state *State) showInFiles(session *Session, target string, how sftpReveal) {
 	// Showing a folder only ever opens the panel: a panel that is already up
 	// keeps the view it has, and the navigation below runs on it.
 	state.showFilesPanel(session)
 	view := session.files
-	switch {
-	case view == nil:
-	case view.local:
-		state.navigateLocalDirectory(view, filepath.FromSlash(dir))
-	default:
-		state.navigateSFTPDirectory(view, dir)
+	if view == nil {
+		return
 	}
+	if session.term != nil {
+		session.term.followPath = "" // the panel goes where it was sent, not to the shell's folder
+	}
+	folder := &view.sftpFolder
+	if view.localOnly {
+		folder = &view.lfolder
+	} else if view.local {
+		state.toggleSFTPPane(view) // the path is on the server
+	}
+	how.dir, how.name = revealPlace(target, view.localOnly)
+	state.revealSFTPEntry(view, folder, how)
+}
+
+// revealPlace is the folder a path is shown in and the entry to select there,
+// on a server or on this computer. A path that ends in a separator, or a root,
+// is a folder to open.
+func revealPlace(target string, local bool) (dir, name string) {
+	clean, dirOf, baseOf := path.Clean, path.Dir, path.Base
+	trailing := strings.HasSuffix(target, "/")
+	if local {
+		clean, dirOf, baseOf = filepath.Clean, filepath.Dir, filepath.Base
+		target = filepath.FromSlash(target)
+		trailing = strings.HasSuffix(target, string(filepath.Separator))
+	}
+	target = clean(target)
+	if trailing || dirOf(target) == target {
+		return target, ""
+	}
+	return dirOf(target), baseOf(target)
 }
 
 // terminalMenuSession is the session an open menu acts on, if it is still there.
@@ -274,6 +312,8 @@ func actionIcon(kind actionKind) uint8 {
 		return iconGlobe
 	case actionFiles:
 		return iconFolderOpen
+	case actionDownload:
+		return iconDownload
 	case actionExtract:
 		return iconArchive
 	}

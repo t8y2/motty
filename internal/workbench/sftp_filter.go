@@ -38,8 +38,11 @@ func (folder *sftpFolder) filterInputEditor() *text.Editor {
 	return &folder.filterEditor
 }
 
-func (folder *sftpFolder) clearFilter() {
-	folder.filterEditor = *text.NewEditor("")
+func (folder *sftpFolder) clearFilter() { folder.setFilter("") }
+
+// setFilter puts a query in the folder's filter.
+func (folder *sftpFolder) setFilter(query string) {
+	folder.filterEditor = *text.NewEditor(query)
 	folder.filterEditor.Restrict(sftpFilterRune, sftpFilterMaxRunes)
 	folder.filterReady = true
 }

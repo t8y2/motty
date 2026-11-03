@@ -182,7 +182,7 @@ func TestSFTPToolbarButtonTogglesPanel(t *testing.T) {
 func TestShowInFilesKeepsAnOpenPanelOpen(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
-	state.showInFiles(session, "/home/test/docs/guide.md")
+	state.showInFiles(session, "/home/test/docs/guide.md", sftpReveal{})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
 	if context, _ := state.deck.Context(state.deck.ActiveWorkspace()); !context.Open || context.Kind != layoutcore.ContextSFTP {
 		t.Fatalf("showing a folder closed the panel: %+v", context)
