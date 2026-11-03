@@ -174,11 +174,11 @@ func (pal *palette) termColor(color term.Color, fallback ui.Color) ui.Color {
 
 // build turns a terminal line into text, runs and background spans.
 //
-// Runs hold what is visible. Blank cells need no text: a run that ends where a
-// blank begins swallows it, otherwise it is a gap between runs and costs
-// nothing. Every character that is not plain ASCII is a run of its own, placed
-// at its cell by the renderer, so a wide or fallback-font glyph can never push
-// the text after it off its column.
+// Runs hold what is visible. Blank cells need no text: an ASCII run that ends
+// where a blank begins swallows it; otherwise it is a gap between runs and
+// costs nothing. Every non-ASCII character is a run of its own, placed at its
+// cell by the renderer, so a wide or fallback-font glyph can never push the
+// text after it off its column.
 func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool) {
 	cache.builds++
 	entry.runs = entry.runs[:0]
@@ -248,10 +248,12 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		}
 		blank := character == 0 || character == ' ' || cell.Attr&term.Hidden != 0
 		if blank && !style.underline && !style.strike {
-			// An invisible cell: swallow it into a run that ends here.
+			// An invisible cell: swallow it into an ASCII run that ends here.
+			// A non-ASCII character must stay on its own so the renderer keeps
+			// centering it within its cells, even when blanks follow it.
 			// A decorated run (underline, strike) draws across its cells, so
 			// blanks must not stretch it.
-			if run >= 0 && !entry.runs[run].Underline && !entry.runs[run].Strike &&
+			if run >= 0 && runASCII && !entry.runs[run].Underline && !entry.runs[run].Strike &&
 				int(entry.runs[run].Column+entry.runs[run].Cells) == x {
 				entry.runs[run].Bytes++
 				entry.runs[run].Cells += int32(width)
