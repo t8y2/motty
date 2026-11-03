@@ -302,9 +302,7 @@ func (s *State) pumpDashboard() {
 			if status.Endpoint.Host != "" {
 				v.endpoint = status.Endpoint
 			}
-			if status.System != sshconn.SystemUnknown && status.System != v.host.System {
-				s.setSessionSystem(v, status.System)
-			}
+			s.adoptSystem(v, status)
 			if s.modalSession == v.ID && !isPromptPhase(v.phase) {
 				s.closeModal()
 			}

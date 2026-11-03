@@ -152,6 +152,11 @@ type Status struct {
 	// System is detected after authentication without writing to the user's
 	// interactive shell. It remains unknown when command sessions are refused.
 	System RemoteSystem
+	// SystemProvisional marks System as the identification string's guess
+	// rather than the host's own answer. A derivative shares its parent's
+	// OpenSSH, so the guess may name the distribution the host was built from
+	// instead of the one it is: it fills a blank, and never more than that.
+	SystemProvisional bool
 	// Negotiated is what the last endpoint agreed on, once its handshake is done.
 	Negotiated Negotiated
 	// Skipped names identity files not offered to the server: those the user
@@ -539,21 +544,31 @@ func (conn *Conn) connect() error {
 	conn.client = client
 	method := conn.lastMethod
 	conn.mu.Unlock()
+	// The banner names the distribution whose OpenSSH the host serves, and a
+	// derivative serves its parent's: Ubuntu or Debian here is a guess that the
+	// probe below corrects. Reporting it would badge the host as its parent
+	// until the answer arrives, so a guess that is about to be checked is not
+	// published at all.
+	guess := classifyBanner(serverVersion)
+	ask := standardImplementation(serverVersion) &&
+		(guess == SystemUnknown || guess == SystemUbuntu || guess == SystemDebian)
 	conn.update(func(status *Status) {
 		status.Phase = PhaseConnected
 		status.ServerVersion = serverVersion
 		status.Method = method
-		status.System = classifyBanner(serverVersion)
+		if !ask {
+			status.System = guess
+			status.SystemProvisional = false
+		}
 	})
-	if system := conn.Status().System; standardImplementation(serverVersion) &&
-		(system == SystemUnknown || system == SystemUbuntu || system == SystemDebian) {
+	if ask {
 		go conn.detectSystem(client, serverVersion)
 	}
 	return nil
 }
 
 func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
-	system := detectRemoteSystem(client, serverVersion)
+	system, confirmed := detectRemoteSystem(client, serverVersion)
 	if system == SystemUnknown || conn.ctx.Err() != nil {
 		return
 	}
@@ -563,6 +578,7 @@ func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
 		return
 	}
 	conn.status.System = system
+	conn.status.SystemProvisional = !confirmed
 	conn.status.Version++
 	conn.mu.Unlock()
 	conn.notify()
@@ -624,6 +640,7 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 	conn.status.ServerVersion = ""
 	conn.status.Method = ""
 	conn.status.System = SystemUnknown
+	conn.status.SystemProvisional = false
 	conn.status.Skipped = nil
 	conn.status.Err = nil
 	conn.mu.Unlock()

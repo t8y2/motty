@@ -736,9 +736,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 	if status.Method != "" {
 		session.method = status.Method
 	}
-	if status.System != sshconn.SystemUnknown && session.host.System != status.System {
-		state.setSessionSystem(session, status.System)
-	}
+	state.adoptSystem(session, status)
 	switch {
 	case status.EndpointRole == sshconn.EndpointProxyJump && status.Phase != sshconn.PhaseConnected:
 		session.stage = stageConnect
@@ -859,6 +857,28 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	terminal.recording.stop()
 	terminal.ended = true
 	terminal.preedit = app.TextState{}
+}
+
+// adoptSystem records the system a connection reported, for this tab, the saved
+// host and every other tab open on it.
+func (state *State) adoptSystem(session *Session, status sshconn.Status) {
+	if !shouldAdoptSystem(session.host.System, status.System, status.SystemProvisional) {
+		return
+	}
+	state.setSessionSystem(session, status.System)
+}
+
+// shouldAdoptSystem reports whether what a connection reported replaces what the
+// session already knew. A provisional report is the SSH banner's guess: it names
+// the distribution whose OpenSSH the host carries, so a derivative arrives as
+// its parent. Such a guess fills a blank and never replaces a system the host
+// has named itself, or a derivative would badge as its parent until the probe
+// answers and then flip back.
+func shouldAdoptSystem(known, reported sshconn.RemoteSystem, provisional bool) bool {
+	if reported == sshconn.SystemUnknown || reported == known {
+		return false
+	}
+	return !provisional || known == sshconn.SystemUnknown
 }
 
 func (state *State) setSessionSystem(session *Session, system sshconn.RemoteSystem) {
