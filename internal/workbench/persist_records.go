@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"motty/internal/ai/store"
 	"motty/internal/buildinfo"
@@ -731,6 +732,47 @@ func routeLocalState(base *configBase, local []byte) (localWrite, error) {
 	return localWrite{state: releaseBytes, development: developmentBytes, includeDevelopment: true}, nil
 }
 
+// mergeRecentConnectionTimes keeps successes recorded by other windows even
+// when this window writes an older local snapshot or changes another setting.
+func mergeRecentConnectionTimes(current, next []byte) ([]byte, error) {
+	var previous struct {
+		RecentConnections map[string]time.Time `json:"recent_connections"`
+	}
+	if len(current) == 0 {
+		return next, nil
+	}
+	if err := json.Unmarshal(current, &previous); err != nil {
+		return nil, err
+	}
+	if len(previous.RecentConnections) == 0 {
+		return next, nil
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(next, &values); err != nil {
+		return nil, err
+	}
+	times := make(map[string]time.Time)
+	if raw := values["recent_connections"]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &times); err != nil {
+			return nil, err
+		}
+	}
+	if times == nil {
+		times = make(map[string]time.Time)
+	}
+	for key, at := range previous.RecentConnections {
+		if at.After(times[key]) {
+			times[key] = at
+		}
+	}
+	raw, err := json.Marshal(times)
+	if err != nil {
+		return nil, err
+	}
+	values["recent_connections"] = raw
+	return json.Marshal(values)
+}
+
 // writeEntries commits the difference between entries and base, then makes the
 // base describe them. It is the second half of a save, shared by the full
 // encoder and the hosts-only shortcut.
@@ -773,6 +815,16 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 				return false, err
 			}
 			change.LocalPatch[localKey] = patch
+			desired := local.state
+			change.MergeLocal = map[string]func([]byte, []byte) ([]byte, error){
+				localKey: func(current, next []byte) ([]byte, error) {
+					merged, err := mergeRecentConnectionTimes(desired, next)
+					if err == nil {
+						local.state = merged
+					}
+					return merged, err
+				},
+			}
 		}
 		if local.includeDevelopment && !bytes.Equal(local.development, base.development) {
 			if base.developmentDamaged {

@@ -34,40 +34,61 @@ func (state *State) openConnectPicker() {
 
 func (state *State) rebuildConnectPicker() {
 	palette := &state.commandPalette
-	local := localHost(state.messages.LocalTerminalTitle)
-	palette.addDetailed(state.messages.LocalTerminal, local.Address, hitConnectPickLocal)
-	// A computer with several shells offers each as its own entry, which the
-	// search finds by name: the entry above is the default shell of the settings.
-	if choices := state.localShellMenu.choices; localShellSettingVisible() && len(choices) > 1 {
-		for index, choice := range choices {
-			palette.addDetailed(state.messages.LocalTerminal+" · "+choice.Name, local.Address, hitConnectPickShells.At(index))
-		}
+	if state.recentConnectSort {
+		palette.filtered = false
+		state.refreshCommandPalette()
+		return
 	}
-	// The picker lists saved hosts under the groups they are filed in, as the
-	// Hosts page does, so a long catalog can be read by where it connects.
-	if state.namedHostGroups() == 0 {
-		for _, host := range state.hosts {
-			palette.addDetailed(host.Label, state.sessionAddress(host), hitConnectPickList.At(int(host.ID)))
+	var previousGroup *hostGroup
+	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
+		if item.group != nil && item.group != previousGroup {
+			palette.addHeader(state.hostGroupLabel(*item.group), item.group.Count)
 		}
-	} else {
-		for _, group := range state.hostGroups {
-			heading := false
-			for _, host := range state.hosts {
-				if strings.TrimSpace(host.Group) != group.Name {
-					continue
-				}
-				if !heading {
-					palette.addHeader(state.hostGroupLabel(group), group.Count)
-					heading = true
-				}
-				palette.addDetailed(host.Label, state.sessionAddress(host), hitConnectPickList.At(int(host.ID)))
-			}
-		}
-	}
+		previousGroup = item.group
+		palette.addDetailed(item.label, item.detail, item.target)
+	})
 	palette.rawQuery = ""
 	palette.query = ""
 	palette.filtered = false
 	state.refreshCommandPalette()
+}
+
+// connectPickerCandidate is a selectable row in default order; group is nil
+// for local terminals and for hosts when the catalog has no named groups.
+type connectPickerCandidate struct {
+	label, detail string
+	target        ui.ID
+	group         *hostGroup
+	key           string
+}
+
+// eachConnectPickerCandidate keeps both modes' labels, targets and default
+// ordering together. Each mode decides how to filter, sort and head its rows.
+func (state *State) eachConnectPickerCandidate(add func(connectPickerCandidate)) {
+	local := localHost(state.messages.LocalTerminalTitle)
+	add(connectPickerCandidate{label: state.messages.LocalTerminal, detail: local.Address, target: hitConnectPickLocal, key: "local-terminal"})
+	if choices := state.localShellMenu.choices; localShellSettingVisible() && len(choices) > 1 {
+		for index, choice := range choices {
+			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal"})
+		}
+	}
+	addHost := func(host Host, group *hostGroup) {
+		add(connectPickerCandidate{label: host.Label, detail: state.sessionAddress(host), target: hitConnectPickList.At(int(host.ID)), group: group, key: host.CatalogID})
+	}
+	if state.namedHostGroups() == 0 {
+		for _, host := range state.hosts {
+			addHost(host, nil)
+		}
+		return
+	}
+	for index := range state.hostGroups {
+		group := &state.hostGroups[index]
+		for _, host := range state.hosts {
+			if strings.TrimSpace(host.Group) == group.Name {
+				addHost(host, group)
+			}
+		}
+	}
 }
 
 // shellsListed rebuilds an open picker when the WSL distributions have been

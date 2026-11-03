@@ -29,10 +29,12 @@ var (
 )
 
 type commandPaletteEntry struct {
-	label  string
-	detail string // shown after the label, muted (a host's address)
-	search string
-	target ui.ID
+	label       string
+	recency     string
+	recencyHint string
+	detail      string // shown after the label, muted (a host's address)
+	search      string
+	target      ui.ID
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
@@ -177,6 +179,10 @@ func (state *State) refreshCommandPalette() {
 	if palette.filtered && rawQuery == palette.rawQuery {
 		return
 	}
+	if palette.connect && state.recentConnectSort {
+		state.rebuildRecentConnectPicker(rawQuery)
+		return
+	}
 	query := strings.ToLower(rawQuery)
 	palette.rawQuery = rawQuery
 	palette.query = query
@@ -257,6 +263,13 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
+	case hitConnectSortDefault, hitConnectSortRecent:
+		if !state.commandPalette.connect {
+			return
+		}
+		state.recentConnectSort = id == hitConnectSortRecent
+		state.rebuildCommandPalette()
+		state.save()
 	case hitCommandPaletteSearch:
 		return
 	default:

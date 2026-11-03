@@ -121,6 +121,9 @@ type Change struct {
 	// ExpectedLocal guards an explicit replacement, such as recovery of a
 	// malformed workspace, without disabling protection for other local keys.
 	ExpectedLocal map[string][]byte
+	// MergeLocal merges a patched local value inside the transaction.
+	// Callbacks must not call the Store. An error aborts the commit.
+	MergeLocal map[string]func(current, next []byte) ([]byte, error)
 }
 
 // Store is the open database. It is safe for concurrent use.
@@ -723,6 +726,12 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		value, err := patchJSON(current, patch.Before, patch.After)
 		if err != nil {
 			return 0, fmt.Errorf("%s: %w", key, err)
+		}
+		if merge := change.MergeLocal[key]; merge != nil {
+			value, err = merge(current, value)
+			if err != nil {
+				return 0, fmt.Errorf("config store: merge %s: %w", key, err)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO local(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
 			return 0, fmt.Errorf("config store: write %s: %w", key, err)

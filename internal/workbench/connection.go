@@ -470,6 +470,7 @@ const maxBannerLines = 8
 // page. A tab that is dialed again keeps its terminal history. Dialing returns
 // at once; everything after happens on the connection's goroutine.
 func (state *State) startConnection(session *Session, host Host) {
+	session.recordRecent = !session.autoRestore
 	state.cancelReconnect(session)
 	// A user dial is a new logical session; automatic retries and the
 	// share-refusal re-dial go through startConnectionMode and keep the row.
@@ -480,6 +481,9 @@ func (state *State) startConnection(session *Session, host Host) {
 func (state *State) startConnectionMode(session *Session, host Host, automatic bool) {
 	if workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
 		state.clearWorkspaceBroadcast(workspaceID)
+	}
+	if automatic {
+		session.recordRecent = false
 	}
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
@@ -731,6 +735,9 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		if status.Phase == sshconn.PhaseConnected || status.Phase == sshconn.PhaseFailed || status.Phase == sshconn.PhaseClosed {
 			session.autoRestore = false
 		}
+	}
+	if status.Phase == sshconn.PhaseConnected && status.EndpointRole != sshconn.EndpointProxyJump && !session.isLocal() {
+		state.rememberRecentConnection(session)
 	}
 	previousPhase := session.phase
 	session.version = status.Version
