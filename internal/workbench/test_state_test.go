@@ -43,6 +43,14 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.FontFamilies == nil {
 		options.FontFamilies = func() []string { return nil }
 	}
+	if options.Keystore == nil {
+		// Left nil, the vault's key store is the machine's own: a test binary is
+		// not the signed application, so macOS asks for the login keychain's
+		// password every time a rebuilt binary opens the vault. A test keeps its
+		// keys in memory; the ones that exercise a missing or denied store pass
+		// their own.
+		options.Keystore = &memKeys{}
+	}
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
