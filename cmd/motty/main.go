@@ -230,6 +230,10 @@ type placement struct {
 }
 
 func openWorkbenchWindow(application *app.Application, status *tray, hub *workbench.AIHub, newWindow func() error, background bool, place placement) error {
+	importSource, sourceErr := developmentImportSource(datadir.Current().Dir)
+	if sourceErr != nil {
+		return sourceErr
+	}
 	// Connection goroutines wake the window through this; it costs nothing
 	// until a connection reports progress.
 	var invalidator app.Invalidator
@@ -255,7 +259,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		allow()
 	}
 	state = workbench.New(workbench.Options{
-		Invalidate: invalidate, NewWindow: newWindow,
+		DevelopmentSource: importSource,
+		Invalidate:        invalidate, NewWindow: newWindow,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
@@ -301,6 +306,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			return state.TerminalInput(context)
 		}
 		if input := state.SFTPInput(context); input != nil {
+			return input
+		}
+		if input := state.SFTPTabInput(context); input != nil {
 			return input
 		}
 		if input := state.RemoteToolsInput(context); input != nil {
@@ -357,6 +365,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OnResize:      state.Resize,
 		OnFrameChange: state.NoteWindowFrame,
 		OnMinimize:    state.SetWindowMinimized,
+		OnFullscreen:  state.SetWindowFullscreen,
 		OnClosed: func() {
 			log.Print("motty: window closed")
 			windows.remove(state)
@@ -371,6 +380,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if err == nil {
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)
+		state.SetFullscreenControl(mainWindow.SetFullscreen)
 		hub.Add(state, mainWindow.Show)
 		windows.add(state)
 		// The desktop sessions forward the local clipboard; watching it means

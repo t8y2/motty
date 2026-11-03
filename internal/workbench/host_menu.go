@@ -13,6 +13,8 @@ var (
 	hitHostMenuDismiss = tree.ID(hostMenuHits, "host-menu-dismiss")
 	hitHostMenuConnect = tree.ID(hostMenuHits, "host-menu-connect")
 	hitHostMenuSFTP    = tree.ID(hostMenuHits, "host-menu-sftp")
+	hitHostMenuAddress = tree.ID(hostMenuHits, "host-menu-copy-address")
+	hitHostMenuName    = tree.ID(hostMenuHits, "host-menu-copy-name")
 	hitHostMenuEdit    = tree.ID(hostMenuHits, "host-menu-edit")
 	hitHostMenuCopy    = tree.ID(hostMenuHits, "host-menu-copy")
 	hitHostMenuMove    = tree.ID(hostMenuHits, "host-menu-move")
@@ -97,11 +99,16 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitHostMenuConnect, Label: messages.Connect, Icon: icon(iconPlug), Disabled: several})
 	if host, ok := state.hostByID(state.hostMenu.host); ok && host.isSSH() {
-		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconSFTPTransfer), Disabled: several || state.options.OpenContentWindow == nil})
+		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconSFTPTransfer), Disabled: several || !state.sftpManagersAvailable()})
 	}
 	rows.separate()
+	host, _ := state.hostByID(state.hostMenu.host)
+	address := connectionAddressAndPort(host)
+	rows.add(components.ContextMenuItem{ID: hitHostMenuAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: several || address == ""})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: several || host.Label == ""})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHostTitle, Icon: icon(iconCopy), Disabled: several})
+	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
-	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	width, height := rows.size(canvas, state.contextMenuTheme())
@@ -132,6 +139,10 @@ func (state *State) clickHostMenu(id ui.ID) bool {
 		state.newHostSession(host)
 	case hitHostMenuSFTP:
 		state.openHostSFTPWindow(host)
+	case hitHostMenuAddress:
+		state.copyConnectionText(connectionAddressAndPort(host))
+	case hitHostMenuName:
+		state.copyConnectionText(host.Label)
 	case hitHostMenuEdit:
 		state.openEditHostID(host.ID)
 	case hitHostMenuCopy:

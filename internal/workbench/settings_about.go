@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/assets"
 	"motty/internal/i18n"
 	"motty/internal/update"
 )
@@ -24,6 +25,48 @@ const (
 	aboutDocsURL    = "https://motty.page"
 	aboutVivaURL    = "https://vivaui.dev"
 )
+
+// linkMark is how a place to go is drawn: the glyph and its size, the chip it
+// stands on and the color it is drawn in. A glyph that carries colors of its
+// own (the QQ penguin) keeps them; the ink then only says how solid it is. A
+// mark that comes as a picture, such as the application's own icon, brings its
+// tile with it and is drawn as it is.
+type linkMark struct {
+	icon    uint8
+	chip    ui.Color
+	ink     ui.Color
+	size    float32
+	picture func() ui.Bitmap
+}
+
+// aboutMarkInk and aboutMarkTile are the white a brand mark is drawn on and the
+// color it is drawn in, which is what most of these logos ask for.
+var (
+	aboutMarkInk  = ui.RGB(0xFF, 0xFF, 0xFF)
+	aboutMarkTile = ui.RGB(0xFF, 0xFF, 0xFF)
+)
+
+// The community's own marks, on the chip each one is drawn for: the logos that
+// come in color stand on white, and the ones drawn white take their service's
+// hue. These are the only hues on the page, so a place to go is told apart by
+// the service it opens rather than by a decoration the page invented.
+var (
+	aboutQQMark      = linkMark{icon: iconQQ, chip: aboutMarkTile, ink: aboutMarkInk, size: 21}                  // Tencent's penguin
+	aboutWeChatMark  = linkMark{icon: iconWeChat, chip: ui.RGB(0x07, 0xC1, 0x60), ink: aboutMarkInk, size: 16}   // WeChat's green
+	aboutDiscordMark = linkMark{icon: iconDiscord, chip: aboutMarkTile, ink: ui.RGB(0x58, 0x65, 0xF2), size: 17} // Discord's blurple
+	aboutIssuesMark  = linkMark{icon: iconBug, chip: ui.RGB(0xC0, 0x55, 0x4E), ink: aboutMarkInk, size: 16}      // a bug's red, kept quiet
+)
+
+// The project's two: GitHub's mark on the same white chip the community icons
+// use, and the application's own icon for the site it opens.
+var (
+	aboutRepoMark = linkMark{icon: iconGitHub, chip: aboutMarkTile, ink: ui.RGB(0x18, 0x17, 0x17), size: 17}
+	aboutDocsMark = linkMark{picture: aboutIconTile}
+)
+
+// aboutIconTile is the application icon in its rounded tile, the same mark the
+// Dock shows, ready for the About page to paint at its own size.
+var aboutIconTile = embeddedBitmap(assets.IconTile, 1<<60|3)
 
 var (
 	hitAboutCopyInfo = tree.ID(settingsHits, "settings-about-copy")
@@ -124,6 +167,12 @@ func (facts aboutBuildInfo) buildText(m i18n.AboutMessages) string {
 // declared, so the layout is chosen rather than approximated by a minimum cell.
 const aboutTwoColumnMin = float32(460)
 
+// A card's mark sits on a chip of its own color: 26 pixels is enough for the
+// hue to read beside the name, yet small enough that the two lines of a card
+// keep their room. A mark without a color of its own takes a quiet share of the
+// page's ink instead, so the community's hues stay the ones that stand out.
+const linkMarkSize = float32(26)
+
 // tileBox is the inset grid of a group's card: rows of tiles with room between
 // them. It takes the place of a row, so whatever follows it gets a hairline.
 func (page *settingsPage) tileBox(children func()) {
@@ -161,9 +210,9 @@ func (page *settingsPage) factTile(icon uint8, label, value string) {
 	})
 }
 
-// linkCard is one place to go: its name, what it is for, and a mark that it
-// opens outside the window. The whole card is the target.
-func (page *settingsPage) linkCard(id ui.ID, icon uint8, label, description string) {
+// linkCard is one place to go: its mark, its name, what it is for, and a sign
+// that it opens outside the window. The whole card is the target.
+func (page *settingsPage) linkCard(id ui.ID, mark linkMark, label, description string) {
 	f, pal := page.f, page.state.pal
 	background := pal.surfaceSoft
 	if f.Canvas().Hovered() == id {
@@ -178,11 +227,25 @@ func (page *settingsPage) linkCard(id ui.ID, icon uint8, label, description stri
 	page.hitOn(card, id, label, ui.HitOptions{Role: ui.RoleLink, Cursor: ui.PointerCursorHand, Description: description})
 	card.Children(func() {
 		f.Row().Items(flex.Center).Gap(8).Children(func() {
-			f.Icon(lucideIcons[icon]).Size(16, 16).Color(pal.text).Shrink(0)
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Grow(1)
+			page.linkMarkIcon(mark)
+			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Grow(1).Ellipsis()
 			f.Icon(lucideIcons[iconLink]).Size(12, 12).Color(pal.faint).Shrink(0)
 		})
 		f.Paragraph(description, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
+	})
+}
+
+// linkMarkIcon draws a card's mark: its glyph, at the size that mark takes, on
+// the chip of its service, or the picture that brings its own tile.
+func (page *settingsPage) linkMarkIcon(mark linkMark) {
+	f := page.f
+	if mark.picture != nil {
+		f.Image(mark.picture()).Size(linkMarkSize, linkMarkSize).Shrink(0)
+		return
+	}
+	chip := f.Row().Size(linkMarkSize, linkMarkSize).Shrink(0).Center().Radius(radius.item).Background(mark.chip)
+	chip.Children(func() {
+		f.Icon(lucideIcons[mark.icon]).Size(mark.size, mark.size).Color(mark.ink).Shrink(0)
 	})
 }
 
@@ -246,23 +309,23 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 		page.group(m.About.CommunityTitle, func() {
 			page.tileBox(func() {
 				page.pair(func() {
-					page.linkCard(hitAboutQQ, iconQQ, m.About.QQ, m.About.QQDescription)
+					page.linkCard(hitAboutQQ, aboutQQMark, m.About.QQ, m.About.QQDescription)
 				}, func() {
-					page.linkCard(hitAboutWeChat, iconWeChat, m.About.WeChat, m.About.WeChatDescription)
+					page.linkCard(hitAboutWeChat, aboutWeChatMark, m.About.WeChat, m.About.WeChatDescription)
 				})
 				page.pair(func() {
-					page.linkCard(hitAboutDiscord, iconDiscord, m.About.Discord, m.About.DiscordDescription)
+					page.linkCard(hitAboutDiscord, aboutDiscordMark, m.About.Discord, m.About.DiscordDescription)
 				}, func() {
-					page.linkCard(hitAboutIssues, iconBug, m.About.Issues, m.About.IssuesDescription)
+					page.linkCard(hitAboutIssues, aboutIssuesMark, m.About.Issues, m.About.IssuesDescription)
 				})
 			})
 		})
 		page.group(m.About.ProjectTitle, func() {
 			page.tileBox(func() {
 				page.pair(func() {
-					page.linkCard(hitAboutRepo, iconGitHub, m.About.Repo, m.About.RepoDescription)
+					page.linkCard(hitAboutRepo, aboutRepoMark, m.About.Repo, m.About.RepoDescription)
 				}, func() {
-					page.linkCard(hitAboutDocs, iconGlobe, m.About.Docs, m.About.DocsDescription)
+					page.linkCard(hitAboutDocs, aboutDocsMark, m.About.Docs, m.About.DocsDescription)
 				})
 			})
 		})

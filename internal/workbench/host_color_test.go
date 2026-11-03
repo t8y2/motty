@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 func TestConnectionColorPersistsCopiesAndUpdatesOpenSessions(t *testing.T) {
@@ -104,31 +105,36 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 
 func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	s := Session{host: Host{Color: "#ef4444"}}
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
 	before := state.termPal
-	active, line := state.connectionBarColors(&s, false)
-	inactive, _ := state.connectionBarColors(&s, true)
-	if active == state.pal.workspace || active == inactive || line == state.pal.line {
-		t.Fatal("connection color missing from header")
+	for index := range state.sessions {
+		state.sessions[index].host.Color = "#ef4444"
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	headers := 0
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds.Height == infoBarHeight && rectangle.Color == state.pal.workspace {
+			headers++
+		}
+	}
+	if headers < 2 {
+		t.Fatal("colored split panes did not retain neutral headers")
 	}
 	if state.termPal != before {
 		t.Fatal("connection color altered terminal palette")
 	}
-	s.host.Color = ""
-	background, border := state.connectionBarColors(&s, false)
-	if background != state.pal.workspace || border != state.pal.line {
-		t.Fatal("default header changed")
-	}
 }
 
-func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
+func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	session.host.Color = "#3b82f6"
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	header, _ := state.connectionBarColors(session, false)
-	for _, id := range []ui.ID{contextID(hitSFTPRefresh), state.paneIdentity(session, hitSFTPOpen)} {
+	header := state.pal.workspace
+	for _, id := range []ui.ID{contextID(hitSFTPRefresh), hitSFTPOpen} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok {
 			t.Fatal("missing header action", id)
@@ -140,7 +146,7 @@ func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Fatal("file and terminal headers must share their connection color", id)
+			t.Fatal("file header and terminal rail must stay neutral", id)
 		}
 	}
 	foundTab := false
@@ -185,7 +191,7 @@ func TestConnectionColorReachesWorkbenchAndFileHeader(t *testing.T) {
 	}
 }
 
-func TestConnectionColorEmptyFilePanelFollowsItsSession(t *testing.T) {
+func TestConnectionColorKeepsEmptyFilePanelNeutral(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	for _, session := range []*Session{nil, {host: Host{Color: "#a855f7"}}, {}} {
 		var canvas ui.Canvas
@@ -194,7 +200,7 @@ func TestConnectionColorEmptyFilePanelFollowsItsSession(t *testing.T) {
 		if !ok {
 			t.Fatal("empty panel has no close action")
 		}
-		background, _ := state.connectionBarColors(session, false)
+		background := state.pal.workspace
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
 			if rectangle.Color == background && rectangle.Bounds.Height == infoBarHeight && rectangle.Bounds.X <= button.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= button.Bounds.X+button.Bounds.Width {
@@ -202,9 +208,25 @@ func TestConnectionColorEmptyFilePanelFollowsItsSession(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Fatal("empty panel header differs from the connection header")
+			t.Fatal("empty panel header must stay neutral")
+		}
+
+	}
+}
+
+func TestConnectionColorKeepsMonitorHeaderNeutral(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.host.Color = "#3b82f6"
+	bounds := ui.Rect{X: 600, Y: 40, Width: 320, Height: 800}
+	var canvas ui.Canvas
+	state.paintMonitor(&canvas, bounds, session)
+	header := ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: infoBarHeight}
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds == header && rectangle.Color == state.pal.workspace {
+			return
 		}
 	}
+	t.Fatal("colored connection did not retain a neutral monitor header")
 }
 
 // A colored host must keep both the list's selection tone and the card's icon

@@ -316,10 +316,8 @@ func (state *State) paintVerticalTabGroupIcons(canvas *ui.Canvas) {
 			continue
 		}
 		tab := state.workspaceTabs[group.members[0]]
-		if pane, ok := state.deck.Pane(tab.ID, tab.ActivePane); ok {
-			if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
-				state.paintHostCatalogIcon(canvas, session.host, group.badge.Rect(), state.pal.shell)
-			}
+		if session := state.tabSession(tab); session != nil {
+			state.paintHostCatalogIcon(canvas, session.host, group.badge.Rect(), state.pal.shell)
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"motty/internal/buildinfo"
 	"motty/internal/selfupdate"
 )
 
@@ -36,7 +37,7 @@ func updatesDir(dataDir string) string {
 		if err != nil {
 			return ""
 		}
-		dataDir = filepath.Join(config, "motty")
+		dataDir = filepath.Join(config, buildinfo.DataName)
 	}
 	return filepath.Join(dataDir, "updates")
 }

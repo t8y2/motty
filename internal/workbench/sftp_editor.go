@@ -18,6 +18,10 @@ func (state *State) sftpEditorItem(view *sftpView, folder *sftpFolder) (string, 
 	if folder != &view.lfolder {
 		session, ok := state.sftpSession(view)
 		disabled = disabled || !ok || !session.hasServer()
+		if state.defaultEditor == editorCustom {
+			disabled = true
+			return fmt.Sprintf("%s — %s", fmt.Sprintf(m.FilesEditorOpenFmt, name), m.FilesCustomEditorRemoteOnly), true
+		}
 	}
 	return fmt.Sprintf(m.FilesEditorOpenFmt, name), disabled
 }
@@ -69,10 +73,22 @@ func (state *State) openSFTPInEditor(view *sftpView) {
 	}
 	request := state.editorRequestFor(view, folder, session)
 	open := state.options.OpenSchemeURL
+	customExecutable := state.customEditorPath
+	launchCustom := state.options.LaunchCustomEditor
+	if request.editor == editorCustom && !validCustomEditorPath(customExecutable) {
+		state.status = state.messages.Tools.FilesCustomEditorInvalid
+		return
+	}
 	results, notify := make(chan editorResult, 1), state.notifyForView(session, view)
 	view.editorResults = results
 	go func() {
-		results <- editorResult{editor: request.editor, directory: request.directory, err: request.open(open)}
+		var err error
+		if request.editor == editorCustom {
+			err = launchCustom(customExecutable, request.directory)
+		} else {
+			err = request.open(open)
+		}
+		results <- editorResult{editor: request.editor, directory: request.directory, err: err}
 		notify()
 	}()
 }

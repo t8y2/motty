@@ -93,10 +93,10 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	messages, theme := state.messages, state.Theme()
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer:          dialogLayer,
 		Scope:          dialogScope,
-		DismissID:      hitForwardDialogDismiss,
 		CloseID:        hitForwardDialogClose,
 		InitialFocusID: hitForwardDialogLabel,
 		ContentSize:    ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2, state.forwardDialogError), // four rows of fields

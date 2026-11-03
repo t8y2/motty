@@ -344,8 +344,8 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 					files = hit.Bounds
 				}
 			}
-			if entry.Width == 0 || files.Width == 0 || entry.Y != files.Y || entry.X < files.X+files.Width {
-				t.Fatal("independent-window entry is not at the right end of the terminal tools", entry, files)
+			if entry.Width == 0 || files.Width == 0 || entry.X != files.X || entry.Y < files.Y+files.Height {
+				t.Fatal("independent-window entry is not below the file control in the right tool rail", entry, files)
 			}
 			if dir := os.Getenv("MOTTY_SFTP_WINDOW_SCREENSHOT_DIR"); dir != "" {
 				os.MkdirAll(dir, 0700)

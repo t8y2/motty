@@ -21,7 +21,6 @@ var (
 	hitFormTest      = tree.ID(formDialogHits, "form-test")
 	hitFormCancel    = tree.ID(formDialogHits, "form-cancel")
 	hitFormClose     = tree.ID(formDialogHits, "form-close")
-	hitFormDismiss   = tree.ID(formDialogHits, "form-dismiss")
 	hitFormCheckbox  = tree.ID(formDialogHits, "form-checkbox")
 )
 
@@ -106,7 +105,7 @@ func (state *State) clickForm(id ui.ID) {
 		if message := state.startFormTest(); message != "" {
 			state.form.dialogError = message
 		}
-	case hitFormCancel, hitFormClose, hitFormDismiss:
+	case hitFormCancel, hitFormClose:
 		cancel := state.form.cancel
 		state.clearFormTestStatus()
 		state.closeModal()
@@ -192,9 +191,10 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.count > 0 {
 		initial = hitFormFieldList.At(0)
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitFormDismiss, CloseID: hitFormClose, InitialFocusID: initial,
+		CloseID: hitFormClose, InitialFocusID: initial,
 		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: form.bodyHeight(),
 	})
 	layout := dialog.Begin(form.title, form.description)

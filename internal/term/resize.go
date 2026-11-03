@@ -226,6 +226,7 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 				l.cells[x] = Cell{BG: c.BG}
 			}
 		}
+		l.used = len(l.cells)
 		l.hyperlinks = nil
 		if linked {
 			links := append([]uint32(nil), r.links[from:to]...)
@@ -288,6 +289,7 @@ func (l *line) trimForHistory() {
 	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
 		used--
 	}
+	l.used = used
 	if cap(l.cells) > 4*used+64 {
 		l.cells = append([]Cell(nil), l.cells[:used]...)
 	} else {

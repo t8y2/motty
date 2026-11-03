@@ -970,9 +970,9 @@ func (state *State) ConfirmDocumentClose(allow func()) bool {
 }
 
 func (state *State) fileOpenNotice(origin *sftpWindow, title, detail string, kind components.ToastType) {
-	if origin != nil && !origin.closed && origin.window != nil {
+	if origin != nil && !origin.closed && (origin.window != nil || state.sftpTabIndex(origin.session.ID) >= 0) {
 		origin.notices.show(title, detail, kind)
-		origin.window.Invalidate()
+		origin.invalidate()
 		return
 	}
 	state.fileNotices.show(title, detail, kind)
@@ -980,9 +980,9 @@ func (state *State) fileOpenNotice(origin *sftpWindow, title, detail string, kin
 }
 
 func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, location, reason string, kind components.ToastType) {
-	if origin != nil && !origin.closed && origin.window != nil {
+	if origin != nil && !origin.closed && (origin.window != nil || state.sftpTabIndex(origin.session.ID) >= 0) {
 		origin.notices.showPathReason(title, format, location, reason, kind)
-		origin.window.Invalidate()
+		origin.invalidate()
 		return
 	}
 	state.fileNotices.showPathReason(title, format, location, reason, kind)

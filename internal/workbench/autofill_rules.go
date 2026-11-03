@@ -45,7 +45,6 @@ var (
 	hitAutofillSubmit       = tree.ID(autofillHits, "autofill-submit")
 	hitAutofillCancel       = tree.ID(autofillHits, "autofill-cancel")
 	hitAutofillClose        = tree.ID(autofillHits, "autofill-close")
-	hitAutofillDismiss      = tree.ID(autofillHits, "autofill-dismiss")
 
 	hitAutofillAllow        = tree.ID(autofillHits, "autofill-confirm-allow")
 	hitAutofillDeny         = tree.ID(autofillHits, "autofill-confirm-deny")
@@ -312,7 +311,7 @@ func (state *State) clickAutofillDialog(id ui.ID) {
 	switch id {
 	case hitAutofillSubmit:
 		state.submitAutofillRule()
-	case hitAutofillCancel, hitAutofillClose, hitAutofillDismiss:
+	case hitAutofillCancel, hitAutofillClose:
 		state.closeModal()
 	case hitAutofillPassword:
 		form.send = autofill.SendPassword
@@ -498,9 +497,10 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.send == autofill.SendText {
 		body += 68
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitAutofillDismiss, CloseID: hitAutofillClose, InitialFocusID: hitAutofillName,
+		CloseID: hitAutofillClose, InitialFocusID: hitAutofillName,
 		ContentSize: ui.Size{Width: 600}, FitBody: true, BodyHeight: withError(body, form.dialogError),
 	})
 	layout := dialog.Begin(title, "")

@@ -61,7 +61,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 		return
 	}
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := state.connectionBarColors(session, false)
+	headerBackground, headerBorder := pal.workspace, pal.line
 	folder, local := view.active(), view.local
 	if folder.pathEditing && !state.sftpPathInput && canvas.Focused() != hitSFTPPath {
 		folder.pathEditing = false
@@ -800,10 +800,10 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 	case showError:
 		body = 20
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer:          dialogLayer,
 		Scope:          dialogScope,
-		DismissID:      hitSFTPDialogDismiss,
 		CloseID:        hitSFTPDialogClose,
 		InitialFocusID: initialFocus,
 		ContentSize:    ui.Size{Width: 520}, FitBody: true, BodyHeight: body,

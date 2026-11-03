@@ -157,17 +157,20 @@ type Client struct {
 	tlsMinVersion    uint16 // override for TLS version probing; 0 = default
 	tlsMaxVersion    uint16 // override for TLS version probing; 0 = default
 	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
+	rawNTLM          bool   // learned before credentials are sent; retained across version probes
 
 	// MCS/GCC parameters
-	userChannelID   uint16
-	ioChannelID     uint16
-	channelIDs      []uint16
-	channelNames    []string                        // ordered, matching channelIDs indices
-	channelMap      map[uint16]string               // channelID → name (built after MCS Connect)
-	channelOpts     map[uint16]uint32               // channelID → channel options
-	channelHandlers map[string]func(uint16, []byte) // name → handler
-	serverCore      *mcs.ServerCoreData
-	serverSec       *mcs.ServerSecurityData
+	userChannelID    uint16
+	ioChannelID      uint16
+	messageChannelID uint16
+	autodetect       networkAutodetect
+	channelIDs       []uint16
+	channelNames     []string                        // ordered, matching channelIDs indices
+	channelMap       map[uint16]string               // channelID → name (built after MCS Connect)
+	channelOpts      map[uint16]uint32               // channelID → channel options
+	channelHandlers  map[string]func(uint16, []byte) // name → handler
+	serverCore       *mcs.ServerCoreData
+	serverSec        *mcs.ServerSecurityData
 
 	// Standard RDP Security (nil when using TLS)
 	crypto *sec.RDPCrypto
@@ -256,6 +259,7 @@ type Client struct {
 
 	// Callbacks (protected by cbMu — use load*/On* methods, not direct access)
 	cbMu              sync.RWMutex
+	onNetworkRTT      func()
 	onBitmap          func(*BitmapUpdate)
 	onStridedBitmap   func(x, y, w, h int, data []byte, stride int)
 	onH264Frame       func(*egfx.H264Frame) // H.264 pass-through callback
@@ -375,7 +379,7 @@ func (c *Client) Connect() error {
 		} else {
 			credsspErr = c.tryCredSSP()
 		}
-		if credsspErr != nil && !errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+		if canRetryCredSSP(credsspErr) {
 			credsspVersions := []int{6, 3, 2}
 		probeLoop:
 			for i, tlsVer := range tlsVersions {
@@ -396,17 +400,18 @@ func (c *Client) Connect() error {
 					if credsspErr == nil {
 						break probeLoop
 					}
-					if errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+					if !canRetryCredSSP(credsspErr) {
 						break probeLoop
 					}
 				}
 			}
 			c.credsspVersion = 0 // reset
 		}
-		if credsspErr != nil && errors.Is(credsspErr, nla.ErrCredentialsFatal) {
-			// Credentials are definitively wrong — no point retrying or falling back.
+		if credsspErr != nil && !canRetryCredSSP(credsspErr) {
+			// Do not repeat a logon attempt, bypass NLA after submitting
+			// credentials, or retry a certificate the user rejected.
 			c.Close()
-			return fmt.Errorf("%w: %w", ErrAuthFailed, credsspErr)
+			return credsspErr
 		}
 		if credsspErr != nil {
 			// All NLA attempts failed. Try TLS-only fallback, probing versions.
@@ -667,11 +672,31 @@ func (c *Client) upgradeTLS() error {
 	return nil
 }
 
-// credsspAuth performs CredSSP/NLA authentication using NTLM over SPNEGO.
 // tryCredSSP attempts CredSSP authentication on the current TLS connection.
 func (c *Client) tryCredSSP() error {
 	c.setState(StateCredSSPAuth)
+	err := c.credsspAuth()
+	if c.rawNTLM || !errors.Is(err, nla.ErrNegotiateToken) {
+		return err
+	}
+	// Motty compatibility: WinPR 2.x treats SPNEGO as an NTLM header. Retry
+	// with raw NTLM on a fresh NLA/TLS connection, only before credentials
+	// were sent.
+	c.rawNTLM = true
+	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "retrying CredSSP with raw NTLM tokens")
+	if err := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, c.tlsMinVersion, c.tlsMaxVersion); err != nil {
+		return err
+	}
+	if c.selectedProtocol != x224.ProtocolHybrid {
+		return fmt.Errorf("%w: the server did not select NLA for raw NTLM", ErrNegotiationFailed)
+	}
+	c.setState(StateCredSSPAuth)
 	return c.credsspAuth()
+}
+
+func canRetryCredSSP(err error) bool {
+	return err != nil && !errors.Is(err, nla.ErrCredentialsFatal) &&
+		!errors.Is(err, nla.ErrCredentialsSent) && !errors.Is(err, ErrCertificateRejected)
 }
 
 // reconnectWithTLS tears down the current connection and establishes a new
@@ -708,12 +733,19 @@ func (c *Client) credsspAuth() error {
 		ver = nla.MaxCredSSPVersion
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP/NLA authentication", slog.Int("advertiseVersion", ver))
-	if err := nla.Authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
+	authenticate := nla.Authenticate
+	if c.rawNTLM {
+		authenticate = nla.AuthenticateRawNTLM
+	}
+	if err := authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
 		// Motty divergence: %w, so that nla.ErrCredentialsFatal survives and the
 		// caller stops at the first refusal. Upstream wrapped with %v, which hid it
 		// and made one wrong password into 14 logon attempts (an account lockout
 		// threshold of 10 is common).
-		return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		if errors.Is(err, nla.ErrCredentialsFatal) {
+			return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		}
+		return fmt.Errorf("%w: CredSSP: %w", ErrNegotiationFailed, err)
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP authentication successful")
 	return nil
@@ -730,6 +762,8 @@ func (c *Client) mcsConnect() error {
 	// open the RDPEDISP dynamic channel, enabling mid-session resize.
 	coreData.Version = mcs.VersionRDP10
 	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportMonitorLayout
+	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportNetCharAutodetect | mcs.EarlyCapValidConnectionType
+	coreData.ConnectionType = mcs.ConnectionTypeAutoDetect
 	if c.opts.GFX {
 		coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportDynvcGfxProtocol
 	}
@@ -832,6 +866,8 @@ func (c *Client) mcsConnect() error {
 	if monitorBlock != nil {
 		clientData = append(clientData, monitorBlock...)
 	}
+	// TS_UD_CS_MCS_MSGCHANNEL: flags are reserved and must be zero.
+	clientData = append(clientData, 0x06, 0xC0, 0x08, 0x00, 0, 0, 0, 0)
 
 	// Build GCC Conference Create Request
 	gccRequest := mcs.EncodeGCCConferenceCreateRequest(clientData)
@@ -918,6 +954,7 @@ func (c *Client) mcsConnect() error {
 	c.serverCore = serverCore
 	c.serverSec = serverSec
 	c.ioChannelID = serverNet.IOChannelID
+	c.messageChannelID = serverNet.MessageChannelID
 	c.channelIDs = serverNet.ChannelIDs
 
 	// Build channel ID → name map and channel ID → options map
@@ -1174,6 +1211,9 @@ func (c *Client) mcsJoinChannels() error {
 	// Build the list of channels to join
 	channels := []uint16{c.userChannelID, c.ioChannelID}
 	channels = append(channels, c.channelIDs...)
+	if c.messageChannelID != 0 {
+		channels = append(channels, c.messageChannelID)
+	}
 
 	for _, chID := range channels {
 		if err := c.mcsJoinChannel(chID); err != nil {
@@ -1381,11 +1421,20 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 		if err != nil {
 			return 0, nil, fmt.Errorf("decoding MCS SDI: %w", err)
 		}
+		if channelID == c.messageChannelID && c.messageChannelID != 0 {
+			if err := c.handleMessageChannel(userData); err != nil {
+				return 0, nil, err
+			}
+			continue
+		}
 
 		// Decrypt (centralized, matching receiveLoop)
 		userData = c.decryptSlowPath(userData)
 		if userData == nil {
 			return 0, nil, fmt.Errorf("decryption failed")
+		}
+		if err := c.autodetect.received(len(userData)); err != nil {
+			return 0, nil, err
 		}
 
 		return channelID, userData, nil
@@ -1395,7 +1444,7 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 // readLicensingPDU reads an MCS Send Data Indication, validates the channel
 // and SEC_LICENSE_PKT flag, and returns the licensing preamble and body data.
 func (c *Client) readLicensingPDU() (lic.Preamble, []byte, error) {
-	channelID, userData, err := c.readDataPDU()
+	channelID, userData, err := c.readLicensingDataPDU()
 	if err != nil {
 		return lic.Preamble{}, nil, fmt.Errorf("%w: %v", ErrLicensingFailed, err)
 	}
@@ -2039,10 +2088,21 @@ func (c *Client) receiveLoop() {
 					c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
 					continue
 				}
+				if channelID == c.messageChannelID && c.messageChannelID != 0 {
+					if err := c.handleMessageChannel(userData); err != nil {
+						c.handleDisconnect(err)
+						return
+					}
+					continue
+				}
 				// Centralized security-layer decryption for ALL channels
 				// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
 				// every encrypted packet to stay in sync.
 				userData = c.decryptSlowPath(userData)
+				if err := c.autodetect.received(len(userData)); err != nil {
+					c.handleDisconnect(err)
+					return
+				}
 				if channelID != c.ioChannelID {
 					c.handleVirtualChannelData(channelID, userData)
 					continue
@@ -2135,6 +2195,7 @@ func (c *Client) resetForReconnect() {
 	c.tlsMinVersion = 0
 	c.tlsMaxVersion = 0
 	c.credsspVersion = 0
+	c.rawNTLM = false
 	c.channelIDs = nil
 	c.channelNames = nil
 	c.channelHandlers = nil
@@ -2588,6 +2649,10 @@ func (c *Client) handleFastPathPDU(actionByte byte, data []byte) {
 		}
 	}
 
+	if err := c.autodetect.received(len(data)); err != nil {
+		c.handleDisconnect(err)
+		return
+	}
 	updates, err := fastpath.DecodeUpdates(c.logFp, data)
 	if err != nil {
 		c.logFp.LogAttrs(context.Background(), slog.LevelError, "fast-path decode error", slog.Any("err", err))

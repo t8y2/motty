@@ -202,7 +202,7 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
 	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1600})
 	for _, id := range []ui.ID{
 		hitSettingsParallel1, hitSettingsParallel4, hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
 		hitSettingsConfigureColumns, hitSettingsDownloadDirectory, hitSettingsDownloadAsk,

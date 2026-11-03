@@ -20,6 +20,13 @@ files.
 
 Changed:
 
+* Network characteristics auto-detection (MS-RDPBCGR 2.2.14): negotiate and join
+  the MCS message channel, answer server RTT/bandwidth requests during licensing
+  and the connected session, and expose the server's average RTT with its sample
+  timestamp. No synthetic input, graphics probes or client polling are added.
+  Continuous bandwidth measurements count normal slow-path, fast-path and
+  virtual-channel PDU data after the security header and before decompression;
+  connect-time measurements count only their explicit payloads.
 * `Options.Dial`, `Options.VerifyCertificate`: the connection comes from the
   caller (SSH tunnel, proxy) and the server's certificate is passed to the caller
   before any credential is sent, instead of `net.DialTimeout` and a blanket
@@ -30,6 +37,12 @@ Changed:
   `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
   credentials were sent counts as a refusal). Upstream made 14 logon attempts for
   one wrong password, which locks an account out.
+* CredSSP can reconnect once with raw NTLM tokens when SPNEGO negotiation fails
+  before credentials are sent, for older WinPR servers. Raw NTLM keeps TLS,
+  NTLMv2 MIC/channel binding and public-key verification, but does not consume
+  SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
+  write stop probing and TLS-only fallback; protocol errors remain distinct
+  from credential refusals so the UI does not discard a saved password for them.
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.

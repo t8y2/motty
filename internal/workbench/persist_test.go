@@ -42,6 +42,9 @@ func freshOptions(t testing.TB) Options {
 	return Options{
 		KnownHostsPath: filepath.Join(dir, "known_hosts"),
 		Dial:           func(sshconn.Config) Connection { return &fakeConn{} },
+		// Like newTestState, a test never opens the machine's keychain, including
+		// the options a test hands to New itself.
+		Keystore: &memKeys{},
 		// The tests read English; the machine running them may not speak it.
 		PreferredLanguages:    func() []string { return nil },
 		SystemAppearance:      func() app.Appearance { return app.AppearanceUnknown },

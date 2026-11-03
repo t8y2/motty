@@ -224,7 +224,14 @@ func (a appearance) palette() *palette {
 // radius is every corner the workbench draws itself, derived from them, so one
 // change to the corners reaches the framework's controls and the workbench's own
 // tabs, rows and cards alike.
-var metrics, radius = workbenchMetrics()
+// textScaleFactors are the interface text sizes a user can choose: the whole
+// window's text drawn a step smaller or larger, its layout intact. The terminal
+// has a font size of its own and does not follow.
+const (
+	textScaleSmallFactor   = float32(0.9)
+	textScaleRegularFactor = float32(1)
+	textScaleLargeFactor   = float32(1.15)
+)
 
 type radii struct {
 	item    float32 // a small row, chip or close button
@@ -233,9 +240,28 @@ type radii struct {
 	surface float32 // a dialog or a large panel
 }
 
-func workbenchMetrics() (ui.Metrics, radii) {
+var metrics, radius = workbenchMetrics(textScaleRegularFactor)
+
+// barTitleSize is the size of the name in a pane's bar. It follows the text
+// scale, as every text the window paints does.
+var barTitleSize = float32(13)
+
+func workbenchMetrics(scale float32) (ui.Metrics, radii) {
 	m := ui.DefaultMetrics()
+	if scale != textScaleRegularFactor {
+		m.FontSizeS *= scale
+		m.FontSizeM *= scale
+		m.FontSizeL *= scale
+	}
 	return m, radii{item: m.RadiusItem(), control: m.RadiusControl, popup: m.RadiusPopup(), surface: m.RadiusSurface}
+}
+
+// applyTextMetrics rebuilds the size tokens every component paints with, for a
+// scale the user has just chosen. Everything that follows the metrics or the
+// tokens derived from them changes in the next paint; nothing cached survives.
+func applyTextMetrics(scale float32) {
+	metrics, radius = workbenchMetrics(scale)
+	barTitleSize = 13 * scale
 }
 
 // theme maps the palette onto the component theme tokens so framework

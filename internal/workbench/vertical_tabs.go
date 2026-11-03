@@ -4,7 +4,6 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
-	layoutcore "motty/internal/workspace"
 )
 
 var (
@@ -104,7 +103,7 @@ func (state *State) verticalTabsReserve(size ui.Size) float32 {
 
 func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	view := &state.verticalTabs
-	if state.tabOrientation != tabsVertical || !state.terminalPage() || !view.autoHide ||
+	if state.tabOrientation != tabsVertical || (!state.terminalPage() && state.activeSFTPWindow() == nil) || !view.autoHide ||
 		state.modal != modalNone || state.tabMenu.open || state.tabDrag.pressed || event.Captured {
 		return false
 	}
@@ -118,6 +117,15 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	changed := view.over != over
 	view.over = over
 	return changed
+}
+
+// fileTabVerticalRailAt reports whether a window point belongs to the vertical
+// rail painted over a file-tab page. When auto-hide expands the rail, most of
+// its width overlaps the page's fixed content origin; input must stop at the
+// rail rather than reaching the file manager beneath it.
+func (state *State) fileTabVerticalRailAt(x, y float32) bool {
+	return state.tabOrientation == tabsVertical && state.activeSFTPWindow() != nil &&
+		pointInRect(x, y, state.verticalTabs.bounds)
 }
 
 // verticalTabsKeyboardFocused says the keyboard has moved into the sidebar. A
@@ -136,9 +144,11 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	}
 	view, pal, m := &state.verticalTabs, state.pal, state.messages
 	terminal := state.terminalPage()
+	fileManager := state.activeSFTPWindow() != nil
+	sideRail := terminal || fileManager
 	var bounds ui.Rect
 	compact := false
-	if terminal {
+	if sideRail {
 		width := state.verticalTabsReserve(size)
 		compact = view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(canvas)
 		if view.autoHide && !compact {
@@ -158,7 +168,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	defer canvas.Unclip()
 	canvas.Fill(bounds, pal.shell)
 	canvas.HitWithOptions(hitVerticalTabs, bounds, m.TrayTitle, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true})
-	if terminal {
+	if sideRail {
 		canvas.Fill(ui.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
 	} else {
 		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
@@ -174,10 +184,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		state.paintIconButton(canvas, hitVerticalTabsPin, icon, ui.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
 	}
 	list := ui.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-12, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
-	active := layoutcore.WorkspaceID(0)
-	if terminal {
-		active = state.deck.ActiveWorkspace()
-	}
+	active := state.deck.ActiveWorkspace()
 	pitch := verticalTabHeight + barGap
 	rows := state.workspaceTabs
 	if view.grouping {
@@ -223,7 +230,11 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 	for index := range tabs {
 		tab := &tabs[index]
 		var session *Session
-		if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
+		if tab.fileSession != 0 {
+			if manager := state.sftpWindows[tab.fileSession]; manager != nil && !manager.closed {
+				session = &manager.session
+			}
+		} else if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
 			session, _ = state.sessionByIDPointer(uint32(pane.SessionID))
 		}
 		badge := tab.badge.Rect()
@@ -240,6 +251,8 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 		} else if state.tabOrientation == tabsVertical {
 			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
 		}
-		state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+		if tab.workspace.ID != 0 {
+			state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+		}
 	}
 }

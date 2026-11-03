@@ -395,6 +395,37 @@ func TestConnectedStatusDetectsRemoteSystemOnASeparateSession(t *testing.T) {
 	}
 }
 
+// fnOS serves Debian's OpenSSH, so its banner names the distribution it was
+// built from. That guess is never reported: the host is asked first, and the
+// badge does not flip from Debian to fnOS when the answer arrives.
+func TestTheBannerGuessIsNotReportedWhileTheHostIsBeingAsked(t *testing.T) {
+	release := make(chan struct{})
+	server := startServer(t, func(server *testServer) {
+		server.password = "pw"
+		server.version = "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u7"
+		server.exec = func(string) (string, uint32) {
+			<-release
+			return "kernel=Linux\nid=debian\nmarker=/usr/trim\n", 0
+		}
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("pw")
+	connected := h.phase(PhaseConnected)
+	if connected.System != SystemUnknown {
+		t.Fatalf("the banner named the host as %v before it was asked", connected.System)
+	}
+	close(release)
+	status := h.until("the host's own answer", func(status Status) bool {
+		return status.System == SystemFnOS
+	})
+	if status.SystemProvisional {
+		t.Fatal("the host's own answer was marked as a guess")
+	}
+}
+
 func TestKeyboardInteractiveSingleHiddenQuestionUsesThePasswordPrompt(t *testing.T) {
 	server := startServer(t, func(s *testServer) { s.question = "Verification code: "; s.password = "123456" })
 	h := dial(t, server, nil)

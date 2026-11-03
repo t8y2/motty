@@ -66,7 +66,6 @@ var (
 	hitAIHistoryOpen     = tree.Sub(aiPanelHits, tree.Name("ai-history-open"))   // saved conversations, to open
 	hitAIHistoryDelete   = tree.Sub(aiPanelHits, tree.Name("ai-history-delete")) // and to delete
 	hitAIHistoryRename   = tree.Sub(aiPanelHits, tree.Name("ai-history-rename")) // and to rename
-	hitAIRenameDismiss   = tree.ID(aiPanelHits, "ai-rename-dismiss")
 	hitAIRenameClose     = tree.ID(aiPanelHits, "ai-rename-close")
 	hitAIRenameCancel    = tree.ID(aiPanelHits, "ai-rename-cancel")
 	hitAIRenameSubmit    = tree.ID(aiPanelHits, "ai-rename-submit")
@@ -338,7 +337,7 @@ func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size ui.Size) 
 func (state *State) aiSharedWidth(workspaceID layoutcore.WorkspaceID, size ui.Size) float32 {
 	base := state.baseWorkspacePixelBounds(size)
 	if workspaceID == 0 {
-		return size.Width - navigationWidth
+		return size.Width - navigationWidth - state.toolbarDockSideReserve()
 	}
 	available := base.Width
 	available -= state.independentMonitorReserve(workspaceID, size)

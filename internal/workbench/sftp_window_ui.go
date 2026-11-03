@@ -134,8 +134,9 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	f.End()
 	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, body.Rect(), w.ui.fraction).LimitsPx(220, 220)
 	panels := w.ui.split.Paint(m.SFTPWindow.Title)
-	w.paintPane(canvas, panels.First, true)
-	w.paintPane(canvas, panels.Second, false)
+	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
+	w.paintPane(canvas, panels.First, firstLocal)
+	w.paintPane(canvas, panels.Second, !firstLocal)
 	if w.queueCount() > 0 {
 		w.paintQueue(canvas, queue.Rect())
 	} else {
@@ -148,8 +149,9 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	if w.view.dialog != sftpDialogNone {
 		w.owner.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, w.view)
 	}
+	w.owner.paintSFTPFileProperties(canvas, ui.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
-		components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, m.SFTPWindow.CloseDescription, m.SFTPWindow.CloseTransfers, m.Cancel)
+		components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
 	if w.externalConflict != 0 && !w.closeConfirm && w.view.dialog == sftpDialogNone {
 		if edit := w.owner.editByID(w.externalConflict); edit != nil {
@@ -174,7 +176,7 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 }
 
 func (w *sftpWindow) canTransfer(local bool) bool {
-	if !w.connected() || w.view.worker == nil || w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.path == "" || w.view.lfolder.path == "" {
+	if !w.connected() || w.view.worker == nil || w.navigationBusy() || w.bookmark.open || w.fileProperties.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.path == "" || w.view.lfolder.path == "" {
 		return false
 	}
 	return w.selection(local).count > 0
@@ -456,29 +458,28 @@ func (w *sftpWindow) paintQueue(canvas *ui.Canvas, bounds ui.Rect) {
 
 func (w *sftpWindow) paintMenu(canvas *ui.Canvas) {
 	rows := w.owner.sftpMenuRows(&w.session, w.view)
-	m := w.owner.messages
 	if selectedSFTPCount(w.view) == 0 {
 		rows = menuRows{}
 	}
-	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitSFTPNewDirectory, Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus]})
-	if !w.activeLocal {
-		rows.add(components.ContextMenuItem{ID: hitSFTPUpload, Label: m.SFTPUpload, Icon: lucideIcons[iconUpload]})
-		rows.add(components.ContextMenuItem{ID: hitSFTPUploadDirectory, Label: m.SFTPUploadDirectory, Icon: lucideIcons[iconFolderUp]})
-		rows.add(components.ContextMenuItem{ID: hitSFTPNewLink, Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink]})
-	}
-	if selectedSFTPCount(w.view) > 0 {
-		rows.add(components.ContextMenuItem{ID: hitSFTPWindowMenuCopy, Label: m.SFTPWindow.CopyPath})
-	}
 	for i := range rows.entries[:rows.count] {
-		item := &rows.entries[i].item
+		entry := &rows.entries[i]
+		if entry.separator {
+			continue
+		}
+		item := &entry.item
 		action := item.ID
 		if mapped, ok := sftpMenuAction(action); ok {
 			action = mapped
 		}
+		if action == hitSFTPCopyPath {
+			item.ID = hitSFTPWindowMenuCopy
+			continue
+		}
 		if index := sftpWindowActionIndex(action); index >= 0 {
 			item.ID = sftpWindowMenuActions.At(index)
-			item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || !w.activeLocal && (!w.connected() || w.view.busy)
+			if action != hitSFTPProperties {
+				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || !w.activeLocal && (!w.connected() || w.view.busy)
+			}
 		}
 	}
 	theme := w.owner.contextMenuTheme()

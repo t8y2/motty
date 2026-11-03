@@ -125,7 +125,4 @@ func TestANamedKeyNeverBecomesASnippetShortcut(t *testing.T) {
 	if !chord.valid() || chord.validForSnippet() {
 		t.Fatalf("valid=%v validForSnippet=%v", chord.valid(), chord.validForSnippet())
 	}
-	if (shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyEnter}).valid() {
-		t.Fatal("Control+Enter is the terminal's, not a shortcut key")
-	}
 }

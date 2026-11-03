@@ -31,6 +31,31 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemNixOS:       {icons.Nixos, ui.RGB(82, 119, 195)},
 	sshconn.SystemGentoo:      {icons.Gentoo, ui.RGB(84, 72, 122)},
 	sshconn.SystemManjaro:     {icons.Manjaro, ui.RGB(53, 191, 92)},
+	// The appliances and the derivatives below carry their brand color, darkened
+	// where white on it would fall under a 3:1 contrast.
+	sshconn.SystemSynology:       {icons.Synology, ui.RGB(76, 82, 88)},
+	sshconn.SystemQNAP:           {icons.Qnap, ui.RGB(12, 46, 130)},
+	sshconn.SystemFnOS:           {icons.Fnos, ui.RGB(51, 116, 219)},
+	sshconn.SystemTrueNAS:        {icons.Truenas, ui.RGB(0, 149, 213)},
+	sshconn.SystemUnraid:         {icons.Unraid, ui.RGB(241, 90, 44)},
+	sshconn.SystemOpenMediaVault: {icons.Openmediavault, ui.RGB(61, 143, 192)},
+	sshconn.SystemProxmox:        {icons.Proxmox, ui.RGB(229, 112, 0)},
+	sshconn.SystemOpenWrt:        {icons.Openwrt, ui.RGB(0, 160, 204)},
+	sshconn.SystemDeepin:         {icons.Deepin, ui.RGB(0, 124, 255)},
+	sshconn.SystemUOS:            {icons.Uos, ui.RGB(0, 150, 235)},
+	sshconn.SystemKylin:          {icons.Kylin, ui.RGB(208, 18, 27)},
+	sshconn.SystemPopOS:          {icons.Popos, ui.RGB(46, 154, 166)},
+	sshconn.SystemZorin:          {icons.Zorin, ui.RGB(14, 134, 198)},
+	sshconn.SystemElementary:     {icons.Elementary, ui.RGB(47, 134, 212)},
+	sshconn.SystemVoid:           {icons.Void, ui.RGB(71, 128, 97)},
+	sshconn.SystemSlackware:      {icons.Slackware, ui.RGB(60, 60, 60)},
+	// A vendor's own distribution carries the vendor's mark and color.
+	sshconn.SystemAnolis:      {icons.Anolis, ui.RGB(78, 154, 39)},
+	sshconn.SystemTencentOS:   {icons.Tencentos, ui.RGB(0, 82, 217)},
+	sshconn.SystemAmazonLinux: {icons.Amazonlinux, ui.RGB(35, 47, 62)},
+	sshconn.SystemAzureLinux:  {icons.Azurelinux, ui.RGB(0, 120, 212)},
+	sshconn.SystemOracleLinux: {icons.Oraclelinux, ui.RGB(199, 70, 52)},
+	sshconn.SystemESXi:        {icons.Esxi, ui.RGB(96, 112, 120)},
 }
 
 // badgeGlyph is one filled glyph of a system's badge: the icon, how far the badge's
@@ -72,7 +97,13 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 		}}, true
 	}
 	if badge, ok := distroBadges[system]; ok {
-		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, 0.16, white}}}, true
+		// VMware's mark is a monogram two and a half times wider than it is tall,
+		// so the square-mark inset would leave it a few pixels high.
+		inset := float32(0.16)
+		if system == sshconn.SystemESXi {
+			inset = 0.10
+		}
+		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, inset, white}}}, true
 	}
 	return badgeArt{}, false
 }
@@ -153,17 +184,32 @@ func roundedSquare(side, radius float32) []ui.PathCommand {
 }
 
 // scaledCommands moves a glyph's path into the badge's square, inset from its edge by
-// the given share of it.
+// the given share of it. The glyph is drawn in one color, so it takes every path it
+// has, whether the compiler left them at the top level or in layers for their fills.
 func scaledCommands(icon ui.Icon, inset float32) []ui.PathCommand {
 	margin := badgeIconView * inset
 	scale := (badgeIconView - 2*margin) / icon.ViewBox
 	place := func(point ui.Point) ui.Point {
 		return ui.Point{X: margin + point.X*scale, Y: margin + point.Y*scale}
 	}
-	commands := make([]ui.PathCommand, len(icon.Commands))
-	for index, command := range icon.Commands {
+	commands := glyphCommands(icon)
+	for index, command := range commands {
 		command.Point, command.Control1, command.Control2 = place(command.Point), place(command.Control1), place(command.Control2)
 		commands[index] = command
+	}
+	return commands
+}
+
+// glyphCommands is a glyph's geometry whatever form the compiler left it in: a
+// single-fill icon carries its paths at the top level, one that names fill colors
+// carries them in layers.
+func glyphCommands(icon ui.Icon) []ui.PathCommand {
+	if len(icon.Layers) == 0 {
+		return append([]ui.PathCommand(nil), icon.Commands...)
+	}
+	var commands []ui.PathCommand
+	for _, layer := range icon.Layers {
+		commands = append(commands, layer.Commands...)
 	}
 	return commands
 }

@@ -377,7 +377,7 @@ func (state *State) aiDialogClick(id ui.ID) {
 		switch id {
 		case hitAISetFormPreset:
 			cfg.presetOpen = true
-		case hitAISetFormDismiss, hitAISetFormClose, hitAISetFormCancel:
+		case hitAISetFormClose, hitAISetFormCancel:
 			state.aiCloseDialog()
 		case hitAISetFormSubmit:
 			state.aiSubmitProvider()

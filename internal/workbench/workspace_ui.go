@@ -17,8 +17,36 @@ const (
 )
 
 func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
+	return state.toolbarDockContentBounds(size, true)
+}
+
+// Background terminals retain their eventual chrome; section pages only
+// reserve the globally available docked actions.
+func (state *State) visibleWorkspacePixelBounds(size ui.Size) ui.Rect {
+	return state.toolbarDockContentBounds(size, state.terminalPage())
+}
+
+func (state *State) toolbarDockContentBounds(size ui.Size, includeTerminal bool) ui.Rect {
+	bounds := state.fullWorkspacePixelBounds(size)
+	left := state.toolbarDockSideReserveFor(true, includeTerminal)
+	right := state.toolbarDockSideReserveFor(false, includeTerminal)
+	bounds.X += left
+	bounds.Width = max(bounds.Width-left-right, 0)
+	bounds.Height = max(bounds.Height-state.toolbarDockBottomReserve(includeTerminal), 0)
+	return bounds
+}
+
+func (state *State) fullWorkspacePixelBounds(size ui.Size) ui.Rect {
 	left := state.verticalTabsReserve(size)
 	return ui.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+}
+
+func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
+	if _, ok := state.terminalSideRailSession(); !ok {
+		return ui.Rect{}, false
+	}
+	bounds := state.toolbarDockSideBounds(size)
+	return bounds, true
 }
 
 func (state *State) workspacePixelBounds(size ui.Size) ui.Rect {
@@ -52,8 +80,7 @@ func (state *State) contextPanelExtent(workspace ui.Rect, preferred float32) flo
 }
 
 func (state *State) contextPanelWidth(workspace ui.Rect, context layoutcore.ContextState) float32 {
-	width := context.Width
-	return state.contextPanelExtent(workspace, width)
+	return state.contextPanelExtent(workspace, context.Width)
 }
 
 func pixelBounds(frame ui.Rect, bounds FractionBounds) ui.Rect {
@@ -334,7 +361,7 @@ func (state *State) paintContextSFTP(canvas *ui.Canvas, bounds ui.Rect, session 
 // and close button as the list, then what the panel needs to start.
 func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, session *Session) {
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := state.connectionBarColors(session, false)
+	headerBackground, headerBorder := pal.workspace, pal.line
 	bounds := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
 	canConnect := session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.

@@ -517,6 +517,35 @@ func defaultTabs(cols int, old []bool) []bool {
 
 func (t *Terminal) blankCell() Cell { return Cell{BG: t.pen.bg} }
 
+// touch records that columns up to end have been written. Columns past it still
+// hold the blank the line was recycled with, so pushHistory starts trimming
+// there instead of at the row's width.
+func (l *line) touch(end int) {
+	if end > l.used {
+		l.used = min(end, len(l.cells))
+	}
+}
+
+// span hands out cells x..x+n to be written and records the row as written up
+// to there. Cells past used are blank, so anything but a blank goes through
+// here; a write that skips it leaves text the scrollback then trims away.
+func (l *line) span(x, n int) []Cell {
+	l.touch(x + n)
+	return l.cells[x : x+n]
+}
+
+// fill writes cell over cells a..b-1. A blank that carries a background is
+// content of its own, so the row counts as written up to b.
+func (l *line) fill(a, b int, cell Cell) {
+	if cell != (Cell{}) {
+		l.touch(b)
+	}
+	cells := l.cells[a:b]
+	for i := range cells {
+		cells[i] = cell
+	}
+}
+
 func (t *Terminal) blankLines(n int) []*line {
 	lines := make([]*line, n)
 	for i := range lines {
@@ -530,14 +559,28 @@ func (t *Terminal) allocLine() *line { return t.recycle(&line{}) }
 // recycle turns l into a fresh blank line of the current width, reusing its
 // storage. Giving it a new ID keeps caches built from the old content honest.
 func (t *Terminal) recycle(l *line) *line {
+	// A recycled row is written from column zero again, so it only has to lose
+	// what it wrote: the cells past used are blank already. They can hold stale
+	// cells when the row grows back over a width it had before, so the cells a
+	// shorter slice never covered are cleared too.
+	to := l.used
 	if cap(l.cells) < t.cols {
 		l.cells = make([]Cell, t.cols)
+		to = 0
 	} else {
+		if t.cols > len(l.cells) {
+			// The row grew back over a width it had before: the cells the
+			// shorter slice never covered can still hold its old content.
+			to = t.cols
+		}
 		l.cells = l.cells[:t.cols]
 	}
-	blank := t.blankCell()
-	for i := range l.cells {
-		l.cells[i] = blank
+	// The runtime zeroes cells faster than the blank-cell loop can store them.
+	if blank := t.blankCell(); blank == (Cell{}) {
+		clear(l.cells[:to])
+		l.used = 0
+	} else {
+		l.fill(0, len(l.cells), blank)
 	}
 	l.marks = l.marks[:0]
 	l.hyperlinks = nil
@@ -557,7 +600,7 @@ func (t *Terminal) pushHistory(l *line) {
 	if t.histMax == 0 {
 		return
 	}
-	used := len(l.cells)
+	used := l.used
 	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
 		used--
 	}
@@ -577,6 +620,7 @@ func (t *Terminal) pushHistory(l *line) {
 		dst.cells = make([]Cell, used)
 	}
 	dst.cells = dst.cells[:used]
+	dst.used = used
 	copy(dst.cells, l.cells[:used])
 	dst.marks = append(dst.marks[:0], l.marks...)
 	if used > 0 && l.hyperlinks != nil {
@@ -616,6 +660,7 @@ func (t *Terminal) popHistory() *line {
 		l.hyperlinks = &links
 	}
 	t.fitCols(l)
+	l.used = len(l.cells)
 	t.view = min(t.view, t.histCount)
 	return l
 }
@@ -794,6 +839,7 @@ func (t *Terminal) fitCols(l *line) {
 		l.fitHyperlinks(t.cols)
 		return
 	}
+	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
 	l.version++
 }
@@ -808,11 +854,8 @@ func (t *Terminal) eraseRange(l *line, a, b int) {
 	if t.images != nil {
 		t.images.erase(l.id, a, b)
 	}
-	blank := t.blankCell()
 	l.dropMarks(a, b)
-	for i := a; i < b; i++ {
-		l.cells[i] = blank
-	}
+	l.fill(a, b, t.blankCell())
 	if l.hyperlinks != nil {
 		clear((*l.hyperlinks)[a:b])
 		if a == 0 && b == t.cols {

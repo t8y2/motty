@@ -102,6 +102,7 @@ func (state *State) clickStateNotice(id ui.ID) {
 		return
 	}
 	state.closeModal()
+	state.offerDevelopmentImport()
 	state.showNextPrompt()
 }
 

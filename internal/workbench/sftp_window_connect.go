@@ -8,14 +8,12 @@ import (
 // A host-menu connection has no terminal, pane or persisted session. SSH's
 // existing authentication dialogs and vault still own host trust and secrets.
 func (state *State) openHostSFTPWindow(host Host) {
-	if !host.isSSH() || host.ID == localHostID || state.options.OpenContentWindow == nil {
+	if !host.isSSH() || host.ID == localHostID || !state.sftpManagersAvailable() {
 		return
 	}
 	for _, w := range state.sftpWindows {
 		if !w.closed && w.session.HostID == host.ID {
-			if w.window != nil {
-				w.window.Show()
-			}
+			w.reveal()
 			return
 		}
 	}
@@ -23,7 +21,11 @@ func (state *State) openHostSFTPWindow(host Host) {
 	state.nextSessionID++
 	w := state.newSFTPWindow(&source)
 	w.ownsConnection = true
-	w.show()
+	if state.sftpOpenMode == sftpOpenTab {
+		w.openTab()
+	} else {
+		w.show()
+	}
 	w.connect()
 }
 
@@ -49,7 +51,7 @@ func (w *sftpWindow) connect() {
 	config, valid := state.sshConfigFor(s, s.host)
 	if !valid {
 		s.phase, s.err = sshconn.PhaseFailed, errors.New(state.status)
-		w.window.Invalidate()
+		w.invalidate()
 		return
 	}
 	if state.shareConnections == shareConnectionsOn {
@@ -59,10 +61,10 @@ func (w *sftpWindow) connect() {
 		s.conn = state.options.Dial(config)
 	}
 	if s.relay != nil {
-		s.relay.set(func() { w.window.Invalidate(); state.options.Invalidate() })
+		s.relay.set(w.invalidate)
 	}
 	state.pumpSFTPConnections()
-	w.window.Invalidate()
+	w.invalidate()
 }
 
 func (state *State) raiseSFTPAuthentication(session *Session) {
@@ -87,7 +89,7 @@ func (state *State) pumpSFTPConnections() {
 		if status.Endpoint.Host != "" {
 			s.endpoint = status.Endpoint
 		}
-		if status.System != sshconn.SystemUnknown {
+		if shouldAdoptSystem(s.host.System, status.System, status.SystemProvisional) {
 			s.host.System = status.System
 		}
 		if state.modalSession == s.ID && !isPromptPhase(s.phase) {

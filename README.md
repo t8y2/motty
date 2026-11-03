@@ -73,6 +73,20 @@ servers, stay separate. Grouping only changes the vertical list: it never merges
 or disconnects sessions, and turning it off or returning to horizontal mode
 restores the original order.
 
+Window and terminal toolbar icons can be dragged to the top, either side's
+upper or lower group, or either end of the bottom bar. A drop commits on release;
+Escape or dropping outside a dock keeps the layout unchanged. Right-click an
+icon to move or hide it, customize the toolbar, or restore its default layout.
+Settings > General also controls visibility, order and position. Placements
+stay on this device, and terminal actions follow the active split. The SFTP
+toolbar keeps its separate visibility and ordering settings.
+
+Settings > General > Terminal toolbar > Customize offers small, medium and large
+sizes for both side rails and the bottom bar, including relocated window actions.
+The choice stays on this device; top-bar icons keep their standard size.
+Connection colors remain on tabs and host markers, while terminal, file and
+monitor headers use neutral backgrounds.
+
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword
@@ -309,13 +323,18 @@ restart when a Go file in this repository or `../viva` changes; watch mode needs
 `fswatch`. One-shot mode does not. `tools/dev.sh --once` is the same entry
 point as `make run`.
 
-The development entry shares the default data directory, hosts, settings, AI
-configuration and vault with the release build. Only the development workspace
-(the current page, sessions, active session and tab layout) has its own local
-record, so a development restart does not replace the release workspace. Quit
-the release build completely, including a copy hidden in the tray, before
-starting the development build. The builds use the same single-instance claim
-and do not support parallel writes or live cross-process refresh.
+Development builds use `motty-dev` under the platform's configuration directory,
+separate from the release build's unchanged `motty` directory. Their vault keys
+also use a separate system-secret namespace. The default copies can run side by
+side without upgrading each other's databases. When an unused default development
+profile finds release data, its first-run dialog offers **Import copy** or
+**Start empty**. Import reads the release profile without changing it, copies
+hosts, shared settings and trusted keys, and optionally re-encrypts saved
+passwords under the development key. It never copies open sessions or cloud
+logins. Closing the dialog postpones the choice; failures stay visible and
+unfinished imports can resume without replacing current hosts or passwords.
+Existing profiles and explicit `MOTTY_DATA_DIR` profiles are not auto-imported;
+they can still restore an encrypted backup through Backup & sync.
 
 On macOS the standard entry creates or reuses a private local development
 signing identity under `~/Library/Application Support/motty/development-signing`.
@@ -332,12 +351,20 @@ the entry warns that Keychain authorization may repeat. `go run ./cmd/motty`
 is release behaviour, while `go run -tags dev ./cmd/motty` bypasses the signing
 helper and is intended only for diagnosis.
 
-The shared data is not a test sandbox. A development build can upgrade the
-configuration or AI schema in a way an older release cannot read, and vault or
-cloud-sync operations affect the same daily environment. Back up first and use
-an explicit `MOTTY_DATA_DIR` plus test credentials for migration, deletion,
-master-password or secret-reset tests. A separate directory changes application
-files only; it does not automatically isolate entries in the system Keychain.
+`MOTTY_DATA_DIR` still overrides the directory. Use disposable data and test
+credentials for destructive tests: profiles within one build variant still
+share its system-secret namespace. Never point a development build at production
+data or configure production cloud sync unless that shared access is intentional.
+Portable development builds use `motty-dev-data`, not `motty-data`.
+
+Configuration epoch 23 introduces lossless field updates. Compatible additions
+to JSON objects no longer require a format bump; unknown fields and records
+survive saves, sync and backup restoration. Conflicting edits fail rather than
+overwrite unread data. Arrays remain atomic, so incompatible element changes
+still require a new epoch. Application writer versions are diagnostic only.
+Older epochs (including 19–22) upgrade once; already released older binaries
+cannot read epoch 23. Do not edit the database's format number to bypass this
+protection. See [storage compatibility](tools/README.md#storage-compatibility).
 
 ## 🔐 Security
 

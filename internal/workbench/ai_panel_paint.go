@@ -422,32 +422,6 @@ func (state *State) aiPanelBeginPaint() {
 	panel.linkRows, panel.linkBase = 0, 0
 }
 
-// paintAIBarButton is the window-bar button that shows and hides the panel. A
-// dot on it says a question waits there while the panel is out of sight. The bar
-// places the button; the highlight and the dot are declared over its column.
-func (state *State) paintAIBarButton(canvas *ui.Canvas, x float32) {
-	m, pal := state.messages.AIPanel, state.pal
-	visible := state.aiPanelVisible()
-	column := ui.Rect{X: x, Width: barButtonSize, Height: windowBarHeight}
-	if visible {
-		f := state.aiFlex.barButton.Begin(canvas, state.Theme(), column)
-		f.Column().Fill().Center().Children(func() {
-			f.Column().Size(barButtonSize, barButtonSize).Background(pal.accentSoft).Radius(radius.item)
-		})
-		f.End()
-	}
-	state.paintBarButton(canvas, hitAIToggle, x, iconBot, m.ToggleTip)
-	if len(state.ai.approvals) > 0 && !visible {
-		f := state.aiFlex.barButton.Begin(canvas, state.Theme(), column)
-		f.Column().Fill().Center().Children(func() {
-			f.Column().Size(barButtonSize, barButtonSize).PadSides(3, 3, 0, 0).Items(flex.End).Children(func() {
-				f.Column().Size(7, 7).Background(pal.warning).Radius(3.5)
-			})
-		})
-		f.End()
-	}
-}
-
 // paintAIPanel draws the assistant over the active terminal workspace: a column
 // the panes made room for, or a drawer when the window is too narrow.
 func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
@@ -460,8 +434,9 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
 		bounds := ui.Rect{
 			X: size.Width - reserve + sectionCardMargin, Y: windowBarHeight,
-			Width: reserve - 2*sectionCardMargin, Height: max(size.Height-windowBarHeight-sectionCardMargin, 0),
+			Width: reserve - 2*sectionCardMargin, Height: max(size.Height-windowBarHeight-sectionCardMargin-state.toolbarDockBottomReserve(false), 0),
 		}
+		bounds.X -= state.toolbarDockSideReserveFor(false, false)
 		canvas.RoundedBorder(bounds, radius.surface, 1, pal.windowStroke, pal.workspace)
 		// Keep the resize target in the gutter. Only hover/press/focus paints a
 		// separator; the resting cards already have their own rounded borders.
@@ -480,7 +455,8 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), size); reserve > 0 {
 		// Under the window bar, at the right: a hairline, then the panel.
 		var bounds, divider flex.Box
-		f := state.aiFlex.shell.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
+		inner := state.baseWorkspacePixelBounds(size)
+		f := state.aiFlex.shell.Begin(canvas, state.Theme(), ui.Rect{X: inner.X, Width: inner.Width, Height: inner.Y + inner.Height})
 		f.Column().Fill().Children(func() {
 			f.Column().Height(windowBarHeight).Shrink(0)
 			f.Row().Grow(1).Children(func() {
@@ -493,14 +469,16 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 		})
 		f.End()
 		// The hairline is the panel's left edge, and can be dragged to change its width.
-		window := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
-		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, divider.Rect().X/max(window.Width-1, 1)).
+		window := ui.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: inner.Height}
+		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, (divider.Rect().X-inner.X)/max(window.Width-1, 1)).
 			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
 		state.paintAIBody(canvas, bounds.Rect())
 		state.paintAIMenuOverlay(canvas)
 		return
 	}
-	viewport := state.baseWorkspacePixelBounds(size)
+	// A section page has no visible terminal rail, even while a background
+	// terminal keeps its PTY fitted for that rail.
+	viewport := state.visibleWorkspacePixelBounds(size)
 	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
 		Layer: drawerLayer, Scope: dialogScope, DismissID: hitAIDrawerDismiss,
 		Side: components.DrawerRight, ContentExtent: min(aiPanelWidth, size.Width*0.92),

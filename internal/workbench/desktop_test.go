@@ -203,7 +203,7 @@ func TestVNCHostAsksForThePasswordThenShowsTheDesktopAndSendsInput(t *testing.T)
 		t.Fatal("the picture was not painted")
 	}
 	hit := hitTerminalList.At(int(session.ID))
-	area := desktopLayout(ui.Size{Width: 1400, Height: 900}).area
+	area := desktopLayout(ui.Size{Width: 1400, Height: 900}, false).area
 	origin, scale := session.desk.place(area)
 	if scale <= 1 {
 		t.Fatalf("a 200x100 desktop in a 1400x900 pane is shown at %v", scale)

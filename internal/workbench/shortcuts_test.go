@@ -46,6 +46,180 @@ func TestShortcutCaptureRejectsConflictsAndPersistsTypedBinding(t *testing.T) {
 	}
 }
 
+func TestShortcutCanBeDeletedAndStaysDeletedAcrossRestarts(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	showShortcutSettings(state)
+	state.Click(hitShortcutRowList.At(int(shortcutFind - 1)))
+	if state.modal != modalShortcutCapture || state.shortcutCapture != shortcutFind {
+		t.Fatalf("shortcut row did not open capture: modal=%d action=%d", state.modal, state.shortcutCapture)
+	}
+	state.Click(hitShortcutCaptureDelete)
+	if state.modal != modalNone || state.shortcutCapture != shortcutNone || state.shortcutError != "" {
+		t.Fatalf("delete left modal=%d action=%d error=%q", state.modal, state.shortcutCapture, state.shortcutError)
+	}
+	if state.shortcuts.chords[shortcutFind].valid() {
+		t.Fatalf("the deleted shortcut is still bound: %+v", state.shortcuts.chords[shortcutFind])
+	}
+	if label := state.shortcuts.labels[shortcutFind]; label != "—" {
+		t.Fatalf("the deleted shortcut reads %q, want —", label)
+	}
+
+	restored := newTestState(t, options)
+	if restored.shortcuts.chords[shortcutFind].valid() {
+		t.Fatalf("the deleted shortcut came back: %+v", restored.shortcuts.chords[shortcutFind])
+	}
+	if got := restored.Shortcut(ui.KeyEvent{Modifiers: defaultShortcutModifier(), Text: "f"}); got.Handled {
+		t.Fatal("the deleted find chord still runs")
+	}
+	if got, want := restored.shortcuts.chords[shortcutNewTab], defaultShortcuts().chords[shortcutNewTab]; got != want {
+		t.Fatalf("an untouched shortcut = %+v, want its default %+v", got, want)
+	}
+}
+
+func TestDeleteOrBackspaceCanBeBoundAsShortcuts(t *testing.T) {
+	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyBackspace} {
+		state := newTestState(t, freshOptions(t))
+		state.openShortcutCapture(shortcutFind)
+		result := state.Key(ui.KeyEvent{Key: key})
+		if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutFind] != (shortcutChord{Named: key}) {
+			t.Fatalf("key %v result=%+v modal=%d chord=%+v", key, result, state.modal, state.shortcuts.chords[shortcutFind])
+		}
+	}
+}
+
+func TestFlexibleShortcutsCapturePersistAndKeepConflicts(t *testing.T) {
+	for _, event := range []ui.KeyEvent{
+		{Text: "x"}, {Text: "J", Modifiers: ui.ModifierShift},
+		{Text: "j", Modifiers: ui.ModifierAlt}, {Text: "/"}, {Text: "+"},
+		{Text: ",", Modifiers: ui.ModifierControl}, {Key: ui.KeySpace},
+		{Key: ui.KeyEnter, Modifiers: ui.ModifierShift}, {Key: ui.KeyUp, Modifiers: ui.ModifierAlt},
+		{Key: ui.KeyF1}, {Key: ui.KeyF12}, {Key: ui.KeyEscape, Modifiers: ui.ModifierAlt},
+	} {
+		chord, ok := shortcutChordFromKey(event)
+		if event.Key == ui.KeyUnknown {
+			chord, ok = shortcutChordFromEvent(event)
+		}
+		if !ok {
+			t.Fatalf("event is not a chord: %+v", event)
+		}
+		t.Run(chord.label(), func(t *testing.T) {
+			options := freshOptions(t)
+			state := newTestState(t, options)
+			state.openShortcutCapture(shortcutCommandPalette)
+			result := state.Key(event)
+			if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutCommandPalette] != chord {
+				t.Fatalf("capture result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords[shortcutCommandPalette])
+			}
+			restored := newTestState(t, options)
+			if restored.shortcuts.chords[shortcutCommandPalette] != chord {
+				t.Fatalf("restored chord=%+v, want %+v", restored.shortcuts.chords[shortcutCommandPalette], chord)
+			}
+			restored.openShortcutCapture(shortcutFind)
+			restored.Key(event)
+			if restored.modal != modalShortcutCapture || restored.shortcutError == "" {
+				t.Fatal("duplicate binding was accepted")
+			}
+			restored.clickShortcutCapture(hitShortcutCaptureCancel)
+			if result := restored.Key(event); !result.Handled || restored.modal != modalCommandPalette {
+				t.Fatalf("trigger result=%+v modal=%d", result, restored.modal)
+			}
+		})
+	}
+}
+
+func TestFlexibleShortcutsLeaveTextEditingAndEscCancellationAvailable(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.openShortcutCapture(shortcutFind)
+	before := state.shortcuts.chords[shortcutFind]
+	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	if state.modal != modalNone || state.shortcuts.chords[shortcutFind] != before {
+		t.Fatal("Escape did not cancel recording")
+	}
+	state.shortcuts.bind(shortcutCommandPalette, shortcutChord{Key: 'x'})
+	if result := state.Shortcut(ui.KeyEvent{Target: hitSearch, Text: "x"}); result.Handled || state.modal != modalNone {
+		t.Fatal("a plain shortcut stole input from the host search field")
+	}
+	if chord := (shortcutChord{Key: 'x', Modifiers: ui.ModifierAlt}); chord.validForSnippet() {
+		t.Fatal("application shortcuts unexpectedly changed snippet validation")
+	}
+}
+
+func TestFlexibleShortcutLeavesEmbeddedFileFieldsEditable(t *testing.T) {
+	state, local := openLocal(t)
+	manager := state.newSFTPWindow(local)
+	state.sftpTabs = []*sftpWindow{manager}
+	state.activeSFTPTab, state.activeSection = local.ID, sectionSFTP
+	state.shortcuts.bind(shortcutCommandPalette, shortcutChord{Key: 'x'})
+	manager.view.lfolder.filterOpen = true
+	for _, id := range []ui.ID{sftpWindowPath[0], sftpWindowFilter[0]} {
+		mounted := tree.MountID(sftpWindowMount(manager), id)
+		if !state.shortcutTextInput(mounted) {
+			t.Fatalf("file field %v was not recognized as native input", id)
+		}
+		if result := state.Shortcut(ui.KeyEvent{Text: "x", Target: mounted}); result.Handled || state.modal != modalNone {
+			t.Fatalf("typing in file field %v ran a shortcut: %+v modal=%d", id, result, state.modal)
+		}
+	}
+}
+
+func TestNamedFindBindingFocusesRemoteSearch(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.modal = modalRemoteTools
+	for _, chord := range []shortcutChord{{Named: ui.KeyF8}, {Modifiers: ui.ModifierAlt, Key: 'j'}} {
+		state.shortcuts.bind(shortcutFind, chord)
+		event := ui.KeyEvent{Key: chord.Named, Modifiers: chord.Modifiers}
+		if chord.Key != 0 {
+			event.Text = string(chord.Key)
+		}
+		if result := state.Key(event); !result.Handled || result.Focus != hitRemoteSearch {
+			t.Fatalf("Find did not focus remote search: chord=%+v result=%+v", chord, result)
+		}
+	}
+}
+
+func TestSingleShortcutResetKeepsBindingsWhenItsDefaultIsTaken(t *testing.T) {
+	for _, snippetOwner := range []bool{false, true} {
+		state := newTestState(t, freshOptions(t))
+		custom := shortcutChord{Named: ui.KeyF8}
+		defaultFind := state.shortcuts.chords[shortcutFind]
+		state.shortcuts.bind(shortcutFind, custom)
+		owner := state.shortcutActionLabel(shortcutCompletion)
+		if snippetOwner {
+			owner = "Snippet"
+			state.snippets.list = []snippet{{Name: owner, Command: "pwd", Shortcut: defaultFind}}
+		} else {
+			state.shortcuts.bind(shortcutCompletion, defaultFind)
+		}
+		before := state.shortcuts.chords
+		state.openShortcutCapture(shortcutFind)
+		state.Click(hitShortcutCaptureReset)
+		if state.modal != modalShortcutCapture || !strings.Contains(state.shortcutError, owner) || state.shortcuts.chords != before {
+			t.Fatalf("reset changed a conflicting binding: modal=%d error=%q", state.modal, state.shortcutError)
+		}
+		if snippetOwner && state.snippets.list[0].Shortcut != defaultFind {
+			t.Fatal("reset removed a snippet's binding")
+		}
+	}
+}
+
+func TestRestoreKeepsAnExplicitlyDeletedShortcutUnbound(t *testing.T) {
+	primary := defaultShortcutModifier()
+	restored := restoreShortcuts([]savedShortcut{
+		{Action: "find", Key: ""},
+		{Action: "copy", Key: "c", Modifiers: uint8(primary)},
+	})
+	if restored.chords[shortcutFind].valid() {
+		t.Fatalf("an explicitly deleted shortcut took its default back: %+v", restored.chords[shortcutFind])
+	}
+	if got, want := restored.chords[shortcutCopy], (shortcutChord{Modifiers: primary, Key: 'c'}); got != want {
+		t.Fatalf("saved copy shortcut = %+v, want %+v", got, want)
+	}
+	if got, want := restored.chords[shortcutNewTab], (shortcutChord{Modifiers: primary, Key: 't'}); got != want {
+		t.Fatalf("an action the file did not mention = %+v, want its default %+v", got, want)
+	}
+}
+
 func TestShortcutFilesPathHasPrimaryLDefaultAndPersistsCustomBinding(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)

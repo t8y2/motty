@@ -7,6 +7,14 @@
 // and so on), so adding a string touches its struct and both catalogs.
 package i18n
 
+type HostGroupMessages struct {
+	Actions, Rename, NewChild, Name, Save, Create string
+	InvalidName, Conflict, Missing                string
+	Move, Delete, Parent, TopLevel, Cycle         string
+	Pin, Unpin, MoveUp, MoveDown                  string
+	KeepParentFmt, KeepUngrouped                  string
+}
+
 // Language selects one catalog entry.
 type Language uint8
 
@@ -106,6 +114,15 @@ type Messages struct {
 	StateNoticeOK                        string
 	DevelopmentWorkspaceRestoreTitle     string
 	DevelopmentWorkspaceRestoreFailedFmt string
+	DevelopmentImportTitle               string
+	DevelopmentImportBodyFmt             string
+	DevelopmentImportAction              string
+	DevelopmentImportEmpty               string
+	DevelopmentImportKeep                string
+	DevelopmentImportPasswords           string
+	DevelopmentImportResume              string
+	DevelopmentImportFailedFmt           string
+	DevelopmentImportNotEmpty            string
 
 	// The status-area icon and the panel beside it. TrayTooltipFmt takes the
 	// number of open sessions.
@@ -128,6 +145,11 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsTextSize                       string
+	SettingsTextSizeDescription            string
+	SettingsTextSizeSmall                  string
+	SettingsTextSizeRegular                string
+	SettingsTextSizeLarge                  string
 	SettingsInterfaceFont                  string
 	SettingsInterfaceFontDescription       string
 	SettingsInterfaceFontDefault           string
@@ -148,6 +170,14 @@ type Messages struct {
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
 	SettingsNetworkProxyDirect             string
+	SettingsToolbarPosition                string
+	SettingsToolbarPositionDescription     string
+	SettingsToolbarPositionLeft            string
+	SettingsToolbarPositionRight           string
+	SettingsToolbarSize                    string
+	SettingsToolbarSizeSmall               string
+	SettingsToolbarSizeMedium              string
+	SettingsToolbarSizeLarge               string
 	SettingsTerminalOption                 string
 	SettingsTerminalOptionDescription      string
 	SettingsTerminalOptionText             string
@@ -243,6 +273,8 @@ type Messages struct {
 	TipFilesLocal                          string
 	SFTPInsertPath                         string
 	MenuCopy                               string
+	CopyAddressAndPort                     string
+	CopyConnectionName                     string
 	MenuPaste                              string
 	MenuSelectAll                          string
 	MenuClearScreen                        string
@@ -263,6 +295,7 @@ type Messages struct {
 	SettingsTerminalClipboardAllow       string
 	SettingsShortcuts                    string
 	ShortcutsReset                       string
+	ShortcutsDelete                      string
 	ShortcutsCaptureTitle                string
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
@@ -287,18 +320,19 @@ type Messages struct {
 	RecordingExportFailedFmt             string
 
 	// Toolbar and host table.
-	NewHost       string
-	EditHost      string
-	CopyHost      string
-	DeleteHost    string
-	MoveHostGroup string
-	ExportHosts   string
-	ImportCatalog string
-	ImportMenu    string
-	Connect       string
-	ColumnName    string
-	HostsEmpty    string
-	HostsEmptySub string
+	NewHost          string
+	EditHost         string
+	CopyHost         string
+	DeleteHost       string
+	MoveHostGroup    string
+	HostGroupActions HostGroupMessages
+	ExportHosts      string
+	ImportCatalog    string
+	ImportMenu       string
+	Connect          string
+	ColumnName       string
+	HostsEmpty       string
+	HostsEmptySub    string
 
 	// OpenSSH config import.
 	SSHConfigImport             string

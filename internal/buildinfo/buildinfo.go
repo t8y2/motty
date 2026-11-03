@@ -1,9 +1,11 @@
 // Package buildinfo names the program variant selected at build time.
 package buildinfo
 
-// ProductName is the user-visible name of this build. The dev tag changes only
-// the identity; data directories and vault keys stay shared with release builds.
+// ProductName is the user-visible name of this build.
 const ProductName = productName
+
+// DataName separates development data from the installed application's data.
+const DataName = dataName
 
 // Development reports whether this binary was built with the dev tag.
 const Development = development

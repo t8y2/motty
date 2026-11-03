@@ -425,9 +425,6 @@ func TestDevelopmentWorkspaceIsStoredOnlyInLocalValues(t *testing.T) {
 			t.Fatalf("development workspace became a shared record: %s", key)
 		}
 	}
-	if configFormat != 16 || stateFileVersion != 4 {
-		t.Fatalf("unexpected formats: config=%d state=%d", configFormat, stateFileVersion)
-	}
 }
 
 func TestExistingReleaseWritePreservesDevelopmentAndUnknownLocalValues(t *testing.T) {

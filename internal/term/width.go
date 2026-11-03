@@ -1,9 +1,6 @@
 package term
 
-import (
-	"sort"
-	"unicode"
-)
+import "unicode"
 
 // Width is the number of terminal cells r occupies: 0 for combining marks and
 // other zero-width characters, 2 for East Asian wide characters and emoji, 1
@@ -52,7 +49,33 @@ var wideRanges = [][2]rune{
 	{0x1FA70, 0x1FAFF}, {0x20000, 0x2FFFD}, {0x30000, 0x3FFFD},
 }
 
+// wideRanges covers 0x1100 to 0x3FFFD. A character is printed many times per
+// frame, so the table above is spread over one bit per code point once at
+// startup and the lookup on the printing path is a shift and a mask instead of
+// a binary search.
+const (
+	wideBase  = 0x1100
+	wideLast  = 0x3FFFD
+	wideWords = (wideLast-wideBase)/64 + 1
+)
+
+var wideBits = buildWideBits()
+
+func buildWideBits() []uint64 {
+	bits := make([]uint64, wideWords)
+	for _, r := range wideRanges {
+		for c := r[0]; c <= r[1]; c++ {
+			i := c - wideBase
+			bits[i/64] |= 1 << (i % 64)
+		}
+	}
+	return bits
+}
+
 func isWide(r rune) bool {
-	index := sort.Search(len(wideRanges), func(i int) bool { return wideRanges[i][1] >= r })
-	return index < len(wideRanges) && wideRanges[index][0] <= r
+	if r < wideBase || r > wideLast {
+		return false
+	}
+	i := r - wideBase
+	return wideBits[i/64]&(1<<(i%64)) != 0
 }

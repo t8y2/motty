@@ -19,5 +19,8 @@ type SFTPWindowMessages struct {
 	Open, Title, Local, Remote, Path, Name, Size, Modified                                                  string
 	Upload, Download, DragHint, DropUpload, DropDownload                                                    string
 	SelectedFmt, CopyPath                                                                                   string
-	CloseTitle, CloseDescription, CloseTransfers, Disconnected                                              string
+	PropertiesTitle, PropertiesName, PropertiesPath, PropertiesType, PropertiesSize, PropertiesModified     string
+	PropertiesPermissions, PropertiesOwner, PropertiesGroup, PropertiesLinkTarget                           string
+	PropertiesFolder, PropertiesFile, PropertiesSymlink, PropertiesOther, PropertiesUnknown                 string
+	CloseTitle, CloseDescription, CloseTabDescription, CloseTransfers, Disconnected                         string
 }

@@ -33,11 +33,11 @@ import (
 // tabs, the language and look, the fonts, what this computer does at start) is
 // kept as one value of this device and never synced.
 
-// configFormat is the version of the record payloads this build writes. A change
-// that an older build could not read back unchanged (a new field it would drop
-// when it saved the record, a value it would reject) raises it; a build refuses a
-// store or a synced file with a higher number than its own, so that it never
-// saves over data it only half understands.
+// configFormat is the minimum reader/writer compatibility epoch, NOT the
+// version of the program that last saved. Since epoch 23, optional object fields
+// survive older writers. Only incompatible semantics or structures raise it.
+// Arrays are atomic: extending their element schema requires a new epoch if
+// older clients must still be able to edit them.
 //
 // Version 3 was assigned independently by two lines of work: one added the
 // synchronized SFTP path input, the other the AI provider authentication style.
@@ -67,7 +67,15 @@ import (
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
 // Version 15 preserves the device-local vertical tab grouping switch.
 // Version 16 preserves the interface font.
-const configFormat = 16
+// Version 17 preserves the device-local terminal toolbar position.
+// Version 18 preserves the device-local interface text size.
+// Version 19 preserves the SFTP transfer layout and custom editor path: an
+// older build's full save would otherwise drop these device-local fields.
+// Version 20 preserves the host group explicit, pinned and order metadata.
+// Version 21 preserves toolbar dock zones and mixed-context ordering.
+// Version 22 preserves the device-local docked toolbar size.
+// Version 23 requires lossless transactional field patches from every writer.
+const configFormat = 23
 
 const (
 	kindSetting             = "setting"
@@ -319,7 +327,8 @@ type configBase struct {
 	hostRecords map[string]hostRecord
 	// development is the raw local development_workspace value. Release
 	// builds neither read nor write it.
-	development []byte
+	development        []byte
+	developmentDamaged bool
 }
 
 // hostRecord remembers the state a host was last encoded from, its ordinal, and
@@ -714,23 +723,94 @@ func routeLocalState(base *configBase, local []byte) (localWrite, error) {
 // encoder and the hosts-only shortcut.
 func writeEntries(store *configstore.Store, base *configBase, entries []configstore.Entry, local localWrite) (shared bool, err error) {
 	puts, deletes := base.diff(entries)
-	change := configstore.Change{Put: puts, Delete: deletes}
+	change := configstore.Change{Writer: configWriter(), Delete: deletes, Expected: map[configstore.Key][]byte{}}
+	patchedPayloads := make(map[configstore.Key][]byte, len(puts))
+	for _, entry := range puts {
+		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
+		previous, held := base.payloads[key]
+		if !held {
+			change.Put = append(change.Put, entry)
+			change.Expected[key] = nil
+			continue
+		}
+		before, err := projectRecord(key, previous)
+		if err != nil {
+			return false, err
+		}
+		after, err := projectRecord(key, entry.Payload)
+		if err != nil {
+			return false, err
+		}
+		patch := configstore.JSONChange{Before: before, After: after}
+		kept, err := patch.Apply(previous)
+		if err != nil {
+			return false, err
+		}
+		patchedPayloads[key] = kept
+		change.Patch = append(change.Patch, configstore.PatchEntry{Key: key, JSONChange: patch})
+	}
+	for _, key := range deletes {
+		change.Expected[key] = base.payloads[key]
+	}
 	if !bytes.Equal(local.state, base.local) || local.includeDevelopment && !bytes.Equal(local.development, base.development) {
-		change.Local = map[string][]byte{}
+		change.LocalPatch = map[string]configstore.JSONChange{}
 		if !bytes.Equal(local.state, base.local) {
-			change.Local[localKey] = local.state
+			patch, err := localPatch(base.local, local.state)
+			if err != nil {
+				return false, err
+			}
+			change.LocalPatch[localKey] = patch
 		}
 		if local.includeDevelopment && !bytes.Equal(local.development, base.development) {
-			change.Local[developmentWorkspaceKey] = local.development
+			if base.developmentDamaged {
+				change.Local = map[string][]byte{developmentWorkspaceKey: local.development}
+				change.ExpectedLocal = map[string][]byte{developmentWorkspaceKey: base.development}
+			} else {
+				patch, err := localPatch(base.development, local.development)
+				if err != nil {
+					return false, err
+				}
+				change.LocalPatch[developmentWorkspaceKey] = patch
+			}
 		}
 	}
-	if len(puts) == 0 && len(deletes) == 0 && change.Local == nil {
+	if len(puts) == 0 && len(deletes) == 0 && change.LocalPatch == nil {
 		return false, nil
+	}
+	for key, patch := range change.LocalPatch {
+		previous := base.local
+		if key == developmentWorkspaceKey {
+			previous = base.development
+		}
+		if len(previous) == 0 {
+			previous = []byte("{}")
+		}
+		value, err := patch.Apply(previous)
+		if err != nil {
+			return false, err
+		}
+		if key == developmentWorkspaceKey {
+			local.development = value
+		} else {
+			local.state = value
+		}
 	}
 	if _, err := store.Commit(change); err != nil {
 		return false, err
 	}
+	for index := range entries {
+		entry := &entries[index]
+		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
+		if payload, exists := patchedPayloads[key]; exists {
+			entry.Payload = payload
+			if cached, ok := base.hostRecords[entry.ID]; entry.Kind == kindHost && ok {
+				cached.payload = payload
+				base.hostRecords[entry.ID] = cached
+			}
+		}
+	}
 	base.acceptLocal(entries, local)
+	base.developmentDamaged = false
 	return len(puts) > 0 || len(deletes) > 0, nil
 }
 
@@ -767,6 +847,7 @@ func openConfig(path string) (store *configstore.Store, saved savedState, base *
 			clearSavedWorkspace(&saved)
 			if raw, ok := local[developmentWorkspaceKey]; ok {
 				report.workspaceErr = applySavedWorkspace(&saved, raw)
+				base.developmentDamaged = report.workspaceErr != nil
 			}
 		}
 	}

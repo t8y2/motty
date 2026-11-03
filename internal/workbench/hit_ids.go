@@ -40,9 +40,26 @@ var (
 // the same controls; mounting it in the pane's place makes them that pane's own
 // identities (see Tree.Mount), and the context panel is a mount of its own.
 var (
-	panesHits    = tree.Feature("panes")
-	contextMount = tree.Feature("context")
+	panesHits     = tree.Feature("panes")
+	contextMount  = tree.Feature("context")
+	fileTabsHits  = tree.Feature("file-tabs")
+	filePagesHits = tree.Feature("file-pages")
+
+	fileTabList      = tree.Sub(fileTabsHits, tree.Name("tab"))
+	fileTabCloseList = tree.Sub(fileTabsHits, tree.Name("tab-close"))
 )
+
+func sftpFileTabID(sessionID uint32) ui.ID {
+	return fileTabList.At(int(sessionID))
+}
+
+func sftpFileTabCloseID(sessionID uint32) ui.ID {
+	return fileTabCloseList.At(int(sessionID))
+}
+
+func sftpWindowMount(window *sftpWindow) ui.Scope {
+	return tree.Sub(filePagesHits, ui.Index(int(window.session.ID)))
+}
 
 // paneMount is the place the page of a session is mounted at when it is painted
 // in one of several panes.

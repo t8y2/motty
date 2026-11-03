@@ -51,7 +51,7 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 	colors := state.monitorColors()
 	canvas.Fill(b, colors.background)
 	header := ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: infoBarHeight}
-	bg, edge := state.connectionBarColors(s, false)
+	bg, edge := pal.workspace, pal.line
 	canvas.Fill(header, bg)
 	canvas.DrawIcon(lucideIcons[iconActivity], ui.Rect{X: b.X + 12, Y: b.Y + (header.Height-16)/2, Width: 16, Height: 16}, pal.muted)
 	monitorLabel(canvas, m.Title, ui.Rect{X: b.X + 35, Y: b.Y, Width: 60, Height: header.Height}, 14, pal.text, ui.WeightSemibold)

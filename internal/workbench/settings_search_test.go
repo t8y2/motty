@@ -151,6 +151,19 @@ func TestSearchResultsSteadyPaintDoesNotAllocate(t *testing.T) {
 	}
 }
 
+func TestCustomEditorSettingAppearsInSearchWhenAvailable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if !state.customEditorSettingVisible() {
+		state.defaultEditor = editorCustom
+		state.customEditorPath = "/Applications/Editor.app"
+	}
+	searchSettings(t, state, state.messages.Tools.FilesCustomEditor)
+	if state.settings.count != 1 || state.settings.results[0].category != settingsFiles ||
+		state.settings.results[0].label != state.messages.Tools.FilesCustomEditor {
+		t.Fatalf("custom editor results = %+v", state.settings.results[:state.settings.count])
+	}
+}
+
 func TestSearchingSessionLogSettingsDoesNotShowFormatVerbs(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	searchSettings(t, state, state.messages.SessionLogs.SettingsStorageRow)

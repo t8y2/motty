@@ -105,6 +105,9 @@ func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
 	if !ok || state.shortcuts.actionFor(chord) != shortcutFind {
 		return ui.EventResult{}
 	}
+	if chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
+		return ui.EventResult{}
+	}
 	return ui.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }
 

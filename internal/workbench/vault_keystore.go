@@ -5,24 +5,41 @@ import (
 	"path/filepath"
 
 	"github.com/vivaui/viva/app"
+	"motty/internal/buildinfo"
 	"motty/internal/vault"
 )
 
 // systemKeystore is the vault's key store on the real machine: the system's own
 // secret store, through Viva.
-type systemKeystore struct{}
-
-func (systemKeystore) Store(service, account string, secret []byte) error {
-	return keystoreError(app.StoreSecret(service, account, secret))
+type systemKeystore struct {
+	release bool
 }
 
-func (systemKeystore) Load(service, account string) ([]byte, error) {
-	secret, err := app.LoadSecret(service, account)
+func (store systemKeystore) service(name string) string {
+	if store.release {
+		return name
+	}
+	return keyService(name)
+}
+
+func (store systemKeystore) Store(service, account string, secret []byte) error {
+	return keystoreError(app.StoreSecret(store.service(service), account, secret))
+}
+
+func (store systemKeystore) Load(service, account string) ([]byte, error) {
+	secret, err := app.LoadSecret(store.service(service), account)
 	return secret, keystoreError(err)
 }
 
-func (systemKeystore) Delete(service, account string) error {
-	return keystoreError(app.DeleteSecret(service, account))
+func (store systemKeystore) Delete(service, account string) error {
+	return keystoreError(app.DeleteSecret(store.service(service), account))
+}
+
+func keyService(service string) string {
+	if buildinfo.Development {
+		return service + " development"
+	}
+	return service
 }
 
 // defaultKeystore keeps the data key of the vault at path in the system's secret

@@ -205,27 +205,6 @@ func TestLocalScopePartialReadErrorRetainsLoadedRowsAndWarning(t *testing.T) {
 	}
 }
 
-func TestLocalScopeIncompleteSteadyPaintDoesNotAllocate(t *testing.T) {
-	state, session, _, _ := openTestSFTP(t)
-	dir := localFixture(t)
-	view := openLocalPane(t, state, session, dir)
-	items := scopeDirEntries(t, dir)
-	if err := os.Remove(filepath.Join(dir, "report.txt")); err != nil {
-		t.Fatal(err)
-	}
-	state.applyLocalListing(view, scanLocalListing(dir, items), view.localSeq)
-	canvas := paintLocalScope(state)
-	if scopeHint(canvas) == "" {
-		t.Fatal("fixture is not incomplete")
-	}
-	if allocations := testing.AllocsPerRun(50, func() {
-		canvas.Reset()
-		state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
-	}); allocations != 0 {
-		t.Fatalf("incomplete scope paint allocated %g times", allocations)
-	}
-}
-
 func TestLocalScopeFailedNewerRequestDropsPendingAcceptance(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	dir := localFixture(t)

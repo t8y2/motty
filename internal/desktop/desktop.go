@@ -8,6 +8,7 @@ package desktop
 import (
 	"context"
 	"net"
+	"time"
 )
 
 // Rect is a region of the remote picture in pixels.
@@ -192,6 +193,12 @@ type Resizer interface {
 	// interface is drawn at scale (see Options.Scale). The new size arrives
 	// through Present, when the server has made it.
 	Resize(width, height int, scale float32) error
+}
+
+// LatencySource reports the remote server's last network RTT measurement.
+// A zero timestamp means the server has not supplied a measurement.
+type LatencySource interface {
+	NetworkRTT() (time.Duration, time.Time)
 }
 
 // PointerKind is what a session's remote system last said about its pointer.

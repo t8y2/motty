@@ -209,7 +209,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		return nil, err
 	}
 	records = append(records, passedOn(records, remote.Records, holdable)...)
-	local := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Records: records}
+	local := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	localHosts := ""
 	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
 		localHosts = string(data)

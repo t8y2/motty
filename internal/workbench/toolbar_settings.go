@@ -33,11 +33,13 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
 	},
 	toolbarTerminal: {
-		{"broadcast", hitBroadcast, iconRadio}, {"split-horizontal", hitPaneSplitHorizontal, iconColumns2},
-		{"split-vertical", hitPaneSplitVertical, iconRows2}, {"close-pane", hitPaneClose, iconClose},
-		{"resources", hitRemoteStats, iconActivity}, {"record", hitTerminalRecord, iconRecord},
-		{"export-recording", hitTerminalRecordingExport, iconFilm}, {"export-log", hitConnExport, iconFileDown},
+		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
+		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
+		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
+		{"save-output", hitTerminalSaveOutput, iconSave},
+		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
 		{"files", hitSFTPOpen, iconFolderOpen}, {"file-transfer", hitSFTPDetach, iconSFTPTransfer},
+		{"remote-tools", hitRemoteToolsOpen, iconWrench},
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
@@ -58,14 +60,16 @@ var toolbarDefaults = func() (defaults [3][]toolbarEntry) {
 
 type toolbarPreferences struct {
 	layouts                     [3][]toolbarEntry
+	dock                        []toolbarDockEntry
 	summary                     [3]string
 	summaryCounts, summarySizes [3]int
 	summaryFormat               string
 }
 type savedToolbars struct {
-	Window   []toolbarEntry `json:"window,omitempty"`
-	Terminal []toolbarEntry `json:"terminal,omitempty"`
-	SFTP     []toolbarEntry `json:"sftp,omitempty"`
+	Window   []toolbarEntry     `json:"window,omitempty"`
+	Terminal []toolbarEntry     `json:"terminal,omitempty"`
+	SFTP     []toolbarEntry     `json:"sftp,omitempty"`
+	Dock     []toolbarDockEntry `json:"dock,omitempty"`
 }
 
 func (prefs *toolbarPreferences) entries(group toolbarGroup) []toolbarEntry {
@@ -84,19 +88,11 @@ func (state *State) toolbarVisible(group toolbarGroup, id ui.ID) bool {
 	return false
 }
 
-// windowBarButtons counts the window entries the bar shows. The bar lays its
-// tabs out around them, so changing one reshapes the room the tabs get.
+// windowBarButtons counts the top dock's slots, including its overflow entry.
+// The tab strip gives back space as tools move to another dock.
 func (state *State) windowBarButtons() int {
-	count := 0
-	for _, entry := range state.toolbars.entries(toolbarWindow) {
-		if !entry.Enabled {
-			continue
-		}
-		if _, ok := toolbarSpecFor(toolbarWindow, entry.Key); ok {
-			count++
-		}
-	}
-	return count
+	var tools [maxBarTools]barTool
+	return min(len(state.toolbarDockTools(toolbarDockTop, &tools)), state.toolbarTopLimit())
 }
 
 func normalizeToolbar(group toolbarGroup, entries []toolbarEntry) []toolbarEntry {
@@ -140,13 +136,14 @@ func (prefs *toolbarPreferences) restore(saved *savedToolbars) {
 	prefs.layouts[toolbarWindow] = normalizeToolbar(toolbarWindow, saved.Window)
 	prefs.layouts[toolbarTerminal] = normalizeToolbar(toolbarTerminal, saved.Terminal)
 	prefs.layouts[toolbarSFTP] = normalizeToolbar(toolbarSFTP, saved.SFTP)
+	prefs.restoreDock(saved.Dock)
 }
 
 func (prefs *toolbarPreferences) snapshot() *savedToolbars {
-	if prefs.layouts[0] == nil && prefs.layouts[1] == nil && prefs.layouts[2] == nil {
+	if prefs.layouts[0] == nil && prefs.layouts[1] == nil && prefs.layouts[2] == nil && prefs.dock == nil {
 		return nil
 	}
-	return &savedToolbars{Window: slices.Clone(prefs.layouts[0]), Terminal: slices.Clone(prefs.layouts[1]), SFTP: slices.Clone(prefs.layouts[2])}
+	return &savedToolbars{Window: slices.Clone(prefs.layouts[0]), Terminal: slices.Clone(prefs.layouts[1]), SFTP: slices.Clone(prefs.layouts[2]), Dock: slices.Clone(prefs.dock)}
 }
 
 func (prefs *toolbarPreferences) customize(group toolbarGroup) []toolbarEntry {
@@ -183,8 +180,12 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.PaneClose
 	case hitRemoteStats:
 		return m.TipStatsStart
+	case hitRemoteToolsOpen:
+		return m.Tools.RemoteMenu
 	case hitTerminalRecord:
 		return m.TipRecordStart
+	case hitTerminalSaveOutput:
+		return m.Tools.MenuSaveOutput
 	case hitTerminalRecordingExport:
 		return m.RecordingExport
 	case hitConnExport:

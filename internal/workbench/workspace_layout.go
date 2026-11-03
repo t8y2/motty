@@ -181,6 +181,10 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 	if previous != paneID {
 		// The candidate list belongs to the terminal that opened it.
 		state.closeCompletionList()
+		// So does find mode: the bar replaces the shared rail, and a find left
+		// open on a pane that lost focus would toggle the rail with every
+		// switch, resizing both PTYs and clearing their selections.
+		state.closePaneFind(workspaceID, previous)
 	}
 	if previous != paneID && state.viewport.Width > 0 && state.viewport.Height > 0 {
 		state.fitWorkspaceTerminals(workspaceID)
@@ -197,6 +201,10 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	state.activeSection = sectionTerminal
 	state.syncMonitorTarget()
 	state.closeCompletionList()
+	if state.viewport.Width > 0 && state.viewport.Height > 0 {
+		state.fitWorkspaceTerminals(id)
+		state.fitSFTP(state.viewport)
+	}
 	return true
 }
 
@@ -231,6 +239,7 @@ func (state *State) activateTab(index int) bool {
 func (state *State) syncActiveSession() {
 	workspaceID := state.deck.ActiveWorkspace()
 	paneID := state.deck.ActivePane(workspaceID)
+	state.syncCachedWorkspacePane(workspaceID, paneID)
 	pane, ok := state.deck.Pane(workspaceID, paneID)
 	if !ok {
 		state.activeSessionID = 0
@@ -238,6 +247,19 @@ func (state *State) syncActiveSession() {
 	}
 	state.activeSessionID = uint32(pane.SessionID)
 	state.ensureContextSFTP()
+}
+
+// syncCachedWorkspacePane keeps the tab strip's workspace snapshots aligned
+// with the deck. Pane activation already repaints, but without this update tab
+// labels and system badges keep reading the pane that was active when the tab
+// list was last rebuilt.
+func (state *State) syncCachedWorkspacePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) {
+	for index := range state.workspaceTabs {
+		if state.workspaceTabs[index].ID == workspaceID {
+			state.workspaceTabs[index].ActivePane = paneID
+			return
+		}
+	}
 }
 
 // ensureContextSFTP opens the file list for the session the files panel follows

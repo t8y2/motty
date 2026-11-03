@@ -81,8 +81,15 @@ type terminal struct {
 	commandReporting      bool
 	submittedLines        int
 	blink                 cursorBlink
-	wheelX                float32       // horizontal wheel travel not yet worth a whole cell
-	wheelY                float32       // vertical wheel travel not yet worth a whole cell
+	wheelX                float32            // horizontal wheel travel not yet worth a whole cell
+	wheelY                float32            // vertical wheel travel not yet worth a whole cell
+	railScroll            float32            // horizontal or vertical tool-rail offset
+	railViewport          ui.Rect            // last painted, scrollable tool viewport
+	railBounds            ui.Rect            // full painted rail, including its gutter
+	railContentExtent     float32            // full length of the ordered tool rail
+	railIDs               [maxBarTools]ui.ID // ordered controls for roving keyboard focus
+	railEnabled           [maxBarTools]bool  // disabled actions stay visible but leave the keyboard order
+	railCount             int
 	barDragging           bool          // the scrollbar thumb is held
 	barGrab               float32       // where on the thumb it was taken
 	barOffset             int           // view offset the scrollbar last saw, to notice the view moving
@@ -840,7 +847,19 @@ func terminalLayout(size ui.Size, cellWidth, cellHeight float32, pad terminalPad
 }
 
 func terminalLayoutWithInfoBar(size ui.Size, cellWidth, cellHeight, barHeight float32, pad terminalPadding) terminalGeometry {
-	area := ui.Rect{Y: windowBarHeight + barHeight, Width: size.Width, Height: max(size.Height-windowBarHeight-barHeight, 0)}
+	return terminalLayoutWithChrome(size, cellWidth, cellHeight, terminalChrome{top: barHeight}, pad)
+}
+
+type terminalChrome struct {
+	top float32
+}
+
+func terminalLayoutWithChrome(size ui.Size, cellWidth, cellHeight float32, chrome terminalChrome, pad terminalPadding) terminalGeometry {
+	area := ui.Rect{
+		Y:      windowBarHeight + chrome.top,
+		Width:  size.Width,
+		Height: max(size.Height-windowBarHeight-chrome.top, 0),
+	}
 	geometry := terminalGeometry{area: area, left: pad.x + pad.gutter, top: area.Y + pad.top}
 	if cellWidth > 0 && cellHeight > 0 {
 		geometry.cols = max(int((area.Width-2*pad.x-pad.gutter)/cellWidth), minTerminalCols)
@@ -854,14 +873,74 @@ const (
 	minTerminalRows = 5
 )
 
-// terminalInfoBarHeight is the height of a pane's bar. Active or not it is the
-// same: the bar that changed height when focus moved made the terminals under
-// it jump.
-func (state *State) terminalInfoBarHeight(sessionID uint32) float32 {
-	if session, ok := state.sessionByIDPointer(sessionID); ok && state.terminalInputNoticeVisible(session) {
-		return infoBarHeight + inputNoticeHeight
+func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, bool) {
+	session, ok := state.sessionByIDPointer(sessionID)
+	if !ok {
+		return terminalChrome{}, false
 	}
-	return infoBarHeight
+	inactive := state.paneIsInactive(sessionID)
+	finding := !inactive && session.term != nil && session.term.find.open
+	inSplit := state.paneInSplit(sessionID)
+	var chrome terminalChrome
+	// Every pane in a split keeps the same top chrome whether it owns focus or
+	// not. The active pane leaves that strip blank, but reserving it here keeps
+	// switching panes from resizing either PTY or clearing a selection.
+	if inSplit || finding {
+		chrome.top = infoBarHeight
+	}
+	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {
+		chrome.top += inputNoticeHeight
+	}
+	return chrome, true
+}
+
+// terminalInputNoticeVisibleInWorkspace keeps a split's top chrome equal on
+// every pane while any pane shows the locale warning. The warning belongs to
+// one shell, but resizing only its pane would change that PTY and its selection
+// each time focus moved. The notice itself is still painted only on its owner.
+func (state *State) terminalInputNoticeVisibleInWorkspace(session *Session) bool {
+	if state.terminalInputNoticeVisible(session) {
+		return true
+	}
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	if !ok {
+		return false
+	}
+	for index := range state.sessions {
+		other := &state.sessions[index]
+		owner, _, owned := state.deck.PaneForSession(layoutcore.SessionID(other.ID))
+		if owned && owner == workspaceID && state.terminalInputNoticeVisible(other) {
+			return true
+		}
+	}
+	return false
+}
+
+// terminalToolbarSession reports the active terminal whose eventual return to
+// the terminal page needs the shared rail's width. It intentionally does not
+// depend on activeSection: background terminals must already be fitted to the
+// rail while settings or another page covers them.
+func (state *State) terminalToolbarSession() (*Session, bool) {
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.term == nil || session.restored || session.desk != nil ||
+		session.term.find.open {
+		return nil, false
+	}
+	return session, true
+}
+
+// terminalSideRailSession reports the terminal whose shared rail is visible.
+// Connection, restored and desktop pages use their own chrome, and find mode
+// temporarily replaces the rail with its top search bar.
+func (state *State) terminalSideRailSession() (*Session, bool) {
+	if state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	session, ok := state.terminalToolbarSession()
+	if !ok || state.showsProgress(session) {
+		return nil, false
+	}
+	return session, true
 }
 
 // paneIsInactive reports a pane that shares its workspace without being the
@@ -883,20 +962,30 @@ func (state *State) layout() terminalGeometry {
 func (state *State) layoutForSession(sessionID uint32) terminalGeometry {
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
 	if !ok {
-		return terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+		return state.terminalLayoutForEvent(sessionID, state.viewport)
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
 	if !ok {
-		return terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+		return state.terminalLayoutForEvent(sessionID, state.viewport)
 	}
 	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction)
-	geometry := terminalLayoutWithInfoBar(paneVirtualSize(bounds), state.cellWidth, state.cellHeight, state.terminalInfoBarHeight(sessionID), state.padding())
+	geometry := state.terminalLayoutForEvent(sessionID, paneVirtualSize(bounds))
 	origin := paneEmbedOrigin(bounds)
 	geometry.area.X += origin.X
 	geometry.area.Y += origin.Y
 	geometry.left += origin.X
 	geometry.top += origin.Y
 	return geometry
+}
+
+// terminalLayoutForEvent lays out a terminal using the pane-local viewport and
+// coordinates viva supplies after decoding an embedded hit.
+func (state *State) terminalLayoutForEvent(sessionID uint32, viewport ui.Size) terminalGeometry {
+	chrome, sessionOK := state.terminalChromeForSession(sessionID)
+	if !sessionOK {
+		chrome = terminalChrome{top: infoBarHeight}
+	}
+	return terminalLayoutWithChrome(viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
 }
 
 // fitTerminals gives every session's screen and pty the size the window now
@@ -1137,6 +1226,62 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	return handled
 }
 
+// terminalToolbarKey keeps arrow navigation inside the visible tool rail.
+// Paint scrolls the rail to the new focus on the following frame, which makes
+// controls outside a short pane reachable without sending escape sequences to
+// the shell.
+func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.EventResult, bool) {
+	if session == nil || session.term == nil || session.ID != state.activeSessionID ||
+		event.Modifiers != 0 || event.Release || session.term.railCount == 0 {
+		return ui.EventResult{}, false
+	}
+	t := session.term
+	index := -1
+	for at := 0; at < t.railCount; at++ {
+		if t.railIDs[at] == event.Target {
+			index = at
+			break
+		}
+	}
+	if index < 0 {
+		return ui.EventResult{}, false
+	}
+	next := index
+	switch {
+	case event.Key == ui.KeyUp:
+		for at := index - 1; at >= 0; at-- {
+			if t.railEnabled[at] {
+				next = at
+				break
+			}
+		}
+	case event.Key == ui.KeyDown:
+		for at := index + 1; at < t.railCount; at++ {
+			if t.railEnabled[at] {
+				next = at
+				break
+			}
+		}
+	case event.Key == ui.KeyHome:
+		for at := 0; at < t.railCount; at++ {
+			if t.railEnabled[at] {
+				next = at
+				break
+			}
+		}
+	case event.Key == ui.KeyEnd:
+		for at := t.railCount - 1; at >= 0; at-- {
+			if t.railEnabled[at] {
+				next = at
+				break
+			}
+		}
+	default:
+		return ui.EventResult{}, false
+	}
+	return ui.EventResult{Handled: true, Repaint: next != index, Focus: t.railIDs[next], FocusVisible: true}, true
+}
+
 // commandChord handles Command+key while a terminal has the keyboard.
 func (state *State) commandChord(session *Session, event ui.KeyEvent) ui.EventResult {
 	result := ui.EventResult{Handled: true, Repaint: true}
@@ -1168,6 +1313,9 @@ func (state *State) copySelection(session *Session) ui.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
+	if state.modal == modalFileProperties {
+		return ui.EventResult{Handled: true}
+	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
@@ -1186,6 +1334,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.menuWheel(event); handled {
+		return result
+	}
+	if result := state.toolbarDockScroll(event); result.Handled {
 		return result
 	}
 	if state.modal == modalNewHost {
@@ -1211,14 +1362,27 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
 		return ui.EventResult{Handled: true}
 	}
-	if result, handled := state.tabStrip.scroll(event); handled {
+	// The assistant may be a drawer over a file tab. Give its painted panel the
+	// wheel first; the file page only sees gestures outside that panel.
+	if result, handled := state.aiScroll(event); handled {
+		return result
+	}
+	tabScroll := &state.tabStrip
+	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
+		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
+		tabScroll = &state.fileTabStrip
+	}
+	if result, handled := tabScroll.scroll(event); handled {
+		return result
+	}
+	if state.fileTabVerticalRailAt(event.X, event.Y) {
+		return ui.EventResult{Handled: true}
+	}
+	if result, handled := state.sftpTabScroll(event); handled {
 		return result
 	}
 	if state.tabOrientation == tabsVertical && pointInRect(event.X, event.Y, state.verticalTabs.bounds) {
 		return ui.EventResult{Handled: true}
-	}
-	if result, handled := state.aiScroll(event); handled {
-		return result
 	}
 	if result, handled := state.scrollMonitor(event); handled {
 		return result
@@ -1280,13 +1444,16 @@ func (state *State) scroll(event ui.ScrollEvent) ui.EventResult {
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.term == nil || state.cellWidth <= 0 || state.cellHeight <= 0 || state.showsProgress(session) {
 		return ui.EventResult{}
 	}
+	if result, handled := state.scrollTerminalToolbar(session, event); handled {
+		return result
+	}
 	if session.desk != nil {
 		return state.desktopScroll(session, event)
 	}
 	t := session.term
 	modes := t.screen.Modes()
 	if modes.Mouse != term.MouseOff && event.Target == hitTerminalList.At(int(session.ID)) && event.Modifiers&ui.ModifierShift == 0 {
-		return state.terminalMouseScroll(t, event)
+		return state.terminalMouseScroll(session, event)
 	}
 	if modes.AltScreen {
 		if modes.Mouse != term.MouseOff || !modes.AlternateScroll {
@@ -1316,8 +1483,9 @@ func (state *State) scroll(event ui.ScrollEvent) ui.EventResult {
 	return ui.EventResult{Handled: true}
 }
 
-func (state *State) terminalMouseScroll(terminal *terminal, event ui.ScrollEvent) ui.EventResult {
-	position := state.terminalPositionAt(event.Viewport, event.X, event.Y)
+func (state *State) terminalMouseScroll(session *Session, event ui.ScrollEvent) ui.EventResult {
+	terminal := session.term
+	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
 	repaint := false
 	terminal.wheelY += event.StepY(state.cellHeight) / state.cellHeight
 	vertical := int(terminal.wheelY)

@@ -17,6 +17,7 @@ import (
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
+	"motty/internal/buildinfo"
 )
 
 // AIHub serves the assistant's tools to external agents (MCP clients such as
@@ -55,7 +56,7 @@ func NewAIHub(path string) *AIHub {
 		if err != nil {
 			dir = os.TempDir()
 		}
-		path = filepath.Join(dir, "motty", "ai.db")
+		path = filepath.Join(dir, buildinfo.DataName, "ai.db")
 	}
 	return &AIHub{path: path}
 }

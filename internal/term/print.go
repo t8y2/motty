@@ -19,7 +19,7 @@ func (t *Terminal) printASCII(run []byte) {
 		if t.modes.Insert {
 			t.insertCells(l, x, 1)
 		}
-		c := &l.cells[x]
+		c := &l.span(x, 1)[0]
 		if c.Attr&(WideHead|WideTail) != 0 {
 			t.clearWideHalf(l, x)
 		}
@@ -56,9 +56,10 @@ func (t *Terminal) fillASCII(l *line, run []byte) bool {
 		}
 	}
 	cell := Cell{FG: t.pen.fg, BG: t.pen.bg, Attr: t.pen.attr}
+	cells := l.span(t.cx, len(run))
 	for index, value := range run {
 		cell.R = rune(value)
-		l.cells[t.cx+index] = cell
+		cells[index] = cell
 	}
 	l.version++
 	t.cx = end
@@ -102,18 +103,19 @@ func (t *Terminal) print(r rune) {
 	if t.modes.Insert {
 		t.insertCells(l, x, w)
 	}
-	for i := 0; i < w; i++ {
-		if l.cells[x+i].Attr&(WideHead|WideTail) != 0 {
+	cells := l.span(x, w)
+	for i := range cells {
+		if cells[i].Attr&(WideHead|WideTail) != 0 {
 			t.clearWideHalf(l, x+i)
 		}
 	}
 	l.dropMarks(x, x+w)
 	attr := t.pen.attr
 	if w == 2 {
-		l.cells[x] = Cell{R: r, FG: t.pen.fg, BG: t.pen.bg, Attr: attr | WideHead}
-		l.cells[x+1] = Cell{FG: t.pen.fg, BG: t.pen.bg, Attr: attr | WideTail}
+		cells[0] = Cell{R: r, FG: t.pen.fg, BG: t.pen.bg, Attr: attr | WideHead}
+		cells[1] = Cell{FG: t.pen.fg, BG: t.pen.bg, Attr: attr | WideTail}
 	} else {
-		l.cells[x] = Cell{R: r, FG: t.pen.fg, BG: t.pen.bg, Attr: attr}
+		cells[0] = Cell{R: r, FG: t.pen.fg, BG: t.pen.bg, Attr: attr}
 	}
 	l.setHyperlinkRange(x, x+w, t.pen.hyperlink)
 	l.version++

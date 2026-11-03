@@ -18,6 +18,10 @@ var (
 	hitToolbarScroll          = tree.ID(toolbarSettingsHits, "scroll")
 	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 	hitToolbarToggles         = tree.Sub(toolbarSettingsHits, tree.Name("toggle"))
+	hitToolbarPositions       = tree.Sub(toolbarSettingsHits, tree.Name("position"))
+	hitToolbarSizeSmall       = tree.ID(toolbarSettingsHits, "size-small")
+	hitToolbarSizeMedium      = tree.ID(toolbarSettingsHits, "size-medium")
+	hitToolbarSizeLarge       = tree.ID(toolbarSettingsHits, "size-large")
 )
 
 type toolbarSettingsUI struct {
@@ -87,7 +91,44 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 		return
 	case id == hitToolbarReset:
 		state.toolbars.layouts[editor.group] = nil
+		state.resetToolbarDockGroup(editor.group)
+		if editor.group == toolbarTerminal {
+			state.terminalToolbarSize = terminalToolbarSmall
+		}
 		editor.list.Cancel()
+	case editor.group == toolbarTerminal && (id == hitToolbarSizeSmall || id == hitToolbarSizeMedium || id == hitToolbarSizeLarge):
+		size := terminalToolbarSmall
+		if id == hitToolbarSizeMedium {
+			size = terminalToolbarMedium
+		} else if id == hitToolbarSizeLarge {
+			size = terminalToolbarLarge
+		}
+		state.setTerminalToolbarSize(size)
+		return
+	case id.Scope() == hitToolbarPositions && editor.group <= toolbarTerminal:
+		index := item(id)
+		for _, spec := range toolbarCatalog[editor.group] {
+			if toolbarEntryIndex(editor.group, spec.key) != index {
+				continue
+			}
+			zone := state.toolbarDockZoneFor(editor.group, spec.key)
+			next := toolbarDockSideTop
+			if zone == toolbarDockSideTop {
+				next = toolbarDockSideBottom
+			} else if zone == toolbarDockSideBottom {
+				next = toolbarDockBottom
+			} else if zone == toolbarDockBottom {
+				next = toolbarDockBottomRight
+			} else if zone == toolbarDockBottomRight {
+				next = toolbarDockLeftTop
+			} else if zone == toolbarDockLeftTop {
+				next = toolbarDockLeftBottom
+			} else if zone == toolbarDockLeftBottom {
+				next = toolbarDockTop
+			}
+			state.moveToolbarDockTool(spec.id, next, ui.ID{})
+			return
+		}
 	case id == hitToolbarEnableAll || id == hitToolbarDisableAll:
 		entries := state.toolbars.customize(editor.group)
 		for i := range entries {
@@ -110,7 +151,7 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 	default:
 		return
 	}
-	state.save()
+	state.toolbarDockChanged()
 }
 
 func (state *State) moveToolbarEntry(move components.ReorderMove) {
@@ -129,10 +170,11 @@ func (state *State) moveToolbarEntry(move components.ReorderMove) {
 		copy(entries[move.To+1:move.From+1], entries[move.To:move.From])
 	}
 	entries[move.To] = entry
+	state.reorderToolbarDockGroup(editor.group)
 	// Keep the row the move landed on in view. The list knows the row geometry
 	// and the viewport it was painted in, so the caller keeps no stride here.
 	editor.scroll = max(editor.scroll+editor.list.RevealScroll(move.To), 0)
-	state.save()
+	state.toolbarDockChanged()
 }
 
 func (state *State) toolbarSettingsPointer(event ui.PointerEvent) ui.EventResult {
@@ -170,6 +212,14 @@ func (state *State) toolbarSettingsKey(event ui.KeyEvent) ui.EventResult {
 	if state.modal != modalToolbarSettings {
 		return ui.EventResult{}
 	}
+	if state.toolbarEditor.group == toolbarTerminal && !event.Release &&
+		(event.Target == hitToolbarSizeSmall || event.Target == hitToolbarSizeMedium || event.Target == hitToolbarSizeLarge) {
+		options := state.settingsToolbarSizeOptions()
+		if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
+			state.clickToolbarSettings(next)
+			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+		}
+	}
 	move, result := state.toolbarEditor.list.Key(event)
 	if result.Handled {
 		state.moveToolbarEntry(move)
@@ -196,12 +246,28 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 	editor, m, theme := &state.toolbarEditor, state.messages.Toolbars, state.Theme()
 	entries := state.toolbars.entries(editor.group)
 	height := float32(len(entries))*48 - 4
+	controlsHeight := float32(0)
+	if editor.group == toolbarTerminal {
+		controlsHeight = 48
+	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitToolbarSettingsDismiss, CloseID: hitToolbarSettingsClose,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: min(height, max(viewport.Height-250, 96)),
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: min(height+controlsHeight, max(viewport.Height-250, 96)),
 	})
 	layout := dialog.Begin(state.toolbarGroupName(editor.group), m.Hint)
-	area := components.BeginScrollArea(canvas, theme, layout.Body, ui.Size{Width: layout.Body.Width, Height: height}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
+	body := layout.Body
+	if editor.group == toolbarTerminal {
+		label := ui.Rect{X: body.X, Y: body.Y, Width: min(200, body.Width/2), Height: 32}
+		canvas.Label(canvas.FitLine(state.messages.SettingsToolbarSize, theme.Metrics.FontSizeM, ui.WeightRegular, label.Width), label, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
+		options := state.settingsToolbarSizeOptions()
+		selected := options[state.terminalToolbarSize].ID
+		components.BeginSegmentedControl(canvas, theme, ui.Rect{
+			X: label.X + label.Width + 12, Y: body.Y, Width: max(body.Width-label.Width-12, 0), Height: 32,
+		}, options[:], selected).Paint()
+		body.Y += controlsHeight
+		body.Height = max(body.Height-controlsHeight, 0)
+	}
+	area := components.BeginScrollArea(canvas, theme, body, ui.Size{Width: body.Width, Height: height}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
 	geometry := area.BeginContent()
 	editor.geometry, editor.scroll = geometry, geometry.OffsetY
 	bounds := geometry.Content
@@ -221,7 +287,14 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		canvas.DrawIcon(lucideIcons[spec.icon], ui.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
 		caption := ui.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
+		if editor.group <= toolbarTerminal {
+			caption.Width = max(caption.Width-100, 0)
+		}
 		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, ui.WeightRegular, caption.Width), caption, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
+		if editor.group <= toolbarTerminal {
+			zone := state.toolbarDockZoneFor(editor.group, entry.Key)
+			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 150, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 98, Height: 28}).Outline(state.toolbarDockZoneLabel(zone))
+		}
 		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, entry.Enabled).Label(label).Paint()
 	}
 	list.End()
