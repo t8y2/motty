@@ -6,7 +6,7 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// A window so short that the host menu's five rows do not fit: the menu scrolls,
+// A window so short that the host menu's rows do not fit: the menu scrolls,
 // the keyboard reaches its last item, the wheel and the scrollbar move it, and it
 // starts at the top again when it is opened another time.
 func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) 
 	canvas := paint()
 	canvas = paint()
 	if state.popups.scroll.Max() <= 0 {
-		t.Fatalf("a 110px window left the five-row menu with nothing to scroll (surface %+v)", state.popups.surface)
+		t.Fatalf("a 110px window left the host menu with nothing to scroll (surface %+v)", state.popups.surface)
 	}
 	if inside(canvas, hitHostMenuDelete) {
 		t.Fatal("the last item shows before anything scrolled")

@@ -17,6 +17,8 @@ var (
 	hitTabMenuCloseOthers = tree.ID(tabMenuHits, "tab-menu-close-others")
 	hitTabMenuCloseRight  = tree.ID(tabMenuHits, "tab-menu-close-right")
 	hitTabMenuDuplicate   = tree.ID(tabMenuHits, "tab-menu-duplicate")
+	hitTabMenuCopyAddress = tree.ID(tabMenuHits, "tab-menu-copy-address")
+	hitTabMenuCopyName    = tree.ID(tabMenuHits, "tab-menu-copy-name")
 	hitTabMenuReconnect   = tree.ID(tabMenuHits, "tab-menu-reconnect")
 	hitTabMenuRestart     = tree.ID(tabMenuHits, "tab-menu-restart")
 	hitTabMenuDisconnect  = tree.ID(tabMenuHits, "tab-menu-disconnect")
@@ -128,6 +130,10 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	closeKeys := state.shortcuts.chords[shortcutCloseTab].keys(keys[:0])
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
+	address, name := "", ""
+	if hasSession {
+		address, name = connectionAddressAndPort(session.host), session.host.Label
+	}
 	rows.add(components.ContextMenuItem{ID: hitTabMenuRename, Label: messages.MenuRenameTab, Icon: icon(iconPencil)})
 	lockLabel := messages.MenuLockTab
 	if state.deck.Locked(state.tabMenu.workspace) {
@@ -135,6 +141,9 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	rows.add(components.ContextMenuItem{ID: hitTabMenuLock, Label: lockLabel, Icon: icon(iconLock)})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuDuplicate, Label: messages.MenuDuplicateTab, Icon: icon(iconCopy), Disabled: !hasSession})
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
+	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
 	rows.separate()
 	// A remote desktop keeps its scaling and keyboard controls in the page's
 	// bar, which a host may have asked to hide: the menu holds them either way.
@@ -194,6 +203,16 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 		return true
 	}
 	switch id {
+	case hitTabMenuCopyAddress:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			if address := connectionAddressAndPort(session.host); address != "" && state.options.SetClipboardText != nil {
+				_ = state.options.SetClipboardText(address)
+			}
+		}
+	case hitTabMenuCopyName:
+		if session, ok := state.tabMenuSessionFor(workspace); ok && session.host.Label != "" && state.options.SetClipboardText != nil {
+			_ = state.options.SetClipboardText(session.host.Label)
+		}
 	case hitTabMenuRename:
 		state.openTabRename(workspace)
 	case hitTabMenuLock:
