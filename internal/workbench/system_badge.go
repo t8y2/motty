@@ -184,17 +184,32 @@ func roundedSquare(side, radius float32) []ui.PathCommand {
 }
 
 // scaledCommands moves a glyph's path into the badge's square, inset from its edge by
-// the given share of it.
+// the given share of it. The glyph is drawn in one color, so it takes every path it
+// has, whether the compiler left them at the top level or in layers for their fills.
 func scaledCommands(icon ui.Icon, inset float32) []ui.PathCommand {
 	margin := badgeIconView * inset
 	scale := (badgeIconView - 2*margin) / icon.ViewBox
 	place := func(point ui.Point) ui.Point {
 		return ui.Point{X: margin + point.X*scale, Y: margin + point.Y*scale}
 	}
-	commands := make([]ui.PathCommand, len(icon.Commands))
-	for index, command := range icon.Commands {
+	commands := glyphCommands(icon)
+	for index, command := range commands {
 		command.Point, command.Control1, command.Control2 = place(command.Point), place(command.Control1), place(command.Control2)
 		commands[index] = command
+	}
+	return commands
+}
+
+// glyphCommands is a glyph's geometry whatever form the compiler left it in: a
+// single-fill icon carries its paths at the top level, one that names fill colors
+// carries them in layers.
+func glyphCommands(icon ui.Icon) []ui.PathCommand {
+	if len(icon.Layers) == 0 {
+		return append([]ui.PathCommand(nil), icon.Commands...)
+	}
+	var commands []ui.PathCommand
+	for _, layer := range icon.Layers {
+		commands = append(commands, layer.Commands...)
 	}
 	return commands
 }

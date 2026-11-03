@@ -31,7 +31,9 @@ func TestBadgesAndTheIconListAgree(t *testing.T) {
 }
 
 // TestEveryOfferedBadgeComposes guards the composition step: a badge whose glyph
-// has no path commands would render as an empty square.
+// has no path commands would render as an empty square. The glyph is checked layer
+// by layer, because an icon that names fill colors keeps its geometry in them and
+// a composition that only reads the top level loses the mark.
 func TestEveryOfferedBadgeComposes(t *testing.T) {
 	for _, choice := range hostSystemChoices {
 		if _, ok := distroBadges[choice.system]; !ok {
@@ -44,6 +46,12 @@ func TestEveryOfferedBadgeComposes(t *testing.T) {
 			}
 			if len(icon.Layers) == 0 {
 				t.Errorf("%v composes an empty badge (dark=%v)", choice.system, dark)
+			}
+			// Layer 0 is the square the badge sits on; the rest are the glyph.
+			for index, layer := range icon.Layers[1:] {
+				if len(layer.Commands) == 0 {
+					t.Errorf("%v: glyph layer %d has no path commands (dark=%v)", choice.system, index, dark)
+				}
 			}
 		}
 	}
@@ -79,19 +87,10 @@ func TestBadgeGlyphsAreCentered(t *testing.T) {
 }
 
 // glyphBounds is the extent of a glyph's geometry, in its own view-box units.
-// A glyph that carries fill colors keeps its paths in layers, so the layers are
-// where the geometry is read from.
 func glyphBounds(icon ui.Icon) (minX, minY, maxX, maxY float32) {
 	minX, minY, maxX, maxY = 0, 0, 0, 0
 	first := true
-	commands := icon.Commands
-	if len(icon.Layers) > 0 {
-		commands = nil
-		for _, layer := range icon.Layers {
-			commands = append(commands, layer.Commands...)
-		}
-	}
-	for _, command := range commands {
+	for _, command := range glyphCommands(icon) {
 		if command.Kind == ui.PathCommandClose {
 			continue
 		}
