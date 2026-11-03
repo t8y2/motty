@@ -45,6 +45,25 @@ func TestWideRangesAreSortedAndDisjoint(t *testing.T) {
 	}
 }
 
+func TestIsWideMatchesTheRanges(t *testing.T) {
+	rangeAt := func(r rune) bool {
+		for _, w := range wideRanges {
+			if r < w[0] {
+				return false
+			}
+			if r <= w[1] {
+				return true
+			}
+		}
+		return false
+	}
+	for r := rune(0); r <= 0x10FFFF; r++ {
+		if got, want := isWide(r), rangeAt(r); got != want {
+			t.Fatalf("isWide(%U) = %v, want %v", r, got, want)
+		}
+	}
+}
+
 func BenchmarkWidth(b *testing.B) {
 	runes := []rune("The quick 世界 brown ｆｏｘ é ✓ 😀")
 	b.ReportAllocs()
