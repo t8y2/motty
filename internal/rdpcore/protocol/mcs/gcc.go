@@ -66,13 +66,14 @@ const (
 
 // Early capability flags
 const (
-	EarlyCapSupportErrInfoPDU       uint16 = 0x0001
-	EarlyCapWant32BPPSession        uint16 = 0x0002
-	EarlyCapSupportStatusInfoPDU    uint16 = 0x0004
-	EarlyCapStrongAsymmetricKeys    uint16 = 0x0008
-	EarlyCapValidConnectionType     uint16 = 0x0020
-	EarlyCapSupportMonitorLayout    uint16 = 0x0040
-	EarlyCapSupportDynvcGfxProtocol uint16 = 0x0100
+	EarlyCapSupportErrInfoPDU        uint16 = 0x0001
+	EarlyCapWant32BPPSession         uint16 = 0x0002
+	EarlyCapSupportStatusInfoPDU     uint16 = 0x0004
+	EarlyCapStrongAsymmetricKeys     uint16 = 0x0008
+	EarlyCapValidConnectionType      uint16 = 0x0020
+	EarlyCapSupportMonitorLayout     uint16 = 0x0040
+	EarlyCapSupportNetCharAutodetect uint16 = 0x0080
+	EarlyCapSupportDynvcGfxProtocol  uint16 = 0x0100
 )
 
 // Keyboard types
@@ -397,6 +398,8 @@ type ServerSecurityData struct {
 type ServerNetworkData struct {
 	IOChannelID uint16
 	ChannelIDs  []uint16
+	// MessageChannelID is the separately negotiated TS_UD_SC_MCS_MSGCHANNEL.
+	MessageChannelID uint16
 }
 
 // DecodeServerData parses GCC server data blocks from the Conference Create Response userData.
@@ -405,6 +408,7 @@ func DecodeServerData(log *slog.Logger, data []byte) (*ServerCoreData, *ServerSe
 	var core *ServerCoreData
 	var sec *ServerSecurityData
 	var net *ServerNetworkData
+	var messageChannelID uint16
 
 	offset := 0
 	for offset+4 <= len(data) {
@@ -412,6 +416,9 @@ func DecodeServerData(log *slog.Logger, data []byte) (*ServerCoreData, *ServerSe
 		blockLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
 
 		if blockLen < 4 || offset+blockLen > len(data) {
+			if blockType == 0x0C04 {
+				return core, sec, net, fmt.Errorf("truncated server message channel data")
+			}
 			break
 		}
 
@@ -424,6 +431,11 @@ func DecodeServerData(log *slog.Logger, data []byte) (*ServerCoreData, *ServerSe
 			sec = decodeServerSecurityData(blockData)
 		case ServerNetworkDataType:
 			net = decodeServerNetworkData(blockData)
+		case 0x0C04: // TS_UD_SC_MCS_MSGCHANNEL
+			if len(blockData) != 2 {
+				return core, sec, net, fmt.Errorf("invalid server message channel data length: %d", len(blockData))
+			}
+			messageChannelID = binary.LittleEndian.Uint16(blockData)
 		}
 
 		offset += blockLen
@@ -440,6 +452,17 @@ func DecodeServerData(log *slog.Logger, data []byte) (*ServerCoreData, *ServerSe
 	}
 	if net == nil {
 		return core, sec, nil, fmt.Errorf("server network data not found in response")
+	}
+	net.MessageChannelID = messageChannelID
+	if messageChannelID != 0 {
+		if messageChannelID == net.IOChannelID {
+			return core, sec, net, fmt.Errorf("server message channel overlaps the I/O channel")
+		}
+		for _, channelID := range net.ChannelIDs {
+			if channelID == messageChannelID {
+				return core, sec, net, fmt.Errorf("server message channel overlaps a static channel")
+			}
+		}
 	}
 
 	return core, sec, net, nil

@@ -638,6 +638,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	defer state.syncDesktopFullscreen()
 	defer state.flushLocalDirectories()
 	state.adoptHistoryClear()
 	state.adoptCompletion()

@@ -647,7 +647,7 @@ type State struct {
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle bool
-	// terminalShowLatency displays connection RTT latency in the terminal panel,
+	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
@@ -2135,6 +2135,9 @@ func fieldForDialogHit(id ui.ID) hostField {
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result, handled := state.desktopFullscreenKey(event); handled {
+		return result
+	}
 	if result, handled := state.namedShortcut(event); handled {
 		return result
 	}

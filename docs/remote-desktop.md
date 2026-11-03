@@ -66,6 +66,28 @@ type Session interface {
 
 * Fit-to-window and 100% scaling; at 100% a picture larger than the pane pans
   with the pointer so that the remote pixel under the pointer stays under it.
+* **Fullscreen** in the desktop toolbar or tab menu, or `Ctrl+Alt+Enter`, uses
+  Viva's native fullscreen window and gives the whole monitor to the selected
+  desktop, hiding other panes, tabs and side panels without changing their saved
+  layout. The floating exit button and the same chord restore the window.
+  `Ctrl+Alt+G` still releases the keyboard. Fullscreen exits if the connection
+  ends, another page is activated, or a Motty dialog needs attention. The
+  fullscreen frame is not saved as the next launch's window placement.
+* RDP tabs offer **Show network latency (RTT)** in the tab menu, sharing the
+  existing latency display preference with SSH terminals (off by default).
+  The status line, or a floating badge in fullscreen/picture-only mode, shows
+  the latest average TCP RTT reported by the RDP server through MS-RDPBCGR
+  network characteristics auto-detection. Its tooltip names the sample time:
+  this is not input-to-display latency, and refresh frequency is controlled by
+  the server. Before a measurement, or on a server without auto-detection,
+  `RTT —` explicitly means unavailable. No ping, artificial frame refresh or
+  client polling is used for this display.
+  Headless acceptance covers focus handoff, keyboard input, exiting for dialogs,
+  restoring the normal layout and idle frame scheduling. A loopback xrdp
+  session also verifies real rendering and resizing to 3840x2160. Native Win11
+  fullscreen, physical keyboards, and a live Windows server's RTT reports still
+  need platform verification; xrdp without auto-detection shows the unavailable
+  indicator rather than a fabricated measurement.
 * A backend whose server can change its desktop's size while it runs implements
   `desktop.Resizer` (RDP, once the server has opened its display control
   channel). The workbench then asks for the pane's pixels and the display's
@@ -194,9 +216,10 @@ remote layout decides characters; Shift is added where the character needs it,
 pastes as Unicode events (UTF-16 pairs; a server application that ignores Unicode
 events, such as a terminal in xrdp, shows only some of them), pointer with three
 buttons and horizontal/vertical wheel. Clipboard text (CLIPRDR), per host, off by
-default. Suppress Output while the tab is hidden. The desktop is **1600x900 and
-fixed**: Motty does not resize the remote desktop to the pane (the picture is
-scaled instead), the server may change it and the picture follows.
+default. Suppress Output while the tab is hidden. The initial desktop matches
+the pane's device pixels and display scale (1600x900 only when the caller supplies
+no size). A server with the RDPEDISP display-control channel follows the pane
+in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
 
 ### Certificates
 

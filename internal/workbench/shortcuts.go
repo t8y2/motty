@@ -360,6 +360,9 @@ func shortcutActionFromString(value string) shortcutAction {
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result, handled := state.desktopFullscreenKey(event); handled {
+		return result
+	}
 	chord, ok := shortcutChordFromEvent(event)
 	if state.modal == modalSnippet && state.snippets.capturing {
 		return state.captureSnippetShortcut(event, chord, ok)

@@ -153,15 +153,18 @@ func (state *State) latencyInfo(session *Session) (text string, color ui.Color, 
 		return "", ui.Color{}, false
 	}
 	text = fmt.Sprintf("RTT %dms", ms)
+	return text, state.latencyColor(ms), true
+}
+
+func (state *State) latencyColor(ms int64) ui.Color {
 	switch {
 	case ms < 100:
-		color = state.pal.success
+		return state.pal.success
 	case ms < 200:
-		color = state.pal.warning
+		return state.pal.warning
 	default:
-		color = state.pal.danger
+		return state.pal.danger
 	}
-	return text, color, true
 }
 
 // declareLatencyTag renders the latency badge in the bar.

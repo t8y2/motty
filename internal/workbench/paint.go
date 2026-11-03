@@ -155,6 +155,14 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// was painted with so a resize can work out the rows and columns.
 	state.viewport = size
 	state.cellWidth, state.cellHeight = canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	if session := state.fullscreenDesktop(); session != nil {
+		state.beginMenus()
+		state.paintDesktopPage(canvas, size, session)
+		state.endMenus()
+		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
+		return
+	}
 	pal := state.pal
 	// The window is a bar over a body. The terminals show the picture through their
 	// own ground, so with one set only the bar is shell-colored; the shell behind
