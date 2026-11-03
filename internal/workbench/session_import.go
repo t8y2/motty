@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -130,12 +131,17 @@ func (state *State) readSessionImport(client sessionimport.Client, paths []strin
 			state.showActionWarning(m.ImportChooserTitle, m.ImportEncodingOneFile)
 			return
 		}
-		utf8, _ := sessionimport.ParseWithOptions(client, paths, sessionimport.ParseOptions{MobaEncoding: sessionimport.MobaUTF8})
-		gb, _ := sessionimport.ParseWithOptions(client, paths, sessionimport.ParseOptions{MobaEncoding: sessionimport.MobaGB18030})
+		utf8, utf8Err := sessionimport.ParseWithOptions(client, paths, sessionimport.ParseOptions{MobaEncoding: sessionimport.MobaUTF8})
+		gb, gbErr := sessionimport.ParseWithOptions(client, paths, sessionimport.ParseOptions{MobaEncoding: sessionimport.MobaGB18030})
+		// Bytes that read as both encodings are only a question for the person
+		// when the imported sessions differ; a bookmark named "Café" is not.
+		if utf8Err == nil && gbErr == nil && slices.Equal(utf8.Entries, gb.Entries) {
+			state.readSessionImport(client, paths, sessionimport.ParseOptions{MobaEncoding: sessionimport.MobaUTF8})
+			return
+		}
 		prompt := mobaEncodingPrompt{paths: append([]string(nil), paths...)}
 		for index := 0; index < len(utf8.Entries) && index < len(gb.Entries); index++ {
-			if utf8.Entries[index].Name != gb.Entries[index].Name || utf8.Entries[index].Group != gb.Entries[index].Group ||
-				utf8.Entries[index].User != gb.Entries[index].User || utf8.Entries[index].Host != gb.Entries[index].Host {
+			if utf8.Entries[index] != gb.Entries[index] {
 				prompt.utf8, prompt.gb = mobaEncodingSample(utf8.Entries[index]), mobaEncodingSample(gb.Entries[index])
 				break
 			}

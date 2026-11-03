@@ -99,6 +99,27 @@ func TestImportingAmbiguousMobaXtermChineseWithExplicitEncoding(t *testing.T) {
 	}
 }
 
+func TestAmbiguousMobaXtermBytesOutsideSessionsDoNotAsk(t *testing.T) {
+	// The comment's bytes read as both encodings, but no imported session does:
+	// there is nothing to choose between.
+	text := "[Bookmarks]\n; 客户\nWeb=#109#0%host.example.test%22%root%\n"
+	file := filepath.Join(t.TempDir(), "utf8.mxtsessions")
+	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportMobaXterm)
+	if state.modal == modalMobaEncoding {
+		t.Fatal("bytes that do not change a session asked which encoding to use")
+	}
+	if len(state.hosts) != 1 || state.hosts[0].Label != "Web" {
+		t.Fatalf("import = %+v", state.hosts)
+	}
+}
+
 func TestAmbiguousMobaXtermFilesMustBeImportedSeparately(t *testing.T) {
 	dir := t.TempDir()
 	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte("[Bookmarks]\n隆=#109#0%gb.example.test%22%root%\n"))
