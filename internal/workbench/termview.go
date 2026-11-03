@@ -130,6 +130,14 @@ type cellStyle struct {
 	strike    bool
 }
 
+// cellKey is the part of a cell that resolveCell reads, so two cells with the
+// same key resolve to the same style.
+type cellKey struct {
+	fg   term.Color
+	bg   term.Color
+	attr term.Attr
+}
+
 func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 	bold := cell.Attr&term.Bold != 0
 	fg := cell.FG
@@ -199,6 +207,16 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 	run := -1 // index into entry.runs of the run that may still grow
 	runASCII := false
 	marks := line.Marks
+	// Resolving a cell is the expensive half of a row: it maps the cell's own
+	// colors through the palette. A row is long stretches of one style, so the
+	// style is resolved where a stretch starts, not for every cell of it. The
+	// key is the part of a cell resolveCell reads, so the comparison stays one
+	// comparison however the cell changes.
+	var (
+		key    cellKey
+		style  cellStyle
+		styled bool
+	)
 	var (
 		spanFrom  = -1
 		spanTo    int
@@ -224,22 +242,25 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 			closeSpan()
 			continue
 		}
-		style := resolveCell(cell, pal, inactive)
+		if k := (cellKey{fg: cell.FG, bg: cell.BG, attr: cell.Attr}); !styled || k != key {
+			key, style, styled = k, resolveCell(cell, pal, inactive), true
+		}
+		ink := style
 		if cellSlots != nil && cellSlots[x] != highlight.None && cell.FG.Kind() == term.DefaultColor && cell.Attr&term.Inverse == 0 {
-			style.fg = pal.highlightColor(cellSlots[x], inactive)
+			ink.fg = pal.highlightColor(cellSlots[x], inactive)
 		}
 		if x == cursor {
-			style = cursorStyle
+			ink = cursorStyle
 		}
 
 		switch {
-		case !style.hasBG:
+		case !ink.hasBG:
 			closeSpan()
-		case spanFrom >= 0 && spanColor == style.bg && spanTo == x:
+		case spanFrom >= 0 && spanColor == ink.bg && spanTo == x:
 			spanTo = x + width
 		default:
 			closeSpan()
-			spanFrom, spanTo, spanColor = x, x+width, style.bg
+			spanFrom, spanTo, spanColor = x, x+width, ink.bg
 		}
 
 		character := cell.R
@@ -247,7 +268,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 			character = 0
 		}
 		blank := character == 0 || character == ' ' || cell.Attr&term.Hidden != 0
-		if blank && !style.underline && !style.strike {
+		if blank && !ink.underline && !ink.strike {
 			// An invisible cell: swallow it into an ASCII run that ends here.
 			// A non-ASCII character must stay on its own so the renderer keeps
 			// centering it within its cells, even when blanks follow it.
@@ -272,7 +293,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		// non-ASCII one.
 		ascii := character < 0x7f && !(len(marks) > 0 && int(marks[0].Col) == x)
 		if run >= 0 && ascii && runASCII && int(entry.runs[run].Column+entry.runs[run].Cells) == x &&
-			sameRunInk(entry.runs[run], style) {
+			sameRunInk(entry.runs[run], ink) {
 			entry.runs[run].Bytes++
 			entry.runs[run].Cells++
 			text = append(text, byte(character))
@@ -286,7 +307,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		}
 		entry.runs = append(entry.runs, ui.TextRun{
 			Column: int32(x), Bytes: int32(len(text) - before), Cells: int32(width),
-			Color: style.fg, Weight: style.weight, Italic: style.italic, Underline: style.underline, Strike: style.strike,
+			Color: ink.fg, Weight: ink.weight, Italic: ink.italic, Underline: ink.underline, Strike: ink.strike,
 		})
 		run = len(entry.runs) - 1
 		runASCII = ascii
