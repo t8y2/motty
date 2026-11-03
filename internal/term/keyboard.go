@@ -19,8 +19,10 @@ const kittyMaxStack = 32
 // screen: the value the program would get from CSI ? u.
 func (t *Terminal) KeyboardFlags() uint32 { return t.scr.kittyFlags }
 
-// resetKeyboard drops both screens' kitty keyboard modes and stacks.
-func (t *Terminal) resetKeyboard() {
+// ResetKeyboard drops both screens' kitty keyboard modes and stacks. A screen
+// keeps them across a reconnect, so a new shell must start from the terminal's
+// defaults instead of inheriting a program's negotiation.
+func (t *Terminal) ResetKeyboard() {
 	for _, screen := range []*screen{&t.main, &t.alt} {
 		screen.kittyFlags = 0
 		screen.kittyStack = screen.kittyStack[:0]

@@ -5,6 +5,7 @@ package workbench
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
@@ -43,6 +44,7 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 		{"copy stays local", 8, "cmd+c", ""},
 		{"unbound modified copy", 1, "cmd+alt+c", "\x1b[99;11u"},
 		{"negotiation disabled", 0, "cmd+j", ""},
+		{"bound but not applicable", 1, "cmd+l", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			shell.say(fmt.Sprintf("\x1b[=%du", test.flags))
@@ -56,6 +58,40 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 			}
 		})
 	}
+	// One chord that asks for event types is reported as a press/release pair, so
+	// the wiring that hands releases back to the encoder stays covered. The
+	// release only exists once the terminal has the keyboard: the tab click puts
+	// focus on the tab, and a text input asked for releases only while focused.
+	t.Run("press and release", func(t *testing.T) {
+		shell.say("\x1b[=3u")
+		state.Wake()
+		if err := session.Click(700, 400); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Wait(20 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		driver := session.Driver()
+		shell.input = nil
+		if err := driver.KeyDown(ui.KeyMetaLeft, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.KeyDown(ui.KeyUnknown, "j"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := driver.KeyUp(ui.KeyUnknown, "j"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := driver.KeyUp(ui.KeyMetaLeft, ""); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(shell.input), "\x1b[106;9:1u\x1b[106;9:3u"; got != want {
+			t.Fatalf("Command+J press/release sent %q, want %q", got, want)
+		}
+	})
+
 	shell.say("\x1b[=1u")
 	state.Wake()
 	state.shortcuts.unbind(shortcutCopy)

@@ -651,6 +651,10 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
+	// A program negotiates the kitty keyboard protocol for its own shell, but the
+	// screen keeps those flags across a reconnect, so a new shell would inherit
+	// modes it never asked for and start receiving Super chords as escape codes.
+	t.screen.ResetKeyboard()
 	state.submitSessionLogEvent(session, sessionlog.EventShellOpened, 0)
 	session.logStatus = sessionlog.StatusActive
 	forwardNotes := 0
@@ -1188,7 +1192,11 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
 		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && defaultShortcutModifier() == ui.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
-		} else if t.screen.KeyboardFlags() == 0 {
+		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
+			// A chord the application has bound belongs to it even where the
+			// action does not apply: the router has already declined it for this
+			// context, and sending it on would hand the program a Super key it
+			// never asked for.
 			return handled
 		}
 	}
@@ -1288,6 +1296,13 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 		return ui.EventResult{}, false
 	}
 	return ui.EventResult{Handled: true, Repaint: next != index, Focus: t.railIDs[next], FocusVisible: true}, true
+}
+
+// shortcutBound reports whether the shortcut table binds the chord of event,
+// whether or not its action applies to the focused target.
+func (state *State) shortcutBound(event ui.KeyEvent) bool {
+	chord, ok := shortcutChordFromEvent(event)
+	return ok && state.shortcuts.actionFor(chord) != shortcutNone
 }
 
 func (state *State) copySelection(session *Session) ui.EventResult {

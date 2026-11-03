@@ -10,8 +10,10 @@ import (
 // EncodeKey turns a raw key event into the bytes a program reading a terminal
 // expects, following xterm. Named keys encode by Key; a chord such as Control+C
 // arrives with Key unknown and its character in text. It returns nil for keys
-// that mean nothing to the program (Command chords belong to the application,
-// apart from the line edits, which send the Control chord they stand for).
+// that mean nothing to the program (a Command chord that is not one of the
+// line edits below belongs to the application, which is why this path sends
+// nothing for it; EncodeKeyEvent decides who owns the chord when the program
+// reports kitty keys).
 func EncodeKey(key ui.Key, modifiers ui.Modifiers, text string, appCursorKeys bool) []byte {
 	if modifiers&ui.ModifierMeta != 0 {
 		letter, ok := CommandLineEdit(key, modifiers)

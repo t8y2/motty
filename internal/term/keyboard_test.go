@@ -7,6 +7,23 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
+// A reconnect keeps the screen but not the old program: the flags a program
+// pushed for its shell must not be inherited by the next one.
+func TestResetKeyboardDropsTheModesAndStacksOfBothScreens(t *testing.T) {
+	term := newTerm(20, 3)
+	feed(term, "\x1b[=1u\x1b[>2u\x1b[>4u")
+	if term.KeyboardFlags() != 4 || len(term.scr.kittyStack) != 2 {
+		t.Fatalf("flags=%d stack=%d before the reset", term.KeyboardFlags(), len(term.scr.kittyStack))
+	}
+	feed(term, "\x1b[?1049h\x1b[=8u")
+	term.ResetKeyboard()
+	for _, screen := range []*screen{&term.main, &term.alt} {
+		if screen.kittyFlags != 0 || len(screen.kittyStack) != 0 {
+			t.Fatalf("screen kept flags=%d stack=%d", screen.kittyFlags, len(screen.kittyStack))
+		}
+	}
+}
+
 func TestKittyKeyboardFlagsPerScreenAndStack(t *testing.T) {
 	term := newTerm(20, 3)
 	var replies []string
