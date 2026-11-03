@@ -4,7 +4,7 @@
 // comes from Skill Icons (https://github.com/tandpfun/skill-icons), MIT. The Linux
 // glyph comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and is
 // split into theme-aware color layers. The Apple glyph comes from Devicon
-// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, and the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com). The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The QQ, WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
+// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com), and the Kylin glyph, which was supplied as SVG from Kylin's own icon set (https://www.kylinos.cn). The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The QQ, WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
 // respective trademark policies. SVG sources are compiled at build time with
 // `viva icons`; no SVG parser links into the app.
 // The sftp-* action glyphs were supplied with the SFTP interface design and
@@ -3348,6 +3348,59 @@ var Keyboard = ui.Icon{
 		ui.CubicTo(2.89543, 20.0, 2.0, 19.1046, 2.0, 18.0),
 		ui.LineTo(2.0, 6.0),
 		ui.CubicTo(2.0, 4.89543, 2.89543, 4.0, 4.0, 4.0),
+		ui.ClosePath(),
+	},
+}
+
+// kylin is a compiled vector icon.
+var Kylin = ui.Icon{
+	ViewBox: 1024.0,
+	Stroke:  2.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(764.587, 617.813),
+		ui.LineTo(771.413, 744.107),
+		ui.LineTo(822.613, 846.507),
+		ui.LineTo(723.627, 948.907),
+		ui.LineTo(733.867, 1024.0),
+		ui.LineTo(593.92, 1024.0),
+		ui.LineTo(692.907, 870.4),
+		ui.LineTo(655.36, 822.613),
+		ui.LineTo(542.72, 904.533),
+		ui.LineTo(542.72, 959.147),
+		ui.LineTo(406.187, 959.147),
+		ui.LineTo(501.76, 870.4),
+		ui.LineTo(583.68, 771.413),
+		ui.LineTo(508.587, 716.8),
+		ui.LineTo(344.747, 798.72),
+		ui.LineTo(252.587, 781.653),
+		ui.LineTo(184.32, 866.987),
+		ui.LineTo(167.253, 989.867),
+		ui.LineTo(27.3067, 989.867),
+		ui.LineTo(129.707, 877.227),
+		ui.LineTo(95.5733, 805.547),
+		ui.LineTo(75.0933, 662.187),
+		ui.LineTo(0.0, 498.347),
+		ui.LineTo(78.5067, 372.053),
+		ui.LineTo(133.12, 259.413),
+		ui.LineTo(238.933, 187.733),
+		ui.LineTo(361.813, 64.8533),
+		ui.LineTo(331.093, 136.533),
+		ui.LineTo(365.227, 136.533),
+		ui.LineTo(491.52, 0.0),
+		ui.LineTo(423.253, 116.053),
+		ui.LineTo(430.08, 160.427),
+		ui.LineTo(467.627, 300.373),
+		ui.LineTo(385.707, 423.253),
+		ui.LineTo(522.24, 522.24),
+		ui.LineTo(696.32, 590.507),
+		ui.LineTo(822.613, 512.0),
+		ui.LineTo(894.293, 402.773),
+		ui.LineTo(1024.0, 368.64),
+		ui.LineTo(1006.93, 522.24),
+		ui.LineTo(928.427, 556.373),
+		ui.LineTo(856.747, 542.72),
 		ui.ClosePath(),
 	},
 }

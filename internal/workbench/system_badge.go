@@ -43,6 +43,7 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemOpenWrt:        {icons.Openwrt, ui.RGB(0, 160, 204)},
 	sshconn.SystemDeepin:         {icons.Deepin, ui.RGB(0, 124, 255)},
 	sshconn.SystemUOS:            {icons.Uos, ui.RGB(0, 150, 235)},
+	sshconn.SystemKylin:          {icons.Kylin, ui.RGB(208, 18, 27)},
 	sshconn.SystemPopOS:          {icons.Popos, ui.RGB(46, 154, 166)},
 	sshconn.SystemZorin:          {icons.Zorin, ui.RGB(14, 134, 198)},
 	sshconn.SystemElementary:     {icons.Elementary, ui.RGB(47, 134, 212)},

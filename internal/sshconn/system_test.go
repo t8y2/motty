@@ -31,6 +31,7 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Linux\nid=openwrt\n", SystemOpenWrt},
 		{"kernel=Linux\nid=deepin\n", SystemDeepin},
 		{"kernel=Linux\nid=uos\n", SystemUOS},
+		{"kernel=Linux\nid=kylin\n", SystemKylin},
 		{"kernel=Linux\nid=pop\n", SystemPopOS},
 		{"kernel=Linux\nid=zorin\n", SystemZorin},
 		{"kernel=Linux\nid=elementary\n", SystemElementary},
