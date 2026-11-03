@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,10 +27,15 @@ import (
 // typing into the native search field becomes a query exactly as it does in a
 // window.
 func openSessionLogsWindow(t *testing.T, state *State, size ui.Size) *headless.Session {
+	return openSessionLogsWindowWithInvalidator(t, state, size, nil)
+}
+
+func openSessionLogsWindowWithInvalidator(t *testing.T, state *State, size ui.Size, invalidator *app.Invalidator) *headless.Session {
 	t.Helper()
 	view, err := headless.Open(app.Config{
 		Title: "Session Logs", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
-		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		Invalidator: invalidator,
+		Paint:       state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
 		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize, OnWake: state.Wake,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
 			if editor := state.EditorFor(context.ID); editor != nil {
@@ -46,6 +52,58 @@ func openSessionLogsWindow(t *testing.T, state *State, size ui.Size) *headless.S
 		t.Fatal(err)
 	}
 	return view
+}
+
+func TestSessionLogsNativeIdleMidnightRefresh(t *testing.T) {
+	for _, zone := range []string{"UTC", "America/Santiago"} {
+		t.Run(zone, func(t *testing.T) { testSessionLogsIdleMidnightRefresh(t, zone) })
+	}
+}
+
+func testSessionLogsIdleMidnightRefresh(t *testing.T, zone string) {
+	t.Helper()
+	t.Setenv("TZ", zone)
+	location, err := time.LoadLocation(zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invalidator app.Invalidator
+	options := sessionLogsTestOptions(t)
+	options.Invalidate = invalidator.Invalidate
+	before := time.Date(2026, 9, 5, 23, 59, 59, 0, location)
+	var started atomic.Pointer[time.Time]
+	options.WallNow = func() time.Time {
+		if start := started.Load(); start != nil {
+			return before.Add(time.Since(*start))
+		}
+		return before
+	}
+	state := newTestState(t, options)
+	sessionLogsInsert(t, state, sessionlog.Record{ID: "before-midnight", RunID: "run", Host: "host", Protocol: sessionlog.ProtocolSSH, StartedAt: before.Add(-time.Hour)}, sessionlog.StatusEnded, sessionlog.ReasonUserClosed, before)
+	state.sessionLogs.view.timeRange = sessionLogTimeToday
+	state.openSessionLogs()
+	sessionLogsWait(t, state)
+	view := openSessionLogsWindowWithInvalidator(t, state, ui.Size{Width: 1180, Height: 807}, &invalidator)
+	if state.sessionLogs.view.matched != 1 {
+		t.Fatal("initial today row missing")
+	}
+	start := time.Now()
+	started.Store(&start)
+	deadline := time.NewTimer(4 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-view.Driver().Wakes():
+			if err := view.Driver().Pump(); err != nil {
+				t.Fatal(err)
+			}
+			if !state.sessionLogs.view.loading && state.sessionLogs.view.matched == 0 {
+				return
+			}
+		case <-deadline.C:
+			t.Fatal("idle native page did not refresh at midnight")
+		}
+	}
 }
 
 // sessionLogsSettle lets the page's queued query finish and repaints the frame
@@ -101,11 +159,13 @@ func hasHitLabel(view *headless.Session, label string) bool {
 	return false
 }
 
-// textAt finds the painted text value at a position, for the icon-alignment
+// textAt finds the painted text value inside a row, for the icon-alignment
 // check between two navigation rows.
-func textAt(texts []ui.Text, value string, maxY float32) (ui.Text, bool) {
+func textAt(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
 	for _, text := range texts {
-		if text.Value == value && text.Bounds.Y <= maxY {
+		if text.Value == value && text.Bounds.X >= row.X && text.Bounds.Y >= row.Y &&
+			text.Bounds.X+text.Bounds.Width <= row.X+row.Width &&
+			text.Bounds.Y+text.Bounds.Height <= row.Y+row.Height {
 			return text, true
 		}
 	}
@@ -151,11 +211,11 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 					if gap := nav.Bounds.Y - monitor.Bounds.Y; gap != 40 {
 						t.Fatalf("the session-log row is %g below Monitor, want the sidebar's 40", gap)
 					}
-					navText, ok := textAt(snapshot.Texts, m.Title, 204)
+					navText, ok := textAt(snapshot.Texts, m.Title, nav.Bounds)
 					if !ok {
 						t.Fatalf("the sidebar row's label is not painted: %+v", snapshot.Texts)
 					}
-					monitorText, ok := textAt(snapshot.Texts, state.messages.Dashboard.Title, 204)
+					monitorText, ok := textAt(snapshot.Texts, state.messages.Dashboard.Title, monitor.Bounds)
 					if !ok {
 						t.Fatal("the monitor row's label is not painted")
 					}
@@ -338,6 +398,81 @@ func TestSessionLogsNativeP1Actions(t *testing.T) {
 	if len(sessionLogRows(t, state)) != 6 {
 		t.Fatal("canceling a native cleanup changed the records")
 	}
+}
+
+func TestSessionLogsNativeP2QueryActions(t *testing.T) {
+	state := sessionLogsState(t, true)
+	state.setLanguage(i18n.English)
+	state.setAppearance(appearanceLight)
+	size := ui.Size{Width: 760, Height: 620}
+	view := openSessionLogsWindow(t, state, size)
+	m := state.messages.SessionLogs
+	if err := view.ClickLabel(m.FilterSort); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.SortLongest); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsSettle(t, view, state)
+	if state.sessionLogs.view.query.Sort != sessionlog.SortDurationDesc || !view.HasText(m.ColumnDuration) {
+		t.Fatal("duration ordering hides its comparison value in the narrow table")
+	}
+	windowHitsInside(t, view, size)
+	sessionLogsScreenshot(t, view, "p2-duration-order")
+	if err := view.ClickLabel(m.FilterTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.TimeCustom); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.DateFrom); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("cmd+a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("not-a-date"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(m.ApplyRange); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalForm || state.form.dialogError == "" {
+		t.Fatal("invalid native range did not retain its validation state")
+	}
+	sessionLogsScreenshot(t, view, "p2-custom-invalid")
+	for _, label := range []string{m.DateFrom, m.DateThrough} {
+		if err := view.ClickLabel(label); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Keys("cmd+a"); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Type("2026-10-30"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := view.ClickLabel(m.ApplyRange); err != nil {
+		t.Fatal(err)
+	}
+	sessionLogsSettle(t, view, state)
+	if state.modal != modalNone || len(state.sessionLogs.view.page) != 3 || state.sessionLogs.view.total != 6 {
+		t.Fatal("native custom date range did not reach the query")
+	}
+	windowHitsInside(t, view, size)
+	sessionLogsScreenshot(t, view, "p2-custom-range")
 }
 
 // Typing into the native field filters the page, Escape empties it, and the

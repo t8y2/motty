@@ -5,9 +5,13 @@ package i18n
 // done with the records. Only connection metadata is stored, so nothing here
 // talks about terminal contents, recordings or replay.
 type SessionLogsMessages struct {
-	FieldStopped string
-	Title        string
-	Description  string
+	ApplyRange                                                                               string
+	DateToday, DateYesterday, DateEarlier                                                    string
+	CountSummaryFmt, TimeCustom, DateFrom, DateThrough, InvalidDateRange, CustomRangeHintFmt string
+	FilterSort, SortNewest, SortOldest, SortLongest, SortShortest                            string
+	FieldStopped                                                                             string
+	Title                                                                                    string
+	Description                                                                              string
 
 	// The search box and the four filters. The labels are what assistive
 	// technology reads on a trigger whose visible text is the current choice.
@@ -112,6 +116,10 @@ type SessionLogsMessages struct {
 }
 
 var chineseSessionLogs = SessionLogsMessages{
+	ApplyRange: "应用范围",
+	DateToday:  "今天", DateYesterday: "昨天", DateEarlier: "更早",
+	CountSummaryFmt: "已加载 %d / %d 条 · 全部 %d", TimeCustom: "自定义日期", DateFrom: "开始日期", DateThrough: "结束日期（含当天）", InvalidDateRange: "请输入有效的 YYYY-MM-DD 日期，开始日期不能晚于结束日期。", CustomRangeHintFmt: "日期范围：%s 至 %s",
+	FilterSort: "会话排序", SortNewest: "最新优先", SortOldest: "最早优先", SortLongest: "时长降序", SortShortest: "时长升序",
 	FieldStopped:      "记录停止",
 	More:              "更多会话日志操作",
 	ClearSelectionFmt: "%s：本机日志库中本次选定的 %d 条记录，含 %d 条收藏。范围不受当前筛选影响。\n确认后只删除本次快照；后来新增的记录保留。清除未收藏时，后来被收藏的记录也会保留。\n活动连接不会关闭；删除后该会话不自动补录。命令历史、录制和诊断日志不受影响。",
@@ -259,6 +267,10 @@ var chineseSessionLogs = SessionLogsMessages{
 }
 
 var englishSessionLogs = SessionLogsMessages{
+	ApplyRange: "Apply range",
+	DateToday:  "Today", DateYesterday: "Yesterday", DateEarlier: "Earlier",
+	CountSummaryFmt: "Loaded %d / %d · Total %d", TimeCustom: "Custom dates", DateFrom: "Start date", DateThrough: "End date (inclusive)", InvalidDateRange: "Enter valid YYYY-MM-DD dates with the start on or before the end.", CustomRangeHintFmt: "Date range: %s through %s",
+	FilterSort: "Sort sessions", SortNewest: "Newest first", SortOldest: "Oldest first", SortLongest: "Longest first", SortShortest: "Shortest first",
 	FieldStopped:      "Capture ended",
 	More:              "More session log actions",
 	ClearSelectionFmt: "%s: %d records selected from this computer's journal, including %d favorites, across all filters.\nOnly this selection will be deleted. New records are kept; clearing unfavorited records also protects entries favorited later.\nLive connections stay open; deleted sessions are not recorded again. Command history, recordings and diagnostics are unaffected.",

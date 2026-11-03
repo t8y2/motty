@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	layoutcore "motty/internal/workspace"
 )
 
 // spinnerStep is how long a spinner spoke stays lit.
@@ -54,6 +55,10 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
 	barBackground, barBorder := state.pal.workspace, state.pal.line
+	if state.workspaceManaged(state.deck.ActiveWorkspace()) && !inactive {
+		barBackground = barBackground.Mix(state.pal.accent, .045)
+		barBorder = state.activePaneRimColor()
+	}
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
 	status, _ := state.sessionStatus(session)
@@ -149,19 +154,24 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	if hint, style, offered := state.remoteStatsToggle(session); offered {
 		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
 	}
-	tools = append(tools, barTool{id: hitRemoteToolsOpen, icon: iconWrench, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
+	tools = append(tools, barTool{id: hitProcessToolsOpen, icon: iconProcess, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
 	inSplit := state.paneInSplit(session.ID)
 	if inSplit {
 		tools = append(tools, barTool{id: hitPaneClose, icon: iconClose, hint: state.messages.PaneClose, style: iconButtonQuiet, groupEnd: true})
 	}
-	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, style: iconButtonQuiet, groupEnd: !inSplit})
-	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, style: iconButtonQuiet})
-	if inSplit {
+	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
+	verticalDisabled := managed && !state.canSplitActivePane(layoutcore.Vertical)
+	horizontalDisabled := managed && !state.canSplitActivePane(layoutcore.Horizontal)
+	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
+	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
+	if inSplit && !managed {
 		hint, style := state.messages.Tools.BroadcastStart, iconButtonQuiet
+		enabled := workspaceCanBroadcast(state.workspaceConnectionState(state.deck.ActiveWorkspace()))
 		if state.broadcasting(session.ID) {
 			hint, style = state.messages.Tools.BroadcastStop, iconButtonActive
+			enabled = true
 		}
-		tools = append(tools, barTool{id: hitBroadcast, icon: iconRadio, hint: hint, style: style})
+		tools = append(tools, barTool{id: hitBroadcast, icon: iconRadio, hint: hint, disabled: !enabled, style: style})
 	}
 	ordered := state.orderToolbarTools(toolbarTerminal, tools, false)
 	if session.showLog && !session.term.live {
@@ -171,6 +181,9 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 			id: hitConnProgress, icon: iconChevronLeft, hint: state.messages.ConnShowProgress,
 			style: iconButtonQuiet,
 		}
+	}
+	if managed {
+		ordered = state.compactWorkspacePaneTools(ordered, session.ID, state.viewport.Width)
 	}
 	return ordered
 }
@@ -268,6 +281,9 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 			zone = toolbarDockLeftTop
 		}
 		state.registerToolbarDockTool(canvas, *tool, zone, intersectRect(tool.rect, viewport))
+		if tool.id == hitWorkspacePaneTools {
+			state.workspacePaneTools.anchor = tool.rect
+		}
 	}
 	canvas.Unclip()
 }
@@ -348,6 +364,9 @@ func (state *State) paintAIMarking(canvas *ui.Canvas, geometry terminalGeometry,
 func (state *State) declarePaneBar(f *flex.Frame, width float32, title, status string, session *Session, active bool) (spinner, light flex.Box) {
 	pal, canvas := state.pal, f.Canvas()
 	readout := status
+	if state.workspaceManaged(state.deck.ActiveWorkspace()) && session.quietOK() {
+		readout = ""
+	}
 	gap := float32(29) // from the name to the reading
 	if session.busy {
 		gap = 6

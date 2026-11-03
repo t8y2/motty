@@ -383,6 +383,45 @@ func TestDevelopmentSyncReloadRetainsItsWorkspaceBaseline(t *testing.T) {
 	}
 }
 
+func TestDevelopmentWorkspaceLayoutsStayWithTheirOwnDeck(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
+	release := releaseWorkspaceFixture()
+	release.WorkspaceLayouts = []savedWorkspaceLayout{{ID: 1, Columns: 1}}
+	saveReleaseState(t, options.StatePath, release)
+	development := savedWorkspace{
+		Workspace: "terminal", ActiveSession: 1, Deck: workspaceDeck("Dev Session", 1),
+		Sessions:         []savedSession{{Label: "Dev Session", Address: "dev.example.com", User: "me", Port: 22}},
+		WorkspaceLayouts: []savedWorkspaceLayout{{ID: 1, Columns: 1, Temporary: true}},
+	}
+	raw, err := json.Marshal(development)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveDevelopmentWorkspace(t, options.StatePath, string(raw))
+	state := newTestState(t, options)
+	if state.temporaryWorkspaceColumns[1] != 1 {
+		t.Fatal("development restored the release workspace's identity")
+	}
+	state.Click(hitWorkspaceHeaderLayout)
+	state.Click(hitWorkspaceHeaderColumnsList.At(2))
+	if err := state.reloadShared(); err != nil {
+		t.Fatal(err)
+	}
+	state.save()
+	var gotRelease savedState
+	if err := json.Unmarshal(localConfigValue(t, options.StatePath, localKey), &gotRelease); err != nil {
+		t.Fatal(err)
+	}
+	var gotDevelopment savedWorkspace
+	if err := json.Unmarshal(localConfigValue(t, options.StatePath, developmentWorkspaceKey), &gotDevelopment); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotRelease.WorkspaceLayouts, release.WorkspaceLayouts) || len(gotDevelopment.WorkspaceLayouts) != 1 || gotDevelopment.WorkspaceLayouts[0].Columns != 2 || !gotDevelopment.WorkspaceLayouts[0].Temporary {
+		t.Fatalf("workspace identities crossed builds: release=%+v development=%+v", gotRelease.WorkspaceLayouts, gotDevelopment.WorkspaceLayouts)
+	}
+}
+
 func bytesContain(raw []byte, text string) bool {
 	return strings.Contains(string(raw), text)
 }

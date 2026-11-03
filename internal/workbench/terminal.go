@@ -1316,7 +1316,18 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalFileProperties {
 		return ui.EventResult{Handled: true}
 	}
+	if state.modal == modalNone {
+		if result, handled := state.workspaceArrangementScroll(event); handled {
+			return result
+		}
+	}
 	if result := state.dashboardScroll(event); result.Handled {
+		return result
+	}
+	if result := state.workspaceDraftScroll(event); result.Handled {
+		return result
+	}
+	if result := state.scrollWorkspaceLibrary(event); result.Handled {
 		return result
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
@@ -1329,6 +1340,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		p := &state.editor.tagPicker
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
+	if result, handled := state.remoteProcessWheel(event); handled {
+		return result
 	}
 	if result, handled := state.transferCenterScroll(event); handled {
 		return result

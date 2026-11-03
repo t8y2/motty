@@ -162,10 +162,6 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 		if len(w.ui.remote.rows) != 1 || w.ui.remote.rows[0].cells[0] != "3000" || state.modal != modalNone {
 			t.Fatal("native utility search was routed to the workbench or lost its source")
 		}
-		row := hitOf(t, driver, hitRemoteRowList.At(0))
-		if err := driver.Click(row.Bounds.X+10, row.Bounds.Y+row.Bounds.Height/2); err != nil {
-			t.Fatal(err)
-		}
 		if err := driver.Key(ui.KeyEscape, 0); err != nil {
 			t.Fatal(err)
 		}

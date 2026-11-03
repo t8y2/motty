@@ -75,22 +75,26 @@ import (
 // Version 21 preserves toolbar dock zones and mixed-context ordering.
 // Version 22 preserves the device-local docked toolbar size.
 // Version 23 requires lossless transactional field patches from every writer.
+// Workspace templates travel as shared records; the layout they restore is a
+// device-local object, which epoch 23 preserves without a version of its own.
 const configFormat = 23
 
 const (
 	kindSetting             = "setting"
+	kindWorkspaceTemplate   = "workspace-template"
 	localKey                = "state"
 	developmentWorkspaceKey = "development_workspace"
 )
 
 // savedWorkspace is the restore state that differs between release and
-// development builds. It is deliberately limited to these four fields: all
-// other settings remain shared in local state.
+// development builds. Workspace identity travels with its deck; all other
+// settings remain shared in local state.
 type savedWorkspace struct {
-	Workspace     string              `json:"workspace,omitempty"`
-	Sessions      []savedSession      `json:"sessions,omitempty"`
-	ActiveSession int                 `json:"active_session,omitempty"`
-	Deck          *layoutcore.DeckDTO `json:"deck,omitempty"`
+	Workspace        string                 `json:"workspace,omitempty"`
+	Sessions         []savedSession         `json:"sessions,omitempty"`
+	ActiveSession    int                    `json:"active_session,omitempty"`
+	Deck             *layoutcore.DeckDTO    `json:"deck,omitempty"`
+	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
 }
 
 func clearSavedWorkspace(saved *savedState) {
@@ -98,6 +102,7 @@ func clearSavedWorkspace(saved *savedState) {
 	saved.Sessions = nil
 	saved.ActiveSession = 0
 	saved.Deck = nil
+	saved.WorkspaceLayouts = nil
 }
 
 func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
@@ -125,6 +130,7 @@ func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
 	saved.Sessions = workspace.Sessions
 	saved.ActiveSession = workspace.ActiveSession
 	saved.Deck = workspace.Deck
+	saved.WorkspaceLayouts = workspace.WorkspaceLayouts
 	return nil
 }
 
@@ -157,6 +163,7 @@ var entityFields = []entityField{
 		return joinKey("anonymous", fieldText(fields, "label"), fieldText(fields, "address"), fieldText(fields, "user"), fieldText(fields, "port"))
 	}},
 	{field: "host_groups", kind: "group", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
+	{field: "workspace_templates", kind: kindWorkspaceTemplate, key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "forwards", kind: "forward", key: func(fields map[string]json.RawMessage) string {
 		return joinKey(fieldText(fields, "mode"), fieldText(fields, "host_address"), fieldText(fields, "host_user"), fieldText(fields, "host_port"),
 			fieldText(fields, "local_port"), fieldText(fields, "destination_host"), fieldText(fields, "destination_port"))
@@ -503,6 +510,12 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 			// it is: not part of the state, so never taken for deleted.
 			continue
 		}
+		if entry.Kind == kindWorkspaceTemplate {
+			var template WorkspaceTemplate
+			if json.Unmarshal(payload.Data, &template) != nil || template.Validate() != nil || template.ID != entry.ID {
+				continue
+			}
+		}
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
 		base.payloads[key] = entry.Payload
 		base.ords[key] = payload.Ord
@@ -636,7 +649,7 @@ type localWrite struct {
 
 func isWorkspaceField(name string) bool {
 	switch name {
-	case "workspace", "sessions", "active_session", "deck":
+	case "workspace", "sessions", "active_session", "deck", "workspace_layouts":
 		return true
 	default:
 		return false

@@ -2,7 +2,9 @@ package workbench
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +25,7 @@ const processIdentityFixture = "boot 12345678-1234-1234-1234-123456789abc\n1 101
 
 var processGuardMarker = regexp.MustCompile(`motty-guard-[0-9a-f]{32}:`)
 var processGuardAction = regexp.MustCompile(`\n(kill -(TERM|KILL|HUP) ([0-9]+)|renice (-?[0-9]+) -p ([0-9]+)) 2>&1\n`)
+var processEnvironmentPID = regexp.MustCompile(`(?m)^pid=([0-9]+)$`)
 
 const imageFixture = `d4c45f66efc5|debian:bookworm-slim|74.9MB|2 weeks ago
 cf001c2f8af7|registry.example.com/library/python:<none>|1GB|3 months ago
@@ -40,8 +43,9 @@ type remoteServer struct {
 	failures map[string]error
 	// containers replaces the default container fixture when non-empty, so a
 	// test can show a container appearing while a tool window stays open.
-	containers string
-	identities string
+	containers  string
+	identities  string
+	environment string
 }
 
 func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byte, error) {
@@ -54,6 +58,38 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.identities), nil
 		}
 		return []byte(processIdentityFixture), nil
+	case strings.HasPrefix(command, "# motty-process-environment\n"):
+		if err := server.failures["environment"]; err != nil {
+			return []byte("permission denied\n"), err
+		}
+		match := processEnvironmentPID.FindStringSubmatch(command)
+		if len(match) != 2 {
+			return nil, errors.New("malformed environment protocol")
+		}
+		identities := server.identities
+		if identities == "" {
+			identities = processIdentityFixture
+		}
+		ticks := ""
+		for _, line := range strings.Split(identities, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 && fields[0] == match[1] {
+				ticks = fields[1]
+			}
+		}
+		if ticks == "" {
+			return nil, errors.New("process identity is missing")
+		}
+		environment := server.environment
+		if environment == "" {
+			environment = "LANG=zh_CN.UTF-8\x00PATH=/usr/local/bin:/usr/bin\x00SERVICE=api=blue\x00"
+		}
+		const boot = "12345678-1234-1234-1234-123456789abc"
+		return []byte(
+			"motty-env-before " + boot + " " + ticks + "\n" +
+				base64.StdEncoding.EncodeToString([]byte(environment)) +
+				"\nmotty-env-after " + boot + " " + ticks + "\n",
+		), nil
 	case strings.HasPrefix(command, "# motty-process-guard\n"):
 		marker, action := processGuardMarker.FindString(command), processGuardAction.FindStringSubmatch(command)
 		if marker == "" || len(action) != 6 {
@@ -141,6 +177,8 @@ func openRemoteToolsDialog(t *testing.T) (*State, *remoteServer, *fakeShell) {
 	server := &remoteServer{failures: map[string]error{}}
 	fake.runCommand = server.run
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	// This helper covers the legacy in-window tools dialog when the platform
+	// does not expose independent content windows.
 	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
 	rightClick(state, session, 400, 300)
 	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
@@ -159,7 +197,10 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	}
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitRemoteTabProcesses, hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteTerminate, hitRemoteKill, hitRemoteRefresh} {
+	for _, id := range []ui.ID{
+		hitRemoteTabProcesses, hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteRefresh,
+		hitRemoteTerminate, hitRemoteKill, hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher,
+	} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("control %d is not painted", id)
 		}
@@ -185,13 +226,41 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	}
 }
 
+func TestRemoteProcessFooterSeparatesCollectionTimeFromSearchSummary(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+
+	summary, ok := hitByID(&canvas, hitRemoteSearchScope)
+	if !ok {
+		t.Fatal("search summary is missing")
+	}
+	if strings.Contains(summary.Hint, state.remote.collectedAt.Format("2006-01-02 15:04:05")) {
+		t.Fatalf("collection time remains in the search summary: %q", summary.Hint)
+	}
+	snapshot, ok := hitByID(&canvas, hitRemoteSnapshotStatus)
+	if !ok || !strings.Contains(snapshot.Label, state.remote.collectedAt.Format("2006-01-02 15:04:05")) {
+		t.Fatalf("collection time is missing from the footer: %+v", snapshot)
+	}
+	count := fmt.Sprintf(state.messages.Tools.RemoteLoadedFmt, len(state.remote.rows))
+	countBounds, found := remoteCanvasExactTextBounds(&canvas, count)
+	if !found {
+		t.Fatalf("footer does not show %q", count)
+	}
+	if countBounds.Y < state.remote.processTableBounds.Bottom()-1 ||
+		snapshot.Bounds.Y < state.remote.processTableBounds.Bottom()-1 {
+		t.Fatalf("footer is not below the process table: count=%+v snapshot=%+v table=%+v",
+			countBounds, snapshot.Bounds, state.remote.processTableBounds)
+	}
+}
+
 func TestSignallingAProcessAsksFirstAndReturnsToTheList(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	state.Click(hitRemoteTerminate)
 	if state.modal != modalRemoteTools || state.remote.status != state.messages.Tools.RemoteNeedSelection {
 		t.Fatalf("no selection: modal %d, %q", state.modal, state.remote.status)
 	}
-	state.Click(hitRemoteRowList.At(0)) // the busiest, process 2211
+	selectRemoteToolsRow(state, 0) // the busiest, process 2211
 	state.Click(hitRemoteKill)
 	if state.modal != modalForm || state.form.title != state.messages.Tools.RemoteConfirmKillTitle || !strings.Contains(state.form.description, "2211") {
 		t.Fatalf("no confirmation: modal %d %q %q", state.modal, state.form.title, state.form.description)
@@ -216,7 +285,7 @@ func TestSignallingAProcessAsksFirstAndReturnsToTheList(t *testing.T) {
 func TestAServerThatRefusesASignalIsReportedInTheDialog(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["kill -TERM"] = errors.New("exit status 1")
-	state.Click(hitRemoteRowList.At(1))
+	selectRemoteToolsRow(state, 1)
 	state.Click(hitRemoteTerminate)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool { return state.remote.failed && !state.remote.loading })
@@ -232,7 +301,7 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 	if state.remote.rows[0].cells[0] != "web" || server.ran("docker ps") != 1 {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
-	state.Click(hitRemoteRowList.At(1)) // old-job, stopped
+	selectRemoteToolsRow(state, 1) // old-job, stopped
 	state.Click(hitRemoteStart)
 	waitFor(t, state, func() bool {
 		return server.ran("docker start a1b2c3d4e5f6") == 1 && !state.remote.loading && server.ran("docker ps") == 2
@@ -246,7 +315,7 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 	waitFor(t, state, func() bool { return server.ran("docker rm a1b2c3d4e5f6") == 1 })
 
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteRowList.At(0)) // web
+	selectRemoteToolsRow(state, 0) // web
 	state.Click(hitRemoteLogs)
 	if state.modal != modalNone || !strings.Contains(shell.typed(), "docker logs -f --tail 200 0f1e2d3c4b5a\r") {
 		t.Fatalf("modal %d, the terminal got %q", state.modal, shell.typed())
@@ -264,7 +333,7 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 	state.openRemoteTools(source)
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
-	state.Click(hitRemoteRowList.At(0)) // running web
+	selectRemoteToolsRow(state, 0) // running web
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
@@ -285,7 +354,7 @@ func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteRowList.At(1)) // exited job
+	selectRemoteToolsRow(state, 1) // exited job
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
@@ -304,7 +373,7 @@ func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
 	source.host.System = sshconn.SystemWindows
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
@@ -328,7 +397,7 @@ func TestRemoteToolsContainerShellFailureDoesNotCreateATab(t *testing.T) {
 	state.openRemoteTools(source)
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteShell)
 	waitFor(t, state, func() bool { return !state.remote.loading && state.remote.failed })
 	if len(state.sessions) != 1 || len(world.shared) != 0 || state.modal != modalRemoteTools {
@@ -361,7 +430,7 @@ func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
 	state.openRemoteTools(source)
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteShell)
 	<-started
 	state.Click(hitRemoteClose)
@@ -507,7 +576,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	if state.remote.status != state.messages.Tools.RemoteNeedSelection {
 		t.Fatalf("nothing selected, status %q", state.remote.status)
 	}
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteRemove)
 	if state.modal != modalForm || state.form.title != state.messages.Tools.RemoteConfirmRemoveImageTitle || !strings.Contains(state.form.description, "debian:bookworm-slim") {
 		t.Fatalf("no confirmation: modal %d %q", state.modal, state.form.title)
@@ -523,7 +592,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	})
 
 	// An image without a tag has nothing to be addressed by but its ID.
-	state.Click(hitRemoteRowList.At(1))
+	selectRemoteToolsRow(state, 1)
 	state.Click(hitRemoteRemove)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool { return server.ran("docker rmi cf001c2f8af7") == 1 })
@@ -531,7 +600,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	state.Click(hitRemoteTabVolumes)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 1 })
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteRemove)
 	if state.form.title != state.messages.Tools.RemoteConfirmRemoveVolumeTitle {
 		t.Fatalf("a volume's confirmation is %q", state.form.title)
@@ -546,7 +615,7 @@ func TestReniceUsesTheSelectedProcessAndShowsTheServersRefusal(t *testing.T) {
 	if state.remote.status != state.messages.Tools.RemoteNeedSelection {
 		t.Fatalf("nothing selected, status %q", state.remote.status)
 	}
-	state.Click(hitRemoteRowList.At(0)) // 2211
+	selectRemoteToolsRow(state, 0) // 2211
 	state.Click(hitRemoteNiceLower)
 	waitFor(t, state, func() bool {
 		return server.ran("renice 10 -p 2211") == 1 && !state.remote.loading && server.ran("LC_ALL=C ps") == 2
@@ -569,7 +638,7 @@ func TestRemoteToolsManageComposeProjects(t *testing.T) {
 	if state.remote.rows[0].cells[0] != "batch" || state.remote.rows[1].cells[2] != "/srv/web/compose.yml" {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteRestart)
 	waitFor(t, state, func() bool {
 		return server.ran("docker compose -p batch restart") == 1 && !state.remote.loading && server.ran("docker compose ls") == 2

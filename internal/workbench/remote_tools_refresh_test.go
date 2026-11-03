@@ -27,7 +27,7 @@ func TestRemoteAutoRefreshIsOptInAndSkipsBusyOrConfirming(t *testing.T) {
 	if state.remote.loading {
 		t.Fatal("refresh ran before its interval")
 	}
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	selected := state.remote.selected
 	state.tickRemoteRefresh(5 * time.Second)
 	waitFor(t, state, func() bool { return !state.remote.loading })
@@ -187,15 +187,19 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	}
 	state.Click(hitRemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	canvas.Reset()
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	if !state.remote.noDocker || remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("processes lost the Docker availability cache or displayed the wrong empty state")
 	}
+	state.Click(hitRemoteRowList.At(0))
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitRemoteKill); !ok || hit.Disabled {
 		t.Fatal("missing Docker disabled unrelated process operations")
 	}
+	state.Click(hitRemoteProcessDetailsDismiss)
 	state.Click(hitRemoteTabContainers)
 	if state.remote.loading {
 		t.Fatal("returning from processes did not reuse the known Docker empty state")
@@ -298,7 +302,7 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 				}
 				view.Driver().Pump()
 			}
-			click(hitRemoteRowList.At(0))
+			selectRemoteToolsRow(state, 0)
 			selected := w.ui.remote.selected
 			click(hitRemoteSortMemory)
 			settle()

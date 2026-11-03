@@ -59,12 +59,16 @@ const (
 
 // Process is one line of the process table.
 type Process struct {
-	PID     int
-	User    string
-	CPU     float64 // percent of one CPU
-	Memory  float64 // percent of memory
-	Elapsed string  // running time as ps prints it
-	Command string
+	PID           int
+	ParentPID     int
+	User          string
+	State         string
+	CPU           float64 // percent of one CPU
+	Memory        float64 // percent of memory
+	ResidentBytes uint64
+	VirtualBytes  uint64
+	Elapsed       string // running time as ps prints it
+	Command       string
 	// StartIdentity is empty when this reading cannot safely identify an
 	// instance. Legacy listings deliberately remain read-only for guarded APIs.
 	StartIdentity string
@@ -108,7 +112,11 @@ func processCommand(key SortKey) string {
 // ownPipeline reports whether a command line is the listing's own: the shell
 // that runs it and the stages of its pipe would otherwise head the list.
 func ownPipeline(command string) bool {
-	return strings.Contains(command, collectorMarker) || strings.Contains(command, "/bin/ps -A -o pid= -o user= -o pcpu=") || strings.HasPrefix(command, "sort -k") ||
+	return strings.Contains(command, collectorMarker) ||
+		strings.Contains(command, "ps -e -o pid= -o ppid= -o user= -o state=") ||
+		strings.Contains(command, "/bin/ps -A -o pid= -o user= -o pcpu=") ||
+		strings.Contains(command, "/bin/ps -A -o pid= -o ppid= -o user= -o state=") ||
+		strings.HasPrefix(command, "sort -k") ||
 		strings.HasPrefix(command, "head -n ") || strings.HasPrefix(command, "cut -c1-")
 }
 

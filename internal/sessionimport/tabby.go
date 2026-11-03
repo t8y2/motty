@@ -683,6 +683,7 @@ func (tabby *TabbyFile) applySecrets(secrets []tabbySecret) {
 		}
 		if index, ok := tabby.passwordIndex(byPassword, secret.Key); ok {
 			tabby.result.Entries[index].Password = secret.Value
+			tabby.result.Entries[index].PasswordFromVault = true
 		}
 	}
 	for index := range tabby.result.Entries {

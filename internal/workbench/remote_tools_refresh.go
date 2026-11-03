@@ -51,7 +51,7 @@ func (state *State) tickRemoteRefresh(now time.Duration) {
 	}
 	auto.now = now
 	auto.started, auto.next = now, now+auto.period()
-	if state.modal == modalRemoteTools && !state.remote.loading {
+	if state.remoteToolsVisible() && !state.remote.loading {
 		state.refreshRemoteTools()
 	}
 }
@@ -146,7 +146,7 @@ func (state *State) paintRemoteRefreshMenu(canvas *ui.Canvas) {
 
 func (state *State) remoteRefreshKey(event ui.KeyEvent) ui.EventResult {
 	auto := &state.remote.auto
-	if state.modal != modalRemoteTools || event.Release {
+	if !state.remoteToolsVisible() || event.Release {
 		return ui.EventResult{}
 	}
 	if auto.open {

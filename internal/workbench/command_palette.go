@@ -90,6 +90,7 @@ func (state *State) rebuildCommandPalette() {
 		return
 	}
 	palette.add(messages.NavHosts, hitHosts)
+	palette.add(messages.NavWorkspaces, hitWorkspaces)
 	palette.add(messages.NavKeychain, hitKeychain)
 	palette.add(messages.NavPortForwarding, hitPortForwarding)
 	palette.add(messages.NavProxies, hitProxies)

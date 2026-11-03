@@ -58,7 +58,7 @@ type sessionImportUI struct {
 func (state *State) beginSessionImport(request sessionImportRequest) {
 	plan := state.sessionImportPlan(nil, request.results...)
 	if len(plan.conflicts) == 0 {
-		state.applySessionImport(request, nil)
+		state.continueSessionImport(request, plan)
 		return
 	}
 	state.imports = sessionImportUI{
@@ -69,11 +69,11 @@ func (state *State) beginSessionImport(request sessionImportRequest) {
 	state.modal = modalImportConflicts
 }
 
-// applySessionImport plans the import with the answers given and adds what it
-// found. A nil map means there was nothing to ask about.
-func (state *State) applySessionImport(request sessionImportRequest, overwrite map[uint32]bool) {
+// continueSessionImport takes a planned import the rest of the way: it asks
+// about the passwords the client left readable, then stages and completes. A
+// plan with nothing to write says so in the words the client's import chose.
+func (state *State) continueSessionImport(request sessionImportRequest, plan hostImportPlan) {
 	m := state.messages.Tools
-	plan := state.sessionImportPlan(overwrite, request.results...)
 	plan.warnings = append(plan.warnings, request.warnings...)
 	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards)+len(plan.updates) == 0 && request.nothing != "" {
 		state.status = request.nothing
@@ -86,7 +86,27 @@ func (state *State) applySessionImport(request sessionImportRequest, overwrite m
 	if len(plan.updates) > 0 {
 		summary = fmt.Sprintf(m.ImportSummaryOverwriteFmt, len(plan.hosts), client, len(plan.updates), plan.duplicateHosts)
 	}
-	state.applyHostImportSummary(plan, summary)
+	passwords, conflicts := state.sessionImportPasswords(request.results, plan)
+	if conflicts > 0 {
+		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportPasswordConflictFmt, conflicts))
+	}
+	if len(passwords) > 0 {
+		state.sessionImport = sessionImportPreview{plan: plan, summary: summary, passwords: passwords, conflicts: conflicts}
+		state.dialogError = ""
+		if changes, err := state.sessionImportPasswordChanges(); err != nil {
+			state.dialogError = state.hostPasswordSaveError(err)
+		} else {
+			state.sessionImport.eligible = len(changes)
+		}
+		state.modal = modalSessionImportPreview
+		return
+	}
+	if err := state.stageSessionImport(plan); err != nil {
+		state.modal = modalNone
+		state.showActionWarning(m.ImportChooserTitle, fmt.Sprintf(m.ImportHostSaveFailedFmt, err))
+		return
+	}
+	state.completeSessionImport(plan, summary, 0)
 }
 
 func (state *State) clickImportConflict(id ui.ID) {
@@ -120,7 +140,7 @@ func (state *State) finishImportConflicts() {
 	request, overwrite := state.imports.request, state.imports.overwrite
 	state.imports = sessionImportUI{}
 	state.modal = modalNone
-	state.applySessionImport(request, overwrite)
+	state.continueSessionImport(request, state.sessionImportPlan(overwrite, request.results...))
 }
 
 // importConflictTarget is how the dialog names one conflict: the session's own

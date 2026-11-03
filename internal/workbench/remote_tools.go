@@ -53,6 +53,8 @@ var (
 	hitRemoteDismiss       = tree.ID(remoteToolsHits, "remote-dismiss")
 	hitRemotePrevious      = tree.ID(remoteToolsHits, "remote-previous")
 	hitRemoteNext          = tree.ID(remoteToolsHits, "remote-next")
+	hitRemoteProcessTable  = tree.ID(remoteToolsHits, "remote-process-table")
+	hitRemoteProcessScroll = tree.ID(remoteToolsHits, "remote-process-scroll")
 )
 
 // hitRemoteRowList starts the row ids: one per entry, up to the list limits.
@@ -63,7 +65,8 @@ var remoteAutoScope = tree.ID(remoteToolsHits, "remote-refresh-menu")
 var (
 	hitTerminalMenuTools = tree.ID(remoteToolsHits, "terminal-menu-tools")
 	// hitRemoteToolsOpen is the command palette's entry for the dialog.
-	hitRemoteToolsOpen = tree.ID(remoteToolsHits, "remote-tools-open")
+	hitRemoteToolsOpen  = tree.ID(remoteToolsHits, "remote-tools-open")
+	hitProcessToolsOpen = tree.ID(remoteToolsHits, "process-tools-open")
 )
 
 const (
@@ -75,11 +78,15 @@ const (
 
 // clickRemoteToolsOpen opens the dialog for the active session.
 func (state *State) clickRemoteToolsOpen(id ui.ID) bool {
-	if id != hitRemoteToolsOpen {
+	if id != hitRemoteToolsOpen && id != hitProcessToolsOpen {
 		return false
 	}
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.modal == modalNone {
-		state.openRemoteTools(session)
+		if id == hitProcessToolsOpen {
+			state.openProcessTools(session)
+		} else {
+			state.openRemoteTools(session)
+		}
 	}
 	return true
 }
@@ -140,7 +147,19 @@ type remoteToolsView struct {
 	selected                              string
 	page                                  int
 	pageText                              string
+	processScroll                         float32
+	processScrollBar                      components.ScrollAreaGeometry
+	processScrollDragging                 bool
+	processScrollGrab                     float32
+	processScrollValue                    string
+	processScrollFirst                    int
+	processScrollCount                    int
+	processTableBounds                    ui.Rect
+	processColumns                        [6]components.TableColumn
 	searches                              [6]remoteSearch
+	processMenu                           remoteProcessMenu
+	processDetails                        remoteProcessDetails
+	processDetailsSerial                  uint64
 	sourceTotal                           int
 	processesTruncated, commandsTruncated bool
 	searchSummary                         string
@@ -168,16 +187,32 @@ func (state *State) remoteToolsOffered(session *Session) bool {
 }
 
 func (state *State) openRemoteTools(session *Session) {
+	state.openRemoteToolsTab(session, state.remote.tab, false)
+}
+
+func (state *State) openRemoteToolsTab(session *Session, tab remoteTab, switchTab bool) {
 	if !state.remoteToolsOffered(session) {
 		return
 	}
 	if state.options.OpenContentWindow != nil {
-		state.openRemoteToolsWindow(session)
+		state.openRemoteToolsWindowTab(session, tab, switchTab)
 		return
 	}
-	state.remote = remoteToolsView{session: session.ID, title: session.Title, tab: state.remote.tab, sort: state.remote.sort, serial: state.remote.serial + 1}
+	// Detail generations survive replacing the presentation state. Environment
+	// requests from a closed tools surface must never be accepted by a later
+	// surface that happens to use the same session and process.
+	detailsSerial := state.remote.processDetailsSerial
+	state.cancelRemoteProcessEnvironment()
+	state.remote = remoteToolsView{
+		session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort,
+		serial: state.remote.serial + 1, processDetailsSerial: detailsSerial,
+	}
 	state.modal = modalRemoteTools
 	state.refreshRemoteTools()
+}
+
+func (state *State) remoteToolsVisible() bool {
+	return state.modal == modalRemoteTools
 }
 
 func (state *State) remoteSession() (*Session, bool) {
@@ -195,6 +230,12 @@ func (state *State) remoteSession() (*Session, bool) {
 func (state *State) clickRemoteTools(id ui.ID) {
 	view := &state.remote
 	m := state.messages.Tools
+	if state.clickRemoteProcessDetails(id) {
+		return
+	}
+	if state.clickRemoteProcessMenu(id) {
+		return
+	}
 	if remoteMutation(id) && (view.stale || view.loading || view.collectedAt.IsZero()) {
 		view.status, view.failed = m.RemoteRefreshRequired, true
 		return
@@ -203,9 +244,7 @@ func (state *State) clickRemoteTools(id ui.ID) {
 	case id == hitRemoteSearchClear:
 		state.clearRemoteSearch()
 	case id == hitRemoteClose || id == hitRemoteDismiss:
-		view.auto.enabled, view.auto.open = false, false
-		view.serial++
-		state.closeModal()
+		state.closeRemoteToolsSurface()
 	case id == hitRemoteAutoRefresh:
 		view.auto.open = !view.auto.open
 	case id == hitRemoteAutoDismiss:
@@ -264,6 +303,11 @@ func (state *State) clickRemoteTools(id ui.ID) {
 	case id.Scope() == hitRemoteRowList:
 		if index := item(id); index < len(view.rows) {
 			view.selected = view.rows[index].key
+			if view.tab == remoteProcesses {
+				if process, found := state.remoteProcessByKey(view.selected); found {
+					state.openRemoteProcessDetails(process)
+				}
+			}
 		}
 	case id == hitRemoteTerminate || id == hitRemoteKill:
 		process, ok := state.selectedProcess()
@@ -401,16 +445,22 @@ func shortCommand(command string) string {
 // confirmRemote asks before something destructive; yes runs the action, and
 // either answer returns to the tools.
 func (state *State) confirmRemote(title, description, confirm string, yes func(*State)) {
-	back := func(state *State) { state.modal = modalRemoteTools }
+	back := func(state *State) { state.restoreRemoteToolsSurface() }
 	state.openForm(formDialog{
 		title: title, description: description, submit: confirm, danger: true,
 		run: func(state *State, _ *formDialog) string {
-			state.modal = modalRemoteTools
+			state.restoreRemoteToolsSurface()
 			yes(state)
 			return ""
 		},
 		cancel: back,
 	})
+}
+
+// restoreRemoteToolsSurface returns a form or confirmation to the tools
+// surface that opened it.
+func (state *State) restoreRemoteToolsSurface() {
+	state.modal = modalRemoteTools
 }
 
 func (state *State) selectedProcess() (remotetools.Process, bool) {
@@ -435,7 +485,7 @@ func (state *State) selectedProcess() (remotetools.Process, bool) {
 // prints progress the user may want to stop.
 func (state *State) askPullImage() {
 	m := state.messages.Tools
-	back := func(state *State) { state.modal = modalRemoteTools }
+	back := func(state *State) { state.restoreRemoteToolsSurface() }
 	state.openForm(formDialog{
 		title: m.RemotePullTitle, description: m.RemotePullDescription, submit: m.RemotePull,
 		run: func(state *State, form *formDialog) string {
@@ -470,7 +520,7 @@ func (state *State) askCreateResource() {
 	if kind == remotetools.Networks {
 		title, description = m.RemoteCreateNetworkTitle, m.RemoteCreateNetworkDescription
 	}
-	back := func(state *State) { state.modal = modalRemoteTools }
+	back := func(state *State) { state.restoreRemoteToolsSurface() }
 	state.openForm(formDialog{
 		title: title, description: description, submit: m.RemoteCreate,
 		run: func(state *State, form *formDialog) string {
@@ -478,7 +528,7 @@ func (state *State) askCreateResource() {
 			if !remotetools.ValidName(name) {
 				return m.RemoteBadName
 			}
-			state.modal = modalRemoteTools
+			state.restoreRemoteToolsSurface()
 			state.runRemoteAction(fmt.Sprintf(m.RemoteActionDoneFmt, m.RemoteCreate+" "+name), func(ctx context.Context, runner remotetools.Runner) error {
 				return remotetools.CreateResource(ctx, runner, kind, name)
 			})
@@ -575,7 +625,7 @@ func (state *State) refreshRemoteTools() {
 		collectedAt := time.Now()
 		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
-			if view.serial != serial || view.session != sourceID || view.tab != tab || state.modal != modalRemoteTools {
+			if view.serial != serial || view.session != sourceID || view.tab != tab || !state.remoteToolsVisible() {
 				return
 			}
 			view.loading = false
@@ -642,7 +692,7 @@ func (state *State) runRemoteAction(done string, action func(context.Context, re
 		err := action(ctx, runner)
 		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
-			if view.serial != serial || view.session != sourceID || view.tab != tab || state.modal != modalRemoteTools {
+			if view.serial != serial || view.session != sourceID || view.tab != tab || !state.remoteToolsVisible() {
 				return
 			}
 			if err != nil {
@@ -660,6 +710,14 @@ func (state *State) runRemoteAction(done string, action func(context.Context, re
 	}()
 }
 
+func (state *State) closeRemoteToolsSurface() {
+	state.remote.auto.enabled, state.remote.auto.open = false, false
+	state.remote.processMenu = remoteProcessMenu{}
+	state.closeRemoteProcessDetails()
+	state.remote.serial++
+	state.closeModal()
+}
+
 func (state *State) remoteErrorText(err error) string {
 	m := state.messages.Tools
 	var failure *remotetools.Failure
@@ -668,6 +726,8 @@ func (state *State) remoteErrorText(err error) string {
 		return m.RemoteProcessChanged
 	case errors.Is(err, remotetools.ErrProcessUnverifiable):
 		return m.RemoteProcessUnverifiable
+	case errors.Is(err, remotetools.ErrProcessEnvironmentUnsupported):
+		return m.RemoteProcessEnvironmentUnsupported
 	case errors.Is(err, remotetools.ErrNoCompose):
 		return m.RemoteErrNoCompose
 	case errors.Is(err, remotetools.ErrComposeListUnsupported):
@@ -700,7 +760,7 @@ func (state *State) openContainerShell(container remotetools.Container) {
 		command, err := remotetools.ShellCommand(ctx, runner, container.ID)
 		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
-			if state.modal != modalRemoteTools || view.serial != serial || view.session != sourceID || view.tab != remoteContainers {
+			if !state.remoteToolsVisible() || view.serial != serial || view.session != sourceID || view.tab != remoteContainers {
 				return
 			}
 			view.loading = false
@@ -772,7 +832,7 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 	theme := state.Theme()
 	_, ok := state.remoteSession()
 	if !ok {
-		state.closeModal()
+		state.closeRemoteToolsSurface()
 		return
 	}
 	tableHeight := components.TableHeaderHeight(theme) + remoteRowsPerPage*components.TableRowHeight(theme)
@@ -787,6 +847,8 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.Actions(layout, actions[:count]...)
 	state.paintRemoteRefreshMenu(canvas)
 	dialog.End()
+	state.paintRemoteProcessMenu(canvas, viewport)
+	state.paintRemoteProcessDetails(canvas, viewport)
 }
 
 func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
@@ -817,7 +879,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	if view.failed {
 		color = pal.danger
 	}
-	var tabsSlot, refreshSlot, tableSlot, pagesSlot, searchSlot flex.Box
+	var tabsSlot, refreshSlot, tableSlot, pagesSlot, searchSlot, statusSlot, snapshotSlot flex.Box
 	f := state.partLayout.Begin(canvas, theme, bounds)
 	stacked := bounds.Width < 800
 	f.Column().Fill().Children(func() {
@@ -836,9 +898,14 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 			})
 		}
 		searchSlot = f.Slot().Height(remoteSearchHeight).Shrink(0).MarginSides(8, 0, 0, 0)
-		tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(4, 0, 0, 0)
+		if view.tab == remoteProcesses {
+			tableSlot = f.Slot().Grow(1).Shrink(1).MinHeight(components.TableHeaderHeight(theme)+components.TableRowHeight(theme)).MarginSides(4, 0, 0, 0)
+		} else {
+			tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(4, 0, 0, 0)
+		}
 		f.Row().Height(30).Shrink(0).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
-			f.Text(status).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1).MarginSides(0, 0, 0, 2)
+			statusSlot = f.Slot().Grow(1).Height(24)
+			snapshotSlot = f.Slot().Width(360).Height(24).Shrink(1)
 			if len(view.rows) > pageSize {
 				pagesSlot = f.Slot().Width(250).Height(30).Shrink(0)
 			}
@@ -846,6 +913,18 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	})
 	f.End()
 
+	if status != "" && statusSlot.Rect().Width > 0 {
+		bounds := statusSlot.Rect()
+		canvas.Label(elide(canvas, status, metrics.FontSizeS, ui.WeightMedium, bounds.Width), bounds,
+			ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: color})
+	}
+	if view.snapshotStatus != "" && snapshotSlot.Rect().Width > 0 {
+		bounds := snapshotSlot.Rect()
+		canvas.Label(elide(canvas, view.snapshotStatus, metrics.FontSizeS, ui.WeightMedium, bounds.Width), bounds,
+			ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: pal.muted})
+		canvas.HitWithOptions(hitRemoteSnapshotStatus, bounds, view.snapshotStatus,
+			ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: view.searchSummary})
+	}
 	components.BeginSegmentedControl(canvas, theme, tabsSlot.Rect(), tabs[:], selectedTab).Paint()
 	state.paintRemoteRefresh(canvas, refreshSlot.Rect())
 	state.paintRemoteSearch(canvas, searchSlot.Rect())
@@ -857,14 +936,14 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		state.paintRemoteToolsLoading(canvas, tableSlot.Rect())
 		return
 	}
+	if view.tab == remoteProcesses {
+		state.paintRemoteProcessTable(canvas, tableSlot.Rect())
+		return
+	}
 
 	var columns []components.TableColumn
 	var headings []string
-	if view.tab == remoteProcesses {
-		columns = []components.TableColumn{{Width: 70, Alignment: components.TableAlignRight}, {Width: 110}, {Width: 76, Alignment: components.TableAlignRight}, {Width: 86, Alignment: components.TableAlignRight}, {Width: 110}, {Width: 0}}
-		view.columns = [6]string{m.RemoteColPID, m.RemoteColUser, m.RemoteColCPU, m.RemoteColMemory, m.RemoteColTime, m.RemoteColCommand}
-		headings = view.columns[:6]
-	} else if view.tab == remoteCompose {
+	if view.tab == remoteCompose {
 		columns = []components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}
 		view.columns = [6]string{m.RemoteColName, m.RemoteColStatus, m.RemoteColConfig}
 		headings = view.columns[:3]
@@ -919,7 +998,11 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	end := min(start+pageSize, len(view.rows))
 	for index := start; index < end; index++ {
 		row := &view.rows[index]
-		table.Row(hitRemoteRowList.At(index), row.cells[:len(headings)], row.key == view.selected)
+		id := hitRemoteRowList.At(index)
+		table.Row(id, row.cells[:len(headings)], row.key == view.selected)
+		if view.tab == remoteProcesses {
+			state.openRemoteProcessMenuOn(canvas, id, index)
+		}
 	}
 
 	if len(view.rows) > pageSize {
@@ -962,7 +1045,7 @@ func (state *State) remoteToolActions() (actions [8]components.ButtonAction, cou
 			add(components.ButtonAction{ID: hitRemoteCreate, Label: m.RemoteCreate, Variant: components.ButtonOutline})
 		}
 		add(components.ButtonAction{ID: hitRemoteRemove, Label: m.RemoteRemove, Variant: components.ButtonDestructive})
-	} else {
+	} else if view.tab == remoteContainers {
 		add(components.ButtonAction{ID: hitRemoteStart, Label: m.RemoteStart, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteStop, Label: m.RemoteStop, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteRestart, Label: m.RemoteRestart, Variant: components.ButtonOutline})

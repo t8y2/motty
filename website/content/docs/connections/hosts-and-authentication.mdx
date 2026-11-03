@@ -63,13 +63,18 @@ Hosts can be grouped, tagged and searched.
 Open **Import > Import from** and choose the client, then the file it saved.
 Motty takes each session's name, folder, address, port and user; protocols it
 cannot open are counted as skipped. A host whose address, user and port are
-already saved is left out. What a session saved beside the destination comes
-along when the client wrote it down: the authentication it asked for, X11 and
-agent forwarding, its colour, the private key it used, the jump host it went
-through, the proxy it named, and the tunnels it opened. Passwords and key
-passphrases are the exception: only Tabby's are imported, and only once you type
-its vault (see [The Tabby vault](#the-tabby-vault)). For the other clients, add
-them to the host afterwards.
+already saved is not duplicated: the import asks whether to overwrite it with
+the imported settings or keep it as it is, and it asks that before the passwords
+below. What a session saved beside the destination comes along when the client
+wrote it down: the authentication it asked for, X11 and agent forwarding, its
+colour, the private key it used, the jump host it went through, the proxy it
+named, and the tunnels it opened. Passwords are the exception: Tabby's are
+imported once you type its vault (see [The Tabby vault](#the-tabby-vault)), and
+Electerm and Netcatty exports may carry readable SSH login passwords, which
+Motty asks whether to save in its vault or import connections only. A password
+only ever fills one that is missing, never replaces one already saved. Key
+passphrases, private keys and encrypted passwords from the other clients are not
+imported; add them to the host afterwards.
 
 | Client | File to choose |
 | --- | --- |
@@ -83,8 +88,14 @@ them to the host afterwards.
 | Tabby | `config.yaml` in Tabby's data folder: `~/Library/Application Support/tabby` on macOS, `%APPDATA%\tabby` on Windows, `~/.config/tabby` on Linux. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
-Motty does not import them and says so after the import; delete the file when
-you are done.
+Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
+but does not erase the export. Protect or delete the file when you are done.
+MobaXterm imports support UTF-8, UTF-16 with a byte-order mark, and
+GB18030 text; unsupported or damaged encodings are rejected rather than
+silently dropping characters. If a BOM-less file can be read as both UTF-8 and
+GB18030, Motty shows the differing names and asks you to choose before saving
+any hosts. If several selected files have an encoding ambiguity, import them
+one at a time so each can be decoded correctly.
 
 ### The Tabby vault
 

@@ -39,9 +39,22 @@ func (state *State) broadcastInput(source uint32, input []byte) {
 		if uint32(pane.SessionID) == source {
 			continue
 		}
-		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && peer.term != nil && peer.term.shell != nil {
+		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceSessionState(peer) == workspacePaneConnected {
 			peer.term.send(input)
 		}
+	}
+}
+
+// clearBroadcast stops input from reaching other panes. Callers use it before
+// a connection can change who is typing to whom.
+func (state *State) clearBroadcast() {
+	state.broadcast = 0
+}
+
+// clearWorkspaceBroadcast closes broadcast when workspaceID is its target.
+func (state *State) clearWorkspaceBroadcast(workspaceID layoutcore.WorkspaceID) {
+	if state.broadcast == workspaceID {
+		state.broadcast = 0
 	}
 }
 
@@ -64,13 +77,21 @@ func (state *State) toggleBroadcast() {
 		state.status = m.StatusBroadcastOff
 		return
 	}
-	panes := len(state.deck.Panes(workspaceID, nil))
-	if workspaceID == 0 || panes < 2 {
+	status := state.workspaceConnectionState(workspaceID)
+	if workspaceID == 0 || status.Panes < 2 {
 		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastNeedsSplit)
 		return
 	}
+	if status.Pending > 0 {
+		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastWait)
+		return
+	}
+	if status.Connected < 2 {
+		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastNeedsTwo)
+		return
+	}
 	state.broadcast = workspaceID
-	state.status = fmt.Sprintf(m.StatusBroadcastOnFmt, panes)
+	state.status = fmt.Sprintf(m.StatusBroadcastOnFmt, status.Connected)
 }
 
 // clickTerminalTools handles the controls of the terminal's tools: color

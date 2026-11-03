@@ -23,6 +23,7 @@ import (
 	"motty/internal/sshconn"
 	"motty/internal/update"
 	"motty/internal/vault"
+	layoutcore "motty/internal/workspace"
 )
 
 // Connection is what the workbench needs from one SSH connection. It is
@@ -408,6 +409,8 @@ const (
 	modalDeleteHost
 	modalMoveHostGroup
 	modalHostImportResult
+	modalSessionImportPreview
+	modalMobaEncoding
 	modalNewForward
 	modalNewProxy
 	modalHostKey
@@ -450,6 +453,9 @@ const (
 	modalSFTPColumns
 	modalTerminalInput
 	modalDeleteRule
+	modalWorkspaceDraft
+	modalWorkspaceSave
+	modalWorkspaceTemplateDelete
 )
 
 // tone colors a session's headline.
@@ -476,6 +482,9 @@ func (state *State) startConnection(session *Session, host Host) {
 }
 
 func (state *State) startConnectionMode(session *Session, host Host, automatic bool) {
+	if workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
+		state.clearWorkspaceBroadcast(workspaceID)
+	}
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
@@ -771,6 +780,11 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 	}
 	state.recordConnectionStatus(session, previousPhase, status)
 	state.updateReconnect(session, status)
+	if status.Phase == sshconn.PhaseFailed || status.Phase == sshconn.PhaseClosed || session.reconnectPending {
+		if workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
+			state.clearWorkspaceBroadcast(workspaceID)
+		}
+	}
 	// The retry policy has run: the journal can now tell a transient close that
 	// will be retried from a final one.
 	state.journalConnectionOutcome(session, status)
@@ -1108,6 +1122,15 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalDeleteRule {
 		state.ruleDelete = ruleDelete{}
+	}
+	if state.modal == modalWorkspaceDraft {
+		state.workspaceDraft.reset()
+	}
+	if state.modal == modalWorkspaceSave {
+		state.workspaceSave = workspaceSave{}
+	}
+	if state.modal == modalWorkspaceTemplateDelete {
+		state.workspaceTemplateDelete = workspaceTemplateDelete{}
 	}
 	state.modal = modalNone
 	state.modalSession = 0

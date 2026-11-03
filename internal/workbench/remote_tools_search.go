@@ -35,7 +35,7 @@ func (search *remoteSearch) queryEditor() *text.Editor {
 // RemoteToolsInput exposes native editing without putting user queries in any
 // remote command. Each tab owns its draft independently.
 func (state *State) RemoteToolsInput(context app.TextInputContext) *app.TextInput {
-	if state.modal != modalRemoteTools || context.ID != hitRemoteSearch {
+	if !state.remoteToolsVisible() || context.ID != hitRemoteSearch {
 		return nil
 	}
 	tab := state.remote.tab
@@ -45,7 +45,7 @@ func (state *State) RemoteToolsInput(context app.TextInputContext) *app.TextInpu
 	search.input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
 		before := search.editor.String()
 		event.Apply(&search.editor)
-		if before != search.editor.String() && state.modal == modalRemoteTools && state.remote.tab == tab {
+		if before != search.editor.String() && state.remoteToolsVisible() && state.remote.tab == tab {
 			state.remote.page = 0
 			state.rebuildRemoteRows()
 		}
@@ -84,9 +84,6 @@ func (state *State) filterRemoteRows() {
 	if view.tab == remoteProcesses && (view.processesTruncated || view.commandsTruncated) {
 		view.searchSummary += " · " + state.messages.Tools.RemoteSearchLimited
 	}
-	if view.snapshotStatus != "" {
-		view.searchSummary = view.snapshotStatus + " · " + view.searchSummary
-	}
 }
 
 func (state *State) clearRemoteSearch() {
@@ -98,7 +95,7 @@ func (state *State) clearRemoteSearch() {
 }
 
 func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
-	if state.modal != modalRemoteTools || event.Release {
+	if !state.remoteToolsVisible() || event.Release {
 		return ui.EventResult{}
 	}
 	chord, ok := shortcutChordFromEvent(event)
@@ -112,7 +109,7 @@ func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
 }
 
 func (state *State) remoteSearchKey(event ui.KeyEvent) ui.EventResult {
-	if state.modal != modalRemoteTools || state.remote.auto.open || event.Release || event.Repeat || event.Key != ui.KeyEscape {
+	if !state.remoteToolsVisible() || state.remote.auto.open || event.Release || event.Repeat || event.Key != ui.KeyEscape {
 		return ui.EventResult{}
 	}
 	search := &state.remote.searches[state.remote.tab]
@@ -146,7 +143,4 @@ func (state *State) paintRemoteSearch(canvas *ui.Canvas, bounds ui.Rect) {
 	summary := ui.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 20}
 	canvas.Label(elide(canvas, state.remote.searchSummary, metrics.FontSizeS, ui.WeightRegular, summary.Width), summary, ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
 	canvas.HitWithOptions(hitRemoteSearchScope, summary, state.remote.searchSummary, ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
-	if state.remote.snapshotStatus != "" {
-		canvas.HitWithOptions(hitRemoteSnapshotStatus, summary, state.remote.snapshotStatus, ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
-	}
 }

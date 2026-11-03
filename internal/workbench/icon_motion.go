@@ -524,7 +524,7 @@ func iconMotionFor(icon uint8) (iconMotion, bool) {
 		return iconMotionBlink, true
 	case iconPlug:
 		return iconMotionPlug, true
-	case iconNote, iconInfo, iconBug, iconFileClock:
+	case iconColumns2, iconNote, iconInfo, iconBug, iconFileClock:
 		return iconMotionSquash, true
 	}
 	return iconMotion{}, false
@@ -567,7 +567,7 @@ func playsIconMotion(id ui.ID) bool {
 		return true
 	}
 	switch id {
-	case hitHosts, hitDashboard, hitSessionLogs, hitKeychain, hitProxies, hitPortForwarding,
+	case hitHosts, hitWorkspaces, hitDashboard, hitSessionLogs, hitKeychain, hitProxies, hitPortForwarding,
 		hitKnownHosts, hitSnippets, hitLocalTerminal, hitSettings:
 		return true
 	}

@@ -449,10 +449,13 @@ func (state *State) dockWorkspace(src layoutcore.WorkspaceID, target layoutcore.
 	if dst == 0 || edge == dockNone {
 		return false
 	}
+	sourceIdentity := state.workspaceIdentity(src)
 	if _, err := state.deck.Dock(dst, src, target, edge.axis(), edge.placement()); err != nil {
 		state.status = err.Error()
 		return false
 	}
+	state.restoreWorkspaceIdentity(src, workspaceIdentity{})
+	state.restoreWorkspaceIdentity(dst, mergeWorkspaceIdentities(state.workspaceIdentity(dst), sourceIdentity))
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
 	state.rebuildTabOptions()

@@ -36,7 +36,7 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 		{hitTerminalRecord, state.messages.TipRecordStart},
 		{hitTerminalSaveOutput, state.messages.Tools.MenuSaveOutput},
 		{hitTerminalRecordingExport, state.messages.RecordingExport},
-		{hitRemoteToolsOpen, state.messages.Tools.RemoteMenu},
+		{hitProcessToolsOpen, state.messages.Tools.RemoteMenu},
 		{hitCommandPalette, state.messages.CommandPaletteTitle},
 		{hitWindowSettings, state.messages.NavSettings},
 	} {

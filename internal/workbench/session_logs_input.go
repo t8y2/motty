@@ -20,12 +20,12 @@ func (state *State) openSessionLogs() {
 	if state.activeSection != sectionSessionLogs {
 		state.activeSection = sectionSessionLogs
 		state.save()
-		state.refreshSessionLogs()
+		state.refreshSessionLogFilters()
 		return
 	}
 	view := &state.sessionLogs.view
 	if !view.loaded && !view.loading {
-		state.refreshSessionLogs()
+		state.refreshSessionLogFilters()
 	}
 }
 
@@ -36,7 +36,18 @@ func (state *State) openSessionLogs() {
 // the platform's text service, so the comparison here is what notices them.
 func (state *State) syncSessionLogs() {
 	view := &state.sessionLogs.view
-	if !view.synced || view.syncedLanguage != state.language {
+	if state.activeSection != sectionSessionLogs {
+		state.stopSessionLogCalendar()
+		return
+	}
+	state.updateSessionLogCalendar()
+	clockChanged := view.synced && view.clockStamp != state.sessionLogClockStamp()
+	if clockChanged && view.timeRange != sessionLogTimeAll {
+		state.refreshSessionLogFilters()
+		return
+	}
+	if !view.synced || view.syncedLanguage != state.language || clockChanged {
+		view.clockStamp = state.sessionLogClockStamp()
 		state.prepareSessionLogsView()
 	}
 	query := strings.TrimSpace(view.search.String())
@@ -52,20 +63,26 @@ func (state *State) syncSessionLogs() {
 	}
 	if state.activeSection == sectionSessionLogs && view.dirty {
 		view.dirty = false
-		state.refreshSessionLogs()
+		// A record can finish while the list is sorted by duration, which moves
+		// it; every other order a settled write leaves alone.
+		if view.query.Sort == sessionlog.SortDurationAsc || view.query.Sort == sessionlog.SortDurationDesc {
+			state.refreshSessionLogs()
+		} else {
+			state.refreshSessionLogsKeepingScroll()
+		}
 		return
 	}
 	if state.activeSection == sectionSessionLogs && !view.loaded && !view.loading && !view.unavailable {
-		state.refreshSessionLogs()
+		state.refreshSessionLogFilters()
 	}
 }
 
 // sessionLogRange is the query's time window for a filter choice.
 func sessionLogRange(now time.Time, span sessionLogTimeRange) (since, until time.Time) {
-	local := now.In(time.Local)
+	local := now
 	switch span {
 	case sessionLogTimeToday:
-		midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
+		midnight := sessionLogCalendarBoundary(sessionLogCalendarDate(local), local.Location())
 		return midnight, time.Time{}
 	case sessionLogTimeWeek:
 		return now.Add(-7 * 24 * time.Hour), time.Time{}
@@ -79,7 +96,16 @@ func sessionLogRange(now time.Time, span sessionLogTimeRange) (since, until time
 // applySessionLogFilters pushes the filter choices into the query and reloads
 // the first page. It runs from a click, never from Paint.
 func (state *State) applySessionLogFilters() {
+	if state.refreshSessionLogFilters() {
+		state.rememberSessionLogsView()
+	}
+}
+
+// Opening a page or crossing midnight recalculates relative bounds without
+// replacing defaults most recently chosen in another window.
+func (state *State) refreshSessionLogFilters() bool {
 	view := &state.sessionLogs.view
+	state.updateSessionLogCalendar()
 	view.query.Status = nil
 	if view.statusFilter != 0 {
 		status := view.statusFilter
@@ -95,11 +121,21 @@ func (state *State) applySessionLogFilters() {
 		favorite := true
 		view.query.Favorite = &favorite
 	}
-	view.query.Since, view.query.Until = sessionLogRange(state.wallNow(), view.timeRange)
+	view.query.Since, view.query.Until = sessionLogRange(state.wallNow().In(state.sessionLogLocation()), view.timeRange)
+	if view.timeRange == sessionLogTimeCustom {
+		since, until, err := sessionLogDateRange(view.customStartDate, view.customEndDate, state.sessionLogLocation())
+		if err != nil {
+			view.statusText, view.statusDanger = state.messages.SessionLogs.InvalidDateRange, true
+			return false
+		}
+		view.query.Since, view.query.Until = since, until
+	}
 	view.query.Cursor = sessionlog.Cursor{}
 	view.scrollRows = 0
 	view.filterMenu = sessionLogFilterNone
+	view.clockStamp = state.sessionLogClockStamp()
 	state.refreshSessionLogs()
+	return true
 }
 
 // chooseSessionLogFilter applies one choice of the open filter menu.
@@ -111,11 +147,19 @@ func (state *State) chooseSessionLogFilter(index int) {
 		return
 	}
 	switch menu {
+	case sessionLogFilterSortMenu:
+		if index < 4 {
+			view.query.Sort = sessionlog.SortOrder(index)
+		}
 	case sessionLogFilterOutcomeMenu:
 		if index < 4 {
 			view.query.Outcome = sessionlog.OutcomeFilter(index)
 		}
 	case sessionLogFilterTimeMenu:
+		if index == int(sessionLogTimeCustom) {
+			state.askSessionLogCustomRange()
+			return
+		}
 		if index < 4 {
 			view.timeRange = sessionLogTimeRange(index)
 		}
@@ -364,7 +408,7 @@ func (state *State) clickSessionLogs(id ui.ID) bool {
 		return true
 	case hitSessionLogsSearch:
 		return true
-	case hitSessionLogsTime, hitSessionLogsStatus, hitSessionLogsProtocol, hitSessionLogsOutcome:
+	case hitSessionLogsTime, hitSessionLogsStatus, hitSessionLogsProtocol, hitSessionLogsOutcome, hitSessionLogsSort:
 		view.moreMenu = false
 		filter := sessionLogFilterFor(id)
 		if view.filterMenu == filter {
@@ -477,6 +521,15 @@ func (state *State) sessionLogsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				next = index + 1
 			}
 			if next >= 0 && next < len(view.page) {
+				rowHeight := components.TableRowHeight(state.Theme())
+				top := state.sessionLogRowTop(next, rowHeight)
+				if top < view.scrollRows {
+					view.scrollRows = top
+				}
+				if top+rowHeight > view.scrollRows+view.tableBody.Height {
+					view.scrollRows = max(0, top+rowHeight-view.tableBody.Height)
+				}
+				view.focusPending = hitSessionLogsRowList.At(next)
 				return ui.EventResult{Handled: true, Repaint: true, Focus: hitSessionLogsRowList.At(next), FocusVisible: true}, true
 			}
 			return ui.EventResult{Handled: true}, true
@@ -507,7 +560,7 @@ func (state *State) sessionLogsTableArea() components.ScrollArea {
 	view := &state.sessionLogs.view
 	rowHeight := components.TableRowHeight(state.Theme())
 	return components.BeginScrollArea(nil, state.Theme(), view.tableBody,
-		ui.Size{Width: view.tableBody.Width, Height: float32(len(view.page)) * rowHeight}).Offset(0, view.scrollRows)
+		ui.Size{Width: view.tableBody.Width, Height: state.sessionLogListHeight(rowHeight)}).Offset(0, view.scrollRows)
 }
 
 // sessionLogsEventsArea is the detail panel's event list geometry.

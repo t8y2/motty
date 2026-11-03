@@ -92,6 +92,7 @@ WindTerm、Electerm、Netcatty、Tabby 导入——包括 Tabby 的保险库，�
 TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里，
 也可以用主密码包裹。
+Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
 
 <p align="center">
   <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="主机列表，带分组标签和远程桌面标记" /></a>

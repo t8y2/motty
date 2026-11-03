@@ -352,7 +352,7 @@ func (state *State) applyHostImport(plan hostImportPlan) {
 }
 
 // applyHostImportSummary adds what a plan found and tells the user in summary.
-func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) {
+func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) error {
 	// A host written over keeps its id, so the sessions and tunnels that point
 	// at it keep pointing at it; only what the import brought is replaced.
 	for _, updated := range plan.updates {
@@ -392,8 +392,9 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	state.status = summary
 	state.modal = modalHostImportResult
 	if len(plan.hosts)+len(plan.identities)+len(plan.proxies)+len(plan.forwards)+len(plan.updates) > 0 {
-		state.save()
+		return state.saveWithResult()
 	}
+	return nil
 }
 
 func (result *hostImportResult) set(messages i18n.Messages, summary string, warnings []string) {

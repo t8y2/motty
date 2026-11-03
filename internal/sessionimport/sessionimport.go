@@ -4,12 +4,13 @@
 // or contacts anything in them.
 //
 // Only what a connection needs is taken: a name, a folder, an address, a port
-// and a user. Passwords are never imported, whether a client encrypted them with
-// a scheme of its own or, as Electerm does, wrote them into the file in the
-// clear, and a key file path in a session is reported rather than followed,
-// since each client has its own key format. The one exception is Tabby: its
-// vault is encrypted with a passphrase the user can type, so when they do, the
-// secrets it holds are handed back with the sessions (see ParseTabby).
+// and a user. Other clients' encrypted credentials are not imported, and a key
+// file path in a session is reported rather than followed, since each client has
+// its own key format. Two things are the exception. Electerm and Netcatty can
+// hold an SSH login password in the clear, which is handed back as a candidate
+// for the caller to save or not. Tabby's vault is encrypted with a passphrase
+// the user can type, so when they do, the secrets it holds are handed back with
+// the sessions (see ParseTabby).
 package sessionimport
 
 import (
@@ -29,6 +30,8 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 // Limits keep a damaged or hostile file from using the machine: a session file
@@ -44,6 +47,8 @@ const (
 	// reaches it.
 	maxGroupDepth = 32
 )
+
+var ErrAmbiguousMobaEncoding = errors.New("MobaXterm text is valid as both UTF-8 and GB18030; choose an encoding")
 
 // Protocol is how a session is reached.
 type Protocol uint8
@@ -82,10 +87,16 @@ type Entry struct {
 	X11          bool
 	AgentForward bool
 	Color        string // "#RRGGBB", empty for none
-	// Password is a saved password the client kept encrypted and the user
-	// unlocked (Tabby's vault, or a password Tabby wrote into the file). Empty
-	// when the client kept none, which is every other client.
+	// Password is a saved password the user unlocked (Tabby's vault, or a
+	// password Tabby wrote into the file) or one a client wrote in the clear
+	// (Electerm, Netcatty). It is an ephemeral candidate: never serialized with a
+	// host. Empty when the client kept none.
 	Password string
+	// PasswordFromVault says the password came out of a vault the user opened
+	// with its passphrase. Typing that passphrase was the consent to keep it, so
+	// the caller writes it without asking again; a password a file kept in the
+	// clear is the one worth putting to the user first.
+	PasswordFromVault bool
 	// KeyPath is the private key file the session names, and KeyPassphrase the
 	// passphrase saved for it. A key the client keeps inside its own vault has no
 	// path: KeyID names it there and KeyData holds it once the vault is open.
@@ -101,6 +112,35 @@ type Entry struct {
 	ProxyHTTP    string
 	// Source names where the entry came from, for warnings.
 	Source string
+}
+
+// Same reports whether two entries describe the same session, secrets included.
+// An entry holds the bytes of a key it carried, so it cannot be compared with
+// ==; this is what a caller needs when it has read one file two ways and asks
+// whether the answer depends on which reading it keeps.
+func (e Entry) Same(other Entry) bool {
+	return e.Protocol == other.Protocol &&
+		e.Line == other.Line &&
+		e.Flow == other.Flow &&
+		e.Name == other.Name &&
+		e.Group == other.Group &&
+		e.Host == other.Host &&
+		e.Port == other.Port &&
+		e.User == other.User &&
+		e.Auth == other.Auth &&
+		e.X11 == other.X11 &&
+		e.AgentForward == other.AgentForward &&
+		e.Color == other.Color &&
+		e.Password == other.Password &&
+		e.PasswordFromVault == other.PasswordFromVault &&
+		e.KeyPath == other.KeyPath &&
+		e.KeyPassphrase == other.KeyPassphrase &&
+		e.KeyID == other.KeyID &&
+		bytes.Equal(e.KeyData, other.KeyData) &&
+		e.ProxyCommand == other.ProxyCommand &&
+		e.ProxySOCKS5 == other.ProxySOCKS5 &&
+		e.ProxyHTTP == other.ProxyHTTP &&
+		e.Source == other.Source
 }
 
 // ForwardMode is how a saved port forward carries its traffic.
@@ -143,8 +183,8 @@ type Result struct {
 	// Keys counts sessions that name a private key file, which was not imported.
 	Keys int
 	// PlainSecrets counts imported sessions whose file carried a password, key
-	// passphrase or private key in readable text (Electerm writes them), so the
-	// user can be told to delete the file. None of them were imported.
+	// passphrase or private key in readable text, so the user can be told to
+	// protect the export even if password saving was declined.
 	PlainSecrets int
 	Warnings     []string
 }
@@ -249,19 +289,99 @@ func clean(value string, limit int) string {
 
 // readFile reads at most MaxFileSize bytes and decodes them to UTF-8.
 func readFile(path string) (string, error) {
-	file, err := os.Open(path)
+	data, err := readFileBytes(path)
 	if err != nil {
 		return "", err
+	}
+	return decode(data), nil
+}
+
+func readFileBytes(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(data) > MaxFileSize {
-		return "", fmt.Errorf("%s is too large to be a session file", filepath.Base(path))
+		return nil, fmt.Errorf("%s is too large to be a session file", filepath.Base(path))
 	}
-	return decode(data), nil
+	return data, nil
+}
+
+func readMobaFile(path string, encoding MobaEncoding) (string, error) {
+	data, err := readFileBytes(path)
+	if err != nil {
+		return "", err
+	}
+	problem := fmt.Errorf("%s has an unsupported or damaged text encoding", filepath.Base(path))
+	if bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}) {
+		bigEndian := data[0] == 0xfe
+		if len(data[2:])%2 != 0 {
+			return "", problem
+		}
+		units := make([]uint16, 0, len(data[2:])/2)
+		for index := 2; index < len(data); index += 2 {
+			unit := uint16(data[index+1])<<8 | uint16(data[index])
+			if bigEndian {
+				unit = uint16(data[index])<<8 | uint16(data[index+1])
+			}
+			if unit >= 0xd800 && unit <= 0xdbff {
+				if index+3 >= len(data) {
+					return "", problem
+				}
+				next := uint16(data[index+3])<<8 | uint16(data[index+2])
+				if bigEndian {
+					next = uint16(data[index+2])<<8 | uint16(data[index+3])
+				}
+				if next < 0xdc00 || next > 0xdfff {
+					return "", problem
+				}
+			} else if unit >= 0xdc00 && unit <= 0xdfff {
+				if len(units) == 0 || units[len(units)-1] < 0xd800 || units[len(units)-1] > 0xdbff {
+					return "", problem
+				}
+			}
+			units = append(units, unit)
+		}
+		return string(utf16.Decode(units)), nil
+	}
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		if !utf8.Valid(data[3:]) {
+			return "", problem
+		}
+		return string(data[3:]), nil
+	}
+	if encoding == MobaUTF8 || encoding == MobaAuto && utf8.Valid(data) {
+		if !utf8.Valid(data) {
+			return "", problem
+		}
+		if encoding == MobaAuto {
+			if other, ok := decodeMobaGB18030(data); ok && other != string(data) {
+				return "", ErrAmbiguousMobaEncoding
+			}
+		}
+		return string(data), nil
+	}
+	if decoded, ok := decodeMobaGB18030(data); ok {
+		return decoded, nil
+	}
+	return "", problem
+}
+
+func decodeMobaGB18030(data []byte) (string, bool) {
+	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data)
+	if err == nil {
+		var encoded []byte
+		encoded, err = simplifiedchinese.GB18030.NewEncoder().Bytes(decoded)
+		if err == nil && bytes.Equal(data, encoded) {
+			return string(decoded), true
+		}
+	}
+	return "", false
 }
 
 // decode turns a file's bytes into text: UTF-16 with a byte-order mark (what
@@ -355,6 +475,24 @@ func (file ini) section(name string) (iniSection, bool) {
 
 // Parse reads each path with the reader for client, and joins the results.
 func Parse(client Client, paths []string) (Result, error) {
+	return ParseWithOptions(client, paths, ParseOptions{})
+}
+
+type MobaEncoding uint8
+
+const (
+	MobaAuto MobaEncoding = iota
+	MobaUTF8
+	MobaGB18030
+)
+
+type ParseOptions struct {
+	MobaEncoding MobaEncoding
+}
+
+// ParseWithOptions resolves BOM-less MobaXterm files whose bytes are valid in
+// both UTF-8 and GB18030. The default keeps valid UTF-8 files as UTF-8.
+func ParseWithOptions(client Client, paths []string, options ParseOptions) (Result, error) {
 	var result Result
 	if len(paths) == 0 {
 		return result, errors.New("no file was chosen")
@@ -371,7 +509,7 @@ func Parse(client Client, paths []string) (Result, error) {
 		case Xshell:
 			part, err = ParseXshell(path)
 		case MobaXterm:
-			part, err = ParseMobaXterm(path)
+			part, err = ParseMobaXtermWithEncoding(path, options.MobaEncoding)
 		case WindTerm:
 			part, err = ParseWindTerm(path)
 		case Electerm:
@@ -388,6 +526,9 @@ func Parse(client Client, paths []string) (Result, error) {
 			err = fmt.Errorf("unknown client %d", client)
 		}
 		if err != nil {
+			if errors.Is(err, ErrAmbiguousMobaEncoding) {
+				return Result{}, fmt.Errorf("%s: %w", filepath.Base(path), err)
+			}
 			failed = append(failed, fmt.Sprintf("%s: %v", filepath.Base(path), err))
 			continue
 		}
@@ -700,7 +841,11 @@ func parseXshellArchive(path string) (Result, error) {
 // Name=#icon#type%host%port%user%...; type 0 is SSH. Folders are the SubRep of
 // each [Bookmarks] section.
 func ParseMobaXterm(path string) (Result, error) {
-	text, err := readFile(path)
+	return ParseMobaXtermWithEncoding(path, MobaAuto)
+}
+
+func ParseMobaXtermWithEncoding(path string, encoding MobaEncoding) (Result, error) {
+	text, err := readMobaFile(path, encoding)
 	if err != nil {
 		return Result{}, err
 	}
@@ -828,8 +973,8 @@ type electermBookmark struct {
 	User     string       `json:"username"`
 	Type     string       `json:"type"`
 	AuthType string       `json:"authType"`
-	// Password, Passphrase and PrivateKey are read only to count what the export
-	// left in the clear; they are never put into an entry.
+	// Key material is counted but not imported. A password is offered only for
+	// SSH sessions whose authentication does not select a private key.
 	Password   string `json:"password"`
 	Passphrase string `json:"passphrase"`
 	PrivateKey string `json:"privateKey"`
@@ -909,9 +1054,13 @@ func ParseElecterm(path string) (Result, error) {
 			shortened = shortened || cut
 		}
 		before := len(result.Entries)
+		password := ""
+		if kind == SSH && bookmark.PrivateKey == "" && (bookmark.AuthType == "" || strings.EqualFold(bookmark.AuthType, "password")) {
+			password = bookmark.Password
+		}
 		result.add(Entry{
 			Name: bookmark.Title, Group: group, Protocol: kind,
-			Host: bookmark.Host, Port: int(bookmark.Port), User: user, Source: source,
+			Host: bookmark.Host, Port: int(bookmark.Port), User: user, Password: password, Source: source,
 		})
 		if len(result.Entries) > before && (bookmark.Password != "" || bookmark.Passphrase != "" || bookmark.PrivateKey != "") {
 			result.PlainSecrets++
@@ -1014,8 +1163,9 @@ func (tree *electermTree) groupPath(id string) (string, bool) {
 // Username, ...). Netcatty keeps its vault encrypted with the system secret
 // store, so this export is the only form another program can read. A group is
 // already a "/" path. Password and Passphrase are written into the file in the
-// clear, and are counted but never imported; ProxyJump, Proxy, tags and notes
-// are not read.
+// clear; SSH login passwords without a key are offered to the caller, while
+// passphrases and key material are not. ProxyJump, Proxy, tags and notes are
+// not read.
 func ParseNetcatty(path string) (Result, error) {
 	text, err := readFile(path)
 	if err != nil {
@@ -1093,9 +1243,13 @@ func ParseNetcatty(path string) (Result, error) {
 		group, cut := netcattyGroup(netcattyText(cell(row, columns.group)))
 		shortened = shortened || cut
 		before := len(result.Entries)
+		password := ""
+		if kind == SSH && strings.TrimSpace(cell(row, columns.key)) == "" {
+			password = netcattyText(cell(row, columns.password))
+		}
 		result.add(Entry{
 			Name: netcattyText(cell(row, columns.label)), Group: group, Protocol: kind,
-			Host: strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), Port: port, User: user,
+			Host: strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), Port: port, User: user, Password: password,
 			Source: fmt.Sprintf("%s: line %d", source, line),
 		})
 		if len(result.Entries) == before {

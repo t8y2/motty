@@ -29,8 +29,10 @@ import (
 
 // sessionLogs is the metadata journal owned by one window.
 type sessionLogs struct {
-	store *sessionlog.Store
-	queue *sessionlog.Queue
+	calendar    sessionLogCalendar
+	preferences *savedSessionLogsView
+	store       *sessionlog.Store
+	queue       *sessionlog.Queue
 	// runID names this process run. It is the same for every window of the
 	// process, so one window's startup recovery never marks another window's
 	// live row interrupted.
@@ -58,12 +60,17 @@ type sessionLogs struct {
 // filters carry the choices the query is built from. See session_logs_paint.go
 // for the projection and session_logs_input.go for the interactions.
 type sessionLogsView struct {
-	query   sessionlog.Query
-	rows    []sessionlog.Record
-	next    sessionlog.Cursor
-	more    bool
-	loading bool
-	err     string
+	query      sessionlog.Query
+	rows       []sessionlog.Record
+	next       sessionlog.Cursor
+	more       bool
+	loading    bool
+	err        string
+	matched    int64
+	total      int64
+	items      []sessionLogListItem
+	groupCount int
+	clockStamp sessionLogClockStamp
 
 	unavailable bool
 
@@ -100,16 +107,19 @@ type sessionLogsView struct {
 
 	// The filters. query.Status, query.Protocol, query.Favorite, query.Since and
 	// query.Until are the applied form of these choices.
-	timeRange      sessionLogTimeRange
-	statusFilter   sessionlog.Status
-	protocolFilter sessionlog.Protocol
-	favoriteOnly   bool
-	filterMenu     sessionLogFilterMenu
-	moreMenu       bool
-	moreBounds     ui.Rect
+	timeRange       sessionLogTimeRange
+	statusFilter    sessionlog.Status
+	protocolFilter  sessionlog.Protocol
+	favoriteOnly    bool
+	customStartDate string
+	customEndDate   string
+	customRangeHint string
+	filterMenu      sessionLogFilterMenu
+	moreMenu        bool
+	moreBounds      ui.Rect
 	// filterBounds are the three filter triggers' places, recorded while the page
 	// paints; the popup opens under the one whose menu is open.
-	filterBounds [4]ui.Rect
+	filterBounds [5]ui.Rect
 
 	// Scrolling and the geometry the wheel is aimed at, recorded while painting.
 	scrollRows   float32
@@ -514,6 +524,7 @@ func (state *State) setSessionLogsEnabled(on bool) {
 // closeSessionLogs flushes pending rows and closes the journal. Call it after
 // the window's sessions are finalized: the queue drains before its store closes.
 func (state *State) closeSessionLogs() {
+	state.stopSessionLogCalendar()
 	if state.sessionLogs.done != nil {
 		select {
 		case <-state.sessionLogs.done:
@@ -539,7 +550,22 @@ func (state *State) closeSessionLogs() {
 // Late answers are dropped by generation, so typing or filtering never lets an
 // older result replace a newer one.
 func (state *State) refreshSessionLogs() {
+	state.refreshSessionLogsAt(true)
+}
+
+// refreshSessionLogsKeepingScroll refreshes a result whose order the change
+// cannot alter, such as a favourite or a delete, so the list does not jump back
+// to the top under the reader.
+func (state *State) refreshSessionLogsKeepingScroll() {
+	state.refreshSessionLogsAt(false)
+}
+
+func (state *State) refreshSessionLogsAt(resetScroll bool) {
 	view := &state.sessionLogs.view
+	if resetScroll {
+		view.scrollRows = 0
+	}
+	view.dirty = false
 	state.sessionLogs.requestGeneration++
 	view.loading = true
 	view.loadingMore = false
@@ -687,6 +713,7 @@ func (state *State) applySessionLogsResult(result sessionLogsResult) {
 	}
 	view.next = result.page.Next
 	view.more = result.page.More
+	view.matched, view.total = result.page.Matched, result.page.Total
 	view.unavailable = false
 	view.err = ""
 	state.prepareSessionLogsView()

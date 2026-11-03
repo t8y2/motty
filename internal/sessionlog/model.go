@@ -173,11 +173,23 @@ type Event struct {
 	Reason   Reason
 }
 
-// Cursor is the keyset position of a page: the last returned (StartedAt, ID).
+// Cursor is the last returned composite key, bound to its sort order.
 type Cursor struct {
-	StartedAt time.Time
-	ID        string
+	StartedAt      time.Time
+	ID             string
+	Sort           SortOrder
+	DurationMillis int64
+	Ongoing        bool
 }
+
+type SortOrder uint8
+
+const (
+	SortStartedDesc SortOrder = iota
+	SortStartedAsc
+	SortDurationDesc
+	SortDurationAsc
+)
 
 // Query selects records for List.
 //
@@ -186,6 +198,7 @@ type Cursor struct {
 // Since is inclusive and Until is exclusive, both on StartedAt. Limit clamps to
 // 1..50 (0 means the default of 50), and Cursor continues a previous page.
 type Query struct {
+	Sort     SortOrder
 	Outcome  OutcomeFilter
 	Search   string
 	Status   *Status
@@ -206,9 +219,11 @@ const (
 	OutcomeTrackingStopped
 )
 
-// Page is one page of records, newest first. More says another page exists;
-// Next is then the cursor to pass to the next List call.
+// Page contains one sorted page and consistent counts before cursor/limit.
+// More says another page exists; Next continues the same sort and filters.
 type Page struct {
+	Matched int64
+	Total   int64
 	Records []Record
 	Next    Cursor
 	More    bool

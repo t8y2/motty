@@ -154,6 +154,54 @@ func TestATabDroppedOnAPaneEdgeOfAnotherWindowDocksThere(t *testing.T) {
 	}
 }
 
+func TestDockingATemporaryTabKeepsItsSavedTemplateAction(t *testing.T) {
+	pair := newTwoWindows(t)
+	liveTab(t, pair.first, pair.firstW, 0)
+	liveTab(t, pair.second, pair.secondW, 1)
+	moving := tabOrder(pair.first)[0]
+	pair.first.managedWorkspaceColumns[moving] = 2
+	pair.first.temporaryWorkspaceColumns[moving] = 2
+	frame := pair.second.workspacePixelBounds(pair.second.viewport)
+
+	dragAcross(pair.first, moving, ui.Point{X: 1500 + frame.X + frame.Width*0.95, Y: frame.Y + frame.Height/2}, ui.Point{})
+
+	destination := tabOrder(pair.second)[0]
+	if columns, ok := pair.second.managedWorkspaceColumns[destination]; !ok || columns != 2 {
+		t.Fatalf("destination managed columns = %d, present=%t", columns, ok)
+	}
+	if columns, ok := pair.second.temporaryWorkspaceColumns[destination]; !ok || columns != 2 {
+		t.Fatalf("destination temporary columns = %d, present=%t", columns, ok)
+	}
+	if len(pair.second.managedWorkspaceColumns) != 1 || len(pair.second.temporaryWorkspaceColumns) != 1 {
+		t.Fatalf("identity maps = managed %+v temporary %+v", pair.second.managedWorkspaceColumns, pair.second.temporaryWorkspaceColumns)
+	}
+}
+
+func TestDockingAtemporaryTabPreservesDestinationManagedColumns(t *testing.T) {
+	state, ids := threeTabs(t)
+	source := ids[0]
+	destination := ids[2]
+	state.managedWorkspaceColumns[destination] = 3
+	state.managedWorkspaceColumns[source] = 1
+	state.temporaryWorkspaceColumns[source] = 2
+	state.deck.ActivateWorkspace(destination)
+	if !state.dockWorkspace(source, state.deck.Panes(destination, nil)[0].ID, dockLeft) {
+		t.Fatal("dock failed")
+	}
+	if state.managedWorkspaceColumns[destination] != 3 {
+		t.Fatalf("destination columns = %d, want 3", state.managedWorkspaceColumns[destination])
+	}
+	if state.temporaryWorkspaceColumns[destination] != 3 {
+		t.Fatalf("temporary columns = %d, want the destination's managed 3", state.temporaryWorkspaceColumns[destination])
+	}
+	if _, ok := state.managedWorkspaceColumns[source]; ok {
+		t.Fatal("the docked source id kept managed metadata")
+	}
+	if _, ok := state.temporaryWorkspaceColumns[source]; ok {
+		t.Fatal("the docked source id kept temporary metadata")
+	}
+}
+
 func TestWhileOverAnotherWindowItShowsWhereTheTabWouldLand(t *testing.T) {
 	pair := newTwoWindows(t)
 	liveTab(t, pair.first, pair.firstW, 0)
