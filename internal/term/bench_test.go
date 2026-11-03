@@ -32,6 +32,22 @@ func BenchmarkWriteCJKText(b *testing.B) {
 	benchWrite(b, []byte(strings.Repeat(line, 1000)))
 }
 
+// Lines scrolling the whole way through the scrollback, as `seq` or a build log
+// does: every row is trimmed, pushed and recycled, not just drawn.
+func BenchmarkWriteScrollback(b *testing.B) {
+	var sb strings.Builder
+	for i := range 20000 {
+		sb.WriteString(itoa(i) + "\r\n")
+	}
+	benchWrite(b, []byte(sb.String()))
+}
+
+// Full-width lines through the scrollback: trimming and recycling touch the
+// whole row, so this is the worst case for both.
+func BenchmarkWriteScrollbackWide(b *testing.B) {
+	benchWrite(b, []byte(strings.Repeat(strings.Repeat("x", 119)+"\r\n", 20000)))
+}
+
 // Cursor-addressed redraws, as vim or htop do: every cell positioned and styled.
 func BenchmarkWriteFullScreenRedraw(b *testing.B) {
 	var sb strings.Builder
