@@ -550,8 +550,21 @@ func (state *State) closeSessionLogs() {
 // Late answers are dropped by generation, so typing or filtering never lets an
 // older result replace a newer one.
 func (state *State) refreshSessionLogs() {
+	state.refreshSessionLogsAt(true)
+}
+
+// refreshSessionLogsKeepingScroll refreshes a result whose order the change
+// cannot alter, such as a favourite or a delete, so the list does not jump back
+// to the top under the reader.
+func (state *State) refreshSessionLogsKeepingScroll() {
+	state.refreshSessionLogsAt(false)
+}
+
+func (state *State) refreshSessionLogsAt(resetScroll bool) {
 	view := &state.sessionLogs.view
-	view.scrollRows = 0
+	if resetScroll {
+		view.scrollRows = 0
+	}
 	view.dirty = false
 	state.sessionLogs.requestGeneration++
 	view.loading = true

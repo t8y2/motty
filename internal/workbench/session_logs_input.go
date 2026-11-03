@@ -63,7 +63,13 @@ func (state *State) syncSessionLogs() {
 	}
 	if state.activeSection == sectionSessionLogs && view.dirty {
 		view.dirty = false
-		state.refreshSessionLogs()
+		// A record can finish while the list is sorted by duration, which moves
+		// it; every other order a settled write leaves alone.
+		if view.query.Sort == sessionlog.SortDurationAsc || view.query.Sort == sessionlog.SortDurationDesc {
+			state.refreshSessionLogs()
+		} else {
+			state.refreshSessionLogsKeepingScroll()
+		}
 		return
 	}
 	if state.activeSection == sectionSessionLogs && !view.loaded && !view.loading && !view.unavailable {

@@ -45,7 +45,9 @@ func TestSessionLogCustomRangeMidnightTransitions(t *testing.T) {
 		{"America/Santiago", "2026-09-05", "2026-09-05T04:00:00Z", "2026-09-06T04:00:00Z"},
 		{"America/Santiago", "2026-09-06", "2026-09-06T04:00:00Z", "2026-09-07T03:00:00Z"},
 		{"Pacific/Apia", "2011-12-29", "2011-12-29T10:00:00Z", "2011-12-30T10:00:00Z"},
-		{"America/Havana", "2026-11-01", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z"},
+		// A past fall-back: tzdata keeps past transitions, while a future rule
+		// can change under the test.
+		{"America/Havana", "2023-11-05", "2023-11-05T04:00:00Z", "2023-11-06T05:00:00Z"},
 	} {
 		location, err := time.LoadLocation(tc.zone)
 		if err != nil {

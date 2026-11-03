@@ -3,7 +3,6 @@ package workbench
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -40,12 +39,26 @@ func TestSessionLogsViewPreferencesAreDeviceLocal(t *testing.T) {
 	if syncedSettings["session_logs_view"] || !bytes.Contains(local[localKey], []byte("session_logs_view")) {
 		t.Fatal("view preferences are not device-local")
 	}
-	old, err := configstore.Open(path, 16)
-	if old != nil {
-		old.Close()
+	// Since epoch 23 a writer patches the local document field by field, so a
+	// build that has never heard of the view defaults keeps them when it saves.
+	writer, err := configstore.Open(path, configFormat)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !errors.Is(err, configstore.ErrTooNew) {
-		t.Fatalf("old format-16 writer could drop view preferences: %v", err)
+	defer writer.Close()
+	if _, err := writer.Commit(configstore.Change{
+		LocalPatch: map[string]configstore.JSONChange{
+			localKey: {Before: []byte(`{"theme":"dark"}`), After: []byte(`{"theme":"light"}`)},
+		},
+	}); err != nil {
+		t.Fatalf("an epoch-23 save was refused: %v", err)
+	}
+	after, _, err := loadState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.SessionLogsView == nil || *after.SessionLogsView != *want.SessionLogsView {
+		t.Fatalf("an epoch-23 save dropped the view preferences: %+v", after.SessionLogsView)
 	}
 }
 
