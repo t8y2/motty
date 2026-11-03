@@ -249,11 +249,21 @@ func classifyProbe(output string) RemoteSystem {
 	return SystemUnknown
 }
 
+// remoteSystemProbeTimeout bounds the probe. A host that has not answered by
+// then keeps the banner's guess and is left alone: closing a session whose
+// command is still running can end the whole connection on a minimal server
+// such as dropbear, and with it any shell beside it.
+const remoteSystemProbeTimeout = 1500 * time.Millisecond
+
 // detectRemoteSystem asks the host what it is when the banner could not say, or
 // said only a Linux distribution that a derivative may share. The second result
 // reports whether the host answered: when it refuses a command session, or says
 // no more than Linux, the result is still the banner's guess.
-func detectRemoteSystem(client *ssh.Client, banner string) (RemoteSystem, bool) {
+//
+// The command session is never closed from here: a session closed while its
+// command still runs can end the whole connection on a minimal server such as
+// dropbear. One that has not answered by the timeout is left to the connection.
+func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteSystem, bool) {
 	guess := classifyBanner(banner)
 	if guess == SystemWindows || guess == SystemDarwin || guess == SystemFreeBSD {
 		return guess, true
@@ -262,12 +272,32 @@ func detectRemoteSystem(client *ssh.Client, banner string) (RemoteSystem, bool) 
 	if err != nil {
 		return guess, false
 	}
-	timer := time.AfterFunc(1500*time.Millisecond, func() { _ = session.Close() })
-	output, err := session.Output(remoteSystemCommand)
-	if !timer.Stop() || err != nil {
+	type answer struct {
+		output []byte
+		err    error
+	}
+	answered := make(chan answer, 1)
+	go func() {
+		output, err := session.Output(remoteSystemCommand)
+		answered <- answer{output, err}
+	}()
+	timer := time.NewTimer(remoteSystemProbeTimeout)
+	defer timer.Stop()
+	var probe answer
+	select {
+	case probe = <-answered:
+	case <-timer.C:
+		// The channel is left to the server and released with the connection.
+		conn.addCloser(session)
+		return guess, false
+	case <-conn.ctx.Done():
+		conn.addCloser(session)
 		return guess, false
 	}
-	system := classifyProbe(string(output))
+	if probe.err != nil {
+		return guess, false
+	}
+	system := classifyProbe(string(probe.output))
 	if system == SystemUnknown || system == SystemLinux && guess.IsLinux() {
 		// A derivative with no badge of its own (Pop!_OS, Zorin) keeps the family
 		// its banner named rather than falling back to plain Linux.

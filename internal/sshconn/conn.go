@@ -568,7 +568,7 @@ func (conn *Conn) connect() error {
 }
 
 func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
-	system, confirmed := detectRemoteSystem(client, serverVersion)
+	system, confirmed := conn.detectRemoteSystem(client, serverVersion)
 	if system == SystemUnknown || conn.ctx.Err() != nil {
 		return
 	}
