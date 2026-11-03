@@ -29,6 +29,10 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Linux\nid=endeavouros\n", SystemLinux},
 		{"kernel=Linux\nid=fnos\n", SystemFnOS},
 		{"kernel=Linux\nid=openwrt\n", SystemOpenWrt},
+		// QWRT ships an os-release with no usable ID; its release file is the tell.
+		{"kernel=Linux\nmarker=/etc/openwrt_release\n", SystemOpenWrt},
+		{"kernel=Linux\nid=qwrt\n", SystemOpenWrt},
+		{"kernel=Linux\nid=immortalwrt\n", SystemOpenWrt},
 		{"kernel=Linux\nid=deepin\n", SystemDeepin},
 		{"kernel=Linux\nid=uos\n", SystemUOS},
 		{"kernel=Linux\nid=kylin\n", SystemKylin},

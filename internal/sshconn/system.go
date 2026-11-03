@@ -105,6 +105,10 @@ var osReleaseIDs = map[string]RemoteSystem{
 	"rhel": SystemRedHat, "almalinux": SystemAlma, "rocky": SystemRocky, "raspbian": SystemRaspberryPi,
 	"linuxmint": SystemMint, "arch": SystemArch, "archarm": SystemArch,
 	"pop": SystemPopOS, "pop-os": SystemPopOS,
+	// OpenWrt's derivatives keep the base system and only change the name, and
+	// some of them rewrite the ID to match. They all show the OpenWrt badge:
+	// there is no separate badge for a fork of a firmware.
+	"qwrt": SystemOpenWrt, "immortalwrt": SystemOpenWrt, "lede": SystemOpenWrt,
 }
 
 // systemMarkers are the files an appliance or a distribution with no
@@ -120,6 +124,10 @@ var systemMarkers = [...]struct {
 	{"/etc/unraid-version", SystemUnraid},
 	{"/etc/openmediavault", SystemOpenMediaVault},
 	{"/etc/pve", SystemProxmox},
+	// A router firmware is OpenWrt whatever its /etc/os-release says, and some
+	// forks ship an os-release without an ID at all. This file is the one every
+	// OpenWrt build writes.
+	{"/etc/openwrt_release", SystemOpenWrt},
 	{"/etc/slackware-version", SystemSlackware},
 }
 
