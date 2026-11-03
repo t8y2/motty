@@ -11,7 +11,7 @@ func (state *State) paintTransferBadge(canvas *ui.Canvas) {
 	if !state.toolbarVisible(toolbarWindow, hitTransferCenter) {
 		return
 	}
-	center, box := &state.transfers, state.chrome.bar.transfers.Rect()
+	center, box := &state.transfers, state.toolbarDockBounds(hitTransferCenter)
 	if box.Width <= 0 {
 		return
 	}
@@ -37,7 +37,9 @@ func (state *State) paintTransferCenter(canvas *ui.Canvas) {
 	viewport := state.windowRect()
 	anchor := ui.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
 	if state.toolbarVisible(toolbarWindow, hitTransferCenter) {
-		anchor = state.chrome.bar.transfers.Rect()
+		if button := state.toolbarDockBounds(hitTransferCenter); button.Width > 0 {
+			anchor = button
+		}
 	}
 	initialFocus := hitTransfersList
 	if len(center.batch.targets) > 0 {

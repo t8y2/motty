@@ -2170,9 +2170,14 @@ var chineseAbout = AboutMessages{
 
 var chineseToolbars = ToolbarMessages{
 	Window: "窗口工具栏", Terminal: "终端工具栏", SFTP: "SFTP 工具栏",
-	Description: "自定义图标入口的显示和顺序。", Customize: "自定义", Hint: "拖动左侧手柄调整顺序，也可聚焦手柄后使用方向键。修改即时生效。", EnabledFmt: "已开启 %d / %d 项",
+	Description: "自定义图标入口的显示、位置和顺序。", Customize: "自定义", Hint: "拖动手柄或用方向键排序；点击位置切换停靠区域。修改即时生效。", EnabledFmt: "已开启 %d / %d 项",
 	EnableAll: "全部开启", DisableAll: "全部关闭", Reset: "恢复默认", Close: "完成",
 	DragFmt: "调整 %s 的顺序", LocalRemote: "切换本机 / 服务器", PanelSide: "切换面板左右位置",
+	MoveTop: "移到顶部", MoveSideTop: "移到右侧上组", MoveSideBottom: "移到右侧下组",
+	MoveBottom: "移到底部左组", Bottom: "底部左组",
+	MoveBottomRight: "移到底部右组", BottomRight: "底部右组",
+	MoveLeftTop: "移到左侧上组", MoveLeftBottom: "移到左侧下组", LeftTop: "左侧上组", LeftBottom: "左侧下组",
+	Top: "顶部", SideTop: "右侧上组", SideBottom: "右侧下组", Hide: "隐藏图标", More: "更多工具", ResetLayout: "恢复工具栏默认布局",
 }
 
 var chineseCompletion = CompletionMessages{

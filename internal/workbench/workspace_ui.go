@@ -17,25 +17,23 @@ const (
 )
 
 func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
-	bounds := state.fullWorkspacePixelBounds(size)
-	if _, ok := state.terminalToolbarSession(); !ok {
-		return bounds
-	}
-	if state.terminalToolbarPosition == terminalToolbarLeft {
-		bounds.X += terminalToolRailExtent
-	}
-	bounds.Width = max(bounds.Width-terminalToolRailExtent, 0)
-	return bounds
+	return state.toolbarDockContentBounds(size, true)
 }
 
-// visibleWorkspacePixelBounds is the frame available to content currently on
-// screen. The terminal rail is absent from section pages even when a background
-// terminal is already fitted for the rail it will show on return.
+// Background terminals retain their eventual chrome; section pages only
+// reserve the globally available docked actions.
 func (state *State) visibleWorkspacePixelBounds(size ui.Size) ui.Rect {
-	if state.terminalPage() {
-		return state.baseWorkspacePixelBounds(size)
-	}
-	return state.fullWorkspacePixelBounds(size)
+	return state.toolbarDockContentBounds(size, state.terminalPage())
+}
+
+func (state *State) toolbarDockContentBounds(size ui.Size, includeTerminal bool) ui.Rect {
+	bounds := state.fullWorkspacePixelBounds(size)
+	left := state.toolbarDockSideReserveFor(true, includeTerminal)
+	right := state.toolbarDockSideReserveFor(false, includeTerminal)
+	bounds.X += left
+	bounds.Width = max(bounds.Width-left-right, 0)
+	bounds.Height = max(bounds.Height-state.toolbarDockBottomReserve(includeTerminal), 0)
+	return bounds
 }
 
 func (state *State) fullWorkspacePixelBounds(size ui.Size) ui.Rect {
@@ -47,7 +45,7 @@ func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
 	if _, ok := state.terminalSideRailSession(); !ok {
 		return ui.Rect{}, false
 	}
-	bounds := state.fullWorkspacePixelBounds(size)
+	bounds := state.toolbarDockSideBounds(size)
 	bounds.Width = terminalToolRailExtent
 	if state.terminalToolbarPosition == terminalToolbarRight {
 		bounds.X = max(size.Width-terminalToolRailExtent, 0)

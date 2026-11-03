@@ -2170,9 +2170,14 @@ var englishAbout = AboutMessages{
 
 var englishToolbars = ToolbarMessages{
 	Window: "Window toolbar", Terminal: "Terminal toolbar", SFTP: "SFTP toolbar",
-	Description: "Customize which shortcuts are shown and their order.", Customize: "Customize", Hint: "Drag a handle to reorder, or focus it and use the arrow keys. Changes apply immediately.", EnabledFmt: "%d / %d enabled",
+	Description: "Customize shortcut visibility, placement and order.", Customize: "Customize", Hint: "Drag a handle or use arrow keys to reorder. Click a position to change the dock area. Changes apply immediately.", EnabledFmt: "%d / %d enabled",
 	EnableAll: "Enable all", DisableAll: "Disable all", Reset: "Restore defaults", Close: "Done",
 	DragFmt: "Reorder %s", LocalRemote: "Switch local / remote files", PanelSide: "Move panel left / right",
+	MoveTop: "Move to top", MoveSideTop: "Move to right (upper)", MoveSideBottom: "Move to right (lower)",
+	MoveBottom: "Move to bottom (left)", Bottom: "Bottom (left)",
+	MoveBottomRight: "Move to bottom (right)", BottomRight: "Bottom (right)",
+	MoveLeftTop: "Move to left (upper)", MoveLeftBottom: "Move to left (lower)", LeftTop: "Left (upper)", LeftBottom: "Left (lower)",
+	Top: "Top", SideTop: "Right (upper)", SideBottom: "Right (lower)", Hide: "Hide icon", More: "More tools", ResetLayout: "Restore toolbar layout",
 }
 
 var englishCompletion = CompletionMessages{

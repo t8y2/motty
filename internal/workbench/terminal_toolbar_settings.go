@@ -43,7 +43,29 @@ func (state *State) setTerminalToolbarPosition(position terminalToolbarPosition)
 	if state.terminalToolbarPosition == position {
 		return false
 	}
+	if state.toolbars.dock != nil {
+		// The group setting moves session tools together. Direct manipulation
+		// can subsequently distribute individual tools across both sides.
+		for i := range state.toolbars.dock {
+			entry := &state.toolbars.dock[i]
+			if entry.Group != toolbarTerminal || !toolbarDockVertical(entry.Zone) {
+				continue
+			}
+			lower := entry.Zone == toolbarDockSideBottom || entry.Zone == toolbarDockLeftBottom
+			entry.Zone = toolbarDockSideTop
+			if position == terminalToolbarLeft {
+				entry.Zone = toolbarDockLeftTop
+			}
+			if lower {
+				entry.Zone = toolbarDockSideBottom
+				if position == terminalToolbarLeft {
+					entry.Zone = toolbarDockLeftBottom
+				}
+			}
+		}
+	}
 	state.terminalToolbarPosition = position
+	state.toolbarDock.sideScroll = [4]float32{}
 	state.resetTerminalToolRails()
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)

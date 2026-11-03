@@ -667,6 +667,7 @@ type State struct {
 	settings         settingsUI
 	toolbars         toolbarPreferences
 	toolbarEditor    toolbarSettingsUI
+	toolbarDock      toolbarDockUI
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// area: settings
@@ -1372,7 +1373,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickShortcutCapture(id)
 		return
 	}
-	if state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -1885,6 +1886,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockPointer(event); result.Handled {
+		return result
+	}
 	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
@@ -2135,6 +2139,9 @@ func fieldForDialogHit(id ui.ID) hostField {
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockKey(event); result.Handled {
+		return result
+	}
 	if result, handled := state.desktopFullscreenKey(event); handled {
 		return result
 	}

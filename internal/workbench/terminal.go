@@ -1336,6 +1336,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if result, handled := state.menuWheel(event); handled {
 		return result
 	}
+	if result := state.toolbarDockScroll(event); result.Handled {
+		return result
+	}
 	if state.modal == modalNewHost {
 		return state.scrollHostForm(event)
 	}
