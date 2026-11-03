@@ -118,6 +118,7 @@ var (
 	hitShortcutReset           = tree.ID(shellHits, "shortcut-reset")
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
+	hitShortcutCaptureDelete   = tree.ID(shellHits, "shortcut-capture-delete")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
@@ -2223,9 +2224,15 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.snippets.capturing = false
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalShortcutCapture && event.Key == ui.KeyEscape && !event.Repeat {
-		state.clickShortcutCapture(hitShortcutCaptureCancel)
-		return ui.EventResult{Handled: true, Repaint: true}
+	if state.modal == modalShortcutCapture && !event.Repeat {
+		if event.Key == ui.KeyEscape {
+			state.clickShortcutCapture(hitShortcutCaptureCancel)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		if event.Modifiers == 0 && (event.Key == ui.KeyDelete || event.Key == ui.KeyBackspace) {
+			state.clickShortcutCapture(hitShortcutCaptureDelete)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result
