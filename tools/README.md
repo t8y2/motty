@@ -28,11 +28,29 @@ single-instance claim. An explicit `MOTTY_DATA_DIR` still wins, but two copies
 pointing at the same directory share a claim, not live cross-process refresh.
 The old `development_workspace` record remains readable for existing profiles.
 
-Development starts empty, with no cloud backend configured. To seed it, export
-an encrypted backup from release and explicitly restore it in development.
-That imports shared data and saved passwords, but not production cloud logins
-or workspace state. Use a separate cloud destination for development. Directory
-overrides within one variant do not create extra system-secret namespaces.
+An unused default development profile offers a first-run import when release
+data exists. **Import copy** reads the release configuration and trusted keys;
+the optional password checkbox authorizes reading the release secret store and
+re-encrypting those secrets in the development vault. No source file or key is
+written, and cloud credentials and workspace state are excluded. **Start empty**
+records the opt-out; closing the dialog postpones it until another start.
+Existing profiles and explicit directory overrides do not trigger discovery.
+
+Failures remain in the dialog. A progress marker committed with the imported
+records lets a failed password/key step resume after restart without replacing
+hosts or passwords already in development. Users can retry without passwords
+if the source vault is unavailable, or keep the partial import explicitly.
+An encrypted backup can also be imported through Backup & sync. Use a separate
+cloud destination for development. Directory overrides within one variant do
+not create extra system-secret namespaces.
+
+The import tests use temporary source and destination profiles, never real user
+data. With `tools/e2esshd` listening on loopback port 22483, validate the actual
+dialog, saved-password SSH login and restart with:
+
+```sh
+MOTTY_IMPORT_SSH_PORT=22483 go test -tags 'dev vivahead' ./internal/workbench -run TestDevelopmentImport -count=1
+```
 
 On macOS, the standard entry initializes a private self-signed identity and
 private Keychain under

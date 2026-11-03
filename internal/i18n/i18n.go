@@ -114,6 +114,15 @@ type Messages struct {
 	StateNoticeOK                        string
 	DevelopmentWorkspaceRestoreTitle     string
 	DevelopmentWorkspaceRestoreFailedFmt string
+	DevelopmentImportTitle               string
+	DevelopmentImportBodyFmt             string
+	DevelopmentImportAction              string
+	DevelopmentImportEmpty               string
+	DevelopmentImportKeep                string
+	DevelopmentImportPasswords           string
+	DevelopmentImportResume              string
+	DevelopmentImportFailedFmt           string
+	DevelopmentImportNotEmpty            string
 
 	// The status-area icon and the panel beside it. TrayTooltipFmt takes the
 	// number of open sessions.

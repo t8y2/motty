@@ -325,10 +325,15 @@ point as `make run`.
 Development builds use `motty-dev` under the platform's configuration directory,
 separate from the release build's unchanged `motty` directory. Their vault keys
 also use a separate system-secret namespace. The default copies can run side by
-side without upgrading each other's databases. No production data or cloud
-sync credentials are copied automatically. To seed development explicitly,
-export an encrypted backup from the release build and restore it in development;
-this copies shared records and saved credentials, not workspace or cloud logins.
+side without upgrading each other's databases. When an unused default development
+profile finds release data, its first-run dialog offers **Import copy** or
+**Start empty**. Import reads the release profile without changing it, copies
+hosts, shared settings and trusted keys, and optionally re-encrypts saved
+passwords under the development key. It never copies open sessions or cloud
+logins. Closing the dialog postpones the choice; failures stay visible and
+unfinished imports can resume without replacing current hosts or passwords.
+Existing profiles and explicit `MOTTY_DATA_DIR` profiles are not auto-imported;
+they can still restore an encrypted backup through Backup & sync.
 
 On macOS the standard entry creates or reuses a private local development
 signing identity under `~/Library/Application Support/motty/development-signing`.

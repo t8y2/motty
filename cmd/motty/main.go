@@ -230,6 +230,10 @@ type placement struct {
 }
 
 func openWorkbenchWindow(application *app.Application, status *tray, hub *workbench.AIHub, newWindow func() error, background bool, place placement) error {
+	importSource, sourceErr := developmentImportSource(datadir.Current().Dir)
+	if sourceErr != nil {
+		return sourceErr
+	}
 	// Connection goroutines wake the window through this; it costs nothing
 	// until a connection reports progress.
 	var invalidator app.Invalidator
@@ -255,7 +259,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		allow()
 	}
 	state = workbench.New(workbench.Options{
-		Invalidate: invalidate, NewWindow: newWindow,
+		DevelopmentSource: importSource,
+		Invalidate:        invalidate, NewWindow: newWindow,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),

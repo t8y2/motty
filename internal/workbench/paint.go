@@ -364,6 +364,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintLaunchDialog(canvas, viewport)
 	case modalStateNotice:
 		state.paintStateNotice(canvas, viewport)
+	case modalDevelopmentImport:
+		state.paintDevelopmentImport(canvas, viewport)
 	case modalUpdate:
 		state.paintUpdateDialog(canvas, viewport)
 	case modalUpdateProgress:

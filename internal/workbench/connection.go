@@ -136,6 +136,9 @@ func openRemoteFiles(conn Connection, mode transferMode) (sftpclient.Remote, err
 
 // Options configures the parts of the workbench that touch the outside world.
 type Options struct {
+	// DevelopmentSource offers a one-way import into an unused development
+	// profile. Nil disables discovery, including for explicit test profiles.
+	DevelopmentSource *DevelopmentSource
 	// KnownHostsPath is where trusted host keys are remembered. Empty means
 	// motty/known_hosts under the user's config directory.
 	KnownHostsPath string
@@ -414,6 +417,7 @@ const (
 	modalCommandPalette
 	modalShortcutCapture
 	modalStateNotice
+	modalDevelopmentImport
 	modalVaultUnlock
 	modalVaultForget
 	modalHighlightRule

@@ -465,6 +465,7 @@ type State struct {
 	starting           bool
 	pauseSave          int
 	stateNotice        stateNotice
+	developmentImport  developmentImport
 	stateFileOutcome   string // how the saved state was read at start, for diagnostics
 	sessions           []Session
 	tabOptions         []components.TabOption
@@ -964,6 +965,7 @@ func New(options Options) *State {
 		state.options.Group.join(state)
 	}
 	state.sshSyncStart()
+	state.offerDevelopmentImport()
 	return state
 }
 
@@ -1355,6 +1357,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalStateNotice:
 		state.clickStateNotice(id)
+		return
+	case modalDevelopmentImport:
+		state.clickDevelopmentImport(id)
 		return
 	case modalUpdate:
 		state.clickUpdateDialog(id)
