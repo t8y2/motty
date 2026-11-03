@@ -396,6 +396,37 @@ func TestConnectDialsTheSelectedHostAndShowsProgress(t *testing.T) {
 	}
 }
 
+// A derivative reports its parent in the SSH banner: fnOS serves Debian's
+// OpenSSH, so Debian arrives a moment before the host says what it really is.
+// The rail reads the host's system, so that guess must not badge it as Debian.
+func TestABannerGuessNeverReplacesTheSystemTheHostNamed(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	report := func(system sshconn.RemoteSystem, provisional bool) {
+		fake.set(func(status *sshconn.Status) {
+			status.Phase = sshconn.PhaseConnected
+			status.System = system
+			status.SystemProvisional = provisional
+		})
+		state.Wake()
+	}
+
+	report(sshconn.SystemFnOS, false)
+	if got := state.hosts[0].System; got != sshconn.SystemFnOS {
+		t.Fatalf("host system = %v, want the answer the host gave", got)
+	}
+	report(sshconn.SystemDebian, true)
+	if got := state.hosts[0].System; got != sshconn.SystemFnOS {
+		t.Fatalf("a banner guess replaced the known system: %v", got)
+	}
+	// The host's own answer still wins when it disagrees with what was known.
+	report(sshconn.SystemDebian, false)
+	if got := state.hosts[0].System; got != sshconn.SystemDebian {
+		t.Fatalf("host system = %v, want the answer the host gave", got)
+	}
+}
+
 func TestHostKeyDialogAnswersTrustOnceRejectAndDismiss(t *testing.T) {
 	for _, test := range []struct {
 		name    string

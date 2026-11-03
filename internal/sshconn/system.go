@@ -250,27 +250,28 @@ func classifyProbe(output string) RemoteSystem {
 }
 
 // detectRemoteSystem asks the host what it is when the banner could not say, or
-// said only a Linux distribution that a derivative may share. The answer is the
-// banner's guess when the host refuses a command session.
-func detectRemoteSystem(client *ssh.Client, banner string) RemoteSystem {
+// said only a Linux distribution that a derivative may share. The second result
+// reports whether the host answered: when it refuses a command session, or says
+// no more than Linux, the result is still the banner's guess.
+func detectRemoteSystem(client *ssh.Client, banner string) (RemoteSystem, bool) {
 	guess := classifyBanner(banner)
 	if guess == SystemWindows || guess == SystemDarwin || guess == SystemFreeBSD {
-		return guess
+		return guess, true
 	}
 	session, err := client.NewSession()
 	if err != nil {
-		return guess
+		return guess, false
 	}
 	timer := time.AfterFunc(1500*time.Millisecond, func() { _ = session.Close() })
 	output, err := session.Output(remoteSystemCommand)
 	if !timer.Stop() || err != nil {
-		return guess
+		return guess, false
 	}
 	system := classifyProbe(string(output))
 	if system == SystemUnknown || system == SystemLinux && guess.IsLinux() {
 		// A derivative with no badge of its own (Pop!_OS, Zorin) keeps the family
 		// its banner named rather than falling back to plain Linux.
-		return guess
+		return guess, false
 	}
-	return system
+	return system, true
 }

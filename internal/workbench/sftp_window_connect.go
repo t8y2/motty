@@ -87,7 +87,7 @@ func (state *State) pumpSFTPConnections() {
 		if status.Endpoint.Host != "" {
 			s.endpoint = status.Endpoint
 		}
-		if status.System != sshconn.SystemUnknown {
+		if shouldAdoptSystem(s.host.System, status.System, status.SystemProvisional) {
 			s.host.System = status.System
 		}
 		if state.modalSession == s.ID && !isPromptPhase(s.phase) {
