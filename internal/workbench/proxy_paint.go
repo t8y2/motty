@@ -176,7 +176,11 @@ func (state *State) paintProxyHostField(canvas *ui.Canvas, bounds ui.Rect, targe
 			}
 		}
 		scroll.Offset = max(0, min(float32(selectedIndex)*32, float32(count)*32+8-popupHeight))
-		canvas.SetInitialFocus(itemBase.At(int(selectedID)))
+		// RequestFocus, not SetInitialFocus: the dialog claims its trigger as the
+		// initial focus after this field paints, at the same trap depth, so an initial
+		// focus set here would be overridden. A request is applied once, and the list
+		// follows the focused row from then on.
+		canvas.RequestFocus(itemBase.At(int(selectedID)))
 	}
 	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
 		TriggerID: triggerID, Label: label, Value: value, Hint: hint, Open: open, Invalid: !selectedOK,
