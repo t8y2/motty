@@ -101,6 +101,8 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.captureHostActionIDs()
 		state.groupMenu.menu = false
 		state.hostGroupMenu = len(state.hostActionIDs) > 0
+	case hitBulkHostPassword:
+		state.openBulkHostPassword()
 	case hitImportMenu:
 		state.importMenu = true
 	case hitExportHosts:
@@ -139,6 +141,15 @@ func (state *State) toggleHostSelection(id uint32) {
 func (state *State) hostSelected(id uint32) bool {
 	for _, selected := range state.hostSelections {
 		if selected == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (state *State) selectedHostsCanSavePassword() bool {
+	for _, id := range state.hostSelections {
+		if host, ok := state.hostByID(id); ok && hostSupportsSavedPassword(host) {
 			return true
 		}
 	}
@@ -401,16 +412,23 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 // editing the address or the login moves nothing, deleting the host deletes it,
 // and a copy of the host has a password of its own.
 func hostPasswordSecretName(host Host) (string, bool) {
-	switch host.Protocol {
-	case protocolSSH:
-		if host.Auth == authPrivateKey || host.Auth == authAgent {
-			return "", false
-		}
-	case protocolVNC, protocolRDP:
-	default:
+	if !hostSupportsSavedPassword(host) {
 		return "", false
 	}
 	return hostSecretName(host.CatalogID, hostPasswordPart), true
+}
+
+func hostSupportsSavedPassword(host Host) bool {
+	switch host.Protocol {
+	case protocolSSH:
+		if host.Auth == authPrivateKey || host.Auth == authAgent {
+			return false
+		}
+	case protocolVNC, protocolRDP:
+	default:
+		return false
+	}
+	return true
 }
 
 // hostDialogPasswordChanges plans what the form's password field does to the

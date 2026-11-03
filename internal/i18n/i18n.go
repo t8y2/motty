@@ -278,18 +278,24 @@ type Messages struct {
 	RecordingExportFailedFmt             string
 
 	// Toolbar and host table.
-	NewHost       string
-	EditHost      string
-	CopyHost      string
-	DeleteHost    string
-	MoveHostGroup string
-	ExportHosts   string
-	ImportCatalog string
-	ImportMenu    string
-	Connect       string
-	ColumnName    string
-	HostsEmpty    string
-	HostsEmptySub string
+	NewHost                    string
+	EditHost                   string
+	CopyHost                   string
+	DeleteHost                 string
+	MoveHostGroup              string
+	BulkPasswordTitle          string
+	BulkPasswordDescriptionFmt string
+	BulkPasswordConfirm        string
+	BulkPasswordEmpty          string
+	BulkPasswordNoHosts        string
+	BulkPasswordSavedFmt       string
+	ExportHosts                string
+	ImportCatalog              string
+	ImportMenu                 string
+	Connect                    string
+	ColumnName                 string
+	HostsEmpty                 string
+	HostsEmptySub              string
 
 	// OpenSSH config import.
 	SSHConfigImport             string

@@ -80,6 +80,11 @@ Electerm and Netcatty write saved passwords into the export in clear text.
 Motty does not import them and says so after the import; delete the file when
 you are done.
 
+On the Hosts page, select several hosts and choose **Set Password** to save one
+new password for all eligible selections. SSH hosts using a key or agent, and
+Telnet/serial hosts, are skipped. VNC and RDP hosts are eligible. This changes
+Motty's saved credentials, not the passwords on the remote servers.
+
 ## Syncing with your SSH config
 
 Importing reads a file once. To keep `~/.ssh/config` and Motty in step both ways,

@@ -404,6 +404,7 @@ const (
 	modalDeleteHost
 	modalMoveHostGroup
 	modalHostImportResult
+	modalBulkHostPassword
 	modalNewForward
 	modalNewProxy
 	modalHostKey

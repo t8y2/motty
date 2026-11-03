@@ -10,13 +10,14 @@ var hostMenuHits = tree.Feature("host-menu")
 
 // The host menu's hit identities, beside the tab menu's.
 var (
-	hitHostMenuDismiss = tree.ID(hostMenuHits, "host-menu-dismiss")
-	hitHostMenuConnect = tree.ID(hostMenuHits, "host-menu-connect")
-	hitHostMenuSFTP    = tree.ID(hostMenuHits, "host-menu-sftp")
-	hitHostMenuEdit    = tree.ID(hostMenuHits, "host-menu-edit")
-	hitHostMenuCopy    = tree.ID(hostMenuHits, "host-menu-copy")
-	hitHostMenuMove    = tree.ID(hostMenuHits, "host-menu-move")
-	hitHostMenuDelete  = tree.ID(hostMenuHits, "host-menu-delete")
+	hitHostMenuDismiss  = tree.ID(hostMenuHits, "host-menu-dismiss")
+	hitHostMenuConnect  = tree.ID(hostMenuHits, "host-menu-connect")
+	hitHostMenuSFTP     = tree.ID(hostMenuHits, "host-menu-sftp")
+	hitHostMenuEdit     = tree.ID(hostMenuHits, "host-menu-edit")
+	hitHostMenuCopy     = tree.ID(hostMenuHits, "host-menu-copy")
+	hitHostMenuMove     = tree.ID(hostMenuHits, "host-menu-move")
+	hitHostMenuPassword = tree.ID(hostMenuHits, "host-menu-password")
+	hitHostMenuDelete   = tree.ID(hostMenuHits, "host-menu-delete")
 )
 
 // hostMenu is the right-click menu of a host, in the list or the cards: which
@@ -103,6 +104,9 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
+	if several {
+		rows.add(components.ContextMenuItem{ID: hitHostMenuPassword, Label: messages.BulkPasswordTitle, Icon: icon(iconKey), Disabled: !state.selectedHostsCanSavePassword()})
+	}
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	width, height := rows.size(canvas, state.contextMenuTheme())
 	bounds := state.popupAt(canvas, viewport, state.hostMenu.at, width, height, 6)
@@ -142,6 +146,9 @@ func (state *State) clickHostMenu(id ui.ID) bool {
 		// not under the action row the host list may not even be showing.
 		state.groupMenu = groupMenuAnchor{point: state.hostMenu.at, menu: true}
 		state.hostGroupMenu = len(state.hostActionIDs) > 0
+	case hitHostMenuPassword:
+		state.captureHostMenuActionIDs(host.ID)
+		state.openBulkHostPassword()
 	case hitHostMenuDelete:
 		state.captureHostMenuActionIDs(host.ID)
 		state.openDeleteCapturedHosts()
