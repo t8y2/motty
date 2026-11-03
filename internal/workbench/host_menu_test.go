@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"errors"
+	"net"
+	"strconv"
 	"testing"
 
 	"github.com/vivaui/viva/ui"
@@ -24,7 +27,7 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 		t.Fatalf("selection = %v selected %d, want the original check and the pointed host highlighted", state.hostSelections, state.selectedHostID)
 	}
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitHostMenuConnect, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
+	for _, id := range []ui.ID{hitHostMenuConnect, hitHostMenuAddress, hitHostMenuName, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
 			t.Errorf("menu item %d: %+v found=%v", id, hit, ok)
 		}
@@ -32,6 +35,81 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 	state.Click(hitHostMenuConnect)
 	if state.hostMenu.open || len(world.conns) != 1 {
 		t.Fatalf("Connect: open=%v dialed=%d", state.hostMenu.open, len(world.conns))
+	}
+}
+
+func TestHostMenuCopiesThePointedHostAddressAndConnectionName(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	target := state.hosts[1]
+	var copied []string
+	state.options.SetClipboardText = func(value string) error {
+		copied = append(copied, value)
+		return nil
+	}
+
+	rightClickHost(state, target.ID)
+	state.Click(hitHostMenuAddress)
+	wantAddress := net.JoinHostPort(target.Address, strconv.Itoa(int(target.Port)))
+	if state.hostMenu.open || len(copied) != 1 || copied[0] != wantAddress {
+		t.Fatalf("Copy Address and Port: open=%v copied=%q target=%q", state.hostMenu.open, copied, wantAddress)
+	}
+
+	rightClickHost(state, target.ID)
+	state.Click(hitHostMenuName)
+	if state.hostMenu.open || len(copied) != 2 || copied[1] != target.Label {
+		t.Fatalf("Copy Connection Name: open=%v copied=%q target=%q", state.hostMenu.open, copied, target.Label)
+	}
+}
+
+func TestConnectionAddressAndPortHandlesIPv6AndPortlessHosts(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host Host
+		want string
+	}{
+		{name: "hostname", host: Host{Address: "server.example.com", Port: 2222}, want: "server.example.com:2222"},
+		{name: "IPv4", host: Host{Address: "192.0.2.10", Port: 22}, want: "192.0.2.10:22"},
+		{name: "IPv6", host: Host{Address: "2001:db8::10", Port: 22}, want: "[2001:db8::10]:22"},
+		{name: "serial", host: Host{Address: "/dev/ttyUSB0"}},
+		{name: "missing address", host: Host{Port: 22}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := connectionAddressAndPort(test.host); got != test.want {
+				t.Fatalf("connectionAddressAndPort() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// A clipboard that refuses the write must say so: the menu closes either way, so
+// silence would leave the choice looking as if it had worked.
+func TestAFailedConnectionCopyIsReported(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.options.SetClipboardText = func(string) error { return errors.New("clipboard unavailable") }
+	rightClickHost(state, state.hosts[1].ID)
+	state.Click(hitHostMenuAddress)
+	if state.status != "clipboard unavailable" {
+		t.Fatalf("status = %q, want the clipboard's reason", state.status)
+	}
+}
+
+// The connection copies read as one group: a separator between the address, the
+// name and the host would say they are different kinds of action.
+func TestHostMenuKeepsTheConnectionCopyRowsTogether(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	rightClickHost(state, state.hosts[1].ID)
+	canvas, _ := paintedTexts(state)
+	order := []ui.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuEdit}
+	previous := float32(0)
+	for index, id := range order {
+		hit, ok := hitByID(canvas, id)
+		if !ok {
+			t.Fatalf("menu item %d is missing", id)
+		}
+		if index > 0 && hit.Bounds.Y <= previous {
+			t.Fatalf("row %d sits at %.0f, above the row before it at %.0f", id, hit.Bounds.Y, previous)
+		}
+		previous = hit.Bounds.Y
 	}
 }
 
@@ -91,7 +169,7 @@ func TestRightClickInsideSeveralCheckedHostsKeepsThemAndDisablesTheSingleOnes(t 
 		t.Fatalf("selection = %v, want both kept", state.hostSelections)
 	}
 	canvas, _ := paintedTexts(state)
-	for id, disabled := range map[ui.ID]bool{hitHostMenuConnect: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
+	for id, disabled := range map[ui.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled != disabled {
 			t.Errorf("item %d: found=%v disabled=%v, want disabled=%v", id, ok, hit.Disabled, disabled)
 		}
@@ -131,7 +209,10 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 		if !ok {
 			t.Fatal("no menu")
 		}
-		widest := canvas.TextWidth(state.messages.MoveHostGroup, 13)
+		widest := float32(0)
+		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHostTitle, state.messages.MoveHostGroup, state.messages.DeleteHost} {
+			widest = max(widest, canvas.TextWidth(label, 13))
+		}
 		// A context menu is never narrower than Vega's 9rem, whatever its labels.
 		if hit.Bounds.Width > max(widest+80, 144) || hit.Bounds.Width < widest+8 {
 			t.Errorf("chinese=%v: a row is %.0f wide for a %.0f wide label", chinese, hit.Bounds.Width, widest)
@@ -157,8 +238,14 @@ func TestHostMenuTypeaheadHighlightsRowsByName(t *testing.T) {
 	if got := key("c"); got != hitHostMenuConnect {
 		t.Fatalf("c focused %v, want Connect", got)
 	}
+	if got := key("c"); got != hitHostMenuAddress {
+		t.Fatalf("second c focused %v, want Copy Address and Port", got)
+	}
+	if got := key("c"); got != hitHostMenuName {
+		t.Fatalf("third c focused %v, want Copy Connection Name", got)
+	}
 	if got := key("c"); got != hitHostMenuCopy {
-		t.Fatalf("second c focused %v, want Copy Host", got)
+		t.Fatalf("fourth c focused %v, want Copy Host", got)
 	}
 }
 

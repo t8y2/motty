@@ -246,6 +246,8 @@ type Messages struct {
 	TipFilesLocal                          string
 	SFTPInsertPath                         string
 	MenuCopy                               string
+	CopyAddressAndPort                     string
+	CopyConnectionName                     string
 	MenuPaste                              string
 	MenuSelectAll                          string
 	MenuClearScreen                        string

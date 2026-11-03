@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"net"
+	"strconv"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
@@ -8,6 +11,28 @@ import (
 // contextMenuRow is the height of an item row in every right-click menu: a dense
 // 24px, so a menu of a dozen rows stays short.
 const contextMenuRow = float32(24)
+
+// connectionAddressAndPort is the endpoint text the copy actions place on the
+// clipboard. Portless connections, including serial hosts, have nothing useful
+// to copy under that label.
+func connectionAddressAndPort(host Host) string {
+	if host.Address == "" || host.Port == 0 {
+		return ""
+	}
+	return net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
+}
+
+// copyConnectionText places what a connection copy row offers on the clipboard.
+// A failure goes to the status line, where the terminal's own Copy reports it,
+// instead of being dropped along with the menu that asked for it.
+func (state *State) copyConnectionText(value string) {
+	if value == "" || state.options.SetClipboardText == nil {
+		return
+	}
+	if err := state.options.SetClipboardText(value); err != nil {
+		state.status = err.Error()
+	}
+}
 
 // contextMenuTheme is the theme the right-click menus are measured and painted
 // with: a point smaller text than the window's, which Viva takes from the theme.

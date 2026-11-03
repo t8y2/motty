@@ -245,6 +245,8 @@ var ChineseMessages = Messages{
 	TipFilesLocal:                          "文件:浏览本机文件",
 	SFTPInsertPath:                         "把路径输入终端",
 	MenuCopy:                               "复制",
+	CopyAddressAndPort:                     "复制连接地址和端口",
+	CopyConnectionName:                     "复制连接名称",
 	MenuPaste:                              "粘贴",
 	MenuSelectAll:                          "全选",
 	MenuClearScreen:                        "清空屏幕",

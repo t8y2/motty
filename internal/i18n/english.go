@@ -245,6 +245,8 @@ var EnglishMessages = Messages{
 	TipFilesLocal:                          "Files: browse this computer",
 	SFTPInsertPath:                         "Type the path into the terminal",
 	MenuCopy:                               "Copy",
+	CopyAddressAndPort:                     "Copy Address and Port",
+	CopyConnectionName:                     "Copy Connection Name",
 	MenuPaste:                              "Paste",
 	MenuSelectAll:                          "Select All",
 	MenuClearScreen:                        "Clear Screen",
