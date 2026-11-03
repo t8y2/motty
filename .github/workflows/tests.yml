@@ -8,17 +8,93 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # the `changes` job lists a pull request's files
 
-# A superseded run is cancelled, pushes to main included: a newer push to the
-# same ref contains everything the older one would have tested, and leaving the
-# older run in place makes the newer one wait for ten jobs it cannot use.
+# A superseded pull-request run is cancelled: the newer push contains everything
+# the older one would have tested, and leaving the older run in place makes the
+# newer one wait for jobs it cannot use.
+#
+# main is deliberately never cancelled. The commit that reaches main is the one
+# a release is tagged from, so every one of them has to see the whole suite
+# finish, even when the next push arrives before it does; those runs queue
+# instead of replacing each other.
+#
+# The trigger is not filtered by path. A workflow that does not run at all never
+# reports its checks, and the required ones would stay "Expected" forever on a
+# docs-only pull request. The `changes` job decides instead; a job it skips
+# reports itself as skipped, which is a passing check.
 concurrency:
   group: go-tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Everything below needs this answer, so it is the cheapest possible job: it
+  # asks the API which files changed and runs no checkout. A change that touches
+  # nothing but documentation, the website (which has a workflow of its own) or
+  # an issue template cannot alter the Go build, so the suite is skipped and the
+  # pull request gets its checks back in about ten seconds instead of ten
+  # minutes. Anything uncertain — no base commit, a compare cut off at its
+  # 300-file cap, a failed API call — runs the whole suite rather than guessing.
+  changes:
+    name: Decide whether the change needs the suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - name: Classify the changed files
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          run_all() {
+            echo "$1: running the whole suite"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          [ "$EVENT" != workflow_dispatch ] || run_all "a manual run"
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            run_all "no base commit to compare against"
+          fi
+
+          changed=$(mktemp)
+          if [ "$EVENT" = pull_request ]; then
+            # Paginated, so this lists every file a pull request touches.
+            gh api "repos/$REPOSITORY/pulls/$NUMBER/files" --paginate --jq '.[].filename' > "$changed" ||
+              run_all "the pull request's file list could not be read"
+          else
+            gh api "repos/$REPOSITORY/compare/$BASE...$HEAD" --jq '.files[].filename' > "$changed" ||
+              run_all "the push could not be compared with its base"
+            # This endpoint stops at 300 files and says so only by its size.
+            [ "$(wc -l < "$changed")" -lt 300 ] || run_all "the compare hit its file cap"
+          fi
+
+          code=false
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            case "$file" in
+            docs/* | website/* | .github/ISSUE_TEMPLATE/* | *.md | LICENSE | NOTICE) ;;
+            *)
+              code=true
+              break
+              ;;
+            esac
+          done < "$changed"
+          echo "the change needs the Go suite: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   quality:
     name: Format and vet
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -46,6 +122,8 @@ jobs:
 
   tests:
     name: Unit and integration tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -70,6 +148,8 @@ jobs:
   # package again with the dev tag, so it stays cheaper than the release suite.
   dev-tests:
     name: Development components
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -88,71 +168,48 @@ jobs:
         working-directory: motty
         run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
 
-  # The Windows tests build only on Windows, so the Linux jobs above never
-  # compile them. This job keeps the package and its Windows command/parser
-  # tests building; -short skips the real CIM query, which needs a live host.
-  windows-remote-tools:
-    name: Remote tools (Windows)
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: motty
-      - uses: actions/checkout@v7
-        with:
-          repository: vivaui/viva
-          path: viva
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: motty/go.mod
-          cache-dependency-path: motty/go.sum
-      - name: Test remote tools platform handling
-        working-directory: motty
-        run: go test -short -run 'Test(Windows|Darwin|Docker)' ./internal/remotetools -count=1
-
-  # A Windows checkout converts line endings when core.autocrlf is true, which
-  # is the Git for Windows default. The embedded completion catalog is a
-  # byte-exact format and the ssh_config parser reads Windows paths, so this job
-  # checks out with the conversion on and runs the packages that depend on it.
-  windows-checkout:
-    name: Windows checkout (autocrlf)
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - name: Convert line endings on checkout
-        run: git config --global core.autocrlf true
-      - uses: actions/checkout@v7
-        with:
-          path: motty
-      - uses: actions/checkout@v7
-        with:
-          repository: vivaui/viva
-          path: viva
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: motty/go.mod
-          cache-dependency-path: motty/go.sum
-      - name: Test the packages that read checked-out data
-        working-directory: motty
-        run: go test ./internal/completion ./internal/sshconfig -count=1
-
   # The workbench tests above only run on Linux: they build everywhere, but no
-  # job runs them on Windows, so what a Windows clone sees never reaches CI. This
-  # job runs the whole package the way a Windows developer's git checks the
-  # sources out (core.autocrlf true), which the job above does for the data
-  # files alone.
+  # job runs them on Windows, so what a Windows clone sees never reaches CI.
+  # This suite runs the package the way a Windows developer's git checks the
+  # sources out (core.autocrlf true).
+  #
+  # It is also the slowest job in the workflow by a wide margin: one package,
+  # one test at a time, about twelve minutes on a hosted Windows runner. The
+  # package cannot overlap itself — its tests share the headless driver's state —
+  # so it is spread over five machines by test name with tools/testslice, the
+  # same split the race jobs use. Each shard hashes the names the package really
+  # carries, so a new test lands in exactly one shard and no list is maintained.
+  #
+  # Five is measured, not guessed: the suite's own timings put a four-way name
+  # split at an unbalanced 266 s worst shard against a 204 s ideal, while five
+  # ways comes within ten percent of its ideal, and the per-shard checkout and
+  # toolchain make a sixth shard cheaper than its wall-clock gain.
+  #
+  # The two other Windows checks ride on the first shard instead of a job of
+  # their own. They are a checkout and a toolchain plus thirteen seconds of
+  # tests, so a separate runner bought nothing but a sixth Windows machine to
+  # wait for; here they run before the workbench tests that would otherwise be
+  # the only thing this runner did. The remote-tools tests build only on
+  # Windows and -short skips the real CIM query, which needs a live host, and
+  # the completion catalog and ssh_config parser check the CRLF checkout this
+  # job makes anyway.
   #
   # The skips are allocation and steady-paint budgets (#272): they count
   # allocations per paint and compare timings, so a hosted runner answers
   # differently from the desktop that set the budgets. Every skip is listed here
   # and nothing else is: a test that fails on the runner is a defect to fix, not
-  # a new entry. The suite runs about fifteen to eighteen minutes here, well
-  # past go test's ten-minute default, hence both timeouts.
+  # a new entry.
   windows-workbench:
-    name: Workbench (Windows, autocrlf)
+    name: Workbench (Windows, autocrlf, ${{ matrix.shard }}/5)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
+    strategy:
+      # Every shard reports, so one failure does not hide the others.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
     steps:
       - name: Check the sources out the way a Windows developer's git does
         run: git config --global core.autocrlf true
@@ -163,25 +220,63 @@ jobs:
         with:
           repository: vivaui/viva
           path: viva
+      # The shards keep a build cache below. setup-go's key carries go.sum
+      # alone, so every job sharing it would restore the same cache and only the
+      # first to finish could ever store one — which is how the Windows jobs
+      # came to rebuild this package from scratch on every run.
       - uses: actions/setup-go@v7
         with:
           go-version-file: motty/go.mod
-          cache-dependency-path: motty/go.sum
-      - name: Test the workbench
+          cache: false
+      - name: Restore the Go module cache
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-Windows-${{ hashFiles('motty/go.sum') }}
+      - name: Restore the workbench build cache
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\go-build
+          # One key for the whole suite: every shard compiles the same test
+          # binary, so whichever finishes first stores the cache the others
+          # restore on the next run. A key per run keeps it following the
+          # sources instead of freezing at the first save.
+          key: go-build-win-${{ hashFiles('motty/go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-build-win-${{ hashFiles('motty/go.sum') }}-
+            go-build-win-
+      - name: Test remote tools platform handling
+        if: matrix.shard == 0
         working-directory: motty
-        run: go test ./internal/workbench -count=1 -timeout 25m -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue'
+        run: go test -short -run 'Test(Windows|Darwin|Docker)' ./internal/remotetools -count=1
+      - name: Test the packages that read checked-out data
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/completion ./internal/sshconfig -count=1
+      - name: Test the workbench
+        shell: bash
+        working-directory: motty
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: 5
+        run: |
+          pattern=$(go run ./tools/testslice -n "$SHARDS" -i "$SHARD" ./internal/workbench)
+          go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
+            -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue'
 
-  # The race detector is the long pole: it runs one package at a time, and it
-  # multiplies the memory the tests hold. CI therefore spreads the package list
-  # over six jobs (`make race` still runs the whole list for the merge gate),
-  # and a growing list keeps being covered because `make race-rest` takes every
-  # package the other jobs do not name.
+  # The race detector is the long pole on Linux: it runs one package at a time,
+  # and it multiplies the memory the tests hold. CI therefore spreads the
+  # package list over six jobs (`make race` still runs the whole list for the
+  # merge gate), and a growing list keeps being covered because `make
+  # race-rest` takes every package the other jobs do not name.
   #
   # The workbench package alone is about half of the race runtime and cannot be
   # overlapped from the inside (its tests share the headless driver's state), so
   # it gets four shards of its own; the other shards are package groups.
   race:
     name: Race (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -189,10 +284,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: workbench 1/4, target: race-workbench, shard: 0, cache: workbench-0 }
-          - { name: workbench 2/4, target: race-workbench, shard: 1, cache: workbench-1 }
-          - { name: workbench 3/4, target: race-workbench, shard: 2, cache: workbench-2 }
-          - { name: workbench 4/4, target: race-workbench, shard: 3, cache: workbench-3 }
+          - { name: workbench 1/4, target: race-workbench, shard: 0, cache: workbench }
+          - { name: workbench 2/4, target: race-workbench, shard: 1, cache: workbench }
+          - { name: workbench 3/4, target: race-workbench, shard: 2, cache: workbench }
+          - { name: workbench 4/4, target: race-workbench, shard: 3, cache: workbench }
           - { name: heavy packages, target: race-heavy, cache: heavy }
           - { name: other packages, target: race-rest, cache: rest }
     steps:
@@ -220,10 +315,14 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/go-build
-          # A key per run so the cache follows the source instead of freezing at
-          # the first save, and restore keys that fall back to this shard's own
-          # previous run, then to any shard for the race-instrumented standard
-          # library they all share.
+          # One cache per package group, not per shard: the four workbench
+          # shards compile the same test binary, so a shared key stores the
+          # race-instrumented build once instead of four times. A key per run
+          # keeps the cache following the source instead of freezing at the
+          # first save, and the restore keys fall back to this group's previous
+          # run and then to any group for the race standard library they share.
+          # Keeping the whole set to about one gigabyte per run leaves room
+          # under the repository's ten-gigabyte cache limit for the other jobs.
           key: go-race-${{ matrix.cache }}-${{ hashFiles('motty/go.sum') }}-${{ github.run_id }}
           restore-keys: |
             go-race-${{ matrix.cache }}-${{ hashFiles('motty/go.sum') }}-
