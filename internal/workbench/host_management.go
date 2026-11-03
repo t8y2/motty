@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 
@@ -53,6 +54,7 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		case id == hitHostGroupNew:
 			state.hostGroupMenu = false
 			state.hostGroupEditor = text.Editor{}
+			state.groupActions.op = hostGroupMoveHosts
 			state.dialogError = ""
 			state.modal = modalMoveHostGroup
 		case id.Scope() == hitHostGroupItemList:
@@ -595,19 +597,68 @@ func containsHostID(ids []uint32, id uint32) bool {
 }
 
 func (state *State) clickMoveHostGroupDialog(id ui.ID) {
+	if state.groupActions.op == hostGroupRelocate {
+		switch {
+		case id == hitMoveGroupField:
+			state.groupActions.parentOpen = !state.groupActions.parentOpen
+			return
+		case id == hitGroupParentDismiss:
+			state.groupActions.parentOpen = false
+			return
+		case id == hitGroupParentRoot:
+			state.hostGroupEditor = text.Editor{}
+			state.groupActions.parentOpen = false
+			return
+		case id.Scope() == hitGroupParentItems:
+			index := item(id)
+			if index >= 0 && index < len(state.hostGroups) {
+				state.hostGroupEditor = text.Editor{}
+				state.hostGroupEditor.Insert(state.hostGroups[index].Name)
+			}
+			state.groupActions.parentOpen = false
+			return
+		}
+	}
 	switch id {
-	case hitMoveGroupClose, hitMoveGroupCancel:
+	case hitGroupDeleteParent, hitGroupDeleteUngroup:
+		if state.groupActions.op == hostGroupDelete {
+			state.groupActions.ungroup = id == hitGroupDeleteUngroup
+		}
+	case hitMoveGroupDismiss, hitMoveGroupClose, hitMoveGroupCancel:
 		state.modal = modalNone
 		state.dialogError = ""
 	case hitMoveGroupSubmit:
 		group := strings.TrimSpace(state.hostGroupEditor.String())
-		if group == "" {
-			state.dialogError = state.messages.ErrGroupRequired
-			return
+		switch state.groupActions.op {
+		case hostGroupRelocate:
+			if !state.moveHostGroup(state.groupActions.path, group) {
+				return
+			}
+		case hostGroupDelete:
+			if !state.deleteHostGroup(state.groupActions.path, state.groupActions.ungroup) {
+				return
+			}
+		case hostGroupRename:
+			if !state.renameHostGroup(state.groupActions.path, group) {
+				return
+			}
+		case hostGroupCreateChild:
+			if !state.createHostChildGroup(state.groupActions.path, group) {
+				return
+			}
+		default:
+			if group == "" {
+				state.dialogError = state.messages.ErrGroupRequired
+				return
+			}
+			if !validHostGroup(group) {
+				state.dialogError = state.messages.ErrHostGroupInvalid
+				return
+			}
+			state.applyHostGroup(group)
 		}
 		state.modal = modalNone
 		state.dialogError = ""
-		state.applyHostGroup(group)
 	}
 }
 
@@ -663,6 +714,14 @@ func (state *State) pruneHostSelections() {
 
 func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	if state.groupActions.drag.pressed && event.Key == ui.KeyEscape {
+		state.groupActions.drag = hostGroupDrag{}
+		return handled, true
+	}
+	if state.groupActions.open && event.Key == ui.KeyEscape {
+		state.groupActions.open = false
+		return handled, true
+	}
 	if state.modal == modalDeleteHost {
 		if event.Key == ui.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
 			state.confirmDeleteHosts()
@@ -671,7 +730,22 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		return ui.EventResult{}, false
 	}
 	if state.modal == modalMoveHostGroup {
-		if event.Key == ui.KeyEnter && (event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) && !event.Repeat {
+		if state.groupActions.parentOpen && event.Key == ui.KeyEscape {
+			state.groupActions.parentOpen = false
+			return handled, true
+		}
+		if state.groupActions.op == hostGroupDelete && (event.Target == hitGroupDeleteParent || event.Target == hitGroupDeleteUngroup) {
+			choices := state.groupDeleteChoices()
+			if next, ok := components.RadioGroupKeyDown(event.Target, choices[:], components.DirectionLTR, event.Key); ok {
+				state.groupActions.ungroup = next == hitGroupDeleteUngroup
+				return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
+			}
+		}
+		editable := state.groupActions.op == hostGroupMoveHosts || state.groupActions.op == hostGroupRename || state.groupActions.op == hostGroupCreateChild
+		if event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
+			if _, composing := state.hostGroupEditor.Composition(); event.Repeat || editable && composing {
+				return handled, true
+			}
 			state.clickMoveHostGroupDialog(hitMoveGroupSubmit)
 			return handled, true
 		}

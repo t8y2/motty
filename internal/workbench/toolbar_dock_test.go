@@ -335,7 +335,7 @@ func TestToolbarDockVerticalTabsSideAndBottom(t *testing.T) {
 		t.Fatal("tab orientation changed icon placement")
 	}
 	state.save()
-	if _, _, err := configstore.ReadOnly(options.StatePath, 19); !errors.Is(err, configstore.ErrTooNew) {
+	if _, _, err := configstore.ReadOnly(options.StatePath, 20); !errors.Is(err, configstore.ErrTooNew) {
 		t.Fatalf("old writer can discard dock layout: %v", err)
 	}
 	reopened := newTestState(t, options)

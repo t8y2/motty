@@ -57,6 +57,7 @@ var (
 	hitHostDeleteClose         = tree.ID(shellHits, "host-delete-close")
 	hitHostDeleteCancel        = tree.ID(shellHits, "host-delete-cancel")
 	hitHostDeleteConfirm       = tree.ID(shellHits, "host-delete-confirm")
+	hitMoveGroupDismiss        = tree.ID(shellHits, "move-group-dismiss")
 	hitMoveGroupClose          = tree.ID(shellHits, "move-group-close")
 	hitMoveGroupCancel         = tree.ID(shellHits, "move-group-cancel")
 	hitMoveGroupSubmit         = tree.ID(shellHits, "move-group-submit")
@@ -519,6 +520,7 @@ type State struct {
 	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
 	terminalMenu       terminalMenu
 	hostGroupEditor    text.Editor
+	groupActions       hostGroupActions
 	tabRename          tabRename
 	tabsClose          tabsClose
 	sessionLink        sessionLink
@@ -1105,7 +1107,7 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.editor.otp
 		}
 	case modalMoveHostGroup:
-		if hit == hitMoveGroupField {
+		if hit == hitMoveGroupField && state.groupActions.op != hostGroupRelocate && state.groupActions.op != hostGroupDelete {
 			return &state.hostGroupEditor
 		}
 	case modalRenameTab:
@@ -1371,7 +1373,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickShortcutCapture(id)
 		return
 	}
-	if state.clickToolbarDockMenu(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -1933,6 +1935,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if result, handled := state.hostMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostGroupDragPointer(event); handled {
 		return result
 	}
 	if result, handled := state.localShellPickerPointer(event); handled {

@@ -50,7 +50,7 @@ func TestSessionLogLocateRevealsFilteredCollapsedHost(t *testing.T) {
 	for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
 		state, record := sessionLogActionState(t)
 		host := state.hosts[0]
-		host.Group = "hidden-group"
+		host.Group = "hidden-group/region/production"
 		state.hosts[0] = host
 		state.refreshHostGroups()
 		for i := range state.hostGroups {
