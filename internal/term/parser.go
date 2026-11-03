@@ -71,15 +71,27 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				continue
 			}
 		}
-		if run := t.stringRun(p[i:]); run > 0 {
-			i += run
-			continue
+		if t.inString() {
+			if run := t.stringRun(p[i:]); run > 0 {
+				i += run
+				continue
+			}
 		}
 		t.feed(p[i])
 		i++
 	}
 	t.version++
 	return len(p), nil
+}
+
+// inString reports whether the parser is inside a control string, whose payload
+// is copied in runs rather than fed a byte at a time.
+func (t *Terminal) inString() bool {
+	switch t.state {
+	case stOSC, stDCS, stAPC:
+		return true
+	}
+	return false
 }
 
 // stringRun appends a printable run of a control string in one copy and
@@ -90,10 +102,6 @@ func (t *Terminal) Write(p []byte) (int, error) {
 func (t *Terminal) stringRun(p []byte) int {
 	if len(p) == 0 || p[0] < 0x20 {
 		return 0
-	}
-	run := 0
-	for run < len(p) && p[run] >= 0x20 {
-		run++
 	}
 	var dst *[]byte
 	limit, overflow := maxOSC, false
@@ -112,6 +120,10 @@ func (t *Terminal) stringRun(p []byte) int {
 		dst, overflow, limit = &t.apc, t.apcOverflow, maxImageSequence
 	default:
 		return 0
+	}
+	run := 0
+	for run < len(p) && p[run] >= 0x20 {
+		run++
 	}
 	if overflow {
 		return run
