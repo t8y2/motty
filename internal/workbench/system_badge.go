@@ -55,6 +55,7 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemAmazonLinux: {icons.Amazonlinux, ui.RGB(35, 47, 62)},
 	sshconn.SystemAzureLinux:  {icons.Azurelinux, ui.RGB(0, 120, 212)},
 	sshconn.SystemOracleLinux: {icons.Oraclelinux, ui.RGB(199, 70, 52)},
+	sshconn.SystemESXi:        {icons.Esxi, ui.RGB(96, 112, 120)},
 }
 
 // badgeGlyph is one filled glyph of a system's badge: the icon, how far the badge's
