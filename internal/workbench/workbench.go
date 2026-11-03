@@ -43,6 +43,7 @@ var (
 	hitCopyHost                = tree.ID(shellHits, "copy-host")
 	hitDeleteHost              = tree.ID(shellHits, "delete-host")
 	hitMoveHostGroup           = tree.ID(shellHits, "move-host-group")
+	hitBulkHostPassword        = tree.ID(shellHits, "bulk-host-password")
 	hitExportHosts             = tree.ID(shellHits, "export-hosts")
 	hitImportHostCatalog       = tree.ID(shellHits, "import-host-catalog")
 	hitImportMenu              = tree.ID(shellHits, "import-menu")
@@ -534,6 +535,7 @@ type State struct {
 	forwardStarts      chan forwardStartResult
 	proxyCountText     string
 	hostImportResult   hostImportResult
+	bulkPassword       bulkHostPassword
 	knownHosts         knownHostsView
 	knownHostsLayout   flex.View
 	settingsRow        flex.View
@@ -1111,6 +1113,19 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitMoveGroupField && state.groupActions.op != hostGroupRelocate && state.groupActions.op != hostGroupDelete {
 			return &state.hostGroupEditor
 		}
+	case modalBulkHostPassword:
+		if hit == hitBulkPasswordField {
+			return &state.bulkPassword.editor
+		}
+		if hit == hitBulkUserField {
+			return &state.bulkPassword.user
+		}
+		if hit == hitBulkOTPField {
+			return &state.bulkPassword.otp
+		}
+		if hit == hitBulkPassphraseField {
+			return &state.bulkPassword.passphrase
+		}
 	case modalRenameTab:
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
@@ -1282,6 +1297,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalHostImportResult:
 		state.clickHostImportResult(id)
+		return
+	case modalBulkHostPassword:
+		state.clickBulkHostPassword(id)
 		return
 	case modalNewForward:
 		state.clickForwardDialog(id)
@@ -2346,6 +2364,11 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if state.modal == modalVaultUnlock && event.Key == ui.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalBulkHostPassword && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitBulkUserField || event.Target == hitBulkPasswordField || event.Target == hitBulkOTPField || event.Target == hitBulkPassphraseField) {
+		state.submitBulkHostPassword()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalOutboundProxy && event.Key == ui.KeyEnter && !event.Repeat &&

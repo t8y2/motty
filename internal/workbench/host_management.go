@@ -103,6 +103,8 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.captureHostActionIDs()
 		state.groupMenu.menu = false
 		state.hostGroupMenu = len(state.hostActionIDs) > 0
+	case hitBulkHostPassword:
+		state.openBulkHostPassword()
 	case hitImportMenu:
 		state.importMenu = true
 	case hitExportHosts:
@@ -142,6 +144,17 @@ func (state *State) hostSelected(id uint32) bool {
 	for _, selected := range state.hostSelections {
 		if selected == id {
 			return true
+		}
+	}
+	return false
+}
+
+func (state *State) selectedHostsCanEditAuth() bool {
+	for _, id := range state.hostSelections {
+		if host, ok := state.hostByID(id); ok {
+			if host.isSSH() || host.Protocol == protocolVNC || host.Protocol == protocolRDP {
+				return true
+			}
 		}
 	}
 	return false
@@ -293,7 +306,7 @@ func (state *State) submitHostDialog() {
 		state.dialogError = failure
 		return
 	}
-	passphraseChanges, failure := state.hostPassphraseChanges()
+	passphraseChanges, failure := state.hostPassphraseChanges(candidate, source)
 	if failure != "" {
 		state.dialogError = failure
 		return
@@ -403,16 +416,23 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 // editing the address or the login moves nothing, deleting the host deletes it,
 // and a copy of the host has a password of its own.
 func hostPasswordSecretName(host Host) (string, bool) {
-	switch host.Protocol {
-	case protocolSSH:
-		if host.Auth == authPrivateKey || host.Auth == authAgent {
-			return "", false
-		}
-	case protocolVNC, protocolRDP:
-	default:
+	if !hostSupportsSavedPassword(host) {
 		return "", false
 	}
 	return hostSecretName(host.CatalogID, hostPasswordPart), true
+}
+
+func hostSupportsSavedPassword(host Host) bool {
+	switch host.Protocol {
+	case protocolSSH:
+		if host.Auth == authPrivateKey || host.Auth == authAgent {
+			return false
+		}
+	case protocolVNC, protocolRDP:
+	default:
+		return false
+	}
+	return true
 }
 
 // hostDialogPasswordChanges plans what the form's password field does to the
@@ -444,7 +464,7 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 // host that uses the key and the page itself see the same one. A passphrase that
 // does not open the key is refused here, as there: it would only fail at the
 // next connection.
-func (state *State) hostPassphraseChanges() (changes []vault.Change, failure string) {
+func (state *State) hostPassphraseChanges(host Host, source *Host) (changes []vault.Change, failure string) {
 	typed := state.editor.passphrase.String()
 	if typed == "" || !state.hostAsksKeyPassphrase() {
 		return nil, ""
@@ -461,6 +481,9 @@ func (state *State) hostPassphraseChanges() (changes []vault.Change, failure str
 	clear(secret)
 	if err != nil {
 		return nil, state.messages.KeyPassphraseWrong
+	}
+	if source != nil && savedPassphraseName(state.secrets.vault, source.CatalogID, identity.Path) == hostPassphraseSecretName(source.CatalogID) {
+		return []vault.Change{{Name: hostPassphraseSecretName(host.CatalogID), Value: encodeHostPassphrase(identity.Path, typed)}}, ""
 	}
 	return []vault.Change{{Name: passphraseSecretName(identity.Path), Value: typed}}, ""
 }
@@ -553,7 +576,8 @@ func (state *State) confirmDeleteHosts() {
 			}
 			changes = append(changes,
 				vault.Change{Name: hostSecretName(host.CatalogID, hostPasswordPart), Delete: true},
-				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true})
+				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true},
+				vault.Change{Name: hostPassphraseSecretName(host.CatalogID), Delete: true})
 			if host.Proxy != nil && host.Proxy.kind != sshconn.ProxyNone && host.Proxy.user != "" {
 				changes = append(changes, vault.Change{Name: hostProxyPasswordSecret(host.CatalogID, host.Proxy), Delete: true})
 			}

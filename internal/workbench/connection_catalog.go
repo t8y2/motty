@@ -107,8 +107,20 @@ func (catalog *hostCatalog) secretOwner(target Host, endpoint sshconn.Endpoint, 
 		}
 		return target.CatalogID
 	}
+	if chain, valid := catalog.proxyChainFor(target); valid {
+		for _, jump := range chain {
+			if jump.Address == endpoint.Host && jump.Port == endpoint.Port && catalog.login(jump) == endpoint.User {
+				return jump.CatalogID
+			}
+		}
+	}
 	if jump, ok := catalog.hostByConnection(endpoint.Host, endpoint.User, endpoint.Port); ok {
 		return jump.CatalogID
+	}
+	for _, jump := range catalog.hosts {
+		if jump.isSSH() && jump.User == "" && jump.Address == endpoint.Host && jump.Port == endpoint.Port && catalog.login(jump) == endpoint.User {
+			return jump.CatalogID
+		}
 	}
 	return catalogIDFor(Host{Protocol: protocolSSH, Address: endpoint.Host, User: endpoint.User, Port: endpoint.Port})
 }

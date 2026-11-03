@@ -306,6 +306,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintDeleteHostDialog(canvas, viewport)
 	case modalMoveHostGroup:
 		state.paintMoveHostGroupDialog(canvas, viewport)
+	case modalBulkHostPassword:
+		state.paintBulkHostPassword(canvas, viewport)
 	case modalRenameTab:
 		state.paintTabRenameDialog(canvas, viewport)
 	case modalAIRename:
@@ -1005,6 +1007,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 		{hitEditHost, m.EditHost, iconPencil, false, false},
 		{hitCopyHost, m.CopyHost, iconCopy, false, false},
 		{hitMoveHostGroup, m.MoveHostGroup, iconFolderOpen, false, false},
+		{hitBulkHostPassword, m.BulkPasswordTitle, iconKey, false, false},
 		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconActivity, false, false},
 		{hitDeleteHost, m.DeleteHost, iconTrash, false, true},
 	}
@@ -1021,6 +1024,8 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 				actions[i].enabled = single
 			case hitMoveHostGroup, hitDeleteHost:
 				actions[i].enabled = enabled
+			case hitBulkHostPassword:
+				actions[i].enabled = state.selectedHostsCanEditAuth()
 			case hitDashboardAddHosts:
 				actions[i].enabled = state.dashboardCanAddHosts()
 			}

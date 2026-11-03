@@ -1342,6 +1342,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalNewHost {
 		return state.scrollHostForm(event)
 	}
+	if state.modal == modalBulkHostPassword {
+		return state.scrollBulkHostPassword(event)
+	}
 	if state.modal == modalFontPicker {
 		return state.scrollFontPicker(event)
 	}

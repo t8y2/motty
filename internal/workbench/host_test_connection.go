@@ -242,7 +242,13 @@ func (state *State) answerHostTestPassphrase(status sshconn.Status) {
 			passphrase = test.passphrase
 		}
 		if passphrase == "" && state.secrets.vault != nil {
-			if value, found, err := state.secrets.vault.Get(passphraseSecretName(status.IdentityPath)); err == nil && found {
+			candidate := state.editor.host(state.nextHostID)
+			if state.hostDialogMode == hostDialogEdit {
+				if saved, ok := state.hostByID(state.hostDialogID); ok {
+					candidate.CatalogID = saved.CatalogID
+				}
+			}
+			if _, value, found, err := savedPassphrase(state.secrets.vault, candidate.CatalogID, status.IdentityPath); err == nil && found {
 				passphrase = value
 			}
 		}

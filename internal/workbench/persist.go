@@ -573,16 +573,24 @@ func (state *State) snapshot() savedState {
 // interrupting what the user is doing; the change stays in memory. A state that
 // started from a file of a newer build never saves, so that file stays as it is;
 // the dialog that says so comes back each time the user changes something.
-func (state *State) save() {
-	defer state.sshSyncFlush()
+func (state *State) save() { _ = state.saveWithResult() }
+
+func (state *State) saveWithResult() error { return state.saveWithResultMode(true) }
+
+func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	defer func() {
+		if flushSync && saveErr == nil {
+			state.sshSyncFlush()
+		}
+	}()
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice
 		}
-		return
+		return errors.New("configuration was written by a newer build")
 	}
 	if state.config == nil || state.pauseSave > 0 {
-		return
+		return errors.New("configuration store is unavailable")
 	}
 	snapshot := state.snapshot()
 	// Many actions save after changing only run-local UI state. Comparing the
@@ -591,30 +599,31 @@ func (state *State) save() {
 	if state.hasSaved {
 		changes := changedSavedFields(state.lastSaved, snapshot)
 		if len(changes) == 0 {
-			return
+			return nil
 		}
 		shared, handled, err := writeChangedFields(state.config, state.configBase, state.configDefaults, changes)
 		if handled {
 			if err != nil {
 				state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-				return
+				return err
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
-			if shared {
+			if shared && flushSync {
 				state.scheduleSync()
 			}
-			return
+			return nil
 		}
 	}
 	shared, err := writeConfig(state.config, state.configBase, state.configDefaults, snapshot)
 	if err != nil {
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-		return
+		return err
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
-	if shared {
+	if shared && flushSync {
 		state.scheduleSync()
 	}
+	return nil
 }
 
 // restore applies a loaded state at start: its settings and catalog, then the

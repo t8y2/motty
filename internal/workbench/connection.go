@@ -404,6 +404,7 @@ const (
 	modalDeleteHost
 	modalMoveHostGroup
 	modalHostImportResult
+	modalBulkHostPassword
 	modalNewForward
 	modalNewProxy
 	modalHostKey
@@ -1028,7 +1029,7 @@ func (state *State) showNextPrompt() {
 			state.offerToSave()
 			if session.attempt > 1 {
 				state.keyPassphraseError = state.messages.KeyPassphraseRetry
-				if state.forgetRefusedSecret(session, passphraseSecretName(session.identity)) {
+				if state.forgetRefusedSecret(session, session.filledSecret) {
 					state.keyPassphraseError = state.messages.PasswordSavedRefused
 				}
 			}
@@ -1189,6 +1190,11 @@ func (state *State) submitKeyPassphrase() {
 	}
 	passphrase := state.keyPassphrase.String()
 	session.conn.SubmitKeyPassphrase(passphrase)
-	state.stageSecret(session, passphraseSecretName(session.identity), passphrase)
+	name := savedPassphraseName(state.secrets.vault, state.secretOwner(session.host, session.endpoint, session.role), session.identity)
+	if passphrase != "" && name == hostPassphraseSecretName(state.secretOwner(session.host, session.endpoint, session.role)) {
+		state.stageSecret(session, name, encodeHostPassphrase(session.identity, passphrase))
+	} else {
+		state.stageSecret(session, name, passphrase)
+	}
 	state.answered(session)
 }

@@ -58,6 +58,7 @@ var (
 	ErrKeystoreNotFound    = errors.New("vault: the key is not in the secret store")
 	ErrKeystoreUnavailable = errors.New("vault: the system has no secret store")
 	ErrKeystoreDenied      = errors.New("vault: the secret store refused access")
+	ErrRollbackFailed      = errors.New("vault: could not restore the previous records")
 )
 
 // Keystore is a store for a small secret: what the data key lives in.
@@ -352,6 +353,34 @@ func (vault *Vault) Set(name, value string) error {
 func (vault *Vault) Apply(changes []Change) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
+	return vault.apply(changes)
+}
+
+// ApplyWithCommit retains the previous encrypted records until commit succeeds.
+// A failed commit restores those records without creating a synced tombstone.
+func (vault *Vault) ApplyWithCommit(changes []Change, commit func() error) error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	return vault.applyWithCommit(changes, commit)
+}
+
+func (vault *Vault) applyWithCommit(changes []Change, commit func() error) error {
+	previous := append([]record(nil), vault.file.Records...)
+	if err := vault.apply(changes); err != nil {
+		return err
+	}
+	if err := commit(); err != nil {
+		if len(changes) > 0 {
+			if restoreErr := vault.write(previous); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: %v", ErrRollbackFailed, restoreErr))
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (vault *Vault) apply(changes []Change) error {
 	if len(changes) == 0 {
 		return nil
 	}

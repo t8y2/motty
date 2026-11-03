@@ -83,7 +83,7 @@ func TestWindowBarGitHubButtonOpensTheRepository(t *testing.T) {
 
 func TestHostActionsAppearOnlyWhileSomethingIsChecked(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
+	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitBulkHostPassword, hitDeleteHost}
 	canvas, _ := paintedTexts(state)
 	for _, id := range actions {
 		if _, ok := hitByID(canvas, id); ok {
@@ -215,7 +215,7 @@ func TestTheHostActionsCondenseIntoIcons(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.hostSelections = append(state.hostSelections, state.hosts[0].ID)
 	state.selectedHostID = state.hosts[0].ID
-	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
+	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitBulkHostPassword, hitDeleteHost}
 	wide, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
 	for _, id := range actions {
 		if hit := panelHit(t, wide, id); hit.Hint != "" || hit.Bounds.Width <= actionIconSize {
