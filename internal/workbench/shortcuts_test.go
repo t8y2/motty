@@ -46,6 +46,65 @@ func TestShortcutCaptureRejectsConflictsAndPersistsTypedBinding(t *testing.T) {
 	}
 }
 
+func TestShortcutCanBeDeletedAndStaysDeletedAcrossRestarts(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	showShortcutSettings(state)
+	state.Click(hitShortcutRowList.At(int(shortcutFind - 1)))
+	if state.modal != modalShortcutCapture || state.shortcutCapture != shortcutFind {
+		t.Fatalf("shortcut row did not open capture: modal=%d action=%d", state.modal, state.shortcutCapture)
+	}
+	state.Click(hitShortcutCaptureDelete)
+	if state.modal != modalNone || state.shortcutCapture != shortcutNone || state.shortcutError != "" {
+		t.Fatalf("delete left modal=%d action=%d error=%q", state.modal, state.shortcutCapture, state.shortcutError)
+	}
+	if state.shortcuts.chords[shortcutFind].valid() {
+		t.Fatalf("the deleted shortcut is still bound: %+v", state.shortcuts.chords[shortcutFind])
+	}
+	if label := state.shortcuts.labels[shortcutFind]; label != "—" {
+		t.Fatalf("the deleted shortcut reads %q, want —", label)
+	}
+
+	restored := newTestState(t, options)
+	if restored.shortcuts.chords[shortcutFind].valid() {
+		t.Fatalf("the deleted shortcut came back: %+v", restored.shortcuts.chords[shortcutFind])
+	}
+	if got := restored.Shortcut(ui.KeyEvent{Modifiers: defaultShortcutModifier(), Text: "f"}); got.Handled {
+		t.Fatal("the deleted find chord still runs")
+	}
+	if got, want := restored.shortcuts.chords[shortcutNewTab], defaultShortcuts().chords[shortcutNewTab]; got != want {
+		t.Fatalf("an untouched shortcut = %+v, want its default %+v", got, want)
+	}
+}
+
+func TestDeleteOrBackspaceRemovesTheShortcutBeingCaptured(t *testing.T) {
+	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyBackspace} {
+		state := newTestState(t, freshOptions(t))
+		state.openShortcutCapture(shortcutFind)
+		result := state.Key(ui.KeyEvent{Key: key})
+		if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutFind].valid() {
+			t.Fatalf("key %v result=%+v modal=%d chord=%+v", key, result, state.modal, state.shortcuts.chords[shortcutFind])
+		}
+	}
+}
+
+func TestRestoreKeepsAnExplicitlyDeletedShortcutUnbound(t *testing.T) {
+	primary := defaultShortcutModifier()
+	restored := restoreShortcuts([]savedShortcut{
+		{Action: "find", Key: ""},
+		{Action: "copy", Key: "c", Modifiers: uint8(primary)},
+	})
+	if restored.chords[shortcutFind].valid() {
+		t.Fatalf("an explicitly deleted shortcut took its default back: %+v", restored.chords[shortcutFind])
+	}
+	if got, want := restored.chords[shortcutCopy], (shortcutChord{Modifiers: primary, Key: 'c'}); got != want {
+		t.Fatalf("saved copy shortcut = %+v, want %+v", got, want)
+	}
+	if got, want := restored.chords[shortcutNewTab], (shortcutChord{Modifiers: primary, Key: 't'}); got != want {
+		t.Fatalf("an action the file did not mention = %+v, want its default %+v", got, want)
+	}
+}
+
 func TestShortcutFilesPathHasPrimaryLDefaultAndPersistsCustomBinding(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)

@@ -71,7 +71,9 @@ import (
 // Version 18 preserves the device-local interface text size.
 // Version 19 preserves the SFTP transfer layout and custom editor path: an
 // older build's full save would otherwise drop these device-local fields.
-const configFormat = 19
+// Version 20 preserves the host group explicit, pinned and order metadata.
+// Version 21 preserves toolbar dock zones and mixed-context ordering.
+const configFormat = 21
 
 const (
 	kindSetting             = "setting"

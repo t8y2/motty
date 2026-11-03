@@ -127,6 +127,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.syncVisible()
 	state.syncSFTPTabs()
 	state.reveal.beginPaint()
+	state.toolbarDock.count = 0
+	state.toolbarDock.zones = [7]ui.Rect{}
+	state.toolbarDock.bottomViewports = [2]ui.Rect{}
+	state.toolbarDock.sideViewports = [4]ui.Rect{}
 	state.contextRect = ui.Rect{}
 	state.hostsBounds, state.chrome.hostList = ui.Rect{}, ui.Rect{}
 	state.verticalTabs.bounds, state.verticalTabs.slot = ui.Rect{}, flex.Box{}
@@ -155,6 +159,14 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// was painted with so a resize can work out the rows and columns.
 	state.viewport = size
 	state.cellWidth, state.cellHeight = canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	if session := state.fullscreenDesktop(); session != nil {
+		state.beginMenus()
+		state.paintDesktopPage(canvas, size, session)
+		state.endMenus()
+		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
+		return
+	}
 	pal := state.pal
 	// The window is a bar over a body. The terminals show the picture through their
 	// own ground, so with one set only the bar is shell-colored; the shell behind
@@ -199,6 +211,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
 		cardRight = reserve
 	}
+	cardRight += state.toolbarDockSideReserveFor(false, false)
 	f := chrome.window.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	root := f.Column().Fill()
 	if !picture {
@@ -207,7 +220,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	root.Children(func() {
 		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
 		if !fullPage {
-			f.Row().Grow(1).Children(func() {
+			f.Row().Grow(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
+				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
 				state.declareNavigation(f)
 				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
 					Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
@@ -261,6 +275,10 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		canvas.Unclip()
 		state.paintAIPanel(canvas, size)
 	}
+	if !terminal {
+		state.paintToolbarDockSide(canvas, size)
+	}
+	state.paintToolbarDockBottom(canvas, size)
 	state.paintVerticalTabs(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
@@ -367,8 +385,11 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintAIDialogs(canvas, viewport)
 	state.paintTerminalMenu(canvas, viewport)
 	state.paintTabDrag(canvas, viewport)
+	state.paintToolbarDockDrag(canvas)
+	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
+	state.paintHostGroupActions(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
 	state.paintSFTPMenu(canvas, viewport)
@@ -400,10 +421,12 @@ func (state *State) fileManagerPixelBounds(size ui.Size) ui.Rect {
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
 		right = reserve
 	}
+	left += state.toolbarDockSideReserveFor(true, false)
+	right += state.toolbarDockSideReserveFor(false, false)
 	return ui.Rect{
 		X: left, Y: windowBarHeight,
 		Width:  max(size.Width-left-right, 0),
-		Height: max(size.Height-windowBarHeight, 0),
+		Height: max(size.Height-windowBarHeight-state.toolbarDockBottomReserve(false), 0),
 	}
 }
 
@@ -502,15 +525,11 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, trailing := app.TitlebarInsets()
-	themeIcon, themeLabel := iconSun, m.LabelThemeToLight
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {
 			visibleFileTabs++
 		}
-	}
-	if state.appearance == appearanceLight {
-		themeIcon, themeLabel = iconMoon, m.LabelThemeToDark
 	}
 	bar.tabs = bar.tabs[:0]
 	if probe {
@@ -663,34 +682,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 				chrome.probeArea = area
 			}
 		})
-		f.Row().Shrink(0).MarginSides(0, 0, 0, 10).Gap(2).Children(func() {
-			bar.transfers, bar.assistant = flex.Box{}, flex.Box{}
-			transferLabel := m.Transfers.Title
-			if state.transfers.buttonLabel != "" {
-				transferLabel = state.transfers.buttonLabel
-			}
-			for _, entry := range state.toolbars.entries(toolbarWindow) {
-				if !entry.Enabled {
-					continue
-				}
-				spec, _ := toolbarSpecFor(toolbarWindow, entry.Key)
-				switch spec.id {
-				case hitTransferCenter:
-					bar.transfers = state.barButton(f, probe, spec.id, spec.icon, transferLabel)
-				case hitAIToggle:
-					bar.assistant = f.Slot().Size(barButtonSize, barButtonSize)
-				case hitTheme:
-					state.barButton(f, probe, spec.id, themeIcon, themeLabel)
-				case hitWindowLocalTerminal:
-					state.barButton(f, probe, spec.id, spec.icon, state.toolbarLabel(spec.id))
-					if !probe {
-						state.openLocalShellPickerOn(f.Canvas(), spec.id, false)
-					}
-				default:
-					state.barButton(f, probe, spec.id, spec.icon, state.toolbarLabel(spec.id))
-				}
-			}
-		})
+		state.declareToolbarDockTop(f, probe)
 	})
 }
 
@@ -809,20 +801,7 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	bar := &state.chrome.bar
 	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
-	if state.toolbarVisible(toolbarWindow, hitAIToggle) {
-		state.paintAIBarButton(canvas, state.chrome.bar.assistant.Rect().X)
-	}
-	state.paintTransferBadge(canvas)
-}
-
-// paintBarButton is a square icon button of the window bar whose left edge is at x,
-// for a caller that has its own place for one (the assistant's).
-func (state *State) paintBarButton(canvas *ui.Canvas, id ui.ID, x float32, icon uint8, label string) {
-	f := state.chrome.widget.Begin(canvas, state.Theme(), ui.Rect{X: x, Width: barButtonSize, Height: windowBarHeight})
-	f.Column().Fill().Center().Children(func() {
-		state.barButton(f, false, id, icon, label)
-	})
-	f.End()
+	state.paintToolbarDockTop(canvas)
 }
 
 // elide shortens text to fit width, ending it with an ellipsis. Weight is the
@@ -948,6 +927,8 @@ func (state *State) paintHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 	state.hostsContent = 0
 	switch {
+	case len(state.hostTreeRows) > 0:
+		state.paintHostTable(canvas, list)
 	case len(state.hosts) == 0:
 		state.paintEmptyHosts(canvas, bounds)
 	case len(state.visible) == 0:
@@ -1488,6 +1469,12 @@ func (state *State) sessionStatus(session *Session) (string, ui.Color) {
 
 func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	pal := state.pal
+	if cap(state.groupActions.rows) < len(state.hostGroups) {
+		state.groupActions.rows = make([]ui.Rect, len(state.hostGroups))
+	} else {
+		state.groupActions.rows = state.groupActions.rows[:len(state.hostGroups)]
+		clear(state.groupActions.rows)
+	}
 	// The list scrolls under the toolbar: the tree starts above its window by the
 	// scrolled distance, and the clip keeps what is out of the window out of sight
 	// and out of reach.
@@ -1501,6 +1488,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	canvas.Clip(treeBounds)
 	if state.hostView == hostViewGrid {
 		state.paintHostGrid(canvas, treeBounds)
+		state.paintHostGroupDrop(canvas)
 		canvas.Unclip()
 		return
 	}
@@ -1515,28 +1503,36 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			tree = tree.RowHeight(hostGroupRowHeight)
 			row := tree.Item(components.TreeItem{
 				ID: hitHostGroupRowList.At(entry.GroupIndex), DisclosureID: hitHostGroupOpenList.At(entry.GroupIndex),
-				Label: state.hostGroupLabel(group), Branch: true, Expanded: group.Expanded || filtering,
+				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
 			})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				return
 			}
-			f := state.chrome.hostRow.Begin(canvas, state.Theme(), row.Content)
+			content := row.Content
+			content.Width = max(0, content.Width-38)
+			f := state.chrome.hostRow.Begin(canvas, state.Theme(), content)
 			f.Row().Fill().PadSides(0, 0, 0, 2).Gap(6).Items(flex.Center).Children(func() {
-				f.Text(state.hostGroupLabel(group)).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23)
+				if group.Pinned {
+					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
+				}
+				label := group.Label
+				if group.Name == "" {
+					label = state.messages.HostGroupDefault
+				}
+				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
 				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(21)
 			})
 			f.End()
+			state.hostGroupRowEvents(canvas, hitHostGroupRowList.At(entry.GroupIndex), entry.GroupIndex, row.Bounds)
 		case hostTreeHost:
 			host := state.hosts[entry.HostIndex]
 			id := hitHostList.At(int(host.ID))
 			tree = tree.RowHeight(hostRowHeight)
-			depth := uint8(1)
-			if state.hostsFlat() {
-				depth = 0
-			}
-			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: depth, Selected: host.ID == state.selectedHostID})
+			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				return
 			}
@@ -1544,6 +1540,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			state.hostRowEvents(canvas, id, host)
 		}
 	}
+	state.paintHostGroupDrop(canvas)
 	canvas.Unclip()
 }
 
@@ -1999,32 +1996,53 @@ func (state *State) paintDeleteHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 }
 
 func (state *State) paintMoveHostGroupDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	if state.groupActions.op == hostGroupDelete {
+		state.paintHostGroupDeleteDialog(canvas, viewport)
+		return
+	}
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
+		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 90,
 	})
-	layout := dialog.Begin(state.messages.MoveGroupTitle, "")
+	title, submit, label := state.messages.MoveGroupTitle, state.messages.MoveGroupSubmit, state.messages.MoveGroupField
+	switch state.groupActions.op {
+	case hostGroupRename:
+		title, submit, label = state.messages.HostGroupActions.Rename, state.messages.HostGroupActions.Save, state.messages.HostGroupActions.Name
+	case hostGroupCreateChild:
+		title, submit, label = state.messages.HostGroupActions.NewChild, state.messages.HostGroupActions.Create, state.messages.HostGroupActions.Name
+	case hostGroupRelocate:
+		title, submit, label = state.messages.HostGroupActions.Move, state.messages.MoveGroupSubmit, state.messages.HostGroupActions.Parent
+	}
+	description := ""
+	if state.groupActions.op != hostGroupMoveHosts {
+		description = elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, ui.WeightRegular, dialog.Layout("").Header.Width)
+	}
+	layout := dialog.Begin(title, description)
 	var slot flex.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
+	f.Column().Fill().Children(func() { slot = f.Slot().Height(90) })
 	f.End()
 	field := components.BeginField(canvas, state.Theme(), slot.Rect()).For(hitMoveGroupField)
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
-	content := field.Paint(state.messages.MoveGroupField, "", state.dialogError)
+	content := field.Paint(label, "", state.dialogError)
 	value := state.hostGroupEditor.String()
 	focused := canvas.Focused() == hitMoveGroupField
 	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-		ID: hitMoveGroupField, Label: state.messages.MoveGroupField, Value: value,
-		Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
-	})
+	if state.groupActions.op == hostGroupRelocate {
+		state.paintHostGroupParentSelect(canvas, content, viewport)
+	} else {
+		components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
+			ID: hitMoveGroupField, Label: label, Value: value,
+			Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+		})
+	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitMoveGroupCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMoveGroupSubmit, Label: state.messages.MoveGroupSubmit},
+		components.ButtonAction{ID: hitMoveGroupSubmit, Label: submit},
 	)
 	dialog.End()
 }

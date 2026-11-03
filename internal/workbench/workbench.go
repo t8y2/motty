@@ -58,6 +58,7 @@ var (
 	hitHostDeleteClose         = tree.ID(shellHits, "host-delete-close")
 	hitHostDeleteCancel        = tree.ID(shellHits, "host-delete-cancel")
 	hitHostDeleteConfirm       = tree.ID(shellHits, "host-delete-confirm")
+	hitMoveGroupDismiss        = tree.ID(shellHits, "move-group-dismiss")
 	hitMoveGroupClose          = tree.ID(shellHits, "move-group-close")
 	hitMoveGroupCancel         = tree.ID(shellHits, "move-group-cancel")
 	hitMoveGroupSubmit         = tree.ID(shellHits, "move-group-submit")
@@ -118,7 +119,9 @@ var (
 	hitClipboardAlways         = tree.ID(shellHits, "clipboard-always")
 	hitShortcutReset           = tree.ID(shellHits, "shortcut-reset")
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
+	hitShortcutCaptureClose    = tree.ID(shellHits, "shortcut-capture-close")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
+	hitShortcutCaptureDelete   = tree.ID(shellHits, "shortcut-capture-delete")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
@@ -518,6 +521,7 @@ type State struct {
 	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
 	terminalMenu       terminalMenu
 	hostGroupEditor    text.Editor
+	groupActions       hostGroupActions
 	tabRename          tabRename
 	tabsClose          tabsClose
 	sessionLink        sessionLink
@@ -645,7 +649,7 @@ type State struct {
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle bool
-	// terminalShowLatency displays connection RTT latency in the terminal panel,
+	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
@@ -665,6 +669,7 @@ type State struct {
 	settings         settingsUI
 	toolbars         toolbarPreferences
 	toolbarEditor    toolbarSettingsUI
+	toolbarDock      toolbarDockUI
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// area: settings
@@ -1104,7 +1109,7 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.editor.otp
 		}
 	case modalMoveHostGroup:
-		if hit == hitMoveGroupField {
+		if hit == hitMoveGroupField && state.groupActions.op != hostGroupRelocate && state.groupActions.op != hostGroupDelete {
 			return &state.hostGroupEditor
 		}
 	case modalBulkHostPassword:
@@ -1377,7 +1382,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickShortcutCapture(id)
 		return
 	}
-	if state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -1890,6 +1895,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockPointer(event); result.Handled {
+		return result
+	}
 	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
@@ -1936,6 +1944,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if result, handled := state.hostMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostGroupDragPointer(event); handled {
 		return result
 	}
 	if result, handled := state.localShellPickerPointer(event); handled {
@@ -2137,6 +2148,12 @@ func fieldForDialogHit(id ui.ID) hostField {
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockKey(event); result.Handled {
+		return result
+	}
+	if result, handled := state.desktopFullscreenKey(event); handled {
+		return result
+	}
 	if result, handled := state.namedShortcut(event); handled {
 		return result
 	}
@@ -2232,9 +2249,15 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.snippets.capturing = false
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalShortcutCapture && event.Key == ui.KeyEscape && !event.Repeat {
-		state.clickShortcutCapture(hitShortcutCaptureCancel)
-		return ui.EventResult{Handled: true, Repaint: true}
+	if state.modal == modalShortcutCapture && !event.Repeat {
+		if event.Key == ui.KeyEscape {
+			state.clickShortcutCapture(hitShortcutCaptureCancel)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		if event.Modifiers == 0 && (event.Key == ui.KeyDelete || event.Key == ui.KeyBackspace) {
+			state.clickShortcutCapture(hitShortcutCaptureDelete)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result

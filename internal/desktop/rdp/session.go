@@ -79,6 +79,10 @@ type Session struct {
 
 var _ desktop.Session = (*Session)(nil)
 
+func (session *Session) NetworkRTT() (time.Duration, time.Time) {
+	return session.client.NetworkRTT()
+}
+
 // Open connects to address through dial and starts reading the server. It
 // returns ErrAuthFailed when the server refused the account, and
 // ErrAuthRequired when there is no password to try.
@@ -184,6 +188,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		_ = client.RefreshRect(0, 0, width, height)
 	})
 	client.OnPointer(session.onPointer)
+	client.OnNetworkRTTChanged(session.wake)
 	client.OnDisconnect(func(err error) { session.finish(err) })
 	if opts.Clipboard {
 		client.OnClipboardUpdate(func(hasText, _ bool) {

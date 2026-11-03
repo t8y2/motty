@@ -75,9 +75,13 @@ func namedShortcutKey(key ui.Key) (int, bool) {
 }
 
 // savedKey is the chord's key as the settings file writes it: the character, or
-// the name of a named key. Older builds read a name as no key at all and keep
-// the default for that action.
+// the name of a named key. An unbound action has no key at all, which is how the
+// file says to leave it without a chord instead of restoring its default. Older
+// builds read a name as no key at all and keep the default for that action.
 func (chord shortcutChord) savedKey() string {
+	if !chord.valid() {
+		return ""
+	}
 	if index, ok := namedShortcutKey(chord.Named); ok {
 		return namedShortcutKeys[index].saved
 	}
@@ -276,6 +280,17 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord shortcutChord) (
 	return shortcutNone, true
 }
 
+// unbind takes the chord away from an action, which then reads "—" in the
+// settings and runs nothing until it is given one again or the defaults return.
+func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
+	if action <= shortcutNone || action >= shortcutActionCount {
+		return false
+	}
+	shortcuts.chords[action] = shortcutChord{}
+	shortcuts.labels[action] = shortcuts.chords[action].label()
+	return true
+}
+
 func (action shortcutAction) String() string {
 	switch action {
 	case shortcutCommandPalette:
@@ -345,6 +360,9 @@ func shortcutActionFromString(value string) shortcutAction {
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result, handled := state.desktopFullscreenKey(event); handled {
+		return result
+	}
 	chord, ok := shortcutChordFromEvent(event)
 	if state.modal == modalSnippet && state.snippets.capturing {
 		return state.captureSnippetShortcut(event, chord, ok)
@@ -466,6 +484,18 @@ func (state *State) captureShortcut(event ui.KeyEvent, chord shortcutChord) ui.E
 	state.shortcutError = ""
 	state.save()
 	return ui.EventResult{Handled: true, Repaint: true}
+}
+
+// clearShortcut removes the chord the capture dialog is waiting for and closes
+// it. The action keeps its row, reading "—", and can be given a new chord later.
+func (state *State) clearShortcut(action shortcutAction) {
+	if !state.shortcuts.unbind(action) {
+		return
+	}
+	state.modal = modalNone
+	state.shortcutCapture = shortcutNone
+	state.shortcutError = ""
+	state.save()
 }
 
 // namedShortcut runs the action bound to a chord whose key has no text, which

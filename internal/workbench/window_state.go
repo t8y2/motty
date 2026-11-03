@@ -17,11 +17,14 @@ const (
 )
 
 type windowChrome struct {
-	remember  bool
-	frame     ui.Rect
-	hasFrame  bool
-	minimized bool
-	saveTimer *time.Timer
+	remember          bool
+	frame             ui.Rect
+	hasFrame          bool
+	minimized         bool
+	saveTimer         *time.Timer
+	fullscreen        bool
+	fullscreenSession uint32
+	setFullscreen     func(bool) error
 }
 
 // RestoredWindowFrame is where the last first window was, if a previous run
@@ -46,7 +49,7 @@ func (state *State) restoreWindowFrame(frame ui.Rect) {
 // size change, and saves it once the drag settles. Windows that do not remember
 // their frame ignore it.
 func (state *State) NoteWindowFrame(frame ui.Rect) {
-	if !state.winChrome.remember || state.closed {
+	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
 		return
 	}
 	if state.winChrome.hasFrame && state.winChrome.frame == frame {

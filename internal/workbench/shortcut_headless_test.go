@@ -41,6 +41,136 @@ func TestHeadlessShortcutCaptureClickAndChord(t *testing.T) {
 	}
 }
 
+// A bound action can be removed from its capture dialog, and the row then reads
+// "—" instead of the chord.
+func TestHeadlessShortcutCanBeDeletedFromTheCaptureDialog(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	showShortcutSettings(state)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	if err := session.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalShortcutCapture || state.shortcutCapture != shortcutFind {
+		t.Fatalf("shortcut click left modal=%d action=%d", state.modal, state.shortcutCapture)
+	}
+	if err := session.ClickLabel(state.messages.ShortcutsDelete); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.shortcuts.chords[shortcutFind].valid() {
+		t.Fatalf("delete left modal=%d chord=%+v", state.modal, state.shortcuts.chords[shortcutFind])
+	}
+	if label := state.shortcuts.labels[shortcutFind]; label != "—" {
+		t.Fatalf("the deleted shortcut reads %q, want —", label)
+	}
+	if err := session.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, text := range session.Snapshot().Texts {
+		found = found || text.Value == "—"
+	}
+	if !found {
+		t.Fatal("the deleted shortcut row does not show —")
+	}
+}
+
+// The backdrop and the close button are different controls: hovering the area
+// outside the dialog must not paint the close button as hovered.
+func TestHeadlessShortcutCaptureCloseHoversOnlyOnItself(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	showShortcutSettings(state)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	if err := session.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
+		t.Fatal(err)
+	}
+	var close ui.Rect
+	for _, hit := range session.Snapshot().Hits {
+		if hit.ID == hitShortcutCaptureClose {
+			close = hit.Bounds
+		}
+	}
+	if close.Width == 0 {
+		t.Fatal("the capture dialog has no close button")
+	}
+	if err := session.Move(20, 20); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.Snapshot().Hovered; got != hitShortcutCaptureDismiss {
+		t.Fatalf("the pointer outside the dialog hovers %v, want the dismiss backdrop", got)
+	}
+	center := ui.Point{X: close.X + close.Width/2, Y: close.Y + close.Height/2}
+	if err := session.Move(center.X, center.Y); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.Snapshot().Hovered; got != hitShortcutCaptureClose {
+		t.Fatalf("the pointer on the close button hovers %v, want the close button", got)
+	}
+	if err := session.Click(center.X, center.Y); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.shortcutCapture != shortcutNone {
+		t.Fatalf("close left modal=%d action=%d", state.modal, state.shortcutCapture)
+	}
+}
+
+// Reset defaults is a page-wide action in the header, above the rows, and it
+// still restores a shortcut the user removed.
+func TestHeadlessShortcutResetLivesInThePageHeader(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	showShortcutSettings(state)
+	state.openShortcutCapture(shortcutFind)
+	state.clearShortcut(shortcutFind)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	var reset, firstRow ui.Rect
+	for _, hit := range session.Snapshot().Hits {
+		switch hit.ID {
+		case hitShortcutReset:
+			reset = hit.Bounds
+		case hitShortcutRowList.At(0):
+			firstRow = hit.Bounds
+		}
+	}
+	if reset.Width == 0 || firstRow.Width == 0 {
+		t.Fatalf("header reset=%+v first row=%+v, want both painted", reset, firstRow)
+	}
+	if reset.Y >= firstRow.Y {
+		t.Fatalf("reset top %.1f is not above the first row top %.1f", reset.Y, firstRow.Y)
+	}
+	if err := session.ClickLabel(state.messages.ShortcutsReset); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := state.shortcuts.chords[shortcutFind], defaultShortcuts().chords[shortcutFind]; got != want {
+		t.Fatalf("after the header reset find = %+v, want %+v", got, want)
+	}
+}
+
 // A shortcut row has no explanation, so its name is alone in the row and must sit
 // in the middle of the row, level with the chord it names.
 func TestHeadlessShortcutRowNameIsCenteredWithItsChord(t *testing.T) {

@@ -71,12 +71,14 @@ func (state *State) openShortcutCapture(action shortcutAction) {
 }
 
 func (state *State) clickShortcutCapture(id ui.ID) {
-	if id != hitShortcutCaptureDismiss && id != hitShortcutCaptureCancel {
-		return
+	switch id {
+	case hitShortcutCaptureDelete:
+		state.clearShortcut(state.shortcutCapture)
+	case hitShortcutCaptureDismiss, hitShortcutCaptureClose, hitShortcutCaptureCancel:
+		state.modal = modalNone
+		state.shortcutCapture = shortcutNone
+		state.shortcutError = ""
 	}
-	state.modal = modalNone
-	state.shortcutCapture = shortcutNone
-	state.shortcutError = ""
 }
 
 // shortcutRowHeight leaves room for each action and its chord.
@@ -101,8 +103,8 @@ func (state *State) completionKeys() [6]completionKeyHelp {
 }
 
 // paintShortcutSettings is the Keyboard shortcuts category: one row per action
-// with its chord on a button that opens the capture dialog, and a way back to
-// the defaults.
+// with its chord on a button that opens the capture dialog. The page header
+// holds the way back to the defaults.
 func (state *State) paintShortcutSettings(page *settingsPage) {
 	messages := state.messages
 	page.rowHeight = shortcutRowHeight
@@ -112,8 +114,6 @@ func (state *State) paintShortcutSettings(page *settingsPage) {
 				page.actionRow(state.shortcutActionLabel(action), "", false,
 					components.ButtonAction{ID: hitShortcutRowList.At(int(action - 1)), Label: state.shortcuts.labels[action], Variant: components.ButtonOutline})
 			}
-			page.actionRow(messages.ShortcutsReset, "", false,
-				components.ButtonAction{ID: hitShortcutReset, Label: messages.ShortcutsReset, Variant: components.ButtonOutline})
 		})
 		page.group(messages.Completion.KeysGroup, func() {
 			for _, help := range state.completionKeys() {
@@ -134,7 +134,7 @@ func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Re
 	}
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureDismiss,
+		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureClose,
 		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(messages.ShortcutsCaptureTitle, messages.ShortcutsCaptureDescription)
@@ -146,6 +146,14 @@ func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Re
 		}
 	})
 	f.End()
-	dialog.Actions(layout, components.ButtonAction{ID: hitShortcutCaptureCancel, Label: messages.Cancel, Variant: components.ButtonSecondary})
+	var actions [2]components.ButtonAction
+	count := 0
+	if state.shortcuts.chords[state.shortcutCapture].valid() {
+		actions[count] = components.ButtonAction{ID: hitShortcutCaptureDelete, Label: messages.ShortcutsDelete, Variant: components.ButtonOutline}
+		count++
+	}
+	actions[count] = components.ButtonAction{ID: hitShortcutCaptureCancel, Label: messages.Cancel, Variant: components.ButtonSecondary}
+	count++
+	dialog.Actions(layout, actions[:count]...)
 	dialog.End()
 }
