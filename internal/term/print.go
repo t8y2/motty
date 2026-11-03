@@ -26,7 +26,9 @@ func (t *Terminal) printASCII(run []byte) {
 		if len(l.marks) != 0 {
 			l.dropMarks(x, x+1)
 		}
-		*c = Cell{R: rune(b), FG: t.pen.fg, BG: t.pen.bg, Attr: t.pen.attr}
+		cell := t.pen.cell()
+		cell.R = rune(b)
+		*c = cell
 		l.setHyperlink(x, t.pen.hyperlink)
 		l.version++
 		if x+1 >= t.cols {

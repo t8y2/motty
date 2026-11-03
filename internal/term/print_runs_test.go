@@ -26,6 +26,13 @@ func TestTextRunsMatchTheBytePath(t *testing.T) {
 		"中\x1b[1;2H中文",
 		"中文\x1b[1;4Hxy",
 		"中中中\x1b[1;3Habcdef",
+		// The run stops on the head of a wide character: the repair of the half it
+		// leaves behind happens after the write and has nothing else to catch it.
+		"中文\x1b[1;1H\u00e9",
+		"中文\x1b[1;2H\u00e9x",
+		// One write longer than the run buffer keeps decoding the remainder on the
+		// state machine, so the boundary is covered.
+		strings.Repeat("\u00e9", 5000),
 	}
 	for _, cols := range []int{20, 21, 2, 1} {
 		for _, text := range texts {
