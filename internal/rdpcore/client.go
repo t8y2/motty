@@ -157,6 +157,7 @@ type Client struct {
 	tlsMinVersion    uint16 // override for TLS version probing; 0 = default
 	tlsMaxVersion    uint16 // override for TLS version probing; 0 = default
 	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
+	rawNTLM          bool   // learned before credentials are sent; retained across version probes
 
 	// MCS/GCC parameters
 	userChannelID    uint16
@@ -378,7 +379,7 @@ func (c *Client) Connect() error {
 		} else {
 			credsspErr = c.tryCredSSP()
 		}
-		if credsspErr != nil && !errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+		if canRetryCredSSP(credsspErr) {
 			credsspVersions := []int{6, 3, 2}
 		probeLoop:
 			for i, tlsVer := range tlsVersions {
@@ -399,17 +400,18 @@ func (c *Client) Connect() error {
 					if credsspErr == nil {
 						break probeLoop
 					}
-					if errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+					if !canRetryCredSSP(credsspErr) {
 						break probeLoop
 					}
 				}
 			}
 			c.credsspVersion = 0 // reset
 		}
-		if credsspErr != nil && errors.Is(credsspErr, nla.ErrCredentialsFatal) {
-			// Credentials are definitively wrong — no point retrying or falling back.
+		if credsspErr != nil && !canRetryCredSSP(credsspErr) {
+			// Do not repeat a logon attempt, bypass NLA after submitting
+			// credentials, or retry a certificate the user rejected.
 			c.Close()
-			return fmt.Errorf("%w: %w", ErrAuthFailed, credsspErr)
+			return credsspErr
 		}
 		if credsspErr != nil {
 			// All NLA attempts failed. Try TLS-only fallback, probing versions.
@@ -670,11 +672,31 @@ func (c *Client) upgradeTLS() error {
 	return nil
 }
 
-// credsspAuth performs CredSSP/NLA authentication using NTLM over SPNEGO.
 // tryCredSSP attempts CredSSP authentication on the current TLS connection.
 func (c *Client) tryCredSSP() error {
 	c.setState(StateCredSSPAuth)
+	err := c.credsspAuth()
+	if c.rawNTLM || !errors.Is(err, nla.ErrNegotiateToken) {
+		return err
+	}
+	// Motty compatibility: WinPR 2.x treats SPNEGO as an NTLM header. Retry
+	// with raw NTLM on a fresh NLA/TLS connection, only before credentials
+	// were sent.
+	c.rawNTLM = true
+	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "retrying CredSSP with raw NTLM tokens")
+	if err := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, c.tlsMinVersion, c.tlsMaxVersion); err != nil {
+		return err
+	}
+	if c.selectedProtocol != x224.ProtocolHybrid {
+		return fmt.Errorf("%w: the server did not select NLA for raw NTLM", ErrNegotiationFailed)
+	}
+	c.setState(StateCredSSPAuth)
 	return c.credsspAuth()
+}
+
+func canRetryCredSSP(err error) bool {
+	return err != nil && !errors.Is(err, nla.ErrCredentialsFatal) &&
+		!errors.Is(err, nla.ErrCredentialsSent) && !errors.Is(err, ErrCertificateRejected)
 }
 
 // reconnectWithTLS tears down the current connection and establishes a new
@@ -711,12 +733,19 @@ func (c *Client) credsspAuth() error {
 		ver = nla.MaxCredSSPVersion
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP/NLA authentication", slog.Int("advertiseVersion", ver))
-	if err := nla.Authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
+	authenticate := nla.Authenticate
+	if c.rawNTLM {
+		authenticate = nla.AuthenticateRawNTLM
+	}
+	if err := authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
 		// Motty divergence: %w, so that nla.ErrCredentialsFatal survives and the
 		// caller stops at the first refusal. Upstream wrapped with %v, which hid it
 		// and made one wrong password into 14 logon attempts (an account lockout
 		// threshold of 10 is common).
-		return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		if errors.Is(err, nla.ErrCredentialsFatal) {
+			return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		}
+		return fmt.Errorf("%w: CredSSP: %w", ErrNegotiationFailed, err)
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP authentication successful")
 	return nil
@@ -2166,6 +2195,7 @@ func (c *Client) resetForReconnect() {
 	c.tlsMinVersion = 0
 	c.tlsMaxVersion = 0
 	c.credsspVersion = 0
+	c.rawNTLM = false
 	c.channelIDs = nil
 	c.channelNames = nil
 	c.channelHandlers = nil

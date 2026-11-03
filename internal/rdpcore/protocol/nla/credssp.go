@@ -1,6 +1,7 @@
 package nla
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/rand"
@@ -21,6 +22,15 @@ import (
 // Callers should stop probing and report the error immediately.
 var ErrCredentialsFatal = errors.New("credentials rejected")
 
+// ErrNegotiateToken marks a failure before an NTLM Authenticate message was
+// sent. A caller may reconnect and try another token encoding without retrying
+// credentials. Explicit credential refusals are never marked with this error.
+var ErrNegotiateToken = errors.New("token negotiation failed")
+
+// ErrCredentialsSent marks failures after sending an NTLM Authenticate message
+// was attempted. Callers must not retry credentials or fall back to TLS-only.
+var ErrCredentialsSent = errors.New("failed after credentials were sent")
+
 // isFatalNTSTATUS returns true for error codes where retrying is pointless.
 func isFatalNTSTATUS(code int) bool {
 	switch uint32(code) {
@@ -35,7 +45,8 @@ func isFatalNTSTATUS(code int) bool {
 		0xC000015B, // STATUS_LOGON_TYPE_NOT_GRANTED
 		0xC0000193, // STATUS_ACCOUNT_EXPIRED
 		0xC0000224, // STATUS_PASSWORD_MUST_CHANGE
-		0xC0000234: // STATUS_ACCOUNT_LOCKED_OUT
+		0xC0000234, // STATUS_ACCOUNT_LOCKED_OUT
+		0x8009030C: // SEC_E_LOGON_DENIED (some servers return SSPI status directly)
 		return true
 	}
 	return false
@@ -78,6 +89,29 @@ type tsPasswordCreds struct {
 // the actual version used is the minimum of this and the server's response.
 // The hostname is used to construct the SPN for MsvAvTargetName in the NTLM TargetInfo.
 func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, false)
+}
+
+// AuthenticateRawNTLM is Motty's compatibility path for unwrapped NTLM tokens
+// inside CredSSP, for servers such as WinPR 2.x whose Negotiate package passes
+// input directly to NTLM. It retains TLS, NTLMv2 MIC/channel binding and
+// CredSSP public-key verification.
+func AuthenticateRawNTLM(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, true)
+}
+
+func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int, rawNTLM bool) (err error) {
+	credentialsSent := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		if credentialsSent {
+			err = fmt.Errorf("%w: %w", ErrCredentialsSent, err)
+		} else if !errors.Is(err, ErrCredentialsFatal) {
+			err = fmt.Errorf("%w: %w", ErrNegotiateToken, err)
+		}
+	}()
 	ctx := context.Background()
 
 	// Compute TLS channel bindings hash (RFC 5929 tls-server-end-point)
@@ -99,19 +133,24 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		targetSPN:           "TERMSRV/" + hostname,
 	}
 
-	// Step 1: Send NTLM Negotiate in SPNEGO in TSRequest
+	// Step 1: Send an NTLM Negotiate token, optionally wrapped in SPNEGO.
 	negotiateMsg := ntlm.negotiate()
-	spnegoInit, mechTypeList := encodeNegTokenInit(negotiateMsg)
+	negotiateToken := negotiateMsg
+	var mechTypeList []byte
+	if !rawNTLM {
+		negotiateToken, mechTypeList = encodeNegTokenInit(negotiateMsg)
+	}
 
 	req1 := &tsRequest{
 		Version:    advertiseVersion,
-		NegoTokens: []negoToken{{Data: spnegoInit}},
+		NegoTokens: []negoToken{{Data: negotiateToken}},
 	}
 	req1Bytes, _ := asn1.Marshal(*req1)
 	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Negotiate",
 		slog.Int("advertiseVersion", advertiseVersion), slog.Int("negoBytes", len(negotiateMsg)),
 		slog.Int("tsRequestBytes", len(req1Bytes)),
-		util.Bytes("spnegoInit", spnegoInit),
+		slog.Bool("rawNTLM", rawNTLM),
+		util.Bytes("negotiateToken", negotiateToken),
 		util.Bytes("tsRequest", req1Bytes))
 	if err := sendTSRequest(tlsConn, req1); err != nil {
 		return fmt.Errorf("credssp: sending negotiate: %w", err)
@@ -134,14 +173,21 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		return errors.New("credssp: no nego tokens in server response")
 	}
 
-	// Extract NTLM challenge from SPNEGO NegTokenResp
-	negState, ntlmChallenge, err := decodeNegTokenResp(resp1.NegoTokens[0].Data)
-	if err != nil {
-		return fmt.Errorf("credssp: decoding SPNEGO response: %w", err)
-	}
-	log.LogAttrs(ctx, slog.LevelDebug, "SPNEGO challenge decoded", slog.Int("negState", negState), slog.Int("challengeBytes", len(ntlmChallenge)))
-	if negState == spnegoReject {
-		return errors.New("credssp: SPNEGO negotiation rejected by server")
+	ntlmChallenge := resp1.NegoTokens[0].Data
+	if rawNTLM {
+		if !bytes.HasPrefix(ntlmChallenge, ntlmSignature[:]) {
+			return errors.New("credssp: expected a raw NTLM challenge")
+		}
+	} else {
+		var negState int
+		negState, ntlmChallenge, err = decodeNegTokenResp(ntlmChallenge)
+		if err != nil {
+			return fmt.Errorf("credssp: decoding SPNEGO response: %w", err)
+		}
+		log.LogAttrs(ctx, slog.LevelDebug, "SPNEGO challenge decoded", slog.Int("negState", negState), slog.Int("challengeBytes", len(ntlmChallenge)))
+		if negState == spnegoReject {
+			return errors.New("credssp: SPNEGO negotiation rejected by server")
+		}
 	}
 
 	// Negotiate CredSSP version: use minimum of client and server versions (MS-CSSP 3.1.5)
@@ -160,21 +206,17 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	// Initialize NTLM SEAL for mechListMIC, pubKeyAuth, and authInfo.
 	seal := newNTLMSeal(ntlm.exportedSessionKey, log)
 
-	// Compute mechListMIC = MAC(ExportedSessionKey, MechTypeList) with seqNum=0.
-	// Per RFC 4178 §5, this MUST be included when the NTLM Authenticate contains a MIC
-	// (indicated by MsvAvFlags=0x02 in the TargetInfo).
-	mechListMICSig := seal.makeSignature(mechTypeList)
-	log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", mechListMICSig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
-
-	// Reset RC4 cipher state after mechListMIC, per MS-NLMP.
-	// Sequence numbers are NOT reset — pubKeyAuth will use seqNum=1.
-	// The server also increments its server-to-client seqNum symmetrically,
-	// so both directions advance to 1 after mechListMIC.
-	seal.seqNumServer++
-	seal.resetCipherState(ntlm.exportedSessionKey)
-
-	spnegoResp := encodeNegTokenResp(authMsg, mechListMICSig[:])
-	log.LogAttrs(ctx, slog.LevelDebug, "NTLM Authenticate built", slog.Int("authBytes", len(authMsg)), slog.Int("spnegoRespBytes", len(spnegoResp)))
+	authToken := authMsg
+	if !rawNTLM {
+		// SPNEGO mechListMIC is separate from the NTLM Authenticate MIC. Raw
+		// NTLM has no mechanism list and starts pubKeyAuth at sequence zero.
+		mechListMICSig := seal.makeSignature(mechTypeList)
+		log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", mechListMICSig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
+		seal.seqNumServer++
+		seal.resetCipherState(ntlm.exportedSessionKey)
+		authToken = encodeNegTokenResp(authMsg, mechListMICSig[:])
+	}
+	log.LogAttrs(ctx, slog.LevelDebug, "NTLM Authenticate built", slog.Int("authBytes", len(authMsg)), slog.Int("tokenBytes", len(authToken)))
 
 	// Extract SubjectPublicKey (raw key DER) from SubjectPublicKeyInfo.
 	// MS-CSSP 3.1.5 specifies "SubjectPublicKey" — the BIT STRING content
@@ -212,13 +254,15 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 
 	req2 := &tsRequest{
 		Version:    negotiatedVersion,
-		NegoTokens: []negoToken{{Data: spnegoResp}},
+		NegoTokens: []negoToken{{Data: authToken}},
 		PubKeyAuth: pubKeyAuth,
 	}
 	if clientNonce != nil {
 		req2.ClientNonce = clientNonce
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Authenticate + pubKeyAuth")
+	// A partial write can already count as a logon attempt at the server.
+	credentialsSent = true
 	if err := sendTSRequest(tlsConn, req2); err != nil {
 		return fmt.Errorf("credssp: sending authenticate: %w", err)
 	}
@@ -482,6 +526,8 @@ func ntstatusName(code int) string {
 		return "STATUS_ACCOUNT_LOCKED_OUT"
 	case 0x80090308:
 		return "SEC_E_INVALID_TOKEN"
+	case 0x8009030C:
+		return "SEC_E_LOGON_DENIED"
 	case 0x80090311:
 		return "SEC_E_NO_AUTHENTICATING_AUTHORITY"
 	case 0x80090331:
