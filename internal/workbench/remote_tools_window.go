@@ -281,6 +281,10 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 }
 
 func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
+	w.ui.shortcuts = w.owner.shortcuts
+	if result := w.ui.remoteSearchShortcut(event); result.Handled {
+		return result
+	}
 	if result := w.ui.remoteSearchKey(event); result.Handled {
 		return result
 	}

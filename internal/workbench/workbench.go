@@ -120,6 +120,7 @@ var (
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
 	hitShortcutCaptureClose    = tree.ID(shellHits, "shortcut-capture-close")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
+	hitShortcutCaptureReset    = tree.ID(shellHits, "shortcut-capture-reset")
 	hitShortcutCaptureDelete   = tree.ID(shellHits, "shortcut-capture-delete")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
@@ -2163,7 +2164,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	if result, handled := state.desktopFullscreenKey(event); handled {
 		return result
 	}
-	if result, handled := state.namedShortcut(event); handled {
+	if result, handled := state.keyShortcut(event); handled {
 		return result
 	}
 	if state.tabDrag.active && event.Key == ui.KeyEscape {
@@ -2257,16 +2258,6 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if state.modal == modalSnippet && state.snippets.capturing && event.Key == ui.KeyEscape && !event.Repeat {
 		state.snippets.capturing = false
 		return ui.EventResult{Handled: true, Repaint: true}
-	}
-	if state.modal == modalShortcutCapture && !event.Repeat {
-		if event.Key == ui.KeyEscape {
-			state.clickShortcutCapture(hitShortcutCaptureCancel)
-			return ui.EventResult{Handled: true, Repaint: true}
-		}
-		if event.Modifiers == 0 && (event.Key == ui.KeyDelete || event.Key == ui.KeyBackspace) {
-			state.clickShortcutCapture(hitShortcutCaptureDelete)
-			return ui.EventResult{Handled: true, Repaint: true}
-		}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result

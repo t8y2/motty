@@ -41,7 +41,7 @@ const (
 )
 
 // shortcutChord is a modifier set and one key: a printable one in Key, or one of
-// the few named keys in Named. Exactly one of the two is set.
+// the named keys in Named. Exactly one of the two is set.
 type shortcutChord struct {
 	Modifiers ui.Modifiers
 	Key       byte
@@ -50,8 +50,7 @@ type shortcutChord struct {
 
 // namedShortcutKeys are the keys without text a chord may use, with the name
 // the label shows, the keycap a menu shows, and the name the settings file
-// keeps. They are the keys a tab switcher is bound to; the rest of the keyboard
-// belongs to the terminal program.
+// keeps. Unbound keys remain available to the terminal program.
 var namedShortcutKeys = [...]struct {
 	key    ui.Key
 	label  string
@@ -63,6 +62,27 @@ var namedShortcutKeys = [...]struct {
 	{ui.KeyPageDown, "PageDown", "PgDn", "page_down"},
 	{ui.KeyLeft, "Left", "←", "left"},
 	{ui.KeyRight, "Right", "→", "right"},
+	{ui.KeyEnter, "Enter", "↵", "enter"},
+	{ui.KeyEscape, "Esc", "Esc", "escape"},
+	{ui.KeyUp, "Up", "↑", "up"},
+	{ui.KeyDown, "Down", "↓", "down"},
+	{ui.KeyHome, "Home", "Home", "home"},
+	{ui.KeyEnd, "End", "End", "end"},
+	{ui.KeyBackspace, "Backspace", "⌫", "backspace"},
+	{ui.KeyDelete, "Delete", "Del", "delete"},
+	{ui.KeyInsert, "Insert", "Ins", "insert"},
+	{ui.KeyF1, "F1", "F1", "f1"},
+	{ui.KeyF2, "F2", "F2", "f2"},
+	{ui.KeyF3, "F3", "F3", "f3"},
+	{ui.KeyF4, "F4", "F4", "f4"},
+	{ui.KeyF5, "F5", "F5", "f5"},
+	{ui.KeyF6, "F6", "F6", "f6"},
+	{ui.KeyF7, "F7", "F7", "f7"},
+	{ui.KeyF8, "F8", "F8", "f8"},
+	{ui.KeyF9, "F9", "F9", "f9"},
+	{ui.KeyF10, "F10", "F10", "f10"},
+	{ui.KeyF11, "F11", "F11", "f11"},
+	{ui.KeyF12, "F12", "F12", "f12"},
 }
 
 func namedShortcutKey(key ui.Key) (int, bool) {
@@ -150,15 +170,14 @@ func (shortcuts *shortcutMap) refreshLabels() {
 }
 
 func (chord shortcutChord) valid() bool {
-	if chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 ||
-		chord.Modifiers&^(ui.ModifierShift|ui.ModifierControl|ui.ModifierAlt|ui.ModifierMeta) != 0 {
+	if chord.Modifiers&^(ui.ModifierShift|ui.ModifierControl|ui.ModifierAlt|ui.ModifierMeta) != 0 {
 		return false
 	}
 	if chord.Named != ui.KeyUnknown {
 		_, named := namedShortcutKey(chord.Named)
 		return named && chord.Key == 0
 	}
-	return chord.Key >= 'a' && chord.Key <= 'z' || chord.Key >= '0' && chord.Key <= '9' || chord.Key == '=' || chord.Key == '-'
+	return chord.Key >= ' ' && chord.Key <= '~' && !(chord.Key >= 'A' && chord.Key <= 'Z')
 }
 
 func (chord shortcutChord) label() string {
@@ -183,6 +202,10 @@ func (chord shortcutChord) label() string {
 		return label.String()
 	}
 	key := chord.Key
+	if key == ' ' {
+		label.WriteString("Space")
+		return label.String()
+	}
 	if key >= 'a' && key <= 'z' {
 		key -= 'a' - 'A'
 	}
@@ -222,6 +245,9 @@ func (chord shortcutChord) keys(dst []string) []string {
 		return append(dst, namedShortcutKeys[index].keycap)
 	}
 	key := chord.Key
+	if key == ' ' {
+		return append(dst, "Space")
+	}
 	if key >= 'a' && key <= 'z' {
 		key -= 'a' - 'A'
 	}
@@ -232,10 +258,18 @@ func (chord shortcutChord) keys(dst []string) []string {
 // reads its own keys (Ctrl+R searches history, Ctrl+D ends input), so where
 // Command is not the modifier a snippet chord needs Shift or Alt as well.
 func (chord shortcutChord) validForSnippet() bool {
-	return chord.valid() && chord.Named == ui.KeyUnknown && chord.Modifiers&(ui.ModifierMeta|ui.ModifierShift|ui.ModifierAlt) != 0
+	printable := chord.Key >= 'a' && chord.Key <= 'z' || chord.Key >= '0' && chord.Key <= '9' || chord.Key == '=' || chord.Key == '-'
+	return chord.valid() && printable && chord.Named == ui.KeyUnknown &&
+		chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) != 0 &&
+		chord.Modifiers&(ui.ModifierMeta|ui.ModifierShift|ui.ModifierAlt) != 0
 }
 
 func shortcutChordFromEvent(event ui.KeyEvent) (shortcutChord, bool) {
+	if event.Key != ui.KeyUnknown {
+		if _, named := namedShortcutKey(event.Key); named || event.Key == ui.KeySpace {
+			return shortcutChordFromKey(event)
+		}
+	}
 	if len(event.Text) != 1 {
 		return shortcutChord{}, false
 	}
@@ -243,18 +277,16 @@ func shortcutChordFromEvent(event ui.KeyEvent) (shortcutChord, bool) {
 	if key >= 'A' && key <= 'Z' {
 		key += 'a' - 'A'
 	}
-	modifiers := event.Modifiers
-	if key == '+' {
-		// Command+Shift+= types a plus: it is the same zoom-in chord.
-		key, modifiers = '=', modifiers&^ui.ModifierShift
-	}
-	chord := shortcutChord{Modifiers: modifiers, Key: key}
+	chord := shortcutChord{Modifiers: event.Modifiers, Key: key}
 	return chord, chord.valid()
 }
 
 // shortcutChordFromKey is the chord of a key without text, one of the named
 // keys a chord may use. Printable chords come through shortcutChordFromEvent.
 func shortcutChordFromKey(event ui.KeyEvent) (shortcutChord, bool) {
+	if event.Key == ui.KeySpace {
+		return shortcutChord{Modifiers: event.Modifiers, Key: ' '}, true
+	}
 	chord := shortcutChord{Modifiers: event.Modifiers, Named: event.Key}
 	return chord, event.Key != ui.KeyUnknown && chord.valid()
 }
@@ -355,7 +387,7 @@ func shortcutActionFromString(value string) shortcutAction {
 	return shortcutNone
 }
 
-// Shortcut handles an application-owned modified printable chord. It is wired
+// Shortcut handles an application-owned printable chord. It is wired
 // to app.Config.OnShortcut so ordinary pages can own shortcuts without moving
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
@@ -368,7 +400,34 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 		return state.captureSnippetShortcut(event, chord, ok)
 	}
 	if !ok {
+		if state.modal == modalShortcutCapture && !event.Release {
+			state.shortcutError = state.messages.ShortcutsInvalid
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 		return ui.EventResult{}
+	}
+	return state.shortcut(event, chord)
+}
+
+// shortcut shares contextual routing between printable and named bindings.
+func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventResult {
+	if event.Release {
+		// Swallow the release of every press this routing consumed, a snippet
+		// chord included, so a terminal that asked for releases is not sent the
+		// end of a press it never saw.
+		consumed := state.shortcuts.actionFor(chord) != shortcutNone ||
+			state.activeSection == sectionTerminal && state.snippetFor(chord, -1) >= 0
+		return ui.EventResult{Handled: consumed}
+	}
+	if state.modal == modalShortcutCapture {
+		return state.captureShortcut(event, chord)
+	}
+	if chord.Key == '+' && state.shortcuts.actionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
+		// Preserve the default zoom-in alias without collapsing a custom + binding.
+		alias := shortcutChord{Modifiers: chord.Modifiers &^ ui.ModifierShift, Key: '='}
+		if state.shortcuts.actionFor(alias) == shortcutZoomIn {
+			chord = alias
+		}
 	}
 	if login := state.ai.login; login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
 		action := state.shortcuts.actionFor(chord)
@@ -385,8 +444,9 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 		}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalShortcutCapture {
-		return state.captureShortcut(event, chord)
+	// Plain and Alt/Shift bindings must leave ordinary text editing usable.
+	if chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 && state.shortcutTextInput(event.Target) {
+		return ui.EventResult{}
 	}
 	if result := state.remoteSearchShortcut(event); result.Handled {
 		return result
@@ -432,7 +492,7 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 			return ui.EventResult{}
 		}
 	}
-	if event.Repeat {
+	if event.Repeat && !action.repeats() {
 		return ui.EventResult{Handled: true}
 	}
 	if action == shortcutFind {
@@ -447,6 +507,15 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 		return ui.EventResult{}
 	}
 	return state.executeShortcut(action)
+}
+
+// shortcutTextInput includes native inputs owned by embedded presenters, whose
+// editors are resolved separately from EditorFor by the main window.
+func (state *State) shortcutTextInput(target ui.ID) bool {
+	context := app.TextInputContext{ID: target}
+	return state.EditorFor(target) != nil || state.SFTPTabInput(context) != nil ||
+		state.SFTPInput(context) != nil || state.RemoteToolsInput(context) != nil ||
+		state.AIPanelInput(context) != nil
 }
 
 // tabNumberChord reports which tab Command plus a digit names, counting from
@@ -498,36 +567,56 @@ func (state *State) clearShortcut(action shortcutAction) {
 	state.save()
 }
 
-// namedShortcut runs the action bound to a chord whose key has no text, which
-// reaches the application as a key and not through Shortcut. The keyboard stays
+// keyShortcut runs a binding delivered as a raw key event. The keyboard stays
 // with a modal dialog and with a remote desktop that has it, as for any other
 // shortcut. A release of the key is swallowed too, so a terminal that asked for
 // releases is not sent the end of a press it never saw.
-func (state *State) namedShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
-	chord, ok := shortcutChordFromKey(event)
+func (state *State) keyShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+	chord, ok := shortcutChordFromEvent(event)
 	if !ok {
 		return ui.EventResult{}, false
 	}
 	if state.modal == modalShortcutCapture {
-		if event.Release {
+		if event.Release || event.Repeat {
 			return ui.EventResult{Handled: true}, true
+		}
+		if event.Key == ui.KeyEscape && event.Modifiers == 0 {
+			state.clickShortcutCapture(hitShortcutCaptureCancel)
+			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
 		return state.captureShortcut(event, chord), true
 	}
-	if state.modal != modalNone || state.tabDrag.active {
+	if state.tabDrag.active {
 		return ui.EventResult{}, false
 	}
 	if _, view := state.focusedDesktop(event.Target); view != nil && !view.released {
 		return ui.EventResult{}, false
 	}
-	action := state.shortcuts.actionFor(chord)
-	if action == shortcutNone {
+	// A terminal owns Command chords: terminalKey drives the tabs and the
+	// program's line edits with them, so the application table does not take
+	// them first.
+	if event.Modifiers&ui.ModifierMeta != 0 && state.terminalHasMetaChords(event.Target) {
 		return ui.EventResult{}, false
 	}
-	if event.Release || event.Repeat && !action.repeats() {
-		return ui.EventResult{Handled: true}, true
+	result := state.shortcut(event, chord)
+	return result, result.Handled
+}
+
+// terminalHasMetaChords reports whether the target is a running terminal, which
+// handles Command chords itself. An event with no target still belongs to the
+// active terminal, the way the raw key path reads it.
+func (state *State) terminalHasMetaChords(target ui.ID) bool {
+	if session := state.terminalSession(target); session != nil {
+		return session.term != nil
 	}
-	return state.executeShortcut(action), true
+	if session, _, ok := state.decodePaneHit(target); ok {
+		return session != nil && session.term != nil
+	}
+	if target.IsZero() {
+		session, ok := state.sessionByIDPointer(state.activeSessionID)
+		return ok && session != nil && session.term != nil
+	}
+	return false
 }
 
 // repeats reports whether holding the chord runs the action again and again:
