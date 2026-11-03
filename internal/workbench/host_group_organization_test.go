@@ -177,13 +177,23 @@ func TestHostGroupDragMovesSubtreeAndEscapeCancels(t *testing.T) {
 }
 
 func TestHostGroupDragCannotTargetClippedRows(t *testing.T) {
-	state := nestedHostGroupState(t)
+	state := manyHostsState(t, 40)
+	for index := range state.hosts {
+		state.hosts[index].Group = "Team2"
+	}
+	state.hosts[0].Group = "Team/Dev"
+	state.hostDataChanged()
 	state.hostView = hostViewList
-	state.hostsScroll = 100
-	paintAt(state, ui.Size{Width: 900, Height: 420})
-	row := state.groupActions.rows[state.hostGroupIndex("Team/Dev")]
-	x, y := row.X+40, row.Y+2
-	if pointInRect(x, y, state.chrome.hostList) {
+	size := ui.Size{Width: 900, Height: 600}
+	paintAt(state, size)
+	group := state.hostGroupIndex("Team/Dev")
+	row := state.groupActions.rows[group]
+	// Scroll the measured row above the clip; dev builds have a taller sidebar.
+	state.hostsScroll = row.Y + row.Height - state.chrome.hostList.Y + 1
+	paintAt(state, size)
+	row = state.groupActions.rows[group]
+	x, y := row.X+row.Width/2, row.Y+row.Height/2
+	if row.Width <= 0 || row.Height <= 0 || !pointInRect(x, y, row) || pointInRect(x, y, state.chrome.hostList) {
 		t.Fatalf("fixture target is not clipped: row=%+v viewport=%+v scroll=%v", row, state.chrome.hostList, state.hostsScroll)
 	}
 	state.groupActions.drag = hostGroupDrag{pressed: true, active: true, path: "Team2"}

@@ -42,3 +42,14 @@ One independent read-only review identified five issues. Each was reproduced by 
 No actual SSH session, physical IME candidate acceptance, live WebDAV synchronization, Windows/Linux runtime, or installed-app acceptance is claimed. Host records and existing persistence/sync tests were exercised locally.
 
 Merge, deployment and installation are outside this change.
+
+## Development Components CI Follow-Up
+
+The [Development components job](https://github.com/t8y2/motty/actions/runs/41563712717/job/125680064937) failed in `TestHostGroupDragCannotTargetClippedRows` before exercising the drop guard. The dev-only gallery adds a sidebar row, increasing the list viewport; the three-host fixture's requested scroll was clamped to 8 pixels and did not clip its target.
+
+The fixture now uses forty hosts and calculates its scroll offset from the first paint's row and viewport geometry. It still asserts that the target exists outside the viewport and that dragging cannot select it. Runtime grouping and drag behavior are unchanged.
+
+Focused `TestHostGroupDrag` checks pass with default tags, `dev`, and `vivahead,dev`.
+
+- `go test -tags dev ./cmd/motty ./internal/workbench -count=1`: PASS (workbench 121.859s).
+- `go test -race -tags dev ./internal/workbench -run '^TestHostGroupDrag' -count=1`: PASS (5.383s).
