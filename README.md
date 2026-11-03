@@ -441,3 +441,5 @@ the licence and a list of changes are in `internal/rdpcore/`. Interface icons
 come from Lucide, Simple Icons, SVG Logos, Skill Icons, Devicon, selfh.st/icons,
 Material Icon Theme and LobeHub Icons; their licences and trademark notes are in
 `internal/workbench/icons/NOTICE`.
+
+<!-- docs-only probe -->
