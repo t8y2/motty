@@ -266,7 +266,9 @@ func (chord shortcutChord) validForSnippet() bool {
 
 func shortcutChordFromEvent(event ui.KeyEvent) (shortcutChord, bool) {
 	if event.Key != ui.KeyUnknown {
-		return shortcutChordFromKey(event)
+		if _, named := namedShortcutKey(event.Key); named || event.Key == ui.KeySpace {
+			return shortcutChordFromKey(event)
+		}
 	}
 	if len(event.Text) != 1 {
 		return shortcutChord{}, false
@@ -410,7 +412,12 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 // shortcut shares contextual routing between printable and named bindings.
 func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventResult {
 	if event.Release {
-		return ui.EventResult{Handled: state.shortcuts.actionFor(chord) != shortcutNone}
+		// Swallow the release of every press this routing consumed, a snippet
+		// chord included, so a terminal that asked for releases is not sent the
+		// end of a press it never saw.
+		consumed := state.shortcuts.actionFor(chord) != shortcutNone ||
+			state.activeSection == sectionTerminal && state.snippetFor(chord, -1) >= 0
+		return ui.EventResult{Handled: consumed}
 	}
 	if state.modal == modalShortcutCapture {
 		return state.captureShortcut(event, chord)
@@ -507,7 +514,8 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 func (state *State) shortcutTextInput(target ui.ID) bool {
 	context := app.TextInputContext{ID: target}
 	return state.EditorFor(target) != nil || state.SFTPTabInput(context) != nil ||
-		state.SFTPInput(context) != nil || state.RemoteToolsInput(context) != nil
+		state.SFTPInput(context) != nil || state.RemoteToolsInput(context) != nil ||
+		state.AIPanelInput(context) != nil
 }
 
 // tabNumberChord reports which tab Command plus a digit names, counting from
@@ -584,8 +592,31 @@ func (state *State) keyShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 	if _, view := state.focusedDesktop(event.Target); view != nil && !view.released {
 		return ui.EventResult{}, false
 	}
+	// A terminal owns Command chords: terminalKey drives the tabs and the
+	// program's line edits with them, so the application table does not take
+	// them first.
+	if event.Modifiers&ui.ModifierMeta != 0 && state.terminalHasMetaChords(event.Target) {
+		return ui.EventResult{}, false
+	}
 	result := state.shortcut(event, chord)
 	return result, result.Handled
+}
+
+// terminalHasMetaChords reports whether the target is a running terminal, which
+// handles Command chords itself. An event with no target still belongs to the
+// active terminal, the way the raw key path reads it.
+func (state *State) terminalHasMetaChords(target ui.ID) bool {
+	if session := state.terminalSession(target); session != nil {
+		return session.term != nil
+	}
+	if session, _, ok := state.decodePaneHit(target); ok {
+		return session != nil && session.term != nil
+	}
+	if target.IsZero() {
+		session, ok := state.sessionByIDPointer(state.activeSessionID)
+		return ok && session != nil && session.term != nil
+	}
+	return false
 }
 
 // repeats reports whether holding the chord runs the action again and again:
