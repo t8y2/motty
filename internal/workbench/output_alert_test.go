@@ -31,6 +31,9 @@ func TestBackgroundOutputTransitionsAndCommandPriority(t *testing.T) {
 	}
 	token := session.term.folderToken
 	marker := func(value string) string { return "\x1b]133;" + value + ";motty=" + token + "\a" }
+	// A shell shows its prompt before the first command it reports.
+	w.shell.say(marker("A") + marker("B"))
+	s.Wake()
 	// Completion and output in the same Drain must leave completion in control.
 	w.shell.say(marker("C") + "failure\r\n" + marker("D;7"))
 	s.Wake()
@@ -206,6 +209,10 @@ func TestOutputAlertAnimationOnlyRequestsFramesForVisibleDynamicTitles(t *testin
 				if !different {
 					t.Fatal("wave has no highlight")
 				}
+				// The wave rises and falls, so it has at most two runs per color.
+				if len(texts) > 2*sweepBands+1 {
+					t.Fatalf("the wave painted %d layers, want at most %d cached colors", len(texts), 2*sweepBands+1)
+				}
 			}
 		}
 	}
@@ -214,5 +221,34 @@ func TestOutputAlertAnimationOnlyRequestsFramesForVisibleDynamicTitles(t *testin
 	s.paintOutputAlertTitle(&hidden, &tab, ui.Rect{X: 2000, Y: 2000, Width: 10, Height: 10})
 	if _, scheduled := hidden.NextFrame(); scheduled {
 		t.Fatal("offscreen title kept requesting frames")
+	}
+}
+
+// The integration reports a command start while it installs itself, before the
+// shell has shown a prompt, and the first prompt reports whatever status the
+// shell inherited. Counting that pair as a command paints an error on a session
+// that connected in the background and ran nothing.
+func TestTheStatusOfTheFirstPromptIsNotACommandCompletion(t *testing.T) {
+	w := liveAutofillSession(t)
+	s, session := w.state, &w.state.sessions[0]
+	s.activeSection = sectionSettings
+	s.backgroundOutputAlerts = true
+	token := session.term.folderToken
+	marker := func(value string) string { return "\x1b]133;" + value + ";motty=" + token + "\a" }
+	// A fresh shell: the fixture has already shown a prompt, a background
+	// connection starts one.
+	s.configureTerminal(session)
+	w.shell.say(marker("C"))
+	w.shell.say(marker("A"))
+	w.shell.say(marker("D;7"))
+	s.Wake()
+	if kind := session.outputAlert.kind; kind == outputAlertError {
+		t.Fatal("the inherited status of the first prompt painted an error")
+	}
+	// A command run after that prompt still reports its own status.
+	w.shell.say(marker("C") + "done\r\n" + marker("D;1"))
+	s.Wake()
+	if kind := session.outputAlert.kind; kind != outputAlertError {
+		t.Fatalf("a failed command after the prompt left alert %v", kind)
 	}
 }

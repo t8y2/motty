@@ -273,6 +273,7 @@ func (t *terminal) syncRemaining() time.Duration {
 func (state *State) configureTerminal(session *Session) {
 	session.outputAlert.commandRunning = false
 	session.outputAlert.completionKnown = false
+	session.outputAlert.promptSeen = false
 	if session.term.folderToken == "" {
 		session.term.resetFolderSync()
 	}
@@ -308,6 +309,7 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
+			current.outputAlert.promptSeen = true
 		}
 	})
 	session.term.screen.SetPromptReady(func() {
@@ -325,7 +327,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetCommandStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
-			current.outputAlert.commandRunning = true
+			current.outputAlert.commandRunning = current.outputAlert.promptSeen
 			t.commandReporting = true
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false

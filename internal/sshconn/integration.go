@@ -325,7 +325,9 @@ const zshIntegrationTail = `
 _motty_prompt_marker=$'%{\e]133;B__MOTTY_SUFFIX__\a%}'
 typeset -ga precmd_functions
 if (( $+functions[precmd] )); then
-    functions[__motty_user_precmd]=$functions[precmd]
+    # Copy the hook with its function flags, under a name the wrapper can call:
+    # assigning the body alone loses flags and changes the $0 a hook sees.
+    functions -c precmd __motty_user_precmd
     precmd() { __motty_command_finished; __motty_user_precmd; }
 else
     precmd() { __motty_command_finished; return 0; }

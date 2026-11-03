@@ -21,11 +21,21 @@ const (
 
 const outputQuietDelay = 2 * time.Second
 
+// sweepBands is how many colors the running sweep uses across the title. Each
+// color is one cached text layer, so the number is a cost, not a look: more
+// bands only make the gradient smoother at the price of rasterizing more lines.
+const sweepBands = 6
+
 type terminalOutputAlert struct {
 	kind            outputAlertKind
 	lastOutput      time.Duration
 	commandRunning  bool
 	completionKnown bool
+	// promptSeen says the shell has already shown a prompt in this session. The
+	// integration reports a command start while it installs itself, before that
+	// first prompt; counting it would turn the first prompt's status line into a
+	// completion and paint green on a session that ran nothing.
+	promptSeen bool
 }
 
 // All panes of the active workspace count as viewed, including unfocused ones.
@@ -145,13 +155,27 @@ func (state *State) paintOutputAlertTitle(canvas *ui.Canvas, tab *barTab, strip 
 	phase := float32(canvas.Now()%(1800*time.Millisecond)) / float32(1800*time.Millisecond)
 	center, band := (phase*1.6-.3)*width, max(width*.24, 12)
 	origin := canvas.LabelOrigin(label, bounds, style, ui.AlignStart)
-	for x := float32(0); x < width; x += 3 {
+	// The sweep is drawn as flat runs of a fixed palette rather than one band per
+	// three pixels: a text layer is cached by its color, so a distinct color per
+	// band would rebuild the whole line's texture on every frame of the 1.8s
+	// animation, for as long as a background command keeps running.
+	level := func(x float32) int {
 		distance := float32(math.Abs(float64((x + 1.5 - center) / band)))
 		amount := max(1-distance, 0)
 		amount = amount * amount * (3 - 2*amount)
-		style.Color = blue.Mix(highlight, amount)
-		canvas.Clip(ui.Rect{X: origin + x, Y: bounds.Y, Width: min(3, width-x), Height: bounds.Height})
+		return int(math.Round(float64(amount) * sweepBands))
+	}
+	for x := float32(0); x < width; {
+		step := level(x)
+		end := x + 3
+		for end < width && level(end) == step {
+			end += 3
+		}
+		end = min(end, width)
+		style.Color = blue.Mix(highlight, float32(step)/sweepBands)
+		canvas.Clip(ui.Rect{X: origin + x, Y: bounds.Y, Width: end - x, Height: bounds.Height})
 		canvas.Label(label, bounds, style)
 		canvas.Unclip()
+		x = end
 	}
 }
