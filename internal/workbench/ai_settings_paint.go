@@ -2,11 +2,13 @@ package workbench
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
+	"motty/internal/ai/probe"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 )
@@ -270,9 +272,8 @@ func (state *State) paintAIModels(page *settingsPage) {
 	}
 	total, enabled := state.aiModelsOf(provider.ID)
 	status, failed := state.aiModelsStatus()
-	shown := min(max(total-cfg.page*aiModelPageSize, 0), aiModelPageSize)
 	page.group(m.ModelsTitle, func() {
-		// Which provider, what it holds, and the fetch button.
+		// Which provider, what it holds, and the probe & fetch buttons.
 		fetchLabel := m.ModelsFetch
 		if store.IsCLIKind(provider.Kind) {
 			fetchLabel = m.CLIModelsCheck
@@ -280,9 +281,18 @@ func (state *State) paintAIModels(page *settingsPage) {
 		description := fmt.Sprintf(m.ModelsDescFmt, total, enabled)
 		if cfg.fetch != nil {
 			fetchLabel, description = m.ModelsCancel, m.ModelsFetching
+		} else if cfg.probeCancel != nil && cfg.probingProvider == provider.ID && cfg.probingModel == "" {
+			description = fmt.Sprintf(m.ModelsProbingFmt, cfg.probeProgress[0], cfg.probeProgress[1])
+		}
+		probeLabel := m.ModelsProbeAll
+		if cfg.probeCancel != nil && cfg.probingProvider == provider.ID && cfg.probingModel == "" {
+			probeLabel = m.ModelsProbeCancel
 		}
 		page.aiFrame(settingsRowHeight, fmt.Sprintf(m.ModelsOfFmt, provider.Name), description, pal.muted, func() {
-			page.button(hitAISetFetchModels, fetchLabel, aiButtonOutline, false)
+			f.Row().Gap(8).Items(flex.Center).Shrink(0).Children(func() {
+				page.button(hitAISetModelProbeAll, probeLabel, aiButtonOutline, total == 0)
+				page.button(hitAISetFetchModels, fetchLabel, aiButtonOutline, false)
+			})
 		})
 
 		if status != "" {
@@ -295,36 +305,105 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if total == 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, ui.WeightRegular, pal.muted)
 		}
+		filteredModels := state.aiFilteredModels(provider.ID)
+		filteredTotal := len(filteredModels)
+		shown := min(max(filteredTotal-cfg.page*aiModelPageSize, 0), aiModelPageSize)
+		if filteredTotal == 0 && total > 0 {
+			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+		}
+		defaultColWidth, _ := state.aiButtonSize(f.Canvas(), m.ModelUse)
+		if defaultColWidth < 76 {
+			defaultColWidth = 76
+		}
+		const probeColWidth = float32(92)
 		for row := 0; row < shown; row++ {
-			model, _ := state.aiModelAt(provider.ID, cfg.page*aiModelPageSize+row)
+			model := filteredModels[cfg.page*aiModelPageSize+row]
 			isDefault := state.aiIsDefault(provider.ID, model.Name)
 			nameColor := pal.text
 			if !model.Enabled {
 				nameColor = pal.muted
 			}
-			page.rowOf(aiModelRowHeight).PadX(18).Gap(14).Children(func() {
+			cat := probe.ClassifyModel(model.Name)
+			res, hasRes := state.aiGetProbeResult(provider.ID, model.Name)
+			isProbing := state.aiIsProbing(provider.ID, model.Name)
+
+			page.rowOf(aiModelRowHeight).PadX(18).Gap(10).Children(func() {
 				label := model.Name
 				if store.IsCLIKind(provider.Kind) && model.Name == "default" {
 					label = m.CLIDefaultModel
 				}
-				f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).Grow(1).MarginSides(0, 4, 0, 0)
-				if isDefault {
-					f.Row().Height(20).PadX(8).Center().Shrink(0).Background(pal.accentSoft).Radius(10).Children(func() {
-						f.Text(m.ModelDefault).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.accent)
+				// Name and reasoning tag (left-aligned)
+				f.Row().Grow(1).Gap(8).Items(flex.Center).Children(func() {
+					f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
+					if cat == probe.CategoryReasoning {
+						f.Row().Height(18).PadX(6).Radius(4).Background(pal.surfaceSoft).Center().Children(func() {
+							f.Text(m.ModelTagReasoning).FontSize(metrics.FontSizeS).Color(pal.muted)
+						})
+					}
+				})
+
+				// Probe badge or button (fixed-width column for neat vertical alignment)
+				if isProbing {
+					f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
+						f.Text(m.ModelProbing).FontSize(metrics.FontSizeS).Color(pal.muted)
 					})
+				} else if hasRes {
+					switch res.Status {
+					case probe.StatusSuccess:
+						ms := res.Latency.Milliseconds()
+						badgeText := fmt.Sprintf("%dms", ms)
+						textColor := pal.success
+						if ms >= 800 && ms < 2500 {
+							textColor = pal.warning
+						} else if ms >= 2500 {
+							textColor = pal.danger
+						}
+						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
+						page.hitOn(box, hitAISetModelProbe.At(row), badgeText, ui.HitOptions{Role: ui.RoleButton})
+						box.Children(func() {
+							f.Text("✓ " + badgeText).FontSize(metrics.FontSizeS).Color(textColor).Weight(ui.WeightMedium)
+						})
+					case probe.StatusFailed:
+						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
+						page.hitOn(box, hitAISetModelProbe.At(row), m.ModelProbeFailed, ui.HitOptions{Role: ui.RoleButton})
+						box.Children(func() {
+							f.Text("✗ " + m.ModelProbeFailed).FontSize(metrics.FontSizeS).Color(pal.danger).Weight(ui.WeightMedium)
+						})
+					case probe.StatusSkipped:
+						f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
+							f.Text(m.ModelProbeSkipped).FontSize(metrics.FontSizeS).Color(pal.muted)
+						})
+					default:
+						f.Row().Width(probeColWidth).Center().Shrink(0).Children(func() {
+							page.button(hitAISetModelProbe.At(row), m.ModelProbe, aiButtonOutline, false)
+						})
+					}
 				} else {
-					page.button(hitAISetModelUse.At(row), m.ModelUse, aiButtonOutline, false)
+					f.Row().Width(probeColWidth).Center().Shrink(0).Children(func() {
+						page.button(hitAISetModelProbe.At(row), m.ModelProbe, aiButtonOutline, false)
+					})
 				}
+
+				// Default status / button (fixed-width column to prevent probe column shift)
+				f.Row().Width(defaultColWidth).Center().Shrink(0).Children(func() {
+					if isDefault {
+						f.Row().Height(20).PadX(8).Center().Background(pal.accentSoft).Radius(10).Children(func() {
+							f.Text(m.ModelDefault).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.accent)
+						})
+					} else {
+						page.button(hitAISetModelUse.At(row), m.ModelUse, aiButtonOutline, false)
+					}
+				})
 				page.switchSlot(hitAISetModelSwitch.At(row), model.Enabled, isDefault, m.ModelEnabled+" "+model.Name)
 			})
 		}
-		if total > aiModelPageSize {
+		if filteredTotal > aiModelPageSize {
 			first := cfg.page*aiModelPageSize + 1
 			page.rowOf(aiPagerRowHeight).PadX(18).Gap(8).Children(func() {
-				f.Text(fmt.Sprintf(m.ModelPageFmt, first, first+shown-1, total)).FontSize(metrics.FontSizeS).Color(pal.muted)
+				f.Text(fmt.Sprintf(m.ModelPageFmt, first, first+shown-1, filteredTotal)).FontSize(metrics.FontSizeS).Color(pal.muted)
 				f.Spacer()
 				page.button(hitAISetModelPrev, m.ModelPrev, aiButtonOutline, cfg.page == 0)
-				page.button(hitAISetModelNext, m.ModelNext, aiButtonOutline, first+shown >= total)
+				page.button(hitAISetModelNext, m.ModelNext, aiButtonOutline, first+shown-1 >= filteredTotal)
 			})
 		}
 
@@ -497,6 +576,8 @@ func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
 	case aiDialogImport:
 		state.paintAIImport(canvas, viewport)
+	case aiDialogProbe:
+		state.paintAIProbeDialog(canvas, viewport)
 	}
 }
 
@@ -508,6 +589,56 @@ func (state *State) paintAIConfirm(canvas *ui.Canvas, viewport ui.Rect, title, b
 		InitialFocusID: hitAISetConfirmCancel,
 	})
 	dialog.Begin(title, body, action, state.messages.Cancel)
+	dialog.End()
+}
+
+func (state *State) paintAIProbeDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	m, theme := state.messages.AISettings, state.Theme()
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+		Layer: dialogLayer, Scope: dialogScope,
+		CloseID: hitAISetFormClose, InitialFocusID: hitAISetProbeStart,
+		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 140,
+	})
+	layout := dialog.Begin(m.ProbeDialogTitle, m.ProbeDialogDesc)
+
+	var concSlot, timeoutSlot flex.Box
+	f := state.settingsRow.Begin(canvas, theme, layout.Body)
+	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+		concSlot = f.Slot().Height(60)
+		timeoutSlot = f.Slot().Height(60)
+	})
+	f.End()
+
+	concContent := components.BeginField(canvas, theme, concSlot.Rect()).Paint(m.ProbeConcurrency, "", "")
+	concOptions := state.aiProbeConcOptions()
+	selectedConc := hitAISetProbeConc4
+	switch state.aiProbeConcurrency() {
+	case 1:
+		selectedConc = hitAISetProbeConc1
+	case 2:
+		selectedConc = hitAISetProbeConc2
+	case 8:
+		selectedConc = hitAISetProbeConc8
+	}
+	components.BeginSegmentedControl(canvas, theme, concContent, concOptions[:], selectedConc).Paint()
+
+	timeoutContent := components.BeginField(canvas, theme, timeoutSlot.Rect()).Paint(m.ProbeTimeout, "", "")
+	timeoutOptions := state.aiProbeTimeoutOptions()
+	selectedTimeout := hitAISetProbeTimeout15
+	switch state.aiProbeTimeout() {
+	case 5 * time.Second:
+		selectedTimeout = hitAISetProbeTimeout5
+	case 10 * time.Second:
+		selectedTimeout = hitAISetProbeTimeout10
+	case 30 * time.Second:
+		selectedTimeout = hitAISetProbeTimeout30
+	}
+	components.BeginSegmentedControl(canvas, theme, timeoutContent, timeoutOptions[:], selectedTimeout).Paint()
+
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitAISetProbeStart, Label: m.ProbeStartAction},
+	)
 	dialog.End()
 }
 

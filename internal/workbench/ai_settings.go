@@ -19,6 +19,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/mcp"
+	"motty/internal/ai/probe"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/vault"
@@ -111,6 +112,17 @@ var (
 	hitAISetProviderDelete = tree.Sub(aiSettingsHits, tree.Name("ai-set-provider-delete"))
 	hitAISetModelUse       = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-use")) // per row of the shown page
 	hitAISetModelSwitch    = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-switch"))
+	hitAISetModelProbeAll  = tree.ID(aiSettingsHits, "ai-set-model-probe-all")
+	hitAISetProbeStart     = tree.ID(aiSettingsHits, "ai-set-probe-start")
+	hitAISetModelProbe     = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-probe"))
+	hitAISetProbeConc1     = tree.ID(aiSettingsHits, "ai-set-probe-conc-1")
+	hitAISetProbeConc2     = tree.ID(aiSettingsHits, "ai-set-probe-conc-2")
+	hitAISetProbeConc4     = tree.ID(aiSettingsHits, "ai-set-probe-conc-4")
+	hitAISetProbeConc8     = tree.ID(aiSettingsHits, "ai-set-probe-conc-8")
+	hitAISetProbeTimeout5  = tree.ID(aiSettingsHits, "ai-set-probe-to-5")
+	hitAISetProbeTimeout10 = tree.ID(aiSettingsHits, "ai-set-probe-to-10")
+	hitAISetProbeTimeout15 = tree.ID(aiSettingsHits, "ai-set-probe-to-15")
+	hitAISetProbeTimeout30 = tree.ID(aiSettingsHits, "ai-set-probe-to-30")
 )
 
 // aiDialogKind is which of the section's dialogs is up.
@@ -125,6 +137,7 @@ const (
 	aiDialogImport
 	aiDialogMCPAllowAll
 	aiDialogAgentAllowAll
+	aiDialogProbe
 )
 
 // aiCopyState is what the "copy client configuration" button last did.
@@ -171,6 +184,14 @@ type aiSettingsUI struct {
 	selected   string // provider whose models are listed
 	page       int    // page of that provider's models
 	modelInput text.Editor
+
+	probeResults     map[string]map[string]probe.Result
+	probeCancel      context.CancelFunc
+	probingProvider  string
+	probingModel     string
+	probeProgress    [2]int
+	probeConcurrency int
+	probeTimeout     time.Duration
 
 	fetch              *aiFetch
 	fetched            bool // a fetch ended: with fetchCount models, or fetchErr
@@ -267,6 +288,31 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		}
 	case id == hitAISetFetchModels:
 		state.aiFetchModels()
+	case id == hitAISetModelProbeAll:
+		if cfg.probeCancel != nil && cfg.probingProvider == cfg.selected && cfg.probingModel == "" {
+			state.aiProbeAllModels()
+		} else {
+			cfg.dialog = aiDialogProbe
+		}
+	case id == hitAISetProbeConc1:
+		cfg.probeConcurrency = 1
+	case id == hitAISetProbeConc2:
+		cfg.probeConcurrency = 2
+	case id == hitAISetProbeConc4:
+		cfg.probeConcurrency = 4
+	case id == hitAISetProbeConc8:
+		cfg.probeConcurrency = 8
+	case id == hitAISetProbeTimeout5:
+		cfg.probeTimeout = 5 * time.Second
+	case id == hitAISetProbeTimeout10:
+		cfg.probeTimeout = 10 * time.Second
+	case id == hitAISetProbeTimeout15:
+		cfg.probeTimeout = 15 * time.Second
+	case id == hitAISetProbeTimeout30:
+		cfg.probeTimeout = 30 * time.Second
+	case id.Scope() == hitAISetModelProbe:
+		index, _ := id.In(hitAISetModelProbe)
+		state.aiProbeSingleModel(index)
 	case id == hitAISetModelAdd:
 		state.aiAddModel()
 	case id == hitAISetModelPrev:
@@ -441,6 +487,30 @@ func (state *State) aiDialogClick(id ui.ID) {
 			if state.aiPut(agentModeSetting, AgentModeAllowAll) {
 				state.aiCloseDialog()
 			}
+		}
+	case aiDialogProbe:
+		switch id {
+		case hitAISetFormClose, hitAISetFormCancel:
+			state.aiCloseDialog()
+		case hitAISetProbeStart:
+			state.aiCloseDialog()
+			state.aiProbeAllModels()
+		case hitAISetProbeConc1:
+			cfg.probeConcurrency = 1
+		case hitAISetProbeConc2:
+			cfg.probeConcurrency = 2
+		case hitAISetProbeConc4:
+			cfg.probeConcurrency = 4
+		case hitAISetProbeConc8:
+			cfg.probeConcurrency = 8
+		case hitAISetProbeTimeout5:
+			cfg.probeTimeout = 5 * time.Second
+		case hitAISetProbeTimeout10:
+			cfg.probeTimeout = 10 * time.Second
+		case hitAISetProbeTimeout15:
+			cfg.probeTimeout = 15 * time.Second
+		case hitAISetProbeTimeout30:
+			cfg.probeTimeout = 30 * time.Second
 		}
 	case aiDialogImport:
 		state.aiImportDialogClick(id)
@@ -939,16 +1009,20 @@ func (state *State) aiDeleteProvider(id string) {
 	if cfg.fetch != nil && cfg.fetch.providerID == id {
 		state.cancelAIFetch()
 	}
+	if cfg.probingProvider == id {
+		state.aiCancelProbe()
+	}
 	if cfg.selected == id {
 		cfg.selected, cfg.page, cfg.fetched, cfg.modelErr = "", 0, false, ""
 	}
 	state.aiWrote()
 }
 
-// aiModelsOf counts the models of a provider and how many are enabled.
+// aiModelsOf counts the models of a provider and how many are enabled,
+// excluding non-chat models.
 func (state *State) aiModelsOf(providerID string) (total, enabled int) {
 	for _, model := range state.ai.models {
-		if model.ProviderID == providerID {
+		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
 			total++
 			if model.Enabled {
 				enabled++
@@ -956,6 +1030,16 @@ func (state *State) aiModelsOf(providerID string) (total, enabled int) {
 		}
 	}
 	return total, enabled
+}
+
+func (state *State) aiFilteredModels(providerID string) []store.Model {
+	var filtered []store.Model
+	for _, model := range state.ai.models {
+		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }
 
 // aiModelAt is the nth model of a provider in the stored order.
@@ -977,7 +1061,7 @@ func (state *State) aiClampModelPage() {
 	provider, ok := state.aiSelectedProvider()
 	total := 0
 	if ok {
-		total, _ = state.aiModelsOf(provider.ID)
+		total = len(state.aiFilteredModels(provider.ID))
 	}
 	cfg.page = min(max(cfg.page, 0), max((total-1)/aiModelPageSize, 0))
 }
@@ -988,8 +1072,12 @@ func (state *State) aiModelOnPage(row int) (store.Provider, store.Model, bool) {
 	if !ok {
 		return store.Provider{}, store.Model{}, false
 	}
-	model, ok := state.aiModelAt(provider.ID, state.ai.cfg.page*aiModelPageSize+row)
-	return provider, model, ok
+	filtered := state.aiFilteredModels(provider.ID)
+	index := state.ai.cfg.page*aiModelPageSize + row
+	if index < 0 || index >= len(filtered) {
+		return store.Provider{}, store.Model{}, false
+	}
+	return provider, filtered[index], true
 }
 
 func (state *State) aiUseModel(row int) {
@@ -1157,7 +1245,7 @@ func (state *State) aiFetchDone(fetch *aiFetch, names []string, err error, key s
 	var merged []store.Model
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if name == "" || seen[name] {
+		if name == "" || seen[name] || !probe.IsChatOrReasoningModel(name) {
 			continue
 		}
 		seen[name] = true
@@ -1172,7 +1260,7 @@ func (state *State) aiFetchDone(fetch *aiFetch, names []string, err error, key s
 				merged[index].Enabled = old.Enabled
 			}
 		}
-		if !seen[old.Name] && (old.Enabled || state.aiIsDefault(old.ProviderID, old.Name)) {
+		if !seen[old.Name] && (old.Enabled || state.aiIsDefault(old.ProviderID, old.Name)) && probe.IsChatOrReasoningModel(old.Name) {
 			merged = append(merged, old)
 		}
 	}
@@ -1262,4 +1350,204 @@ func (state *State) aiCopyMCP(target ui.ID, value string) {
 		return
 	}
 	state.aiCopyText(target, value)
+}
+
+// ── Model Probing ──
+
+func (state *State) aiGetProbeResult(providerID, modelName string) (probe.Result, bool) {
+	cfg := &state.ai.cfg
+	if cfg.probeResults == nil {
+		return probe.Result{}, false
+	}
+	pm, ok := cfg.probeResults[providerID]
+	if !ok {
+		return probe.Result{}, false
+	}
+	res, ok := pm[modelName]
+	return res, ok
+}
+
+func (state *State) aiSetProbeResult(providerID, modelName string, res probe.Result) {
+	cfg := &state.ai.cfg
+	if cfg.probeResults == nil {
+		cfg.probeResults = make(map[string]map[string]probe.Result)
+	}
+	pm, ok := cfg.probeResults[providerID]
+	if !ok {
+		pm = make(map[string]probe.Result)
+		cfg.probeResults[providerID] = pm
+	}
+	pm[modelName] = res
+}
+
+func (state *State) aiIsProbing(providerID, modelName string) bool {
+	cfg := &state.ai.cfg
+	if cfg.probeCancel == nil || cfg.probingProvider != providerID {
+		return false
+	}
+	if cfg.probingModel != "" {
+		return cfg.probingModel == modelName
+	}
+	res, ok := state.aiGetProbeResult(providerID, modelName)
+	return ok && res.Status == probe.StatusRunning
+}
+
+func (state *State) aiCancelProbe() {
+	cfg := &state.ai.cfg
+	if cfg.probeCancel != nil {
+		cfg.probeCancel()
+		cfg.probeCancel = nil
+		cfg.probingProvider = ""
+		cfg.probingModel = ""
+		cfg.probeProgress = [2]int{0, 0}
+	}
+}
+
+func (state *State) aiProbeConcurrency() int {
+	if state.ai.cfg.probeConcurrency <= 0 {
+		return 4
+	}
+	return state.ai.cfg.probeConcurrency
+}
+
+func (state *State) aiProbeTimeout() time.Duration {
+	if state.ai.cfg.probeTimeout <= 0 {
+		return 15 * time.Second
+	}
+	return state.ai.cfg.probeTimeout
+}
+
+func (state *State) aiProbeConcOptions() [4]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitAISetProbeConc1, Label: "1"},
+		{ID: hitAISetProbeConc2, Label: "2"},
+		{ID: hitAISetProbeConc4, Label: "4"},
+		{ID: hitAISetProbeConc8, Label: "8"},
+	}
+}
+
+func (state *State) aiProbeTimeoutOptions() [4]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitAISetProbeTimeout5, Label: "5s"},
+		{ID: hitAISetProbeTimeout10, Label: "10s"},
+		{ID: hitAISetProbeTimeout15, Label: "15s"},
+		{ID: hitAISetProbeTimeout30, Label: "30s"},
+	}
+}
+
+func (state *State) aiProbeSingleModel(row int) {
+	provider, model, ok := state.aiModelOnPage(row)
+	if !ok {
+		return
+	}
+	cfg := &state.ai.cfg
+	if cfg.probeCancel != nil {
+		state.aiCancelProbe()
+	}
+	provider, ready := state.aiKeyedProvider(provider, func() { state.aiProbeSingleModel(row) })
+	if !ready {
+		return
+	}
+	client := state.aiProvider(provider)
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg.probeCancel = cancel
+	cfg.probingProvider = provider.ID
+	cfg.probingModel = model.Name
+	timeout := state.aiProbeTimeout()
+	state.aiSetProbeResult(provider.ID, model.Name, probe.Result{Status: probe.StatusRunning, Timestamp: time.Now()})
+	state.aiSettingsChanged()
+
+	go func() {
+		res := probe.ProbeModel(ctx, provider, model.Name, client, timeout)
+		state.aiPost(func(s *State) {
+			s.aiSetProbeResult(provider.ID, model.Name, res)
+			if res.Status == probe.StatusFailed && res.Error != "" {
+				s.ai.cfg.modelErr = fmt.Sprintf("%s: %s", model.Name, res.Error)
+			}
+			if s.ai.cfg.probeCancel != nil && s.ai.cfg.probingModel == model.Name {
+				s.ai.cfg.probeCancel = nil
+				s.ai.cfg.probingProvider = ""
+				s.ai.cfg.probingModel = ""
+			}
+			s.aiSettingsChanged()
+		})
+	}()
+}
+
+func (state *State) aiProbeAllModels() {
+	cfg := &state.ai.cfg
+	if cfg.probeCancel != nil {
+		state.aiCancelProbe()
+		state.aiSettingsChanged()
+		return
+	}
+	provider, ok := state.aiSelectedProvider()
+	if !ok {
+		return
+	}
+	provider, ready := state.aiKeyedProvider(provider, state.aiProbeAllModels)
+	if !ready {
+		return
+	}
+	models := state.aiFilteredModels(provider.ID)
+	if len(models) == 0 {
+		return
+	}
+	client := state.aiProvider(provider)
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg.probeCancel = cancel
+	cfg.probingProvider = provider.ID
+	cfg.probingModel = ""
+	cfg.probeProgress = [2]int{0, len(models)}
+	timeout := state.aiProbeTimeout()
+	concurrency := state.aiProbeConcurrency()
+
+	for _, m := range models {
+		state.aiSetProbeResult(provider.ID, m.Name, probe.Result{Status: probe.StatusRunning, Timestamp: time.Now()})
+	}
+	state.aiSettingsChanged()
+
+	go func() {
+		type job struct {
+			model store.Model
+		}
+		jobs := make(chan job, len(models))
+		for _, m := range models {
+			jobs <- job{model: m}
+		}
+		close(jobs)
+
+		workerCount := min(concurrency, len(models))
+		doneCh := make(chan struct{}, len(models))
+
+		for w := 0; w < workerCount; w++ {
+			go func() {
+				for j := range jobs {
+					if ctx.Err() != nil {
+						doneCh <- struct{}{}
+						continue
+					}
+					res := probe.ProbeModel(ctx, provider, j.model.Name, client, timeout)
+					state.aiPost(func(s *State) {
+						s.aiSetProbeResult(provider.ID, j.model.Name, res)
+						s.ai.cfg.probeProgress[0]++
+						s.aiSettingsChanged()
+					})
+					doneCh <- struct{}{}
+				}
+			}()
+		}
+
+		for i := 0; i < len(models); i++ {
+			<-doneCh
+		}
+
+		state.aiPost(func(s *State) {
+			if s.ai.cfg.probeCancel != nil && s.ai.cfg.probingModel == "" {
+				s.ai.cfg.probeCancel = nil
+				s.ai.cfg.probingProvider = ""
+			}
+			s.aiSettingsChanged()
+		})
+	}()
 }
