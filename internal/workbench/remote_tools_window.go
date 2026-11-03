@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -26,7 +27,7 @@ type remoteToolsWindow struct {
 	pageSize   int
 }
 
-func (state *State) openRemoteToolsWindow(session *Session) {
+func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, switchTab bool) {
 	owners := []*State{state}
 	if group := state.options.Group; group != nil {
 		group.mu.Lock()
@@ -37,6 +38,15 @@ func (state *State) openRemoteToolsWindow(session *Session) {
 		for _, window := range owner.remoteWindows {
 			if !window.closed && window.connection == session.conn {
 				window.bind(state, session)
+				if switchTab {
+					window.ui.remote.tab = tab
+				}
+				window.ui.remote.selected = ""
+				window.ui.remote.page = 0
+				window.ui.remote.rows = nil
+				window.ui.remote.pageText = ""
+				window.ui.remote.collectedAt = time.Time{}
+				window.ui.remote.stale = false
 				window.window.Show()
 				// The window is a snapshot of a remote host, and a container or
 				// process may have changed since it was read. Bringing the tools
@@ -54,14 +64,14 @@ func (state *State) openRemoteToolsWindow(session *Session) {
 	w.ui.language, w.ui.messages = state.language, state.messages
 	w.ui.appearance, w.ui.pal, w.ui.theme = state.appearance, state.pal, state.theme
 	w.ui.modal, w.ui.activeSessionID, w.ui.remoteWindow = modalRemoteTools, session.ID, w
-	w.ui.remote = remoteToolsView{session: session.ID, title: session.Title, tab: state.remote.tab, sort: state.remote.sort, serial: 1}
+	w.ui.remote = remoteToolsView{session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1}
 	window, err := state.options.OpenContentWindow(app.Config{
 		Title: state.messages.Tools.RemoteTitle + " · " + session.Title + " · " + session.Address,
 		Icon:  AppIcon(), Width: 1100, Height: 780, Tree: &tree,
 		WindowMode: app.WindowTitled,
 		MinWidth:   remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
 		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
-		Paint:      w.paint, OnKey: w.key, OnClosed: w.dispose,
+		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
 		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
 			w.ui.shortcuts = w.owner.shortcuts
 			return w.ui.remoteSearchShortcut(event)
@@ -77,6 +87,9 @@ func (state *State) openRemoteToolsWindow(session *Session) {
 		OnScroll: func(event ui.ScrollEvent) ui.EventResult {
 			if w.ui.remote.auto.open {
 				return ui.EventResult{Handled: true, Repaint: w.ui.remote.auto.scroll.Wheel(event)}
+			}
+			if result, handled := w.ui.remoteProcessWheel(event); handled {
+				return result
 			}
 			return ui.EventResult{Handled: true}
 		},
@@ -153,6 +166,7 @@ func (w *remoteToolsWindow) dispose() {
 	w.closed, w.ui.closed = true, true
 	w.ui.remote.auto.enabled, w.ui.remote.auto.open = false, false
 	w.ui.remote.serial++
+	w.ui.cancelRemoteProcessEnvironment()
 	w.cancel()
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
 }
@@ -282,6 +296,15 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 
 func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 	w.ui.shortcuts = w.owner.shortcuts
+	if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := w.ui.menuKey(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteProcessTableKey(event); handled {
+		return result
+	}
 	if result := w.ui.remoteSearchShortcut(event); result.Handled {
 		return result
 	}
@@ -325,6 +348,8 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	if w.closed {
 		return
 	}
+	w.ui.beginMenus()
+	defer w.ui.endMenus()
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { w.click(id) })
@@ -353,12 +378,14 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	if width < 800 {
 		toolbar += remoteToolbarHeight + 8
 	}
-	pageSize := max(1, int((body.Height-toolbar-48-components.TableHeaderHeight(theme))/components.TableRowHeight(theme)))
-	if pageSize != w.pageSize {
-		first := w.ui.remote.page * w.pageSize
-		w.pageSize = pageSize
-		w.ui.remote.page = min(first/pageSize, max(0, (len(w.ui.remote.rows)-1)/pageSize))
-		w.ui.remote.pageText = ""
+	if w.ui.remote.tab != remoteProcesses {
+		pageSize := max(1, int((body.Height-toolbar-48-components.TableHeaderHeight(theme))/components.TableRowHeight(theme)))
+		if pageSize != w.pageSize {
+			first := w.ui.remote.page * w.pageSize
+			w.pageSize = pageSize
+			w.ui.remote.page = min(first/pageSize, max(0, (len(w.ui.remote.rows)-1)/pageSize))
+			w.ui.remote.pageText = ""
+		}
 	}
 	canvas.Clip(body)
 	w.ui.paintRemoteToolsBody(canvas, body)
@@ -380,7 +407,9 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		}
 	}
 	w.ui.paintRemoteRefreshMenu(canvas)
+	w.ui.paintRemoteProcessMenu(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	if w.ui.modal == modalForm {
 		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	}
+	w.ui.paintRemoteProcessDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 }

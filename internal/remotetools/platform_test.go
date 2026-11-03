@@ -28,17 +28,50 @@ func decodePowerShell(t *testing.T, command string) string {
 }
 
 func TestWindowsProcessSnapshotUsesEncodedCommandAndStaysReadOnly(t *testing.T) {
-	r := &captureRunner{output: []byte(`[{"pid":42,"user":"域\\操作员","cpu":12.5,"memory":2,"elapsed":90061,"command":"C:\\程序\\服务.exe --名字 中文"}]`)}
+	r := &captureRunner{output: []byte(`[{"pid":42,"parent":4,"user":"域\\操作员","state":3,"cpu":12.5,"memory":2,"rss":67108864,"virtual":134217728,"elapsed":90061,"command":"C:\\程序\\服务.exe --名字 中文"}]`)}
 	snapshot, err := ReadSafeProcessSnapshot(context.Background(), ForSystem(r, "windows"), SortCPU)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshot.Processes) != 1 || snapshot.Processes[0].Elapsed != "1-01:01:01" || snapshot.Processes[0].StartIdentity != "" {
+	if len(snapshot.Processes) != 1 || snapshot.Processes[0].Elapsed != "1-01:01:01" ||
+		snapshot.Processes[0].ParentPID != 4 || snapshot.Processes[0].State != "Running" ||
+		snapshot.Processes[0].ResidentBytes != 64<<20 || snapshot.Processes[0].VirtualBytes != 128<<20 ||
+		snapshot.Processes[0].StartIdentity != "" {
 		t.Fatalf("snapshot=%+v", snapshot)
 	}
 	// The bounded snapshot must fit cmd.exe's command-line budget.
 	if len(encodePowerShell(windowsProcessScript)) >= 7800 {
 		t.Fatal("script exceeds SSH cmd.exe budget")
+	}
+}
+
+func TestWindowsProcessStateLabelsMatchCIMExecutionStates(t *testing.T) {
+	for code, want := range map[int]string{
+		0: "Unknown", 2: "Ready", 3: "Running", 4: "Blocked",
+		5: "Suspended", 6: "Terminated", 7: "Stopped", 8: "Growing",
+		9: "Not Responding",
+	} {
+		if got := windowsProcessState(code); got != want {
+			t.Errorf("ExecutionState %d = %q, want %q", code, got, want)
+		}
+	}
+}
+
+func TestUnixSnapshotReadsProcessDetailsForTheListAndDialog(t *testing.T) {
+	r := &captureRunner{output: []byte("42 7 alice S< 8.5 2.25 2048 8192 01:02:03 worker --job daily\n")}
+	snapshot, err := ReadProcessSnapshot(context.Background(), ForSystem(r, "linux"), SortCPU)
+	if err != nil || len(snapshot.Processes) != 1 {
+		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
+	}
+	got := snapshot.Processes[0]
+	if got.PID != 42 || got.ParentPID != 7 || got.User != "alice" || got.State != "S<" ||
+		got.CPU != 8.5 || got.Memory != 2.25 || got.ResidentBytes != 2<<20 ||
+		got.VirtualBytes != 8<<20 || got.Elapsed != "01:02:03" || got.Command != "worker --job daily" {
+		t.Fatalf("process=%+v", got)
+	}
+	if !strings.Contains(r.command, "-o ppid=") || !strings.Contains(r.command, "-o rss=") ||
+		!strings.Contains(r.command, "-o vsz=") {
+		t.Fatalf("snapshot command lacks detail columns: %s", r.command)
 	}
 }
 

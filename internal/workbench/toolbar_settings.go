@@ -39,7 +39,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"save-output", hitTerminalSaveOutput, iconSave},
 		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
 		{"files", hitSFTPOpen, iconFolderOpen}, {"file-transfer", hitSFTPDetach, iconSFTPTransfer},
-		{"remote-tools", hitRemoteToolsOpen, iconWrench},
+		{"remote-tools", hitProcessToolsOpen, iconProcess},
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
@@ -182,6 +182,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.TipStatsStart
 	case hitRemoteToolsOpen:
 		return m.Tools.RemoteMenu
+	case hitProcessToolsOpen:
+		return m.Tools.RemoteTabProcesses
 	case hitTerminalRecord:
 		return m.TipRecordStart
 	case hitTerminalSaveOutput:

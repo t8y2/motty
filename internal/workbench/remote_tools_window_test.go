@@ -118,7 +118,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		// Destructive confirmation belongs to the utility, while the main
 		// window can still accept ordinary terminal input in its other tab.
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemoteRowList.At(0))
+		selectRemoteToolsWindowRow(w, 0)
 		w.click(hitRemoteKill)
 		if w.ui.modal != modalForm || state.modal != modalNone {
 			t.Fatal("confirmation escaped into the workbench")
@@ -157,10 +157,13 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		state.broadcast = state.deck.ActiveWorkspace()
 		w.click(hitRemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemoteRowList.At(0))
+		selectRemoteToolsWindowRow(w, 0)
+		w.ui.remote.auto.enabled = true
+		w.ui.remote.auto.restart()
 		w.click(hitRemoteLogs)
-		if !strings.Contains(shell.typed(), "docker logs") || strings.Contains(peerShell.typed(), "docker logs") {
-			t.Fatal("tool command was broadcast into another pane")
+		if !strings.Contains(shell.typed(), "docker logs") || strings.Contains(peerShell.typed(), "docker logs") ||
+			!w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
+			t.Fatal("tool command was broadcast into another pane or disabled the tool surface")
 		}
 		w.close()
 		fake.mu.Lock()
@@ -212,6 +215,36 @@ func TestRemoteNativeWindowCloseCancelsWorkAndRejectsLateResults(t *testing.T) {
 	})
 }
 
+func TestRemoteProcessButtonOpensProcessTabAndReusesToolsWindow(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{}
+		fake.mu.Lock()
+		fake.runCommand = server.run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteContainers
+
+		state.Click(hitProcessToolsOpen)
+		if len(host.windows) != 1 || len(state.remoteWindows) != 1 {
+			t.Fatal("process button did not open the shared tools window")
+		}
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		if w.ui.remote.tab != remoteProcesses || state.modal != modalNone {
+			t.Fatalf("process button opened tab %v with owner modal %v", w.ui.remote.tab, state.modal)
+		}
+
+		w.click(hitRemoteTabContainers)
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		state.Click(hitProcessToolsOpen)
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteProcesses })
+		if len(host.windows) != 1 || host.windows[0].shows != 1 || w.ui.remote.tab != remoteProcesses {
+			t.Fatal("process button duplicated the window or failed to return to its tab")
+		}
+	})
+}
+
 func TestRemoteNativeWindowContainerShellUsesItsOriginalConnection(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		world, options := newSharingWorld(t)
@@ -229,10 +262,13 @@ func TestRemoteNativeWindowContainerShellUsesItsOriginalConnection(t *testing.T)
 		w.click(hitRemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		state.activeSessionID = 0
-		w.click(hitRemoteRowList.At(0))
+		selectRemoteToolsWindowRow(w, 0)
+		w.ui.remote.auto.enabled = true
+		w.ui.remote.auto.restart()
 		w.click(hitRemoteShell)
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		if w.ui.remote.failed || len(world.conns) != 1 || len(world.shared) != 1 || len(state.sessions) != 2 || state.modal != modalNone || w.closed {
+		if w.ui.remote.failed || len(world.conns) != 1 || len(world.shared) != 1 || len(state.sessions) != 2 ||
+			state.modal != modalNone || w.closed || !w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
 			t.Fatal("container shell lost its original SSH connection or closed tools", w.ui.remote.status)
 		}
 		if len(world.shared[0].configs) != 1 || !strings.HasPrefix(world.shared[0].configs[0].Command, "docker exec -it 0f1e2d3c4b5a") {
@@ -272,7 +308,7 @@ func TestRemoteNativeWindowFollowsItsSessionBetweenWorkbenchWindows(t *testing.T
 			t.Fatal("moving a session detached or duplicated its utility window")
 		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemoteRowList.At(0))
+		selectRemoteToolsWindowRow(w, 0)
 		w.click(hitRemoteNiceLower)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("renice 10 -p 2211") != 1 {
@@ -316,7 +352,7 @@ func TestRemoteNativeWindowReopenAndRestoreReadTheHostAgain(t *testing.T) {
 	})
 }
 
-func TestRemoteNativeWindowResizesWithReachableActionsAndPagination(t *testing.T) {
+func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, _, fake, _ := liveSession(t)
 		fake.mu.Lock()
@@ -333,19 +369,27 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndPagination(t *testing.T
 		for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 			state.setLanguage(language)
 			for _, size := range []ui.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
+				w.ui.remote.processScroll = 0
 				var canvas ui.Canvas
 				w.paint(&canvas, size)
-				for _, id := range []ui.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteNext} {
+				for _, id := range []ui.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteProcessScroll} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
 						t.Fatalf("language %v viewport %+v: control %v is unreachable: %+v", language, size, id, hit)
 					}
 				}
-				w.click(hitRemoteNext)
-				if w.ui.remote.page != 1 {
-					t.Fatal("native pagination did not use its resized page size")
+				if _, ok := hitByID(&canvas, hitRemoteNext); ok {
+					t.Fatal("process list still paints pagination controls")
 				}
-				w.click(hitRemotePrevious)
+				bounds := w.ui.remote.processTableBounds
+				before := w.ui.remote.processScroll
+				result, handled := w.ui.remoteProcessWheel(ui.ScrollEvent{
+					X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
+					DeltaY: 20, Precise: true, Viewport: size,
+				})
+				if !handled || !result.Handled || w.ui.remote.processScroll <= before {
+					t.Fatalf("language %v viewport %+v: virtual scroll did not move: handled=%v result=%+v", language, size, handled, result)
+				}
 			}
 		}
 	})

@@ -231,7 +231,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), Kind: components.ContextMenuCheckbox, Checked: session.stats != nil})
 	}
 	if state.remoteToolsOffered(session) {
-		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconProcess)})
 	}
 	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)
 	if reconnect || restart || disconnect {
@@ -339,7 +339,7 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 	case hitTerminalMenuTransfer:
 		state.openXYSetup(session)
 	case hitTerminalMenuTools:
-		state.openRemoteTools(session)
+		state.openProcessTools(session)
 	case hitTerminalMenuStats:
 		state.Click(hitRemoteStats)
 	case hitTerminalMenuReconnect:

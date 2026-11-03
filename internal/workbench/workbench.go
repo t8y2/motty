@@ -811,6 +811,9 @@ func (state *State) Close() {
 		return
 	}
 	state.closed = true
+	state.remote.auto.enabled = false
+	state.closeRemoteProcessDetails()
+	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
 	state.closeRemoteToolsWindows()
@@ -2058,6 +2061,12 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.updateDialogPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteProcessScrollPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
 			state.editor.groupPicker.control.Open = false
@@ -2202,6 +2211,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result := state.dashboardKey(event); result.Handled {
+		return result
+	}
+	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteProcessTableKey(event); handled {
 		return result
 	}
 	if result := state.remoteSearchKey(event); result.Handled {

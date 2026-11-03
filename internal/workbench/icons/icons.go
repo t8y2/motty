@@ -9,6 +9,8 @@
 // `viva icons`; no SVG parser links into the app.
 // The sftp-* action glyphs were supplied with the SFTP interface design and
 // normalized to use the application's theme tint.
+// The process glyph was supplied by the Motty project owner for this interface
+// and normalized to use the application's theme tint.
 // The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 // (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
 // It is ISC licensed like the other Lucide icons above.
@@ -7778,6 +7780,67 @@ var Proxmox = ui.Icon{
 		ui.CubicTo(19.815, 21.745, 20.057, 21.503, 20.023, 21.434),
 		ui.CubicTo(19.936, 21.174, 12.103, 12.615, 11.965, 12.633),
 		ui.CubicTo(11.896, 12.633, 10.098, 14.587, 7.954, 16.973),
+		ui.ClosePath(),
+	},
+}
+
+// process is a compiled vector icon.
+var Process = ui.Icon{
+	ViewBox: 1024.0,
+	Stroke:  0.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(848.8, 924.8),
+		ui.LineTo(716.5, 924.8),
+		ui.LineTo(716.5, 854.8),
+		ui.LineTo(848.9, 854.8),
+		ui.CubicTo(855.3, 854.8, 861.5, 852.2, 866.1, 847.7),
+		ui.CubicTo(870.6, 843.2, 873.1, 837.0, 873.1, 830.4),
+		ui.LineTo(873.1, 193.5),
+		ui.CubicTo(873.1, 180.7, 863.1, 170.1, 850.5, 169.3),
+		ui.LineTo(716.5, 169.3),
+		ui.LineTo(716.5, 99.3),
+		ui.LineTo(846.0, 99.3),
+		ui.CubicTo(846.9, 99.2, 847.8, 99.2, 848.7, 99.2),
+		ui.CubicTo(900.7, 99.2, 943.0, 141.5, 943.0, 193.5),
+		ui.LineTo(943.0, 830.3),
+		ui.CubicTo(943.0, 855.6, 933.2, 879.3, 915.4, 897.0),
+		ui.CubicTo(898.0, 914.7, 873.6, 924.8, 848.8, 924.8),
+		ui.ClosePath(),
+		ui.MoveTo(175.2, 924.8),
+		ui.LineTo(307.6, 924.8),
+		ui.LineTo(307.6, 854.8),
+		ui.LineTo(175.2, 854.8),
+		ui.CubicTo(168.8, 854.8, 162.6, 852.2, 158.0, 847.7),
+		ui.CubicTo(153.5, 843.2, 151.0, 837.0, 151.0, 830.4),
+		ui.LineTo(151.0, 193.5),
+		ui.CubicTo(151.0, 180.7, 161.0, 170.1, 173.6, 169.3),
+		ui.LineTo(307.6, 169.3),
+		ui.LineTo(307.6, 99.3),
+		ui.LineTo(177.9, 99.3),
+		ui.CubicTo(177.0, 99.2, 176.1, 99.2, 175.2, 99.2),
+		ui.CubicTo(123.2, 99.2, 80.9, 141.5, 80.9, 193.5),
+		ui.LineTo(80.9, 830.3),
+		ui.CubicTo(80.9, 855.6, 90.7, 879.3, 108.5, 897.0),
+		ui.CubicTo(126.2, 914.7, 150.4, 924.8, 175.2, 924.8),
+		ui.ClosePath(),
+		ui.MoveTo(445.2, 821.9),
+		ui.LineTo(316.8, 437.2),
+		ui.LineTo(278.2, 552.0),
+		ui.LineTo(125.1, 552.0),
+		ui.LineTo(125.1, 482.0),
+		ui.LineTo(227.9, 482.0),
+		ui.LineTo(317.2, 216.8),
+		ui.LineTo(445.0, 600.1),
+		ui.LineTo(572.8, 214.3),
+		ui.LineTo(701.1, 597.1),
+		ui.LineTo(740.0, 482.0),
+		ui.LineTo(891.0, 482.0),
+		ui.LineTo(891.0, 552.0),
+		ui.LineTo(790.1, 552.0),
+		ui.LineTo(701.0, 816.9),
+		ui.LineTo(573.2, 435.7),
 		ui.ClosePath(),
 	},
 }
