@@ -1330,6 +1330,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		p := &state.editor.tagPicker
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
+	if result, handled := state.remoteProcessWheel(event); handled {
+		return result
+	}
 	if result, handled := state.transferCenterScroll(event); handled {
 		return result
 	}

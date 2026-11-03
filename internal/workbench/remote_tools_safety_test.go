@@ -15,7 +15,7 @@ import (
 func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	stamp := state.remote.collectedAt
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	selected := state.remote.selected
 	server.mu.Lock()
 	server.failures["processes"] = errors.New("listing failed")
@@ -37,6 +37,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 			t.Fatal("direct dispatch bypassed stale-state guard")
 		}
 	}
+	state.Click(hitRemoteRowList.At(0))
 	canvas := &ui.Canvas{}
 	driver, err := app.NewDriver(app.Config{Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer}, canvas)
 	if err != nil {
@@ -56,6 +57,9 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	if state.modal != modalRemoteTools || server.ran("kill") != 0 {
 		t.Fatal("native pointer activated a stale mutation")
 	}
+	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled {
+		t.Fatal("Escape did not dismiss the stale process details")
+	}
 	server.mu.Lock()
 	delete(server.failures, "processes")
 	server.mu.Unlock()
@@ -68,7 +72,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 
 func TestRemoteProcessSelectionNeverRetargetsAReusedPID(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	selected := state.remote.selected
 	state.remote.procs[0].StartIdentity = "linux:aaaaaaaa-1234-1234-1234-123456789abc:999"
 	state.rebuildRemoteRows()
@@ -81,7 +85,7 @@ func TestRemoteProcessConfirmationCannotEscapeCapturedScope(t *testing.T) {
 	for _, change := range []string{"selection", "session", "stale", "identity"} {
 		t.Run(change, func(t *testing.T) {
 			state, server, _ := openRemoteToolsDialog(t)
-			state.Click(hitRemoteRowList.At(0))
+			selectRemoteToolsRow(state, 0)
 			state.Click(hitRemoteKill)
 			if state.modal != modalForm {
 				t.Fatal("missing process confirmation")
@@ -111,14 +115,26 @@ func TestRemoteIdentityUnavailableKeepsSearchButDisablesProcessActions(t *testin
 	}
 	state.updateRemoteSnapshotStatus()
 	state.rebuildRemoteRows()
-	if !strings.Contains(state.remote.searchSummary, state.messages.Tools.RemoteProcessUnverifiable) {
+	if !strings.Contains(state.remote.snapshotStatus, state.messages.Tools.RemoteProcessUnverifiable) {
 		t.Fatal("read-only snapshot did not explain disabled process actions")
 	}
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	actions, count := state.remoteToolActions()
 	for _, action := range actions[1:count] {
 		if !action.Disabled {
-			t.Fatal("unverifiable process action enabled")
+			t.Fatalf("unverifiable process action enabled: %+v", action)
+		}
+	}
+	rows := state.remoteProcessMenuRows(state.remote.procs[0])
+	for _, entry := range rows.entries[:rows.count] {
+		if entry.item.ID == hitRemoteProcessMenuTerminate ||
+			entry.item.ID == hitRemoteProcessMenuKill ||
+			entry.item.ID == hitRemoteProcessMenuNiceLower ||
+			entry.item.ID == hitRemoteProcessMenuNiceNormal ||
+			entry.item.ID == hitRemoteProcessMenuNiceHigher {
+			if !entry.item.Disabled {
+				t.Fatalf("unverifiable process action enabled: %+v", entry.item)
+			}
 		}
 	}
 	state.Click(hitRemoteKill)
@@ -129,7 +145,7 @@ func TestRemoteIdentityUnavailableKeepsSearchButDisablesProcessActions(t *testin
 
 func TestRemoteGuardFailureRequiresRefreshAndReselection(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.runRemoteAction("should not succeed", func(context.Context, remotetools.Runner) error { return remotetools.ErrProcessChanged })
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if !state.remote.stale || state.remote.selected != "" || server.ran("kill") != 0 || !strings.Contains(state.remote.status, state.messages.Tools.RemoteProcessChanged) {
@@ -139,7 +155,7 @@ func TestRemoteGuardFailureRequiresRefreshAndReselection(t *testing.T) {
 
 func TestRemoteProcessActionTimeoutRequiresFreshSnapshot(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.runRemoteAction("unknown outcome", func(context.Context, remotetools.Runner) error { return context.DeadlineExceeded })
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if !state.remote.stale || state.remote.selected != "" {
@@ -167,7 +183,7 @@ func TestRemoteInitialFailureHasNoSuccessfulTimestamp(t *testing.T) {
 
 func TestRemotePIDReuseBetweenConfirmationAndExecutionNeverSignals(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteKill)
 	if state.modal != modalForm {
 		t.Fatal("no confirmation")
@@ -205,11 +221,18 @@ func TestRemoteFailedTabSwitchNeverShowsAnotherTabsTimestamp(t *testing.T) {
 
 func TestRemoteProcessActionPaintStateDoesNotAllocate(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	selectRemoteToolsRow(state, 0)
+	// The completion catalog is loaded by a background wake. Let it finish so
+	// the allocation sample observes this paint path rather than unrelated I/O.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
 	if allocations := testing.AllocsPerRun(100, func() { state.remoteToolActions() }); allocations != 0 {
 		t.Fatalf("process action paint state allocates: %g", allocations)
 	}
 	var canvas ui.Canvas
+	// Keep the auto-refresh clock frame deterministic. A wall clock advances
+	// between allocation samples and intentionally tessellates the next hand
+	// phase, which measures animation-cache growth rather than list painting.
+	canvas.SetClock(func() time.Duration { return time.Second })
 	size := ui.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {

@@ -590,6 +590,9 @@ type ToolsMessages struct {
 	RemoteMenu                      string
 	RemoteTitle                     string
 	RemoteDescriptionFmt            string
+	RemoteDockOpenWindow            string
+	RemoteDockSelectProcess         string
+	RemoteDockClose                 string
 	RemoteTabProcesses              string
 	RemoteTabContainers             string
 	RemoteTabImages                 string
@@ -631,6 +634,44 @@ type ToolsMessages struct {
 	RemoteColMemory                 string
 	RemoteColTime                   string
 	RemoteColCommand                string
+	RemoteProcessDetails            string
+	RemoteProcessDetailsTitle       string
+	RemoteProcessPID                string
+	RemoteProcessParentPID          string
+	RemoteProcessUser               string
+	RemoteProcessState              string
+	RemoteProcessCPU                string
+	RemoteProcessMemory             string
+	RemoteProcessResidentMemory     string
+	RemoteProcessVirtualMemory      string
+	RemoteProcessElapsed            string
+	RemoteProcessCommand            string
+	RemoteProcessCollectedAt        string
+
+	RemoteProcessEnvironment            string
+	RemoteProcessEnvironmentName        string
+	RemoteProcessEnvironmentValue       string
+	RemoteProcessEnvironmentLoading     string
+	RemoteProcessEnvironmentEmpty       string
+	RemoteProcessEnvironmentUnsupported string
+
+	RemoteProcessCopyPID            string
+	RemoteProcessCopyUser           string
+	RemoteProcessCopyCommand        string
+	RemoteProcessStateReady         string
+	RemoteProcessStateRunning       string
+	RemoteProcessStateSleeping      string
+	RemoteProcessStateWaiting       string
+	RemoteProcessStateZombie        string
+	RemoteProcessStateStopped       string
+	RemoteProcessStatePaging        string
+	RemoteProcessStateIdle          string
+	RemoteProcessStateBlocked       string
+	RemoteProcessStateSuspended     string
+	RemoteProcessStateTerminated    string
+	RemoteProcessStateGrowing       string
+	RemoteProcessStateNotResponding string
+	RemoteProcessStateUnknown       string
 	RemoteColName                   string
 	RemoteColImage                  string
 	RemoteColState                  string

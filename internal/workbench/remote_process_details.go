@@ -1,0 +1,505 @@
+package workbench
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/ui"
+	"motty/internal/remotetools"
+)
+
+var (
+	hitRemoteProcessMenuDismiss     = tree.ID(remoteToolsHits, "remote-process-menu-dismiss")
+	hitRemoteProcessMenuView        = tree.ID(remoteToolsHits, "remote-process-menu-view")
+	hitRemoteProcessMenuCopyPID     = tree.ID(remoteToolsHits, "remote-process-menu-copy-pid")
+	hitRemoteProcessMenuCopyUser    = tree.ID(remoteToolsHits, "remote-process-menu-copy-user")
+	hitRemoteProcessMenuCopyCommand = tree.ID(remoteToolsHits, "remote-process-menu-copy-command")
+	hitRemoteProcessMenuTerminate   = tree.ID(remoteToolsHits, "remote-process-menu-terminate")
+	hitRemoteProcessMenuKill        = tree.ID(remoteToolsHits, "remote-process-menu-kill")
+	hitRemoteProcessMenuNiceLower   = tree.ID(remoteToolsHits, "remote-process-menu-nice-lower")
+	hitRemoteProcessMenuNiceNormal  = tree.ID(remoteToolsHits, "remote-process-menu-nice-normal")
+	hitRemoteProcessMenuNiceHigher  = tree.ID(remoteToolsHits, "remote-process-menu-nice-higher")
+	hitRemoteProcessDetailsDismiss  = tree.ID(remoteToolsHits, "remote-process-details-dismiss")
+	hitRemoteProcessDetailsClose    = tree.ID(remoteToolsHits, "remote-process-details-close")
+	hitRemoteProcessDetailsCommand  = tree.ID(remoteToolsHits, "remote-process-details-command")
+	hitRemoteProcessDetailsEnv      = tree.ID(remoteToolsHits, "remote-process-details-environment")
+)
+
+type remoteProcessDetails struct {
+	open                   bool
+	process                remotetools.Process
+	tab                    ui.ID
+	collectedAt            time.Time
+	serial                 uint64
+	loading                bool
+	failed                 bool
+	status                 string
+	environmentLoaded      bool
+	environmentRequest     uint64
+	environmentCancel      func()
+	environment            []remotetools.ProcessEnvironmentVariable
+	environmentScroll      float32
+	environmentScrollBar   components.ScrollAreaGeometry
+	environmentDragging    bool
+	environmentGrab        float32
+	environmentScrollValue string
+	environmentBounds      ui.Rect
+}
+
+type remoteProcessMenu struct {
+	open bool
+	key  string
+	at   ui.Point
+}
+
+func (state *State) remoteProcessByKey(key string) (remotetools.Process, bool) {
+	for _, process := range state.remote.procs {
+		if remotetools.ProcessKey(process) == key {
+			return process, true
+		}
+	}
+	return remotetools.Process{}, false
+}
+
+func (state *State) openRemoteProcessDetails(process remotetools.Process) {
+	state.remote.processMenu = remoteProcessMenu{}
+	state.cancelRemoteProcessEnvironment()
+	state.remote.processDetailsSerial++
+	serial := state.remote.processDetailsSerial
+	state.remote.processDetails = remoteProcessDetails{
+		open: true, process: process, collectedAt: state.remote.collectedAt,
+		tab: hitRemoteProcessDetailsCommand, serial: serial,
+	}
+}
+
+func (state *State) closeRemoteProcessDetails() {
+	state.cancelRemoteProcessEnvironment()
+	state.remote.processDetails = remoteProcessDetails{}
+}
+
+func (state *State) selectRemoteProcessDetailTab(tab ui.ID) {
+	details := &state.remote.processDetails
+	if !details.open || tab != hitRemoteProcessDetailsCommand && tab != hitRemoteProcessDetailsEnv {
+		return
+	}
+	if details.tab == tab {
+		if tab == hitRemoteProcessDetailsEnv {
+			state.loadRemoteProcessEnvironment()
+		}
+		return
+	}
+	if details.tab == hitRemoteProcessDetailsEnv {
+		state.cancelRemoteProcessEnvironment()
+	}
+	details.tab = tab
+	if tab == hitRemoteProcessDetailsEnv {
+		state.loadRemoteProcessEnvironment()
+	}
+}
+
+// openRemoteProcessMenuOn runs while a process row is painted. A secondary
+// press selects the row and opens the same fixed action menu in the main window
+// and in a native remote-tools window.
+func (state *State) openRemoteProcessMenuOn(canvas *ui.Canvas, id ui.ID, index int) {
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary ||
+		!state.remoteToolsVisible() || state.remote.processDetails.open {
+		return
+	}
+	if index < 0 || index >= len(state.remote.rows) {
+		return
+	}
+	row := &state.remote.rows[index]
+	state.remote.selected = row.key
+	state.remote.processMenu = remoteProcessMenu{
+		open: true, key: row.key, at: ui.Point{X: event.X, Y: event.Y},
+	}
+	canvas.Consume()
+}
+
+func (state *State) clickRemoteProcessDetails(id ui.ID) bool {
+	details := &state.remote.processDetails
+	if !details.open {
+		return false
+	}
+	switch id {
+	case hitRemoteProcessDetailsDismiss, hitRemoteProcessDetailsClose:
+		state.closeRemoteProcessDetails()
+		return true
+	case hitRemoteProcessDetailsCommand, hitRemoteProcessDetailsEnv:
+		state.selectRemoteProcessDetailTab(id)
+		return true
+	case hitRemoteTerminate, hitRemoteKill,
+		hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher:
+		state.closeRemoteProcessDetails()
+		state.clickRemoteTools(id)
+		return true
+	default:
+		// Keep the detail dialog modal even for direct API calls. The window and
+		// canvas overlay already intercept pointer hits, but consuming every
+		// action here prevents stale hit IDs from reaching the obscured tools
+		// page during the paint that first opened the dialog.
+		return true
+	}
+}
+
+func (state *State) remoteProcessDetailTabs() [2]components.TabOption {
+	m := state.messages.Tools
+	return [2]components.TabOption{
+		{ID: hitRemoteProcessDetailsCommand, Label: m.RemoteProcessCommand, Icon: lucideIcons[iconTerminal]},
+		{ID: hitRemoteProcessDetailsEnv, Label: m.RemoteProcessEnvironment, Icon: lucideIcons[iconSliders]},
+	}
+}
+
+func (state *State) remoteProcessDetailTab() ui.ID {
+	if state.remote.processDetails.tab == hitRemoteProcessDetailsEnv {
+		return hitRemoteProcessDetailsEnv
+	}
+	return hitRemoteProcessDetailsCommand
+}
+
+func (state *State) processMenuProcess() (remotetools.Process, bool) {
+	if !state.remote.processMenu.open {
+		return remotetools.Process{}, false
+	}
+	return state.remoteProcessByKey(state.remote.processMenu.key)
+}
+
+func (state *State) clickRemoteProcessMenu(id ui.ID) bool {
+	menu := &state.remote.processMenu
+	if !menu.open {
+		return false
+	}
+	process, found := state.processMenuProcess()
+	menu.open = false
+	if !found {
+		return true
+	}
+	switch id {
+	case hitRemoteProcessMenuDismiss:
+		return true
+	case hitRemoteProcessMenuView:
+		state.openRemoteProcessDetails(process)
+	case hitRemoteProcessMenuCopyPID:
+		state.copyRemoteProcessValue(fmt.Sprint(process.PID))
+	case hitRemoteProcessMenuCopyUser:
+		state.copyRemoteProcessValue(process.User)
+	case hitRemoteProcessMenuCopyCommand:
+		state.copyRemoteProcessValue(process.Command)
+	case hitRemoteProcessMenuTerminate:
+		state.clickRemoteTools(hitRemoteTerminate)
+	case hitRemoteProcessMenuKill:
+		state.clickRemoteTools(hitRemoteKill)
+	case hitRemoteProcessMenuNiceLower:
+		state.clickRemoteTools(hitRemoteNiceLower)
+	case hitRemoteProcessMenuNiceNormal:
+		state.clickRemoteTools(hitRemoteNiceNormal)
+	case hitRemoteProcessMenuNiceHigher:
+		state.clickRemoteTools(hitRemoteNiceHigher)
+	}
+	return true
+}
+
+func (state *State) copyRemoteProcessValue(value string) {
+	if value == "" || value == "—" {
+		return
+	}
+	copy := state.options.SetClipboardText
+	if state.remoteWindow != nil && state.remoteWindow.owner != nil {
+		copy = state.remoteWindow.owner.options.SetClipboardText
+	}
+	view := &state.remote
+	if copy == nil {
+		return
+	}
+	if err := copy(value); err != nil {
+		view.failed = true
+		view.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
+		return
+	}
+	view.failed = false
+	view.status = state.messages.StatusClipboardCopied
+}
+
+func (state *State) paintRemoteProcessMenu(canvas *ui.Canvas, viewport ui.Rect) {
+	menu := &state.remote.processMenu
+	if !menu.open {
+		return
+	}
+	process, found := state.processMenuProcess()
+	if !found {
+		*menu = remoteProcessMenu{}
+		return
+	}
+	rows := state.remoteProcessMenuRows(process)
+	width, height := rows.size(canvas, state.contextMenuTheme())
+	width = min(width, 480)
+	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
+	popup := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
+		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitRemoteProcessMenuDismiss,
+		Viewport: viewport, Scroll: state.menuScrollFor(hitRemoteProcessMenuDismiss), RowHeight: contextMenuRow,
+	})
+	state.menuPlaced(popup.Bounds())
+	rows.paint(&popup, nil)
+	popup.End()
+}
+
+func (state *State) remoteProcessMenuRows(process remotetools.Process) menuRows {
+	m := state.messages.Tools
+	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	actionsBlocked := state.remoteProcessActionsBlocked(process)
+	var rows menuRows
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuView, Label: m.RemoteProcessDetails, Icon: icon(iconInfo)})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuCopyPID, Label: m.RemoteProcessCopyPID, Icon: icon(iconCopy)})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuCopyUser, Label: m.RemoteProcessCopyUser, Icon: icon(iconCopy), Disabled: process.User == "" || process.User == "—"})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuCopyCommand, Label: m.RemoteProcessCopyCommand, Icon: icon(iconCopy), Disabled: process.Command == ""})
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuTerminate, Label: m.RemoteTerminate, Icon: icon(iconStop), Disabled: actionsBlocked})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuKill, Label: m.RemoteForceKill, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive, Disabled: actionsBlocked})
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuNiceLower, Label: m.RemoteReniceLower, Icon: icon(iconSliders), Disabled: actionsBlocked})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuNiceNormal, Label: m.RemoteReniceNormal, Icon: icon(iconSliders), Disabled: actionsBlocked})
+	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuNiceHigher, Label: m.RemoteReniceHigher, Icon: icon(iconArrowUp), Disabled: actionsBlocked})
+	return rows
+}
+
+func (state *State) remoteProcessActionsBlocked(process remotetools.Process) bool {
+	view := &state.remote
+	return view.loading || view.stale || view.collectedAt.IsZero() ||
+		process.PID <= 1 || process.StartIdentity == ""
+}
+
+func (state *State) paintRemoteProcessDetails(canvas *ui.Canvas, viewport ui.Rect) {
+	details := &state.remote.processDetails
+	if !details.open {
+		return
+	}
+	m := state.messages.Tools
+	contentWidth := min(float32(980), max(viewport.Width-32, 360))
+	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
+	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
+		Layer: dialogLayer + 2, Scope: dialogScope,
+		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
+		InitialFocusID: hitRemoteProcessDetailsClose,
+		ContentSize:    ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
+		ButtonSize: components.ButtonSizeSmall,
+	})
+	process := details.process
+	description := shortCommand(process.Command)
+	if description == "" {
+		description = fmt.Sprintf("PID %d", process.PID)
+	}
+	layout := dialog.Begin(m.RemoteProcessDetailsTitle, description)
+	state.paintRemoteProcessDetailsBody(canvas, layout.Body, process, details.collectedAt)
+	actionsBlocked := state.remoteProcessActionsBlocked(process)
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitRemoteTerminate, Label: m.RemoteTerminate, Variant: components.ButtonOutline, Disabled: actionsBlocked},
+		components.ButtonAction{ID: hitRemoteKill, Label: m.RemoteForceKill, Variant: components.ButtonDestructive, Disabled: actionsBlocked},
+		components.ButtonAction{ID: hitRemoteNiceLower, Label: m.RemoteReniceLower, Variant: components.ButtonOutline, Disabled: actionsBlocked},
+		components.ButtonAction{ID: hitRemoteNiceNormal, Label: m.RemoteReniceNormal, Variant: components.ButtonOutline, Disabled: actionsBlocked},
+		components.ButtonAction{ID: hitRemoteNiceHigher, Label: m.RemoteReniceHigher, Variant: components.ButtonOutline, Disabled: actionsBlocked},
+		components.ButtonAction{ID: hitRemoteProcessDetailsClose, Label: m.RemoteClose, Variant: components.ButtonSecondary},
+	)
+	dialog.End()
+}
+
+type processDetailPair struct {
+	label string
+	value string
+}
+
+func (state *State) remoteProcessDetailPairs(process remotetools.Process, collectedAt time.Time) [10]processDetailPair {
+	m := state.messages.Tools
+	return [10]processDetailPair{
+		{m.RemoteProcessPID, fmt.Sprint(process.PID)},
+		{m.RemoteProcessParentPID, processInteger(process.ParentPID)},
+		{m.RemoteProcessUser, processText(process.User)},
+		{m.RemoteProcessState, processStateText(state, process.State)},
+		{m.RemoteProcessCPU, processPercent(process.CPU)},
+		{m.RemoteProcessMemory, processPercent(process.Memory)},
+		{m.RemoteProcessResidentMemory, processBytes(process.ResidentBytes)},
+		{m.RemoteProcessVirtualMemory, processBytes(process.VirtualBytes)},
+		{m.RemoteProcessElapsed, processText(process.Elapsed)},
+		{m.RemoteProcessCollectedAt, processCollectedAt(collectedAt)},
+	}
+}
+
+func (state *State) remoteProcessDetailPairRows(process remotetools.Process, collectedAt time.Time) [5][2]processDetailPair {
+	flat := state.remoteProcessDetailPairs(process, collectedAt)
+	return [5][2]processDetailPair{
+		{flat[0], flat[1]},
+		{flat[2], flat[3]},
+		{flat[4], flat[5]},
+		{flat[6], flat[7]},
+		{flat[8], flat[9]},
+	}
+}
+
+func processText(value string) string {
+	if value == "" {
+		return "—"
+	}
+	return value
+}
+
+func processInteger(value int) string {
+	if value <= 0 {
+		return "—"
+	}
+	return fmt.Sprint(value)
+}
+
+func processPercent(value float64) string {
+	return fmt.Sprintf("%.1f%%", value)
+}
+
+func processBytes(value uint64) string {
+	if value == 0 {
+		return "—"
+	}
+	return formatBytes(int64(value))
+}
+
+func processCollectedAt(value time.Time) string {
+	if value.IsZero() {
+		return "—"
+	}
+	return value.Format("15:04:05")
+}
+
+func processStateText(state *State, value string) string {
+	m := state.messages.Tools
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "—"
+	}
+	switch {
+	case strings.EqualFold(trimmed, "Ready"):
+		return m.RemoteProcessStateReady
+	case strings.EqualFold(trimmed, "Running"):
+		return m.RemoteProcessStateRunning
+	case strings.EqualFold(trimmed, "Sleeping"):
+		return m.RemoteProcessStateSleeping
+	case strings.EqualFold(trimmed, "Waiting"):
+		return m.RemoteProcessStateWaiting
+	case strings.EqualFold(trimmed, "Zombie"):
+		return m.RemoteProcessStateZombie
+	case strings.EqualFold(trimmed, "Stopped"):
+		return m.RemoteProcessStateStopped
+	case strings.EqualFold(trimmed, "Paging"):
+		return m.RemoteProcessStatePaging
+	case strings.EqualFold(trimmed, "Idle"):
+		return m.RemoteProcessStateIdle
+	case strings.EqualFold(trimmed, "Blocked"):
+		return m.RemoteProcessStateBlocked
+	case strings.EqualFold(trimmed, "Suspended"):
+		return m.RemoteProcessStateSuspended
+	case strings.EqualFold(trimmed, "Terminated"):
+		return m.RemoteProcessStateTerminated
+	case strings.EqualFold(trimmed, "Growing"):
+		return m.RemoteProcessStateGrowing
+	case strings.EqualFold(trimmed, "Not Responding"):
+		return m.RemoteProcessStateNotResponding
+	case strings.EqualFold(trimmed, "Unknown"):
+		return m.RemoteProcessStateUnknown
+	}
+	switch strings.ToUpper(trimmed[:1]) {
+	case "R":
+		return m.RemoteProcessStateRunning
+	case "S":
+		return m.RemoteProcessStateSleeping
+	case "D":
+		return m.RemoteProcessStateWaiting
+	case "Z":
+		return m.RemoteProcessStateZombie
+	case "T":
+		return m.RemoteProcessStateStopped
+	case "W":
+		return m.RemoteProcessStatePaging
+	case "I":
+		return m.RemoteProcessStateIdle
+	case "P":
+		return m.RemoteProcessStateSuspended
+	case "X", "K":
+		return m.RemoteProcessStateTerminated
+	}
+	return trimmed
+}
+
+func (state *State) remoteProcessDetailsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if !state.remoteToolsVisible() {
+		return ui.EventResult{}, false
+	}
+	if state.remote.processDetails.open {
+		details := &state.remote.processDetails
+		options := state.remoteProcessDetailTabs()
+		if event.Target == hitRemoteProcessDetailsCommand || event.Target == hitRemoteProcessDetailsEnv {
+			if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+				state.selectRemoteProcessDetailTab(event.Target)
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+			if next, handled := components.TabsKeyDown(
+				event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key,
+			); handled {
+				state.selectRemoteProcessDetailTab(next)
+				return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+			}
+		}
+		if event.Key == ui.KeyTab && event.Modifiers&^ui.ModifierShift == 0 {
+			return ui.EventResult{Handled: true, ContinueTraversal: true}, true
+		}
+		if event.Key == ui.KeyEscape && !event.Repeat {
+			state.closeRemoteProcessDetails()
+			return ui.EventResult{Handled: true, Repaint: true}, true
+		}
+		if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+			switch event.Target {
+			case hitRemoteProcessDetailsClose:
+				state.closeRemoteProcessDetails()
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			case hitRemoteTerminate, hitRemoteKill,
+				hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher:
+				if state.remoteProcessActionsBlocked(details.process) {
+					return ui.EventResult{Handled: true}, true
+				}
+				state.closeRemoteProcessDetails()
+				state.clickRemoteTools(event.Target)
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+		return ui.EventResult{Handled: true}, true
+	}
+	if state.remote.processMenu.open && event.Key == ui.KeyEscape && !event.Repeat {
+		state.remote.processMenu = remoteProcessMenu{}
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	return ui.EventResult{}, false
+}
+
+func (state *State) remoteProcessMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	if !state.remoteToolsVisible() || !state.remote.processMenu.open ||
+		event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary ||
+		event.Target != hitRemoteProcessMenuDismiss {
+		return ui.EventResult{}, false
+	}
+	state.remote.processMenu = remoteProcessMenu{}
+	return ui.EventResult{Handled: true, Repaint: true}, true
+}
+
+func (w *remoteToolsWindow) pointer(event ui.PointerEvent) ui.EventResult {
+	if w.closed {
+		return ui.EventResult{Handled: true}
+	}
+	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
+		return result
+	}
+	if result, handled := w.ui.menuPointer(event); handled {
+		return result
+	}
+	return ui.EventResult{}
+}

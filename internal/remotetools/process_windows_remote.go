@@ -31,7 +31,14 @@ try {
     if (!$command) { $command=[string]$p.Name }; if (!$command) { $command=[string]$_.Name }
     $truncated=$command.Length -gt 1024; if ($truncated) { $command=$command.Substring(0,1024) }
     $owner=$owners[$id]; if (!$owner) { $owner='—' }; if ($owner.Length -gt 128) { $owner=$owner.Substring(0,128) }
-    @{pid=$id;user=$owner;cpu=$_.PercentProcessorTime;memory=([double]$_.WorkingSet/$total*100);elapsed=$_.ElapsedTime;command=$command;truncated=$truncated}
+    $parent=0; $rss=0; $virtual=0; $execution=0
+    if ($p) {
+      $parent=[int]$p.ParentProcessId
+      $rss=[uint64]$p.WorkingSetSize
+      $virtual=[uint64]$p.VirtualSize
+      $execution=[int]$p.ExecutionState
+    }
+    @{pid=$id;parent=$parent;user=$owner;state=$execution;cpu=$_.PercentProcessorTime;memory=([double]$_.WorkingSet/$total*100);rss=$rss;virtual=$virtual;elapsed=$_.ElapsedTime;command=$command;truncated=$truncated}
   })
   [Console]::WriteLine((ConvertTo-Json -InputObject $rows -Compress -Depth 3))
 } catch { [Console]::WriteLine($_.Exception.Message); exit 1 }
@@ -51,9 +58,13 @@ func readWindowsProcesses(ctx context.Context, runner Runner, key SortKey) (Proc
 func parseWindowsProcesses(output []byte, key SortKey) (ProcessSnapshot, error) {
 	var rows []struct {
 		PID       int      `json:"pid"`
+		Parent    int      `json:"parent"`
 		User      string   `json:"user"`
+		State     int      `json:"state"`
 		CPU       *float64 `json:"cpu"`
 		Memory    float64  `json:"memory"`
+		RSS       uint64   `json:"rss"`
+		Virtual   uint64   `json:"virtual"`
 		Elapsed   uint64   `json:"elapsed"`
 		Command   string   `json:"command"`
 		Truncated bool     `json:"truncated"`
@@ -67,7 +78,7 @@ func parseWindowsProcesses(output []byte, key SortKey) (ProcessSnapshot, error) 
 		// A row can be malformed without the whole machine being unreadable: a
 		// process may exit between the CIM and the perf-counter query, and one
 		// duplicate or zeroed row must not throw away every other process.
-		if r.PID <= 0 || seen[r.PID] || r.CPU == nil || math.IsNaN(*r.CPU) || math.IsInf(*r.CPU, 0) || *r.CPU < 0 || math.IsNaN(r.Memory) || math.IsInf(r.Memory, 0) || r.Memory < 0 || r.Memory > 100 || r.Elapsed > uint64(1000*366*86400) {
+		if r.PID <= 0 || r.Parent < 0 || seen[r.PID] || r.CPU == nil || math.IsNaN(*r.CPU) || math.IsInf(*r.CPU, 0) || *r.CPU < 0 || math.IsNaN(r.Memory) || math.IsInf(r.Memory, 0) || r.Memory < 0 || r.Memory > 100 || r.Elapsed > uint64(1000*366*86400) {
 			continue
 		}
 		seen[r.PID] = true
@@ -82,7 +93,11 @@ func parseWindowsProcesses(output []byte, key SortKey) (ProcessSnapshot, error) 
 		if seconds >= 86400 {
 			elapsed = fmt.Sprintf("%d-%02d:%02d:%02d", seconds/86400, seconds/3600%24, seconds/60%60, seconds%60)
 		}
-		result.Processes = append(result.Processes, Process{PID: r.PID, User: r.User, CPU: *r.CPU, Memory: r.Memory, Elapsed: elapsed, Command: command})
+		result.Processes = append(result.Processes, Process{
+			PID: r.PID, ParentPID: r.Parent, User: r.User, State: windowsProcessState(r.State),
+			CPU: *r.CPU, Memory: r.Memory, ResidentBytes: r.RSS, VirtualBytes: r.Virtual,
+			Elapsed: elapsed, Command: command,
+		})
 	}
 	if len(result.Processes) == 0 && len(rows) > 0 {
 		return ProcessSnapshot{}, ErrMalformed
@@ -97,4 +112,27 @@ func parseWindowsProcesses(output []byte, key SortKey) (ProcessSnapshot, error) 
 		result.Processes = result.Processes[:maxSnapshotProcesses]
 	}
 	return result, nil
+}
+
+func windowsProcessState(code int) string {
+	switch code {
+	case 2:
+		return "Ready"
+	case 3:
+		return "Running"
+	case 4:
+		return "Blocked"
+	case 5:
+		return "Suspended"
+	case 6:
+		return "Terminated"
+	case 7:
+		return "Stopped"
+	case 8:
+		return "Growing"
+	case 9:
+		return "Not Responding"
+	default:
+		return "Unknown"
+	}
 }
