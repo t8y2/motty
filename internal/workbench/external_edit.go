@@ -115,7 +115,7 @@ func (state *State) startExternalEdit(session *Session, view *sftpView) {
 	remote := path.Join(view.path, entry.Name)
 	if existing := state.editForRemote(session.ID, remote); existing != nil {
 		// Already open: bring the editor back to it instead of making a copy.
-		if err := state.options.OpenPath(existing.local); err != nil {
+		if err := state.openWithConfiguredEditor(existing.local); err != nil {
 			view.errorText = fmt.Sprintf(state.messages.Tools.ExtEditOpenFailedFmt, entry.Name, err)
 		}
 		return
@@ -202,7 +202,7 @@ func (state *State) openInSystemEditor(session *Session, view *sftpView, result 
 	}
 	info, err := os.Stat(local)
 	if err == nil {
-		err = state.options.OpenPath(local)
+		err = state.openWithConfiguredEditor(local)
 	}
 	if err != nil {
 		_ = os.RemoveAll(dir)
@@ -349,8 +349,7 @@ func (state *State) askExternalConflict() {
 		id, m := edit.id, state.messages.Tools
 		if edit.origin != nil {
 			edit.origin.externalConflict = id
-			edit.origin.window.Show()
-			edit.origin.window.Invalidate()
+			edit.origin.reveal()
 			return
 		}
 		state.openForm(formDialog{

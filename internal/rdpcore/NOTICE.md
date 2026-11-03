@@ -20,6 +20,13 @@ files.
 
 Changed:
 
+* Network characteristics auto-detection (MS-RDPBCGR 2.2.14): negotiate and join
+  the MCS message channel, answer server RTT/bandwidth requests during licensing
+  and the connected session, and expose the server's average RTT with its sample
+  timestamp. No synthetic input, graphics probes or client polling are added.
+  Continuous bandwidth measurements count normal slow-path, fast-path and
+  virtual-channel PDU data after the security header and before decompression;
+  connect-time measurements count only their explicit payloads.
 * `Options.Dial`, `Options.VerifyCertificate`: the connection comes from the
   caller (SSH tunnel, proxy) and the server's certificate is passed to the caller
   before any credential is sent, instead of `net.DialTimeout` and a blanket

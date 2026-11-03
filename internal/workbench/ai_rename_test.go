@@ -16,7 +16,6 @@ func TestAIRenameDialogButtons(t *testing.T) {
 	}{
 		{"close", hitAIRenameClose, "discarded", "original"},
 		{"cancel", hitAIRenameCancel, "discarded", "original"},
-		{"dismiss", hitAIRenameDismiss, "discarded", "original"},
 		{"submit", hitAIRenameSubmit, "  重命名后的对话  ", "重命名后的对话"},
 		{"empty", hitAIRenameSubmit, "   ", "original"},
 	} {
@@ -51,11 +50,7 @@ func TestAIRenameDialogButtons(t *testing.T) {
 				if hit.ID != tc.hit || hit.IsLabel {
 					continue
 				}
-				x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
-				if tc.hit == hitAIRenameDismiss {
-					x, y = hit.Bounds.X+1, hit.Bounds.Y+1 // outside the dialog
-				}
-				if err := driver.Click(x, y); err != nil {
+				if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 					t.Fatal(err)
 				}
 				clicked = true

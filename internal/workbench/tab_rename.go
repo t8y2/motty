@@ -43,7 +43,7 @@ func (state *State) openTabRename(workspace layoutcore.WorkspaceID) {
 
 func (state *State) clickTabRenameDialog(id ui.ID) {
 	switch id {
-	case hitTabRenameDismiss, hitTabRenameClose, hitTabRenameCancel:
+	case hitTabRenameClose, hitTabRenameCancel:
 		state.modal = modalNone
 		state.dialogError = ""
 	case hitTabRenameSubmit:
@@ -90,9 +90,10 @@ func (state *State) tabRenameKey(event ui.KeyEvent) (ui.EventResult, bool) {
 
 func (state *State) paintTabRenameDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	messages := state.messages
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitTabRenameDismiss, CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
+		CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
 		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
 	})
 	title, placeholder := messages.RenameTabTitle, messages.RenameTabPlaceholder

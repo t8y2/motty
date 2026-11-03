@@ -99,6 +99,7 @@ func (state *State) afterEvent(result *ui.EventResult) {
 		result.Repaint = true
 	}
 	state.syncShortcutCapture()
+	state.syncDesktopFullscreen()
 }
 
 // runLaunches starts the requests that came in, one at a time, while no dialog

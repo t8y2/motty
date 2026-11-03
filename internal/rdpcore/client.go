@@ -159,15 +159,17 @@ type Client struct {
 	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
 
 	// MCS/GCC parameters
-	userChannelID   uint16
-	ioChannelID     uint16
-	channelIDs      []uint16
-	channelNames    []string                        // ordered, matching channelIDs indices
-	channelMap      map[uint16]string               // channelID → name (built after MCS Connect)
-	channelOpts     map[uint16]uint32               // channelID → channel options
-	channelHandlers map[string]func(uint16, []byte) // name → handler
-	serverCore      *mcs.ServerCoreData
-	serverSec       *mcs.ServerSecurityData
+	userChannelID    uint16
+	ioChannelID      uint16
+	messageChannelID uint16
+	autodetect       networkAutodetect
+	channelIDs       []uint16
+	channelNames     []string                        // ordered, matching channelIDs indices
+	channelMap       map[uint16]string               // channelID → name (built after MCS Connect)
+	channelOpts      map[uint16]uint32               // channelID → channel options
+	channelHandlers  map[string]func(uint16, []byte) // name → handler
+	serverCore       *mcs.ServerCoreData
+	serverSec        *mcs.ServerSecurityData
 
 	// Standard RDP Security (nil when using TLS)
 	crypto *sec.RDPCrypto
@@ -256,6 +258,7 @@ type Client struct {
 
 	// Callbacks (protected by cbMu — use load*/On* methods, not direct access)
 	cbMu              sync.RWMutex
+	onNetworkRTT      func()
 	onBitmap          func(*BitmapUpdate)
 	onStridedBitmap   func(x, y, w, h int, data []byte, stride int)
 	onH264Frame       func(*egfx.H264Frame) // H.264 pass-through callback
@@ -730,6 +733,8 @@ func (c *Client) mcsConnect() error {
 	// open the RDPEDISP dynamic channel, enabling mid-session resize.
 	coreData.Version = mcs.VersionRDP10
 	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportMonitorLayout
+	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportNetCharAutodetect | mcs.EarlyCapValidConnectionType
+	coreData.ConnectionType = mcs.ConnectionTypeAutoDetect
 	if c.opts.GFX {
 		coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportDynvcGfxProtocol
 	}
@@ -832,6 +837,8 @@ func (c *Client) mcsConnect() error {
 	if monitorBlock != nil {
 		clientData = append(clientData, monitorBlock...)
 	}
+	// TS_UD_CS_MCS_MSGCHANNEL: flags are reserved and must be zero.
+	clientData = append(clientData, 0x06, 0xC0, 0x08, 0x00, 0, 0, 0, 0)
 
 	// Build GCC Conference Create Request
 	gccRequest := mcs.EncodeGCCConferenceCreateRequest(clientData)
@@ -918,6 +925,7 @@ func (c *Client) mcsConnect() error {
 	c.serverCore = serverCore
 	c.serverSec = serverSec
 	c.ioChannelID = serverNet.IOChannelID
+	c.messageChannelID = serverNet.MessageChannelID
 	c.channelIDs = serverNet.ChannelIDs
 
 	// Build channel ID → name map and channel ID → options map
@@ -1174,6 +1182,9 @@ func (c *Client) mcsJoinChannels() error {
 	// Build the list of channels to join
 	channels := []uint16{c.userChannelID, c.ioChannelID}
 	channels = append(channels, c.channelIDs...)
+	if c.messageChannelID != 0 {
+		channels = append(channels, c.messageChannelID)
+	}
 
 	for _, chID := range channels {
 		if err := c.mcsJoinChannel(chID); err != nil {
@@ -1381,11 +1392,20 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 		if err != nil {
 			return 0, nil, fmt.Errorf("decoding MCS SDI: %w", err)
 		}
+		if channelID == c.messageChannelID && c.messageChannelID != 0 {
+			if err := c.handleMessageChannel(userData); err != nil {
+				return 0, nil, err
+			}
+			continue
+		}
 
 		// Decrypt (centralized, matching receiveLoop)
 		userData = c.decryptSlowPath(userData)
 		if userData == nil {
 			return 0, nil, fmt.Errorf("decryption failed")
+		}
+		if err := c.autodetect.received(len(userData)); err != nil {
+			return 0, nil, err
 		}
 
 		return channelID, userData, nil
@@ -1395,7 +1415,7 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 // readLicensingPDU reads an MCS Send Data Indication, validates the channel
 // and SEC_LICENSE_PKT flag, and returns the licensing preamble and body data.
 func (c *Client) readLicensingPDU() (lic.Preamble, []byte, error) {
-	channelID, userData, err := c.readDataPDU()
+	channelID, userData, err := c.readLicensingDataPDU()
 	if err != nil {
 		return lic.Preamble{}, nil, fmt.Errorf("%w: %v", ErrLicensingFailed, err)
 	}
@@ -2039,10 +2059,21 @@ func (c *Client) receiveLoop() {
 					c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
 					continue
 				}
+				if channelID == c.messageChannelID && c.messageChannelID != 0 {
+					if err := c.handleMessageChannel(userData); err != nil {
+						c.handleDisconnect(err)
+						return
+					}
+					continue
+				}
 				// Centralized security-layer decryption for ALL channels
 				// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
 				// every encrypted packet to stay in sync.
 				userData = c.decryptSlowPath(userData)
+				if err := c.autodetect.received(len(userData)); err != nil {
+					c.handleDisconnect(err)
+					return
+				}
 				if channelID != c.ioChannelID {
 					c.handleVirtualChannelData(channelID, userData)
 					continue
@@ -2588,6 +2619,10 @@ func (c *Client) handleFastPathPDU(actionByte byte, data []byte) {
 		}
 	}
 
+	if err := c.autodetect.received(len(data)); err != nil {
+		c.handleDisconnect(err)
+		return
+	}
 	updates, err := fastpath.DecodeUpdates(c.logFp, data)
 	if err != nil {
 		c.logFp.LogAttrs(context.Background(), slog.LevelError, "fast-path decode error", slog.Any("err", err))

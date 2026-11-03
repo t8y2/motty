@@ -303,6 +303,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.SFTPInput(context); input != nil {
 			return input
 		}
+		if input := state.SFTPTabInput(context); input != nil {
+			return input
+		}
 		if input := state.RemoteToolsInput(context); input != nil {
 			return input
 		}
@@ -357,6 +360,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OnResize:      state.Resize,
 		OnFrameChange: state.NoteWindowFrame,
 		OnMinimize:    state.SetWindowMinimized,
+		OnFullscreen:  state.SetWindowFullscreen,
 		OnClosed: func() {
 			log.Print("motty: window closed")
 			windows.remove(state)
@@ -371,6 +375,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if err == nil {
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)
+		state.SetFullscreenControl(mainWindow.SetFullscreen)
 		hub.Add(state, mainWindow.Show)
 		windows.add(state)
 		// The desktop sessions forward the local clipboard; watching it means

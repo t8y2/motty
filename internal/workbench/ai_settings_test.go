@@ -1035,9 +1035,9 @@ func TestAISettingsDialogBlocksThePageBehindIt(t *testing.T) {
 	if state.language != before {
 		t.Fatal("a click reached the page behind the dialog")
 	}
-	state.Click(hitAISetFormDismiss)
+	state.Click(hitAISetFormCancel)
 	if state.ai.cfg.dialog != aiDialogNone {
-		t.Fatal("dismiss did not close the dialog")
+		t.Fatal("cancel did not close the dialog")
 	}
 	state.Click(hitSettingsLanguageChinese)
 	if state.language != i18n.Chinese {

@@ -216,6 +216,9 @@ type Options struct {
 	// OpenPath opens a local document with the system's default application. Nil
 	// uses app.OpenPath.
 	OpenPath func(string) error
+	// LaunchCustomEditor starts a user-chosen executable with one path. Nil uses
+	// Viva's system launcher.
+	LaunchCustomEditor func(executable, path string) error
 	// OpenSchemeURL hands a link to the application registered for a custom URL
 	// scheme, for the folder an editor is asked to open. Nil uses
 	// app.OpenSchemeURL.
@@ -325,6 +328,9 @@ func (options Options) withDefaults() Options {
 	if options.OpenPath == nil {
 		options.OpenPath = app.OpenPath
 	}
+	if options.LaunchCustomEditor == nil {
+		options.LaunchCustomEditor = app.OpenWith
+	}
 	if options.FileIcon == nil {
 		options.FileIcon = app.FileIcon
 	}
@@ -428,6 +434,7 @@ const (
 	modalHistory
 	modalUpdate
 	modalUpdateProgress
+	modalFileProperties
 	modalDashboard
 	modalDashboardAdd
 	modalToolbarSettings
@@ -631,6 +638,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	defer state.syncDesktopFullscreen()
 	defer state.flushLocalDirectories()
 	state.adoptHistoryClear()
 	state.adoptCompletion()
@@ -686,6 +694,7 @@ func (state *State) Wake() {
 		state.scheduleUpdateCheck(state.update.firstDelay)
 	}
 	state.pumpSFTPConnections()
+	state.wakeEmbeddedSFTPWindows()
 	state.pumpDashboard()
 	state.pumpSessionLogs()
 	state.showNextPrompt()

@@ -67,7 +67,6 @@ var (
 	hitHostImportDone          = tree.ID(shellHits, "host-import-done")
 	hitGitHub                  = tree.ID(shellHits, "github")
 	hitTheme                   = tree.ID(shellHits, "theme")
-	hitDialogDismiss           = tree.ID(shellHits, "dialog-dismiss")
 	hitDialogClose             = tree.ID(shellHits, "dialog-close")
 	hitDialogCancel            = tree.ID(shellHits, "dialog-cancel")
 	hitDialogSubmit            = tree.ID(shellHits, "dialog-submit")
@@ -119,7 +118,9 @@ var (
 	hitClipboardAlways         = tree.ID(shellHits, "clipboard-always")
 	hitShortcutReset           = tree.ID(shellHits, "shortcut-reset")
 	hitShortcutCaptureDismiss  = tree.ID(shellHits, "shortcut-capture-dismiss")
+	hitShortcutCaptureClose    = tree.ID(shellHits, "shortcut-capture-close")
 	hitShortcutCaptureCancel   = tree.ID(shellHits, "shortcut-capture-cancel")
+	hitShortcutCaptureDelete   = tree.ID(shellHits, "shortcut-capture-delete")
 	hitTerminalRecord          = tree.ID(shellHits, "terminal-record")
 	hitTerminalSaveOutput      = tree.ID(shellHits, "terminal-save-output")
 	hitTerminalRecordingExport = tree.ID(shellHits, "terminal-recording-export")
@@ -164,7 +165,6 @@ var (
 	hitForwardAdd                   = tree.ID(forwardsHits, "forward-add")
 	hitForwardRemove                = tree.ID(forwardsHits, "forward-remove")
 	hitForwardStartStop             = tree.ID(forwardsHits, "forward-start-stop")
-	hitForwardDialogDismiss         = tree.ID(forwardsHits, "forward-dialog-dismiss")
 	hitForwardDialogClose           = tree.ID(forwardsHits, "forward-dialog-close")
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
@@ -254,7 +254,6 @@ var (
 	hitProxyAdd              = tree.ID(proxiesHits, "proxy-add")
 	hitProxyStartStop        = tree.ID(proxiesHits, "proxy-start-stop")
 	hitProxyRemove           = tree.ID(proxiesHits, "proxy-remove")
-	hitProxyDialogDismiss    = tree.ID(proxiesHits, "proxy-dialog-dismiss")
 	hitProxyDialogClose      = tree.ID(proxiesHits, "proxy-dialog-close")
 	hitProxyDialogCancel     = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit     = tree.ID(proxiesHits, "proxy-dialog-submit")
@@ -306,7 +305,6 @@ var (
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
-	hitSFTPDialogDismiss   = tree.ID(sftpHits, "sftp-dialog-dismiss")
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -409,6 +407,9 @@ const (
 	// monitor page and keeps its place even in builds whose page is hidden, so
 	// the other sections do not renumber.
 	sectionSessionLogs
+	// sectionSFTP is a file-manager tab opened in the main window. It comes last
+	// so existing section values stay stable.
+	sectionSFTP
 )
 
 // State owns the complete interactive state of the window.
@@ -427,11 +428,20 @@ type State struct {
 	fileNotices       fileNotices
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
-	reveal        secretReveal
-	sftpWindows   map[uint32]*sftpWindow
-	remoteWindows []*remoteToolsWindow
-	remoteWindow  *remoteToolsWindow // set only on a native tool window's isolated presenter
-	closed        bool
+	reveal      secretReveal
+	sftpWindows map[uint32]*sftpWindow
+	// sftpTabs are the file managers hosted in the main window, in tab order.
+	// They are runtime-only and never enter the persisted workspace deck.
+	sftpTabs         []*sftpWindow
+	activeSFTPTab    uint32
+	fileTabOptions   []components.TabOption
+	windowTabOptions []components.TabOption
+	fileTabStrip     tabStrip
+	fileManagerView  ui.Canvas
+	fileManagerRect  ui.Rect
+	remoteWindows    []*remoteToolsWindow
+	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
+	closed           bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
@@ -467,6 +477,7 @@ type State struct {
 	localShellPicker   localShellPicker
 	snippetMenu        snippetMenu
 	sftpMenu           sftpMenu
+	fileProperties     sftpFileProperties
 	popups             popupMenus
 	selectedHostID     uint32
 	hostRevealID       uint32
@@ -509,6 +520,7 @@ type State struct {
 	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
 	terminalMenu       terminalMenu
 	hostGroupEditor    text.Editor
+	groupActions       hostGroupActions
 	tabRename          tabRename
 	tabsClose          tabsClose
 	sessionLink        sessionLink
@@ -598,10 +610,13 @@ type State struct {
 	sftpTerminalFollow     bool
 	sftpPathInput          bool
 	sftpPanelAutoOpen      bool
+	sftpWindowOrder        sftpWindowOrder
+	sftpOpenMode           sftpOpenMode
 	sftpColumns            sftpColumnPreferences
 	sftpFilesSettings      sftpFilesSettingsCache
 	sftpDownloadDirectory  string
 	defaultEditor          ExternalEditor // hands remote folders to this computer's editor
+	customEditorPath       string
 	monitorRect            ui.Rect
 	monitorMenu            bool
 	monitorMenuRect        ui.Rect
@@ -632,7 +647,7 @@ type State struct {
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle bool
-	// terminalShowLatency displays connection RTT latency in the terminal panel,
+	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
@@ -652,6 +667,7 @@ type State struct {
 	settings         settingsUI
 	toolbars         toolbarPreferences
 	toolbarEditor    toolbarSettingsUI
+	toolbarDock      toolbarDockUI
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// area: settings
@@ -1091,7 +1107,7 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.editor.otp
 		}
 	case modalMoveHostGroup:
-		if hit == hitMoveGroupField {
+		if hit == hitMoveGroupField && state.groupActions.op != hostGroupRelocate && state.groupActions.op != hostGroupDelete {
 			return &state.hostGroupEditor
 		}
 	case modalRenameTab:
@@ -1344,6 +1360,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalUpdateProgress:
 		state.clickUpdateProgress(id)
 		return
+	case modalFileProperties:
+		state.clickFileProperties(id)
+		return
 	case modalCommandPalette:
 		state.clickCommandPalette(id)
 		return
@@ -1354,7 +1373,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickShortcutCapture(id)
 		return
 	}
-	if state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -1532,6 +1551,12 @@ func (state *State) click(id ui.ID, feedback bool) {
 				state.save()
 			}
 		}
+	case id.Scope() == fileTabCloseList:
+		if manager := state.sftpWindows[uint32(item(id))]; manager != nil && !manager.closed {
+			state.requestCloseSFTPTab(manager)
+		}
+	case id.Scope() == fileTabList:
+		state.activateSFTPTab(uint32(item(id)))
 	}
 }
 
@@ -1575,6 +1600,7 @@ func (state *State) closeSession(id uint32) {
 	}
 	session.term.abandonShell()
 	state.dropExternalEdits(session.ID)
+	state.closeSFTPTabForSource(session.ID)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.conn != nil {
@@ -1639,6 +1665,12 @@ func (state *State) closeActivePane() {
 // terminal on show (the host list, with or without tabs open behind it) has
 // nothing of that kind to close, so the window closes instead.
 func (state *State) closeActivePaneOrTab() {
+	if state.activeSection == sectionSFTP {
+		if manager := state.activeSFTPWindow(); manager != nil {
+			state.requestCloseSFTPTab(manager)
+		}
+		return
+	}
 	workspaceID := state.deck.ActiveWorkspace()
 	if workspaceID == 0 || state.activeSection != sectionTerminal {
 		if state.options.CloseWindow != nil {
@@ -1711,7 +1743,7 @@ func (state *State) clickHostDialog(id ui.ID) {
 		return
 	}
 	switch id {
-	case hitDialogDismiss, hitDialogClose, hitDialogCancel:
+	case hitDialogClose, hitDialogCancel:
 		state.cancelHostTest()
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.modal = modalNone
@@ -1854,11 +1886,20 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockPointer(event); result.Handled {
+		return result
+	}
 	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
+	}
+	if state.modal == modalFileProperties {
+		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
+			return ui.EventResult{}
+		}
+		return ui.EventResult{Handled: true}
 	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
@@ -1896,6 +1937,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.hostMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.hostGroupDragPointer(event); handled {
+		return result
+	}
 	if result, handled := state.localShellPickerPointer(event); handled {
 		return result
 	}
@@ -1908,8 +1952,23 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.sftpPlacesPointer(event); handled {
 		return result
 	}
+	if state.fileTabVerticalRailAt(event.X, event.Y) {
+		repaint := false
+		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
+			w.cancelDrag()
+			repaint = true
+		}
+		return ui.EventResult{Handled: true, Repaint: repaint}
+	}
+	// An assistant drawer is painted over the page when the window is too narrow
+	// to dock it. It therefore owns pointer input before a full-page file tab.
 	if result, handled := state.aiPointer(event); handled {
 		return result
+	}
+	if state.modal == modalNone {
+		if result, handled := state.sftpTabPointer(event); handled {
+			return result
+		}
 	}
 	if result, handled := state.contextDividerPointer(event); handled {
 		return result
@@ -2080,12 +2139,26 @@ func fieldForDialogHit(id ui.ID) hostField {
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if result := state.toolbarDockKey(event); result.Handled {
+		return result
+	}
+	if result, handled := state.desktopFullscreenKey(event); handled {
+		return result
+	}
 	if result, handled := state.namedShortcut(event); handled {
 		return result
 	}
 	if state.tabDrag.active && event.Key == ui.KeyEscape {
 		state.tabDrag = tabDrag{}
 		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalNone {
+		if result, handled := state.sftpTabKey(event); handled {
+			return result
+		}
+	}
+	if result, handled := state.modalFilePropertiesKey(event); handled {
+		return result
 	}
 	var mount ui.Scope
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
@@ -2167,9 +2240,15 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.snippets.capturing = false
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalShortcutCapture && event.Key == ui.KeyEscape && !event.Repeat {
-		state.clickShortcutCapture(hitShortcutCaptureCancel)
-		return ui.EventResult{Handled: true, Repaint: true}
+	if state.modal == modalShortcutCapture && !event.Repeat {
+		if event.Key == ui.KeyEscape {
+			state.clickShortcutCapture(hitShortcutCaptureCancel)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		if event.Modifiers == 0 && (event.Key == ui.KeyDelete || event.Key == ui.KeyBackspace) {
+			state.clickShortcutCapture(hitShortcutCaptureDelete)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result
@@ -2215,6 +2294,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.terminalFindKey(event); handled {
+		return result
+	}
+	if result, handled := state.filePropertiesKey(event); handled {
 		return result
 	}
 	if result, handled := state.sftpKey(event); handled {
@@ -2294,16 +2376,24 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.verticalTabGroupKey(event); handled {
 		return result
 	}
-	if event.Target.Scope() != hitTabList {
+	tabScope := event.Target.Scope()
+	if tabScope != hitTabList && tabScope != fileTabList {
 		return ui.EventResult{}
 	}
-	orientation := components.TabsHorizontal
-	if state.tabOrientation == tabsVertical {
+	options, orientation := state.tabOptions, components.TabsHorizontal
+	switch {
+	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
+	case tabScope == fileTabList && state.tabOrientation == tabsVertical:
+		options = state.fileTabOptions
+	default:
+		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
+		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
+		options = state.windowTabOptions
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
-		state.tabOptions,
+		options,
 		orientation,
 		components.DirectionLTR,
 		event.Key,

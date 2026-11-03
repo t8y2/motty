@@ -335,6 +335,16 @@ func (state *State) clickSFTP(id ui.ID) {
 		sftpPlaceBrowser{owner: state, session: session, view: view}.clickDirectoryPlace(id)
 		return
 	}
+	if id == hitSFTPCopyPath {
+		if err := state.copySFTPPaths(view.active(), view.local); err != nil {
+			state.showActionError(state.messages.SFTPWindow.Title, err.Error())
+		}
+		return
+	}
+	if id == hitSFTPProperties {
+		state.openSFTPProperties(view.active(), view.local)
+		return
+	}
 	folder := view.active()
 	if folder.headerMenuOpen {
 		if state.clickSFTPHistory(view, view.local, id, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits) {
@@ -1211,7 +1221,7 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 
 func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
 	switch id {
-	case hitSFTPDialogDismiss, hitSFTPDialogClose, hitSFTPDialogCancel:
+	case hitSFTPDialogClose, hitSFTPDialogCancel:
 		state.closeSFTPDialog(view)
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)

@@ -82,9 +82,12 @@ type savedState struct {
 	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
 	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
+	SFTPWindowOrder            string              `json:"sftp_window_order,omitempty"`
+	SFTPOpenMode               string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns                string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory      string              `json:"sftp_download_directory,omitempty"`
 	DefaultEditor              string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
+	CustomEditorPath           string              `json:"custom_editor_path,omitempty"`
 	Toolbars                   *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck                string              `json:"update_check,omitempty"`
 	CloseAction                string              `json:"close_action,omitempty"`
@@ -182,6 +185,9 @@ type savedHost struct {
 type savedHostGroup struct {
 	Name      string `json:"name"`
 	Collapsed bool   `json:"collapsed,omitempty"`
+	Explicit  bool   `json:"explicit,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
+	Order     int    `json:"order,omitempty"`
 }
 
 type savedForward struct {
@@ -425,9 +431,12 @@ func (state *State) snapshot() savedState {
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
+		SFTPWindowOrder:            state.sftpWindowOrder.String(),
+		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
 		DefaultEditor:              string(state.defaultEditor),
+		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
@@ -501,7 +510,7 @@ func (state *State) snapshot() savedState {
 	}
 	saved.SFTPLocalBookmarks = slices.Clone(state.sftpLocalBookmarks)
 	for _, group := range state.hostGroups {
-		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded})
+		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 	}
 	for _, identity := range state.identities {
 		saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
@@ -742,7 +751,7 @@ func (state *State) restoreShared(saved savedState) {
 		if state.hostGroupIndex(name) >= 0 {
 			continue
 		}
-		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed})
+		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed, Explicit: entry.Explicit, Pinned: entry.Pinned, Order: max(0, entry.Order)})
 	}
 	state.restoreForwards(saved.Forwards)
 	state.restoreProxies(saved.Proxies)
@@ -780,24 +789,37 @@ func (state *State) workspaceName() string {
 	}
 }
 
-// restoreShortcuts applies the bindings the file holds, then fills what is
-// still free with the defaults. The file wins on purpose: a chord saved for one
-// action is not taken by the default of an action a later build added. Such an
-// action stays unbound, reading "—" in the settings until it is given a chord,
-// rather than quietly moving a shortcut the user chose.
+// restoreShortcuts applies the bindings the file holds, then fills what the
+// file does not mention with the defaults. The file wins on purpose: a chord
+// saved for one action is not taken by the default of an action a later build
+// added. Such an action stays unbound, reading "—" in the settings until it is
+// given a chord, rather than quietly moving a shortcut the user chose. An entry
+// with no key is an action the user removed: it stays unbound instead of taking
+// its default back.
 func restoreShortcuts(saved []savedShortcut) shortcutMap {
 	defaults := defaultShortcuts()
 	var shortcuts shortcutMap
+	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
 		action := shortcutActionFromString(entry.Action)
-		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
-		if action == shortcutNone || !ok {
+		if action == shortcutNone {
 			continue
 		}
-		shortcuts.bind(action, chord)
+		if entry.Key == "" {
+			shortcuts.unbind(action)
+			specified[action] = true
+			continue
+		}
+		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
+		if !ok {
+			continue
+		}
+		if _, bound := shortcuts.bind(action, chord); bound {
+			specified[action] = true
+		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if shortcuts.chords[action].valid() {
+		if specified[action] || shortcuts.chords[action].valid() {
 			continue
 		}
 		shortcuts.bind(action, defaults.chords[action])

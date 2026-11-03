@@ -5,7 +5,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink}
+var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties}
 
 func sftpWindowActionIndex(id ui.ID) int {
 	for i, action := range sftpWindowActionIDs {
@@ -85,13 +85,19 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 }
 
 func (w *sftpWindow) fileAction(local bool, id ui.ID) {
-	defer w.window.Invalidate()
+	defer w.invalidate()
 	w.selectionChanged(local)
+	w.activeLocal, w.view.local = local, local
+	if id == hitSFTPProperties {
+		if properties, ok := captureSFTPProperties(w.folder(local), local); ok {
+			w.fileProperties = properties
+		}
+		return
+	}
 	if w.browse.pending != nil || w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
 		return
 	}
 	w.cancelDrag()
-	w.activeLocal, w.view.local = local, local
 	switch id {
 	case hitSFTPOpenEntry:
 		for i := range w.folder(local).rows {

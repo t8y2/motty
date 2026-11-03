@@ -535,9 +535,10 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 	if cfg.kind == store.KindOpenAI {
 		formatHeight = 84
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
+		CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
 		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+3*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
 	})
 	layout := dialog.Begin(title, m.FormDescription)

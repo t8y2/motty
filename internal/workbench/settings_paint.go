@@ -118,7 +118,7 @@ func (state *State) paintSettingsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		f.Column().Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
 		scroll = f.Scroll(offset).Grow(1).Basis(0).Items(flex.Center).Children(func() {
 			f.Column().FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
-				f.Text(title).FontSize(26).Bold().Color(pal.text).LineHeight(34).MarginSides(0, 0, 20, 0)
+				page.header(title, searching)
 				if searching {
 					state.paintSettingsResults(&page)
 				} else {
@@ -195,6 +195,32 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.paintLockup(canvas, rect)
 		}
 	}
+}
+
+// header is the page's title and, for a category with a page-wide action, that
+// action against the right edge.
+func (page *settingsPage) header(title string, searching bool) {
+	f, pal := page.f, page.state.pal
+	row := f.Row().FillWidth().Items(flex.Center).Justify(flex.Between).MarginSides(0, 0, 20, 0)
+	row.Children(func() {
+		f.Text(title).FontSize(26).Bold().Color(pal.text).LineHeight(34)
+		if searching {
+			return
+		}
+		switch page.state.settingsCategory {
+		case settingsShortcuts:
+			page.headerButton(page.state.messages.ShortcutsReset, hitShortcutReset)
+		}
+	})
+}
+
+// headerButton is a page-wide action in the title row. It is recorded like a
+// row's buttons, so the keyboard reaches it and the page paints it in place.
+func (page *settingsPage) headerButton(label string, id ui.ID) {
+	theme := page.state.Theme()
+	width := components.BeginButton(page.f.Canvas(), theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(label).BoundsWidth()
+	slot := page.f.Row().Size(width, 34).Shrink(0).Items(flex.Center).Justify(flex.End)
+	page.buttons(slot, false, components.ButtonAction{ID: id, Label: label, Variant: components.ButtonOutline})
 }
 
 func (state *State) paintSettingsCategory(page *settingsPage) {

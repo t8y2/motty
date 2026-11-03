@@ -800,10 +800,10 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 	case showError:
 		body = 20
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer:          dialogLayer,
 		Scope:          dialogScope,
-		DismissID:      hitSFTPDialogDismiss,
 		CloseID:        hitSFTPDialogClose,
 		InitialFocusID: initialFocus,
 		ContentSize:    ui.Size{Width: 520}, FitBody: true, BodyHeight: body,

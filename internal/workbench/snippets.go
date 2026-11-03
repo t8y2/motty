@@ -53,7 +53,6 @@ var (
 	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
 	hitSnippetCancel      = tree.ID(snippetsHits, "snippet-cancel")
 	hitSnippetClose       = tree.ID(snippetsHits, "snippet-close")
-	hitSnippetDismiss     = tree.ID(snippetsHits, "snippet-dismiss")
 )
 
 var (
@@ -164,7 +163,7 @@ func (state *State) clickSnippetDialog(id ui.ID) {
 	switch id {
 	case hitSnippetSubmit:
 		state.submitSnippet()
-	case hitSnippetCancel, hitSnippetClose, hitSnippetDismiss:
+	case hitSnippetCancel, hitSnippetClose:
 		state.closeModal()
 	case hitSnippetRun:
 		form.run = !form.run
@@ -328,9 +327,10 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.editing >= 0 {
 		title = m.SnippetDialogEditTitle
 	}
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitSnippetDismiss, CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
+		CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
 		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(204, form.dialogError), // two fields, a box and the shortcut
 	})
 	layout := dialog.Begin(title, "")

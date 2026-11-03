@@ -331,18 +331,30 @@ func TestSFTPSaveRefreshesTheShownDirectoryAndReportsSuccess(t *testing.T) {
 	state, session, _, remote := openTestSFTP(t)
 	view := openSFTPTextEditor(t, state, session, "notes.txt")
 	readsBefore := remote.readCount("/home/test")
-	replaceSFTPText(t, state, "saved and refreshed\n")
+	const saved = "saved and refreshed\n"
+	replaceSFTPText(t, state, saved)
 	state.Click(hitSFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return !view.busy && view.status == state.messages.SFTPEditSaved &&
-			len(state.fileNotices.items) == 1
+		if view.busy || sftpEditorDirty(view) || view.errorText != "" || len(state.fileNotices.items) != 1 {
+			return false
+		}
+		// Listing completion may replace the transient status with a count.
+		// Wait for the saved metadata, not just for the read to start.
+		for _, row := range view.rows {
+			if row.entry.Name == "notes.txt" {
+				return row.entry.Size == int64(len(saved))
+			}
+		}
+		return false
 	})
-	waitFor(t, state, func() bool { return remote.readCount("/home/test") > readsBefore })
+	if remote.readCount("/home/test") <= readsBefore {
+		t.Fatal("save did not refresh the shown directory")
+	}
 	notice := state.fileNotices.items[0]
 	if notice.title != "notes.txt" || notice.detail != state.messages.SFTPEditSaved || notice.kind != components.ToastSuccess {
 		t.Fatalf("save notice = %+v", notice)
 	}
-	if view.selected >= len(view.rows) || view.rows[view.selected].entry.Name != "notes.txt" {
+	if view.selected < 0 || view.selected >= len(view.rows) || view.rows[view.selected].entry.Name != "notes.txt" {
 		t.Fatalf("refresh lost the selected file: selected=%d rows=%v", view.selected, view.rows)
 	}
 }

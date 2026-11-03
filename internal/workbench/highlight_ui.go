@@ -45,7 +45,6 @@ var (
 	hitHighlightSubmit         = tree.ID(highlightUiHits, "highlight-submit")
 	hitHighlightCancel         = tree.ID(highlightUiHits, "highlight-cancel")
 	hitHighlightClose          = tree.ID(highlightUiHits, "highlight-close")
-	hitHighlightDismiss        = tree.ID(highlightUiHits, "highlight-dismiss")
 )
 
 var (
@@ -101,7 +100,7 @@ func (state *State) clickHighlightDialog(id ui.ID) {
 	switch {
 	case id == hitHighlightSubmit:
 		state.submitHighlightRule()
-	case id == hitHighlightCancel || id == hitHighlightClose || id == hitHighlightDismiss:
+	case id == hitHighlightCancel || id == hitHighlightClose:
 		state.closeModal()
 	case id == hitHighlightRegex:
 		form.regex = !form.regex
@@ -268,9 +267,10 @@ func (state *State) slotColor(slot highlight.Slot) ui.Color {
 func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
 	form := &state.highlighting
+	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitHighlightDismiss, CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
+		CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
 		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: withError(198, form.dialogError), // the pattern, two boxes and the colors
 	})
 	layout := dialog.Begin(m.HighlightDialogTitle, "")

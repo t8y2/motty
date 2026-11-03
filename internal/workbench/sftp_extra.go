@@ -46,6 +46,12 @@ var (
 	hitSettingsPanelAutoOpen        = tree.ID(sftpHits, "settings-panel-auto-open")
 	hitSettingsPanelLeft            = tree.ID(sftpHits, "settings-panel-left")
 	hitSettingsPanelRight           = tree.ID(sftpHits, "settings-panel-right")
+	hitSettingsWindowLocalLeft      = tree.ID(sftpHits, "settings-window-local-left")
+	hitSettingsWindowRemoteLeft     = tree.ID(sftpHits, "settings-window-remote-left")
+	hitSettingsOpenWindow           = tree.ID(sftpHits, "settings-open-window")
+	hitSettingsOpenTab              = tree.ID(sftpHits, "settings-open-tab")
+	hitSettingsCustomEditorChoose   = tree.ID(sftpHits, "settings-custom-editor-choose")
+	hitSettingsCustomEditorClear    = tree.ID(sftpHits, "settings-custom-editor-clear")
 	hitSettingsConfigureColumns     = tree.ID(sftpHits, "settings-configure-columns")
 	hitSettingsDownloadDirectory    = tree.ID(sftpHits, "settings-download-directory")
 	hitSettingsDownloadAsk          = tree.ID(sftpHits, "settings-download-ask")
@@ -296,12 +302,36 @@ func (state *State) settingsSFTPPanelPositionOptions() [2]components.SegmentOpti
 	}
 }
 
+func (state *State) settingsSFTPWindowOrderOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsWindowLocalLeft, Label: state.messages.Tools.FilesWindowLocalLeft},
+		{ID: hitSettingsWindowRemoteLeft, Label: state.messages.Tools.FilesWindowRemoteLeft},
+	}
+}
+
+func (state *State) settingsSFTPOpenModeOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsOpenWindow, Label: state.messages.Tools.FilesOpenWindow},
+		{ID: hitSettingsOpenTab, Label: state.messages.Tools.FilesOpenTab},
+	}
+}
+
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
 	position := state.settingsSFTPPanelPositionOptions()
 	selectedPosition := hitSettingsPanelLeft
 	if state.sftpPanelSide == layoutcore.ContextRight {
 		selectedPosition = hitSettingsPanelRight
+	}
+	windowOrder := state.settingsSFTPWindowOrderOptions()
+	selectedWindowOrder := hitSettingsWindowLocalLeft
+	if state.sftpWindowOrder == sftpRemoteLeft {
+		selectedWindowOrder = hitSettingsWindowRemoteLeft
+	}
+	openModes := state.settingsSFTPOpenModeOptions()
+	selectedOpenMode := hitSettingsOpenWindow
+	if state.sftpOpenMode == sftpOpenTab {
+		selectedOpenMode = hitSettingsOpenTab
 	}
 	parallel := state.settingsParallelOptions()
 	pathOptions := state.settingsPathOptions()
@@ -322,11 +352,35 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
 			page.row(m.FilesPanelPosition, m.FilesPanelPositionDescription, position[:], selectedPosition)
 			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
+			page.row(m.FilesWindowOrder, m.FilesWindowOrderDescription, windowOrder[:], selectedWindowOrder)
+			page.row(m.FilesOpenMode, m.FilesOpenModeDescription, openModes[:], selectedOpenMode)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
 				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
 			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
 			state.paintEditorSetting(page)
+			if state.customEditorSettingVisible() {
+				path := state.customEditorPath
+				description := m.FilesCustomEditorNotSet
+				if !customEditorSupported() {
+					description = m.FilesCustomEditorUnavailable
+				}
+				if path != "" {
+					description = path
+				}
+				var actions []components.ButtonAction
+				if customEditorSupported() {
+					actions = append(actions, components.ButtonAction{
+						ID: hitSettingsCustomEditorChoose, Label: m.FilesCustomEditorChoose, Variant: components.ButtonOutline,
+					})
+				}
+				if path != "" {
+					actions = append(actions, components.ButtonAction{
+						ID: hitSettingsCustomEditorClear, Label: m.FilesCustomEditorClear, Variant: components.ButtonGhost,
+					})
+				}
+				page.actionRow(m.FilesCustomEditor, description, false, actions...)
+			}
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
 			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
 			page.toggleRow(m.FilesTerminalFollow, m.FilesTerminalFollowDescription, state.sftpTerminalFollow, hitSettingsTerminalFollowToggle)
@@ -334,6 +388,10 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsFollowSetup, Label: m.FilesFollowSetupCopy, Variant: components.ButtonOutline})
 		})
 	})
+}
+
+func (state *State) customEditorSettingVisible() bool {
+	return customEditorSupported() || state.defaultEditor == editorCustom || state.customEditorPath != ""
 }
 
 // clickFilesSettings handles the presses of the Files settings.
@@ -349,6 +407,25 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 		}
 		if state.sftpPanelSide != side {
 			state.sftpPanelSide = side
+			state.save()
+		}
+	case hitSettingsWindowLocalLeft, hitSettingsWindowRemoteLeft:
+		order := sftpLocalLeft
+		if id == hitSettingsWindowRemoteLeft {
+			order = sftpRemoteLeft
+		}
+		if state.sftpWindowOrder != order {
+			state.sftpWindowOrder = order
+			state.invalidateSFTPWindows()
+			state.save()
+		}
+	case hitSettingsOpenWindow, hitSettingsOpenTab:
+		mode := sftpOpenWindow
+		if id == hitSettingsOpenTab {
+			mode = sftpOpenTab
+		}
+		if state.sftpOpenMode != mode {
+			state.sftpOpenMode = mode
 			state.save()
 		}
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
@@ -383,6 +460,10 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 		state.sftpDownloadDirectory = directory
 		state.status = fmt.Sprintf(state.messages.Tools.FilesDownloadDirectorySavedFmt, directory)
 		state.save()
+	case hitSettingsCustomEditorChoose:
+		state.chooseCustomEditor()
+	case hitSettingsCustomEditorClear:
+		state.clearCustomEditor()
 	case hitSettingsDownloadAsk:
 		state.sftpDownloadDirectory = ""
 		state.status = state.messages.Tools.FilesDownloadAskSaved
@@ -509,6 +590,15 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpPanelSide = layoutcore.ContextLeft
 	if saved.SFTPPanelSide == "right" {
 		state.sftpPanelSide = layoutcore.ContextRight
+	}
+	state.sftpWindowOrder = sftpWindowOrderFromString(saved.SFTPWindowOrder)
+	state.sftpOpenMode = sftpOpenModeFromString(saved.SFTPOpenMode)
+	state.customEditorPath = strings.TrimSpace(saved.CustomEditorPath)
+	if !validCustomEditorPath(state.customEditorPath) {
+		state.customEditorPath = ""
+	}
+	if state.defaultEditor == editorCustom && state.customEditorPath == "" {
+		state.defaultEditor = editorNone
 	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.closeAction = closeActionFromString(saved.CloseAction)

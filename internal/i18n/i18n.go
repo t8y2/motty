@@ -7,6 +7,14 @@
 // and so on), so adding a string touches its struct and both catalogs.
 package i18n
 
+type HostGroupMessages struct {
+	Actions, Rename, NewChild, Name, Save, Create string
+	InvalidName, Conflict, Missing                string
+	Move, Delete, Parent, TopLevel, Cycle         string
+	Pin, Unpin, MoveUp, MoveDown                  string
+	KeepParentFmt, KeepUngrouped                  string
+}
+
 // Language selects one catalog entry.
 type Language uint8
 
@@ -254,6 +262,7 @@ type Messages struct {
 	SettingsTerminalClipboardAllow       string
 	SettingsShortcuts                    string
 	ShortcutsReset                       string
+	ShortcutsDelete                      string
 	ShortcutsCaptureTitle                string
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
@@ -278,18 +287,19 @@ type Messages struct {
 	RecordingExportFailedFmt             string
 
 	// Toolbar and host table.
-	NewHost       string
-	EditHost      string
-	CopyHost      string
-	DeleteHost    string
-	MoveHostGroup string
-	ExportHosts   string
-	ImportCatalog string
-	ImportMenu    string
-	Connect       string
-	ColumnName    string
-	HostsEmpty    string
-	HostsEmptySub string
+	NewHost          string
+	EditHost         string
+	CopyHost         string
+	DeleteHost       string
+	MoveHostGroup    string
+	HostGroupActions HostGroupMessages
+	ExportHosts      string
+	ImportCatalog    string
+	ImportMenu       string
+	Connect          string
+	ColumnName       string
+	HostsEmpty       string
+	HostsEmptySub    string
 
 	// OpenSSH config import.
 	SSHConfigImport             string

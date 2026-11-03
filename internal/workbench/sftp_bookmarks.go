@@ -301,7 +301,8 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if w.activeLocal {
 		focus = hitSFTPBookmarkFields.At(1)
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, DismissID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: ui.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: ui.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
 	layout := dialog.Begin(m.BookmarkTitle, m.BookmarkDescription)
 	var fields [3]flex.Box
 	var browse, list, scope, add, save, remove flex.Box

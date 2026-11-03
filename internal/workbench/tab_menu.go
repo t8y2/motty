@@ -31,15 +31,16 @@ var (
 	hitTabMenuActual     = tree.ID(tabMenuHits, "tab-menu-actual")
 	hitTabMenuCtrlAltDel = tree.ID(tabMenuHits, "tab-menu-ctrl-alt-del")
 	hitTabMenuHideBars   = tree.ID(tabMenuHits, "tab-menu-hide-bars")
+	hitTabMenuFullscreen = tree.ID(tabMenuHits, "tab-menu-fullscreen")
+	hitTabMenuLatency    = tree.ID(tabMenuHits, "tab-menu-latency")
 )
 
 // The rename dialog's identities, after the menu's.
 var (
-	hitTabRenameDismiss = tree.ID(tabMenuHits, "tab-rename-dismiss")
-	hitTabRenameClose   = tree.ID(tabMenuHits, "tab-rename-close")
-	hitTabRenameCancel  = tree.ID(tabMenuHits, "tab-rename-cancel")
-	hitTabRenameSubmit  = tree.ID(tabMenuHits, "tab-rename-submit")
-	hitTabRenameField   = tree.ID(tabMenuHits, "tab-rename-field")
+	hitTabRenameClose  = tree.ID(tabMenuHits, "tab-rename-close")
+	hitTabRenameCancel = tree.ID(tabMenuHits, "tab-rename-cancel")
+	hitTabRenameSubmit = tree.ID(tabMenuHits, "tab-rename-submit")
+	hitTabRenameField  = tree.ID(tabMenuHits, "tab-rename-field")
 )
 
 // The confirmation before closing several tabs at once.
@@ -143,6 +144,10 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuActual, Label: desktop.Actual, Icon: icon(iconGrid2x2), Kind: components.ContextMenuRadio, Selected: !session.desk.fit})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuCtrlAltDel, Label: desktop.CtrlAltDel, Icon: icon(iconKeyboard), Disabled: session.desk.ended})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuHideBars, Label: messages.Desktop.HideBars, Icon: icon(iconEyeOff), Kind: components.ContextMenuCheckbox, Checked: session.desk.chromeless})
+		rows.add(components.ContextMenuItem{ID: hitTabMenuFullscreen, Label: desktop.Fullscreen, Icon: icon(iconDesktop), Keys: []string{"Ctrl", "Alt", "Enter"}, Disabled: session.desk.ended})
+		if session.host.Protocol == protocolRDP {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuLatency, Label: desktop.ShowLatency, Icon: icon(iconActivity), Kind: components.ContextMenuCheckbox, Checked: state.terminalShowLatency})
+		}
 		rows.separate()
 	}
 	rows.separate()
@@ -200,7 +205,7 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.pendingWorkspace, state.pendingPane = 0, 0
 			state.newHostSession(session.host)
 		}
-	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars:
+	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
 		session, ok := state.tabMenuSessionFor(workspace)
 		if !ok || session.desk == nil {
 			return true
@@ -217,6 +222,11 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			}
 		case hitTabMenuHideBars:
 			state.setDesktopChromeless(session, !session.desk.chromeless)
+		case hitTabMenuFullscreen:
+			state.toggleDesktopFullscreen(session)
+		case hitTabMenuLatency:
+			state.terminalShowLatency = !state.terminalShowLatency
+			state.save()
 		}
 	case hitTabMenuClose:
 		state.closeWorkspace(workspace)

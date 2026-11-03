@@ -585,7 +585,8 @@ func (s *State) paintDashboardDialog(c *ui.Canvas, viewport ui.Rect) {
 			initial = dashboardOrderID(e.selected[0])
 		}
 	}
-	dialog := components.BeginDialog(c, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitDashboardDismiss, CloseID: hitDashboardDialogCancel, InitialFocusID: initial, ContentSize: ui.Size{Width: 780}, FitBody: true, BodyHeight: min(600, max(360, viewport.Height-240))})
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := components.BeginDialog(c, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDashboardDialogCancel, InitialFocusID: initial, ContentSize: ui.Size{Width: 780}, FitBody: true, BodyHeight: min(600, max(360, viewport.Height-240))})
 	layout := dialog.Begin(title, "")
 	b := layout.Body
 	y := b.Y + 4

@@ -32,6 +32,8 @@ var (
 	hitDesktopCapture    = tree.ID(desktopHits, "capture")
 	hitDesktopCtrlAltDel = tree.ID(desktopHits, "ctrl-alt-del")
 	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
+	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
+	hitDesktopLatency    = tree.ID(desktopHits, "latency")
 )
 
 const (
@@ -72,7 +74,9 @@ type desktopView struct {
 	// chromeless is the host's choice to show only the picture: no bar above it
 	// and no status line under it. Their controls move to the tab's menu, and
 	// the capture note to a corner of the picture.
-	chromeless bool
+	chromeless   bool
+	fullscreen   bool
+	focusPending bool
 	// width and height are the picture's size as last presented.
 	width, height int
 	// resizer is the session when its server can change the picture's size to
@@ -224,6 +228,13 @@ func desktopLayout(size ui.Size, chromeless bool) desktopGeometry {
 	}
 }
 
+func (view *desktopView) layout(size ui.Size) desktopGeometry {
+	if view.fullscreen {
+		return desktopGeometry{area: ui.Rect{Width: size.Width, Height: size.Height}}
+	}
+	return desktopLayout(size, view.chromeless)
+}
+
 // place says where the picture sits in area and at what scale (logical pixels
 // per picture pixel). A picture shown pixel for pixel starts at the top left of
 // the area, as the window of a remote machine does, and sits on a device pixel.
@@ -323,6 +334,9 @@ func (state *State) endDesktop(session *Session) {
 func (state *State) desktopVisible(session *Session) bool {
 	if state.winChrome.minimized || state.activeSection != sectionTerminal {
 		return false
+	}
+	if fullscreen := state.fullscreenDesktop(); fullscreen != nil {
+		return fullscreen.ID == session.ID
 	}
 	owner, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
 	return ok && owner == state.deck.ActiveWorkspace()
@@ -649,7 +663,7 @@ func (state *State) desktopPointer(session *Session, event ui.PointerEvent) ui.E
 	if view.ended || event.Kind == ui.PointerExit {
 		return ui.EventResult{}
 	}
-	geometry := desktopLayout(event.Viewport, view.chromeless)
+	geometry := view.layout(event.Viewport)
 	panned := false
 	if !view.fit {
 		before := view.pointer
@@ -692,7 +706,7 @@ func (state *State) desktopScroll(session *Session, event ui.ScrollEvent) ui.Eve
 	}
 	wheel := desktop.Wheel{X: notches(&view.wheel.X), Y: notches(&view.wheel.Y)}
 	if wheel != (desktop.Wheel{}) {
-		x, y := view.remote(desktopLayout(event.Viewport, view.chromeless).area, event.X, event.Y)
+		x, y := view.remote(view.layout(event.Viewport).area, event.X, event.Y)
 		_ = view.session.SendWheel(x, y, wheel, view.buttons)
 	}
 	return ui.EventResult{Handled: true}
@@ -762,6 +776,8 @@ func (state *State) clickDesktop(id ui.ID) bool {
 		view.fit = true
 	case hitDesktopActual:
 		view.fit = false
+	case hitDesktopFullscreen:
+		state.toggleDesktopFullscreen(session)
 	case hitDesktopCapture:
 		state.toggleCapture(view)
 	case hitDesktopCtrlAltDel:
@@ -785,13 +801,13 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	view := session.desk
 	view.present()
 	view.pixelScale = canvas.PixelScale()
-	geometry := desktopLayout(size, view.chromeless)
+	geometry := view.layout(size)
 	view.area = geometry.area
 	state.followDesktop(canvas, view)
 
 	var light, toolsSlot, captureSlot flex.Box
 	var tools []components.ButtonAction
-	if !view.chromeless {
+	if !view.chromeless && !view.fullscreen {
 		title := session.Title
 		if title == "" {
 			title = session.Address
@@ -804,13 +820,14 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 		tools = []components.ButtonAction{
 			{ID: hitDesktopFit, Label: m.Desktop.Fit, Variant: components.ButtonGhost},
 			{ID: hitDesktopActual, Label: m.Desktop.Actual, Variant: components.ButtonGhost},
+			{ID: hitDesktopFullscreen, Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
 		}
 		if view.fit {
 			tools[0].Variant = components.ButtonSecondary
 		} else {
 			tools[1].Variant = components.ButtonSecondary
 		}
-		if size.Width >= 620 {
+		if size.Width >= 760 {
 			tools = append([]components.ButtonAction{{ID: hitDesktopCtrlAltDel, Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
 		}
 		toolsWidth := float32(0)
@@ -843,6 +860,7 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 				f.Row().FillWidth().Height(1).Self(flex.Start).Background(pal.line)
 				f.Row().Fill().PadX(termPadX).Items(flex.Center).Children(func() {
 					f.Text(state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
+					state.declareDesktopLatency(f, canvas, view)
 					chordText := m.Desktop.StripCaptured
 					colour := pal.muted
 					if view.released {
@@ -877,7 +895,7 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	// The bars lay that ground in their flex stack; a chromeless session drops
 	// the stack, so the ground is painted here instead.
 	area := geometry.area
-	if view.chromeless {
+	if view.chromeless || view.fullscreen {
 		canvas.Fill(area, state.ground(state.termPal.terminal))
 	}
 	canvas.Clip(area)
@@ -892,7 +910,7 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	if view.ended {
 		state.paintDesktopEnded(canvas, area, session)
 	}
-	if view.chromeless && !view.released && !view.ended {
+	if view.chromeless && !view.fullscreen && !view.released && !view.ended {
 		state.paintDesktopCaptureNote(canvas, view, area)
 	}
 	canvas.Unclip()
@@ -902,6 +920,15 @@ func (state *State) paintDesktopPage(canvas *ui.Canvas, size ui.Size, session *S
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, ui.HitOptions{
 		Role: ui.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor, CursorImage: cursorImage,
 	})
+	if view.focusPending {
+		canvas.RequestFocus(hitTerminalList.At(int(session.ID)))
+		view.focusPending = false
+	}
+	if view.fullscreen {
+		state.paintDesktopFullscreenControls(canvas, view, area)
+	} else if view.chromeless {
+		state.paintChromelessLatency(canvas, view, area)
+	}
 }
 
 // paintDesktopCaptureNote is the corner note a chromeless session shows while it
@@ -927,6 +954,9 @@ func (state *State) paintDesktopCaptureNote(canvas *ui.Canvas, view *desktopView
 // picture area of the page it is on, at the display scale last painted.
 func (state *State) desktopTargetFor(session *Session) desktopTarget {
 	size := state.viewport
+	if session.desk != nil && session.desk.fullscreen {
+		return desktopTargetFor(session.desk.layout(size).area, state.pixelScale)
+	}
 	if workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
 		if fraction, _, ok := state.paneFractionBounds(workspaceID, paneID); ok {
 			size = paneVirtualSize(pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction))
