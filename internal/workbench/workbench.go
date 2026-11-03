@@ -2044,6 +2044,16 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
+	if state.modal == modalSnippet && event.Kind == ui.PointerDown {
+		state.snippets.abandonOther(event.Target)
+	}
+	if state.modal == modalSnippet && event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) && event.Target == hitSnippetSubmit {
+		if target := state.snippets.composingTarget(); !target.IsZero() {
+			// Keep the composition and its field focused; swallowing this press
+			// prevents the focus change from committing the preedit before Save.
+			return ui.EventResult{Handled: true, Repaint: true, Focus: target}
+		}
+	}
 	if result, handled := state.updateDialogPointer(event); handled {
 		return result
 	}
@@ -2374,6 +2384,8 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand) && !event.Repeat {
+		// submitSnippet refuses while either field is composing: that Enter
+		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

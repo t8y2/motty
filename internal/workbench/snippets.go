@@ -198,8 +198,44 @@ func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord shortcutChor
 	return result
 }
 
+// composingTarget returns the field whose input method still holds marked
+// text. Saving then would persist the preedit verbatim, so the dialog waits for
+// the input method to commit it; an empty range marks nothing to protect.
+func (form *snippetsUI) composingTarget() ui.ID {
+	fields := [...]struct {
+		id     ui.ID
+		editor *text.Editor
+	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}}
+	for _, field := range fields {
+		if marked, composing := field.editor.Composition(); composing && marked.Start != marked.End {
+			return field.id
+		}
+	}
+	return ui.ID{}
+}
+
+func (form *snippetsUI) composing() bool {
+	return form.composingTarget() != ui.ID{}
+}
+
+// abandonOther ends the composition of the field the pointer is leaving. The
+// input method drops its marked text when the text input moves; the editor has
+// to drop it too, or the field the user left keeps composing and blocks every
+// later save. Unmark keeps the text, which is what the user already sees.
+func (form *snippetsUI) abandonOther(target ui.ID) {
+	switch target {
+	case hitSnippetName:
+		form.command.Unmark()
+	case hitSnippetCommand:
+		form.name.Unmark()
+	}
+}
+
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
+	if form.composing() {
+		return
+	}
 	entry := snippet{
 		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
 		Command:  cleanSnippetText(form.command.String(), maxSnippetCommand),
