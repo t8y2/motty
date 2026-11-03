@@ -133,3 +133,49 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		view.Close()
 	}
 }
+
+func TestHostTagPopupCanSelectOutsideScrolledForm(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.setLanguage(i18n.Chinese)
+	state.Click(hitAddHost)
+	picker := state.hostTagPicker()
+	picker.control.SetValues([]string{"extra"}) // a fourth row crosses the form's bottom clip at this window size
+	state.syncHostTags()
+	view, err := headless.Open(app.Config{Width: 960, Height: 600, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, TextInput: func(c app.TextInputContext) *app.TextInput {
+		if editor := state.EditorFor(c.ID); editor != nil {
+			return &app.TextInput{Editor: editor}
+		}
+		return nil
+	}}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == hitDialogTags {
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	clip := state.editor.form.geometry.Viewport
+	var option ui.Hit
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == hitHostTagOptions.At(3) {
+			option = hit
+		}
+	}
+	if option.Bounds.Y+option.Bounds.Height <= clip.Y+clip.Height || option.Bounds.Height < 30 || option.Bounds.Y+option.Bounds.Height > state.viewport.Height {
+		t.Fatalf("last tag row was clipped by the scrolled form: row=%+v form=%+v window=%+v", option, clip, state.viewport)
+	}
+	if err := view.Click(option.Bounds.X+option.Bounds.Width/2, option.Bounds.Y+option.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if state.editor.value(fieldTags) != "" || state.modal != modalNewHost || !picker.control.Open {
+		t.Fatalf("option beyond the form footer was not selected: tags=%q modal=%v open=%v", state.editor.value(fieldTags), state.modal, picker.control.Open)
+	}
+}

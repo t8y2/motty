@@ -174,6 +174,8 @@ func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
 		InputID: hitDialogTags, TriggerID: hitHostTagsTrigger, DismissID: hitHostTagsDismiss, Scope: hostTagsScope, ScrollID: hitHostTagsScroll,
 		OptionIDs: hitHostTagOptions, RemoveIDs: hitHostTagRemove, Label: state.messages.FieldTags,
 		Placeholder: state.messages.FieldTagsPlaceholder, EmptyLabel: state.messages.HostTagsEmpty, CreatePrefix: state.messages.HostTagsCreatePrefix,
+		// The popup may cover the dialog footer, while the input stays clipped to
+		// the scrollable form. Viva bounds the floating list to this window.
 		Viewport: ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2,
 		Invalid: query != "" && !validHostTag(query),
 	})
