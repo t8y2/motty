@@ -58,6 +58,7 @@ type AISettingsMessages struct {
 	ErrFormKey               string
 	ErrFormSaveFmt           string
 	ErrModelName             string
+	ErrModelNotChat          string
 	CLIPath                  string
 	CLIPathDefault           string
 	CLIPathDetected          string
@@ -159,6 +160,21 @@ type AISettingsMessages struct {
 	ModelPageFmt     string
 	ModelPrev        string
 	ModelNext        string
+
+	// Probing.
+	ModelsProbeAll    string
+	ModelsProbeCancel string
+	ProbeDialogTitle  string
+	ProbeDialogDesc   string
+	ProbeStartAction  string
+	ModelsProbingFmt  string
+	ProbeConcurrency  string
+	ProbeTimeout      string
+	ModelProbe        string
+	ModelProbing      string
+	ModelProbeSkipped string
+	ModelProbeFailed  string
+	ModelTagReasoning string
 
 	// Behaviour.
 	BehaviourTitle   string
