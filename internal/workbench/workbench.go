@@ -860,6 +860,7 @@ func (state *State) Close() {
 	for index := range state.forwards {
 		state.forwards[index].stop()
 	}
+	memoryTrim.request()
 }
 
 // New returns the workspace. Options wire it to the outside world: where
@@ -1589,6 +1590,7 @@ func (state *State) closeSession(id uint32) {
 		return
 	}
 	defer state.save()
+	defer memoryTrim.request()
 	session := &state.sessions[index]
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.
