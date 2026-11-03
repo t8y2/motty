@@ -25,11 +25,11 @@ var ErrCredentialsFatal = errors.New("credentials rejected")
 // ErrNegotiateToken marks a failure before an NTLM Authenticate message was
 // sent. A caller may reconnect and try another token encoding without retrying
 // credentials. Explicit credential refusals are never marked with this error.
-var ErrNegotiateToken = errors.New("CredSSP token negotiation failed before credentials were sent")
+var ErrNegotiateToken = errors.New("token negotiation failed")
 
 // ErrCredentialsSent marks failures after sending an NTLM Authenticate message
 // was attempted. Callers must not retry credentials or fall back to TLS-only.
-var ErrCredentialsSent = errors.New("CredSSP failed after credentials were sent")
+var ErrCredentialsSent = errors.New("failed after credentials were sent")
 
 // isFatalNTSTATUS returns true for error codes where retrying is pointless.
 func isFatalNTSTATUS(code int) bool {
