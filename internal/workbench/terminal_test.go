@@ -668,3 +668,45 @@ func TestTerminalEscapeWithOpenSFTPDoesNotCloseSFTP(t *testing.T) {
 		t.Fatal("Escape inside SFTP panel did not close the panel")
 	}
 }
+
+// An open editor belongs to the panel: Escape typed in the terminal must reach
+// the shell and leave the editor alone.
+func TestTerminalEscapeWithAnOpenEditorLeavesItAlone(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	state.openSFTP(session)
+	if session.files == nil {
+		t.Fatal("SFTP panel failed to open")
+	}
+	session.files.editPath = "/home/test/notes.txt"
+	shell.input = nil
+
+	result := key(state, 0, ui.KeyEvent{Key: ui.KeyEscape})
+	if !result.Handled {
+		t.Fatal("Escape in terminal was not handled")
+	}
+	if session.files == nil || session.files.editPath == "" {
+		t.Fatal("Escape in terminal closed the editor")
+	}
+	if got := string(shell.input); got != "\x1b" {
+		t.Fatalf("shell input = %q, want Escape (\\x1b)", got)
+	}
+}
+
+// The terminal is the only focus that keeps its Escape; away from it the panel
+// still closes.
+func TestEscapeOutsideThePanelStillClosesIt(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.openSFTP(session)
+	if session.files == nil {
+		t.Fatal("SFTP panel failed to open")
+	}
+	workspace := state.deck.ActiveWorkspace()
+	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitTabList.At(int(workspace))}); !result.Handled {
+		t.Fatal("Escape outside the panel was not handled")
+	}
+	if session.files != nil {
+		t.Fatal("Escape outside the panel did not close it")
+	}
+}

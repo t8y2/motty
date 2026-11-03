@@ -1709,14 +1709,16 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		return ui.EventResult{}, false
 	}
+	// A terminal keeps its own keys: an open editor or panel is no reason to take
+	// Escape away from the shell the user is typing into.
+	if state.terminalSession(event.Target) != nil {
+		return ui.EventResult{}, false
+	}
 	if view.editPath != "" {
 		if event.Key == ui.KeyEscape {
 			state.closeSFTPEditor(view)
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{}, false
-	}
-	if state.terminalSession(event.Target) != nil {
 		return ui.EventResult{}, false
 	}
 	switch event.Key {
@@ -1741,10 +1743,8 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			view.bookmarksOpen = false
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
-		if tree.Within(event.Target.Scope(), sftpHits) || event.Target.IsZero() {
-			state.clickSFTP(hitSFTPClose)
-			return ui.EventResult{Handled: true, Repaint: true}, true
-		}
+		state.clickSFTP(hitSFTPClose)
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	case ui.KeyEnter:
 		if event.Target.Scope() == hitSFTPEntryList {
 			folder := view.active()
