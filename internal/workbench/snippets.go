@@ -198,8 +198,31 @@ func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord shortcutChor
 	return result
 }
 
+// composingTarget returns the field whose input method still holds marked
+// text. Saving then would persist the preedit verbatim, so the dialog waits for
+// the input method to commit it; an empty range marks nothing to protect.
+func (form *snippetsUI) composingTarget() ui.ID {
+	fields := [...]struct {
+		id     ui.ID
+		editor *text.Editor
+	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}}
+	for _, field := range fields {
+		if marked, composing := field.editor.Composition(); composing && marked.Start != marked.End {
+			return field.id
+		}
+	}
+	return ui.ID{}
+}
+
+func (form *snippetsUI) composing() bool {
+	return form.composingTarget() != ui.ID{}
+}
+
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
+	if form.composing() {
+		return
+	}
 	entry := snippet{
 		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
 		Command:  cleanSnippetText(form.command.String(), maxSnippetCommand),
