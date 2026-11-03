@@ -1709,6 +1709,11 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		return ui.EventResult{}, false
 	}
+	// A terminal keeps its own keys: an open editor or panel is no reason to take
+	// Escape away from the shell the user is typing into.
+	if state.terminalSession(event.Target) != nil {
+		return ui.EventResult{}, false
+	}
 	if view.editPath != "" {
 		if event.Key == ui.KeyEscape {
 			state.closeSFTPEditor(view)
