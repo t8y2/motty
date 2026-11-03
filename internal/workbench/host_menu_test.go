@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"net"
 	"strconv"
 	"testing"
@@ -77,6 +78,38 @@ func TestConnectionAddressAndPortHandlesIPv6AndPortlessHosts(t *testing.T) {
 				t.Fatalf("connectionAddressAndPort() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+// A clipboard that refuses the write must say so: the menu closes either way, so
+// silence would leave the choice looking as if it had worked.
+func TestAFailedConnectionCopyIsReported(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.options.SetClipboardText = func(string) error { return errors.New("clipboard unavailable") }
+	rightClickHost(state, state.hosts[1].ID)
+	state.Click(hitHostMenuAddress)
+	if state.status != "clipboard unavailable" {
+		t.Fatalf("status = %q, want the clipboard's reason", state.status)
+	}
+}
+
+// The connection copies read as one group: a separator between the address, the
+// name and the host would say they are different kinds of action.
+func TestHostMenuKeepsTheConnectionCopyRowsTogether(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	rightClickHost(state, state.hosts[1].ID)
+	canvas, _ := paintedTexts(state)
+	order := []ui.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuEdit}
+	previous := float32(0)
+	for index, id := range order {
+		hit, ok := hitByID(canvas, id)
+		if !ok {
+			t.Fatalf("menu item %d is missing", id)
+		}
+		if index > 0 && hit.Bounds.Y <= previous {
+			t.Fatalf("row %d sits at %.0f, above the row before it at %.0f", id, hit.Bounds.Y, previous)
+		}
+		previous = hit.Bounds.Y
 	}
 }
 

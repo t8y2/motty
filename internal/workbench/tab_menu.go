@@ -205,13 +205,11 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	switch id {
 	case hitTabMenuCopyAddress:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
-			if address := connectionAddressAndPort(session.host); address != "" && state.options.SetClipboardText != nil {
-				_ = state.options.SetClipboardText(address)
-			}
+			state.copyConnectionText(connectionAddressAndPort(session.host))
 		}
 	case hitTabMenuCopyName:
-		if session, ok := state.tabMenuSessionFor(workspace); ok && session.host.Label != "" && state.options.SetClipboardText != nil {
-			_ = state.options.SetClipboardText(session.host.Label)
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			state.copyConnectionText(session.host.Label)
 		}
 	case hitTabMenuRename:
 		state.openTabRename(workspace)

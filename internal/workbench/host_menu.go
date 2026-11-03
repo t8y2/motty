@@ -106,9 +106,9 @@ func (state *State) paintHostMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	address := connectionAddressAndPort(host)
 	rows.add(components.ContextMenuItem{ID: hitHostMenuAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: several || address == ""})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: several || host.Label == ""})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHostTitle, Icon: icon(iconCopy), Disabled: several})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
-	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHostTitle, Icon: icon(iconCopy), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	width, height := rows.size(canvas, state.contextMenuTheme())
@@ -140,13 +140,9 @@ func (state *State) clickHostMenu(id ui.ID) bool {
 	case hitHostMenuSFTP:
 		state.openHostSFTPWindow(host)
 	case hitHostMenuAddress:
-		if address := connectionAddressAndPort(host); address != "" && state.options.SetClipboardText != nil {
-			_ = state.options.SetClipboardText(address)
-		}
+		state.copyConnectionText(connectionAddressAndPort(host))
 	case hitHostMenuName:
-		if state.options.SetClipboardText != nil {
-			_ = state.options.SetClipboardText(host.Label)
-		}
+		state.copyConnectionText(host.Label)
 	case hitHostMenuEdit:
 		state.openEditHostID(host.ID)
 	case hitHostMenuCopy:

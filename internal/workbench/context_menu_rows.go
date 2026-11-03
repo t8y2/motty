@@ -22,6 +22,18 @@ func connectionAddressAndPort(host Host) string {
 	return net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
 }
 
+// copyConnectionText places what a connection copy row offers on the clipboard.
+// A failure goes to the status line, where the terminal's own Copy reports it,
+// instead of being dropped along with the menu that asked for it.
+func (state *State) copyConnectionText(value string) {
+	if value == "" || state.options.SetClipboardText == nil {
+		return
+	}
+	if err := state.options.SetClipboardText(value); err != nil {
+		state.status = err.Error()
+	}
+}
+
 // contextMenuTheme is the theme the right-click menus are measured and painted
 // with: a point smaller text than the window's, which Viva takes from the theme.
 func (state *State) contextMenuTheme() ui.Theme {
