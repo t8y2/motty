@@ -370,11 +370,10 @@ func (state *State) terminalPositionAt(session *Session, viewport ui.Size, x, y 
 	if terminal == nil {
 		return term.Position{}
 	}
-	// The pane's layout can lead the terminal's own resize while a window or a
-	// split is changing. Pointer targets must follow the buffer that will serve
-	// them, not the larger rectangle that is about to resize it.
+	// The visible grid can lead the buffer's resize while a window changes.
+	// Clamp against both so a click in the painted pane stays in the screen.
 	cols, rows := terminal.screen.Size()
-	if cols <= 0 || rows <= 0 {
+	if cols <= 0 || rows <= 0 || geometry.cols <= 0 || geometry.rows <= 0 {
 		return term.Position{}
 	}
 	column, row := 0, 0

@@ -124,7 +124,7 @@ func TestTerminalPointerClampsToTheScreensCurrentRows(t *testing.T) {
 				Width:  state.viewport.Width + 24*state.cellWidth,
 				Height: state.viewport.Height + 24*state.cellHeight,
 			}
-			geometry := terminalLayout(state.viewport, state.cellWidth, state.cellHeight, state.padding())
+			geometry := state.terminalLayoutForEvent(session.ID, state.viewport)
 			hit := hitTerminalList.At(int(session.ID))
 			cols, rows := session.term.screen.Size()
 
@@ -150,7 +150,7 @@ func TestTerminalPointerClampsToTheScreensCurrentRows(t *testing.T) {
 func TestTerminalPointerReturnsTheOriginForAnEmptyScreen(t *testing.T) {
 	state, session, geometry := selectionState()
 	session.term.screen.Resize(0, 0)
-	position := state.terminalPositionAt(session.term, state.viewport,
+	position := state.terminalPositionAt(session, state.viewport,
 		geometry.left+5*state.cellWidth, geometry.top+3*state.cellHeight)
 	if position != (term.Position{}) {
 		t.Fatalf("empty screen pointer = %+v", position)

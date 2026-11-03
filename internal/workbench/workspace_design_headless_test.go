@@ -33,7 +33,7 @@ func TestWorkspaceDesignCaptures(t *testing.T) {
 						state.setAppearance(appearanceLight)
 					}
 					state.templates = []WorkspaceTemplate{
-						mustWorkspaceTemplate(t, "Production API", append([]string{workspaceLocalTerminalRef}, workspaceCatalogIDs(state, 0, 1)...), 2),
+						mustWorkspaceTemplate(t, "Production API", workspaceCatalogIDs(state, 0, 1, 2), 2),
 						mustWorkspaceTemplate(t, "Staging", workspaceCatalogIDs(state, 1), 1),
 					}
 					state.activeSection = sectionWorkspaces
@@ -68,13 +68,19 @@ func TestWorkspaceDesignCaptures(t *testing.T) {
 						}
 					}
 					capture("library")
+					state.openWorkspaceDraftEdit(state.templates[0].ID)
+					capture("edit")
+					state.closeModal()
+					state.openWorkspaceTemplateDelete(state.templates[0].ID)
+					capture("delete")
+					state.closeModal()
 					state.moveWorkspaceTemplateCard(state.templates[0].ID, 0, 1)
 					capture("library-reordered")
 					state.openWorkspaceDraft(workspaceDraftFixed)
 					state.workspaceDraft.name.Insert("Production API")
-					state.Click(hitWorkspaceDraftHostList.At(0))
 					state.Click(workspaceDraftHostID(0))
 					state.Click(workspaceDraftHostID(1))
+					state.Click(workspaceDraftHostID(2))
 					capture("draft")
 					state.closeModal()
 					launchTemporaryWorkspace(t, state, 0, 1, 2)
@@ -129,8 +135,7 @@ func TestWorkspacePaneToolsThroughWindowDriver(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	session, _ := state.sessionByIDPointer(state.activeSessionID)
-	trigger := state.paneIdentity(session, hitWorkspacePaneTools)
+	trigger := hitWorkspacePaneTools
 	click(trigger)
 	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
 		t.Fatal("embedded terminal menu did not open")

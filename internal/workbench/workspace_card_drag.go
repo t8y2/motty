@@ -78,10 +78,7 @@ func (state *State) moveWorkspaceCard(source workspaceCardRegion, target int) {
 	case workspaceCardsTemplate:
 		state.moveWorkspaceTemplateCard(source.template, source.index, target)
 	case workspaceCardsDraft:
-		ids := state.workspaceDraftSelectedCatalogIDs()
-		if moveWorkspaceItem(ids, source.index, target) {
-			state.workspaceDraft.order = ids
-		}
+		state.moveWorkspaceDraftItem(source.index, target)
 	}
 }
 

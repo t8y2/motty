@@ -449,6 +449,7 @@ const (
 	modalDeleteRule
 	modalWorkspaceDraft
 	modalWorkspaceSave
+	modalWorkspaceTemplateDelete
 )
 
 // tone colors a session's headline.
@@ -1121,6 +1122,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalWorkspaceSave {
 		state.workspaceSave = workspaceSave{}
+	}
+	if state.modal == modalWorkspaceTemplateDelete {
+		state.workspaceTemplateDelete = workspaceTemplateDelete{}
 	}
 	state.modal = modalNone
 	state.modalSession = 0

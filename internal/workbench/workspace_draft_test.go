@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -255,6 +256,252 @@ func TestWorkspaceDraftRequiresAtLeastOneHost(t *testing.T) {
 	}
 	if len(world.configs) != 0 || len(state.sessions) != 0 {
 		t.Fatalf("empty draft dialed=%d sessions=%d", len(world.configs), len(state.sessions))
+	}
+}
+
+func TestWorkspaceDraftEditCopiesTemplateAndPreservesMissingReferences(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[0].CatalogID, "host_deleted", state.hosts[1].CatalogID,
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+
+	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftEdit {
+		t.Fatalf("edit opened modal=%d mode=%d", state.modal, state.workspaceDraft.mode)
+	}
+	if state.workspaceDraft.editID != template.ID || state.workspaceDraft.name.String() != template.Name ||
+		state.workspaceDraft.columns != template.Columns || !slices.Equal(state.workspaceDraft.order, template.HostIDs) {
+		t.Fatalf("edit draft = %+v, want template %+v", state.workspaceDraft, template)
+	}
+
+	state.workspaceDraft.name = *text.NewEditor("Critical")
+	state.workspaceDraftRemoveItem(1)
+	if !slices.Equal(state.workspaceDraft.order, []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
+		t.Fatalf("explicit removal left order %v", state.workspaceDraft.order)
+	}
+	state.workspaceDraft.name = *text.NewEditor(template.Name)
+	if !slices.Equal(state.workspaceDraft.order, []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
+		t.Fatalf("removed missing reference came back: %v", state.workspaceDraft.order)
+	}
+}
+
+func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[0].CatalogID, "host_deleted",
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	zero, four := uint8(0), uint8(4)
+
+	tests := []struct {
+		name   string
+		setup  func()
+		column *uint8
+	}{
+		{name: "empty members", setup: func() { state.workspaceDraftRemoveItem(1); state.workspaceDraftRemoveItem(0) }},
+		{name: "duplicate members", setup: func() { state.workspaceDraft.order = append(state.workspaceDraft.order, state.workspaceDraft.order[0]) }},
+		{name: "too many members", setup: func() {
+			state.workspaceDraft.order = []string{
+				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9",
+			}
+		}},
+		{name: "zero columns", setup: func() {}, column: &zero},
+		{name: "four columns", setup: func() {}, column: &four},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state.templates = []WorkspaceTemplate{template}
+			state.openWorkspaceDraftEdit(template.ID)
+			test.setup()
+			if test.column != nil {
+				state.workspaceDraft.columns = *test.column
+			}
+			state.submitWorkspaceDraft()
+			if state.modal != modalWorkspaceDraft || state.workspaceDraft.error == "" {
+				t.Fatalf("invalid edit closed with error %q", state.workspaceDraft.error)
+			}
+			if !reflect.DeepEqual(state.templates, []WorkspaceTemplate{template}) {
+				t.Fatalf("invalid edit changed templates: %+v", state.templates)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDraftEditUpdatesTheSameTemplateAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[0].CatalogID, "host_deleted", state.hosts[1].CatalogID,
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+	state.workspaceDraft.name = *text.NewEditor("Critical")
+	state.workspaceDraftRemoveItem(1)
+	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftColumns2,
+		[]components.SegmentOption{
+			{ID: hitWorkspaceDraftColumns1}, {ID: hitWorkspaceDraftColumns2}, {ID: hitWorkspaceDraftColumns3},
+		}, components.DirectionLTR, ui.KeyRight); !ok || next != hitWorkspaceDraftColumns3 {
+		t.Fatalf("columns test setup = %v, %v", next, ok)
+	}
+	state.Click(hitWorkspaceDraftColumns3)
+	state.submitWorkspaceDraft()
+
+	if state.modal != modalNone || len(state.templates) != 1 {
+		t.Fatalf("edit closed modal=%d templates=%+v", state.modal, state.templates)
+	}
+	got := state.templates[0]
+	if got.ID != template.ID || got.Name != "Critical" || got.Columns != 3 ||
+		!slices.Equal(got.HostIDs, []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
+		t.Fatalf("edited template = %+v", got)
+	}
+	loaded, report, err := loadState(options.StatePath)
+	if err != nil || report.outcome != loadOK || !reflect.DeepEqual(loaded.WorkspaceTemplates, state.templates) {
+		t.Fatalf("loaded edit: %+v outcome=%v err=%v", loaded.WorkspaceTemplates, report.outcome, err)
+	}
+}
+
+func TestWorkspaceDraftFailedEditRestoresTemplateContents(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	previousConfig := state.config
+	t.Cleanup(func() { state.config = previousConfig })
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[0].CatalogID, "host_deleted", state.hosts[1].CatalogID,
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+	state.workspaceDraft.name = *text.NewEditor("Critical")
+	state.workspaceDraft.order = []string{state.hosts[1].CatalogID}
+	state.workspaceDraft.columns = 3
+	before := cloneWorkspaceTemplates(state.templates)
+	beforeSelected := state.selectedWorkspaceTemplateID
+	beforeExpanded := state.workspaceLibraryExpanded
+	state.config = nil
+
+	state.submitWorkspaceDraft()
+
+	if state.modal != modalWorkspaceDraft || state.workspaceDraft.error != state.messages.WorkspaceSaveFailed {
+		t.Fatalf("failed edit: modal=%d error=%q", state.modal, state.workspaceDraft.error)
+	}
+	if !reflect.DeepEqual(state.templates, before) || state.selectedWorkspaceTemplateID != beforeSelected ||
+		state.workspaceLibraryExpanded != beforeExpanded {
+		t.Fatalf("failed edit changed library: templates=%+v selected=%q expanded=%t",
+			state.templates, state.selectedWorkspaceTemplateID, state.workspaceLibraryExpanded)
+	}
+	if state.templates[0].HostIDs[1] != "host_deleted" {
+		t.Fatalf("rollback left a mutated host slice: %v", state.templates[0].HostIDs)
+	}
+	if state.workspaceDraft.name.String() != "Critical" ||
+		!slices.Equal(state.workspaceDraft.order, []string{state.hosts[1].CatalogID}) {
+		t.Fatal("failed edit discarded the user's input")
+	}
+}
+
+func TestWorkspaceDraftEditMissingTargetDoesNotInsertTheDraft(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{state.hosts[0].CatalogID}, 1)
+	other := mustWorkspaceTemplate(t, "Database", []string{state.hosts[1].CatalogID}, 1)
+	state.templates = []WorkspaceTemplate{template, other}
+	state.openWorkspaceDraftEdit(template.ID)
+	state.workspaceDraft.name = *text.NewEditor("Renamed")
+	state.templates = []WorkspaceTemplate{other}
+
+	state.submitWorkspaceDraft()
+
+	if state.modal != modalWorkspaceDraft || state.workspaceDraft.error != state.messages.WorkspaceTemplateEditMissing {
+		t.Fatalf("stale target: modal=%d error=%q", state.modal, state.workspaceDraft.error)
+	}
+	if !reflect.DeepEqual(state.templates, []WorkspaceTemplate{other}) {
+		t.Fatalf("stale target inserted or changed a template: %+v", state.templates)
+	}
+}
+
+func TestWorkspaceDraftEditCancelDoesNotChangeAnOpenWorkspace(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		cancel func(*State)
+	}{
+		{"cancel", func(state *State) { state.Click(hitWorkspaceDraftCancel) }},
+		{"dismiss", func(state *State) { state.Click(hitWorkspaceDraftDismiss) }},
+		{"escape", func(state *State) { state.Key(ui.KeyEvent{Key: ui.KeyEscape}) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newWorld(t)
+			state := newTestState(t, options)
+			state.activeSection = sectionWorkspaces
+			template := mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 0, 1), 2)
+			state.templates = []WorkspaceTemplate{template}
+			state.selectedWorkspaceTemplateID = template.ID
+			state.applySelectedWorkspaceTemplate()
+			workspace := state.deck.ActiveWorkspace()
+			active := state.activeSessionID
+			panes := state.deck.Panes(workspace, nil)
+			context, _ := state.deck.Context(workspace)
+			state.activeSection = sectionWorkspaces
+			state.openWorkspaceDraftEdit(template.ID)
+			state.workspaceDraft.name = *text.NewEditor("Renamed")
+			state.workspaceDraftRemoveItem(0)
+			test.cancel(state)
+
+			if state.modal != modalNone || !reflect.DeepEqual(state.templates, []WorkspaceTemplate{template}) {
+				t.Fatal("cancel changed the saved template")
+			}
+			gotContext, _ := state.deck.Context(workspace)
+			if state.activeSessionID != active || !reflect.DeepEqual(state.deck.Panes(workspace, nil), panes) ||
+				gotContext != context || len(world.configs) != 2 {
+				t.Fatal("cancel changed the open workspace")
+			}
+		})
+	}
+}
+
+func TestWorkspaceDraftEditTogglesCurrentHostsAtTheEndOfTheSavedOrder(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[1].CatalogID, "host_deleted",
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	state.Click(workspaceDraftHostID(0))
+	if want := []string{state.hosts[1].CatalogID, "host_deleted", state.hosts[0].CatalogID}; !slices.Equal(state.workspaceDraft.order, want) {
+		t.Fatalf("adding a host = %v, want %v", state.workspaceDraft.order, want)
+	}
+	state.Click(workspaceDraftHostID(0))
+	if want := []string{state.hosts[1].CatalogID, "host_deleted"}; !slices.Equal(state.workspaceDraft.order, want) {
+		t.Fatalf("removing a host = %v, want %v", state.workspaceDraft.order, want)
+	}
+}
+
+func TestWorkspaceDraftEditPreviewAndReorderKeepMissingReferences(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", []string{
+		state.hosts[0].CatalogID, "host_deleted", state.hosts[1].CatalogID,
+	}, 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+	paintAt(state, ui.Size{Width: 1400, Height: 900})
+
+	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
+	if len(items) != 3 || items[1].host != "host_deleted" {
+		t.Fatalf("preview items = %+v", items)
+	}
+	region := workspaceCardRegion{view: workspaceCardsDraft, index: 0}
+	state.moveWorkspaceCard(region, 2)
+	want := []string{"host_deleted", state.hosts[1].CatalogID, state.hosts[0].CatalogID}
+	if !slices.Equal(state.workspaceDraft.order, want) {
+		t.Fatalf("reordered draft = %v, want %v", state.workspaceDraft.order, want)
 	}
 }
 

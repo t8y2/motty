@@ -16,6 +16,7 @@ var workspaceHits = tree.Feature("workspaces")
 var (
 	hitWorkspaceTemplateRowList       = tree.Sub(workspaceHits, tree.Name("template-row"))
 	hitWorkspaceTemplateOpen          = tree.Sub(workspaceHits, tree.Name("template-open"))
+	hitWorkspaceTemplateMore          = tree.Sub(workspaceHits, tree.Name("template-more"))
 	hitWorkspaceLibraryScroll         = tree.ID(workspaceHits, "library-scroll")
 	hitWorkspaceNew                   = tree.ID(workspaceHits, "new")
 	hitWorkspaceDraftDismiss          = tree.ID(workspaceHits, "draft-dismiss")
@@ -33,6 +34,7 @@ var (
 	hitWorkspaceDraftScrollbar        = tree.ID(workspaceHits, "draft-scrollbar")
 	hitWorkspaceDraftPreviewScroll    = tree.ID(workspaceHits, "draft-preview-scroll")
 	hitWorkspaceDraftPreviewScrollbar = tree.ID(workspaceHits, "draft-preview-scrollbar")
+	hitWorkspaceDraftRemoveItem       = tree.Sub(workspaceHits, tree.Name("draft-remove-item"))
 )
 
 const (
@@ -58,6 +60,8 @@ func (state *State) clickWorkspaceLibrary(id ui.ID) bool {
 			state.workspaceLibraryExpanded = true
 			state.applySelectedWorkspaceTemplate()
 		}
+	case id.Scope() == hitWorkspaceTemplateMore:
+		state.clickWorkspaceTemplateManagement(id)
 	case id == hitWorkspaceNew:
 		state.openWorkspaceDraft(workspaceDraftTemporary)
 	case id.Scope() == hitWorkspaceTemplateRowList:
@@ -88,7 +92,7 @@ func (state *State) workspaceLibraryPointer(event ui.PointerEvent) (ui.EventResu
 	if event.ClickCount > 1 {
 		templateID := state.workspaceLibraryPointerID
 		state.workspaceLibraryPointerID = ""
-		if templateID == "" {
+		if templateID == "" || event.Target.Scope() != hitWorkspaceTemplateRowList {
 			return ui.EventResult{}, false
 		}
 		state.selectedWorkspaceTemplateID = templateID
@@ -260,6 +264,7 @@ func (state *State) paintWorkspaceLibraryRows(canvas *ui.Canvas, bounds ui.Rect,
 	state.workspaceLibraryScroll = geometry.OffsetY
 	state.workspaceLibraryBounds = bounds
 	state.workspaceLibraryContent = contentHeight
+	state.workspaceTemplateMoreBounds = state.workspaceTemplateMoreBounds[:0]
 
 	for _, row := range rows {
 		rect := row.bounds
@@ -367,7 +372,14 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	if compact {
 		openWidth = 32
 	}
-	openBounds := ui.Rect{X: bounds.X + bounds.Width - 16 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
+	moreBounds := ui.Rect{X: bounds.X + bounds.Width - 16 - 28, Y: bounds.Y + 22, Width: 28, Height: 32}
+	openBounds := ui.Rect{X: moreBounds.X - 8 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
+	for len(state.workspaceTemplateMoreBounds) <= index {
+		state.workspaceTemplateMoreBounds = append(state.workspaceTemplateMoreBounds, ui.Rect{})
+	}
+	state.workspaceTemplateMoreBounds[index] = moreBounds
+	state.paintIconButton(canvas, hitWorkspaceTemplateMore.At(index), iconEllipsis, moreBounds,
+		m.WorkspaceTemplateActions, false, iconButtonQuiet, background)
 	titleX := bounds.X + 48
 	titleWidth := max(0, openBounds.X-titleX-12)
 	canvas.Label(elide(canvas, template.Name, 16, ui.WeightSemibold, titleWidth), ui.Rect{X: titleX, Y: bounds.Y + 11, Width: titleWidth, Height: 24}, ui.TextStyle{Size: 16, Weight: ui.WeightSemibold, Color: pal.text})

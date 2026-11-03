@@ -138,7 +138,11 @@ func (state *State) paintWorkspaceHostCard(canvas *ui.Canvas, region workspaceCa
 	ink := state.workspaceStatusInk(pal.muted)
 	width := max(0, box.Width-20)
 	monitorLabel(canvas, elide(canvas, address, 12, ui.WeightRegular, width), ui.Rect{X: box.X + 10, Y: box.Y + 40, Width: width, Height: 20}, 12, ink, ui.WeightRegular)
-	monitorLabel(canvas, elide(canvas, detail, 11, ui.WeightRegular, width), ui.Rect{X: box.X + 10, Y: box.Y + 66, Width: width, Height: 18}, 11, ink, ui.WeightRegular)
+	detailWidth := width
+	if region.view == workspaceCardsDraft && state.workspaceDraft.mode == workspaceDraftEdit {
+		detailWidth = max(0, box.Width-44)
+	}
+	monitorLabel(canvas, elide(canvas, detail, 11, ui.WeightRegular, detailWidth), ui.Rect{X: box.X + 10, Y: box.Y + 66, Width: detailWidth, Height: 18}, 11, ink, ui.WeightRegular)
 	canvas.HitWithOptions(region.id, box, name, ui.HitOptions{Role: ui.RoleButton, Cursor: ui.PointerCursorHand, Hint: state.messages.WorkspaceCardReorderHint,
 		Description: address + " · " + detail, PosInSet: int32(region.index + 1), SetSize: int32(count), Selected: active})
 	drag := &state.workspaceCardDrag
@@ -174,7 +178,7 @@ func (state *State) workspaceItemsForRegion(region workspaceCardRegion) []worksp
 			}
 		}
 	case workspaceCardsDraft:
-		ids := state.workspaceDraftSelectedCatalogIDs()
+		ids := state.workspaceDraftOrderedIDs()
 		items := make([]workspaceArrangementItem, len(ids))
 		for index, id := range ids {
 			items[index].host = id

@@ -546,21 +546,25 @@ type State struct {
 	partLayout         flex.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
-	selectedWorkspaceTemplateID string
-	workspaceLibraryExpanded    bool
-	workspaceLibraryPointerID   string
-	workspaceLibraryLayout      flex.View
-	workspaceLibraryScroll      float32
-	workspaceLibraryBounds      ui.Rect
-	workspaceLibraryContent     float32
-	workspaceDraft              workspaceDraft
-	workspaceHeaderLayout       flex.View
-	workspaceHeaderMenu         workspaceHeaderMenuState
-	workspacePaneTools          workspacePaneTools
-	workspaceLayoutDraft        workspaceArrangement
-	workspaceCardRegions        []workspaceCardRegion
-	workspaceCardDrag           workspaceCardDrag
-	workspaceHeaderPanes        [layoutcore.MaxPanes]layoutcore.Pane
+	selectedWorkspaceTemplateID   string
+	workspaceLibraryExpanded      bool
+	workspaceLibraryPointerID     string
+	workspaceLibraryLayout        flex.View
+	workspaceLibraryScroll        float32
+	workspaceLibraryBounds        ui.Rect
+	workspaceLibraryContent       float32
+	workspaceTemplateMoreBounds   []ui.Rect
+	workspaceTemplateMenu         workspaceTemplateMenu
+	workspaceTemplateDelete       workspaceTemplateDelete
+	workspaceTemplateFocusPending ui.ID
+	workspaceDraft                workspaceDraft
+	workspaceHeaderLayout         flex.View
+	workspaceHeaderMenu           workspaceHeaderMenuState
+	workspacePaneTools            workspacePaneTools
+	workspaceLayoutDraft          workspaceArrangement
+	workspaceCardRegions          []workspaceCardRegion
+	workspaceCardDrag             workspaceCardDrag
+	workspaceHeaderPanes          [layoutcore.MaxPanes]layoutcore.Pane
 	// temporaryWorkspaceColumns marks workspaces opened from the temporary
 	// selector and keeps the column count needed to save their current shape.
 	temporaryWorkspaceColumns map[layoutcore.WorkspaceID]uint8
@@ -1431,8 +1435,12 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalWorkspaceSave:
 		state.clickWorkspaceSave(id)
 		return
+	case modalWorkspaceTemplateDelete:
+		state.clickWorkspaceTemplateDelete(id)
+		return
 	}
-	if state.clickToolbarDockMenu(id) || state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+	if state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
+		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -2317,6 +2325,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.workspaceLibraryKey(event); handled {
 		return result
 	}
+	if result, handled := state.workspaceTemplateLauncherKey(event); handled {
+		return result
+	}
 	if result := state.workspaceHeaderKey(event); result.Handled {
 		return result
 	}
@@ -2358,6 +2369,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if state.terminalMenu.open && event.Key == ui.KeyEscape {
 		state.terminalMenu.open = false
 		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if result, handled := state.workspaceTemplateMenuKey(event); handled {
+		return result
+	}
+	if result, handled := state.workspaceTemplateDeleteKey(event); handled {
+		return result
 	}
 	if result, handled := state.menuKey(event); handled {
 		return result

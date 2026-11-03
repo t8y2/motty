@@ -180,6 +180,15 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 			}
 		}
 	}
+	// The compact pane-tools menu is synthesized after catalog ordering and has
+	// no customizable entry of its own. Keep it with the terminal's default rail.
+	if zone == state.defaultToolbarDockZone(toolbarTerminal) {
+		for _, tool := range terminalTools {
+			if tool.id == hitWorkspacePaneTools {
+				tools = append(tools, tool)
+			}
+		}
+	}
 	return tools
 }
 

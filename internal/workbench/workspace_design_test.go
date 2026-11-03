@@ -110,9 +110,8 @@ func TestWorkspacePaneToolsPreserveAvailabilityAndDismissForNewFocus(t *testing.
 		finishWorkspaceConnection(t, state, connection)
 	}
 	canvas, _ := paintAt(state, ui.Size{Width: 960, Height: 600})
-	session, _ := state.sessionByIDPointer(state.activeSessionID)
-	panelHit(t, canvas, state.paneIdentity(session, hitWorkspacePaneTools))
-	state.Click(state.paneIdentity(session, hitWorkspacePaneTools))
+	panelHit(t, canvas, hitWorkspacePaneTools)
+	state.Click(hitWorkspacePaneTools)
 	canvas, _ = paintAt(state, ui.Size{Width: 960, Height: 600})
 	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
 		t.Fatal("terminal actions menu did not open")

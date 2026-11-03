@@ -121,8 +121,7 @@ func TestWorkspaceBroadcastButtonIsDisabledUntilReady(t *testing.T) {
 	}
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	session, _ := state.sessionByIDPointer(sessions[0].ID)
-	if hit, ok := hitByID(&canvas, state.paneIdentity(session, hitBroadcast)); !ok || !hit.Disabled {
+	if hit, ok := hitByID(&canvas, hitBroadcast); !ok || !hit.Disabled {
 		t.Fatalf("broadcast hit = %+v, present=%v", hit, ok)
 	}
 }

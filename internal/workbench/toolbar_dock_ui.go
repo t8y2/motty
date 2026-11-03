@@ -410,6 +410,9 @@ func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool
 		}
 		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
+		if tool.id == hitWorkspacePaneTools {
+			state.workspacePaneTools.anchor = tool.rect
+		}
 	}
 	canvas.Unclip()
 }

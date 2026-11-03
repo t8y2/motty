@@ -17,10 +17,12 @@ type workspaceDraftMode uint8
 const (
 	workspaceDraftTemporary workspaceDraftMode = iota
 	workspaceDraftFixed
+	workspaceDraftEdit
 )
 
 type workspaceDraft struct {
 	mode           workspaceDraftMode
+	editID         string
 	name, query    text.Editor
 	selected       map[string]bool
 	order          []string
@@ -48,15 +50,51 @@ func (state *State) openWorkspaceDraft(mode workspaceDraftMode) {
 	state.modal = modalWorkspaceDraft
 }
 
+func (state *State) openWorkspaceDraftEdit(templateID string) {
+	index := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
+		return template.ID == templateID
+	})
+	if index < 0 {
+		return
+	}
+	template := state.templates[index]
+	draft := workspaceDraft{
+		mode:           workspaceDraftEdit,
+		editID:         template.ID,
+		selected:       make(map[string]bool, len(template.HostIDs)),
+		order:          slices.Clone(template.HostIDs),
+		columns:        template.Columns,
+		columnsTouched: true,
+	}
+	draft.name.Insert(template.Name)
+	draft.name.SetSelection(text.Range{End: draft.name.RuneCount()})
+	for _, id := range template.HostIDs {
+		draft.selected[id] = true
+	}
+	state.workspaceDraft = draft
+	state.selectedWorkspaceTemplateID = template.ID
+	state.workspaceLibraryExpanded = true
+	state.modal = modalWorkspaceDraft
+}
+
 func (state *State) clickWorkspaceDraft(id ui.ID) {
 	draft := &state.workspaceDraft
 	switch {
 	case id == hitWorkspaceDraftDismiss || id == hitWorkspaceDraftCancel:
+		if draft.mode == workspaceDraftEdit {
+			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(draft.editID)
+		}
 		state.closeModal()
 	case id == hitWorkspaceDraftTemporary:
+		if draft.mode == workspaceDraftEdit {
+			return
+		}
 		draft.mode = workspaceDraftTemporary
 		draft.error = ""
 	case id == hitWorkspaceDraftFixed:
+		if draft.mode == workspaceDraftEdit {
+			return
+		}
 		draft.mode = workspaceDraftFixed
 		draft.error = ""
 	case id == hitWorkspaceDraftColumns1:
@@ -78,10 +116,24 @@ func (state *State) clickWorkspaceDraft(id ui.ID) {
 			return
 		}
 		draft.selected[host.CatalogID] = !selected
+		if draft.mode == workspaceDraftEdit {
+			if selected {
+				draft.order = slices.DeleteFunc(draft.order, func(id string) bool {
+					return id == host.CatalogID
+				})
+			} else {
+				draft.order = append(draft.order, host.CatalogID)
+			}
+		}
 		if !draft.columnsTouched {
 			draft.columns = DefaultWorkspaceColumns(state.workspaceDraftSelectionCount())
 		}
 		draft.error = ""
+	case id.Scope() == hitWorkspaceDraftRemoveItem:
+		index, ok := id.In(hitWorkspaceDraftRemoveItem)
+		if ok {
+			state.workspaceDraftRemoveItem(index)
+		}
 	default:
 		return
 	}
@@ -94,7 +146,7 @@ func (state *State) setWorkspaceDraftColumns(columns uint8) {
 
 func (state *State) submitWorkspaceDraft() {
 	draft := &state.workspaceDraft
-	hostIDs := state.workspaceDraftSelectedCatalogIDs()
+	hostIDs := state.workspaceDraftOrderedIDs()
 	if len(hostIDs) == 0 {
 		draft.error = state.messages.WorkspaceDraftHostsRequired
 		return
@@ -102,6 +154,10 @@ func (state *State) submitWorkspaceDraft() {
 	name := strings.TrimSpace(draft.name.String())
 	if draft.mode == workspaceDraftFixed && name == "" {
 		draft.error = state.messages.WorkspaceDraftNameRequired
+		return
+	}
+	if draft.mode == workspaceDraftEdit {
+		state.submitWorkspaceDraftEdit(name, hostIDs)
 		return
 	}
 
@@ -154,6 +210,45 @@ func (state *State) submitWorkspaceDraft() {
 	)
 }
 
+func (state *State) submitWorkspaceDraftEdit(name string, hostIDs []string) {
+	draft := &state.workspaceDraft
+	index := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
+		return template.ID == draft.editID
+	})
+	if index < 0 {
+		draft.error = state.messages.WorkspaceTemplateEditMissing
+		return
+	}
+	template := WorkspaceTemplate{
+		ID: draft.editID, Name: name, HostIDs: slices.Clone(hostIDs), Columns: draft.columns,
+	}
+	if err := template.validate(); err != nil {
+		draft.error = state.workspaceSaveTemplateError(err)
+		return
+	}
+
+	previousTemplates := cloneWorkspaceTemplates(state.templates)
+	previousSelected := state.selectedWorkspaceTemplateID
+	previousExpanded := state.workspaceLibraryExpanded
+	state.templates = slices.Clone(state.templates)
+	state.templates[index] = template
+	state.selectedWorkspaceTemplateID = template.ID
+	state.workspaceLibraryExpanded = true
+	if !state.saveResult() {
+		state.templates = previousTemplates
+		state.selectedWorkspaceTemplateID = previousSelected
+		state.workspaceLibraryExpanded = previousExpanded
+		draft.error = state.messages.WorkspaceSaveFailed
+		return
+	}
+	state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(template.ID)
+	state.closeModal()
+	state.showActionInfo(
+		state.messages.WorkspaceLibraryTitle,
+		fmt.Sprintf(state.messages.WorkspaceTemplateEditedFmt, template.Name),
+	)
+}
+
 func (state *State) workspaceDraftSelectedCatalogIDs() []string {
 	ids := make([]string, 0, len(state.workspaceDraft.selected))
 	for _, host := range state.workspaceHosts() {
@@ -176,6 +271,54 @@ func (state *State) workspaceDraftSelectedCatalogIDs() []string {
 		return ordered
 	}
 	return ids
+}
+
+func (state *State) workspaceDraftOrderedIDs() []string {
+	if state.workspaceDraft.mode == workspaceDraftEdit {
+		return slices.Clone(state.workspaceDraft.order)
+	}
+	return state.workspaceDraftSelectedCatalogIDs()
+}
+
+func (state *State) moveWorkspaceDraftItem(from, to int) bool {
+	draft := &state.workspaceDraft
+	if draft.mode == workspaceDraftEdit {
+		return moveWorkspaceItem(draft.order, from, to)
+	}
+	ids := state.workspaceDraftSelectedCatalogIDs()
+	if !moveWorkspaceItem(ids, from, to) {
+		return false
+	}
+	draft.order = ids
+	return true
+}
+
+func (state *State) workspaceDraftRemoveItem(index int) {
+	draft := &state.workspaceDraft
+	if index < 0 || index >= len(draft.order) {
+		return
+	}
+	id := draft.order[index]
+	draft.order = slices.Delete(draft.order, index, index+1)
+	delete(draft.selected, id)
+	draft.error = ""
+}
+
+func cloneWorkspaceTemplates(templates []WorkspaceTemplate) []WorkspaceTemplate {
+	cloned := slices.Clone(templates)
+	for index := range cloned {
+		cloned[index].HostIDs = slices.Clone(cloned[index].HostIDs)
+	}
+	return cloned
+}
+
+func (state *State) workspaceTemplateLauncherFocus(templateID string) ui.ID {
+	if index := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
+		return template.ID == templateID
+	}); index >= 0 {
+		return hitWorkspaceTemplateMore.At(index)
+	}
+	return hitWorkspaceNew
 }
 
 func (state *State) workspaceDraftHostCatalogIDs(hosts []Host) []string {
@@ -238,27 +381,34 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	draft, m, theme := &state.workspaceDraft, state.messages, state.Theme()
 	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
 	initial := hitWorkspaceDraftTemporary
+	description := m.WorkspaceDraftDescription
 	if draft.mode == workspaceDraftFixed {
 		title, submit, initial = m.WorkspaceDraftTitleFixed, m.WorkspaceDraftSave, hitWorkspaceDraftName
+	} else if draft.mode == workspaceDraftEdit {
+		title, submit, initial = m.WorkspaceDraftTitleEdit, m.WorkspaceDraftSaveChanges, hitWorkspaceDraftName
+		description = m.WorkspaceDraftEditDescription
 	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel,
 		InitialFocusID: initial, ContentSize: ui.Size{Width: 860}, FitBody: true,
 		BodyHeight: min(440, max(0, viewport.Height-236)),
 	})
-	layout := dialog.Begin(title, m.WorkspaceDraftDescription)
+	layout := dialog.Begin(title, description)
 	body := layout.Body
-	modes := [2]components.SegmentOption{
-		{ID: hitWorkspaceDraftTemporary, Label: m.WorkspaceDraftTemporary},
-		{ID: hitWorkspaceDraftFixed, Label: m.WorkspaceDraftFixed},
+	y := body.Y
+	if draft.mode != workspaceDraftEdit {
+		modes := [2]components.SegmentOption{
+			{ID: hitWorkspaceDraftTemporary, Label: m.WorkspaceDraftTemporary},
+			{ID: hitWorkspaceDraftFixed, Label: m.WorkspaceDraftFixed},
+		}
+		selectedMode := hitWorkspaceDraftTemporary
+		if draft.mode == workspaceDraftFixed {
+			selectedMode = hitWorkspaceDraftFixed
+		}
+		components.BeginSegmentedControl(canvas, theme, ui.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32}, modes[:], selectedMode).Paint()
+		y += 44
 	}
-	selectedMode := hitWorkspaceDraftTemporary
-	if draft.mode == workspaceDraftFixed {
-		selectedMode = hitWorkspaceDraftFixed
-	}
-	components.BeginSegmentedControl(canvas, theme, ui.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32}, modes[:], selectedMode).Paint()
-	y := body.Y + 44
-	if draft.mode == workspaceDraftFixed {
+	if draft.mode == workspaceDraftFixed || draft.mode == workspaceDraftEdit {
 		field := components.BeginField(canvas, theme, ui.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
 		control := field.Paint(m.WorkspaceDraftName, "", "")
 		components.PaintInput(canvas, theme, control, components.InputSnapshot{
@@ -293,6 +443,8 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	hint, color := m.WorkspaceDraftLimit, state.pal.muted
 	if draft.mode == workspaceDraftTemporary {
 		hint = m.WorkspaceDraftTemporaryHint
+	} else if draft.mode == workspaceDraftEdit {
+		hint = m.WorkspaceDraftFixedHint
 	} else {
 		hint = m.WorkspaceDraftFixedHint
 	}
@@ -328,9 +480,36 @@ func (state *State) paintWorkspaceDraftLayout(canvas *ui.Canvas, bounds ui.Rect,
 	if len(items) == 0 {
 		state.paintWorkspaceGridPreview(canvas, geometry.Viewport, nil, draft.columns)
 	} else {
-		state.paintWorkspaceCards(canvas, ui.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, bounds.Width-10), Height: draft.previewContent}, geometry.Viewport, items, draft.columns, workspaceCardsDraft, "", 0)
+		content := ui.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, bounds.Width-10), Height: draft.previewContent}
+		state.paintWorkspaceCards(canvas, content, geometry.Viewport, items, draft.columns, workspaceCardsDraft, "", 0)
+		if draft.mode == workspaceDraftEdit {
+			state.paintWorkspaceDraftRemoveButtons(canvas, content, geometry.Viewport, items, draft.columns)
+		}
 	}
 	area.EndContent()
+}
+
+func (state *State) paintWorkspaceDraftRemoveButtons(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, columns uint8) {
+	cells := workspaceGridCells(len(items), columns)
+	for index, item := range items {
+		if index >= len(cells) {
+			continue
+		}
+		box := pixelBounds(content, cells[index]).Inset(ui.All(4))
+		if box.Y+box.Height <= viewport.Y || box.Y >= viewport.Y+viewport.Height {
+			continue
+		}
+		remove := ui.Rect{
+			X: box.X + box.Width - 34, Y: box.Y + box.Height - 34,
+			Width: 26, Height: 26,
+		}
+		name := item.host
+		if host, ok := state.workspaceHostByID(item.host); ok {
+			name = host.Label
+		}
+		state.paintIconButton(canvas, hitWorkspaceDraftRemoveItem.At(index), iconClose, remove,
+			fmt.Sprintf(state.messages.WorkspaceDraftRemoveFmt, name), false, iconButtonDanger, state.pal.surfaceSoft)
+	}
 }
 
 func (state *State) paintWorkspaceDraftHosts(canvas *ui.Canvas) {
@@ -399,6 +578,9 @@ func (state *State) workspaceDraftKey(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	if event.Key == ui.KeyEscape {
+		if state.workspaceDraft.mode == workspaceDraftEdit {
+			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceDraft.editID)
+		}
 		state.closeModal()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
@@ -413,6 +595,9 @@ func (state *State) workspaceDraftKey(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if event.Target == hitWorkspaceDraftTemporary || event.Target == hitWorkspaceDraftFixed {
+		if state.workspaceDraft.mode == workspaceDraftEdit {
+			return ui.EventResult{}
+		}
 		options := [2]components.TabOption{
 			{ID: hitWorkspaceDraftTemporary, Label: state.messages.WorkspaceDraftTemporary},
 			{ID: hitWorkspaceDraftFixed, Label: state.messages.WorkspaceDraftFixed},
@@ -436,6 +621,14 @@ func (state *State) workspaceDraftKey(event ui.KeyEvent) ui.EventResult {
 		area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds, ui.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).Offset(0, state.workspaceDraft.scroll)
 		if _, y, ok := area.ScrollForKey(0, state.workspaceDraft.scroll, event.Key, 32); ok {
 			state.workspaceDraft.scroll = y
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+	}
+	if event.Target == hitWorkspaceDraftPreviewScroll {
+		draft := &state.workspaceDraft
+		area := components.BeginScrollArea(nil, state.Theme(), draft.previewBounds, ui.Size{Width: draft.previewBounds.Width, Height: draft.previewContent}).Offset(0, draft.previewScroll)
+		if _, y, ok := area.ScrollForKey(0, draft.previewScroll, event.Key, 32); ok {
+			draft.previewScroll = y
 			return ui.EventResult{Handled: true, Repaint: true}
 		}
 	}

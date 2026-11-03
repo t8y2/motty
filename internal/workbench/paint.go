@@ -243,6 +243,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
 		state.paintWorkspaceSideRail(canvas, size)
+		state.paintWorkspacePaneTools(canvas)
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
@@ -386,6 +387,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintWorkspaceDraft(canvas, viewport)
 	case modalWorkspaceSave:
 		state.paintWorkspaceSaveDialog(canvas, viewport)
+	case modalWorkspaceTemplateDelete:
+		state.paintWorkspaceTemplateDelete(canvas, viewport)
 	}
 	if state.knownHosts.action != knownHostsActionNone {
 		state.paintKnownHostsDialog(canvas, viewport)
@@ -398,6 +401,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
 	state.paintHostGroupActions(canvas, viewport)
+	state.paintWorkspaceTemplateMenu(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
 	state.paintSFTPMenu(canvas, viewport)
@@ -409,6 +413,12 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
+	if !state.workspaceTemplateFocusPending.IsZero() {
+		if state.activeSection == sectionWorkspaces && state.modal == modalNone {
+			canvas.RequestFocus(state.workspaceTemplateFocusPending)
+		}
+		state.workspaceTemplateFocusPending = ui.ID{}
+	}
 }
 
 // windowRect is the whole window as last painted: the viewport a popup gives
