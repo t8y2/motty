@@ -18,6 +18,11 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 	if _, ok := state.shortcuts.bind(shortcutCopy, shortcutChord{Modifiers: ui.ModifierMeta, Key: 'c'}); !ok {
 		t.Fatal("could not bind Command+C")
 	}
+	// The files path default is the platform's primary modifier; bind it to
+	// Command here too, so the bound-chord rule is checked on every OS.
+	if _, ok := state.shortcuts.bind(shortcutFilesPath, shortcutChord{Modifiers: ui.ModifierMeta, Key: 'l'}); !ok {
+		t.Fatal("could not bind Command+L")
+	}
 	session, err := headless.Open(app.Config{
 		Title: "Command forwarding", Width: 1400, Height: 900,
 		Paint: state.Paint, TextInput: state.TerminalInput,
