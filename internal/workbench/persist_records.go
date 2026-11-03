@@ -65,8 +65,6 @@ import (
 // older build's full save would drop the choice and the menu item with it.
 // Version 13 preserves the device-local network proxy choice.
 // Version 14 preserves the device-local tab orientation and auto-hide choice.
-// Version 14 also preserves synchronized workspace templates and local
-// workspace identity and layout controls on restore.
 // Version 15 preserves the device-local vertical tab grouping switch.
 // Version 16 preserves the interface font.
 // Version 17 preserves the device-local terminal toolbar position.
@@ -77,6 +75,8 @@ import (
 // Version 21 preserves toolbar dock zones and mixed-context ordering.
 // Version 22 preserves the device-local docked toolbar size.
 // Version 23 requires lossless transactional field patches from every writer.
+// Workspace templates travel as shared records; the layout they restore is a
+// device-local object, which epoch 23 preserves without a version of its own.
 const configFormat = 23
 
 const (
