@@ -62,9 +62,12 @@ Hosts can be grouped, tagged and searched.
 
 Open **Import > Import from** and choose the client, then the file it saved.
 Motty takes each session's name, folder, address, port and user; protocols it
-cannot open are counted as skipped. Passwords, key passphrases and key files
-are never imported, so add them to the host afterwards. A host whose address,
-user and port are already saved is left out.
+cannot open are counted as skipped. Electerm and Netcatty exports may also
+contain readable SSH login passwords. When they do, Motty asks whether to save
+them in its vault or import connections only. Key passphrases, private keys and
+encrypted passwords from other clients are not imported. A host whose address,
+user and port are already saved is not duplicated; importing a password may
+fill an empty saved password, but never replace one already saved.
 
 | Client | File to choose |
 | --- | --- |
@@ -77,8 +80,14 @@ user and port are already saved is left out.
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
-Motty does not import them and says so after the import; delete the file when
-you are done.
+Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
+but does not erase the export. Protect or delete the file when you are done.
+MobaXterm imports support UTF-8, UTF-16 with a byte-order mark, and
+GB18030 text; unsupported or damaged encodings are rejected rather than
+silently dropping characters. If a BOM-less file can be read as both UTF-8 and
+GB18030, Motty shows the differing names and asks you to choose before saving
+any hosts. If several selected files have an encoding ambiguity, import them
+one at a time so each can be decoded correctly.
 
 ## Syncing with your SSH config
 

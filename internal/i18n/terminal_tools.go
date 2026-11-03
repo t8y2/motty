@@ -209,20 +209,34 @@ type ToolsMessages struct {
 	SearchEmptyFmt    string
 
 	// Importing sessions from other clients.
-	ImportSessions            string
-	ImportChooserTitle        string
-	ImportChooserBody         string
-	ImportGuide               string // the link to the docs on exporting from each client
-	ImportGuideURL            string
-	ImportPickerFmt           string // the client's name
-	ImportCanceled            string
-	ImportFailedFmt           string
-	ImportSummaryFmt          string // hosts, client, duplicates
-	ImportWarningKeysFmt      string
-	ImportWarningSkippedFmt   string
-	ImportWarningPasswords    string
-	ImportWarningCleartextFmt string // sessions whose file held readable passwords or keys
-	ImportWarningLoopback     string // a session aimed at 127.0.0.1 / localhost
+	ImportSessions               string
+	ImportChooserTitle           string
+	ImportChooserBody            string
+	ImportEncodingTitle          string
+	ImportEncodingBody           string
+	ImportEncodingSampleUTF8Fmt  string
+	ImportEncodingSampleGBFmt    string
+	ImportEncodingOneFile        string
+	ImportGuide                  string // the link to the docs on exporting from each client
+	ImportGuideURL               string
+	ImportPickerFmt              string // the client's name
+	ImportCanceled               string
+	ImportFailedFmt              string
+	ImportSummaryFmt             string // hosts, client, duplicates
+	ImportWarningKeysFmt         string
+	ImportWarningSkippedFmt      string
+	ImportWarningPasswords       string
+	ImportWarningCleartextFmt    string // sessions whose file held readable passwords or keys
+	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
+	ImportPasswordPreviewTitle   string
+	ImportPasswordPreviewBodyFmt string
+	ImportConnectionsOnly        string
+	ImportSavePasswords          string
+	ImportPasswordsSavedFmt      string
+	ImportPasswordConflictFmt    string
+	ImportHostSaveUnavailable    string
+	ImportHostSaveFailedFmt      string
+	ImportHostSaveRollbackFailed string
 
 	// Broadcast input.
 	BroadcastStart            string

@@ -288,7 +288,7 @@ func (state *State) applyHostImport(plan hostImportPlan) {
 }
 
 // applyHostImportSummary adds what a plan found and tells the user in summary.
-func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) {
+func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) error {
 	state.hosts = append(state.hosts, plan.hosts...)
 	state.identities = append(state.identities, plan.identities...)
 	state.proxies = append(state.proxies, plan.proxies...)
@@ -312,8 +312,9 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	state.status = summary
 	state.modal = modalHostImportResult
 	if len(plan.hosts)+len(plan.identities)+len(plan.proxies) > 0 {
-		state.save()
+		return state.saveWithResult()
 	}
+	return nil
 }
 
 func (result *hostImportResult) set(messages i18n.Messages, summary string, warnings []string) {

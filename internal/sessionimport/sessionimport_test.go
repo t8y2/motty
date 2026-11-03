@@ -2,12 +2,16 @@ package sessionimport
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf16"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func write(t testing.TB, dir, name string, data []byte) string {
@@ -143,6 +147,75 @@ func TestMobaXtermSessionsKeepFoldersAndSkipOtherProtocols(t *testing.T) {
 	}
 }
 
+func TestMobaXtermChineseEncoding(t *testing.T) {
+	text := "[Bookmarks]\r\nSubRep=客户\\生产\r\n中文主机=#109#0%web.example.test%22%root%\r\n"
+	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string][]byte{
+		"gb18030.mxtsessions": legacy,
+		"utf8.mxtsessions":    []byte(text),
+		"utf16.mxtsessions":   utf16le(text),
+	} {
+		path := write(t, t.TempDir(), name, contents)
+		result, err := ParseMobaXterm(path)
+		if name == "utf8.mxtsessions" && errors.Is(err, ErrAmbiguousMobaEncoding) {
+			result, err = ParseMobaXtermWithEncoding(path, MobaUTF8)
+		}
+		if err != nil || len(result.Entries) != 1 {
+			t.Fatalf("%s: entries=%d err=%v", name, len(result.Entries), err)
+		}
+		if got := result.Entries[0]; got.Name != "中文主机" || got.Group != "客户/生产" {
+			t.Fatalf("%s: name=%q group=%q", name, got.Name, got.Group)
+		}
+	}
+}
+
+func TestMobaXtermMalformedLegacyEncodingDoesNotDropBytes(t *testing.T) {
+	path := write(t, t.TempDir(), "broken.mxtsessions", append([]byte("[Bookmarks]\n"), []byte{'x', 0x81, '=', '#', '1', '#', '0', '%', 'h', '%', '2', '2', '%', 'u', '%', '\n'}...))
+	if _, err := ParseMobaXterm(path); err == nil {
+		t.Fatal("invalid legacy bytes were accepted and silently dropped")
+	}
+}
+
+func TestMobaXtermAmbiguousGB18030CanBeSelectedExplicitly(t *testing.T) {
+	text := "[Bookmarks]\n隆=#109#0%host.example.test%22%root%\n"
+	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))
+	if err != nil || !utf8.Valid(legacy) {
+		t.Fatal("fixture must be ambiguous but valid UTF-8")
+	}
+	path := write(t, t.TempDir(), "ambiguous.mxtsessions", legacy)
+	if _, err := ParseMobaXterm(path); !errors.Is(err, ErrAmbiguousMobaEncoding) {
+		t.Fatalf("default import did not pause for ambiguous text: %v", err)
+	}
+	plain := write(t, t.TempDir(), "plain.mxtsessions", []byte("[Bookmarks]\nWeb=#109#0%web.example.test%22%root%\n"))
+	if result, err := Parse(MobaXterm, []string{plain, path}); !errors.Is(err, ErrAmbiguousMobaEncoding) || len(result.Entries) != 0 {
+		t.Fatalf("mixed import committed files before resolving encoding: entries=%d err=%v", len(result.Entries), err)
+	}
+	result, err := ParseWithOptions(MobaXterm, []string{path}, ParseOptions{MobaEncoding: MobaGB18030})
+	if err != nil || len(result.Entries) != 1 || result.Entries[0].Name != "隆" {
+		t.Fatalf("explicit GB18030 did not recover the Chinese name: entries=%d err=%v", len(result.Entries), err)
+	}
+	result, err = ParseWithOptions(MobaXterm, []string{path}, ParseOptions{MobaEncoding: MobaUTF8})
+	if err != nil || len(result.Entries) != 1 || result.Entries[0].Name != "¡" {
+		t.Fatalf("explicit UTF-8 was ignored: entries=%d err=%v", len(result.Entries), err)
+	}
+}
+
+func TestMobaXtermRejectsDamagedUTF16(t *testing.T) {
+	valid := utf16le("[Bookmarks]\nName=#109#0%host.example.test%22%root%\n")
+	for name, damaged := range map[string][]byte{
+		"odd byte":           append(append([]byte(nil), valid...), 0xaa),
+		"unpaired surrogate": append(append([]byte(nil), valid...), 0x00, 0xd8),
+		"isolated low":       append(append([]byte(nil), valid...), 0x00, 0xdc),
+	} {
+		if _, err := ParseMobaXterm(write(t, t.TempDir(), name+".mxtsessions", damaged)); err == nil {
+			t.Fatalf("%s was silently accepted", name)
+		}
+	}
+}
+
 func TestWindTermSessionsFileKeepsGroupsAndSkipsOtherProtocols(t *testing.T) {
 	text := `[
 	{"session.group": "Production", "session.icon": "linux", "session.label": "Web", "session.port": 2222, "session.protocol": "SSH", "session.target": "web.example.com", "session.uuid": "a"},
@@ -201,6 +274,9 @@ func TestElectermBookmarksKeepTheirFoldersAndSkipOtherKinds(t *testing.T) {
 	}
 	if got := byName["Web"]; got.Group != "Clients/Acme" || got.Host != "web.acme.test" || got.Port != 2222 || got.User != "root" {
 		t.Fatalf("web = %+v", got)
+	}
+	if byName["Web"].Password != "hunter2" || byName["db.acme.test"].Password != "" || byName["Switch"].Password != "" {
+		t.Fatal("only password-authenticated SSH sessions may carry login passwords")
 	}
 	// A bookmark with no title of its own is named after its address.
 	if got := byName["db.acme.test"]; got.Group != "Clients/Acme/Prod" || got.User != "deploy" {
@@ -285,6 +361,9 @@ func TestNetcattyHostsExportKeepsGroupsAndSkipsWhatItCannotConnect(t *testing.T)
 	if got := byName["Web, primary"]; got.Group != "Project/Prod" || got.Host != "web.example.com" || got.Port != 2222 || got.User != "deploy" {
 		t.Fatalf("web = %+v", got)
 	}
+	if byName["Web, primary"].Password != "hunter2" || byName["DB"].Password != "" || byName["Switch"].Password != "" {
+		t.Fatal("only SSH rows without a key may carry login passwords")
+	}
 	if got := byName["DB"]; got.Group != "Project/Prod" || got.Host != "10.0.0.5" || got.User != "admin" {
 		t.Fatalf("db = %+v", got)
 	}
@@ -303,6 +382,22 @@ func TestNetcattyHostsExportKeepsGroupsAndSkipsWhatItCannotConnect(t *testing.T)
 		if _, err := ParseNetcatty(write(t, dir, "other.csv", []byte(notAnExport))); err == nil {
 			t.Fatalf("%q was accepted as an export", notAnExport)
 		}
+	}
+}
+
+func TestPlaintextPasswordsStayWithTheirOwnEntriesAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	first := write(t, dir, "first.csv", []byte("Hostname/IP,Protocol,Username,Password\nweb.example.test,ssh,root,first\n"))
+	second := write(t, dir, "second.csv", []byte("Hostname/IP,Protocol,Username,Password\ndb.example.test,ssh,admin,'=second\n"))
+	result, err := Parse(Netcatty, []string{first, second})
+	if err != nil || len(result.Entries) != 2 {
+		t.Fatalf("entries=%d err=%v", len(result.Entries), err)
+	}
+	if result.Entries[0].Password != "first" || result.Entries[1].Password != "=second" {
+		t.Fatal("password candidates were lost or changed across files")
+	}
+	if strings.Contains(strings.Join(result.Warnings, "\n"), "first") || strings.Contains(strings.Join(result.Warnings, "\n"), "second") {
+		t.Fatal("secret appeared in import warning")
 	}
 }
 
