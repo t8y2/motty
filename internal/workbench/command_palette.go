@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -333,6 +334,22 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	if event.Key == ui.KeyEscape {
 		state.closeCommandPalette()
 		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	if palette.connect {
+		switch event.Target {
+		case hitConnectSortDefault, hitConnectSortRecent:
+			// The switch is a radio group of its own: the arrows move between its
+			// two options, and choosing one puts the keyboard back in the search
+			// field so typing filters the list at once.
+			options := state.connectSortOptions()
+			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
+				state.clickCommandPalette(next)
+				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+			}
+			if event.Key == ui.KeyEnter || event.Key == ui.KeySpace {
+				return ui.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
+			}
+		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
 	_, inItems := event.Target.In(hitCommandPaletteItems)

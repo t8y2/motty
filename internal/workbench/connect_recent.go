@@ -36,11 +36,17 @@ func (state *State) rememberRecentConnection(session *Session) {
 	state.save()
 }
 
-func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
-	options := [...]components.SegmentOption{
+// connectSortOptions is the default/recent switch of the new-tab picker. It is
+// one list for painting and for the keyboard, so the two cannot drift.
+func (state *State) connectSortOptions() [2]components.SegmentOption {
+	return [2]components.SegmentOption{
 		{ID: hitConnectSortDefault, Label: state.messages.NewTabSortDefault},
 		{ID: hitConnectSortRecent, Label: state.messages.NewTabSortRecent},
 	}
+}
+
+func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
+	options := state.connectSortOptions()
 	selected := hitConnectSortDefault
 	if state.recentConnectSort {
 		selected = hitConnectSortRecent

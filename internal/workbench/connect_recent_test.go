@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -20,6 +21,25 @@ func recentHostHint(t *testing.T, state *State, label string) string {
 	}
 	t.Fatalf("no picker row for %q", label)
 	return ""
+}
+
+func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitNewTab)
+	if state.modal != modalCommandPalette {
+		t.Fatal("the picker did not open")
+	}
+	result := state.Key(ui.KeyEvent{Target: hitConnectSortDefault, Key: ui.KeyRight})
+	if !result.Handled || !state.recentConnectSort {
+		t.Fatalf("right on the switch = %+v, recent=%t", result, state.recentConnectSort)
+	}
+	if result.Focus != hitCommandPaletteSearch {
+		t.Fatalf("the keyboard stayed on the switch: %+v", result)
+	}
+	result = state.Key(ui.KeyEvent{Target: hitConnectSortRecent, Key: ui.KeyEnter})
+	if !result.Handled || result.Focus != hitCommandPaletteSearch {
+		t.Fatalf("enter on the switch = %+v", result)
+	}
 }
 
 func TestRecentPickerRecordsOnlyTargetSuccessAndNotStatusRefresh(t *testing.T) {
