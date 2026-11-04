@@ -193,6 +193,7 @@ type Terminal struct {
 	promptStartFn      func()
 	promptToken        string
 	inputEnvironmentFn func(InputEnvironment)
+	homeDirectoryFn    func(string)
 	commandStartFn     func()
 	commandFinishedFn  func(int)
 	syncFn             func(bool)

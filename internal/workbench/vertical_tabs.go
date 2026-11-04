@@ -281,6 +281,13 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 	defer canvas.Unclip()
 	for index := range tabs {
 		tab := &tabs[index]
+		if tab.pathLabel != "" && tab.output == outputAlertNone {
+			bounds := tab.title.Rect()
+			label := elideTabDirectory(tab.pathLabel, func(value string) bool {
+				return canvas.TextWidthWeight(value, metrics.FontSizeS, ui.WeightMedium) <= bounds.Width
+			})
+			canvas.Label(label, bounds, ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: tab.foreground})
+		}
 		var session *Session
 		if tab.fileSession != 0 {
 			if manager := state.sftpWindows[tab.fileSession]; manager != nil && !manager.closed {

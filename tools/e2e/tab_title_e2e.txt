@@ -1,6 +1,6 @@
 # End to end: a tab follows the title the terminal reports (OSC 2, which tmux
-# sets with `set-titles on`) once Settings > Terminal > Tab title follows
-# terminal is on. Needs a headless Viva build and e2esshd on port 2249:
+# sets with `set-titles on`) once Settings > Terminal > Tab name is set
+# to Terminal title. Needs a headless Viva build and e2esshd on port 2249:
 #
 #   go build -tags vivahead,dev -o /tmp/motty-head-title ./cmd/motty
 #   (cd tools/e2esshd && go build -o /tmp/e2esshd-title .) && /tmp/e2esshd-title 2249 &
@@ -34,7 +34,9 @@ click "Settings"
 settle 600
 click "Terminal"
 settle 700
-click "Tab title follows terminal"
+scroll 1100 650 0 700
+settle 500
+click "Terminal title"
 settle 600
 click "gallery-web:1:bash"
 settle 800

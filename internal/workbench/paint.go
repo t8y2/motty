@@ -479,6 +479,8 @@ type windowBar struct {
 
 type barTab struct {
 	badge, light flex.Box
+	pathLabel    string
+	foreground   ui.Color
 	title        flex.Box
 	output       outputAlertKind
 	label        string
@@ -738,6 +740,7 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 		edge = tintHostSurface(edge, session.host.Color, .35)
 	}
 	entry.background = fill
+	entry.foreground = foreground
 	label := state.tabLabel(workspace)
 	entry.label = label
 	entry.output = state.workspaceOutputAlert(workspace.ID)
@@ -748,6 +751,13 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	tabOptions.Hint = label
 	if workspace.Locked {
 		tabOptions.Hint = m.TabLockedHint
+	}
+	if directory := state.tabDirectory(workspace); directory != "" {
+		if tabOptions.Hint != "" && workspace.Locked {
+			tabOptions.Hint += "\n" + directory
+		} else {
+			tabOptions.Hint = directory
+		}
 	}
 	// A desktop keeps its size and protection in the status line under the
 	// picture, which the host may have hidden: the tab says it on hover instead.
@@ -776,7 +786,15 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 		if entry.output != outputAlertNone {
 			titleColor.Alpha = 0
 		}
-		title := f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
+		var title flex.Box
+		if state.tabDirectory(workspace) != "" {
+			// Reserve the same layout space as text, then shorten the path once
+			// the actual width is known. Ordinary names keep tail ellipsis.
+			entry.pathLabel = label
+			title = f.Slot().Size(f.Canvas().TextWidthWeight(label, metrics.FontSizeS, ui.WeightMedium), 20).Shrink(1)
+		} else {
+			title = f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
+		}
 		entry.title = title
 		if vertical {
 			title.Grow(1).Basis(0)
