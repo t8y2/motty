@@ -133,6 +133,24 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	}
 	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(size).Width-files-minPaneWidth-1)))
 }
+
+// monitorAndAICanCoexist reports whether the workspace has room to dock both the
+// resource monitor and the assistant beside the terminal and context panels.
+func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size ui.Size) bool {
+	if size.Width < contextDrawerAt || size.Width < aiDockAt {
+		return false
+	}
+	base := state.baseWorkspacePixelBounds(size)
+	files := float32(0)
+	if c, ok := state.deck.Context(workspace); ok && c.Open && size.Width >= contextDrawerAt {
+		files = state.contextPanelExtent(base, c.Width) + 1
+	}
+	monitorWidth := state.monitorPanelWidth(workspace, size) + 1
+	aiWidth := state.aiPanelExtent(size) + 1
+	minTerminal := max(minPaneWidth, aiMinTerminal)
+	return base.Width-files-monitorWidth-aiWidth >= minTerminal
+}
+
 func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
 	if !state.monitorShown(workspace) || size.Width < contextDrawerAt {
 		return 0
@@ -143,7 +161,14 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
 	}
 	width := state.monitorPanelWidth(workspace, size)
-	if state.baseWorkspacePixelBounds(size).Width-files-width-1 < minPaneWidth {
+	aiWidth := float32(0)
+	if state.aiPanelVisible() {
+		if !state.monitorAndAICanCoexist(workspace, size) {
+			return 0
+		}
+		aiWidth = state.aiPanelExtent(size) + 1
+	}
+	if state.baseWorkspacePixelBounds(size).Width-files-width-1-aiWidth < minPaneWidth {
 		return 0
 	}
 	return width + 1
@@ -185,6 +210,9 @@ func (state *State) showMonitor() {
 		return
 	}
 	id := state.deck.ActiveWorkspace()
+	if state.aiPanelVisible() && !state.monitorAndAICanCoexist(id, state.viewport) {
+		state.setAIPanelOpen(false)
+	}
 	c, _ := state.deck.Context(id)
 	c.MonitorOpen = true
 	_ = state.deck.SetContext(id, c)

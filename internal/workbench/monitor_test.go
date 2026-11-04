@@ -394,3 +394,91 @@ func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
 		t.Fatalf("content height %v with the section, %v without", with, without)
 	}
 }
+
+func TestMonitorClickClosesAIWhenSpaceInsufficient(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.viewport = size
+	state.setAIPanelOpen(true)
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open")
+	}
+
+	state.Click(hitRemoteStats)
+
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open on hitRemoteStats click")
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("AI panel should close when monitor opens and space is insufficient for both")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+}
+
+func TestAIClickClosesMonitorWhenSpaceInsufficient(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.viewport = size
+	state.showMonitor()
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open")
+	}
+
+	state.toggleAIPanel()
+
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open on toggle")
+	}
+	if state.monitorShown(id) {
+		t.Fatal("monitor should close when AI opens and space is insufficient for both")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+}
+
+func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 2000, Height: 900}
+	state.viewport = size
+	state.closeMonitor()
+	state.setAIPanelOpen(true)
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open")
+	}
+
+	state.Click(hitRemoteStats)
+
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open")
+	}
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel should remain open alongside monitor on wide screens")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+	if state.aiReserve(id, size) <= 0 {
+		t.Fatal("AI panel should be docked on wide screen")
+	}
+	if state.independentMonitorReserve(id, size) <= 0 {
+		t.Fatal("monitor should be docked on wide screen")
+	}
+}

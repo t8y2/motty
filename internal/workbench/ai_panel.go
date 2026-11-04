@@ -384,7 +384,14 @@ func (state *State) aiPanelSync() {
 // setAIPanelOpen shows or hides the panel.
 func (state *State) setAIPanelOpen(open bool) {
 	ai := &state.ai
+	if ai.open == open {
+		return
+	}
 	if open {
+		id := state.deck.ActiveWorkspace()
+		if state.monitorShown(id) && !state.monitorAndAICanCoexist(id, state.viewport) {
+			state.closeMonitor()
+		}
 		// The model line reads what the database holds, so open it now rather
 		// than during a paint.
 		_, _ = state.aiStore()
