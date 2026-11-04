@@ -404,6 +404,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsCursorThin:
+		changed = state.setTerminalCursorThickness(cursorThin)
+	case hitSettingsCursorNormal:
+		changed = state.setTerminalCursorThickness(cursorNormal)
+	case hitSettingsCursorThick:
+		changed = state.setTerminalCursorThickness(cursorThick)
 	case hitSettingsGutterOff:
 		changed = state.setTerminalGutter(gutterOff)
 	case hitSettingsGutterNumbers:
@@ -562,6 +568,15 @@ func (state *State) settingsOptionOptions() [2]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsOptionText, Label: state.messages.SettingsTerminalOptionText},
 		{ID: hitSettingsOptionMeta, Label: state.messages.SettingsTerminalOptionMeta},
+	}
+}
+
+func (state *State) settingsCursorThicknessOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsCursorThin, Label: m.CursorThin},
+		{ID: hitSettingsCursorNormal, Label: m.CursorNormal},
+		{ID: hitSettingsCursorThick, Label: m.CursorThick},
 	}
 }
 
