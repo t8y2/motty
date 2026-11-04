@@ -91,6 +91,17 @@ func (state *State) eachConnectPickerCandidate(add func(connectPickerCandidate))
 	}
 }
 
+// matchesConnectKeywords requires every query word somewhere in a picker's
+// searchable label/address, regardless of order. Both inputs are lowercase.
+func matchesConnectKeywords(search string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if !strings.Contains(search, keyword) {
+			return false
+		}
+	}
+	return true
+}
+
 // shellsListed rebuilds an open picker when the WSL distributions have been
 // named, keeping what was typed and where the selection was.
 func (state *State) shellsListed() {

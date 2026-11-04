@@ -61,6 +61,7 @@ func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.Dialog
 func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	palette := &state.commandPalette
 	query := strings.ToLower(rawQuery)
+	keywords := strings.Fields(query)
 	type candidate struct {
 		entry commandPaletteEntry
 		group string
@@ -69,7 +70,7 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	var candidates []candidate
 	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
 		search := strings.ToLower(item.label + " " + item.detail)
-		if query != "" && !strings.Contains(search, query) {
+		if !matchesConnectKeywords(search, keywords) {
 			return
 		}
 		group := ""
