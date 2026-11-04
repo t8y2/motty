@@ -72,6 +72,8 @@ func (h *documentTestHost) AddStatusItem(app.StatusItemConfig) (app.StatusItemCo
 func (h *documentTestHost) SetDockBadge(string) {}
 func (h *documentTestHost) SetProgress(float32) {}
 
+func (h *documentTestHost) SetProgress(float32) {}
+
 func (h *documentTestHost) Quit() {
 	for _, w := range h.windows {
 		w.Close()

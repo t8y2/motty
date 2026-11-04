@@ -27,6 +27,12 @@ type Group struct {
 	// the one it read at start.
 	frame    ui.Rect
 	hasFrame bool
+	// reportProgress is what the desktop is told about the work the windows are
+	// doing, and progressStep is the hundredth of the whole it was last told,
+	// with -1 for no bar; progressReported says it was told anything at all.
+	reportProgress   func(active int, fraction float32)
+	progressStep     int
+	progressReported bool
 }
 
 // setWindowFrame remembers where the windows are, for the next save.
@@ -106,12 +112,19 @@ func (group *Group) join(state *State) {
 
 func (group *Group) leave(state *State) {
 	group.mu.Lock()
-	defer group.mu.Unlock()
+	left := false
 	for index, member := range group.members {
 		if member == state {
 			group.members = slices.Delete(group.members, index, index+1)
-			return
+			left = true
+			break
 		}
+	}
+	group.mu.Unlock()
+	if left {
+		// The work the window was doing left with it: the icon stands for the
+		// windows that remain.
+		group.reportTransferProgress()
 	}
 }
 

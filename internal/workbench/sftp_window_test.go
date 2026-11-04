@@ -47,6 +47,8 @@ func (h *sftpNativeHost) AddStatusItem(app.StatusItemConfig) (app.StatusItemCont
 func (h *sftpNativeHost) SetDockBadge(string) {}
 func (h *sftpNativeHost) SetProgress(float32) {}
 
+func (h *sftpNativeHost) SetProgress(float32) {}
+
 func (h *sftpNativeHost) Quit() {
 	for _, w := range h.windows {
 		w.Close()
