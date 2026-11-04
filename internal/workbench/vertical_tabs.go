@@ -193,14 +193,11 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	}
 	content := max(float32(len(rows))*pitch-barGap, 0)
 	scroll := state.tabStrip.layout(list, content+barGap, rows, pitch, verticalTabHeight, active)
-	area := components.BeginScrollArea(canvas, state.Theme(), list, ui.Size{Width: list.Width, Height: content}).Offset(0, scroll)
-	geometry := area.BeginContent()
-	tabWidth := geometry.Viewport.Width
-	if geometry.MaxOffsetY > 0 {
-		tabWidth = max(tabWidth-geometry.VerticalTrack.Width, 0)
-	}
+	canvas.Clip(list)
+	contentBounds := ui.Rect{X: list.X, Y: list.Y - scroll, Width: list.Width, Height: max(content, list.Height)}
+	tabWidth := list.Width
 	view.tabs = view.tabs[:0]
-	f := view.view.Begin(canvas, state.Theme(), geometry.Content)
+	f := view.view.Begin(canvas, state.Theme(), contentBounds)
 	f.Column().Fill().Children(func() {
 		if view.grouping {
 			state.declareGroupedVerticalTabs(f, tabWidth, compact)
@@ -211,11 +208,11 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		}
 	})
 	f.End()
-	state.paintWorkspaceTabParts(canvas, geometry.Viewport, view.tabs)
+	state.paintWorkspaceTabParts(canvas, list, view.tabs)
 	if view.grouping {
 		state.paintVerticalTabGroupIcons(canvas)
 	}
-	area.EndContent()
+	canvas.Unclip()
 	button := ui.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
 	if compact {
 		state.paintIconButton(canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, pal.shell)
