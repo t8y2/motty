@@ -2017,6 +2017,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
 	}
+	if result, handled := state.verticalTabsScrollPointer(event); handled {
+		return result
+	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}

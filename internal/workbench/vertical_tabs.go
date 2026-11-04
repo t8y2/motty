@@ -12,6 +12,7 @@ var (
 	hitSettingsVerticalTabsAutoHide = tree.ID(settingsHits, "vertical-tabs-auto-hide")
 	hitSettingsVerticalTabsGrouping = tree.ID(settingsHits, "vertical-tabs-grouping")
 	hitVerticalTabs                 = tree.ID(shellHits, "vertical-tabs")
+	hitVerticalTabsBar              = tree.ID(shellHits, "vertical-tabs-scrollbar")
 	hitVerticalTabsPin              = tree.ID(shellHits, "vertical-tabs-pin")
 	hitVerticalTabsNew              = tree.ID(shellHits, "vertical-tabs-new")
 	hitVerticalTabGroups            = tree.Sub(shellHits, tree.Name("vertical-tab-group"))
@@ -48,14 +49,17 @@ func tabOrientationFromString(value string) tabOrientation {
 }
 
 type verticalTabs struct {
-	autoHide bool
-	grouping bool
-	grouped  verticalTabGrouping
-	over     bool
-	bounds   ui.Rect
-	slot     flex.Box
-	view     flex.View
-	tabs     []barTab
+	autoHide    bool
+	grouping    bool
+	grouped     verticalTabGrouping
+	over        bool
+	barDrag     bool
+	barGrab     float32
+	barGeometry components.ScrollAreaGeometry
+	bounds      ui.Rect
+	slot        flex.Box
+	view        flex.View
+	tabs        []barTab
 }
 
 func (state *State) settingsTabOrientationOptions() [2]components.SegmentOption {
@@ -72,7 +76,7 @@ func (state *State) setTabOrientation(orientation tabOrientation) bool {
 	state.tabOrientation = orientation
 	state.tabStrip = tabStrip{vertical: orientation == tabsVertical}
 	state.chrome.geometry.valid = false
-	state.verticalTabs.over = false
+	state.verticalTabs.over, state.verticalTabs.barDrag = false, false
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 	return true
@@ -101,9 +105,12 @@ func (state *State) verticalTabsReserve(size ui.Size) float32 {
 	return min(width, size.Width*0.4)
 }
 
+// trackVerticalTabs records whether the pointer is over the sidebar. The
+// sidebar expands under it when auto-hide is on, and the tab list reveals its
+// hover scrollbar; both only need the pointer inside the bounds, not a hit.
 func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	view := &state.verticalTabs
-	if state.tabOrientation != tabsVertical || (!state.terminalPage() && state.activeSFTPWindow() == nil) || !view.autoHide ||
+	if state.tabOrientation != tabsVertical ||
 		state.modal != modalNone || state.tabMenu.open || state.tabDrag.pressed || event.Captured {
 		return false
 	}
@@ -117,6 +124,41 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	changed := view.over != over
 	view.over = over
 	return changed
+}
+
+// verticalTabsScrollPointer drags the sidebar's hover scrollbar. The bar paints
+// only while the pointer is over the sidebar, so a press on it pins the reveal
+// until the drag ends: the list must not lose its bar under the pointer.
+func (state *State) verticalTabsScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	view := &state.verticalTabs
+	if state.tabOrientation != tabsVertical || (event.Target != hitVerticalTabsBar && !view.barDrag) {
+		return ui.EventResult{}, false
+	}
+	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
+		return ui.EventResult{}, false
+	}
+	switch event.Kind {
+	case ui.PointerDown:
+		thumb := view.barGeometry.VerticalThumb
+		if thumb.Height <= 0 {
+			return ui.EventResult{}, false
+		}
+		view.barDrag = true
+		view.barGrab = thumb.Height / 2
+		if pointInRect(event.X, event.Y, thumb) {
+			view.barGrab = event.Y - thumb.Y
+		}
+	case ui.PointerMove:
+		if !view.barDrag {
+			return ui.EventResult{}, false
+		}
+		state.tabStrip.offset = view.barGeometry.VerticalOffsetForThumb(event.Y - view.barGrab)
+	case ui.PointerUp:
+		view.barDrag = false
+	default:
+		return ui.EventResult{}, false
+	}
+	return ui.EventResult{Handled: true, Repaint: true}, true
 }
 
 // fileTabVerticalRailAt reports whether a window point belongs to the vertical
@@ -140,6 +182,7 @@ func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
 
 func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	if state.tabOrientation != tabsVertical {
+		state.verticalTabs.bounds = ui.Rect{}
 		return
 	}
 	view, pal, m := &state.verticalTabs, state.pal, state.messages
@@ -161,6 +204,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		bounds = view.slot.Rect()
 	}
 	if bounds.Width <= 0 || bounds.Height <= 0 {
+		view.bounds = ui.Rect{}
 		return
 	}
 	view.bounds = bounds
@@ -183,7 +227,9 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		}
 		state.paintIconButton(canvas, hitVerticalTabsPin, icon, ui.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
 	}
-	list := ui.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-12, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
+	// The right inset is 2px wider than the left one: the hover scrollbar lives
+	// in that gutter, so the rows end just before it instead of under it.
+	list := ui.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-14, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
 	active := state.deck.ActiveWorkspace()
 	pitch := verticalTabHeight + barGap
 	rows := state.workspaceTabs
@@ -193,12 +239,18 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	}
 	content := max(float32(len(rows))*pitch-barGap, 0)
 	scroll := state.tabStrip.layout(list, content+barGap, rows, pitch, verticalTabHeight, active)
-	area := components.BeginScrollArea(canvas, state.Theme(), list, ui.Size{Width: list.Width, Height: content}).Offset(0, scroll)
+	// The bar floats in the shell margin beside the rows instead of over them:
+	// it appears while the pointer is over the sidebar (or a drag is in
+	// progress), hands the tabs the width the always-on bar used to take, and
+	// never covers a row's border or its close button.
+	barBounds := ui.Rect{X: list.X, Y: list.Y, Width: max(bounds.Width-7, 0), Height: list.Height}
+	area := components.BeginScrollArea(canvas, state.Theme(), barBounds, ui.Size{Width: barBounds.Width, Height: content}).
+		Offset(0, scroll).
+		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
+		HoverScrollbars(view.over || view.barDrag)
 	geometry := area.BeginContent()
-	tabWidth := geometry.Viewport.Width
-	if geometry.MaxOffsetY > 0 {
-		tabWidth = max(tabWidth-geometry.VerticalTrack.Width, 0)
-	}
+	view.barGeometry = geometry
+	tabWidth := list.Width
 	view.tabs = view.tabs[:0]
 	f := view.view.Begin(canvas, state.Theme(), geometry.Content)
 	f.Column().Fill().Children(func() {
@@ -211,7 +263,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		}
 	})
 	f.End()
-	state.paintWorkspaceTabParts(canvas, geometry.Viewport, view.tabs)
+	state.paintWorkspaceTabParts(canvas, list, view.tabs)
 	if view.grouping {
 		state.paintVerticalTabGroupIcons(canvas)
 	}

@@ -245,6 +245,7 @@ var ChineseMessages = Messages{
 	VerticalTabGroupCountFmt:               "%s（%d 个连接）",
 	VerticalTabsPin:                        "固定展开标签栏",
 	VerticalTabsAutoHide:                   "自动收起标签栏",
+	VerticalTabsScrollbar:                  "会话列表滚动条",
 	SettingsNetworkProxy:                   "本地终端代理",
 	SettingsNetworkProxyDescription:        "默认不设置，终端沿用继承的环境；跟随系统时按系统代理设置 HTTP_PROXY 等变量。对新建和重连的终端生效，WSL 除外。",
 	SettingsNetworkProxySystem:             "跟随系统",
