@@ -101,6 +101,13 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 				f.Button(hitDocumentZoomOut, "−").Small().Outline()
 				f.Button(hitDocumentZoomIn, "+").Small().Outline()
 			}
+			if d.image == nil && d.ready {
+				wrap := d.owner.messages.CodeEditor.WrapOn
+				if d.edit.noWrap {
+					wrap = d.owner.messages.CodeEditor.WrapOff
+				}
+				f.Button(hitDocumentWrap, wrap).Small().Outline()
+			}
 			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
 			if d.image == nil {
 				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
@@ -125,19 +132,7 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	} else {
 		d.ui.encodingBounds = encoding.Rect()
 		d.ui.editorBounds = content.Rect()
-		value := d.editor.String()
-		selection := d.editor.Selection()
-		focused := canvas.Focused() == hitDocumentInput
-		snapshot := components.CodeEditorSnapshot{TextareaSnapshot: components.TextareaSnapshot{
-			ID: hitDocumentInput, Label: m.Title, Value: value, Placeholder: m.ChooseEncoding, ReadOnly: d.busy || !d.ready, Focused: focused,
-			HideEditorText: true, ShowCaret: selection.Start == selection.End, Layout: &d.ui.code.Layout,
-			SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End), Caret: aiByteOffset(value, d.editor.Caret()),
-		}, Language: documentLanguage(d.name), Highlight: d.ui.highlighter, ScrollbarID: hitDocumentScroll}
-		if marked, ok := d.editor.Composition(); ok {
-			snapshot.CompositionStart = aiByteOffset(value, marked.Start)
-			snapshot.CompositionEnd = aiByteOffset(value, marked.End)
-		}
-		d.ui.code.Paint(canvas, theme, content.Rect(), snapshot)
+		d.paintCodeEditor(canvas, theme, content.Rect())
 		d.paintEncoding(canvas)
 	}
 	if d.image == nil && !d.local {
@@ -243,10 +238,11 @@ func (d *fileDocument) footerStatus() string {
 	if d.format.LineEnding == "\r" {
 		ending = "CR"
 	}
+	position := d.positionStatus() + " · " + ending
 	if status == "" {
-		return ending
+		return position
 	}
-	return ending + " · " + status
+	return position + " · " + status
 }
 
 func (d *fileDocument) comparisonStatus() string {
@@ -406,6 +402,9 @@ func (d *fileDocument) click(id ui.ID) {
 		}
 		return
 	}
+	if d.clickCode(id) {
+		return
+	}
 	switch {
 	case id == hitDocumentSave:
 		d.requestSave(false)
@@ -524,6 +523,9 @@ func (view *fileDocumentUI) pixelScale() float32 {
 }
 
 func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
+	if input := d.barTextInput(context.ID); input != nil {
+		return input
+	}
 	if context.ID != hitDocumentInput || !d.ready || d.busy || d.confirm != "" || d.comparison.confirm {
 		return nil
 	}
@@ -618,13 +620,8 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 		d.encodingOpen = true
 		return handled
 	}
-	if event.Target == hitDocumentInput {
-		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
-			value := d.editor.String()
-			offset := d.ui.code.Layout.Move(value, aiByteOffset(value, d.editor.Caret()), movement)
-			d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
-			return handled
-		}
+	if result, ok := d.codeKey(event); ok {
+		return result
 	}
 	return ui.EventResult{}
 }
@@ -661,6 +658,9 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release {
 		return ui.EventResult{}
+	}
+	if result, ok := d.codeShortcut(event); ok {
+		return result
 	}
 	switch strings.ToLower(event.Text) {
 	case "s":
@@ -719,7 +719,7 @@ func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
 			d.ui.pan.Y = max(-y, min(y, d.ui.pan.Y))
 		}
 	} else {
-		d.ui.code.Layout.ScrollBy(event.DeltaY)
+		return d.ui.code.Scroll(event)
 	}
 	return ui.EventResult{Handled: true, Repaint: true}
 }

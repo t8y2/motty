@@ -45,6 +45,9 @@ type Messages struct {
 	Transfers      TransferCenterMessages
 	// LocalProxy holds the compact SSH reverse-proxy panel.
 	LocalProxy LocalProxyMessages
+	// CodeEditor holds the code editor of the file window: find, replace and the
+	// status line.
+	CodeEditor CodeEditorMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages

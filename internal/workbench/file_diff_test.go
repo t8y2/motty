@@ -227,6 +227,7 @@ func TestDocumentComparisonCannotUploadAnEqualFile(t *testing.T) {
 func TestDocumentComparisonCloseKeepsEditorAndCancelsPendingDocumentClose(t *testing.T) {
 	d := documentFixture(t)
 	d.local = false
+	d.editor.MoveTo(d.editor.RuneCount(), false) // a document opens with the caret at its start
 	d.editor.Insert("unsaved local edit\n")
 	d.comparison.active = true
 	d.comparison.confirm = true

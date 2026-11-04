@@ -129,7 +129,12 @@ failure.
 
 A native editor opens UTF-8 files up to 1 MiB, hashes the remote file before and
 after staging, and preserves permissions. Servers without SFTP can use the
-built-in SCP fallback.
+built-in SCP fallback. It edits code in a fixed-pitch grid with line numbers,
+syntax colors, bracket matching, soft wrap, auto-indent that follows the file's
+own tabs or spaces, paired brackets and quotes, Tab/Shift+Tab block indent,
+line comment toggling (Cmd/Ctrl+/), line move/copy/delete (Alt+Up/Down,
+Shift+Alt+Up/Down, Cmd/Ctrl+Shift+K), find and replace (Cmd/Ctrl+F, Ctrl+H) with
+case, whole-word and regular-expression options, and go to line (Ctrl+G).
 
 The panel's more menu can hand the folder it shows to VS Code or Zed through the
 editor's own URL scheme. Pick the editor under **Settings > Files**, which lists

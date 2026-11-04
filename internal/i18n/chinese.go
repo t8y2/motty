@@ -76,6 +76,7 @@ var ChineseMessages = Messages{
 		BatchScopeFmt: "已捕获范围：%s。仅处理本批仍符合条件的失败任务，不含后续失败或隐藏连接；不会修改后续传输的默认行为。",
 	},
 	LocalProxy: chineseLocalProxy,
+	CodeEditor: chineseCodeEditor,
 
 	NavHosts:                  "主机",
 	NavWorkspaces:             "工作区",
