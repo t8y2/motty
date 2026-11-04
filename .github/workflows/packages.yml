@@ -112,7 +112,10 @@ jobs:
             exit 0
           fi
           git -C "$dir" commit -m "motty ${VERSION}"
-          git -C "$dir" push
+          if ! git -C "$dir" push; then
+            echo "::error::the tap refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/homebrew-tap"
+            exit 1
+          fi
           echo "::notice::homebrew-tap Casks/motty.rb is at $TAG"
 
       - name: Publish the Scoop manifest
@@ -140,5 +143,8 @@ jobs:
             exit 0
           fi
           git -C "$dir" commit -m "motty ${VERSION}"
-          git -C "$dir" push
+          if ! git -C "$dir" push; then
+            echo "::error::the bucket refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/scoop-bucket"
+            exit 1
+          fi
           echo "::notice::scoop-bucket motty.json is at $TAG"
