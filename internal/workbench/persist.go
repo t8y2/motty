@@ -63,7 +63,7 @@ type savedState struct {
 	TerminalCursorSteady       bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCopyOnSelect       bool                `json:"terminal_copy_on_select,omitempty"`
 	TerminalRightClickPaste    bool                `json:"terminal_right_click_paste,omitempty"`
-	TerminalTabTitleOff        bool                `json:"terminal_tab_title_off,omitempty"`
+	TerminalTabTitle           bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency        bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition    string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize        string              `json:"terminal_toolbar_size,omitempty"`
@@ -426,7 +426,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
-		TerminalTabTitleOff:        !state.terminalTabTitle,
+		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
@@ -827,7 +827,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
-	state.terminalTabTitle = !saved.TerminalTabTitleOff
+	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.terminalBellOff = saved.TerminalBellOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
