@@ -45,15 +45,7 @@ func directoryTreeTestNode(w *sftpWindow, local bool, location string) *sftpTree
 }
 
 func sameDirectoryTreeTestLocation(local bool, left, right string) bool {
-	if sameDirectoryTreePath(local, left, right) {
-		return true
-	}
-	if !local {
-		return false
-	}
-	leftInfo, leftErr := os.Stat(left)
-	rightInfo, rightErr := os.Stat(right)
-	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
+	return sameDirectoryTreeLocation(local, left, right)
 }
 
 func waitDirectoryTree(t *testing.T, state *State, w *sftpWindow, view *headless.Session, ready func() bool) {

@@ -212,6 +212,18 @@ func sameDirectoryTreePath(local bool, left, right string) bool {
 	return directoryTreePathKey(local, left) == directoryTreePathKey(local, right)
 }
 
+func sameDirectoryTreeLocation(local bool, left, right string) bool {
+	if sameDirectoryTreePath(local, left, right) {
+		return true
+	}
+	if !local {
+		return false
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
+}
+
 // Windows can expose the same directory through both its long name and an
 // 8.3 alias (for example RUNNER~1). The tree cache uses the long name returned
 // by its directory listing, so retry a missing local child by file identity.
@@ -338,7 +350,7 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 	}
 	if sameDirectoryTreePath(local, node.path, location) && !node.loaded {
 		folder := w.folder(local)
-		if sameDirectoryTreePath(local, folder.path, location) {
+		if sameDirectoryTreeLocation(local, folder.path, location) {
 			entries := make([]sftpclient.Entry, len(folder.allRows))
 			for index := range folder.allRows {
 				entries[index] = folder.allRows[index].entry
@@ -354,7 +366,7 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 func (w *sftpWindow) syncDirectoryTreeAfterBackgroundLoad(local bool) {
 	current := w.folder(local).path
 	tree := &w.directoryTree[sideIndex(local)]
-	if current == "" || !sameDirectoryTreePath(local, tree.selectedPath, current) {
+	if current == "" || !sameDirectoryTreeLocation(local, tree.selectedPath, current) {
 		return
 	}
 	w.syncDirectoryTreeToPath(local, current)
@@ -530,15 +542,19 @@ func (w *sftpWindow) observeDirectoryTreeListing(local bool, directory string, e
 	if !tree.enabled {
 		return
 	}
-	node := tree.nodes[directoryTreePathKey(local, directory)]
+	selectedDirectory := directory
+	if sameDirectoryTreeLocation(local, tree.selectedPath, directory) {
+		selectedDirectory = tree.selectedPath
+	}
+	node := tree.nodes[directoryTreePathKey(local, selectedDirectory)]
 	if node == nil {
 		return
 	}
 	w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
-	if local && sameDirectoryTreePath(true, tree.selectedPath, directory) {
+	if local && sameDirectoryTreeLocation(true, tree.selectedPath, directory) {
 		w.syncDirectoryTreeToPath(true, directory)
 	}
-	if !local && sameDirectoryTreePath(false, tree.selectedPath, directory) {
+	if !local && sameDirectoryTreeLocation(false, tree.selectedPath, directory) {
 		w.syncDirectoryTreeToPath(false, directory)
 	}
 	w.invalidate()
