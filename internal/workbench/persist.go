@@ -146,6 +146,7 @@ type savedState struct {
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	CommandCompletion       string              `json:"command_completion,omitempty"`
 	NoteSidebars            *savedNoteSidebars  `json:"note_sidebars,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
 	Notes                   []savedNote         `json:"notes,omitempty"`
@@ -543,6 +544,7 @@ func (state *State) snapshot() savedState {
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
+		CommandCompletion:          state.completionMode().record(),
 		SessionLogsOff:             state.sessionLogsOff,
 		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
@@ -1119,6 +1121,18 @@ func (state *State) restoreShared(saved savedState) {
 	state.history.on = saved.CommandHistory
 	state.history.suggestOff = saved.CommandSuggestOff
 	state.history.inlineOff = saved.CommandInlineSuggestOff
+	// The mode's own record, when present, outranks the two older flags: with
+	// suggestions off by default (issue #303) the flags can no longer tell an
+	// explicit "both" from the older default, and the record is the only
+	// spelling that pins it. Without the record the flags decide, and a
+	// catalog with neither flag nor record never expressed a choice: it takes
+	// the new default, off.
+	if mode, ok := completionModeFromRecord(saved.CommandCompletion); ok {
+		state.history.suggestOff = mode == completionOff
+		state.history.inlineOff = mode == completionList
+	} else if !state.history.suggestOff && !state.history.inlineOff {
+		state.history.suggestOff = true
+	}
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)

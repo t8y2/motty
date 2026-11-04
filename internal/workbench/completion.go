@@ -62,6 +62,35 @@ func (state *State) completionMode() completionMode {
 	}
 }
 
+// record is the mode as the shared setting keeps it. Off is the default and
+// stays unrecorded: only a choice against it is written, so a catalog without
+// the record either never expressed a choice or comes from an older build,
+// whose two flags carry the mode instead (issue #303).
+func (mode completionMode) record() string {
+	switch mode {
+	case completionList:
+		return "list"
+	case completionBoth:
+		return "both"
+	}
+	return ""
+}
+
+// completionModeFromRecord reads the shared setting back. ok is false when the
+// record holds no mode — the empty spelling of the default, or a damaged one —
+// and the older flags decide instead.
+func completionModeFromRecord(value string) (completionMode, bool) {
+	switch value {
+	case "off":
+		return completionOff, true
+	case "list":
+		return completionList, true
+	case "both":
+		return completionBoth, true
+	}
+	return completionOff, false
+}
+
 // setCompletionMode reports whether the mode changed. Turning completion on
 // starts the work it needs here, in answer to the user, because nothing is
 // loaded while it is off.

@@ -26,6 +26,10 @@ func newCompletionWorld(t *testing.T) *completionWorld {
 	state, _, _, shell := liveSession(t)
 	w := &completionWorld{state: state, shell: shell, clock: time.Second}
 	state.options.Now = func() time.Duration { return w.clock }
+	// These suites exercise the suggestions themselves, not the mode they are
+	// offered in, so they turn them on explicitly: suggestions are off by
+	// default now (issue #303).
+	state.history.suggestOff = false
 	shell.onWrite = func(p []byte) {
 		shell.say(strings.ReplaceAll(string(p), "\r", "\r\n"))
 	}

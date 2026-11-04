@@ -12,6 +12,10 @@ import (
 func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 	t.Helper()
 	h := newHistoryWorld(t, true)
+	// The ghost suites exercise the suggestions themselves, not the mode they
+	// are offered in, so they turn them on explicitly: suggestions are off by
+	// default now (issue #303).
+	h.state.history.suggestOff = false
 	store := h.state.historyStore()
 	key := historyKey(&h.state.sessions[0])
 	base := time.Now()
