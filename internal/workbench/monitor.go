@@ -134,6 +134,16 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(size).Width-files-minPaneWidth-1)))
 }
 
+// aiPreferredWidth returns the configured or default width of the AI panel,
+// without querying aiPanelLimits or aiSharedWidth (avoiding circular recursion
+// with independentMonitorReserve).
+func (state *State) aiPreferredWidth(size ui.Size) float32 {
+	if state.ai.panelWidth > 0 {
+		return max(state.ai.panelWidth, aiPanelMin)
+	}
+	return min(aiPanelWidth, size.Width*0.42)
+}
+
 // monitorAndAICanCoexist reports whether the workspace has room to dock both the
 // resource monitor and the assistant beside the terminal and context panels.
 func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size ui.Size) bool {
@@ -146,7 +156,7 @@ func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, siz
 		files = state.contextPanelExtent(base, c.Width) + 1
 	}
 	monitorWidth := state.monitorPanelWidth(workspace, size) + 1
-	aiWidth := state.aiPanelExtent(size) + 1
+	aiWidth := state.aiPreferredWidth(size) + 1
 	minTerminal := max(minPaneWidth, aiMinTerminal)
 	return base.Width-files-monitorWidth-aiWidth >= minTerminal
 }
@@ -166,7 +176,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 		if !state.monitorAndAICanCoexist(workspace, size) {
 			return 0
 		}
-		aiWidth = state.aiPanelExtent(size) + 1
+		aiWidth = state.aiPreferredWidth(size) + 1
 	}
 	if state.baseWorkspacePixelBounds(size).Width-files-width-1-aiWidth < minPaneWidth {
 		return 0
