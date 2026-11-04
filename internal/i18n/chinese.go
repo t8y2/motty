@@ -1391,6 +1391,10 @@ var chineseTools = ToolsMessages{
 	ColorMagenta:                 "紫",
 
 	SnippetsTitle:             "快捷命令",
+	SnippetTip:                "发送快捷命令",
+	SnippetPickerPlaceholder:  "搜索快捷命令…",
+	SnippetPickerEmpty:        "没有匹配的快捷命令",
+	SnippetPickerAdd:          "添加快捷命令…",
 	SnippetsPageDescription:   "保存常用命令。选中后点“发送到终端”或双击一行即可发送；也可以从命令面板或用快捷键发送。",
 	SnippetEmpty:              "还没有快捷命令",
 	SnippetEmptySub:           "保存一条常用命令，再给它设一个快捷键，一键发送到终端。",

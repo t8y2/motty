@@ -53,6 +53,9 @@ var (
 	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
 	hitSnippetCancel      = tree.ID(snippetsHits, "snippet-cancel")
 	hitSnippetClose       = tree.ID(snippetsHits, "snippet-close")
+	// hitTerminalSnippets is the terminal toolbar's button that lists the
+	// snippets to send to that terminal.
+	hitTerminalSnippets = tree.ID(snippetsHits, "terminal-snippets")
 )
 
 var (

@@ -50,6 +50,10 @@ type ToolsMessages struct {
 
 	// Snippets.
 	SnippetsTitle             string
+	SnippetTip                string
+	SnippetPickerPlaceholder  string
+	SnippetPickerEmpty        string
+	SnippetPickerAdd          string
 	SnippetsPageDescription   string
 	SnippetEmpty              string
 	SnippetEmptySub           string

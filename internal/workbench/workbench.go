@@ -1485,6 +1485,10 @@ func (state *State) click(id ui.ID, feedback bool) {
 	if state.clickTerminalFind(id) {
 		return
 	}
+	if id == hitTerminalSnippets {
+		state.openSnippetPicker()
+		return
+	}
 	if id == hitLocalProxyOpen {
 		session, _ := state.sessionByIDPointer(state.activeSessionID)
 		state.openLocalProxy(session)

@@ -1391,6 +1391,10 @@ var englishTools = ToolsMessages{
 	ColorMagenta:                 "Magenta",
 
 	SnippetsTitle:             "Snippets",
+	SnippetTip:                "Send a snippet",
+	SnippetPickerPlaceholder:  "Search snippets…",
+	SnippetPickerEmpty:        "No matching snippets",
+	SnippetPickerAdd:          "Add a snippet…",
 	SnippetsPageDescription:   "Commands you keep to send to the active terminal. Select one and choose Send to terminal, or double-click a row; the command palette and shortcuts work too.",
 	SnippetEmpty:              "No snippets",
 	SnippetEmptySub:           "Save a command you run often, and give it a shortcut to send it with one key press.",

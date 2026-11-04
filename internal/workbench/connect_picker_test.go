@@ -69,7 +69,7 @@ func TestPickerSearchMatchesHostNamesAndAddresses(t *testing.T) {
 	state.commandPalette.search.Insert(state.hosts[0].Address)
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	if palette.visibleCount == 0 {
+	if len(palette.visible) == 0 {
 		t.Fatal("searching a host's address finds nothing")
 	}
 	if got := palette.entries[palette.visible[0]].target; got != hitConnectPickList.At(int(state.hosts[0].ID)) {
@@ -77,8 +77,8 @@ func TestPickerSearchMatchesHostNamesAndAddresses(t *testing.T) {
 	}
 	state.commandPalette.search.Insert("zzzz-no-such-host")
 	state.refreshCommandPalette()
-	if palette.visibleCount != 0 {
-		t.Fatalf("%d matches for a nonsense query", palette.visibleCount)
+	if len(palette.visible) != 0 {
+		t.Fatalf("%d matches for a nonsense query", len(palette.visible))
 	}
 }
 
@@ -140,7 +140,7 @@ func TestTheCommandPaletteIsStillTheCommandPalette(t *testing.T) {
 		t.Fatal("the palette opened as the picker")
 	}
 	found := false
-	for index := uint8(0); index < state.commandPalette.entryCount; index++ {
+	for index := 0; index < len(state.commandPalette.entries); index++ {
 		found = found || state.commandPalette.entries[index].target == hitSettings
 	}
 	if !found {
@@ -174,7 +174,7 @@ func TestNewTabPickerKeyboardStepsOverGroupHeadings(t *testing.T) {
 	if !result.Handled || result.Focus != hitCommandPaletteItems.At(2) {
 		t.Fatalf("down from the first row focused %v, want the row under the heading", result.Focus)
 	}
-	last := hitCommandPaletteItems.At(int(state.commandPalette.visibleCount) - 1)
+	last := hitCommandPaletteItems.At(len(state.commandPalette.visible) - 1)
 	result = state.Key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyEnd})
 	if !result.Handled || result.Focus != last {
 		t.Fatalf("End focused %v, want the last choice %v", result.Focus, last)

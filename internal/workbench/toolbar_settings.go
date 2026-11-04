@@ -34,6 +34,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 	},
 	toolbarTerminal: {
 		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
+		{"snippets", hitTerminalSnippets, iconNote},
 		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
 		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
 		{"save-output", hitTerminalSaveOutput, iconSave},
@@ -173,6 +174,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.NavSettings
 	case hitBroadcast:
 		return m.Tools.BroadcastStart
+	case hitTerminalSnippets:
+		return m.Tools.SnippetTip
 	case hitPaneSplitHorizontal:
 		return m.PaneSplitHorizontal
 	case hitPaneSplitVertical:

@@ -173,6 +173,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
 	verticalDisabled := managed && !state.canSplitActivePane(layoutcore.Vertical)
 	horizontalDisabled := managed && !state.canSplitActivePane(layoutcore.Horizontal)
+	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconNote, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
 	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
 	if inSplit && !managed {

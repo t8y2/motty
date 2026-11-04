@@ -167,15 +167,15 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	state.openCommandPalette()
 	found := -1
 	palette := &state.commandPalette
-	for index := uint8(0); index < palette.entryCount; index++ {
+	for index := 0; index < len(palette.entries); index++ {
 		if palette.entries[index].label == state.messages.AIPanel.Toggle {
-			found = int(index)
+			found = index
 		}
 	}
 	if found < 0 {
 		t.Fatal("the command palette has no assistant entry")
 	}
-	state.executeCommandPalette(uint8(found))
+	state.executeCommandPalette(found)
 	if !state.ai.open || state.modal != modalNone {
 		t.Fatalf("palette entry: open=%v modal=%v", state.ai.open, state.modal)
 	}

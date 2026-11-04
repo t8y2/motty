@@ -19,8 +19,11 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		ContentSize: ui.Size{Width: 620, Height: 446},
 	})
 	title, placeholder, empty := state.messages.CommandPaletteTitle, state.messages.CommandPalettePlaceholder, state.messages.CommandPaletteEmpty
-	if state.commandPalette.connect {
+	switch {
+	case state.commandPalette.connect:
 		title, placeholder, empty = state.messages.LabelNewTab, state.messages.NewTabPickerPlaceholder, state.messages.NewTabPickerEmpty
+	case state.commandPalette.snippets:
+		title, placeholder, empty = state.messages.Tools.SnippetsTitle, state.messages.Tools.SnippetPickerPlaceholder, state.messages.Tools.SnippetPickerEmpty
 	}
 	layout := dialog.Begin(title, "")
 	if state.commandPalette.connect {
@@ -29,7 +32,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	value := state.commandPalette.search.String()
 	focused := canvas.Focused() == hitCommandPaletteSearch
 	palette := &state.commandPalette
-	count := min(int(palette.visibleCount)-int(palette.top), commandPaletteVisibleRows)
+	count := min(len(palette.visible)-palette.top, commandPaletteVisibleRows)
 
 	var search flex.Box
 	f := state.paletteLayout.Begin(canvas, state.Theme(), layout.Body)
@@ -41,7 +44,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		f.Column().Gap(4).MarginSides(12, 0, 0, 0).Children(func() {
 			for visible := 0; visible < count; visible++ {
-				entry := palette.entries[palette.visible[int(palette.top)+visible]]
+				entry := palette.entries[palette.visible[palette.top+visible]]
 				if entry.header {
 					f.Row().Height(30).PadX(10).Gap(6).Items(flex.Center).Shrink(0).
 						HitOutset(2, 0, 2, 0).
@@ -55,7 +58,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					continue
 				}
 				id := hitCommandPaletteItems.At(visible)
-				selected := palette.selected == palette.top+uint8(visible)
+				selected := palette.selected == palette.top+visible
 				color, detailColor := state.pal.muted, state.pal.faint
 				if selected {
 					color, detailColor = state.pal.onAccent, state.pal.onAccent
@@ -85,7 +88,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 	})
 	f.End()
-	if total := int(palette.visibleCount); total > commandPaletteVisibleRows {
+	if total := len(palette.visible); total > commandPaletteVisibleRows {
 		// A thumb on the right edge says there are more rows above or below.
 		track := ui.Rect{X: layout.Body.X + layout.Body.Width - 4, Y: search.Rect().Y + 48, Width: 3, Height: commandPaletteVisibleRows*34 - 4}
 		thumb := track.Height * commandPaletteVisibleRows / float32(total)
