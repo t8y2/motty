@@ -232,6 +232,9 @@ var (
 	hitSettingsReconnectForever = tree.ID(settingsHits, "settings-reconnect-forever")
 	hitSettingsClipboardBlock   = tree.ID(settingsHits, "settings-clipboard-block")
 	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorThin       = tree.ID(settingsHits, "settings-cursor-thin")
+	hitSettingsCursorNormal     = tree.ID(settingsHits, "settings-cursor-normal")
+	hitSettingsCursorThick      = tree.ID(settingsHits, "settings-cursor-thick")
 	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
@@ -587,36 +590,37 @@ type State struct {
 	// search is the box beside Connect: typing narrows the host list, and
 	// Connect opens what it holds. visible lists the indexes into hosts that
 	// match it; it is rebuilt when the text or the host list changes.
-	search              text.Editor
-	visible             []int
-	visibleQuery        string
-	visibleHosts        int
-	status              string
-	language            i18n.Language
-	languageChosen      bool // the user picked it; until then it follows the system
-	messages            i18n.Messages
-	modal               modalKind
-	modalSession        uint32
-	dialogError         string
-	editor              hostEditor
-	forwardEditor       forwardEditor
-	forwardDialogError  string
-	proxyEditor         proxyEditor
-	proxyDialogError    string
-	options             Options
-	appearance          appearance
-	appearanceMode      appearanceMode
-	networkProxy        networkProxyMode
-	stopAppearanceWatch func()
-	terminalOption      terminalOptionMode
-	recentConnectSort   bool
-	recentConnections   map[string]time.Time
-	localShell          string // executable on this computer; empty uses the platform default
-	localShellMenu      localShellSelect
-	editorMenu          editorSelect
-	terminalFontSize    float32
-	terminalFontFace    ui.MonoFace
-	terminalScrollback  int
+	search                  text.Editor
+	visible                 []int
+	visibleQuery            string
+	visibleHosts            int
+	status                  string
+	language                i18n.Language
+	languageChosen          bool // the user picked it; until then it follows the system
+	messages                i18n.Messages
+	modal                   modalKind
+	modalSession            uint32
+	dialogError             string
+	editor                  hostEditor
+	forwardEditor           forwardEditor
+	forwardDialogError      string
+	proxyEditor             proxyEditor
+	proxyDialogError        string
+	options                 Options
+	appearance              appearance
+	appearanceMode          appearanceMode
+	networkProxy            networkProxyMode
+	stopAppearanceWatch     func()
+	terminalOption          terminalOptionMode
+	recentConnectSort       bool
+	recentConnections       map[string]time.Time
+	localShell              string // executable on this computer; empty uses the platform default
+	localShellMenu          localShellSelect
+	editorMenu              editorSelect
+	terminalFontSize        float32
+	terminalFontFace        ui.MonoFace
+	terminalCursorThickness cursorThickness
+	terminalScrollback      int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale

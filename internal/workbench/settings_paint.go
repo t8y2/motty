@@ -321,6 +321,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	if state.terminalOption == terminalOptionMeta {
 		selectedOption = hitSettingsOptionMeta
 	}
+	thickness := state.settingsCursorThicknessOptions()
+	selectedThickness := [...]ui.ID{hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick}[state.terminalCursorThickness]
 	padding := state.settingsPaddingOptions()
 	selectedPadding := hitSettingsPadNormal
 	switch state.terminalPad {
@@ -372,6 +374,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.PaddingRow, "", padding[:], selectedPadding)
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
+			page.row(state.messages.Tools.CursorThicknessRow, "", thickness[:], selectedThickness)
 			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
