@@ -168,6 +168,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// was painted with so a resize can work out the rows and columns.
 	state.viewport = size
 	state.cellWidth, state.cellHeight = canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	if session := state.fullscreenDesktop(); session != nil {
 		state.beginMenus()
 		state.paintDesktopPage(canvas, size, session)

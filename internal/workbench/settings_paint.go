@@ -329,6 +329,14 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	case padRoomy:
 		selectedPadding = hitSettingsPadRoomy
 	}
+	lineHeight := state.settingsLineHeightOptions()
+	selectedLineHeight := hitSettingsLineHeightNormal
+	switch state.terminalLineHeight {
+	case lineHeightCompact:
+		selectedLineHeight = hitSettingsLineHeightCompact
+	case lineHeightRoomy:
+		selectedLineHeight = hitSettingsLineHeightRoomy
+	}
 	gutter := state.settingsGutterOptions()
 	selectedGutter := [...]ui.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
 	intense := state.settingsIntenseOptions()
@@ -366,6 +374,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsFontSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsFontSizeReset, Label: state.fontSizeLabel(), Variant: components.ButtonGhost},
 				components.ButtonAction{ID: hitSettingsFontSizeUp, Label: "+", Variant: components.ButtonOutline})
+			page.row(state.messages.Tools.LineHeightRow, "", lineHeight[:], selectedLineHeight)
 			page.actionRow(messages.SettingsTerminalFontFamily, state.fontDescription(), false,
 				components.ButtonAction{ID: hitSettingsFontPick, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			page.actionRow(state.messages.Tools.FontFallbackRow, state.fallbackDescription(), false, state.fallbackActions()...)

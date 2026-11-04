@@ -210,6 +210,7 @@ var syncedSettings = map[string]bool{
 	"terminal_padding":             true,
 	"terminal_gutter":              true,
 	"terminal_intense":             true,
+	"terminal_line_height":         true,
 	"terminal_notifications":       true,
 	"terminal_paste_image":         true,
 	"sftp_parallel":                true,

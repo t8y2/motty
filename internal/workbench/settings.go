@@ -132,6 +132,7 @@ func (state *State) setTerminalFontSize(value float32) bool {
 	}
 	state.terminalFontSize = value
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -145,6 +146,7 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 	}
 	state.terminalFontFace = face
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -404,6 +406,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsLineHeightCompact:
+		changed = state.setTerminalLineHeight(lineHeightCompact)
+	case hitSettingsLineHeightNormal:
+		changed = state.setTerminalLineHeight(lineHeightNormal)
+	case hitSettingsLineHeightRoomy:
+		changed = state.setTerminalLineHeight(lineHeightRoomy)
 	case hitSettingsGutterOff:
 		changed = state.setTerminalGutter(gutterOff)
 	case hitSettingsGutterNumbers:
@@ -571,6 +579,15 @@ func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
 		{ID: hitSettingsPadCompact, Label: m.PaddingCompact},
 		{ID: hitSettingsPadNormal, Label: m.PaddingNormal},
 		{ID: hitSettingsPadRoomy, Label: m.PaddingRoomy},
+	}
+}
+
+func (state *State) settingsLineHeightOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsLineHeightCompact, Label: m.LineHeightCompact},
+		{ID: hitSettingsLineHeightNormal, Label: m.LineHeightNormal},
+		{ID: hitSettingsLineHeightRoomy, Label: m.LineHeightRoomy},
 	}
 }
 
