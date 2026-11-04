@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -94,4 +95,40 @@ func TestClosingATabWhileItsShellOpensClosesTheShellWhenItArrives(t *testing.T) 
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("the shell opened for a closed tab was left open")
+}
+
+func TestAShellOpeningDuringLayoutChangesReceivesTheLatestSize(t *testing.T) {
+	state, slow := connectSlow(t)
+	state.Wake()
+	session := &state.sessions[0]
+	if session.term.opening == nil {
+		t.Fatal("the shell is not opening in the background")
+	}
+
+	// Layout can change while SSH is waiting for the server. The local screen
+	// already has the new size when the shell eventually attaches.
+	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(ui.Size{Width: 1100, Height: 750})
+	wantCols, wantRows := session.term.screen.Size()
+	close(slow.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for session.term.shell == nil && time.Now().Before(deadline) {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if session.term.shell == nil {
+		t.Fatal("the shell never attached once it opened")
+	}
+	shell := slow.shell(t)
+	if config := slow.configs[0]; config.Cols == wantCols && config.Rows == wantRows {
+		t.Fatal("fixture did not change the size while the shell was opening")
+	}
+	if len(shell.resizes) == 0 || shell.resizes[len(shell.resizes)-1] != [2]int{wantCols, wantRows} {
+		t.Fatalf("attached shell resizes = %v, want latest size %dx%d", shell.resizes, wantCols, wantRows)
+	}
+	resizes := len(shell.resizes)
+	state.Wake()
+	if len(shell.resizes) != resizes {
+		t.Fatal("an unchanged layout sent another resize")
+	}
 }
