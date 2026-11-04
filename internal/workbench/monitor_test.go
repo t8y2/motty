@@ -8,7 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
+	"motty/internal/ai/llm"
 	"motty/internal/i18n"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -481,4 +485,78 @@ func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
 	if state.independentMonitorReserve(id, size) <= 0 {
 		t.Fatal("monitor should be docked on wide screen")
 	}
+}
+
+func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing.T) {
+	state, _ := monitorFixture(t)
+	view, err := headless.Open(app.Config{
+		Title: "Panels", Width: 2000, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	state.Resize(ui.Size{Width: 2000, Height: 900})
+	state.setAIPanelOpen(true)
+	id := state.deck.ActiveWorkspace()
+	if !state.aiPanelVisible() || !state.monitorShown(id) {
+		t.Fatal("both panels should be open on the wide window")
+	}
+	if state.monitorDrawer(state.viewport) || state.aiReserve(id, state.viewport) <= 0 {
+		t.Fatal("both panels should dock on the wide window")
+	}
+
+	if err := view.Resize(760, 700); err != nil {
+		t.Fatal(err)
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("the assistant should close when the narrow window cannot dock both panels")
+	}
+	if !state.monitorShown(id) || !state.monitorDrawer(state.viewport) {
+		t.Fatal("the monitor should be the single drawer left after the resize")
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := view.Snapshot()
+	if _, ok := hitByIDInSnapshot(snapshot, hitAIDrawerDismiss); ok {
+		t.Fatal("the closed assistant still painted its drawer")
+	}
+	if _, ok := hitByIDInSnapshot(snapshot, hitAIClose); ok {
+		t.Fatal("the closed assistant still painted its controls")
+	}
+	if _, ok := hitByIDInSnapshot(snapshot, hitMonitorClose); !ok {
+		t.Fatal("the monitor drawer is missing")
+	}
+}
+
+func TestApprovalOpeningTheAssistantClosesANarrowMonitorsDrawer(t *testing.T) {
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return toolTurn("terminal_exec", `{"command":"touch created-by-assistant"}`)
+		}
+		return textTurn("finished")
+	}}
+	state, _ := assistantSession(t, model)
+	id := state.deck.ActiveWorkspace()
+	c, _ := state.deck.Context(id)
+	c.MonitorOpen = true
+	_ = state.deck.SetContext(id, c)
+	state.Resize(ui.Size{Width: 760, Height: 700})
+	if !state.monitorShown(id) || !state.monitorDrawer(state.viewport) {
+		t.Fatal("the monitor should be the narrow drawer")
+	}
+
+	ask(state, "make a file", agent.ModeAgent)
+	pumpUntil(t, state, "the approval question", func() bool { return len(state.ai.approvals) == 1 })
+	if state.monitorShown(id) {
+		t.Fatal("the question must close the monitor rather than stack a second drawer")
+	}
+	if !state.aiPanelVisible() {
+		t.Fatal("the question should open the assistant")
+	}
+	state.aiAnswerApproval(false)
+	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
 }

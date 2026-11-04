@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
@@ -1196,5 +1197,66 @@ func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
 	}
 	if !foundSidebar {
 		t.Fatal("sidebar/toolbar controls should be present and interactive")
+	}
+}
+
+func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
+	state, _ := panelState(t, nil)
+	size := ui.Size{Width: 720, Height: 600}
+	view, err := headless.Open(app.Config{
+		Width: 1000, Height: 700, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.setAIPanelOpen(true)
+	// The drawer appears once the window is too narrow to dock the panel, which
+	// is also the frame that shows where opening it put the keyboard.
+	if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if focused := view.Snapshot().Focused; focused != hitAIInput {
+		t.Fatalf("narrow assistant focused %v, want the composer %v", focused, hitAIInput)
+	}
+
+	// Leaving the composer is the user's choice; repainting the drawer must not
+	// drag focus back into it.
+	if err := view.Keys("tab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	afterTab := view.Snapshot().Focused
+	if afterTab == hitAIInput || afterTab.IsZero() {
+		t.Fatalf("focus after Tab = %v, want a control beside the composer", afterTab)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != afterTab {
+		t.Fatalf("focus moved from %v to %v: the drawer must ask for focus once", afterTab, got)
+	}
+
+	// A press on the terminal is the drawer's dismiss target; closing from inside
+	// the panel gives the keyboard back to the terminal instead of nowhere.
+	if err := view.Click(200, 300); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("a press on the terminal should dismiss the assistant drawer")
+	}
+	if focused := view.Snapshot().Focused; focused.IsZero() || focused == hitAIInput {
+		t.Fatalf("focus after dismissing = %v, want the terminal", focused)
 	}
 }

@@ -487,6 +487,12 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	layout := drawer.Begin("", "")
 	state.paintAIBody(canvas, layout.Content)
 	drawer.End()
+	// A zero Scope keeps the drawer from trapping focus, and Drawer.End only
+	// installs InitialFocusID for a trapped drawer; ask the runtime for the
+	// composer explicitly so typing goes to the assistant when it opens. The
+	// runtime applies one request once, so later frames leave the focus the user
+	// chose alone.
+	canvas.RequestFocus(hitAIInput)
 	state.paintAIMenuOverlay(canvas)
 }
 
