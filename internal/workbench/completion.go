@@ -679,8 +679,30 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		candidates = append(candidates, candidate)
 	}
 	if state.history.on && state.historyAvailable(session) && !session.host.NoHistory {
-		for _, rest := range cmdhistory.SuggestAll(state.completionHistory(session), line, completionHistoryRows) {
-			add(completion.Candidate{Text: line + rest, Insert: rest, Kind: completion.KindCommand})
+		// Get full commands entries from history
+		fullEntries := cmdhistory.SuggestAllFull(state.completionHistory(session), line, completionHistoryRows)
+
+		// If we have 2+ matches, calculate common prefix and add it first.
+		// Exclude commands that are a prefix of another command, so the
+		// common prefix is not dragged down by shorter partial commands
+		// (e.g. "ip" and "ip route" should not shorten the prefix of
+		// "ip route get 8.8.8.8" and "ip route get 9.9.9.9").
+		if len(fullEntries) >= 2 {
+			filtered := filterPrefixEntries(fullEntries)
+			if len(filtered) >= 2 {
+				commonPrefix := cmdhistory.CommonPrefix(entryCommands(filtered))
+				if len(commonPrefix) > len(line) {
+					insertText := commonPrefix[len(line):]
+					add(completion.Candidate{Text: commonPrefix, Insert: insertText, Desc: "common prefix", Kind: completion.KindCommand})
+				}
+			}
+		}
+
+		// Add individual matches
+		now := time.Now()
+		for _, entry := range fullEntries {
+			insertText := entry.Command[len(line):]
+			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used), Kind: completion.KindCommand})
 		}
 	}
 	if catalog := state.completionCatalog(); catalog != nil {
@@ -919,6 +941,59 @@ func (state *State) completionWidth(canvas *ui.Canvas) float32 {
 		width = max(width, measured)
 	}
 	return min(width, completionMaxWidth)
+}
+
+// filterPrefixEntries removes entries whose command is a prefix of another
+// entry's command.
+func filterPrefixEntries(entries []cmdhistory.Entry) []cmdhistory.Entry {
+	filtered := make([]cmdhistory.Entry, 0, len(entries))
+	for i, e := range entries {
+		isPrefix := false
+		for j, other := range entries {
+			if i != j && strings.HasPrefix(other.Command, e.Command) && len(other.Command) > len(e.Command) {
+				isPrefix = true
+				break
+			}
+		}
+		if !isPrefix {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// entryCommands extracts the command strings from entries.
+func entryCommands(entries []cmdhistory.Entry) []string {
+	commands := make([]string, len(entries))
+	for i, e := range entries {
+		commands[i] = e.Command
+	}
+	return commands
+}
+
+// humanRelativeTime returns a human-readable relative time like "2h", "3d".
+func humanRelativeTime(now, t time.Time) string {
+	if t.IsZero() {
+		return "now"
+	}
+	d := now.Sub(t)
+	if d < 0 {
+		return "now"
+	}
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
+	case d < 12*30*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(d/(30*24*time.Hour)))
+	default:
+		return fmt.Sprintf("%dy ago", int(d/(365*24*time.Hour)))
+	}
 }
 
 // staticGhost is the inline suggestion the catalog adds when history has none:

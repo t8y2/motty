@@ -32,3 +32,50 @@ func SuggestAll(entries []Entry, line string, maxMatches int) []string {
 	}
 	return matches
 }
+
+// SuggestAllFull returns up to maxMatches full command entries that match the line.
+// Matches are sorted by recency (entries are newest first). A line that
+// reads like a secret, or ends in a newline, gets nothing.
+func SuggestAllFull(entries []Entry, line string, maxMatches int) []Entry {
+	if line == "" || strings.ContainsAny(line, "\r\n") || Secret(line) || maxMatches <= 0 {
+		return nil
+	}
+	var matches []Entry
+	for _, entry := range entries {
+		if len(entry.Command) > len(line) && strings.HasPrefix(entry.Command, line) {
+			matches = append(matches, entry)
+			if len(matches) >= maxMatches {
+				break
+			}
+		}
+	}
+	return matches
+}
+
+// CommonPrefix returns the longest common prefix of the given strings.
+func CommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		prefix = commonPrefixLen(prefix, s)
+		if prefix == "" {
+			break
+		}
+	}
+	return prefix
+}
+
+func commonPrefixLen(a, b string) string {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return a[:i]
+		}
+	}
+	return a[:n]
+}
