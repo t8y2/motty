@@ -172,6 +172,7 @@ func (state *State) resizeMonitor(width float32) {
 	}
 	maximum = min(maximum, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(state.viewport).Width-files-minPaneWidth-1))
 	c.MonitorWidth = min(max(width, layoutcore.MinMonitorWidth), maximum)
+	state.monitorWidth = c.MonitorWidth
 	if state.deck.SetContext(id, c) != nil {
 		return
 	}

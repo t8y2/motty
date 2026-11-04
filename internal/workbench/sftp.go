@@ -281,6 +281,9 @@ func (state *State) showFilesPanel(session *Session) {
 	context, _ := state.deck.Context(workspace)
 	context.Kind = layoutcore.ContextSFTP
 	context.Open = true
+	if state.sftpPanelWidth > 0 && (context.Width <= 0 || context.Width == layoutcore.DefaultContextWidth) {
+		context.Width = state.sftpPanelWidth
+	}
 	_ = state.deck.SetContext(workspace, context)
 	state.openSFTP(session)
 	state.fitWorkspaceTerminals(workspace)

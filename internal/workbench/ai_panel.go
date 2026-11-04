@@ -370,7 +370,11 @@ func (state *State) aiPanelLimits(size ui.Size) (least, most float32) {
 	if !state.terminalPage() {
 		workspaceID = 0
 	}
-	return aiPanelMin, max(state.aiSharedWidth(workspaceID, size)-aiMinTerminal-1, aiPanelMin)
+	shared := state.aiSharedWidth(workspaceID, size) - aiMinTerminal - 1
+	if size.Width < aiDockAt || shared < aiPanelMin {
+		return aiPanelMin, max(size.Width*0.92, aiPanelMin)
+	}
+	return aiPanelMin, max(shared, aiPanelMin)
 }
 
 // aiPanelSync resizes the terminals when the panel's claim on the window
