@@ -70,6 +70,7 @@ var ChineseMessages = Messages{
 		Upload: "上传", Download: "下载", To: "到", From: "从", Queued: "排队中", Running: "传输中", Finalizing: "正在收尾", Paused: "已暂停", Completed: "已完成", Failed: "失败", Canceled: "已取消",
 		SummaryFmt: "%d 个进行中 · %s/秒", Idle: "当前没有正在传输的任务", ProgressFmt: "%s / %s", FilesFmt: "%d / %d 个文件", TimeFmt: "%s · 用时 %s",
 		Retry: "重试", Replace: "覆盖", Resume: "续传", Skip: "跳过", Conflict: "目标已存在，选择处理方式：",
+		ShowInFolder: "打开所在位置", ShowInFolderFailed: "无法启动文件管理器，请稍后重试。", ShowInFolderMissing: "下载文件已移动或删除，无法打开所在位置。",
 		Hosts: "主机", AllHosts: "全部主机", ScopeFmt: "%s · %s · 显示 %d 项", CancelVisible: "取消当前显示", ClearVisible: "清空当前显示",
 		RetryFailedFmt: "重试失败项 (%d)", ConflictCountFmt: "冲突 (%d)", ConfirmBatchFmt: "%s %d 个冲突任务？",
 		BatchScopeFmt: "已捕获范围：%s。仅处理本批仍符合条件的失败任务，不含后续失败或隐藏连接；不会修改后续传输的默认行为。",
