@@ -16,11 +16,44 @@ import (
 
 func directoryTreeIndex(w *sftpWindow, local bool, location string) int {
 	for index, row := range w.directoryTree[sideIndex(local)].visible {
-		if sameDirectoryTreePath(local, row.node.path, location) {
+		if sameDirectoryTreeTestLocation(local, row.node.path, location) {
 			return index
 		}
 	}
 	return -1
+}
+
+func directoryTreeTestNode(w *sftpWindow, local bool, location string) *sftpTreeNode {
+	tree := &w.directoryTree[sideIndex(local)]
+	if node := tree.nodes[directoryTreePathKey(local, location)]; node != nil {
+		return node
+	}
+	if !local {
+		return nil
+	}
+	target, err := os.Stat(location)
+	if err != nil {
+		return nil
+	}
+	for _, node := range tree.nodes {
+		actual, err := os.Stat(node.path)
+		if err == nil && os.SameFile(target, actual) {
+			return node
+		}
+	}
+	return nil
+}
+
+func sameDirectoryTreeTestLocation(local bool, left, right string) bool {
+	if sameDirectoryTreePath(local, left, right) {
+		return true
+	}
+	if !local {
+		return false
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
 func waitDirectoryTree(t *testing.T, state *State, w *sftpWindow, view *headless.Session, ready func() bool) {
@@ -71,7 +104,7 @@ func TestSFTPDirectoryTreeIsOffByDefaultAndLoadsLocalChildrenOnExpand(t *testing
 	}
 	var treeNode *sftpTreeNode
 	waitDirectoryTree(t, state, w, view, func() bool {
-		treeNode = w.directoryTree[0].nodes[directoryTreePathKey(true, filepath.Join(directory, "tree"))]
+		treeNode = directoryTreeTestNode(w, true, filepath.Join(directory, "tree"))
 		return treeNode != nil && !treeNode.loading
 	})
 	if treeNode.loaded {
@@ -92,7 +125,7 @@ func TestSFTPDirectoryTreeIsOffByDefaultAndLoadsLocalChildrenOnExpand(t *testing
 	waitDirectoryTree(t, state, w, view, func() bool {
 		return treeNode.loaded && !treeNode.loading
 	})
-	if w.directoryTree[0].nodes[directoryTreePathKey(true, childDirectory)] == nil {
+	if directoryTreeTestNode(w, true, childDirectory) == nil {
 		t.Fatal("expanded local folder did not load its directory children")
 	}
 }
