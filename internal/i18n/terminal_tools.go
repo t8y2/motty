@@ -478,6 +478,7 @@ type ToolsMessages struct {
 	UpdateWhyTranslocated           string
 	UpdateWhySystemInstall          string
 	UpdateWhyNoPackage              string
+	UpdateWhyPackageUnknown         string
 	UpdateWhyUnsigned               string
 	GeneralUpdateInstall            string
 	UpdateConfirmTitle              string

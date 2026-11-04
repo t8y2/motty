@@ -95,6 +95,22 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	}
 }
 
+func TestTheUpdateDialogDoesNotCallAnUncheckedPackageMissing(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+
+	state.update.release.Asset = update.Asset{}
+	state.update.release.PlatformPackageChecked = false
+	if got := state.whyNoInstall(); got != state.messages.Tools.UpdateWhyPackageUnknown {
+		t.Fatalf("unknown package explanation = %q", got)
+	}
+
+	state.update.release.PlatformPackageChecked = true
+	if got := state.whyNoInstall(); got != state.messages.Tools.UpdateWhyNoPackage {
+		t.Fatalf("confirmed missing package explanation = %q", got)
+	}
+}
+
 func TestARegisteredCustomWindowsInstallUsesTheInAppUpdater(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Program Files", "Motty 自定义")
 	install, reason := selfupdate.Detect(filepath.Join(dir, "motty.exe"), selfupdate.Env{

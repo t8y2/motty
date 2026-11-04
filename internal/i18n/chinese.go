@@ -1818,6 +1818,7 @@ var chineseTools = ToolsMessages{
 	UpdateWhyTranslocated:           "macOS 正从临时位置运行 Motty，请先把它移到“应用程序”文件夹。",
 	UpdateWhySystemInstall:          "这份 Motty 是系统级安装的，无法自行替换；请用包管理器更新，或重新运行安装程序。",
 	UpdateWhyNoPackage:              "此版本没有适用于当前系统的安装包。",
+	UpdateWhyPackageUnknown:         "暂时无法确认此版本是否有适用于当前系统的安装包，请重新检查更新或从发布页下载。",
 	UpdateWhyUnsigned:               "此版本没有用于自更新的签名，请从下载页安装。",
 	GeneralUpdateInstall:            "更新",
 	UpdateConfirmTitle:              "安装更新并重启？",

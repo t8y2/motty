@@ -136,14 +136,37 @@ func TestTheMirrorNamesThePackageOfThePlatformAndWhereToGetIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := server.URL + "/releases/v1.2.3/motty-1.2.3-darwin-arm64.zip"
-	if release.Version != "1.2.3" || release.Notes != "## Fixed" || release.Asset.URL != want || release.Asset.SHA256 != goodHash || release.Asset.Size != 100 {
+	if release.Version != "1.2.3" || release.Notes != "## Fixed" || !release.PlatformPackageChecked ||
+		release.Asset.URL != want || release.Asset.SHA256 != goodHash || release.Asset.Size != 100 {
 		t.Fatalf("release %+v, want asset at %s", release, want)
 	}
 
 	// A platform the release has no package for still gets the page.
 	release, err = LatestMirror(context.Background(), server.Client(), server.URL+"/latest.json", "darwin", "amd64")
-	if err != nil || release.Asset.Has() || release.URL == "" {
+	if err != nil || !release.PlatformPackageChecked || release.Asset.Has() || release.URL == "" {
 		t.Fatalf("release %+v, err %v", release, err)
+	}
+}
+
+func TestGitHubFallbackDoesNotClaimThePackageListWasChecked(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mirror":
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		case "/github":
+			w.Write([]byte(`{"tag_name":"v1.2.3","html_url":"https://github.com/t8y2/motty/releases/tag/v1.2.3"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	release, err := checkFeeds(context.Background(), server.Client(), server.URL+"/mirror", server.URL+"/github", "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "1.2.3" || release.PlatformPackageChecked || release.Asset.Has() {
+		t.Fatalf("fallback release = %+v", release)
 	}
 }
 
