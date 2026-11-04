@@ -13,6 +13,9 @@ const (
 	// commandPaletteBarGap is how far the scrollbar's strip sits beyond the
 	// list: in the dialog's padding, so it never covers a row's text.
 	commandPaletteBarGap = 8
+	// commandPaletteBarWidth is the slim bar's strip, as the scroll area's
+	// overlay style draws it; the thumb is a little narrower.
+	commandPaletteBarWidth = 6
 )
 
 func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
@@ -100,11 +103,11 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		// The bar is a real scrollbar, drawn beside the rows in the dialog's
 		// padding: the rows window by index, so its content is as tall as the
 		// whole list and its offset is the first row shown.
-		list := ui.Rect{X: layout.Body.X, Y: search.Rect().Y + 48, Width: layout.Body.Width + commandPaletteBarGap + 10, Height: commandPaletteVisibleRows*commandPaletteRowPitch - 4}
-		content := ui.Size{Width: list.Width - 10, Height: float32(total)*commandPaletteRowPitch - 4}
+		list := ui.Rect{X: layout.Body.X, Y: search.Rect().Y + 48, Width: layout.Body.Width + commandPaletteBarGap + commandPaletteBarWidth, Height: commandPaletteVisibleRows*commandPaletteRowPitch - 4}
+		content := ui.Size{Width: list.Width, Height: float32(total)*commandPaletteRowPitch - 4}
 		area := components.BeginScrollArea(canvas, state.Theme(), list, content).
 			Offset(0, float32(palette.top)*commandPaletteRowPitch).
-			VerticalScrollbar(hitCommandPaletteBar, title, "").ReserveScrollbars()
+			VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
 		palette.bar = area.EndContent()
 	}
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
