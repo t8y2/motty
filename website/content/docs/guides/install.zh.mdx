@@ -13,6 +13,22 @@ motty.page 上的[下载页](/zh/download)通过 Cloudflare R2 提供同样的�
 
 每个发布版本还附带 `SHA256SUMS` 文件。
 
+## 包管理器
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
+的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
+
 ## Windows 便携版
 
 便携版 `.zip` 里有 `motty.exe` 和 `motty-data` 文件夹。可以解压到任意位置，包括 U 盘。
@@ -34,7 +50,7 @@ motty.page 上的[下载页](/zh/download)通过 Cloudflare R2 提供同样的�
 - 配置了证书时，Windows 构建会签名。
 - Linux 安装包未签名。
 
-Homebrew、AUR 和 `.AppImage` 暂不提供。
+AUR 和 `.AppImage` 暂不提供。
 
 ## 更新
 

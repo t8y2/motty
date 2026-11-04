@@ -249,7 +249,25 @@ Download the package for your platform from the
 
 macOS builds are signed and notarized when the release has the credentials.
 Windows builds are signed when a certificate is configured. Linux packages are
-not signed. Homebrew, AUR and `.AppImage` are not available yet.
+not signed. AUR and `.AppImage` are not available yet.
+
+Through a package manager:
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+The cask installs the notarized disk image and is marked as self-updating, so an
+installed copy updates itself. Scoop installs the portable copy: its
+`motty-data` folder is persisted across versions and `scoop update motty` is how
+it updates.
 
 ### If Motty closes unexpectedly
 

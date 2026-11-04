@@ -15,6 +15,23 @@ Cloudflare R2.
 
 Each release also carries a `SHA256SUMS` file.
 
+## Package managers
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+The cask installs the notarized disk image and is marked as self-updating, so an
+installed copy updates itself. Scoop installs the portable copy: `motty-data` is
+persisted across versions and `scoop update motty` is how it updates.
+
 ## Portable copy on Windows
 
 The portable `.zip` holds `motty.exe` and a `motty-data` folder. Unpack it anywhere,
@@ -40,7 +57,7 @@ computer. Copy or move the two together to take your setup with you.
 - Windows builds are signed when a certificate is configured.
 - Linux packages are not signed.
 
-Homebrew, AUR and `.AppImage` are not available yet.
+AUR and `.AppImage` are not available yet.
 
 ## Updates
 

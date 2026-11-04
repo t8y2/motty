@@ -188,7 +188,23 @@ CMD、Git Bash 等已安装的 Shell，并把每个已安装的 WSL 发行版列
 | Linux（amd64、arm64） | `.deb`、`.tar.gz` |
 
 macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
-目前没有 Homebrew、AUR 和 `.AppImage`。
+AUR 和 `.AppImage` 暂不提供。
+
+也可以用包管理器安装：
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
+的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
 
 ### Motty 意外退出时
 

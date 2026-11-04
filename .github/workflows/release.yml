@@ -270,6 +270,11 @@ jobs:
     name: Publish
     needs: checksums
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The package managers are updated by their own workflow so it can be run
+      # again for a tag without rebuilding anything; dispatching it needs this.
+      actions: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -316,3 +321,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: tools/mirror-release.sh "$GITHUB_REF_NAME" --announce --dir "$RUNNER_TEMP/release"
+
+      # The tap and the Scoop bucket are what `brew` and `scoop` hand out, so
+      # they follow the packages and the mirror rather than leading them. The
+      # run is separate so a broken manifest can be fixed by running Packages
+      # for the tag; nothing here depends on it having finished.
+      - name: Update the package managers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run packages.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f tag="$GITHUB_REF_NAME"
