@@ -78,6 +78,12 @@ func main() {
 	err := app.RunApplication(func(application *app.Application) error {
 		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
+		// The icon the desktop shows stands for the whole program, so the
+		// windows report the work they are doing together, through one bar.
+		// A fraction below zero is the end of the work.
+		windowGroup.SetTransferProgress(func(_ int, fraction float32) {
+			application.SetProgress(fraction)
+		})
 		var openWindow func() error
 		firstWindow := true
 		openWindow = func() error {
