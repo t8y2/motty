@@ -205,6 +205,9 @@ func TestAMirrorAnswerThatCannotBeTrustedGivesNoPackage(t *testing.T) {
 		if err != nil || release.Asset.Has() {
 			t.Errorf("%s: %+v %v", name, release, err)
 		}
+		if release.PlatformPackageChecked {
+			t.Errorf("%s: a file the feed cannot hold a download to was reported as a checked package list: %+v", name, release)
+		}
 	}
 	for name, body := range map[string]string{
 		"tag and version differ": `{"version":"1.2.3","tag":"v9.9.9","source":"https://x","files":[]}`,
@@ -215,5 +218,13 @@ func TestAMirrorAnswerThatCannotBeTrustedGivesNoPackage(t *testing.T) {
 		if _, err := LatestMirror(context.Background(), server.Client(), server.URL, "darwin", "arm64"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestAMirrorThatNamesNoPackageForThisPlatformWasChecked(t *testing.T) {
+	server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/o/r","files":[{"name":"motty-darwin-arm64.zip","size":100,"sha256":"`+goodHash+`"}]}`)
+	release, err := LatestMirror(context.Background(), server.Client(), server.URL, "linux", "amd64")
+	if err != nil || release.Asset.Has() || !release.PlatformPackageChecked {
+		t.Fatalf("release %+v, err %v", release, err)
 	}
 }

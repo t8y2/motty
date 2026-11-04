@@ -44,7 +44,8 @@ type Release struct {
 	// announce a release without proving whether that release has a package.
 	PlatformPackageChecked bool
 	// Asset is the package for the platform that asked, when the feed names one.
-	// The zero value means there is none, and the page is all there is.
+	// The zero value means there is none: either the feed checked and this
+	// platform has none, or PlatformPackageChecked is false and it never said.
 	Asset Asset
 }
 
@@ -224,6 +225,11 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 			continue
 		}
 		if !sha256Pattern.MatchString(file.SHA256) || file.Size <= 0 || file.Size > maxAssetBytes {
+			// The feed names this platform's file but nothing that could hold a
+			// download to it. The list is there, the answer is not: calling the
+			// release package-less would be the same wrong claim a bare page
+			// fallback makes.
+			release.PlatformPackageChecked = false
 			break
 		}
 		name := strings.Replace(stable, "motty-", "motty-"+body.Version+"-", 1)
