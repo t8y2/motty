@@ -54,7 +54,10 @@ jobs:
             echo "::error::$TAG is not a release tag like v0.2.9"
             exit 1
           fi
-          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          # GITHUB_ENV only reaches the next step, so the checks below need it
+          # here as well as the render and publish steps after this one.
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
           if [ "$draft" != "false" ]; then
             echo "::error::$TAG is still a draft; publish it before the package managers follow it"
