@@ -20,6 +20,7 @@ func TestTabFollowsTheTitleTheTerminalReports(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
 	hostName := activeTab(state).Title
+	state.terminalTabTitle = false
 	state.sessions[0].term.screen.Write([]byte("\x1b]2;work:1:bash\a"))
 
 	if got := state.tabLabel(activeTab(state)); got != hostName {
@@ -110,12 +111,24 @@ func TestActivatingPaneRefreshesCachedTabIdentityAndKeepsRenamedTitle(t *testing
 	}
 }
 
-func TestTabTitleSettingSurvivesRestart(t *testing.T) {
+func TestTabTitleFollowsTheTerminalByDefault(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
-	state.terminalTabTitle = true
+	if !state.terminalTabTitle {
+		t.Fatal("a new profile must show the title the terminal reports")
+	}
 	state.save()
 	if again := newTestState(t, options); !again.terminalTabTitle {
-		t.Fatal("the setting was lost after a restart")
+		t.Fatal("the default was lost after a restart")
+	}
+}
+
+func TestTabTitleOptOutSurvivesRestart(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.terminalTabTitle = false
+	state.save()
+	if again := newTestState(t, options); again.terminalTabTitle {
+		t.Fatal("a profile that turned the setting off follows the terminal again after a restart")
 	}
 }

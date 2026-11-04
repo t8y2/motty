@@ -690,7 +690,8 @@ type State struct {
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
 	// terminalTabTitle lets a tab show the title its terminal reports instead
-	// of the host's name (see tabLabel).
+	// of the host's name (see tabLabel). It is on unless the user turned it off,
+	// so a profile saved before the setting became the default follows it too.
 	terminalTabTitle       bool
 	backgroundOutputAlerts bool
 	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
@@ -952,6 +953,7 @@ func New(options Options) *State {
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
 		terminalIntense:       defaultTerminalIntense,
+		terminalTabTitle:      true,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
 		localProxyPort:        defaultLocalProxyPort,
