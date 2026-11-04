@@ -949,6 +949,13 @@ func New(options Options) *State {
 	state.initKnownHosts()
 	state.initSecrets()
 
+	// Suggestions start off (issue #303): the list and the ghost text offered
+	// commands the host does not have. This must precede the snapshot the
+	// config defaults are taken from, so a choice of List or Both counts as a
+	// change and is written over the default, and only Off stays unrecorded.
+	// A catalog that holds neither the record nor the older flags takes the
+	// same default at restore.
+	state.history.suggestOff = true
 	state.starting = true
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath)
