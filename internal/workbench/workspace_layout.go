@@ -246,15 +246,22 @@ func (state *State) activateTab(index int) bool {
 }
 
 func (state *State) syncActiveSession() {
+	previous := state.activeSessionID
 	workspaceID := state.deck.ActiveWorkspace()
 	paneID := state.deck.ActivePane(workspaceID)
 	state.syncCachedWorkspacePane(workspaceID, paneID)
 	pane, ok := state.deck.Pane(workspaceID, paneID)
 	if !ok {
 		state.activeSessionID = 0
+		if previous != 0 && !state.ai.targetSet {
+			state.ai.suggestions.disarm()
+		}
 		return
 	}
 	state.activeSessionID = uint32(pane.SessionID)
+	if previous != state.activeSessionID && !state.ai.targetSet {
+		state.ai.suggestions.disarm()
+	}
 	state.ensureContextSFTP()
 }
 

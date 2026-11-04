@@ -86,6 +86,11 @@ func (state *State) declareAIBottom(f *flex.Frame, body *aiBody, boxHeight float
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	f.Column().Children(func() {
 		f.Column().PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
+			if armed := ai.suggestions.armed; armed.Command != "" && ai.input.String() == armed.Text &&
+				ai.suggestions.armedKey == state.aiSuggestionContextKey() && ai.mode == agent.ModeAgent {
+				label := fmt.Sprintf(state.messages.AIPanel.BoundCommandFmt, armed.Command)
+				f.Text(label).FontSize(aiSmallSize).Color(pal.muted).Ellipsis().HitWith(hitAIBoundCommand, label, ui.HitOptions{Role: ui.RoleGroup, Hint: label, SkipTab: true})
+			}
 			if text := state.aiNoticeText(); text != "" {
 				f.Column().PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
 					f.Paragraph(text, 6).FontSize(aiSmallSize).Weight(ui.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)

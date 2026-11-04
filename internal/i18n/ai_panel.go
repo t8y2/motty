@@ -78,13 +78,21 @@ type AIPanelMessages struct {
 	AttachFailedFmt      string // takes the name and the system's reason
 	PastedImageName      string // the name a picture pasted from the clipboard goes by
 
-	EmptyTitle     string
-	EmptyHint      string
-	Example1       string
-	Example2       string
-	Example3       string
-	ScrollToEnd    string
-	ScrollbarLabel string
+	EmptyTitle            string
+	EmptyHint             string
+	Example1              string
+	Example2              string
+	Example3              string
+	Example4              string
+	Example5              string
+	Example6              string
+	RefreshSuggestions    string
+	GeneratingSuggestions string
+	NoSuggestions         string
+	ManageSuggestions     string
+	BoundCommandFmt       string
+	ScrollToEnd           string
+	ScrollbarLabel        string
 
 	// The empty panel while no terminal is open: what to do to give the assistant
 	// something to look at, and questions that need no terminal.
@@ -93,6 +101,9 @@ type AIPanelMessages struct {
 	IdleExample1 string
 	IdleExample2 string
 	IdleExample3 string
+	IdleExample4 string
+	IdleExample5 string
+	IdleExample6 string
 
 	Thinking    string
 	ThinkingNow string // the same while the model is still at it

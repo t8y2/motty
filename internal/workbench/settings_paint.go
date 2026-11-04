@@ -26,6 +26,7 @@ const (
 	controlSwitch                                      // a two-state switch
 	controlButtons                                     // buttons against the right edge of the slot
 	controlButton                                      // one small button filling the slot
+	controlIconButton                                  // one compact icon button
 	controlHit                                         // the slot is a pointer target
 	controlSearch                                      // the search box
 	controlModelInput                                  // the assistant's model-name field
@@ -53,6 +54,7 @@ type settingsControl struct {
 	on       bool
 	disabled bool
 	style    aiButtonStyle
+	icon     uint8
 	hit      ui.HitOptions
 	// first and count name the control's options or actions in the page's arenas.
 	first, count int
@@ -178,6 +180,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			row.Paint(state.settings.actions[control.first : control.first+control.count]...)
 		case controlButton:
 			state.aiButton(canvas, control.id, rect, control.label, control.style, control.disabled)
+		case controlIconButton:
+			state.paintIconButton(canvas, control.id, control.icon, rect, control.label, control.disabled, iconButtonQuiet, state.pal.surface)
 		case controlHit:
 			canvas.HitWithOptions(control.id, rect, control.label, control.hit)
 		case controlLabel:
@@ -615,6 +619,12 @@ func (page *settingsPage) switchIn(slot flex.Box, id ui.ID, on, disabled bool, l
 func (page *settingsPage) button(id ui.ID, label string, style aiButtonStyle, disabled bool) flex.Box {
 	slot := page.state.aiButtonSlot(page.f, label)
 	page.add(settingsControl{kind: controlButton, slot: slot, id: id, label: label, style: style, disabled: disabled})
+	return slot
+}
+
+func (page *settingsPage) iconButton(id ui.ID, icon uint8, label string, disabled bool) flex.Box {
+	slot := page.f.Slot().Size(28, 28).Shrink(0)
+	page.add(settingsControl{kind: controlIconButton, slot: slot, id: id, icon: icon, label: label, disabled: disabled})
 	return slot
 }
 

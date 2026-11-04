@@ -97,6 +97,22 @@ var (
 	hitAISetMCPReset          = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
 	hitAISetMCPSelect         = tree.ID(aiSettingsHits, "ai-set-mcp-select")
 	hitAISetMCPSelectDismiss  = tree.ID(aiSettingsHits, "ai-set-mcp-select-dismiss")
+	hitAISetSuggestLibrary    = tree.ID(aiSettingsHits, "ai-set-suggest-library")
+	hitAISetSuggestAI         = tree.ID(aiSettingsHits, "ai-set-suggest-ai")
+	hitAISetSuggestIdle       = tree.ID(aiSettingsHits, "ai-set-suggest-idle")
+	hitAISetSuggestConnected  = tree.ID(aiSettingsHits, "ai-set-suggest-connected")
+	hitAISetSuggestPreview    = tree.ID(aiSettingsHits, "ai-set-suggest-preview")
+	hitAISetSuggestAdd        = tree.ID(aiSettingsHits, "ai-set-suggest-add")
+	hitAISetSuggestText       = tree.ID(aiSettingsHits, "ai-set-suggest-text")
+	hitAISetSuggestCommand    = tree.ID(aiSettingsHits, "ai-set-suggest-command")
+	hitAISetSuggestSave       = tree.ID(aiSettingsHits, "ai-set-suggest-save")
+	hitAISetSuggestCancel     = tree.ID(aiSettingsHits, "ai-set-suggest-cancel")
+	hitAISetSuggestEdit       = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-edit"))
+	hitAISetSuggestDisable    = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-disable"))
+	hitAISetSuggestMoveUp     = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-up"))
+	hitAISetSuggestMoveDown   = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-down"))
+	hitAISetSuggestReset      = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-reset"))
+	hitAISetSuggestDelete     = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-delete"))
 )
 
 // Rows of the provider and model lists have a block of identities each.
@@ -138,6 +154,7 @@ const (
 	aiDialogMCPAllowAll
 	aiDialogAgentAllowAll
 	aiDialogProbe
+	aiDialogSuggestionEdit
 )
 
 // aiCopyState is what the "copy client configuration" button last did.
@@ -159,7 +176,13 @@ type aiFetch struct {
 // dialog, the selected provider and the outcome of the last action. The saved
 // choices themselves are in aiState.settings.
 type aiSettingsUI struct {
-	dialog aiDialogKind
+	dialog            aiDialogKind
+	suggestionContext aiSuggestionContext
+	suggestionPreview bool
+	suggestionEdit    aiSuggestion
+	suggestionText    text.Editor
+	suggestionCommand text.Editor
+	suggestionError   string
 
 	// The provider dialog. editID is empty when a provider is being added.
 	editID string
@@ -335,6 +358,30 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		state.aiPut("ai.auto_up_to", "medium")
 	case id == hitAISetRiskHigh:
 		state.aiPut("ai.auto_up_to", "high")
+	case id == hitAISetSuggestLibrary:
+		state.aiSetSuggestionSource(aiSuggestionLibrarySource)
+	case id == hitAISetSuggestAI:
+		state.aiSetSuggestionSource(aiSuggestionAI)
+	case id == hitAISetSuggestIdle:
+		cfg.suggestionContext = aiSuggestionIdle
+	case id == hitAISetSuggestConnected:
+		cfg.suggestionContext = aiSuggestionConnected
+	case id == hitAISetSuggestPreview:
+		cfg.suggestionPreview = !cfg.suggestionPreview
+	case id == hitAISetSuggestAdd:
+		state.aiOpenSuggestionEditor(aiSuggestion{})
+	case id.Scope() == hitAISetSuggestEdit:
+		state.aiSuggestionEditAt(item(id))
+	case id.Scope() == hitAISetSuggestDisable:
+		state.aiSuggestionDisableAt(item(id))
+	case id.Scope() == hitAISetSuggestMoveUp:
+		state.aiSuggestionMoveAt(item(id), -1)
+	case id.Scope() == hitAISetSuggestMoveDown:
+		state.aiSuggestionMoveAt(item(id), 1)
+	case id.Scope() == hitAISetSuggestReset:
+		state.aiSuggestionResetAt(item(id))
+	case id.Scope() == hitAISetSuggestDelete:
+		state.aiSuggestionDeleteAt(item(id))
 	case id == hitAISetSteps6:
 		state.aiPut("ai.max_steps", "6")
 	case id == hitAISetSteps12:
@@ -407,6 +454,13 @@ func onOff(on bool) string {
 func (state *State) aiDialogClick(id ui.ID) {
 	cfg := &state.ai.cfg
 	switch cfg.dialog {
+	case aiDialogSuggestionEdit:
+		switch id {
+		case hitAISetFormClose, hitAISetSuggestCancel:
+			state.aiCloseDialog()
+		case hitAISetSuggestSave:
+			state.aiSubmitSuggestion()
+		}
 	case aiDialogCLILogin:
 		if id == hitAISetFormDismiss || id == hitAISetFormClose || id == hitAISetFormCancel {
 			state.aiStopCLILogin()
@@ -606,6 +660,9 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	}
 	if event.Key == ui.KeyEnter && !event.Repeat {
 		switch {
+		case cfg.dialog == aiDialogSuggestionEdit && (event.Target == hitAISetSuggestText || event.Target == hitAISetSuggestCommand):
+			state.aiSubmitSuggestion()
+			return ui.EventResult{Handled: true, Repaint: true}, true
 		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
 			state.aiSubmitProvider()
 			return ui.EventResult{Handled: true, Repaint: true}, true
@@ -652,6 +709,10 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitAISetContext0, hitAISetContext30, hitAISetContext60, hitAISetContext120:
 		lines = state.aiContextOptions()
 		options = lines[:]
+	case hitAISetSuggestLibrary, hitAISetSuggestAI:
+		options = state.aiSuggestionSourceOptions()
+	case hitAISetSuggestIdle, hitAISetSuggestConnected:
+		options = state.aiSuggestionContextOptions()
 	case hitAISetMCPObserve, hitAISetMCPAsk, hitAISetMCPAllowAll:
 		modes = state.aiMCPModeOptions()
 		options = modes[:]
@@ -678,6 +739,10 @@ func (state *State) aiSettingsEditor(hit ui.ID) *text.Editor {
 	}
 	cfg := &state.ai.cfg
 	switch {
+	case cfg.dialog == aiDialogSuggestionEdit && hit == hitAISetSuggestText:
+		return &cfg.suggestionText
+	case cfg.dialog == aiDialogSuggestionEdit && hit == hitAISetSuggestCommand && cfg.suggestionEdit.Context == aiSuggestionConnected:
+		return &cfg.suggestionCommand
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormName:
 		return &cfg.name
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormCLIPath && store.IsCLIKind(cfg.kind):
@@ -769,7 +834,11 @@ func (state *State) aiPut(key, value string) bool {
 
 // aiWrote follows every change to the database made from this page.
 func (state *State) aiWrote() {
+	modelBefore := state.aiSuggestionModelIdentity()
 	state.reloadAI()
+	if modelBefore != state.aiSuggestionModelIdentity() && state.ai.open && len(state.ai.items) == 0 {
+		state.aiStartSuggestions()
+	}
 	state.aiClampModelPage()
 	state.aiSettingsChanged()
 }

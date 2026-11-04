@@ -124,6 +124,7 @@ func (state *State) paintAISettings(page *settingsPage) {
 		state.paintAICLIAuth(page)
 		state.paintAIModels(page)
 		state.paintAIBehaviour(page)
+		state.paintAISuggestionLibrary(page)
 	})
 }
 
@@ -585,6 +586,8 @@ func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAIImport(canvas, viewport)
 	case aiDialogProbe:
 		state.paintAIProbeDialog(canvas, viewport)
+	case aiDialogSuggestionEdit:
+		state.paintAISuggestionEditor(canvas, viewport)
 	}
 }
 

@@ -605,6 +605,7 @@ func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
 	pal := state.pal
 	title, hint, texts := state.aiEmptyTexts()
 	var examples [aiExamples]flex.Box
+	var refresh, manage, generating flex.Box
 	f := state.aiFlex.empty.Begin(canvas, state.Theme(), list)
 	f.Column().Fill().PadX(aiPad).Children(func() {
 		f.Spacer().MinHeight(8)
@@ -613,16 +614,29 @@ func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
 			f.Text(title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
 			f.Paragraph(hint, 4).FontSize(aiSmallSize).Weight(ui.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
 			f.Column().Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
-				for index := range examples {
+				for index := range state.ai.suggestions.visible {
 					examples[index] = f.Slot().Height(36)
 				}
+				if len(state.ai.suggestions.visible) == 0 {
+					f.Text(state.messages.AIPanel.NoSuggestions).FontSize(aiSmallSize).Color(pal.muted).LineHeight(aiSmallLine)
+				}
+				f.Row().Height(aiButton).Children(func() {
+					if state.ai.suggestions.generating {
+						generating = f.Slot().Size(16, 16).MarginSides(5, 0, 0, 0)
+						f.Text(state.messages.AIPanel.GeneratingSuggestions).FontSize(aiSmallSize).Color(pal.muted).Grow(1)
+					}
+					f.Spacer()
+					manage = f.Slot().Size(aiButton, aiButton)
+					refresh = f.Slot().Size(aiButton, aiButton)
+				})
 			})
 		})
 		f.Spacer().Grow(2)
 	})
 	f.End()
 
-	for index, example := range texts {
+	for index := range state.ai.suggestions.visible {
+		example := texts[index]
 		bounds := examples[index].Rect()
 		if bounds.Y+bounds.Height > list.Y+list.Height {
 			break
@@ -643,16 +657,41 @@ func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
 		})
 		r.End()
 	}
+	state.paintIconButton(canvas, hitAIExamplesRefresh, iconRefresh, refresh.Rect(), state.messages.AIPanel.RefreshSuggestions, false, iconButtonQuiet, pal.workspace)
+	state.paintIconButton(canvas, hitAIManageSuggestions, iconSettings, manage.Rect(), state.messages.AIPanel.ManageSuggestions, false, iconButtonQuiet, pal.workspace)
+	if state.ai.suggestions.generating {
+		components.PaintSpinner(canvas, state.Theme(), generating.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
+		canvas.RequestFrameIn(spinnerStep)
+	}
 }
 
 // aiEmptyTexts are the words of the empty panel: about the terminal when there
 // is one to look at, and about getting one when there is not.
 func (state *State) aiEmptyTexts() (title, hint string, examples [aiExamples]string) {
 	m := state.messages.AIPanel
-	if _, err := state.aiTargetSession(); err != nil {
-		return m.IdleTitle, m.IdleHint, [aiExamples]string{m.IdleExample1, m.IdleExample2, m.IdleExample3}
+	context := aiSuggestionIdle
+	title, hint = m.IdleTitle, m.IdleHint
+	if state.aiTarget().Ready {
+		context, title, hint = aiSuggestionConnected, m.EmptyTitle, m.EmptyHint
 	}
-	return m.EmptyTitle, m.EmptyHint, [aiExamples]string{m.Example1, m.Example2, m.Example3}
+	state.ai.suggestions.visible = state.aiSuggestionVisible(context, state.ai.suggestions.page)
+	state.ai.suggestions.visibleKey = state.aiSuggestionVisibleKey()
+	if state.ai.settings.suggestionSource == aiSuggestionAI {
+		if state.ai.suggestions.contextKey != "" && state.ai.suggestions.contextKey != state.aiSuggestionContextKey() {
+			state.aiCancelSuggestions()
+		}
+		if state.ai.suggestions.contextKey == "" && state.ai.open {
+			state.ai.suggestions.contextKey = state.aiSuggestionContextKey()
+			state.aiPost(func(current *State) { current.aiStartSuggestions() })
+		}
+		if len(state.ai.suggestions.generated) == aiExamples {
+			state.ai.suggestions.visible = state.ai.suggestions.generated
+		}
+	}
+	for index, entry := range state.ai.suggestions.visible {
+		examples[index] = entry.Text
+	}
+	return title, hint, examples
 }
 
 // The history list: a title above rows of aiHistoryRow, two pixels of which are the
