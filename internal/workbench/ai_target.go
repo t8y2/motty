@@ -150,6 +150,7 @@ func (state *State) aiSelectedIDs() []uint32 {
 // aiSetSelected makes ids the ticked connections; the first becomes the default.
 // Sessions that are gone are skipped.
 func (state *State) aiSetSelected(ids []uint32) {
+	state.ai.suggestions.disarm()
 	state.dropEscalationApprovals()
 	state.ai.retry, state.ai.answerOnly = false, false
 	state.ai.target, state.ai.extras = gate.SessionInfo{}, nil
@@ -166,6 +167,7 @@ func (state *State) aiSetSelected(ids []uint32) {
 	}
 	state.ai.targetSet = true
 	state.ai.notice = ""
+	state.aiStartSuggestions()
 }
 
 // A separator belongs to the first question sent to a target, not

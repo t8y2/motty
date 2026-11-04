@@ -25,30 +25,33 @@ import (
 var aiPanelHits = tree.Feature("ai-panel")
 
 var (
-	hitAIToggle           = tree.ID(aiPanelHits, "ai-toggle")
-	hitAIClose            = tree.ID(aiPanelHits, "ai-close")
-	hitAINew              = tree.ID(aiPanelHits, "ai-new")
-	hitAIHistory          = tree.ID(aiPanelHits, "ai-history")
-	hitAIMode             = tree.ID(aiPanelHits, "ai-mode")
-	hitAISetup            = tree.ID(aiPanelHits, "ai-setup")
-	hitAISend             = tree.ID(aiPanelHits, "ai-send")
-	hitAIInput            = tree.ID(aiPanelHits, "ai-input")
-	hitAIConfirm          = tree.ID(aiPanelHits, "ai-confirm")
-	hitAIApprove          = tree.ID(aiPanelHits, "ai-approve")
-	hitAIDecline          = tree.ID(aiPanelHits, "ai-decline")
-	hitAIToEnd            = tree.ID(aiPanelHits, "ai-to-end")
-	hitAIMessageBar       = tree.ID(aiPanelHits, "ai-message-scroll-bar")
-	hitAIHistoryBar       = tree.ID(aiPanelHits, "ai-history-scroll-bar")
-	hitAIDrawerDismiss    = tree.ID(aiPanelHits, "ai-drawer-dismiss")
-	hitAIModelChip        = tree.ID(aiPanelHits, "ai-model-chip")
-	hitAIDivider          = tree.ID(aiPanelHits, "ai-divider")
-	hitAIComposerGrip     = tree.ID(aiPanelHits, "ai-composer-grip")
-	hitAIModelDismiss     = tree.ID(aiPanelHits, "ai-model-dismiss")
-	hitAIModelSubDismiss  = tree.ID(aiPanelHits, "ai-model-submenu-dismiss")
-	hitAIAutoScope        = tree.ID(aiPanelHits, "ai-auto-scope")
-	hitAIAutoScopeDismiss = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
-	hitAIModelList        = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
-	hitAIModelBar         = tree.ID(aiPanelHits, "ai-model-scroll-bar")
+	hitAIToggle            = tree.ID(aiPanelHits, "ai-toggle")
+	hitAIClose             = tree.ID(aiPanelHits, "ai-close")
+	hitAINew               = tree.ID(aiPanelHits, "ai-new")
+	hitAIHistory           = tree.ID(aiPanelHits, "ai-history")
+	hitAIMode              = tree.ID(aiPanelHits, "ai-mode")
+	hitAISetup             = tree.ID(aiPanelHits, "ai-setup")
+	hitAISend              = tree.ID(aiPanelHits, "ai-send")
+	hitAIInput             = tree.ID(aiPanelHits, "ai-input")
+	hitAIConfirm           = tree.ID(aiPanelHits, "ai-confirm")
+	hitAIApprove           = tree.ID(aiPanelHits, "ai-approve")
+	hitAIDecline           = tree.ID(aiPanelHits, "ai-decline")
+	hitAIToEnd             = tree.ID(aiPanelHits, "ai-to-end")
+	hitAIMessageBar        = tree.ID(aiPanelHits, "ai-message-scroll-bar")
+	hitAIHistoryBar        = tree.ID(aiPanelHits, "ai-history-scroll-bar")
+	hitAIDrawerDismiss     = tree.ID(aiPanelHits, "ai-drawer-dismiss")
+	hitAIModelChip         = tree.ID(aiPanelHits, "ai-model-chip")
+	hitAIDivider           = tree.ID(aiPanelHits, "ai-divider")
+	hitAIComposerGrip      = tree.ID(aiPanelHits, "ai-composer-grip")
+	hitAIModelDismiss      = tree.ID(aiPanelHits, "ai-model-dismiss")
+	hitAIModelSubDismiss   = tree.ID(aiPanelHits, "ai-model-submenu-dismiss")
+	hitAIAutoScope         = tree.ID(aiPanelHits, "ai-auto-scope")
+	hitAIAutoScopeDismiss  = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
+	hitAIModelList         = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
+	hitAIModelBar          = tree.ID(aiPanelHits, "ai-model-scroll-bar")
+	hitAIExamplesRefresh   = tree.ID(aiPanelHits, "ai-examples-refresh")
+	hitAIBoundCommand      = tree.ID(aiPanelHits, "ai-bound-command")
+	hitAIManageSuggestions = tree.ID(aiPanelHits, "ai-manage-suggestions")
 )
 
 const (
@@ -384,6 +387,7 @@ func (state *State) aiPanelSync() {
 // setAIPanelOpen shows or hides the panel.
 func (state *State) setAIPanelOpen(open bool) {
 	ai := &state.ai
+	wasOpen := ai.open
 	if open {
 		// The model line reads what the database holds, so open it now rather
 		// than during a paint.
@@ -391,6 +395,7 @@ func (state *State) setAIPanelOpen(open bool) {
 	}
 	ai.open = open
 	if !open {
+		state.aiSuspendSuggestions()
 		ai.panel.targetOpen = false
 		ai.panel.history = false
 		ai.panel.modelMenu = false
@@ -399,6 +404,9 @@ func (state *State) setAIPanelOpen(open bool) {
 		ai.panel.clearAITextSelection()
 	}
 	state.aiPanelSync()
+	if open && !wasOpen {
+		state.aiEnsureSuggestions()
+	}
 }
 
 // toggleAIPanel is the window-bar button, the shortcut and the palette entry:
@@ -415,6 +423,7 @@ func (state *State) toggleAIPanel() {
 // sending it, after whatever the user had already typed.
 func (state *State) openAIPanelWith(prompt string) {
 	ai := &state.ai
+	ai.suggestions.disarm()
 	if !state.aiPanelVisible() {
 		state.toggleAIPanel()
 	}
@@ -475,7 +484,10 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 		panel.history = !panel.history
 		panel.clearAITextSelection()
 		if panel.history {
+			state.aiCancelSuggestions()
 			state.aiPanelLoadHistory()
+		} else {
+			state.aiEnsureSuggestions()
 		}
 	case id == hitAIMode:
 		state.dropEscalationApprovals()
@@ -546,10 +558,22 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 	case id == hitAIToEnd:
 		ai.scroll.ScrollToEnd()
 	case id.Scope() == hitAIExamples:
-		_, _, examples := state.aiEmptyTexts()
 		index, _ := id.In(hitAIExamples)
+		if index >= len(ai.suggestions.visible) || ai.suggestions.visibleKey != state.aiSuggestionVisibleKey() {
+			break
+		}
 		ai.input = text.Editor{}
-		ai.input.Insert(examples[index])
+		ai.input.Insert(ai.suggestions.visible[index].Text)
+		ai.suggestions.armed = ai.suggestions.visible[index]
+		ai.suggestions.armedKey = state.aiSuggestionContextKey()
+	case id == hitAIExamplesRefresh:
+		ai.suggestions.page++
+		ai.suggestions.disarm()
+		ai.suggestions.visibleKey = ""
+		state.aiStartSuggestions()
+	case id == hitAIManageSuggestions:
+		state.openSettings()
+		state.selectSettingsCategory(settingsAssistant)
 	case id.Scope() == hitAIMentions:
 		if index, _ := id.In(hitAIMentions); index < len(panel.mentions) {
 			state.acceptMention(panel.mentions[index].name)
@@ -1095,6 +1119,7 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				return handled, true
 			}
 			if event.Modifiers&ui.ModifierShift != 0 {
+				ai.suggestions.disarm()
 				ai.input.Insert("\n")
 				return handled, true
 			}
@@ -1151,6 +1176,7 @@ func (state *State) aiPanelShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	if !event.Repeat {
+		state.ai.suggestions.disarm()
 		state.ai.input.Insert("\n")
 	}
 	return ui.EventResult{Handled: true, Repaint: true}, true
@@ -1210,6 +1236,7 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 	_, composing := ai.input.Composition()
 	if event.Kind == app.TextCommandEvent && !composing && (event.Command == app.TextInsertNewline || event.Command == app.TextInsertTab) {
 		if state.aiAcceptSelectedMention() {
+			ai.suggestions.disarm()
 			result := app.TextStateOf(&ai.input)
 			result.Redraw = true
 			return result
@@ -1221,7 +1248,11 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 			return result
 		}
 	}
+	before := ai.input.String()
 	event.Apply(&ai.input)
+	if ai.input.String() != before {
+		ai.suggestions.disarm()
+	}
 	return app.TextStateOf(&ai.input)
 }
 

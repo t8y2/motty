@@ -287,7 +287,7 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 		return &canvas
 	}
 	canvas := paint()
-	last, ok := hitByID(canvas, hitAISetClearHistory)
+	last, ok := hitByID(canvas, hitAISetSuggestAdd)
 	if ok && last.Bounds.Y+last.Bounds.Height <= size.Height {
 		t.Fatalf("the last row already fits a short window: %+v", last.Bounds)
 	}
@@ -300,7 +300,7 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 		state.Scroll(ui.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
 	}
 	canvas = paint()
-	last, ok = hitByID(canvas, hitAISetClearHistory) // the assistant's category ends the page
+	last, ok = hitByID(canvas, hitAISetSuggestAdd)
 	if !ok || last.Bounds.Y+last.Bounds.Height > size.Height {
 		t.Fatalf("after scrolling the last row is %+v, %v", last.Bounds, ok)
 	}

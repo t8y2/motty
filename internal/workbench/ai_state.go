@@ -95,11 +95,12 @@ type aiRun struct {
 
 // aiSettings are the assistant's choices, kept in the AI database.
 type aiSettings struct {
-	autoUpTo     risk.Level
-	maxSteps     int
-	contextLines int
-	redact       bool
-	keepHistory  bool
+	autoUpTo         risk.Level
+	maxSteps         int
+	contextLines     int
+	redact           bool
+	keepHistory      bool
+	suggestionSource aiSuggestionSource
 	// External access (MCP): whether it is enabled and the shared access level.
 	mcpEnabled bool
 	mcpMode    gate.Mode
@@ -110,7 +111,7 @@ type aiSettings struct {
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, suggestionSource: aiSuggestionLibrarySource, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -148,6 +149,7 @@ type aiState struct {
 	panelWidth     float32
 	composerHeight float32
 	items          []aiItem
+	suggestions    aiSuggestionsState
 	history        []llm.Message
 	conv           int64
 	input          text.Editor
@@ -212,6 +214,7 @@ func (state *State) closeAI() {
 	if state.ai.run != nil {
 		state.ai.run.cancel()
 	}
+	state.aiCancelSuggestions()
 	state.aiStopCLILogin()
 	for _, check := range state.ai.authChecks {
 		check.cancel()
@@ -291,6 +294,17 @@ func (state *State) reloadAI() {
 	})
 	read("ai.redact", func(v string) { ai.settings.redact = v != "off" })
 	read("ai.history", func(v string) { ai.settings.keepHistory = v != "off" })
+	read("ai.suggestions.source", func(value string) {
+		if value == string(aiSuggestionAI) {
+			ai.settings.suggestionSource = aiSuggestionAI
+		}
+	})
+	read(aiSuggestionStoreKey, func(value string) {
+		var library aiSuggestionLibrary
+		if json.Unmarshal([]byte(value), &library) == nil {
+			ai.suggestions.library = library
+		}
+	})
 	read("ai.mcp.enabled", func(v string) { ai.settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { ai.settings.mcpMode = mcpModeFromSetting(v) })
 	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
@@ -637,6 +651,7 @@ func (state *State) aiNoSessionNote(references ...gate.SessionInfo) string {
 // may run.
 func (state *State) setAIMode(mode agent.Mode) {
 	state.dropEscalationApprovals()
+	state.ai.suggestions.disarm()
 	state.ai.panel.autoMenu = false
 	if state.ai.mode == mode {
 		return
@@ -647,6 +662,7 @@ func (state *State) setAIMode(mode agent.Mode) {
 		name = "agent"
 	}
 	state.aiPut("ai.mode", name)
+	state.aiStartSuggestions()
 }
 
 // dropEscalationApprovals removes Ask-mode switch cards. A manual mode change
@@ -668,7 +684,8 @@ func (state *State) aiSend() {
 	if ai.run != nil {
 		return
 	}
-	question := strings.TrimSpace(ai.input.String())
+	rawQuestion := ai.input.String()
+	question := strings.TrimSpace(rawQuestion)
 	if question == "" || ai.attaching > 0 && !ai.retry {
 		return
 	}
@@ -690,6 +707,13 @@ func (state *State) aiSend() {
 	if !ready {
 		return // keep both the question and target while the vault is unlocked
 	}
+	boundCommand := ""
+	if ai.mode == agent.ModeAgent && ai.suggestions.armed.Command != "" &&
+		rawQuestion == ai.suggestions.armed.Text && ai.suggestions.armedKey == state.aiSuggestionContextKey() && target.Ready {
+		boundCommand = ai.suggestions.armed.Command
+	}
+	ai.suggestions.disarm()
+	state.aiCancelSuggestions()
 	ai.notice = ""
 	ai.needLogin = ""
 	retry := ai.retry
@@ -765,9 +789,37 @@ func (state *State) aiSend() {
 	}
 	go func() {
 		defer backend.closeAll()
+		prelude := []llm.Message(nil)
+		if boundCommand != "" {
+			args, _ := json.Marshal(tools.TerminalExecArgs{Session: target.ID, Command: boundCommand})
+			call := llm.ToolCall{ID: "suggestion_1", Name: tools.NameTerminalExec, Arguments: string(args)}
+			state.aiPost(func(current *State) { current.aiEvent(run, agent.Event{Kind: agent.EventToolStart, Call: call}) })
+			result := config.Gate.Run(ctx, call.Name, args)
+			state.aiPost(func(current *State) {
+				current.aiEvent(run, agent.Event{Kind: agent.EventToolDone, Call: call, Result: result})
+			})
+			output := agent.Redact(result.Text)
+			output = aiSuggestionClip(output, 8192)
+			prelude = []llm.Message{
+				{Role: llm.RoleUser, Text: sent, Images: images},
+				{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+				{Role: llm.RoleTool, ToolCallID: call.ID, Text: output},
+			}
+			if ctx.Err() != nil || result.Denied || result.IsError {
+				failure := errors.New("bound command did not complete")
+				if ctx.Err() != nil {
+					failure = ctx.Err()
+				}
+				state.aiPost(func(current *State) { current.aiFinished(run, prelude, failure) })
+				return
+			}
+			config.UserInHistory = true
+			history = append(history, prelude...)
+		}
 		messages, err := agent.Run(ctx, config, history, sent, func(event agent.Event) {
 			state.aiPost(func(s *State) { s.aiEvent(run, event) })
 		})
+		messages = append(prelude, messages...)
 		state.aiPost(func(s *State) { s.aiFinished(run, messages, err) })
 	}()
 }
@@ -1023,10 +1075,14 @@ func (state *State) aiNewConversation() {
 	ai.approvals = nil
 	ai.autoUpTo = nil // a new conversation starts from the setting
 	ai.retry = false
+	ai.suggestions.page++
+	ai.suggestions.disarm()
+	ai.suggestions.visibleKey = ""
 	ai.answerOnly = false
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
+	state.aiStartSuggestions()
 }
 
 // aiOpenConversation shows a saved conversation and continues from it.
@@ -1035,6 +1091,8 @@ func (state *State) aiOpenConversation(id int64) {
 	if ai.run != nil || ai.store == nil {
 		return
 	}
+	state.aiCancelSuggestions()
+	ai.suggestions.disarm()
 	stored, err := ai.store.Messages(id)
 	if err != nil {
 		ai.notice = err.Error()

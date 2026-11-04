@@ -762,7 +762,7 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
 	}
-	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false, suggestionSource: aiSuggestionLibrarySource, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 	if state.ai.settings != want {
 		t.Fatalf("settings = %+v, want %+v", state.ai.settings, want)
 	}
@@ -786,7 +786,7 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	again.Click(hitAISetContext0)
 	again.Click(hitAISetRedact)
 	again.Click(hitAISetHistory)
-	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
+	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true, suggestionSource: aiSuggestionLibrarySource, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
 		t.Fatalf("settings = %+v, want %+v", got, want)
 	}
 }
@@ -1029,13 +1029,8 @@ func TestSettingsPageScrollsToTheAssistantSection(t *testing.T) {
 	}
 	canvas = ui.Canvas{}
 	state.Paint(&canvas, size)
-	var visible bool
-	for _, text := range canvas.Texts() {
-		if text.Value == state.messages.AISettings.BehaviourTitle && text.Bounds.Y > 0 && text.Bounds.Y < size.Height {
-			visible = true
-		}
-	}
-	if !visible {
+	last, visible := hitByID(&canvas, hitAISetSuggestAdd)
+	if !visible || last.Bounds.Y < 0 || last.Bounds.Y+last.Bounds.Height > size.Height {
 		t.Fatalf("the last group is not reachable by scrolling (scroll %v of %v)", state.settingsScroll, state.settingsContent)
 	}
 }
