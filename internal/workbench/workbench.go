@@ -427,6 +427,8 @@ type State struct {
 	hostCatalog
 	fileWindows       fileWindowManager
 	fileNotices       fileNotices
+	revealResults     chan revealResult
+	revealBusy        bool // only the window thread changes it; a worker returns over revealResults
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
 	reveal      secretReveal
@@ -913,6 +915,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
+		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
 		nextIdentityID:        1,
@@ -1883,29 +1886,18 @@ func (state *State) syncVisible() {
 		return
 	}
 	state.visibleQuery, state.visibleHosts = query, len(state.hosts)
-	needle := strings.ToLower(strings.TrimSpace(query))
+	words := strings.Fields(strings.ToLower(query))
 	state.visible = state.visible[:0]
 	if state.visible == nil {
 		state.visible = make([]int, 0, len(state.hosts))
 	}
 	for index, host := range state.hosts {
-		if needle == "" || matchesHost(host, needle) {
+		if len(words) == 0 || matchesHost(host, words) {
 			state.visible = append(state.visible, index)
 		}
 	}
 	state.refreshHostSelection()
 	state.rebuildHostTreeRows()
-}
-
-// matchesHost reports whether needle (lower case) occurs in any text the host
-// shows.
-func matchesHost(host Host, needle string) bool {
-	for _, value := range [...]string{host.Label, host.Address, host.User, host.Group, host.Tags, host.Icon.String()} {
-		if strings.Contains(strings.ToLower(value), needle) {
-			return true
-		}
-	}
-	return false
 }
 
 // hostIsVisible reports whether the search box currently lets a host through.

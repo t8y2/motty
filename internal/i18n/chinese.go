@@ -70,6 +70,7 @@ var ChineseMessages = Messages{
 		Upload: "上传", Download: "下载", To: "到", From: "从", Queued: "排队中", Running: "传输中", Finalizing: "正在收尾", Paused: "已暂停", Completed: "已完成", Failed: "失败", Canceled: "已取消",
 		SummaryFmt: "%d 个进行中 · %s/秒", Idle: "当前没有正在传输的任务", ProgressFmt: "%s / %s", FilesFmt: "%d / %d 个文件", TimeFmt: "%s · 用时 %s",
 		Retry: "重试", Replace: "覆盖", Resume: "续传", Skip: "跳过", Conflict: "目标已存在，选择处理方式：",
+		ShowInFolder: "打开所在位置", ShowInFolderFailed: "无法启动文件管理器，请稍后重试。", ShowInFolderMissing: "下载文件已移动或删除，无法打开所在位置。",
 		Hosts: "主机", AllHosts: "全部主机", ScopeFmt: "%s · %s · 显示 %d 项", CancelVisible: "取消当前显示", ClearVisible: "清空当前显示",
 		RetryFailedFmt: "重试失败项 (%d)", ConflictCountFmt: "冲突 (%d)", ConfirmBatchFmt: "%s %d 个冲突任务？",
 		BatchScopeFmt: "已捕获范围：%s。仅处理本批仍符合条件的失败任务，不含后续失败或隐藏连接；不会修改后续传输的默认行为。",
@@ -386,6 +387,7 @@ var ChineseMessages = Messages{
 	DeleteHost:    "删除",
 	MoveHostGroup: "移动分组",
 	HostGroupActions: HostGroupMessages{
+		ExpandAll: "展开所有分组", CollapseAll: "收起所有分组",
 		Actions: "分组操作", Rename: "修改分组名称", NewChild: "新建子分组", Name: "名称", Save: "保存", Create: "创建",
 		InvalidName: "名称不能为空，不能含斜杠、换行或控制字符，也不能为 . 或 ..", Conflict: "已存在同名分组", Missing: "该分组已不存在",
 		Move: "移动整个分组", Delete: "删除分组", Parent: "上级分组", TopLevel: "顶层", Cycle: "不能移入分组自身或其子分组",
@@ -1817,6 +1819,7 @@ var chineseTools = ToolsMessages{
 	UpdateWhyTranslocated:           "macOS 正从临时位置运行 Motty，请先把它移到“应用程序”文件夹。",
 	UpdateWhySystemInstall:          "这份 Motty 是系统级安装的，无法自行替换；请用包管理器更新，或重新运行安装程序。",
 	UpdateWhyNoPackage:              "此版本没有适用于当前系统的安装包。",
+	UpdateWhyPackageUnknown:         "暂时无法确认此版本是否有适用于当前系统的安装包，请稍后重试，或从发布页下载。",
 	UpdateWhyUnsigned:               "此版本没有用于自更新的签名，请从下载页安装。",
 	GeneralUpdateInstall:            "更新",
 	UpdateConfirmTitle:              "安装更新并重启？",

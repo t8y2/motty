@@ -70,6 +70,7 @@ var EnglishMessages = Messages{
 		Upload: "Upload", Download: "Download", To: "to", From: "from", Queued: "Queued", Running: "Transferring", Finalizing: "Finalizing", Paused: "Paused", Completed: "Completed", Failed: "Failed", Canceled: "Canceled",
 		SummaryFmt: "%d active · %s/s", Idle: "No transfers currently running", ProgressFmt: "%s / %s", FilesFmt: "%d / %d files", TimeFmt: "%s · Duration %s",
 		Retry: "Retry", Replace: "Replace", Resume: "Resume", Skip: "Skip", Conflict: "Destination exists. Choose an action:",
+		ShowInFolder: "Show in folder", ShowInFolderFailed: "Could not start the file manager. Try again later.", ShowInFolderMissing: "The downloaded file was moved or deleted, so its location cannot be opened.",
 		Hosts: "Host", AllHosts: "All hosts", ScopeFmt: "%s · %s · %d shown", CancelVisible: "Cancel visible", ClearVisible: "Clear visible",
 		RetryFailedFmt: "Retry %d failed", ConflictCountFmt: "Conflicts (%d)", ConfirmBatchFmt: "%s %d conflicting transfers?",
 		BatchScopeFmt: "Captured scope: %s. Only the captured eligible failures are included; later arrivals and hidden connections are excluded. This choice does not change transfer defaults.",
@@ -386,6 +387,7 @@ var EnglishMessages = Messages{
 	DeleteHost:    "Delete",
 	MoveHostGroup: "Move Group",
 	HostGroupActions: HostGroupMessages{
+		ExpandAll: "Expand all groups", CollapseAll: "Collapse all groups",
 		Actions: "Group actions", Rename: "Rename group", NewChild: "New child group", Name: "Name", Save: "Save", Create: "Create",
 		InvalidName: "Enter a name without slashes, line breaks or control characters (not . or ..)", Conflict: "A group with this name already exists", Missing: "This group no longer exists",
 		Move: "Move group", Delete: "Delete group", Parent: "Parent group", TopLevel: "Top level", Cycle: "A group cannot be moved into itself or its descendants",
@@ -1817,6 +1819,7 @@ var englishTools = ToolsMessages{
 	UpdateWhyTranslocated:           "macOS is running Motty from a temporary place. Move it to Applications first.",
 	UpdateWhySystemInstall:          "This copy was installed system-wide, so Motty cannot replace it. Update it with your package manager, or run the new installer.",
 	UpdateWhyNoPackage:              "This release has no package for this system.",
+	UpdateWhyPackageUnknown:         "Motty could not verify a package for this system. Try again in a moment, or download it from the release page.",
 	UpdateWhyUnsigned:               "This release is not signed for in-place installation; download it from the release page.",
 	GeneralUpdateInstall:            "Update",
 	UpdateConfirmTitle:              "Install the update and restart?",

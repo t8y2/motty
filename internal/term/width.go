@@ -7,19 +7,29 @@ import "unicode"
 // otherwise. It follows the usual wcwidth rules from a compact range table; a
 // few rare characters may be off by one cell.
 func Width(r rune) int {
-	switch {
-	case r < 0x300:
+	if r < 0x300 {
 		return 1
-	case r >= 0x1100 && isWide(r):
+	}
+	if isWideCJK(r) {
+		return 2
+	}
+	if r >= 0x1100 && isWide(r) {
 		// The wide blocks hold a few combining marks.
 		if (r >= 0x302A && r <= 0x302D) || (r >= 0x3099 && r <= 0x309A) {
 			return 0
 		}
 		return 2
-	case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r), unicode.Is(unicode.Cf, r):
+	}
+	if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
 		return 0
 	}
 	return 1
+}
+
+// isWideCJK reports whether r is in the contiguous CJK and Hangul blocks that
+// contain only wide characters and no combining marks.
+func isWideCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0xAC00 && r <= 0xD7A3) || (r >= 0x3400 && r <= 0x4DBF)
 }
 
 // wideRanges lists the East Asian Wide and Fullwidth characters and the emoji

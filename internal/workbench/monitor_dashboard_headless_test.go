@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
+	"motty/internal/workbench/icons"
 )
 
 func TestDashboardNativePauseFreezesChartsAndResumeAppends(t *testing.T) {
@@ -105,6 +107,44 @@ func TestDashboardNativePauseFreezesChartsAndResumeAppends(t *testing.T) {
 		t.Fatal("resume connected the paused period with a fabricated line")
 	}
 	s.Click(hitDashboardToggle)
+}
+
+// TestDashboardHeaderActionsFitTheirLabels pins each header action to its own
+// label. One fixed width held the Chinese "开始监控" and clipped the English
+// "Start monitoring" against the button's right edge.
+func TestDashboardHeaderActionsFitTheirLabels(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
+		t.Run(language.String(), func(t *testing.T) {
+			s := dashboardNativeFixture(t)
+			s.setLanguage(language)
+			s.setAppearance(appearanceDark)
+			s.dashboard.running = map[string]bool{}
+			view, err := headless.Open(app.Config{Title: "Motty", Width: 1440, Height: 900, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}, nil, headless.Options{ReferenceText: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Rest(); err != nil {
+				t.Fatal(err)
+			}
+			m := s.messages.Dashboard
+			theme := s.Theme()
+			theme.Metrics.ControlHeight = 36
+			for _, action := range []struct {
+				label string
+				icon  ui.Icon
+			}{{m.New, icons.Plus}, {m.Start, icons.Play}} {
+				hit, ok := view.Hit(action.label)
+				if !ok {
+					t.Fatalf("%q has no header action", action.label)
+				}
+				need := components.BeginButton(&ui.Canvas{}, theme, ui.ID{}, ui.Rect{}).WithIcon(action.icon).SizeToFit(action.label).BoundsWidth()
+				if hit.Bounds.Width+0.5 < need {
+					t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label is clipped", action.label, need, hit.Bounds.Width)
+				}
+			}
+		})
+	}
 }
 
 func TestDashboardNativeSelectsAndHostCards(t *testing.T) {

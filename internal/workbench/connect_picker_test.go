@@ -82,6 +82,55 @@ func TestPickerSearchMatchesHostNamesAndAddresses(t *testing.T) {
 	}
 }
 
+func TestNewTabPickerMatchesEverySpaceSeparatedKeywordInBothSortModes(t *testing.T) {
+	for _, recent := range []bool{false, true} {
+		name := "default"
+		if recent {
+			name = "recent"
+		}
+		t.Run(name, func(t *testing.T) {
+			options := testOptions(t)
+			if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
+				{ID: "match", Label: "XX Production", Group: "Servers", Address: "oa.internal", Port: 22},
+				{ID: "wrong-address", Label: "XX Staging", Group: "Servers", Address: "db.internal", Port: 22},
+				{ID: "wrong-name", Label: "OA Production", Group: "Servers", Address: "db.internal", Port: 22},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			state := newTestState(t, options)
+			state.Click(hitNewTab)
+			if recent {
+				state.Click(hitConnectSortRecent)
+			}
+			// Reverse the label/address order and vary case and whitespace. Every
+			// term must match the same host, even across its displayed fields.
+			state.commandPalette.search.Insert("  oA   Xx  ")
+			want := []string{"XX Production"}
+			if recent {
+				want = []string{"Servers", "XX Production"}
+			}
+			if got := pickerRowLabels(state); !slices.Equal(got, want) {
+				t.Fatalf("%s picker matches = %v", name, got)
+			}
+			if recent {
+				state.Click(hitConnectSortDefault)
+			} else {
+				state.Click(hitConnectSortRecent)
+			}
+			if state.commandPalette.search.String() != "  oA   Xx  " {
+				t.Fatal("switching sort cleared the search")
+			}
+			want = []string{"XX Production"}
+			if !recent {
+				want = []string{"Servers", "XX Production"}
+			}
+			if got := pickerRowLabels(state); !slices.Equal(got, want) {
+				t.Fatalf("after switching sort, matches = %v", got)
+			}
+		})
+	}
+}
+
 func TestTheCommandPaletteIsStillTheCommandPalette(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)

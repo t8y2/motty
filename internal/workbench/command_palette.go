@@ -185,6 +185,10 @@ func (state *State) refreshCommandPalette() {
 		return
 	}
 	query := strings.ToLower(rawQuery)
+	var keywords []string
+	if palette.connect {
+		keywords = strings.Fields(query)
+	}
 	palette.rawQuery = rawQuery
 	palette.query = query
 	palette.filtered = true
@@ -199,8 +203,15 @@ func (state *State) refreshCommandPalette() {
 			}
 			continue
 		}
-		if query != "" && !strings.Contains(palette.entries[index].search, query) {
-			continue
+		if query != "" {
+			search := palette.entries[index].search
+			if palette.connect {
+				if !matchesSearchWords(search, keywords) {
+					continue
+				}
+			} else if !strings.Contains(search, query) {
+				continue
+			}
 		}
 		palette.visible[palette.visibleCount] = index
 		palette.visibleCount++

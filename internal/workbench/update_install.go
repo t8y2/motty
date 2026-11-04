@@ -82,7 +82,10 @@ func (state *State) whyNoInstall() string {
 		return m.UpdateWhySystemInstall
 	}
 	if !state.update.release.Asset.Has() {
-		return m.UpdateWhyNoPackage
+		if state.update.release.PlatformPackageChecked {
+			return m.UpdateWhyNoPackage
+		}
+		return m.UpdateWhyPackageUnknown
 	}
 	if !state.update.release.Asset.Signed() {
 		return m.UpdateWhyUnsigned

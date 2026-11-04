@@ -179,3 +179,67 @@ func TestHostTagPopupCanSelectOutsideScrolledForm(t *testing.T) {
 		t.Fatalf("option beyond the form footer was not selected: tags=%q modal=%v open=%v", state.editor.value(fieldTags), state.modal, picker.control.Open)
 	}
 }
+
+// Hovering a tag row names that row: Enter must choose the row under the
+// pointer, not the row the popup opened on.
+func TestHostTagPopupEnterChoosesTheHoveredRow(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.setLanguage(i18n.Chinese)
+	state.Click(hitAddHost)
+	picker := state.hostTagPicker()
+	view, err := headless.Open(app.Config{Width: 1100, Height: 820, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, TextInput: func(c app.TextInputContext) *app.TextInput {
+		if editor := state.EditorFor(c.ID); editor != nil {
+			return &app.TextInput{Editor: editor}
+		}
+		return nil
+	}}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	click := func(id ui.ID) {
+		t.Helper()
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == id {
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatal("missing hit", id)
+	}
+	click(hitDialogTags)
+	choices := picker.control.Choices()
+	if len(choices) < 3 {
+		t.Fatalf("fixture has %d tag options", len(choices))
+	}
+	wanted := choices[2].Value
+	var option ui.Hit
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == hitHostTagOptions.At(2) {
+			option = hit
+		}
+	}
+	if option.Bounds.Height <= 0 {
+		t.Fatal("third tag option was not painted")
+	}
+	if err := view.Move(option.Bounds.X+option.Bounds.Width/2, option.Bounds.Y+option.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if picker.control.Active != 2 {
+		t.Fatalf("hovering the third row left the cursor at %d", picker.control.Active)
+	}
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if values := picker.control.Values(); len(values) != 1 || values[0] != wanted {
+		t.Fatalf("Enter after hovering the third row selected %v, want [%s]", values, wanted)
+	}
+}

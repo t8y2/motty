@@ -287,13 +287,15 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		canvas.DrawIcon(lucideIcons[spec.icon], ui.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
 		caption := ui.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
+		zoneLabel, zoneWidth := "", float32(0)
 		if editor.group <= toolbarTerminal {
-			caption.Width = max(caption.Width-100, 0)
+			zoneLabel = state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
+			zoneWidth = components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).SizeToFit(zoneLabel).BoundsWidth()
+			caption.Width = max(caption.Width-zoneWidth-2, 0)
 		}
 		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, ui.WeightRegular, caption.Width), caption, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
 		if editor.group <= toolbarTerminal {
-			zone := state.toolbarDockZoneFor(editor.group, entry.Key)
-			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 150, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 98, Height: 28}).Outline(state.toolbarDockZoneLabel(zone))
+			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
 		}
 		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, entry.Enabled).Label(label).Paint()
 	}

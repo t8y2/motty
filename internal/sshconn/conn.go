@@ -242,6 +242,10 @@ type Conn struct {
 	attempts   int
 	lastMethod string
 	closers    []io.Closer
+	// closersClosed is set by closeAuxiliary under mu: a closer registered
+	// afterwards is closed at once instead of waiting for a drain that already
+	// happened.
+	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
 
@@ -568,7 +572,7 @@ func (conn *Conn) connect() error {
 }
 
 func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
-	system, confirmed := detectRemoteSystem(client, serverVersion)
+	system, confirmed := conn.detectRemoteSystem(client, serverVersion)
 	if system == SystemUnknown || conn.ctx.Err() != nil {
 		return
 	}
@@ -716,6 +720,13 @@ func containsAuthFailure(err error) bool {
 
 func (conn *Conn) addCloser(closer io.Closer) {
 	conn.mu.Lock()
+	if conn.closersClosed {
+		conn.mu.Unlock()
+		// The drain is over; releasing it here keeps "released with the
+		// connection" true even when Close races the probe's timeout.
+		closer.Close()
+		return
+	}
 	conn.closers = append(conn.closers, closer)
 	conn.mu.Unlock()
 }
@@ -725,6 +736,7 @@ func (conn *Conn) closeAuxiliary() {
 	conn.mu.Lock()
 	closers := conn.closers
 	conn.closers = nil
+	conn.closersClosed = true
 	conn.mu.Unlock()
 	for index := len(closers) - 1; index >= 0; index-- {
 		closers[index].Close()

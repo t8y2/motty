@@ -147,6 +147,32 @@ func dashboardNetworkAxis(dst []byte, v float32) []byte {
 	return append(dst, " KiB/s"...)
 }
 
+// The header's two actions share one height and one gap, and each is as wide as
+// its own label needs from a width the pair was designed at. A single fixed
+// width cannot hold every language: Chinese "开始监控" fits 112 and English
+// "Start monitoring" needs 148, so the fixed box clipped the English label
+// against its own right edge.
+const (
+	dashboardActionHeight = float32(36)
+	dashboardActionGap    = float32(12)
+	dashboardActionLeast  = float32(112)
+	dashboardActionIcon   = float32(36)
+	// The selector's least width, its gap, and the three icon buttons beside
+	// it: the room the actions must leave before they are worth their labels.
+	dashboardHeaderLeast = float32(120 + 8 + 112 + 12)
+)
+
+// dashboardActionWidths is the width of each header action. A label wider than
+// the designed width widens its button instead of being clipped.
+func dashboardActionWidths(c *ui.Canvas, theme ui.Theme, newLabel string, newIcon ui.Icon, toggleLabel string, toggleIcon ui.Icon, iconOnly bool) (newWidth, toggleWidth float32) {
+	if iconOnly {
+		return dashboardActionIcon, dashboardActionIcon
+	}
+	measure := components.BeginButton(c, theme, ui.ID{}, ui.Rect{})
+	return max(dashboardActionLeast, measure.WithIcon(newIcon).SizeToFit(newLabel).BoundsWidth()),
+		max(dashboardActionLeast, measure.WithIcon(toggleIcon).SizeToFit(toggleLabel).BoundsWidth())
+}
+
 func (s *State) paintDashboard(c *ui.Canvas, b ui.Rect) {
 	d, m := &s.dashboard, s.messages.Dashboard
 	pal := s.pal
@@ -161,12 +187,23 @@ func (s *State) paintDashboard(c *ui.Canvas, b ui.Rect) {
 		s.paintEmptyPage(c, icon, button, iconActivity, hitDashboardNew, m.Create, true)
 		return
 	}
-	compact := w < 720
-	buttonW := float32(112)
-	if compact {
-		buttonW = 36
+	actionTheme := theme
+	actionTheme.Metrics.ControlHeight = dashboardActionHeight
+	running := d.running[p.ID]
+	toggle, toggleIcon := m.Start, icons.Play
+	if running {
+		toggle, toggleIcon = m.Stop, icons.Pause
 	}
-	newBox := ui.Rect{X: x + w - buttonW*2 - 12, Y: y, Width: buttonW, Height: 36}
+	compact := w < 720
+	newW, toggleW := dashboardActionWidths(c, actionTheme, m.New, icons.Plus, toggle, toggleIcon, compact)
+	// A long label must not push the actions over the panel selector and its
+	// three icon buttons; two icon buttons fit wherever the labels do not.
+	if !compact && w-newW-toggleW-dashboardActionGap < dashboardHeaderLeast {
+		compact = true
+		newW, toggleW = dashboardActionWidths(c, actionTheme, m.New, icons.Plus, toggle, toggleIcon, true)
+	}
+	newBox := ui.Rect{X: x + w - newW - toggleW - dashboardActionGap, Y: y, Width: newW, Height: dashboardActionHeight}
+	toggleBox := ui.Rect{X: x + w - toggleW, Y: y, Width: toggleW, Height: dashboardActionHeight}
 	panelW := min(float32(240), max(120, newBox.X-x-132))
 	d.selectBounds[0] = ui.Rect{X: x, Y: y, Width: panelW, Height: 36}
 	components.BeginButton(c, theme, hitDashboardEdit, ui.Rect{X: x + panelW + 8, Y: y + 2, Width: 32}).WithIcon(icons.Pencil).Icon().Ghost(m.Edit)
@@ -176,15 +213,7 @@ func (s *State) paintDashboard(c *ui.Canvas, b ui.Rect) {
 	}
 	sortButton.Ghost(m.Sort)
 	components.BeginButton(c, theme, hitDashboardDelete, ui.Rect{X: x + panelW + 80, Y: y + 2, Width: 32}).WithIcon(icons.Trash2).Icon().Ghost(m.Delete)
-	actionTheme := theme
-	actionTheme.Metrics.ControlHeight = 36
 	newButton := components.BeginButton(c, actionTheme, hitDashboardNew, newBox).WithIcon(icons.Plus)
-	toggleBox := ui.Rect{X: x + w - buttonW, Y: y, Width: buttonW, Height: 36}
-	running := d.running[p.ID]
-	toggle, toggleIcon := m.Start, icons.Play
-	if running {
-		toggle, toggleIcon = m.Stop, icons.Pause
-	}
 	toggleButton := components.BeginButton(c, actionTheme, hitDashboardToggle, toggleBox).WithIcon(toggleIcon)
 	if compact {
 		newButton, toggleButton = newButton.Icon(), toggleButton.Icon()

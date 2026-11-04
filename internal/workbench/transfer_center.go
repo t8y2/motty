@@ -1,7 +1,9 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"path/filepath"
 	"slices"
@@ -28,6 +30,7 @@ var (
 	hitTransfersFilter    = tree.Sub(transferCenterHits, tree.Name("filter"))
 	hitTransfersPause     = tree.Sub(transferCenterHits, tree.Name("pause"))
 	hitTransfersCancel    = tree.Sub(transferCenterHits, tree.Name("cancel"))
+	hitTransfersReveal    = tree.Sub(transferCenterHits, tree.Name("show-location"))
 	hitTransfersRemove    = tree.Sub(transferCenterHits, tree.Name("remove"))
 	hitTransfersRetry     = tree.Sub(transferCenterHits, tree.Name("retry"))
 	hitTransfersReplace   = tree.Sub(transferCenterHits, tree.Name("replace"))
@@ -93,6 +96,61 @@ type transferCenter struct {
 
 func transferActive(snapshot sftpclient.TransferSnapshot) bool {
 	return snapshot.State == sftpclient.TransferQueued || snapshot.State == sftpclient.TransferRunning || snapshot.State == sftpclient.TransferPaused
+}
+
+func transferCanReveal(snapshot sftpclient.TransferSnapshot) bool {
+	return snapshot.Operation == sftpclient.OperationDownload &&
+		snapshot.State == sftpclient.TransferCompleted &&
+		snapshot.Destination != ""
+}
+
+type revealResult struct {
+	err error
+}
+
+func (state *State) revealTransferPath(path string) {
+	if state.revealBusy {
+		return
+	}
+	state.revealBusy = true
+	if state.revealResults == nil {
+		state.revealResults = make(chan revealResult, 1)
+	}
+	reveal := state.options.RevealPath
+	go func() {
+		var err error
+		if reveal == nil {
+			err = errors.New("reveal path: no file manager launcher is configured")
+		} else {
+			err = reveal(path)
+		}
+		state.revealResults <- revealResult{err: err}
+		if state.options.Invalidate != nil {
+			state.options.Invalidate()
+		}
+	}()
+}
+
+func (state *State) pumpRevealResults() {
+	if state.revealResults == nil {
+		return
+	}
+	for {
+		select {
+		case result := <-state.revealResults:
+			state.revealBusy = false
+			if result.err == nil {
+				continue
+			}
+			detail := state.messages.Transfers.ShowInFolderFailed
+			if errors.Is(result.err, fs.ErrNotExist) {
+				detail = state.messages.Transfers.ShowInFolderMissing
+			}
+			state.showActionFailure(state.messages.Transfers.ShowInFolder, result.err, detail)
+		default:
+			return
+		}
+	}
 }
 
 func (state *State) transferCenterAvailable() bool {
@@ -410,6 +468,12 @@ func (state *State) clickTransferTask(id ui.ID) bool {
 		entry := &center.entries[index]
 		if item(id) != entry.id {
 			continue
+		}
+		if id.Scope() == hitTransfersReveal {
+			if transferCanReveal(entry.snapshot) {
+				state.revealTransferPath(entry.snapshot.Destination)
+			}
+			return true
 		}
 		if transferActive(entry.snapshot) && id.Scope() == hitTransfersRemove {
 			return true
