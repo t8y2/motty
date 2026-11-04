@@ -773,7 +773,7 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 		panel.usageLines = panel.usageLines[:0]
 		statusHeight = float32(len(panel.statusLines)) * aiSmallLine
 		if usage != "" {
-			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, ui.WeightRegular, max(rowW, 1), 8)
+			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, ui.WeightRegular, max(rowW-20, 1), 8)
 			statusHeight += float32(len(panel.usageLines))*aiSmallLine + 4
 		}
 	}

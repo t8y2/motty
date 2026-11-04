@@ -86,3 +86,28 @@ func TestAIRunStatusHeadlessLayoutAndScreenshots(t *testing.T) {
 		}
 	}
 }
+
+func TestAIRunUsageWrapReservesSpaceForFontFallback(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
+		t.Run(language.String(), func(t *testing.T) {
+			state, _ := panelState(t, nil)
+			withModel(t, state)
+			state.setLanguage(language)
+			state.ai.open, state.ai.panelWidth = true, 300
+			state.ai.items = []aiItem{{kind: aiUser, text: "question"}, {kind: aiAssistant, text: "answer"}}
+			state.ai.lastRun = &aiRunStats{phase: aiRunCompleted, duration: 8 * time.Second,
+				usage: llm.Usage{InputTokens: 12000, OutputTokens: 284, CacheReadTokens: 9800}}
+			state.ai.totalUsage = state.ai.lastRun.usage
+			canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+			width := state.ai.panel.list.Width - 2*aiPad
+			if len(state.ai.panel.usageLines) == 0 {
+				t.Fatal("finished request has no usage")
+			}
+			for _, line := range state.ai.panel.usageLines {
+				if measured := canvas.TextWidthWeight(line, aiSmallSize, ui.WeightRegular); measured > width-16 {
+					t.Fatalf("usage line leaves insufficient cross-platform room: %q measured %.1f, available %.1f", line, measured, width)
+				}
+			}
+		})
+	}
+}
