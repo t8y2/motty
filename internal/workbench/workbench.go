@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -609,6 +611,7 @@ type State struct {
 	appearance          appearance
 	appearanceMode      appearanceMode
 	networkProxy        networkProxyMode
+	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	recentConnectSort   bool
@@ -840,7 +843,15 @@ type State struct {
 	// does not allocate its nodes.
 	sessionLogsLayout flex.View
 	// ai is the built-in assistant; see ai_state.go.
-	ai aiState
+	ai                 aiState
+	localProxyPort     uint16
+	localProxyPortSet  bool
+	localProxyUI       localProxyUI
+	localProxyOnce     sync.Once
+	localProxyFallback *localProxyManager
+	// callbacksClosed prevents process-owned workers from reading UI-thread
+	// close state when they wake windows after their owner has gone away.
+	callbacksClosed atomic.Bool
 }
 
 // Close releases connections, transfers, monitors, and forwards owned by this
@@ -849,6 +860,7 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.callbacksClosed.Store(true)
 	state.closed = true
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
@@ -868,6 +880,7 @@ func (state *State) Close() {
 	}
 	state.closeCompletionWorkers()
 	state.stopUpdateCheck()
+	state.closeLocalProxySessions()
 	if state.options.Group != nil {
 		state.options.Group.leave(state)
 	}
@@ -937,6 +950,8 @@ func New(options Options) *State {
 		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
+		localProxyPort:        defaultLocalProxyPort,
+		lookupSystemProxy:     systemproxy.Lookup,
 		syncDelay:             syncDelayDefault,
 		syncRetryBase:         syncRetryBaseDefault,
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
@@ -1246,6 +1261,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitWorkspaceSaveName {
 			return &state.workspaceSave.name
 		}
+	case modalLocalProxy:
+		if hit == hitLocalProxyPort && !state.localProxyUIPortLocked() {
+			return &state.localProxyUI.port
+		}
 	}
 	if editor := state.terminalFindEditor(hit); editor != nil {
 		return editor
@@ -1451,12 +1470,20 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalWorkspaceTemplateDelete:
 		state.clickWorkspaceTemplateDelete(id)
 		return
+	case modalLocalProxy:
+		state.clickLocalProxy(id)
+		return
 	}
 	if state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
+		return
+	}
+	if id == hitLocalProxyOpen {
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		state.openLocalProxy(session)
 		return
 	}
 	if state.clickVerticalTabGroup(id) {
@@ -1688,6 +1715,7 @@ func (state *State) closeSession(id uint32) {
 	defer state.save()
 	defer memoryTrim.request()
 	session := &state.sessions[index]
+	state.leaveLocalProxy(session)
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)
@@ -2005,6 +2033,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 			return ui.EventResult{}
 		}
 		return ui.EventResult{Handled: true}
+	}
+	if result, handled := state.localProxyPointer(event); handled {
+		return result
 	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
@@ -2398,6 +2429,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.aiKey(event); handled {
+		return result
+	}
+	if result, handled := state.localProxyKey(event); handled {
 		return result
 	}
 	if result, handled := state.commandPaletteKey(event); handled {

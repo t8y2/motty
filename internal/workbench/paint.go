@@ -394,6 +394,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintWorkspaceSaveDialog(canvas, viewport)
 	case modalWorkspaceTemplateDelete:
 		state.paintWorkspaceTemplateDelete(canvas, viewport)
+	case modalLocalProxy:
+		state.paintLocalProxyDialog(canvas, viewport)
 	}
 	if state.knownHosts.action != knownHostsActionNone {
 		state.paintKnownHostsDialog(canvas, viewport)
@@ -415,6 +417,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
+	state.paintLocalProxyFocus(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})

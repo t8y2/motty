@@ -75,6 +75,7 @@ var EnglishMessages = Messages{
 		RetryFailedFmt: "Retry %d failed", ConflictCountFmt: "Conflicts (%d)", ConfirmBatchFmt: "%s %d conflicting transfers?",
 		BatchScopeFmt: "Captured scope: %s. Only the captured eligible failures are included; later arrivals and hidden connections are excluded. This choice does not change transfer defaults.",
 	},
+	LocalProxy: englishLocalProxy,
 
 	NavHosts:                  "Hosts",
 	NavWorkspaces:             "Workspaces",
