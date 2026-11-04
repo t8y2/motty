@@ -468,6 +468,29 @@ func TestAProbeThatNeverAnswersLeavesTheConnectionAlone(t *testing.T) {
 	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
 }
 
+// recorderCloser records that it was released.
+type recorderCloser struct{ closed bool }
+
+func (closer *recorderCloser) Close() error { closer.closed = true; return nil }
+
+// TestACloserRegisteredAfterTheDrainIsReleasedAtOnce covers the race the probe
+// leaves open: a session handed to the connection just as it closes must still
+// be released, or "released with the connection" is only luck.
+func TestACloserRegisteredAfterTheDrainIsReleasedAtOnce(t *testing.T) {
+	conn := &Conn{}
+	before := &recorderCloser{}
+	conn.addCloser(before)
+	conn.closeAuxiliary()
+	if !before.closed {
+		t.Fatal("a closer registered before the drain was never released")
+	}
+	after := &recorderCloser{}
+	conn.addCloser(after)
+	if !after.closed {
+		t.Fatal("a closer registered after the drain was never released")
+	}
+}
+
 func TestKeyboardInteractiveSingleHiddenQuestionUsesThePasswordPrompt(t *testing.T) {
 	server := startServer(t, func(s *testServer) { s.question = "Verification code: "; s.password = "123456" })
 	h := dial(t, server, nil)

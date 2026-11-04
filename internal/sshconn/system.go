@@ -255,6 +255,27 @@ func classifyProbe(output string) RemoteSystem {
 // such as dropbear, and with it any shell beside it.
 const remoteSystemProbeTimeout = 1500 * time.Millisecond
 
+// maxProbeOutput bounds what the probe keeps. The command prints a few hundred
+// bytes; a host that keeps writing after the probe gave up must not be able to
+// grow the client's memory for as long as the connection stays open.
+const maxProbeOutput = 4 << 10
+
+// probeOutput keeps the first maxProbeOutput bytes the probe writes and drops
+// the rest. Reporting the dropped bytes as written keeps the channel's copy
+// loop moving instead of blocking on a full pipe.
+type probeOutput struct {
+	buf []byte
+}
+
+func (output *probeOutput) Write(p []byte) (int, error) {
+	if room := maxProbeOutput - len(output.buf); room > 0 {
+		output.buf = append(output.buf, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (output *probeOutput) Bytes() []byte { return output.buf }
+
 // detectRemoteSystem asks the host what it is when the banner could not say, or
 // said only a Linux distribution that a derivative may share. The second result
 // reports whether the host answered: when it refuses a command session, or says
@@ -277,9 +298,14 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 		err    error
 	}
 	answered := make(chan answer, 1)
+	// The session is left to the connection when it outlives the timeout, so its
+	// output has to be bounded from the start: Output would hand it a buffer that
+	// grows for the rest of the connection.
+	probeOut := &probeOutput{}
+	session.Stdout = probeOut
 	go func() {
-		output, err := session.Output(remoteSystemCommand)
-		answered <- answer{output, err}
+		err := session.Run(remoteSystemCommand)
+		answered <- answer{probeOut.Bytes(), err}
 	}()
 	timer := time.NewTimer(remoteSystemProbeTimeout)
 	defer timer.Stop()
