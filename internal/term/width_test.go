@@ -1,6 +1,9 @@
 package term
 
-import "testing"
+import (
+	"testing"
+	"unicode"
+)
 
 func TestWidth(t *testing.T) {
 	for _, test := range []struct {
@@ -65,6 +68,22 @@ func TestIsWideMatchesTheRanges(t *testing.T) {
 	for r := rune(0); r <= 0x10FFFF; r++ {
 		if got, want := isWide(r), rangeAt(r); got != want {
 			t.Fatalf("isWide(%U) = %v, want %v", r, got, want)
+		}
+	}
+}
+
+func TestIsWideCJKMatchesTheRanges(t *testing.T) {
+	for r := rune(0); r <= 0x10FFFF; r++ {
+		if isWideCJK(r) {
+			if !isWide(r) {
+				t.Fatalf("isWideCJK(%U) = true, but isWide is false", r)
+			}
+			if (r >= 0x302A && r <= 0x302D) || (r >= 0x3099 && r <= 0x309A) {
+				t.Fatalf("isWideCJK(%U) is a combining mark", r)
+			}
+			if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+				t.Fatalf("isWideCJK(%U) is zero-width", r)
+			}
 		}
 	}
 }
