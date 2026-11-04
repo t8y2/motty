@@ -56,8 +56,10 @@ another `cd` back. Both preferences use the existing shared-settings storage.
   trap that the user's startup files set *after* Motty's replaces it; reverse
   sync then stays off for that shell and the file panel says why. An array
   `PROMPT_COMMAND` (Bash 5.1+) always has `PS0` and never takes this path.
-- To keep ordinary shell startup entirely, disable both directions and
-  reconnect. Re-enabling integration for an already open ordinary shell also
+- To keep ordinary SSH shell startup entirely, disable both directions, set
+  **Settings > Terminal > Tab name** to **Connection name** or **Terminal title**,
+  and reconnect. **Current path** independently enables directory reporting.
+  Re-enabling integration for an already open ordinary shell also
   requires reconnecting. There is no command injection into a live prompt to
   install integration.
 

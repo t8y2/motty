@@ -126,6 +126,9 @@ type ToolsMessages struct {
 	LinkPlainClickDescription  string
 	BellRow                    string
 	BellDescription            string
+	TabTitleConnection         string
+	TabTitleTerminal           string
+	TabTitleDirectory          string
 	TabTitleRow                string
 	TabTitleDescription        string
 	LatencyRow                 string

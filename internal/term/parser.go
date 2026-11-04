@@ -522,6 +522,7 @@ func (t *Terminal) endOSC() {
 		}
 	case 777:
 		t.inputEnvironmentReport(text)
+		t.homeDirectoryReport(text)
 		t.osc777(text)
 	case 10, 11:
 		if len(text) == 1 && text[0] == '?' && t.haveDefaults {

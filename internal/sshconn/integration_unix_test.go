@@ -90,7 +90,10 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 			if err != nil {
 				t.Skipf("%s unavailable: %v", name, err)
 			}
-			home, runtimeDir := t.TempDir(), t.TempDir()
+			home, runtimeDir := filepath.Join(t.TempDir(), "home %#;中文"), t.TempDir()
+			if err := os.MkdirAll(home, 0700); err != nil {
+				t.Fatal(err)
+			}
 			target := filepath.Join(home, "a b%'#;$()", "caf\u00e9")
 			if err := os.MkdirAll(target, 0700); err != nil {
 				t.Fatal(err)
@@ -118,6 +121,8 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 			t.Cleanup(shell.Close)
 			screen := term.New(120, 24, 0)
 			screen.SetPromptToken("pty-test-token")
+			reportedHome := ""
+			screen.SetHomeDirectory(func(value string) { reportedHome = value })
 			ready, commandStarts, output := 0, 0, ""
 			screen.SetPromptReady(func() { ready++ })
 			screen.SetCommandStart(func() { commandStarts++ })
@@ -138,6 +143,9 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 				t.Fatalf("waiting for %s: %q", want, output)
 			}
 			await("initial ready prompt", func() bool { return ready > 0 })
+			if reportedHome != home {
+				t.Fatalf("reported home = %q, want %q", reportedHome, home)
+			}
 			beforeReady := ready
 			shell.Write([]byte("false\r"))
 			await("failed command status", func() bool { return ready > beforeReady })
