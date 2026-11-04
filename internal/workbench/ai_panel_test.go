@@ -1074,7 +1074,7 @@ func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 	wide := ui.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
-	x, y := divider.Bounds.X + divider.Bounds.Width/2, divider.Bounds.Y + 100
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
@@ -1102,7 +1102,7 @@ func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 	sectionState.ai.open = true
 	canvasSection, _ := paintAt(sectionState, wide)
 	dividerSection := panelHit(t, canvasSection, hitAIDivider)
-	sx, sy := dividerSection.Bounds.X + dividerSection.Bounds.Width/2, dividerSection.Bounds.Y + 100
+	sx, sy := dividerSection.Bounds.X+dividerSection.Bounds.Width/2, dividerSection.Bounds.Y+100
 	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
 	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
 	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
@@ -1125,7 +1125,7 @@ func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
 	// In drawer mode, divider is placed at the left edge of the drawer
 	initialWidth := state.ai.panel.rect.Width
 	divider := panelHit(t, canvas, hitAIDivider)
-	x, y := divider.Bounds.X + divider.Bounds.Width/2, divider.Bounds.Y + 100
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
 	// Drag divider to resize drawer by 70px wider
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
@@ -1157,7 +1157,7 @@ func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
 	canvas, _ := paintAt(state, wide)
 
 	grip := panelHit(t, canvas, hitAIComposerGrip)
-	gx, gy := grip.Bounds.X + grip.Bounds.Width/2, grip.Bounds.Y + grip.Bounds.Height/2
+	gx, gy := grip.Bounds.X+grip.Bounds.Width/2, grip.Bounds.Y+grip.Bounds.Height/2
 	initialHeight := state.ai.panel.boxHeight
 	// Drag grip upward to increase composer height
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
