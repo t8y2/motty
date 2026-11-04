@@ -70,7 +70,7 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	var candidates []candidate
 	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
 		search := strings.ToLower(item.label + " " + item.detail)
-		if !matchesConnectKeywords(search, keywords) {
+		if !matchesSearchWords(search, keywords) {
 			return
 		}
 		group := ""

@@ -206,7 +206,7 @@ func (state *State) refreshCommandPalette() {
 		if query != "" {
 			search := palette.entries[index].search
 			if palette.connect {
-				if !matchesConnectKeywords(search, keywords) {
+				if !matchesSearchWords(search, keywords) {
 					continue
 				}
 			} else if !strings.Contains(search, query) {

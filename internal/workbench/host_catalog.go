@@ -339,8 +339,8 @@ func (state *State) inHostFilter(host Host) bool {
 
 func (state *State) rebuildHostTreeRows() {
 	state.hostTreeRows = state.hostTreeRows[:0]
-	filtering := strings.TrimSpace(state.visibleQuery) != ""
-	needle := strings.ToLower(strings.TrimSpace(state.visibleQuery))
+	words := strings.Fields(strings.ToLower(state.visibleQuery))
+	filtering := len(words) != 0
 	flat := state.hostsFlat()
 	hidden := ""
 	for groupIndex, group := range state.hostGroups {
@@ -357,10 +357,10 @@ func (state *State) rebuildHostTreeRows() {
 				matched++
 			}
 		}
-		explicit := group.Explicit && (!filtering || strings.Contains(strings.ToLower(group.Name), needle))
+		explicit := group.Explicit && (!filtering || matchesSearchWords(strings.ToLower(group.Name), words))
 		if !explicit {
 			for _, child := range state.hostGroups {
-				if child.Explicit && hostGroupWithin(child.Name, group.Name) && (!filtering || strings.Contains(strings.ToLower(child.Name), needle)) {
+				if child.Explicit && hostGroupWithin(child.Name, group.Name) && (!filtering || matchesSearchWords(strings.ToLower(child.Name), words)) {
 					explicit = true
 					break
 				}

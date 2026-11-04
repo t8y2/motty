@@ -1883,29 +1883,18 @@ func (state *State) syncVisible() {
 		return
 	}
 	state.visibleQuery, state.visibleHosts = query, len(state.hosts)
-	needle := strings.ToLower(strings.TrimSpace(query))
+	words := strings.Fields(strings.ToLower(query))
 	state.visible = state.visible[:0]
 	if state.visible == nil {
 		state.visible = make([]int, 0, len(state.hosts))
 	}
 	for index, host := range state.hosts {
-		if needle == "" || matchesHost(host, needle) {
+		if len(words) == 0 || matchesHost(host, words) {
 			state.visible = append(state.visible, index)
 		}
 	}
 	state.refreshHostSelection()
 	state.rebuildHostTreeRows()
-}
-
-// matchesHost reports whether needle (lower case) occurs in any text the host
-// shows.
-func matchesHost(host Host, needle string) bool {
-	for _, value := range [...]string{host.Label, host.Address, host.User, host.Group, host.Tags, host.Icon.String()} {
-		if strings.Contains(strings.ToLower(value), needle) {
-			return true
-		}
-	}
-	return false
 }
 
 // hostIsVisible reports whether the search box currently lets a host through.
