@@ -165,8 +165,8 @@ func TestLockedTabAnnouncesItsProtection(t *testing.T) {
 		}
 		return found
 	}
-	if hint := hit().Hint; hint != "" {
-		t.Fatalf("an unlocked tab announces %q", hint)
+	if tab := hit(); tab.Hint != tab.Label {
+		t.Fatalf("an unlocked tab announces %q, want its full label %q", tab.Hint, tab.Label)
 	}
 	lockTab(t, state, id)
 	if hint := hit().Hint; hint != state.messages.TabLockedHint {
