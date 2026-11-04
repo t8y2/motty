@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
@@ -683,4 +684,35 @@ func TestToolbarDockBottomLeftAndRightGroups(t *testing.T) {
 		}
 	}
 	toolbarDockShot(t, view, "14-bottom-groups-overflow")
+}
+
+// TestToolbarDockZoneButtonFitsItsLabel keeps the dock zone control as wide as
+// its own label. A fixed 98px box held the Chinese "顶部" and left the English
+// "Bottom (right)" wider than the button's own padding, so the caption gives up
+// the room instead.
+func TestToolbarDockZoneButtonFitsItsLabel(t *testing.T) {
+	dir := t.TempDir()
+	state := newTestState(t, Options{StatePath: filepath.Join(dir, "state.json"), KnownHostsPath: filepath.Join(dir, "known_hosts")})
+	state.setLanguage(i18n.English)
+	state.Click(hitLocalTerminal)
+	state.Wake()
+	state.moveToolbarDockTool(hitPaneClose, toolbarDockBottomRight, hitBroadcast)
+	state.openToolbarSettings(toolbarTerminal)
+	view, err := headless.Open(app.Config{Width: 1200, Height: 800, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{ReferenceText: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	label := state.messages.Toolbars.BottomRight
+	hit, ok := view.Hit(label)
+	if !ok {
+		t.Fatalf("%q has no dock zone control", label)
+	}
+	need := components.BeginButton(&ui.Canvas{}, state.Theme(), ui.ID{}, ui.Rect{}).SizeToFit(label).BoundsWidth()
+	if hit.Bounds.Width+0.5 < need {
+		t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label overflows its padding", label, need, hit.Bounds.Width)
+	}
 }
