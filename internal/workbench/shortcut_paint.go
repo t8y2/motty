@@ -28,6 +28,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.ShortcutNextTab
 	case shortcutPreviousTab:
 		return messages.ShortcutPreviousTab
+	case shortcutTabNumber:
+		return messages.ShortcutTabNumber
 	case shortcutPanePrevious:
 		return messages.PanePrevious
 	case shortcutPaneNext:

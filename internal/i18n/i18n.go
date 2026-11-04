@@ -365,6 +365,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string
 	ShortcutFilesPath                    string
@@ -375,6 +376,7 @@ type Messages struct {
 	ShortcutCloseTab                     string
 	ShortcutNextTab                      string
 	ShortcutPreviousTab                  string
+	ShortcutTabNumber                    string
 	ShortcutClearScreen                  string
 	RecordingStart                       string
 	RecordingStop                        string
