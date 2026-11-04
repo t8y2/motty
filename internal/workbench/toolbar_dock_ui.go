@@ -156,9 +156,8 @@ func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
 // Reserve each physical side independently. Background terminals keep their
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
-	_, hasTerminal := state.terminalToolbarSession()
-	if includeTerminal && hasTerminal && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
-		// Retain the default rail's latency slot even when all actions are hidden.
+	session, hasTerminal := state.terminalToolbarSession()
+	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
 		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
@@ -168,7 +167,8 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 		if !toolbarDockVertical(entry.Zone) || toolbarDockLeft(entry.Zone) != left {
 			continue
 		}
-		if entry.Group == toolbarTerminal && (!includeTerminal || !hasTerminal) {
+		// Terminal entries were resolved against the active session above.
+		if entry.Group == toolbarTerminal {
 			continue
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
@@ -177,6 +177,83 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 		}
 	}
 	return 0
+}
+
+// terminalToolbarShowsOnSide reports whether this physical side has actual
+// content: a usable tool or a latency badge backed by an RTT sample. This sits
+// on the steady-state paint path, so it scans preferences directly instead of
+// building and ordering the complete barTool slice.
+func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool {
+	if session == nil {
+		return false
+	}
+	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
+	capacity := min(3, max(0, int((state.viewport.Width-144)/(barToolSize+barToolGap))-1))
+	compactCount := 0
+	compactMenu := false
+	entries := state.toolbars.entries(toolbarTerminal)
+	for _, preference := range entries {
+		if !preference.Enabled {
+			continue
+		}
+		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
+		if !ok || !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		if managed {
+			if terminalToolbarCompactVisible(spec.id) && compactCount < capacity {
+				compactCount++
+			} else {
+				compactMenu = true
+				continue
+			}
+		}
+		zone := state.toolbarDockZoneFor(toolbarTerminal, preference.Key)
+		if toolbarDockVertical(zone) && toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	if managed && compactMenu {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	if session.showLog && !session.term.live {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	if state.latencyAvailable(session) {
+		return (state.terminalToolbarPosition == terminalToolbarLeft) == left
+	}
+	return false
+}
+
+// terminalToolbarOffers mirrors the context filters in activeTerminalTools.
+// Disabled actions still count because their icon remains visible.
+func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
+	switch id {
+	case hitSFTPDetach:
+		return session.host.isSSH() && !session.isLocal()
+	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
+		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal:
+		return true
+	case hitRemoteStats:
+		_, _, offered := state.remoteStatsToggle(session)
+		return offered
+	case hitPaneClose:
+		return state.paneInSplit(session.ID)
+	case hitBroadcast:
+		return state.paneInSplit(session.ID) && !state.workspaceManaged(state.deck.ActiveWorkspace())
+	default:
+		return false
+	}
+}
+
+// These are the actions compactWorkspacePaneTools keeps beside the pane title
+// when space permits. Everything else is represented by the synthesized menu.
+func terminalToolbarCompactVisible(id ui.ID) bool {
+	return id == hitSFTPOpen || id == hitRemoteStats || id == hitPaneClose
 }
 
 func (state *State) toolbarDockSideBoundsFor(size ui.Size, left bool) ui.Rect {
@@ -310,6 +387,9 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
+			if terminalVisible && primary && session != nil {
+				state.clearTerminalRail(session)
+			}
 			continue
 		}
 		bounds := state.toolbarDockSideBoundsFor(size, left)

@@ -204,6 +204,7 @@ func (state *State) clearTerminalRail(session *Session) {
 		return
 	}
 	session.term.railCount = 0
+	session.term.railIDs = [maxBarTools]ui.ID{}
 	session.term.railEnabled = [maxBarTools]bool{}
 	session.term.railViewport = ui.Rect{}
 	session.term.railBounds = ui.Rect{}
