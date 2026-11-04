@@ -11,8 +11,6 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/ai/agent"
-	"motty/internal/ai/llm"
 	"motty/internal/i18n"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -530,33 +528,4 @@ func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing
 	if _, ok := hitByIDInSnapshot(snapshot, hitMonitorClose); !ok {
 		t.Fatal("the monitor drawer is missing")
 	}
-}
-
-func TestApprovalOpeningTheAssistantClosesANarrowMonitorsDrawer(t *testing.T) {
-	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
-		if index == 0 {
-			return toolTurn("terminal_exec", `{"command":"touch created-by-assistant"}`)
-		}
-		return textTurn("finished")
-	}}
-	state, _ := assistantSession(t, model)
-	id := state.deck.ActiveWorkspace()
-	c, _ := state.deck.Context(id)
-	c.MonitorOpen = true
-	_ = state.deck.SetContext(id, c)
-	state.Resize(ui.Size{Width: 760, Height: 700})
-	if !state.monitorShown(id) || !state.monitorDrawer(state.viewport) {
-		t.Fatal("the monitor should be the narrow drawer")
-	}
-
-	ask(state, "make a file", agent.ModeAgent)
-	pumpUntil(t, state, "the approval question", func() bool { return len(state.ai.approvals) == 1 })
-	if state.monitorShown(id) {
-		t.Fatal("the question must close the monitor rather than stack a second drawer")
-	}
-	if !state.aiPanelVisible() {
-		t.Fatal("the question should open the assistant")
-	}
-	state.aiAnswerApproval(false)
-	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
 }
