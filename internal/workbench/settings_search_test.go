@@ -164,6 +164,28 @@ func TestCustomEditorSettingAppearsInSearchWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestFilesSettingsPlaceDirectoryTreeAfterOpenMode(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	var labels []string
+	state.eachSettingsEntry(func(entry settingsEntry) {
+		if entry.category == settingsFiles {
+			labels = append(labels, entry.label)
+		}
+	})
+	openMode, directoryTree := -1, -1
+	for index, label := range labels {
+		switch label {
+		case state.messages.Tools.FilesOpenMode:
+			openMode = index
+		case state.messages.Tools.FilesDirectoryTree:
+			directoryTree = index
+		}
+	}
+	if openMode < 0 || directoryTree != openMode+1 {
+		t.Fatalf("files settings order = %q; directory tree must immediately follow open mode", labels)
+	}
+}
+
 func TestSearchingSessionLogSettingsDoesNotShowFormatVerbs(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	searchSettings(t, state, state.messages.SessionLogs.SettingsStorageRow)

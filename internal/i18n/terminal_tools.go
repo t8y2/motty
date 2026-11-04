@@ -319,6 +319,8 @@ type ToolsMessages struct {
 	CatFiles                        string
 	FilesPanelAutoOpen              string
 	FilesPanelAutoOpenDescription   string
+	FilesDirectoryTree              string
+	FilesDirectoryTreeDescription   string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string

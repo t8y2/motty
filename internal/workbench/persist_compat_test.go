@@ -164,7 +164,7 @@ func TestCompatibleBackupRestoreAndSyncPreserveRawRecords(t *testing.T) {
 }
 
 func TestCompatibilityEpochMigratesLegacyAndRejectsIncompatibleData(t *testing.T) {
-	for _, format := range []int{19, 20, 21, 22} {
+	for _, format := range []int{19, 20, 21, 22, 23} {
 		t.Run(fmt.Sprint(format), func(t *testing.T) {
 			state := futureConfigState(t, format)
 			if state.saveBlocked || len(state.hosts) != 1 {

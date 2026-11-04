@@ -926,6 +926,14 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 	}
 	view.allRows = rows
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
+	if view.detached != nil {
+		entries := make([]sftpclient.Entry, len(rows))
+		for index := range rows {
+			entries[index] = rows[index].entry
+		}
+		view.detached.observeDirectoryTreeListing(false, remotePath, entries)
+		view.detached.syncDirectoryTreeToPath(false, remotePath)
+	}
 	state.applySFTPFilter(view, &view.sftpFolder, true)
 	state.finishSFTPNavigation(view, false, place, restore, nav)
 	view.errorText = ""
@@ -975,6 +983,9 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 		return
 	}
 	view.remember(result.Path, result.Entries)
+	if view.detached != nil {
+		view.detached.observeDirectoryTreeListing(false, result.Path, result.Entries)
+	}
 	switch {
 	case waited:
 		state.showSFTPListingNavigation(view, result.Path, result.Entries, nav, result.ListID)
@@ -1004,6 +1015,9 @@ func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
 		}
 	}
 	view.allRows = prepareSFTPRows(view.allRows, entries)
+	if view.detached != nil {
+		view.detached.observeDirectoryTreeListing(false, view.path, entries)
+	}
 	for index := range view.allRows {
 		if _, ok := selected[view.allRows[index].entry.Name]; ok {
 			view.allRows[index].selected = true
@@ -1444,6 +1458,9 @@ func (state *State) pumpSFTP(session *Session) {
 			}
 			if result.Operation == sftpclient.OperationList && result.Err == nil {
 				view.approximate = result.Approximate
+			}
+			if result.Operation == sftpclient.OperationList && result.Background && view.detached != nil && view.detached.acceptDirectoryTreeResult(result) {
+				continue
 			}
 			if result.FollowUp {
 				if result.ListID != 0 {

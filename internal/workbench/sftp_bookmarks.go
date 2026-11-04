@@ -29,15 +29,24 @@ var (
 	hitSFTPProfileScopeDismiss = tree.ID(sftpWindowHits, "profile-scope-dismiss")
 	hitSFTPProfileSite         = tree.ID(sftpWindowHits, "profile-site")
 	hitSFTPProfileShared       = tree.ID(sftpWindowHits, "profile-shared")
+	hitSFTPBookmarkSync        = tree.ID(sftpWindowHits, "bookmark-sync")
 	hitSFTPProfileNew          = tree.ID(sftpWindowHits, "profile-new")
 	hitSFTPProfileDelete       = tree.ID(sftpWindowHits, "profile-delete")
 	hitSFTPProfileItems        = tree.Sub(sftpWindowHits, tree.Name("profile-items"))
 	hitSFTPProfileList         = tree.ID(sftpWindowHits, "profile-list")
 	hitSFTPProfileBar          = tree.ID(sftpWindowHits, "profile-scroll")
+	hitSFTPProfileQuick        = tree.ID(sftpWindowHits, "profile-quick")
+	hitSFTPProfileQuickDismiss = tree.ID(sftpWindowHits, "profile-quick-dismiss")
+	hitSFTPProfileQuickMenu    = tree.ID(sftpWindowHits, "profile-quick-menu")
+	hitSFTPProfileQuickItems   = tree.Sub(sftpWindowHits, tree.Name("profile-quick-items"))
+	hitSFTPProfileQuickBar     = tree.ID(sftpWindowHits, "profile-quick-scroll")
+	hitSFTPProfileHover        = tree.ID(sftpWindowHits, "profile-hover")
+	hitSFTPProfileHoverItems   = tree.Sub(sftpWindowHits, tree.Name("profile-hover-items"))
 )
 
 type sftpBookmarkEditor struct {
-	open, editing, shared, focusName   bool
+	open, editing, shared, sync        bool
+	focusName                          bool
 	original                           sftpBookmark
 	fields                             [3]text.Editor // name, local directory, remote directory
 	layout                             flex.View
@@ -114,7 +123,7 @@ func (w *sftpWindow) visibleProfiles() []sftpBookmark {
 
 func (w *sftpWindow) selectProfile(bookmark sftpBookmark) {
 	b := &w.bookmark
-	b.original, b.editing, b.shared = bookmark, true, bookmark.shared
+	b.original, b.editing, b.shared, b.sync = bookmark, true, bookmark.shared, bookmark.sync
 	name := bookmark.name
 	if name == "" {
 		name = path.Base(bookmark.path)
@@ -141,12 +150,13 @@ func (w *sftpWindow) editBookmark(bookmark *sftpBookmark) {
 	}
 	w.cancelDrag()
 	w.closeHeaderMenu()
+	w.closeProfileQuickMenu()
 	w.view.bookmarksOpen, w.ui.menuOpen = false, false
 	b := &w.bookmark
 	*b = sftpBookmarkEditor{open: true, shared: w.session.host.CatalogID == ""}
 	values := [3]string{path.Base(w.view.path), w.view.lfolder.path, w.view.path}
 	if bookmark != nil {
-		b.original, b.editing, b.shared = *bookmark, true, bookmark.shared
+		b.original, b.editing, b.shared, b.sync = *bookmark, true, bookmark.shared, bookmark.sync
 		values = [3]string{bookmark.name, bookmark.local, bookmark.path}
 		if values[0] == "" {
 			values[0] = path.Base(bookmark.path)
@@ -169,14 +179,14 @@ func (w *sftpWindow) saveBookmark() {
 	}
 	name := cleanBookmarkName(b.fields[0].String())
 	local, remote := strings.TrimSpace(b.fields[1].String()), strings.TrimSpace(b.fields[2].String())
-	if name == "" || !validBookmarkLocal(local) || !validSyncDirectory(remote) || len(remote) > 2048 {
+	if name == "" || !validBookmarkLocal(local) || b.sync && local == "" || !validSyncDirectory(remote) || len(remote) > 2048 {
 		b.errorText = w.owner.messages.SFTPWindow.BookmarkInvalid
 		return
 	}
 	if local != "" {
 		local = filepath.Clean(local)
 	}
-	bookmark := sftpBookmark{host: w.session.host.CatalogID, name: name, local: local, path: path.Clean(remote), shared: b.shared}
+	bookmark := sftpBookmark{host: w.session.host.CatalogID, name: name, local: local, path: path.Clean(remote), shared: b.shared, sync: b.sync}
 	if b.shared {
 		bookmark.host = ""
 	}
@@ -255,6 +265,8 @@ func (w *sftpWindow) clickBookmarkEditor(id ui.ID) {
 		w.bookmark.scopeOpen = false
 		w.bookmark.focusScope = true
 		w.bookmark.errorText = ""
+	case hitSFTPBookmarkSync:
+		w.bookmark.sync = !w.bookmark.sync
 	case hitSFTPBookmarkBrowse:
 		directory, err := w.owner.options.OpenDirectory(app.OpenDirectoryOptions{Title: w.owner.messages.SFTPWindow.BookmarkLocal})
 		if err == nil {
@@ -280,7 +292,7 @@ func (w *sftpWindow) openProfileDraft() {
 		}
 	}
 	local, remote := strings.TrimSpace(b.fields[1].String()), strings.TrimSpace(b.fields[2].String())
-	if !validBookmarkLocal(local) || !validSyncDirectory(remote) || len(remote) > 2048 {
+	if !validBookmarkLocal(local) || b.sync && local == "" || !validSyncDirectory(remote) || len(remote) > 2048 {
 		b.errorText = w.owner.messages.SFTPWindow.BookmarkInvalid
 		return
 	}
@@ -288,12 +300,12 @@ func (w *sftpWindow) openProfileDraft() {
 		return
 	}
 	b.open = false
-	w.openPairedBookmark(sftpBookmark{local: local, path: path.Clean(remote)})
+	w.openPairedBookmark(sftpBookmark{local: local, path: path.Clean(remote), sync: b.sync})
 }
 
 func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
-	bodyHeight := min(float32(368), max(float32(260), viewport.Height-208))
+	bodyHeight := min(float32(400), max(float32(292), viewport.Height-208))
 	if b.errorText != "" {
 		bodyHeight += 24
 	}
@@ -305,7 +317,7 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: ui.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
 	layout := dialog.Begin(m.BookmarkTitle, m.BookmarkDescription)
 	var fields [3]flex.Box
-	var browse, list, scope, add, save, remove flex.Box
+	var browse, list, scope, add, save, remove, sync flex.Box
 	f := b.layout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().Gap(8).Children(func() {
 		f.Row().Height(56).Gap(8).Items(flex.End).Children(func() {
@@ -321,6 +333,7 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			save = f.Slot().Width(max(56, canvas.TextWidth(m.BookmarkSave, theme.Metrics.FontSizeM)+24)).Height(32)
 			remove = f.Slot().Width(max(56, canvas.TextWidth(m.ProfileDelete, theme.Metrics.FontSizeM)+24)).Height(32)
 		})
+		sync = f.Slot().Height(32)
 		list = f.Slot().Grow(1)
 		if b.errorText != "" {
 			f.Text(b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
@@ -342,6 +355,15 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		value, focused := b.fields[i].String(), canvas.Focused() == id
 		components.PaintInput(canvas, theme, input, components.InputSnapshot{ID: id, Label: label, Value: value, Focused: focused, PlatformEditing: focused && value != ""})
 	}
+	syncBounds := sync.Rect()
+	checkboxSide := components.CheckboxExtent(theme)
+	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, ui.Rect{
+		X: syncBounds.X + 4,
+		Y: syncBounds.Y + (syncBounds.Height-checkboxSide)/2,
+	}, b.sync).Label(m.ProfileSync).HitBounds(syncBounds).Paint()
+	canvas.Label(m.ProfileSync, ui.Rect{
+		X: syncBounds.X + 32, Y: syncBounds.Y, Width: max(0, syncBounds.Width-32), Height: syncBounds.Height,
+	}, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
 	w.paintProfileList(canvas, list.Rect())
 	w.paintProfileScope(canvas, scope.Rect(), viewport)
 	if b.focusName {
@@ -417,6 +439,9 @@ func (w *sftpWindow) paintProfileList(canvas *ui.Canvas, bounds ui.Rect) {
 		description := profile.path
 		if profile.local != "" {
 			description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
+		}
+		if profile.sync {
+			description += " · " + m.ProfileQuickSync
 		}
 		nameWidth := max(0, row.Width-badgeWidth-32)
 		canvas.Label(canvas.FitLine(name, theme.Metrics.FontSizeM, ui.WeightMedium, nameWidth), ui.Rect{X: row.X + 8, Y: row.Y + 4, Width: nameWidth, Height: 22}, ui.TextStyle{Size: theme.Metrics.FontSizeM, Weight: ui.WeightMedium, Color: theme.Foreground})

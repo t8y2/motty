@@ -79,7 +79,9 @@ import (
 // Version 23 requires lossless transactional field patches from every writer.
 // Workspace templates travel as shared records; the layout they restore is a
 // device-local object, which epoch 23 preserves without a version of its own.
-const configFormat = 23
+// Version 24 preserves the SFTP location profile synchronization flag. Profiles
+// are array records, so an older writer would otherwise drop the new field.
+const configFormat = 24
 
 const (
 	kindSetting             = "setting"
