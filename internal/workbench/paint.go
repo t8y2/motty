@@ -470,11 +470,14 @@ const (
 )
 
 // windowBar keeps the places the window bar's own painters need once it is laid
-// out: the assistant's button and, for each tab, where its system and its light go.
+// out: the assistant's button, the room the active session's name is drawn in,
+// and, for each tab, where its system and its light go.
 type windowBar struct {
-	assistant flex.Box
-	transfers flex.Box
-	tabs      []barTab
+	assistant  flex.Box
+	transfers  flex.Box
+	title      flex.Box
+	titleLabel string
+	tabs       []barTab
 }
 
 type barTab struct {
@@ -558,6 +561,8 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		}
 	}
 	bar.tabs = bar.tabs[:0]
+	bar.title = flex.Box{}
+	bar.titleLabel = ""
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
 	}
@@ -573,20 +578,14 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	row.Children(func() {
 		state.barButton(f, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
 		if state.tabOrientation == tabsVertical {
-			if !probe {
-				label := m.TrayTitle
-				if manager := state.activeSFTPWindow(); manager != nil {
-					label = state.sftpFileTabTitle(manager)
-				} else if state.terminalPage() {
-					for _, tab := range state.workspaceTabs {
-						if tab.ID == state.deck.ActiveWorkspace() {
-							label = state.tabLabel(tab)
-						}
-					}
-				}
-				f.Text(label).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1).Basis(0)
-			} else {
+			if probe {
 				f.Spacer()
+			} else {
+				// The name is drawn after the bar is laid out, centred over the
+				// workspace it names: see paintWindowBarTitle. The slot keeps the
+				// height of a tab so the drawn line sits on the row's middle.
+				bar.title = f.Slot().Grow(1).Height(barTabHeight)
+				bar.titleLabel = state.windowBarTitle()
 			}
 		}
 		// The room of the tabs and the new-tab button. The tabs stay as wide as they
@@ -832,11 +831,56 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 
 // paintWindowBarParts draws what the bar's tabs and assistant button hold that is
 // drawn rather than declared: the system of a session and its light, in the room
-// the layout kept for them.
+// the layout kept for them, and the session's name.
 func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	bar := &state.chrome.bar
 	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
+	state.paintWindowBarTitle(canvas)
 	state.paintToolbarDockTop(canvas)
+}
+
+// windowBarTitle names what the window shows when the tabs are in the sidebar:
+// the file tab in front, else the active session, else the app's own name.
+func (state *State) windowBarTitle() string {
+	if manager := state.activeSFTPWindow(); manager != nil {
+		return state.sftpFileTabTitle(manager)
+	}
+	if state.terminalPage() {
+		for _, tab := range state.workspaceTabs {
+			if tab.ID == state.deck.ActiveWorkspace() {
+				return state.tabLabel(tab)
+			}
+		}
+	}
+	return state.messages.TrayTitle
+}
+
+// paintWindowBarTitle draws that name in the bar's free room, centred over the
+// workspace the name belongs to. With the tabs in the left sidebar the middle of
+// the bar is empty: a name left against the hosts button reads as part of that
+// group of buttons rather than as the name of what is on screen, and one name in
+// a wide empty strip reads as the strip's own title.
+func (state *State) paintWindowBarTitle(canvas *ui.Canvas) {
+	bar := &state.chrome.bar
+	if bar.titleLabel == "" {
+		return
+	}
+	band := bar.title.Rect()
+	const pad = float32(10)
+	room := band.Width - 2*pad
+	if room < 24 {
+		return
+	}
+	label := elide(canvas, bar.titleLabel, metrics.FontSizeS, ui.WeightRegular, room)
+	width := canvas.TextWidth(label, metrics.FontSizeS)
+	// The workspace is what the name is about: centre it over that column rather
+	// than over the whole bar, which carries the sidebar on its left. File tabs
+	// share the band, so the name still stops at the band's ends.
+	column := state.verticalTabsColumn(state.viewport)
+	center := column + (state.viewport.Width-column)/2
+	x := min(max(center-width/2, band.X+pad), band.X+band.Width-pad-width)
+	canvas.Label(label, ui.Rect{X: x, Y: band.Y, Width: width, Height: band.Height},
+		ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
 }
 
 // elide shortens text to fit width, ending it with an ellipsis. Weight is the
