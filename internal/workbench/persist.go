@@ -70,6 +70,7 @@ type savedState struct {
 	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
 	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
+	MonitorPanelWidth          float32             `json:"monitor_panel_width,omitempty"`
 	WindowX                    int                 `json:"window_x,omitempty"`
 	WindowY                    int                 `json:"window_y,omitempty"`
 	WindowWidth                int                 `json:"window_width,omitempty"`
@@ -89,6 +90,7 @@ type savedState struct {
 	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
 	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
+	SFTPPanelWidth             float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder            string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode               string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns                string              `json:"sftp_columns,omitempty"`
@@ -430,6 +432,7 @@ func (state *State) snapshot() savedState {
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
+		MonitorPanelWidth:          state.monitorWidth,
 		TerminalSchemeDark:         state.terminalSchemes[appearanceDark],
 		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
 		TerminalPadding:            state.terminalPad.String(),
@@ -449,6 +452,7 @@ func (state *State) snapshot() savedState {
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
+		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
@@ -784,6 +788,12 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
 	state.ai.panelWidth = saved.AIPanelWidth
+	if saved.MonitorPanelWidth >= layoutcore.MinMonitorWidth && saved.MonitorPanelWidth <= layoutcore.MaxMonitorWidth {
+		state.monitorWidth = saved.MonitorPanelWidth
+	}
+	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
+		state.sftpPanelWidth = saved.SFTPPanelWidth
+	}
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)
 	state.restoreSync(saved.Sync)

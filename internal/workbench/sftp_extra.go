@@ -585,6 +585,9 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpTerminalFollow = saved.SFTPTerminalFollow
 	state.sftpPathInput = saved.SFTPPathInput
 	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
+		state.sftpPanelWidth = saved.SFTPPanelWidth
+	}
 	state.sftpColumns = restoreSFTPColumnPreferences(saved.SFTPColumns)
 	state.sftpDownloadDirectory = restoreSFTPDownloadDirectory(saved.SFTPDownloadDirectory)
 	state.sftpPanelSide = layoutcore.ContextLeft

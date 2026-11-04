@@ -125,7 +125,11 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	c, _ := state.deck.Context(workspace)
 	width := c.MonitorWidth
 	if width == 0 {
-		width = monitorWidth
+		if state.monitorWidth > 0 {
+			width = state.monitorWidth
+		} else {
+			width = monitorWidth
+		}
 	}
 	files := float32(0)
 	if c.Open {
@@ -225,6 +229,9 @@ func (state *State) showMonitor() {
 	}
 	c, _ := state.deck.Context(id)
 	c.MonitorOpen = true
+	if state.monitorWidth > 0 && (c.MonitorWidth <= 0 || c.MonitorWidth == layoutcore.DefaultMonitorWidth) {
+		c.MonitorWidth = state.monitorWidth
+	}
 	_ = state.deck.SetContext(id, c)
 	state.ensureMonitor(session)
 	state.monitorMenu = false

@@ -529,3 +529,28 @@ func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing
 		t.Fatal("the monitor drawer is missing")
 	}
 }
+
+func TestMonitorRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
+	state, _ := monitorFixture(t)
+	state.Paint(&ui.Canvas{}, state.viewport)
+	state.resizeMonitor(450)
+	state.save()
+
+	if state.monitorWidth != 450 {
+		t.Fatalf("state.monitorWidth = %v, want 450", state.monitorWidth)
+	}
+
+	// Toggling monitor closed and open again in the same workspace remembers the width.
+	state.closeMonitor()
+	state.showMonitor()
+	c, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	if c.MonitorWidth != 450 {
+		t.Fatalf("reopened monitor width = %v, want 450", c.MonitorWidth)
+	}
+
+	// Restoring the app remembers the adjusted width.
+	restored := newTestState(t, state.options)
+	if restored.monitorWidth != 450 {
+		t.Fatalf("restored.monitorWidth = %v, want 450", restored.monitorWidth)
+	}
+}

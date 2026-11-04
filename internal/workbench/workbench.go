@@ -667,7 +667,9 @@ type State struct {
 	monitorResizeWorkspace layoutcore.WorkspaceID
 	monitorResizeSession   uint32
 	monitorMenuSession     uint32
+	monitorWidth           float32
 	sftpPanelSide          layoutcore.ContextSide
+	sftpPanelWidth         float32
 	sftpBookmarks          []sftpBookmark
 	sftpLocalBookmarks     []string
 	transferLeftover       []byte
