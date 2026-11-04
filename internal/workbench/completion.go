@@ -110,6 +110,9 @@ const (
 	// completionRows is how many candidates the popover lists at once; the rest
 	// scroll with the arrow keys.
 	completionRows = 10
+	// completionHistoryRows caps how many history matches join the host's
+	// commands in the popover.
+	completionHistoryRows = 5
 	// completionRowHeight is one candidate row.
 	completionRowHeight = float32(24)
 	completionMinWidth  = float32(240)
@@ -676,8 +679,7 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		candidates = append(candidates, candidate)
 	}
 	if state.history.on && state.historyAvailable(session) && !session.host.NoHistory {
-		// Show up to 5 history matches instead of just the most recent one
-		for _, rest := range cmdhistory.SuggestAll(state.completionHistory(session), line, 5) {
+		for _, rest := range cmdhistory.SuggestAll(state.completionHistory(session), line, completionHistoryRows) {
 			add(completion.Candidate{Text: line + rest, Insert: rest, Kind: completion.KindCommand})
 		}
 	}

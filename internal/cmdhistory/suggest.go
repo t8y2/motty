@@ -7,15 +7,11 @@ import "strings"
 // longer. entries are newest first, as Store.List returns them. A line that
 // reads like a secret, or ends in a newline, gets nothing.
 func Suggest(entries []Entry, line string) (rest string, ok bool) {
-	if line == "" || strings.ContainsAny(line, "\r\n") || Secret(line) {
+	matches := SuggestAll(entries, line, 1)
+	if len(matches) == 0 {
 		return "", false
 	}
-	for _, entry := range entries {
-		if len(entry.Command) > len(line) && strings.HasPrefix(entry.Command, line) {
-			return entry.Command[len(line):], true
-		}
-	}
-	return "", false
+	return matches[0], true
 }
 
 // SuggestAll returns up to maxMatches command suffixes that match the line.
