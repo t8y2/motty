@@ -71,6 +71,8 @@ type desktopView struct {
 	held     []heldKey
 	wheel    ui.Point
 	sentClip string
+	// files is the transfer of files from this computer to the remote clipboard.
+	files desktopFiles
 	// chromeless is the host's choice to show only the picture: no bar above it
 	// and no status line under it. Their controls move to the tab's menu, and
 	// the capture note to a corner of the picture.
@@ -126,6 +128,7 @@ func desktopTargetFor(area ui.Rect, scale float32) desktopTarget {
 func newDesktopView(session desktop.Session, clipboard bool) *desktopView {
 	view := &desktopView{session: session, clipboard: clipboard, fit: true, active: true}
 	view.resizer, _ = session.(desktop.Resizer)
+	view.files.remote, _ = session.(desktop.FileClipboard)
 	return view
 }
 
@@ -358,6 +361,7 @@ func (state *State) pumpDesktop(session *Session) {
 		}
 	}
 	view.session.Bells() // a bell has no sound to make here
+	state.finishFileOffers(view)
 	if text, ok := view.session.RemoteClipboard(); ok && view.clipboard {
 		view.sentClip = text // what the remote has: not to be sent back
 		if err := state.options.SetClipboardText(text); err != nil {
@@ -405,11 +409,15 @@ func (state *State) syncClipboard(view *desktopView) {
 	if !view.clipboard || view.ended {
 		return
 	}
+	if view.files.remote != nil && state.syncClipboardFiles(view) {
+		return
+	}
 	text, err := state.options.ClipboardText()
 	if err != nil || text == "" || text == view.sentClip {
 		return
 	}
 	view.sentClip = text
+	view.files.dropped = false
 	_ = view.session.SetClipboard(text)
 }
 
@@ -617,6 +625,15 @@ func (state *State) desktopShortcut(view *desktopView, event ui.KeyEvent) ui.Eve
 		}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
+	// The paste shortcut of this computer, when what is to be pasted is files: the
+	// text system would paste text (and nothing at all from a clipboard that has
+	// none, as a file manager's copy on Windows is), so Motty presses the remote's
+	// own paste instead. Held until the files are offered, in an event of its own.
+	if !event.Release && event.Modifiers == defaultShortcutModifier() && strings.EqualFold(event.Text, "v") {
+		if !event.Repeat && state.pasteFiles(view) {
+			return ui.EventResult{Handled: true}
+		}
+	}
 	return ui.EventResult{}
 }
 
@@ -745,8 +762,16 @@ func (state *State) desktopText(sessionID uint32, event app.TextEvent) app.TextS
 		if typing {
 			_ = view.session.SendText(event.Text)
 		}
-	case app.TextPaste:
-		if typing {
+	case app.TextPaste, app.TextPasteNoText:
+		if !typing {
+			break
+		}
+		// Files are pasted by the remote itself (Ctrl+V): typing their names, which
+		// a file manager also leaves on the clipboard as text, would paste nothing.
+		if state.pasteFiles(view) {
+			break
+		}
+		if event.Kind == app.TextPaste {
 			_ = view.session.SendText(event.Text)
 		}
 	case app.TextSetMarked:

@@ -130,7 +130,7 @@ SOCKS5/HTTP 代理可以承载第一条连接；每台已保存的网络主机�
 
 VNC 支持 RFB 3.3/3.7/3.8、None 和 VNC Authentication、Raw/CopyRect/RRE/
 Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使用 TLS，优先 NLA，
-服务器证书在你确认后固定。两者都可以经 SSH 连接只监听自己 loopback 的服务器。
+服务器证书在你确认后固定；还支持把本机文件复制到服务器（在远程里粘贴，或拖到画面上）。两者都可以经 SSH 连接只监听自己 loopback 的服务器。
 完整边界见 [docs/remote-desktop.md](docs/remote-desktop.md)。
 
 ### 🤖 AI 助手与 MCP

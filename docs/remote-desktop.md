@@ -220,7 +220,8 @@ remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
 pastes as Unicode events (UTF-16 pairs; a server application that ignores Unicode
 events, such as a terminal in xrdp, shows only some of them), pointer with three
-buttons and horizontal/vertical wheel. Clipboard text (CLIPRDR), per host, off by
+buttons and horizontal/vertical wheel. Clipboard text and images, and files from this
+computer to the server (CLIPRDR, see "Copying files to the server"), per host, off by
 default. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
@@ -265,12 +266,50 @@ Windows' decision, not the client's. Only Windows has a console session; xrdp
 ignores the field and always starts a new session, so the switch does nothing
 there.
 
+### Copying files to the server
+
+Files go from this computer to the server through the clipboard, the way
+`mstsc` does it (MS-RDPECLIP file transfer, `internal/rdpcore/protocol/cliprdr/files.go`).
+Copy files in Finder, Explorer or a Linux file manager and paste in the remote
+system, or drop them on the picture and paste. The paste shortcut of this computer
+(Command+V on macOS, Ctrl+V elsewhere) pastes them by pressing the remote's own
+Ctrl+V; a file manager also leaves the files' names on the clipboard as text, and
+those are not typed instead. The files dropped stay the remote clipboard until
+something new is copied here. The host's clipboard
+sharing must be on and the server must negotiate file transfer; a drop on a
+connection that cannot take files says why in a notice.
+
+Nothing is sent when the files are copied. Motty announces `FileGroupDescriptorW`
+and `FileContents`; when the remote user pastes, the server asks for the list
+(names relative to the copied entries, sizes, times, folders before what is in
+them) and then for each file's size and byte ranges, which are read from this
+computer on demand. So a paste of a large folder needs this window open until it
+ends, and a file that was changed after it was copied is refused when it is
+read (its size or modification time no longer matches the list) instead of
+arriving half old, half new. No file is held open between requests, so a copied
+file can still be moved or deleted here meanwhile.
+
+The server only reaches what was copied: it asks by index into the list, never by
+path. Limits: 20000 files and folders per copy (a larger selection is refused,
+not cut), paths of at most 259 characters inside the copied folder, folders
+nested at most 32 deep; symbolic links inside a copied folder are left out (one
+that was itself copied is followed), as are devices and sockets, and a file of 4
+GiB or more when the server did not announce support for it. What was left out is
+counted in the notice. Characters Windows forbids in a name (`\ : * ? " < > |` and
+control characters) become `_`. The list is made on a goroutine of its own, since
+it walks folders; a second copy made meanwhile replaces a waiting one.
+
+The other direction, from the server to this computer, is not implemented: it
+needs files that only exist when pasted on the local clipboard (a virtual file
+list, which each platform does differently).
+
 ### Limits
 
 No audio, drive/printer/smartcard/USB redirection, multiple monitors, dynamic
 resolution change from the client, RD Gateway, Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
-H.264, clipboard formats other than text, or file transfer. A fresh Windows logon
+H.264, clipboard formats other than text, images and files (and files from the
+server to this computer). A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
@@ -288,7 +327,11 @@ localhost:3389 with a throwaway local user): NLA off and NLA on; TLS 1.2 handsha
 certificate pinned, logon, the "other user is signed in" question answered by a
 click, the profile build, the desktop (non-uniform, 1000+ colours), the Start menu
 opened by the Windows key, the taskbar hover, a wrong password (one attempt,
-`STATUS_LOGON_FAILURE`), a refused certificate (one connection), a clean close. On
+`STATUS_LOGON_FAILURE`), a refused certificate (one connection), a clean close, and
+files copied to the server: four files and two folders (one file of 3 MiB, so many
+requests, one folder two levels deep, a name outside ASCII) copied by the test and pasted
+by the remote Explorer, every file compared by SHA-256
+(`TestLiveFilesCopiedHereArePastedInExplorer`, `MOTTY_RDP_PASTE_DIR`). On
 **xrdp** in Docker (amd64 under Rosetta): TLS without NLA, pixels via the RDPGFX
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,
@@ -297,7 +340,8 @@ certificate dialog, password dialog, the picture, click and typing, status line
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the
-window, resizing, clipboard against a real server, reconnect after a network loss.
+window, resizing, text and image clipboard against a real server, reconnect after a
+network loss.
 The console session switch was not exercised either: it needs a Windows host with
 a console session, and xrdp ignores the field.
 

@@ -170,7 +170,8 @@ Xauthority cookie.
 VNC supports RFB 3.3/3.7/3.8, None and VNC Authentication, Raw/CopyRect/RRE/
 Hextile/ZRLE, desktop resize, pointer, keyboard and text clipboard. RDP uses TLS
 with NLA preferred and pins the server certificate after an explicit trust
-decision. Both can connect through an SSH host when the server only listens on
+decision; it also copies files to the server (paste them in the remote or drop
+them on the picture). Both can connect through an SSH host when the server only listens on
 its own loopback. See [docs/remote-desktop.md](docs/remote-desktop.md) for the
 exact limits.
 
