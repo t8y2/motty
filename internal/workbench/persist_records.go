@@ -198,6 +198,7 @@ var syncedSettings = map[string]bool{
 	"connection_reconnect":         true,
 	"terminal_clipboard":           true,
 	"terminal_cursor_steady":       true,
+	"terminal_cursor_thickness":    true,
 	"terminal_copy_on_select":      true,
 	"terminal_right_click_paste":   true,
 	"terminal_tab_title":           true,

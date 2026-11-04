@@ -234,6 +234,9 @@ var (
 	hitSettingsReconnectForever = tree.ID(settingsHits, "settings-reconnect-forever")
 	hitSettingsClipboardBlock   = tree.ID(settingsHits, "settings-clipboard-block")
 	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorThin       = tree.ID(settingsHits, "settings-cursor-thin")
+	hitSettingsCursorNormal     = tree.ID(settingsHits, "settings-cursor-normal")
+	hitSettingsCursorThick      = tree.ID(settingsHits, "settings-cursor-thick")
 	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
@@ -622,6 +625,7 @@ type State struct {
 	editorMenu          editorSelect
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
+	terminalCursorThick cursorThickness
 	terminalScrollback  int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
