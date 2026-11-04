@@ -34,7 +34,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
 		"sftp_window_order": true, "sftp_open_mode": true, "custom_editor_path": true,
 		"toolbars":    true,
-		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true,
+		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true,
 		"window_x": true, "window_y": true, "window_width": true, "window_height": true,
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.

@@ -130,7 +130,10 @@ type Status struct {
 	// Version increases with every change, so a reader can tell cheaply
 	// whether anything happened since it last looked.
 	Version uint64
-	Phase   Phase
+	// ConnectionGeneration identifies this authenticated transport for its
+	// lifetime. Shared tabs keep the value of the connection they borrow.
+	ConnectionGeneration uint64
+	Phase                Phase
 	// Endpoint is the account currently being connected or authenticated.
 	Endpoint Endpoint
 	// EndpointRole distinguishes the final target from its jump hosts.
@@ -166,6 +169,8 @@ type Status struct {
 	// established connection. It is nil when Close or Cancel ended the session.
 	Err error
 }
+
+var nextConnectionGeneration atomic.Uint64
 
 // KeepAliveConfig probes an established SSH connection for liveness. A zero
 // value is disabled and starts no timer or goroutine.
@@ -265,11 +270,12 @@ type Conn struct {
 	// the owner: it holds the client and the goroutine, and lives on, retired,
 	// while shares remain after its own tab has closed. A shared Conn has the
 	// owner it borrows from and no goroutine.
-	owner      *Conn
-	shares     []*Conn
-	retired    bool
-	terminated bool
-	doneOnce   sync.Once
+	owner         *Conn
+	shares        []*Conn
+	retired       bool
+	terminated    bool
+	listenPending chan struct{}
+	doneOnce      sync.Once
 	// pingPending is set while a keepalive probe sent by Ping is unanswered.
 	pingPending atomic.Bool
 }
@@ -294,7 +300,9 @@ type reply struct {
 // Dial starts connecting in the background and returns at once.
 func Dial(config Config) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
+	generation := nextConnectionGeneration.Add(1)
 	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	conn.status.ConnectionGeneration = generation
 	go conn.run()
 	return conn
 }
@@ -329,11 +337,7 @@ func (conn *Conn) DialContext(ctx context.Context, network, address string) (net
 
 // Listen asks the authenticated SSH server to open one remote listener.
 func (conn *Conn) Listen(network, address string) (net.Listener, error) {
-	client := conn.Client()
-	if client == nil {
-		return nil, errors.New("sshconn: not connected")
-	}
-	return client.Listen(network, address)
+	return conn.ListenContext(context.Background(), network, address, nil)
 }
 
 // TrustHostKey answers a host-key prompt by accepting the key. With save the

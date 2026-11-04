@@ -169,7 +169,8 @@ func main() {
 						newChannel.Reject(ssh.Prohibited, "administratively prohibited")
 						continue
 					}
-					target, err := allowedDirectTarget(newChannel.ExtraData(), allowedTargets...)
+					targets := append(remoteForwards.directTargets(), allowedTargets...)
+					target, err := allowedDirectTarget(newChannel.ExtraData(), targets...)
 					if err != nil {
 						newChannel.Reject(ssh.Prohibited, err.Error())
 						continue

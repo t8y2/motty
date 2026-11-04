@@ -43,6 +43,8 @@ type Messages struct {
 	FileWindow     FileWindowMessages
 	SFTPWindow     SFTPWindowMessages
 	Transfers      TransferCenterMessages
+	// LocalProxy holds the compact SSH reverse-proxy panel.
+	LocalProxy LocalProxyMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages

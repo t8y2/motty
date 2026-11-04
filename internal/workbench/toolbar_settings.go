@@ -38,7 +38,8 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
 		{"save-output", hitTerminalSaveOutput, iconSave},
 		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
-		{"files", hitSFTPOpen, iconFolderOpen}, {"file-transfer", hitSFTPDetach, iconSFTPTransfer},
+		{"files", hitSFTPOpen, iconFolderOpen}, {"local-proxy", hitLocalProxyOpen, iconGlobe},
+		{"file-transfer", hitSFTPDetach, iconSFTPTransfer},
 		{"remote-tools", hitProcessToolsOpen, iconProcess},
 	},
 	toolbarSFTP: {
@@ -194,6 +195,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.ConnExportLog
 	case hitSFTPOpen:
 		return m.TipFiles
+	case hitLocalProxyOpen:
+		return m.LocalProxy.Title
 	case hitSFTPDetach:
 		return m.SFTPWindow.Open
 	case hitSFTPUpload:

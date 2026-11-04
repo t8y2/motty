@@ -20,6 +20,8 @@ type Group struct {
 	members          []*State
 	completionStores map[string]*completion.CatalogStore
 	historyClears    map[string]*historyClearJob
+	shareOnce        sync.Once
+	shares           *localProxyManager
 	// frame is where the process's windows were last seen. It lives here, not
 	// in one window, so any window's save writes the newest place rather than
 	// the one it read at start.
@@ -55,6 +57,20 @@ func (group *Group) ClipboardChanged() {
 	group.mu.Unlock()
 	for _, member := range members {
 		member.ClipboardChanged()
+	}
+}
+
+// LocalProxyChanged wakes every live window that may show a shared tunnel. The
+// operation belongs to the process rather than to the window which started it.
+func (group *Group) LocalProxyChanged() {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		if !member.callbacksClosed.Load() && member.options.Invalidate != nil {
+			member.options.Invalidate()
+		}
 	}
 }
 

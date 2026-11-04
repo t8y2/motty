@@ -114,6 +114,7 @@ type savedState struct {
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
 	SessionLogsView         *savedSessionLogsView `json:"session_logs_view,omitempty"`
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
+	LocalProxyPort          int                   `json:"local_proxy_port,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
 	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
 	Workspace               string                `json:"workspace,omitempty"`
@@ -470,6 +471,9 @@ func (state *State) snapshot() savedState {
 		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
 		Sessions:                   make([]savedSession, 0, len(state.sessions)),
 	}
+	if state.localProxyPortSet {
+		saved.LocalProxyPort = int(state.localProxyPort)
+	}
 	if frame, ok := state.savedWindowFrame(); ok {
 		saved.WindowX = int(math.Round(float64(frame.X)))
 		saved.WindowY = int(math.Round(float64(frame.Y)))
@@ -735,6 +739,12 @@ func (state *State) restoreLocal(saved savedState) {
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
 	state.restoreSessionLogsView(saved.SessionLogsView)
+	state.localProxyPort = defaultLocalProxyPort
+	state.localProxyPortSet = false
+	if saved.LocalProxyPort >= 1 && saved.LocalProxyPort <= 65535 {
+		state.localProxyPort = uint16(saved.LocalProxyPort)
+		state.localProxyPortSet = true
+	}
 	// The saved editor is read as it is: a value this build does not know stays
 	// unknown rather than becoming another editor.
 	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))

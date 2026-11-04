@@ -46,8 +46,11 @@ type Connection interface {
 	DialContext(context.Context, string, string) (net.Conn, error)
 	// Listen asks the authenticated server to open a remote listener.
 	Listen(string, string) (net.Listener, error)
+	ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error)
 	// RunCommand executes one bounded command on the authenticated server.
 	RunCommand(context.Context, string, int) ([]byte, error)
+	// Exec runs one command without a PTY and preserves its exit status.
+	Exec(context.Context, string, int) (sshconn.ExecResult, error)
 	// StreamCommand runs a long-lived command and hands over its stdout lines
 	// as they arrive, until the callback stops or the context ends.
 	StreamCommand(context.Context, string, int, func([]byte) bool) error
@@ -104,6 +107,11 @@ func (conn realConn) OpenSFTP() (sftpclient.Remote, error) {
 // OpenSCP is the file backend for a server that has no SFTP subsystem.
 func (conn realConn) OpenSCP() (sftpclient.Remote, error) {
 	return sftpclient.OpenSCP(conn.Conn.Client())
+}
+
+// Exec runs one bounded, non-PTY SSH command and preserves its exit status.
+func (conn realConn) Exec(ctx context.Context, command string, limit int) (sshconn.ExecResult, error) {
+	return conn.Conn.Exec(ctx, command, limit)
 }
 
 // scpOpener is a Connection that can move files over SCP. It is optional: only
@@ -458,6 +466,7 @@ const (
 	modalWorkspaceDraft
 	modalWorkspaceSave
 	modalWorkspaceTemplateDelete
+	modalLocalProxy
 )
 
 // tone colors a session's headline.
@@ -664,6 +673,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 func (state *State) Wake() {
 	defer state.syncDesktopFullscreen()
 	defer state.flushLocalDirectories()
+	defer state.syncLocalProxySessions()
 	state.adoptHistoryClear()
 	state.adoptCompletion()
 	state.pumpRevealResults()
@@ -812,6 +822,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.tell(session, toldBanner, status)
 			state.sayStreamOpened(session)
 			state.startPendingForwards(session)
+			state.joinLocalProxy(session)
 		}
 		state.status = state.messages.StatusConnectedFmt + session.Title
 		if weak := status.Negotiated.Weak(); len(weak) > 0 && previousPhase != sshconn.PhaseConnected {
@@ -1142,6 +1153,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalWorkspaceTemplateDelete {
 		state.workspaceTemplateDelete = workspaceTemplateDelete{}
+	}
+	if state.modal == modalLocalProxy {
+		state.localProxyUI = localProxyUI{}
 	}
 	state.modal = modalNone
 	state.modalSession = 0

@@ -496,8 +496,16 @@ func (conn *desktopConn) DialContext(context.Context, string, string) (net.Conn,
 
 func (conn *desktopConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
 
+func (conn *desktopConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {
+	return nil, errNoServer
+}
+
 func (conn *desktopConn) RunCommand(context.Context, string, int) ([]byte, error) {
 	return nil, errNoServer
+}
+
+func (conn *desktopConn) Exec(context.Context, string, int) (sshconn.ExecResult, error) {
+	return sshconn.ExecResult{}, errNoServer
 }
 
 func (conn *desktopConn) StreamCommand(context.Context, string, int, func([]byte) bool) error {

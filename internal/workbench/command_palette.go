@@ -119,6 +119,11 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.PaneSplitVertical, hitPaneSplitVertical)
 		palette.add(messages.PaneClose, hitPaneClose)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
+		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
+				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
+			}
+		}
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil && state.remoteToolsOffered(session) {
 			palette.add(messages.Tools.RemoteMenu, hitRemoteToolsOpen)
 		}

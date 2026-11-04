@@ -1340,6 +1340,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 			return result
 		}
 	}
+	if state.modal == modalLocalProxy {
+		return state.scrollLocalProxy(event)
+	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}

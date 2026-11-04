@@ -219,4 +219,7 @@ type Session struct {
 	// keptAfterShell: the shell ended but the file panel or window still uses the
 	// connection, which closes with the last of them.
 	keptAfterShell bool
+	// localProxy is this session's subscription to the process-owned tunnel for
+	// its exact authenticated SSH transport. Zero means it has not joined one.
+	localProxy localProxySubscription
 }
