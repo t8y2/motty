@@ -1258,6 +1258,7 @@ func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 	for index, group := range state.hostGroups[:state.hostFilterHidden] {
 		state.paintFilterChip(canvas, hitHostFilterList.At(index), chips[1+index].Rect(),
 			state.hostGroupLabel(group), group.Digits, state.hostFilterOn && state.hostFilter == group.Name)
+		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
 	}
 	if state.hostFilterHidden < len(state.hostGroups) {
 		hiddenChosen := false
@@ -1317,6 +1318,7 @@ func (state *State) paintHostFilterMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	state.menuPlaced(menu.Bounds())
 	for index := state.hostFilterHidden; index < len(state.hostGroups); index++ {
 		menu.AddItem(components.DropdownMenuItem{ID: hitHostFilterMenuList.At(index), Label: state.hostGroupLabel(state.hostGroups[index])})
+		state.openHostGroupActionsOn(canvas, hitHostFilterMenuList.At(index), index)
 	}
 	menu.End()
 }
