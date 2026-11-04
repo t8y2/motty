@@ -25,7 +25,9 @@ func directoryTreeIndex(w *sftpWindow, local bool, location string) int {
 
 func waitDirectoryTree(t *testing.T, state *State, w *sftpWindow, view *headless.Session, ready func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(4 * time.Second)
+	// Windows CI can start from a slow drive root and must disclose every
+	// ancestor before reaching a temporary test directory.
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if err := view.Driver().Pump(); err != nil {
