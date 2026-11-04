@@ -18,7 +18,7 @@ func (s *State) monitorColors() monitorColors {
 	if s.pal.dark {
 		return monitorColors{ui.RGB(13, 17, 25), ui.RGB(25, 31, 43), ui.RGB(41, 50, 67), ui.RGB(237, 242, 250), ui.RGB(165, 179, 198), ui.RGB(41, 49, 66), ui.RGB(85, 196, 225), ui.RGB(83, 187, 145), ui.RGB(237, 180, 72), ui.RGB(170, 131, 247)}
 	}
-	return monitorColors{ui.RGB(244, 247, 251), ui.RGB(255, 255, 255), ui.RGB(224, 231, 239), ui.RGB(23, 38, 57), ui.RGB(102, 119, 141), ui.RGB(232, 237, 243), ui.RGB(21, 127, 153), ui.RGB(27, 133, 94), ui.RGB(169, 107, 17), ui.RGB(121, 85, 199)}
+	return monitorColors{ui.RGB(237, 240, 245), ui.RGB(248, 250, 252), ui.RGB(217, 224, 233), ui.RGB(28, 42, 60), ui.RGB(98, 114, 136), ui.RGB(226, 231, 238), ui.RGB(21, 127, 153), ui.RGB(27, 133, 94), ui.RGB(169, 107, 17), ui.RGB(121, 85, 199)}
 }
 
 func monitorRight(c *ui.Canvas, text string, b ui.Rect, size float32, color ui.Color, weight float32) {

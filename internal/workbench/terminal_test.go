@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -581,6 +582,13 @@ func TestALargeFloodIsParsedInOneWakeWithoutAnInvalidator(t *testing.T) {
 	}
 }
 
+// oscRGB spells a color the way an OSC 10/11 reply does: sixteen bits a channel,
+// each 8-bit value repeated.
+func oscRGB(c ui.Color) string {
+	channel := func(v float32) string { return fmt.Sprintf("%02x%02x", uint8(v*255+0.5), uint8(v*255+0.5)) }
+	return channel(c.Red) + "/" + channel(c.Green) + "/" + channel(c.Blue)
+}
+
 // A program that asks the terminal for its colors with OSC 10 and 11 (Codex,
 // Helix, bat and others) picks a light or a dark theme from the answer, so the
 // answer has to be the colors the terminal is drawn with now: from the first
@@ -597,8 +605,8 @@ func TestTerminalAnswersColorQueriesWithItsLook(t *testing.T) {
 		return "\x1b]10;rgb:" + foreground + "\x1b\\\x1b]11;rgb:" + background + "\x1b\\"
 	}
 	answers := map[appearance]string{
-		appearanceLight: reply("1d1d/1d1d/1f1f", "fafa/fafa/fcfc"),
-		appearanceDark:  reply("e2e2/e7e7/eeee", "0b0b/0e0e/1313"),
+		appearanceLight: reply(oscRGB(lightPalette.termFG), oscRGB(lightPalette.terminal)),
+		appearanceDark:  reply(oscRGB(darkPalette.termFG), oscRGB(darkPalette.terminal)),
 	}
 	if got, want := ask(), answers[state.appearance]; got != want {
 		t.Fatalf("a new session answered %q, want %q", got, want)
@@ -630,11 +638,11 @@ func TestLoginTerminalAnswersColorQueries(t *testing.T) {
 		return strings.Join(replies, "")
 	}
 	state.setAppearance(appearanceLight)
-	if got, want := ask(), "\x1b]11;rgb:fafa/fafa/fcfc\x1b\\"; got != want {
+	if got, want := ask(), "\x1b]11;rgb:"+oscRGB(lightPalette.terminal)+"\x1b\\"; got != want {
 		t.Fatalf("light: the login terminal answered %q, want %q", got, want)
 	}
 	state.setAppearance(appearanceDark)
-	if got, want := ask(), "\x1b]11;rgb:0b0b/0e0e/1313\x1b\\"; got != want {
+	if got, want := ask(), "\x1b]11;rgb:"+oscRGB(darkPalette.terminal)+"\x1b\\"; got != want {
 		t.Fatalf("dark: the login terminal answered %q, want %q", got, want)
 	}
 }
