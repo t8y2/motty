@@ -7,6 +7,8 @@
 // and so on), so adding a string touches its struct and both catalogs.
 package i18n
 
+import "strings"
+
 type HostGroupMessages struct {
 	ExpandAll, CollapseAll                        string
 	Actions, Rename, NewChild, Name, Save, Create string
@@ -22,6 +24,7 @@ type Language uint8
 const (
 	English Language = iota
 	Chinese
+	TraditionalChinese
 )
 
 // String returns the BCP-ish tag for persistence or debugging.
@@ -29,9 +32,34 @@ func (language Language) String() string {
 	switch language {
 	case Chinese:
 		return "zh-CN"
+	case TraditionalChinese:
+		return "zh-TW"
 	default:
 		return "en"
 	}
+}
+
+// ChineseVariant picks the catalog a Chinese language tag reads: "zh-TW",
+// "zh-Hant-HK" and a locale like "zh_TW.UTF-8" are Traditional, and a tag that
+// names neither a script nor a Traditional region is Simplified. A script wins
+// over a region, so "zh-Hans-TW" stays Simplified.
+func ChineseVariant(tag string) Language {
+	tag, _, _ = strings.Cut(strings.ToLower(tag), ".")
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "hans":
+			return Chinese
+		case "hant":
+			return TraditionalChinese
+		}
+	}
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "tw", "hk", "mo":
+			return TraditionalChinese
+		}
+	}
+	return Chinese
 }
 
 // Messages is the complete set of user-visible workbench strings. Adding a
@@ -223,6 +251,7 @@ type Messages struct {
 	SettingsLanguage                       string
 	SettingsLanguageEnglish                string
 	SettingsLanguageChinese                string
+	SettingsLanguageTraditionalChinese     string
 	SettingsAppearance                     string
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
@@ -1012,6 +1041,17 @@ func For(language Language) Messages {
 		messages.SSHSync = chineseSSHSync
 		messages.Desktop = chineseDesktop
 		messages.About = chineseAbout
+		return messages
+	case TraditionalChinese:
+		messages := TraditionalMessages
+		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
+		messages.Toolbars = traditionalToolbars
+		messages.Autofill = traditionalAutofill
+		messages.History = traditionalHistory
+		messages.Completion = traditionalCompletion
+		messages.SSHSync = traditionalSSHSync
+		messages.Desktop = traditionalDesktop
+		messages.About = traditionalAbout
 		return messages
 	default:
 		messages := EnglishMessages

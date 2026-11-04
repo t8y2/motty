@@ -220,6 +220,7 @@ var ChineseMessages = Messages{
 	SettingsLanguage:                       "语言",
 	SettingsLanguageEnglish:                "English",
 	SettingsLanguageChinese:                "简体中文",
+	SettingsLanguageTraditionalChinese:     "繁體中文",
 	SettingsAppearance:                     "外观",
 	SettingsAppearanceSystem:               "跟随系统",
 	SettingsAppearanceDark:                 "深色",

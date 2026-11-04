@@ -761,6 +761,8 @@ func (state *State) restoreLocal(saved savedState) {
 	switch saved.Language {
 	case i18n.Chinese.String():
 		state.language, state.languageChosen = i18n.Chinese, true
+	case i18n.TraditionalChinese.String():
+		state.language, state.languageChosen = i18n.TraditionalChinese, true
 	case i18n.English.String():
 		state.language, state.languageChosen = i18n.English, true
 	default:

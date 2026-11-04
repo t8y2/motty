@@ -220,6 +220,7 @@ var EnglishMessages = Messages{
 	SettingsLanguage:                       "Language",
 	SettingsLanguageEnglish:                "English",
 	SettingsLanguageChinese:                "简体中文",
+	SettingsLanguageTraditionalChinese:     "繁體中文",
 	SettingsAppearance:                     "Appearance",
 	SettingsAppearanceSystem:               "System",
 	SettingsAppearanceDark:                 "Dark",

@@ -97,7 +97,7 @@ func TestAPasswordTypedWithoutEchoIsNeverRecorded(t *testing.T) {
 }
 
 func TestAPromptThatAsksForASecretIsNeverRecordedEvenIfEchoed(t *testing.T) {
-	for _, prompt := range []string{"[sudo] password for user: ", "Enter passphrase for key '/home/u/.ssh/id': ", "Verification code: ", "请输入密码: ", "OTP> "} {
+	for _, prompt := range []string{"[sudo] password for user: ", "Enter passphrase for key '/home/u/.ssh/id': ", "Verification code: ", "请输入密码: ", "請輸入密碼: ", "驗證碼: ", "OTP> "} {
 		s := newShell(t, 80)
 		s.prompt(prompt)
 		s.typeEchoed("123456")
