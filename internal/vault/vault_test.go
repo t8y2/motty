@@ -114,8 +114,8 @@ func TestASavedSecretComesBackAfterTheFileIsOpenedAgain(t *testing.T) {
 	if _, found, _ := again.Get("password:other@host:22"); found {
 		t.Fatal("found a secret that was never saved")
 	}
-	if again.Len() != 1 || again.NeedsConversion() {
-		t.Fatalf("Len %d, needs conversion %v", again.Len(), again.NeedsConversion())
+	if again.Len() != 1 || again.Locked() {
+		t.Fatalf("Len %d, locked %v", again.Len(), again.Locked())
 	}
 }
 
@@ -552,7 +552,7 @@ func FuzzOpenNeverPanicsOnAnyFile(f *testing.F) {
 		if err != nil {
 			return
 		}
-		_ = vault.ConvertLegacy("password")
+		_ = vault.Unlock("password")
 		vault.Names()
 		vault.Get("a")
 	})
@@ -589,54 +589,236 @@ func legacyVault(t *testing.T, password string, secrets map[string]string) strin
 	return path
 }
 
-func TestAVaultKeptByAMasterPasswordIsConvertedOnceAndThenNeedsNoPassword(t *testing.T) {
+func TestAVaultKeptByAMasterPasswordAsksForItEveryStart(t *testing.T) {
 	path := legacyVault(t, "correct horse", map[string]string{"password:ops@host:22": "hunter2", "aikey:x": "sk-1"})
 	keys := &memoryKeystore{}
 	vault, err := Open(path, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !vault.NeedsConversion() {
-		t.Fatal("a vault kept by a password does not say so")
+	if !vault.Locked() || !vault.Protected() {
+		t.Fatalf("a vault kept by a password says locked %v, protected %v", vault.Locked(), vault.Protected())
 	}
-	if _, _, err := vault.Get("aikey:x"); !errors.Is(err, ErrNeedsConversion) {
-		t.Fatalf("Get before converting = %v", err)
+	if _, _, err := vault.Get("aikey:x"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("Get before unlocking = %v", err)
 	}
-	if err := vault.Set("b", "x"); !errors.Is(err, ErrNeedsConversion) {
-		t.Fatalf("Set before converting = %v", err)
+	if err := vault.Set("b", "x"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("Set before unlocking = %v", err)
 	}
-	if err := vault.ConvertLegacy("wrong horse"); !errors.Is(err, ErrWrongPassword) || !vault.NeedsConversion() || keys.has() {
-		t.Fatalf("a wrong password converted the vault: %v", err)
+	if err := vault.Unlock("wrong horse"); !errors.Is(err, ErrWrongPassword) || !vault.Locked() || keys.has() {
+		t.Fatalf("a wrong password unlocked the vault: %v", err)
 	}
 
-	if err := vault.ConvertLegacy("correct horse"); err != nil {
+	if err := vault.Unlock("correct horse"); err != nil {
 		t.Fatal(err)
 	}
+	if vault.Locked() {
+		t.Fatal("an unlocked vault still says it is locked")
+	}
 	if got, found, err := vault.Get("password:ops@host:22"); err != nil || !found || got != "hunter2" {
-		t.Fatalf("after converting = %q, %v, %v", got, found, err)
+		t.Fatalf("after unlocking = %q, %v, %v", got, found, err)
+	}
+	// Unlocking is for this run only: the file keeps the password, and the store
+	// never learns the key.
+	if keys.has() {
+		t.Fatal("unlocking put the data key in the store")
 	}
 	reopened, err := Open(path, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.NeedsConversion() {
-		t.Fatal("the file is still kept by the password")
+	if !reopened.Locked() {
+		t.Fatal("a fresh start did not ask for the password")
+	}
+	if err := reopened.Unlock("correct horse"); err != nil {
+		t.Fatal(err)
 	}
 	if got, found, err := reopened.Get("aikey:x"); err != nil || !found || got != "sk-1" {
 		t.Fatalf("a fresh start reads %q, %v, %v", got, found, err)
 	}
 }
 
-func TestAConversionThatCannotKeepTheKeyLeavesTheVaultAsItWas(t *testing.T) {
+func TestSetPasswordTakesTheKeyOutOfTheStoreAndSavingKeepsIt(t *testing.T) {
+	keys := &memoryKeystore{}
+	vault, path := openVault(t, keys)
+	if err := vault.Set("a", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if !keys.has() {
+		t.Fatal("the key was not in the store before the password was set")
+	}
+	if err := vault.SetPassword("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	if keys.has() {
+		t.Fatal("the store still holds a key that opens the file without the password")
+	}
+	if !vault.Protected() || vault.Locked() {
+		t.Fatalf("after setting a password: protected %v, locked %v", vault.Protected(), vault.Locked())
+	}
+	data, _ := os.ReadFile(path)
+	for _, leak := range []string{"alpha", "correct horse"} {
+		if strings.Contains(string(data), leak) {
+			t.Fatalf("the file shows %q in clear", leak)
+		}
+	}
+	// A secret saved after the password was set must not take the protection off.
+	if err := vault.Set("b", "beta"); err != nil {
+		t.Fatal(err)
+	}
+	if !vault.Protected() {
+		t.Fatal("saving a secret removed the master password")
+	}
+	reopened, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Locked() {
+		t.Fatal("the file no longer asks for its password")
+	}
+	if err := reopened.Unlock("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"a": "alpha", "b": "beta"} {
+		if got, found, err := reopened.Get(name); err != nil || !found || got != want {
+			t.Fatalf("Get(%q) = %q, %v, %v", name, got, found, err)
+		}
+	}
+}
+
+func TestSetPasswordReplacesOneAlreadySetOnceItIsUnlocked(t *testing.T) {
+	keys := &memoryKeystore{}
+	vault, path := openVault(t, keys)
+	if err := vault.Set("a", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.SetPassword("first"); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := locked.SetPassword("second"); !errors.Is(err, ErrPasswordSet) {
+		t.Fatalf("SetPassword on a locked vault = %v", err)
+	}
+	if err := vault.SetPassword("second"); err != nil {
+		t.Fatalf("SetPassword on an unlocked vault = %v", err)
+	}
+	// A reader that read the file before the change still holds the old blob; a
+	// fresh start is what the user gets.
+	fresh, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.Unlock("first"); !errors.Is(err, ErrWrongPassword) {
+		t.Fatalf("the old password still opens the file: %v", err)
+	}
+	if err := fresh.Unlock("second"); err != nil {
+		t.Fatalf("the new password does not open the file: %v", err)
+	}
+	if got, found, err := fresh.Get("a"); err != nil || !found || got != "alpha" {
+		t.Fatalf("Get = %q, %v, %v", got, found, err)
+	}
+}
+
+func TestAnEmptyPasswordIsRefused(t *testing.T) {
+	vault, _ := openVault(t, &memoryKeystore{})
+	if err := vault.SetPassword(""); !errors.Is(err, ErrEmptyPassword) {
+		t.Fatalf("SetPassword(\"\") = %v", err)
+	}
+	if vault.Protected() {
+		t.Fatal("an empty password protected the vault")
+	}
+}
+
+func TestRemovePasswordPutsTheKeyBackInTheStore(t *testing.T) {
+	keys := &memoryKeystore{}
+	vault, path := openVault(t, keys)
+	if err := vault.Set("a", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.SetPassword("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.RemovePassword(); err != nil {
+		t.Fatal(err)
+	}
+	if vault.Protected() || !keys.has() {
+		t.Fatalf("after removing the password: protected %v, store has key %v", vault.Protected(), keys.has())
+	}
+	reopened, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Locked() {
+		t.Fatal("the file still asks for a password")
+	}
+	if got, found, err := reopened.Get("a"); err != nil || !found || got != "alpha" {
+		t.Fatalf("Get = %q, %v, %v", got, found, err)
+	}
+}
+
+func TestRemovePasswordNeedsTheVaultUnlocked(t *testing.T) {
+	keys := &memoryKeystore{}
+	vault, path := openVault(t, keys)
+	if err := vault.Set("a", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.SetPassword("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	locked, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := locked.RemovePassword(); !errors.Is(err, ErrLocked) {
+		t.Fatalf("RemovePassword while locked = %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) || !locked.Protected() {
+		t.Fatal("a refused removal changed the vault")
+	}
+}
+
+func TestARemovalThatCannotKeepTheKeyLeavesTheVaultAsItWas(t *testing.T) {
 	path := legacyVault(t, "correct horse", map[string]string{"a": "alpha"})
 	before, _ := os.ReadFile(path)
 	vault, _ := Open(path, &memoryKeystore{denied: true})
-	if err := vault.ConvertLegacy("correct horse"); !errors.Is(err, ErrKeystoreDenied) {
-		t.Fatalf("ConvertLegacy with the store refusing = %v", err)
+	if err := vault.Unlock("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.RemovePassword(); !errors.Is(err, ErrKeystoreDenied) {
+		t.Fatalf("RemovePassword with the store refusing = %v", err)
 	}
 	after, _ := os.ReadFile(path)
-	if !bytes.Equal(before, after) || !vault.NeedsConversion() {
-		t.Fatal("a failed conversion changed the vault")
+	if !bytes.Equal(before, after) || !vault.Protected() {
+		t.Fatal("a failed removal changed the vault")
+	}
+}
+
+func TestClearTakesTheMasterPasswordOff(t *testing.T) {
+	keys := &memoryKeystore{}
+	vault, path := openVault(t, keys)
+	if err := vault.Set("a", "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.SetPassword("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Protected() || reopened.Locked() || reopened.Len() != 0 {
+		t.Fatalf("after clearing: protected %v, locked %v, %d records", reopened.Protected(), reopened.Locked(), reopened.Len())
+	}
+	if err := reopened.Set("b", "beta"); err != nil {
+		t.Fatalf("saving after clearing = %v", err)
 	}
 }
 

@@ -997,7 +997,7 @@ func (state *State) aiDeleteProvider(id string) {
 			// The key goes first, so a failure leaves the provider whole. A locked
 			// vault is opened and the deletion tried again.
 			switch err = opened.Delete(aiKeySecretName(id)); {
-			case errors.Is(err, vault.ErrNeedsConversion):
+			case errors.Is(err, vault.ErrLocked):
 				state.openVaultUnlock(nil, func() { state.aiDeleteProvider(id) })
 				return
 			case err != nil:

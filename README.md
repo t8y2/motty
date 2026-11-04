@@ -107,11 +107,12 @@ A host can also forward the local ssh-agent to its shells, per host and off by
 default.
 
 Hosts can be grouped, tagged, searched and imported from OpenSSH config, PuTTY,
-Xshell, MobaXterm, WindTerm, Electerm or Netcatty. TOTP/HOTP seeds can be stored in the
+Xshell, MobaXterm, WindTerm, Electerm, Netcatty or Tabby — Tabby's vault included,
+once its passphrase is typed. TOTP/HOTP seeds can be stored in the
 vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
-in a portable copy).
+in a portable copy), and a master password can wrap it instead.
 Electerm and Netcatty imports can save readable SSH passwords with explicit
 consent; re-import only fills missing passwords.
 

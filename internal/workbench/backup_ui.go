@@ -39,6 +39,7 @@ var (
 	hitSyncNow           = tree.ID(backupUiHits, "sync-now")
 	hitSyncRestore       = tree.ID(backupUiHits, "sync-restore")
 	hitSyncAuto          = tree.ID(backupUiHits, "sync-auto")
+	hitBackupKeys        = tree.ID(backupUiHits, "backup-keys")
 )
 
 const (
@@ -91,6 +92,9 @@ type syncState struct {
 	// waitingForVault is set when a sync could not read its passwords because
 	// the vault is locked; unlocking it syncs.
 	waitingForVault bool
+	// keysFailed counts private keys the last sync received but could not write,
+	// which is said out loud instead of leaving a host that cannot log in.
+	keysFailed int
 	// timer is the one pending start of a sync, after a change or a failure.
 	timer *time.Timer
 	// holdBack is set while a restore from the server settles: the changes it
@@ -162,24 +166,26 @@ func excludedFromBackup(name string) bool {
 }
 
 // backupDocument gathers what a backup holds: every shared record, deleted ones
-// as tombstones, the trusted keys and the saved passwords. A locked vault is
-// reported as vault.ErrNeedsConversion, since the passwords cannot be read.
-func (state *State) backupDocument() (backup.Document, error) {
+// as tombstones, the trusted keys and the saved passwords. The private key files
+// join them only when the user asked for that; leftOut is how many of those could
+// not be read. A locked vault is reported as vault.ErrLocked, since the passwords
+// cannot be read.
+func (state *State) backupDocument() (document backup.Document, leftOut int, err error) {
 	if state.config == nil {
-		return backup.Document{}, errors.New(state.messages.Tools.SyncErrNoStore)
+		return backup.Document{}, 0, errors.New(state.messages.Tools.SyncErrNoStore)
 	}
 	records, err := state.config.Records()
 	if err != nil {
-		return backup.Document{}, err
+		return backup.Document{}, 0, err
 	}
-	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
+	document = backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
 		document.KnownHosts = string(data)
 	}
 	if opened := state.secrets.vault; opened != nil {
 		secrets, err := opened.Export()
 		if err != nil {
-			return backup.Document{}, err
+			return backup.Document{}, 0, err
 		}
 		for _, secret := range secrets {
 			if !excludedFromBackup(secret.Name) {
@@ -187,7 +193,10 @@ func (state *State) backupDocument() (backup.Document, error) {
 			}
 		}
 	}
-	return document, nil
+	if state.backupKeys {
+		document.Keys, leftOut = state.backupKeyFiles()
+	}
+	return document, leftOut, nil
 }
 
 // backupErrorText says why a backup could not be made or opened.
@@ -202,7 +211,7 @@ func (state *State) backupErrorText(err error) string {
 		return m.BackupErrNotBackup
 	case errors.Is(err, backup.ErrTooNew):
 		return m.BackupErrTooNew
-	case errors.Is(err, vault.ErrNeedsConversion):
+	case errors.Is(err, vault.ErrLocked):
 		return m.BackupErrVault
 	case errors.Is(err, cloudsync.ErrUnauthorized):
 		// The service's own words (an S3 error code, GitHub's message) follow.
@@ -246,8 +255,8 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		return 0, backup.ErrTooNew
 	}
 	opened := state.secrets.vault
-	if len(document.Secrets) > 0 && opened != nil && opened.NeedsConversion() {
-		return 0, vault.ErrNeedsConversion
+	if len(document.Secrets) > 0 && opened != nil && opened.Locked() {
+		return 0, vault.ErrLocked
 	}
 
 	if _, refused := holdableRecords(document.Records); refused > 0 {
@@ -320,6 +329,11 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		// A backup made before secrets were kept under hosts has them under logins.
 		state.migrateSecretsToHosts(true)
 	}
+	if len(document.Keys) > 0 {
+		if _, failed := state.applyBackupKeys(document.Keys, opened); failed > 0 && incomplete == nil {
+			incomplete = &partialRestoreError{fmt.Sprintf(m.BackupKeysFailedFmt, failed)}
+		}
+	}
 	return len(state.hosts), incomplete
 }
 
@@ -378,6 +392,9 @@ func (state *State) openExportBackup() {
 	state.openForm(formDialog{
 		title: m.BackupExportTitle, description: m.BackupExportDialogDescription, submit: m.BackupExportSave,
 		run: (*State).runExportBackup,
+		// What goes into the file is asked before the password that seals it.
+		checkLabel: m.BackupKeys, checkDescription: m.BackupKeysExportDescription,
+		checked: state.backupKeys, checkFirst: true,
 	},
 		formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true},
 		formField{label: m.BackupPasswordConfirm, secure: true},
@@ -393,7 +410,10 @@ func (state *State) runExportBackup(form *formDialog) string {
 	case password != form.value(1):
 		return m.BackupErrPasswordMismatch
 	}
-	document, err := state.backupDocument()
+	// The dialog's answer is the setting's: a user who ticked it here wants the
+	// keys in the next backup too, not only in this one.
+	state.setBackupKeys(form.checked)
+	document, leftOut, err := state.backupDocument()
 	if err != nil {
 		return state.backupErrorText(err)
 	}
@@ -417,6 +437,9 @@ func (state *State) runExportBackup(form *formDialog) string {
 		return fmt.Sprintf(m.BackupFailedFmt, err)
 	}
 	state.status = fmt.Sprintf(m.BackupSavedFmt, path)
+	if leftOut > 0 {
+		state.status = fmt.Sprintf(m.BackupSavedKeysLeftOutFmt, path, leftOut)
+	}
 	return ""
 }
 
@@ -574,7 +597,7 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 	if !state.sync.configured() || opened == nil {
 		return fail(m.SyncErrNeedsVault)
 	}
-	if opened.NeedsConversion() {
+	if opened.Locked() {
 		if quiet {
 			state.sync.waitingForVault = true
 			return fail(m.BackupErrVault)
@@ -823,6 +846,8 @@ func (state *State) clickBackupSettings(id ui.ID) bool {
 				state.scheduleSync()
 			}
 		}
+	case hitBackupKeys:
+		state.setBackupKeys(!state.backupKeys)
 	default:
 		return false
 	}
@@ -855,6 +880,20 @@ func (state *State) syncTexts() (row, run string) {
 	return view.rowText, view.runText
 }
 
+// setBackupKeys turns carrying private keys in backups on or off. Turning it on
+// while syncing pushes them on the next run rather than waiting for the timer: a
+// user who just asked for it expects the other computer to get them soon.
+func (state *State) setBackupKeys(on bool) {
+	if state.backupKeys == on {
+		return
+	}
+	state.backupKeys = on
+	state.save()
+	if on && state.sync.configured() && !state.sync.manual {
+		state.scheduleSync()
+	}
+}
+
 func (state *State) paintBackupSettings(page *settingsPage) {
 	m := state.messages.Tools
 	row, run := state.syncTexts()
@@ -870,6 +909,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSyncConfigure, Label: m.SyncConfigure, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSyncConfigureS3, Label: m.SyncConfigureS3, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSyncConfigureGist, Label: m.SyncConfigureGist, Variant: components.ButtonOutline})
+			page.toggleRow(m.BackupKeys, m.BackupKeysDescription, state.backupKeys, hitBackupKeys)
 			page.toggleRow(m.SyncAuto, m.SyncAutoDescription, !state.sync.manual, hitSyncAuto)
 			page.actionRow(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
 				components.ButtonAction{ID: hitSyncNow, Label: m.SyncNow, Variant: components.ButtonOutline},

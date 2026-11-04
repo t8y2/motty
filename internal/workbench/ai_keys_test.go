@@ -94,7 +94,7 @@ func TestAILegacyKeysMoveIntoTheVaultOnLoad(t *testing.T) {
 		t.Fatalf("the legacy key was dropped without being saved: %v", legacy)
 	}
 
-	if err := state.secrets.vault.ConvertLegacy("master password"); err != nil {
+	if err := state.secrets.vault.Unlock("master password"); err != nil {
 		t.Fatal(err)
 	}
 	state.reloadAI()

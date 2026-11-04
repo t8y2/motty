@@ -39,6 +39,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.
 		"session_logs_off": true, "session_logs_view": true,
+		// So does carrying private keys in backups: what leaves a computer is its
+		// own decision, not one another device makes for it.
+		"backup_keys": true,
 	}
 	entity := map[string]bool{}
 	for _, field := range entityFields {

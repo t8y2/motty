@@ -532,7 +532,7 @@ func TestSharedBackupDoesNotContainTheDevelopmentWorkspace(t *testing.T) {
 	}`)
 
 	state := newTestState(t, options)
-	document, err := state.backupDocument()
+	document, _, err := state.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

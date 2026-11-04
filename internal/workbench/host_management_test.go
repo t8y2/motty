@@ -162,7 +162,7 @@ func TestHostPasswordSaveErrorsKeepTheDialogOpen(t *testing.T) {
 		state.secrets.vault.DropKeyForTests()
 		fillNewHost(state, "Edge", "edge.example.com", "ops", "secret")
 		state.Click(hitDialogSubmit)
-		want := fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.messages.VaultNeedsConversion)
+		want := fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.messages.VaultLocked)
 		if state.modal != modalNewHost || state.dialogError != want || len(state.hosts) != 3 {
 			t.Fatalf("locked submit: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 		}

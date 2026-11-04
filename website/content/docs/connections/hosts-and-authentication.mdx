@@ -62,12 +62,19 @@ Hosts can be grouped, tagged and searched.
 
 Open **Import > Import from** and choose the client, then the file it saved.
 Motty takes each session's name, folder, address, port and user; protocols it
-cannot open are counted as skipped. Electerm and Netcatty exports may also
-contain readable SSH login passwords. When they do, Motty asks whether to save
-them in its vault or import connections only. Key passphrases, private keys and
-encrypted passwords from other clients are not imported. A host whose address,
-user and port are already saved is not duplicated; importing a password may
-fill an empty saved password, but never replace one already saved.
+cannot open are counted as skipped. A host whose address, user and port are
+already saved is not duplicated: the import asks whether to overwrite it with
+the imported settings or keep it as it is, and it asks that before the passwords
+below. What a session saved beside the destination comes along when the client
+wrote it down: the authentication it asked for, X11 and agent forwarding, its
+colour, the private key it used, the jump host it went through, the proxy it
+named, and the tunnels it opened. Passwords are the exception: Tabby's are
+imported once you type its vault (see [The Tabby vault](#the-tabby-vault)), and
+Electerm and Netcatty exports may carry readable SSH login passwords, which
+Motty asks whether to save in its vault or import connections only. A password
+only ever fills one that is missing, never replaces one already saved. Key
+passphrases, private keys and encrypted passwords from the other clients are not
+imported; add them to the host afterwards.
 
 | Client | File to choose |
 | --- | --- |
@@ -78,6 +85,7 @@ fill an empty saved password, but never replace one already saved.
 | WindTerm | `user.sessions` in the `terminal` folder of WindTerm's profile. |
 | Electerm | The bookmarks JSON exported from Electerm's bookmark manager. |
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
+| Tabby | `config.yaml` in Tabby's data folder: `~/Library/Application Support/tabby` on macOS, `%APPDATA%\tabby` on Windows, `~/.config/tabby` on Linux. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
@@ -88,6 +96,37 @@ silently dropping characters. If a BOM-less file can be read as both UTF-8 and
 GB18030, Motty shows the differing names and asks you to choose before saving
 any hosts. If several selected files have an encoding ambiguity, import them
 one at a time so each can be decoded correctly.
+
+### The Tabby vault
+
+Tabby keeps the passwords, key passphrases and any private key you stored in it
+inside a **vault**: one blob encrypted with a passphrase you set in Tabby. When
+the file has one, the import asks for that passphrase before it adds anything,
+and a wrong one is refused rather than guessed at. Once it opens:
+
+- Passwords and key passphrases go into Motty's own vault, under the host or the
+  key they belong to, so connecting does not ask for them again.
+- A private key kept in Tabby's vault is written to `keys/` beside Motty's
+  configuration and added to the Keychain.
+- Jump hosts become jump routes, and the tunnels a session saved become port
+  forwards.
+
+Dismiss the dialog and only what the file holds in the clear is imported — the
+sessions, their routes and their tunnels — with a line saying the vault was left
+locked. A Tabby configuration that is itself encrypted holds nothing else, so
+dismissing it imports nothing at all.
+
+Tabby before its vault kept passwords in the system keychain, which is not
+Motty's to read; a file with no vault says so after the import.
+
+Tabby has a bug worth knowing about here: its vault's salt is random bytes
+written in hex, and roughly one salt in sixteen begins `1e` and reads as a
+number, which Tabby turns into `.inf` when it saves the file again. The salt is
+then gone and Tabby can no longer open its own vault. Motty reads the salt as
+the text it is, so a file whose salt is still there — quoted or not — opens
+normally; a file where Tabby already replaced it with `.inf` is reported as
+exactly that, rather than as a wrong passphrase, and its sessions are still
+imported. Keep a copy of `config.yaml` before you upgrade Tabby.
 
 ## Syncing with your SSH config
 

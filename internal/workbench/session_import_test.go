@@ -10,8 +10,64 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
+
+// A saved host the import meets again is the user's to keep or replace. Writing
+// over it keeps its id — so the sessions and tunnels that point at it keep
+// pointing at it — and takes the imported settings.
+func TestImportingOverASavedHostWritesItOverWhenTheUserSaysSo(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sessions.mxtsessions")
+	content := "[Bookmarks]\nSubRep=Servers\nImgNum=42\n" +
+		"Production (imported)=#109#0%prod.example.com%22%deploy%\n"
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.Keystore = &memKeys{}
+	if err := saveState(options.StatePath, savedState{Hosts: sampleHosts}); err != nil {
+		t.Fatal(err)
+	}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+
+	state.Click(hitImportMenu)
+	state.Click(hitImportSessions)
+	state.Click(hitImportMobaXterm)
+	if state.modal != modalImportConflicts {
+		t.Fatalf("modal = %d, want the conflict dialog", state.modal)
+	}
+	if len(state.imports.conflicts) != 1 || state.imports.conflicts[0].existing.Address != "prod.example.com" {
+		t.Fatalf("conflicts = %+v", state.imports.conflicts)
+	}
+	// The dialog offers both answers, and the two that answer for the rest.
+	canvas, _ := paintedTexts(state)
+	for _, hit := range []ui.ID{hitImportConflictOverwrite, hitImportConflictSkip, hitImportConflictOverwriteAll, hitImportConflictSkipAll} {
+		if _, ok := hitByID(canvas, hit); !ok {
+			t.Fatalf("the conflict dialog has no button %v", hit)
+		}
+	}
+	state.Click(hitImportConflictOverwrite)
+	if state.modal != modalHostImportResult {
+		t.Fatalf("modal = %d, want the result", state.modal)
+	}
+	if len(state.hosts) != len(sampleHosts) {
+		t.Fatalf("overwriting added a host: %d hosts", len(state.hosts))
+	}
+	host := state.hosts[0]
+	if host.Label != "Production (imported)" || host.Address != "prod.example.com" || host.User != "deploy" {
+		t.Fatalf("host = %+v", host)
+	}
+	if !strings.Contains(state.hostImportResult.summary, "overwrote 1") {
+		t.Fatalf("summary = %q", state.hostImportResult.summary)
+	}
+	// The other saved hosts are untouched.
+	if state.hosts[1].Label != "Staging" || state.hosts[2].Label != "Router" {
+		t.Fatalf("hosts = %+v", state.hosts)
+	}
+}
 
 func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "sessions.mxtsessions")
@@ -49,6 +105,12 @@ func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *t
 	if !request.AllowMultiple || !strings.Contains(request.Title, "MobaXterm") {
 		t.Fatalf("OpenFiles request = %+v", request)
 	}
+	// One session names a host that is already saved, which is the user's call:
+	// the import stops and asks before it writes anything.
+	if state.modal != modalImportConflicts {
+		t.Fatalf("modal = %d, want the conflict dialog", state.modal)
+	}
+	state.Click(hitImportConflictSkipAll)
 	if state.modal != modalHostImportResult || len(state.hosts) != len(sampleHosts)+1 {
 		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
 	}
@@ -338,6 +400,13 @@ func TestImportPasswordsOnlyFillsMissingHostsAndKeepsExistingValues(t *testing.T
 	}
 	state.Click(hitImportSessions)
 	state.Click(hitImportNetcatty)
+	// Both destinations are already saved, so they are put to the user before
+	// anything else. Keeping them is what this test is about: the import fills
+	// the password that is missing and leaves the one that is not.
+	if state.modal != modalImportConflicts {
+		t.Fatalf("modal=%d, want the saved hosts to be asked about first", state.modal)
+	}
+	state.Click(hitImportConflictSkipAll)
 	if state.modal != modalSessionImportPreview || len(state.hosts) != 2 {
 		t.Fatal("expected a preview without changing hosts")
 	}
@@ -485,6 +554,12 @@ func TestImportPasswordConflictsAndKeyHostsAreSkipped(t *testing.T) {
 	state.nextHostID = 2
 	state.Click(hitImportSessions)
 	state.Click(hitImportNetcatty)
+	// The saved key host is asked about before the passwords are: keeping it as
+	// it is leaves it out of the import, and its password with it.
+	if state.modal != modalImportConflicts {
+		t.Fatalf("modal=%d, want the saved host to be asked about first", state.modal)
+	}
+	state.Click(hitImportConflictSkipAll)
 	if state.modal != modalSessionImportPreview || len(state.sessionImport.passwords) != 1 || state.sessionImport.conflicts != 1 {
 		t.Fatalf("preview has %d candidates, %d conflicts", len(state.sessionImport.passwords), state.sessionImport.conflicts)
 	}

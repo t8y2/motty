@@ -316,7 +316,7 @@ func (state *State) reloadAI() {
 // exists, and either has no master password or has been unlocked.
 func (state *State) aiVaultUsable() bool {
 	opened := state.secrets.vault
-	return opened != nil && (!opened.NeedsConversion())
+	return opened != nil && (!opened.Locked())
 }
 
 // aiAdoptKeys moves API keys that older versions left in plaintext in the AI
@@ -360,7 +360,7 @@ func (state *State) aiKeyedProvider(provider store.Provider, retry func()) (stor
 	if opened == nil {
 		return provider, true
 	}
-	if opened.NeedsConversion() {
+	if opened.Locked() {
 		state.openVaultUnlock(nil, func() {
 			state.reloadAI()
 			retry()

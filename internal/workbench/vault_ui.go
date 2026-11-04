@@ -20,31 +20,41 @@ import (
 // Saved passwords. The vault package keeps them encrypted; this file is what the
 // workbench does with it: offer to save a password or a key passphrase when the
 // user types one, answer the same question by itself the next time it is asked,
-// and let the user forget everything in Settings. A vault still kept by the master
-// password of an earlier version is opened once, by the dialog below, and is an
-// ordinary one afterwards.
+// and let the user forget everything in Settings. A vault the user put behind a
+// master password is locked at each start and unlocked by the dialog below.
 
 // secretsUI is the state of saving and using secrets.
 type secretsUI struct {
 	vault *vault.Vault
-	// declined is set when the user dismissed the dialog that asks for the old
-	// master password, so the window does not ask again at every prompt until the
-	// next start; Settings can ask again.
+	// declined is set when the user dismissed the dialog that asks for the master
+	// password, so the window does not ask again at every prompt until the next
+	// start; Settings can ask again.
 	declined bool
+	// denied is set when the system's secret store refused the key, which is a
+	// "allow it in the prompt" to fix, not the "there is nowhere to keep it" the
+	// import says when the vault is simply missing.
+	denied bool
 	// canSave is whether the open password or passphrase dialog offers to save,
 	// worked out when it opened, and save whether the box is ticked.
 	canSave, save bool
 
 	unlock      text.Editor
+	password    text.Editor
+	repeat      text.Editor
 	dialogError string
 	// after is what to do once the vault is unlocked from Settings.
 	after func()
 	// actions is where Settings lays out its buttons, so painting them keeps no
 	// slice of its own.
-	actions [3]components.ButtonAction
+	actions [4]components.ButtonAction
 	// layout lays out the body of the vault's dialogs, one at a time.
 	layout flex.View
 }
+
+// vaultPasswordMinimum is the shortest master password the dialog accepts. The
+// vault is the only copy of what it holds, so a short one is not worth the
+// encryption it turns on.
+const vaultPasswordMinimum = 8
 
 // secretPurpose says what a secret is for: its name in the vault, and the
 // wording of the box the user ticks.
@@ -99,9 +109,13 @@ func (state *State) initSecrets() {
 		}
 	}
 	if err != nil {
+		// The reason is kept for the import, which is where a missing vault
+		// costs the user something they can see.
+		state.secrets.denied = errors.Is(err, vault.ErrKeystoreDenied)
 		return // no saved passwords this run; the rest of the application is unaffected
 	}
 	state.secrets.vault = opened
+	state.secrets.denied = false
 }
 
 // isPasswordQuestion reports the one secret question that asks for the account
@@ -257,21 +271,23 @@ func (state *State) rememberSecret(session *Session) {
 // vaultErrorText says why the vault refused, in the current language.
 func (state *State) vaultErrorText(err error) string {
 	switch {
-	case errors.Is(err, vault.ErrNeedsConversion):
-		return state.messages.VaultNeedsConversion
+	case errors.Is(err, vault.ErrLocked):
+		return state.messages.VaultLocked
 	case errors.Is(err, vault.ErrKeyLost):
 		return state.messages.VaultKeyLost
 	case errors.Is(err, vault.ErrUnavailable):
 		return state.messages.VaultUnavailable
 	case errors.Is(err, vault.ErrWrongPassword):
 		return state.messages.VaultWrongPassword
+	case errors.Is(err, vault.ErrEmptyPassword):
+		return fmt.Sprintf(state.messages.VaultPasswordShortFmt, vaultPasswordMinimum)
 	}
 	return err.Error()
 }
 
-// openVaultUnlock asks for the master password of an earlier version, once, to
-// move the saved passwords under the key store. after, if set, runs once it has
-// been typed correctly; otherwise the prompt that was waiting goes on.
+// openVaultUnlock asks for the master password that locks the saved passwords.
+// after, if set, runs once it has been typed correctly; otherwise the prompt
+// that was waiting goes on.
 func (state *State) openVaultUnlock(session *Session, after func()) {
 	state.modal = modalVaultUnlock
 	if session != nil {
@@ -299,7 +315,7 @@ func (state *State) submitVaultUnlock() {
 		state.closeModal()
 		return
 	}
-	if err := state.secrets.vault.ConvertLegacy(state.secrets.unlock.String()); err != nil {
+	if err := state.secrets.vault.Unlock(state.secrets.unlock.String()); err != nil {
 		state.secrets.dialogError = state.vaultErrorText(err)
 		state.secrets.unlock = text.Editor{}
 		return
@@ -326,7 +342,7 @@ func (state *State) paintVaultUnlockDialog(canvas *ui.Canvas, viewport ui.Rect) 
 		DismissID: hitVaultUnlockDismiss, CloseID: hitVaultUnlockClose, InitialFocusID: hitVaultUnlockField,
 		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: withError(66, state.secrets.dialogError),
 	})
-	layout := dialog.Begin(m.VaultUnlockTitle, m.VaultConvertDescription)
+	layout := dialog.Begin(m.VaultUnlockTitle, "")
 	var field flex.Box
 	f := state.secrets.layout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
@@ -344,6 +360,138 @@ func (state *State) paintVaultUnlockDialog(canvas *ui.Canvas, viewport ui.Rect) 
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitVaultUnlockCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitVaultUnlockSubmit, Label: m.VaultUnlockButton},
+	)
+	dialog.End()
+}
+
+// openVaultPassword asks for a new master password, twice. The vault has to be
+// unlocked first when one is already set: the key is what gets wrapped again.
+func (state *State) openVaultPassword() {
+	state.modal = modalVaultPassword
+	state.secrets.password = text.Editor{}
+	state.secrets.repeat = text.Editor{}
+	state.secrets.dialogError = ""
+}
+
+func (state *State) clickVaultPassword(id ui.ID) {
+	switch id {
+	case hitVaultPasswordSubmit:
+		state.submitVaultPassword()
+	case hitVaultPasswordCancel, hitVaultPasswordClose, hitVaultPasswordDismiss:
+		state.closeModal()
+		state.showNextPrompt()
+	}
+}
+
+func (state *State) submitVaultPassword() {
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		state.closeModal()
+		return
+	}
+	password, repeat := state.secrets.password.String(), state.secrets.repeat.String()
+	wasProtected := vaultFile.Protected()
+	switch {
+	case len([]rune(password)) < vaultPasswordMinimum:
+		state.secrets.dialogError = fmt.Sprintf(state.messages.VaultPasswordShortFmt, vaultPasswordMinimum)
+		return
+	case password != repeat:
+		state.secrets.dialogError = state.messages.VaultPasswordMismatch
+		return
+	}
+	if err := vaultFile.SetPassword(password); err != nil {
+		state.secrets.dialogError = state.vaultErrorText(err)
+		return
+	}
+	state.secrets.password, state.secrets.repeat = text.Editor{}, text.Editor{}
+	if wasProtected {
+		state.status = state.messages.VaultPasswordChanged
+	} else {
+		state.status = state.messages.VaultPasswordSet
+	}
+	state.closeModal()
+	state.showNextPrompt()
+}
+
+func (state *State) paintVaultPasswordDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	m, theme := state.messages, state.Theme()
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitVaultPasswordDismiss, CloseID: hitVaultPasswordClose, InitialFocusID: hitVaultPasswordField,
+		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: withError(140, state.secrets.dialogError),
+	})
+	layout := dialog.Begin(m.VaultPasswordTitle, "")
+	var first, second flex.Box
+	f := state.secrets.layout.Begin(canvas, theme, layout.Body)
+	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
+		first = f.Slot().Height(62)
+		second = f.Slot().Height(62)
+		state.problemLine(f, state.secrets.dialogError)
+	})
+	f.End()
+	fields := [...]struct {
+		id    ui.ID
+		label string
+		box   flex.Box
+		value string
+	}{
+		{hitVaultPasswordField, m.VaultPasswordNewLabel, first, state.secrets.password.String()},
+		{hitVaultRepeatField, m.VaultPasswordRepeatLabel, second, state.secrets.repeat.String()},
+	}
+	for _, field := range fields {
+		content := components.BeginField(canvas, theme, field.box.Rect()).Paint(field.label, "", "")
+		focused := canvas.Focused() == field.id
+		state.paintSecretInput(canvas, content, components.InputSnapshot{
+			ID: field.id, Label: field.label, Value: field.value, Secure: true,
+			Focused: focused, PlatformEditing: focused && field.value != "", Invalid: state.secrets.dialogError != "",
+		})
+	}
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitVaultPasswordCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitVaultPasswordSubmit, Label: m.VaultPasswordSave},
+	)
+	dialog.End()
+}
+
+func (state *State) openVaultRemovePassword() {
+	state.modal = modalVaultRemovePassword
+}
+
+func (state *State) clickVaultRemovePassword(id ui.ID) {
+	switch id {
+	case hitVaultRemovePasswordConfirm:
+		if vaultFile := state.secrets.vault; vaultFile != nil {
+			if err := vaultFile.RemovePassword(); err != nil {
+				state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
+			} else {
+				state.status = state.messages.VaultPasswordRemoved
+			}
+		}
+		state.closeModal()
+		state.showNextPrompt()
+	case hitVaultRemovePasswordCancel, hitVaultRemovePasswordClose, hitVaultRemovePasswordDismiss:
+		state.closeModal()
+		state.showNextPrompt()
+	}
+}
+
+func (state *State) paintVaultRemovePasswordDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	m := state.messages
+	// The text is wrapped to the body's width: 540 less the dialog's padding.
+	var wrapped [4]string
+	lines := canvas.WrapLines(wrapped[:0], m.VaultRemovePasswordDescription, metrics.FontSizeM, ui.WeightRegular, 500, 4)
+	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitVaultRemovePasswordDismiss, CloseID: hitVaultRemovePasswordClose, InitialFocusID: hitVaultRemovePasswordCancel,
+		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: float32(len(lines))*21 - 1,
+	})
+	layout := dialog.Begin(m.VaultRemovePasswordTitle, "")
+	f := state.secrets.layout.Begin(canvas, state.Theme(), layout.Body)
+	f.Paragraph(m.VaultRemovePasswordDescription, len(wrapped)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
+	f.End()
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitVaultRemovePasswordCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitVaultRemovePasswordConfirm, Label: m.VaultRemovePasswordConfirm, Variant: components.ButtonDestructive},
 	)
 	dialog.End()
 }
@@ -401,10 +549,18 @@ func (state *State) clickVaultSettings(id ui.ID) bool {
 		if vaultFile != nil {
 			state.openVaultForget()
 		}
-	case hitSettingsVaultConvert:
-		if vaultFile != nil && vaultFile.NeedsConversion() {
+	case hitSettingsVaultUnlock:
+		if vaultFile != nil && vaultFile.Locked() {
 			state.secrets.declined = false
-			state.openVaultUnlock(nil, nil)
+			state.openVaultUnlock(nil, func() { state.status = state.messages.VaultUnlocked })
+		}
+	case hitSettingsVaultSetPassword, hitSettingsVaultChangePassword:
+		if vaultFile != nil && !vaultFile.Locked() {
+			state.openVaultPassword()
+		}
+	case hitSettingsVaultRemovePassword:
+		if vaultFile != nil && vaultFile.Protected() && !vaultFile.Locked() {
+			state.openVaultRemovePassword()
 		}
 	default:
 		return false
@@ -424,21 +580,32 @@ func (state *State) paintSecuritySettings(page *settingsPage) {
 		if vaultFile == nil {
 			return
 		}
-		convert, count := vaultFile.NeedsConversion(), vaultFile.Len()
+		locked, protected, count := vaultFile.Locked(), vaultFile.Protected(), vaultFile.Len()
 		description := m.SettingsVaultEmpty
-		switch {
-		case count > 0 && convert:
-			description = fmt.Sprintf(m.SettingsVaultDescriptionLockedFmt, count)
-		case count > 0:
+		if count > 0 {
 			description = fmt.Sprintf(m.SettingsVaultDescriptionFmt, count)
 		}
+		passwordDescription := m.SettingsVaultPasswordOff
 		actions := state.secrets.actions[:0]
-		if convert {
-			actions = append(actions, components.ButtonAction{ID: hitSettingsVaultConvert, Label: m.SettingsVaultConvert})
+		switch {
+		case locked:
+			passwordDescription = m.SettingsVaultPasswordLocked
+			actions = append(actions, components.ButtonAction{ID: hitSettingsVaultUnlock, Label: m.SettingsVaultUnlock})
+		case protected:
+			passwordDescription = m.SettingsVaultPasswordOn
+			actions = append(actions,
+				components.ButtonAction{ID: hitSettingsVaultChangePassword, Label: m.SettingsVaultChangePassword, Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSettingsVaultRemovePassword, Label: m.SettingsVaultRemovePassword, Variant: components.ButtonOutline},
+			)
+		default:
+			actions = append(actions, components.ButtonAction{ID: hitSettingsVaultSetPassword, Label: m.SettingsVaultSetPassword, Variant: components.ButtonOutline})
 		}
-		actions = append(actions, components.ButtonAction{ID: hitSettingsVaultForget, Label: m.SettingsVaultForgetAll, Variant: components.ButtonOutline})
+		// The saved passwords and their password are two rows: a row of three
+		// buttons leaves too little room for the sentence beside it.
 		page.group(m.SettingsGroupSecurity, func() {
-			page.actionRow(m.SettingsVault, description, count == 0, actions...)
+			page.actionRow(m.SettingsVault, description, count == 0,
+				components.ButtonAction{ID: hitSettingsVaultForget, Label: m.SettingsVaultForgetAll, Variant: components.ButtonOutline})
+			page.actionRow(m.SettingsVaultPassword, passwordDescription, false, actions...)
 		})
 	})
 }

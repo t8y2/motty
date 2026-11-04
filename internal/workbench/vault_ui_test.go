@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -328,35 +329,114 @@ func TestDecliningToUnlockFallsBackToTheNormalDialogAndDoesNotAskAgain(t *testin
 	}
 }
 
-func TestAVaultStillKeptByAnOldMasterPasswordIsConvertedFromSettings(t *testing.T) {
+func TestALockedVaultIsUnlockedFromSettingsAndStaysLockedNextStart(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	signInSavingThePassword(t, state, world, "hunter2")
 	if err := state.secrets.vault.LegacyForTests("long enough one"); err != nil {
 		t.Fatal(err)
 	}
+	state.secrets.vault.DropKeyForTests()
 	state.Click(hitSettings)
-	if !settingsShows(state, hitSettingsVaultConvert) {
-		t.Fatal("Settings does not offer to enter the old master password")
+	if !settingsShows(state, hitSettingsVaultUnlock) {
+		t.Fatal("Settings does not offer to unlock the saved passwords")
 	}
-	state.Click(hitSettingsVaultConvert)
+	state.Click(hitSettingsVaultUnlock)
 	if state.modal != modalVaultUnlock {
-		t.Fatalf("modal = %d, want the dialog for the old master password", state.modal)
+		t.Fatalf("modal = %d, want the master password dialog", state.modal)
 	}
 	typeInto(state, hitVaultUnlockField, "long enough one")
 	state.Click(hitVaultUnlockSubmit)
-	if state.modal != modalNone || state.secrets.vault.NeedsConversion() {
-		t.Fatalf("modal %d, still needs conversion %v", state.modal, state.secrets.vault.NeedsConversion())
+	if state.modal != modalNone || state.secrets.vault.Locked() {
+		t.Fatalf("modal %d, still locked %v", state.modal, state.secrets.vault.Locked())
 	}
 	if value, found, err := state.secrets.vault.Get(prodPasswordName); err != nil || !found || value != "hunter2" {
-		t.Fatalf("after converting: %q, %v, %v", value, found, err)
+		t.Fatalf("after unlocking: %q, %v, %v", value, found, err)
 	}
-	if settingsShows(state, hitSettingsVaultConvert) {
-		t.Fatal("Settings still offers the old master password after it was converted")
+	// The password is still the vault's own: unlocking is for this run only.
+	if !state.secrets.vault.Protected() {
+		t.Fatal("unlocking took the master password off the vault")
+	}
+	if settingsShows(state, hitSettingsVaultUnlock) {
+		t.Fatal("Settings still offers to unlock an unlocked vault")
+	}
+	if !settingsShows(state, hitSettingsVaultChangePassword) {
+		t.Fatal("Settings does not offer to change the master password")
 	}
 }
 
-func TestAnOldMasterPasswordIsAskedForOnceAtStartAndOnlyOnce(t *testing.T) {
+func TestSettingAMasterPasswordFromSettingsLocksTheVault(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	signInSavingThePassword(t, state, world, "hunter2")
+	state.Click(hitSettings)
+	if !settingsShows(state, hitSettingsVaultSetPassword) {
+		t.Fatal("Settings does not offer to set a master password")
+	}
+	state.Click(hitSettingsVaultSetPassword)
+	if state.modal != modalVaultPassword {
+		t.Fatalf("modal = %d, want the master password dialog", state.modal)
+	}
+	typeInto(state, hitVaultPasswordField, "short")
+	typeInto(state, hitVaultRepeatField, "short")
+	state.Click(hitVaultPasswordSubmit)
+	if state.modal != modalVaultPassword || state.secrets.dialogError != fmt.Sprintf(state.messages.VaultPasswordShortFmt, vaultPasswordMinimum) {
+		t.Fatalf("modal %d, error %q", state.modal, state.secrets.dialogError)
+	}
+	retypeInto(state, hitVaultPasswordField, "long enough one")
+	retypeInto(state, hitVaultRepeatField, "another one")
+	state.Click(hitVaultPasswordSubmit)
+	if state.modal != modalVaultPassword || state.secrets.dialogError != state.messages.VaultPasswordMismatch {
+		t.Fatalf("modal %d, error %q", state.modal, state.secrets.dialogError)
+	}
+	retypeInto(state, hitVaultRepeatField, "long enough one")
+	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitVaultRepeatField})
+	if state.modal != modalNone || !state.secrets.vault.Protected() || state.status != state.messages.VaultPasswordSet {
+		t.Fatalf("modal %d, protected %v, status %q", state.modal, state.secrets.vault.Protected(), state.status)
+	}
+	// A fresh start of the same file asks for it again.
+	state.secrets.vault.DropKeyForTests()
+	if !state.secrets.vault.Locked() {
+		t.Fatal("the vault is not locked once its key is dropped")
+	}
+	if err := state.secrets.vault.Unlock("long enough one"); err != nil {
+		t.Fatalf("the password set from Settings does not open the vault: %v", err)
+	}
+	if value, found, err := state.secrets.vault.Get(prodPasswordName); err != nil || !found || value != "hunter2" {
+		t.Fatalf("after unlocking: %q, %v, %v", value, found, err)
+	}
+}
+
+func TestRemovingTheMasterPasswordPutsTheKeyBackAndAsksFirst(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	signInSavingThePassword(t, state, world, "hunter2")
+	if err := state.secrets.vault.SetPassword("long enough one"); err != nil {
+		t.Fatal(err)
+	}
+	state.Click(hitSettings)
+	if !settingsShows(state, hitSettingsVaultRemovePassword) {
+		t.Fatal("Settings does not offer to remove the master password")
+	}
+	state.Click(hitSettingsVaultRemovePassword)
+	if state.modal != modalVaultRemovePassword {
+		t.Fatalf("modal = %d, want the confirmation", state.modal)
+	}
+	state.Click(hitVaultRemovePasswordCancel)
+	if !state.secrets.vault.Protected() {
+		t.Fatal("cancelling removed the master password")
+	}
+	state.Click(hitSettingsVaultRemovePassword)
+	state.Click(hitVaultRemovePasswordConfirm)
+	if state.secrets.vault.Protected() || state.status != state.messages.VaultPasswordRemoved {
+		t.Fatalf("protected %v, status %q", state.secrets.vault.Protected(), state.status)
+	}
+	if value, found, err := state.secrets.vault.Get(prodPasswordName); err != nil || !found || value != "hunter2" {
+		t.Fatalf("after removing the password: %q, %v, %v", value, found, err)
+	}
+}
+
+func TestALockedVaultIsAskedForOnceAtStartAndOnlyOnce(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	signInSavingThePassword(t, state, world, "hunter2")

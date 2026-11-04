@@ -111,7 +111,10 @@ type savedState struct {
 	CommandSuggestOff          bool                `json:"command_suggest_off,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
-	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
+	SessionLogsOff bool `json:"session_logs_off,omitempty"`
+	// BackupKeys carries private key files in backups and sync. It belongs to
+	// this computer: another one decides for itself what leaves it.
+	BackupKeys              bool                  `json:"backup_keys,omitempty"`
 	SessionLogsView         *savedSessionLogsView `json:"session_logs_view,omitempty"`
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
@@ -439,6 +442,7 @@ func (state *State) snapshot() savedState {
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		SessionLogsOff:             state.sessionLogsOff,
+		BackupKeys:                 state.backupKeys,
 		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
 		SFTPParallel:               state.sftpParallel,
@@ -734,6 +738,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.recentConnectSort = saved.RecentConnectSort
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
+	state.backupKeys = saved.BackupKeys
 	state.restoreSessionLogsView(saved.SessionLogsView)
 	// The saved editor is read as it is: a value this build does not know stays
 	// unknown rather than becoming another editor.

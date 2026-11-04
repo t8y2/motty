@@ -209,34 +209,77 @@ type ToolsMessages struct {
 	SearchEmptyFmt    string
 
 	// Importing sessions from other clients.
-	ImportSessions               string
-	ImportChooserTitle           string
-	ImportChooserBody            string
-	ImportEncodingTitle          string
-	ImportEncodingBody           string
-	ImportEncodingSampleUTF8Fmt  string
-	ImportEncodingSampleGBFmt    string
-	ImportEncodingOneFile        string
-	ImportGuide                  string // the link to the docs on exporting from each client
-	ImportGuideURL               string
-	ImportPickerFmt              string // the client's name
-	ImportCanceled               string
-	ImportFailedFmt              string
-	ImportSummaryFmt             string // hosts, client, duplicates
-	ImportWarningKeysFmt         string
-	ImportWarningSkippedFmt      string
-	ImportWarningPasswords       string
-	ImportWarningCleartextFmt    string // sessions whose file held readable passwords or keys
-	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
+	ImportSessions              string
+	ImportChooserTitle          string
+	ImportChooserBody           string
+	ImportEncodingTitle         string
+	ImportEncodingBody          string
+	ImportEncodingSampleUTF8Fmt string
+	ImportEncodingSampleGBFmt   string
+	ImportEncodingOneFile       string
+	ImportGuide                 string // the link to the docs on exporting from each client
+	ImportGuideURL              string
+	ImportPickerFmt             string // the client's name
+	ImportCanceled              string
+	ImportFailedFmt             string
+	ImportSummaryFmt            string // hosts, client, duplicates
+	ImportWarningKeysFmt        string
+	ImportWarningSkippedFmt     string
+	ImportWarningPasswords      string
+	ImportWarningCleartextFmt   string // sessions whose file held readable passwords or keys
+	ImportWarningLoopback       string // a session aimed at 127.0.0.1 / localhost
+	// Readable passwords found in the file wait for consent: the user chooses
+	// between hosts alone and hosts plus the passwords they came with.
 	ImportPasswordPreviewTitle   string
-	ImportPasswordPreviewBodyFmt string
+	ImportPasswordPreviewBodyFmt string // how many, the client
 	ImportConnectionsOnly        string
 	ImportSavePasswords          string
-	ImportPasswordsSavedFmt      string
-	ImportPasswordConflictFmt    string
+	ImportPasswordsSavedFmt      string // how many
+	ImportPasswordConflictFmt    string // how many already had one
 	ImportHostSaveUnavailable    string
-	ImportHostSaveFailedFmt      string
+	ImportHostSaveFailedFmt      string // the error
 	ImportHostSaveRollbackFailed string
+	// What an import could not carry over: routes, tunnels, a key it could not
+	// write out, and secrets the vault refused.
+	ImportWarningRouteFmt       string // routes left out
+	ImportWarningForwardFmt     string // tunnels left out
+	ImportWarningKeyWriteFmt    string // session name, the error
+	ImportWarningSecretsFmt     string // the error
+	ImportWarningSecretsMissing string
+	// The import met hosts that are already saved. The user decides what happens
+	// to each, and can answer for the ones left at once.
+	ImportConflictTitle           string
+	ImportConflictBodyFmt         string // the session, which one, how many
+	ImportConflictOverwrite       string
+	ImportConflictSkip            string
+	ImportConflictOverwriteAllFmt string // how many are left
+	ImportConflictSkipAllFmt      string // how many are left
+	// The summary of an import that wrote over saved hosts: imported, client,
+	// overwritten, skipped.
+	ImportSummaryOverwriteFmt string
+	// The secrets arrived but the system's secret store refused the key that
+	// opens the vault, which the user allows in the prompt that asked.
+	ImportWarningSecretsDenied string
+	// The secrets arrived but Motty's own vault is locked by a master password.
+	ImportWarningSecretsLocked string
+	// A session that saved its own route: the command waits for confirmation,
+	// and one this program cannot run is left out.
+	ImportProxyCommandFmt        string // session name
+	ImportWarningProxyCommandFmt string // session name
+	// Tabby keeps its sessions and its secrets in a vault the user opens with a
+	// passphrase, so its import is the one that asks for something.
+	ImportTabbyPassphraseTitle  string
+	ImportTabbyPassphraseBody   string
+	ImportTabbyPassphraseLabel  string
+	ImportTabbyPassphraseSubmit string
+	ImportTabbyPassphraseWrong  string
+	ImportTabbyPassphraseEmpty  string
+	// Tabby wrote the salt or the IV of a vault as a number, which loses it, so
+	// no passphrase can open that vault.
+	ImportTabbyVaultMangled   string
+	ImportTabbyVaultFailedFmt string // the error
+	ImportTabbyLockedFmt      string // the file's name
+	ImportTabbyNothing        string
 
 	// Broadcast input.
 	BroadcastStart            string
@@ -513,6 +556,12 @@ type ToolsMessages struct {
 	BackupRestore                   string
 	BackupExportTitle               string
 	BackupExportDialogDescription   string
+	BackupKeys                      string
+	BackupKeysDescription           string
+	BackupKeysExportDescription     string
+	BackupSavedKeysLeftOutFmt       string
+	BackupKeysFailedFmt             string
+	SyncDoneKeysFailedFmt           string
 	BackupPassword                  string
 	BackupPasswordConfirm           string
 	BackupPasswordPlaceholder       string

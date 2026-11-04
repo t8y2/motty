@@ -422,10 +422,14 @@ const (
 	modalStateNotice
 	modalDevelopmentImport
 	modalVaultUnlock
+	modalVaultPassword
+	modalVaultRemovePassword
 	modalVaultForget
 	modalHighlightRule
 	modalSnippet
 	modalImportSessions
+	modalImportConflicts
+	modalTabbyPassphrase
 	modalFontPicker
 	modalOutboundProxy
 	modalForm
@@ -1041,7 +1045,7 @@ func (state *State) showNextPrompt() {
 	}
 	// A vault still kept by the master password of an earlier version cannot
 	// answer anything until that password has been typed once.
-	if vaultFile := state.secrets.vault; vaultFile != nil && vaultFile.NeedsConversion() && !state.secrets.declined {
+	if vaultFile := state.secrets.vault; vaultFile != nil && vaultFile.Locked() && !state.secrets.declined {
 		state.openVaultUnlock(nil, nil)
 		return
 	}

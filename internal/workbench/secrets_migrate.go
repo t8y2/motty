@@ -73,7 +73,7 @@ func parseLegacyEndpoint(rest string) (user, address string, port uint16, ok boo
 // backup made before the change.
 func (state *State) migrateSecretsToHosts(force bool) {
 	vaultFile := state.secrets.vault
-	if vaultFile == nil || vaultFile.NeedsConversion() || state.options.StatePath == "" {
+	if vaultFile == nil || vaultFile.Locked() || state.options.StatePath == "" {
 		return
 	}
 	mark := filepath.Join(filepath.Dir(state.options.StatePath), secretsLayoutFile)

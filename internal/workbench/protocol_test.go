@@ -399,7 +399,7 @@ func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
 		{Name: "Console again", Protocol: sessionimport.Serial, Host: "COM7", Line: "9600 8N1"},
 		{Name: "Broken", Protocol: sessionimport.Serial, Host: "COM8", Line: "fast"},
 	}}
-	plan := state.sessionImportPlan(result)
+	plan := state.sessionImportPlan(nil, result)
 	if len(plan.hosts) != 2 || plan.duplicateHosts != 2 {
 		t.Fatalf("hosts %+v duplicates %d", plan.hosts, plan.duplicateHosts)
 	}
