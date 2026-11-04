@@ -212,6 +212,31 @@ func sameDirectoryTreePath(local bool, left, right string) bool {
 	return directoryTreePathKey(local, left) == directoryTreePathKey(local, right)
 }
 
+// Windows can expose the same directory through both its long name and an
+// 8.3 alias (for example RUNNER~1). The tree cache uses the long name returned
+// by its directory listing, so retry a missing local child by file identity.
+// Restricting this to real directories avoids confusing a symlink with a
+// separate entry that happens to target the same location.
+func directoryTreeLocalAliasChild(node *sftpTreeNode, location string) *sftpTreeNode {
+	if node == nil || !node.loaded {
+		return nil
+	}
+	target, err := os.Lstat(location)
+	if err != nil || !target.IsDir() || target.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+	for _, child := range node.children {
+		info, err := os.Lstat(child.path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if os.SameFile(target, info) {
+			return child
+		}
+	}
+	return nil
+}
+
 func cleanDirectoryTreePath(local bool, location string) string {
 	if local {
 		return filepath.Clean(location)
@@ -292,12 +317,25 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 			nextPath = path.Join(node.path, part)
 		}
 		next := tree.nodes[directoryTreePathKey(local, nextPath)]
+		if next == nil && local {
+			next = directoryTreeLocalAliasChild(node, nextPath)
+		}
 		if next == nil {
 			return
 		}
 		node = next
 	}
 	node.expanded = true
+	if local && !sameDirectoryTreePath(true, node.path, location) {
+		target, targetErr := os.Lstat(location)
+		actual, actualErr := os.Lstat(node.path)
+		if targetErr == nil && actualErr == nil && os.SameFile(target, actual) {
+			// Keep selection and reveal logic keyed to the node's canonical
+			// long path rather than the caller's short-path alias.
+			location = node.path
+			tree.selectedPath = node.path
+		}
+	}
 	if sameDirectoryTreePath(local, node.path, location) && !node.loaded {
 		folder := w.folder(local)
 		if sameDirectoryTreePath(local, folder.path, location) {
