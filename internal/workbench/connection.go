@@ -221,6 +221,9 @@ type Options struct {
 	// OpenPath opens a local document with the system's default application. Nil
 	// uses app.OpenPath.
 	OpenPath func(string) error
+	// RevealPath shows a completed local download in the system's file manager.
+	// Nil uses the platform's native reveal command.
+	RevealPath func(string) error
 	// LaunchCustomEditor starts a user-chosen executable with one path. Nil uses
 	// Viva's system launcher.
 	LaunchCustomEditor func(executable, path string) error
@@ -332,6 +335,9 @@ func (options Options) withDefaults() Options {
 	}
 	if options.OpenPath == nil {
 		options.OpenPath = app.OpenPath
+	}
+	if options.RevealPath == nil {
+		options.RevealPath = revealPath
 	}
 	if options.LaunchCustomEditor == nil {
 		options.LaunchCustomEditor = app.OpenWith
@@ -660,6 +666,7 @@ func (state *State) Wake() {
 	defer state.flushLocalDirectories()
 	state.adoptHistoryClear()
 	state.adoptCompletion()
+	state.pumpRevealResults()
 	state.pumpFileWindows()
 	if state.syncPending {
 		state.syncPending = false

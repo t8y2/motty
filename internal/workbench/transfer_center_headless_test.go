@@ -67,6 +67,23 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
 				t.Fatal("End did not reveal the bottom of history")
 			}
+			reveal, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(1))
+			if !ok {
+				t.Fatal("completed download has no reveal control")
+			}
+			if reveal.Role != ui.RoleButton || reveal.Label != state.messages.Transfers.ShowInFolder ||
+				reveal.Hint != state.messages.Transfers.ShowInFolder || !reveal.Focusable {
+				t.Fatalf("reveal control lacks button semantics: %+v", reveal)
+			}
+			remove, ok := findSnapshotHit(view.Snapshot(), hitTransfersRemove.At(1))
+			if !ok || reveal.Bounds.X+reveal.Bounds.Width > remove.Bounds.X {
+				t.Fatalf("reveal control %+v is not left of remove control %+v", reveal.Bounds, remove.Bounds)
+			}
+			for _, id := range []int{2, 3, 4} {
+				if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(id)); ok {
+					t.Fatalf("non-completed-download record %d has a reveal control", id)
+				}
+			}
 			if err := view.Driver().Key(ui.KeyHome, 0); err != nil {
 				t.Fatal(err)
 			}
