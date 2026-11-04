@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1063,6 +1064,123 @@ func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
 	room := aiMinTerminal - 2*(sectionCardMargin+workspaceBorder)
 	if section := state.hostsBounds; section.Width < room || section.X+section.Width > panel.X {
 		t.Fatalf("the section is %+v beside a panel at %+v", section, panel)
+	}
+}
+
+func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := ui.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X + divider.Bounds.Width/2, divider.Bounds.Y + 100
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+
+	if state.ai.panelWidth != 530 {
+		t.Fatalf("state.ai.panelWidth after drag = %v, want 530", state.ai.panelWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIPanelWidth != 530 {
+		t.Fatalf("saved.AIPanelWidth = %v, err = %v", saved.AIPanelWidth, err)
+	}
+	restored := newTestState(t, state.options)
+	if restored.ai.panelWidth != 530 {
+		t.Fatalf("restored.ai.panelWidth = %v, want 530", restored.ai.panelWidth)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.rect.Width != 530 {
+		t.Fatalf("restored.ai.panel.rect.Width = %v, want 530", restored.ai.panel.rect.Width)
+	}
+
+	// Test dragging on section page (e.g. hosts page)
+	sectionState := newTestState(t, state.options)
+	sectionState.activeSection = sectionHosts
+	sectionState.ai.open = true
+	canvasSection, _ := paintAt(sectionState, wide)
+	dividerSection := panelHit(t, canvasSection, hitAIDivider)
+	sx, sy := dividerSection.Bounds.X + dividerSection.Bounds.Width/2, dividerSection.Bounds.Y + 100
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	if sectionState.ai.panelWidth != 610 {
+		t.Fatalf("sectionState.ai.panelWidth after drag = %v, want 610", sectionState.ai.panelWidth)
+	}
+	restoredSection := newTestState(t, sectionState.options)
+	if restoredSection.ai.panelWidth != 610 {
+		t.Fatalf("restoredSection.ai.panelWidth = %v, want 610", restoredSection.ai.panelWidth)
+	}
+}
+
+func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	// Narrow window triggers drawer mode (< aiDockAt = 900)
+	narrow := ui.Size{Width: 800, Height: 600}
+	canvas, _ := paintAt(state, narrow)
+	// In drawer mode, divider is placed at the left edge of the drawer
+	initialWidth := state.ai.panel.rect.Width
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X + divider.Bounds.Width/2, divider.Bounds.Y + 100
+	// Drag divider to resize drawer by 70px wider
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+
+	wantWidth := initialWidth + 70
+	if math.Abs(float64(state.ai.panelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("state.ai.panelWidth after drawer drag = %v, want %v", state.ai.panelWidth, wantWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || math.Abs(float64(saved.AIPanelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("saved.AIPanelWidth = %v, want %v, err = %v", saved.AIPanelWidth, wantWidth, err)
+	}
+
+	// Restored state in narrow window opens drawer with remembered width
+	restored := newTestState(t, state.options)
+	restored.ai.open = true
+	paintAt(restored, narrow)
+	if math.Abs(float64(restored.ai.panel.rect.Width-wantWidth)) > 0.01 {
+		t.Fatalf("restored drawer width = %v, want %v", restored.ai.panel.rect.Width, wantWidth)
+	}
+}
+
+func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := ui.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+
+	grip := panelHit(t, canvas, hitAIComposerGrip)
+	gx, gy := grip.Bounds.X + grip.Bounds.Width/2, grip.Bounds.Y + grip.Bounds.Height/2
+	initialHeight := state.ai.panel.boxHeight
+	// Drag grip upward to increase composer height
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+
+	wantHeight := initialHeight + 60
+	if state.ai.composerHeight != wantHeight {
+		t.Fatalf("state.ai.composerHeight = %v, want %v", state.ai.composerHeight, wantHeight)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIComposerHeight != wantHeight {
+		t.Fatalf("saved.AIComposerHeight = %v, want %v, err = %v", saved.AIComposerHeight, wantHeight, err)
+	}
+
+	restored := newTestState(t, state.options)
+	if restored.ai.composerHeight != wantHeight {
+		t.Fatalf("restored.ai.composerHeight = %v, want %v", restored.ai.composerHeight, wantHeight)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.boxHeight != wantHeight {
+		t.Fatalf("restored.ai.panel.boxHeight = %v, want %v", restored.ai.panel.boxHeight, wantHeight)
 	}
 }
 

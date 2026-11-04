@@ -70,6 +70,7 @@ type savedState struct {
 	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
 	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
+	AIComposerHeight           float32             `json:"ai_composer_height,omitempty"`
 	MonitorPanelWidth          float32             `json:"monitor_panel_width,omitempty"`
 	WindowX                    int                 `json:"window_x,omitempty"`
 	WindowY                    int                 `json:"window_y,omitempty"`
@@ -432,6 +433,7 @@ func (state *State) snapshot() savedState {
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
+		AIComposerHeight:           state.ai.composerHeight,
 		MonitorPanelWidth:          state.monitorWidth,
 		TerminalSchemeDark:         state.terminalSchemes[appearanceDark],
 		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
@@ -788,6 +790,9 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
 	state.ai.panelWidth = saved.AIPanelWidth
+	if saved.AIComposerHeight > 0 {
+		state.ai.composerHeight = saved.AIComposerHeight
+	}
 	if saved.MonitorPanelWidth >= layoutcore.MinMonitorWidth && saved.MonitorPanelWidth <= layoutcore.MaxMonitorWidth {
 		state.monitorWidth = saved.MonitorPanelWidth
 	}
