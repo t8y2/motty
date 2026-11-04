@@ -426,6 +426,71 @@ func TestTheBannerGuessIsNotReportedWhileTheHostIsBeingAsked(t *testing.T) {
 	}
 }
 
+// A probe whose command never answers must cost the host its badge, not its
+// connection. The session is left open when the timeout expires: closing a
+// session whose command still runs ends the whole connection on a minimal
+// server such as dropbear, and the shell beside it with it.
+func TestAProbeThatNeverAnswersLeavesTheConnectionAlone(t *testing.T) {
+	hang := make(chan struct{})
+	probed := make(chan ssh.Channel, 1)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// An OpenSSH banner naming Debian is a guess the host is asked about.
+		server.version = "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u7"
+		server.execChannel = func(channel ssh.Channel) { probed <- channel }
+		server.exec = func(string) (string, uint32) {
+			<-hang
+			return "", 0
+		}
+		server.shell = echoShell
+	})
+	t.Cleanup(func() { close(hang) })
+	h := connect(t, server)
+	// The probe gives up at its timeout, and the banner's guess is published as
+	// one: the host was asked and did not answer.
+	status := h.until("the banner's guess", func(status Status) bool {
+		return status.System == SystemDebian
+	})
+	if !status.SystemProvisional {
+		t.Fatal("an unanswered guess was published as confirmed")
+	}
+	// A channel the client closed cannot be written to, so this is what tells a
+	// session left to the connection from one closed while its command ran. The
+	// close is a message in flight, hence the wait.
+	channel := <-probed
+	for deadline := time.Now().Add(500 * time.Millisecond); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if _, err := channel.Write([]byte{0}); err != nil {
+			t.Fatalf("the probe closed a session whose command was still running: %v", err)
+		}
+	}
+	// The connection still carries a shell.
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+}
+
+// recorderCloser records that it was released.
+type recorderCloser struct{ closed bool }
+
+func (closer *recorderCloser) Close() error { closer.closed = true; return nil }
+
+// TestACloserRegisteredAfterTheDrainIsReleasedAtOnce covers the race the probe
+// leaves open: a session handed to the connection just as it closes must still
+// be released, or "released with the connection" is only luck.
+func TestACloserRegisteredAfterTheDrainIsReleasedAtOnce(t *testing.T) {
+	conn := &Conn{}
+	before := &recorderCloser{}
+	conn.addCloser(before)
+	conn.closeAuxiliary()
+	if !before.closed {
+		t.Fatal("a closer registered before the drain was never released")
+	}
+	after := &recorderCloser{}
+	conn.addCloser(after)
+	if !after.closed {
+		t.Fatal("a closer registered after the drain was never released")
+	}
+}
+
 func TestKeyboardInteractiveSingleHiddenQuestionUsesThePasswordPrompt(t *testing.T) {
 	server := startServer(t, func(s *testServer) { s.question = "Verification code: "; s.password = "123456" })
 	h := dial(t, server, nil)
