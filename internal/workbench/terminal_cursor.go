@@ -10,7 +10,7 @@ const (
 	cursorThick
 )
 
-// bar is the bar cursor's width in device pixels.
+// bar is the bar cursor's width in logical pixels.
 func (mode cursorThickness) bar() float32 {
 	switch mode {
 	case cursorThin:
@@ -21,7 +21,7 @@ func (mode cursorThickness) bar() float32 {
 	return 3
 }
 
-// underline is the underline cursor's height in device pixels.
+// underline is the underline cursor's height in logical pixels.
 func (mode cursorThickness) underline() float32 {
 	switch mode {
 	case cursorThin:

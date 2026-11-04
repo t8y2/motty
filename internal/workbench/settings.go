@@ -710,6 +710,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
 		options := state.settingsPaddingOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
+		options := state.settingsCursorThicknessOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
