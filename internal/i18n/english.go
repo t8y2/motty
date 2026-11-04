@@ -1819,6 +1819,7 @@ var englishTools = ToolsMessages{
 	UpdateWhyTranslocated:           "macOS is running Motty from a temporary place. Move it to Applications first.",
 	UpdateWhySystemInstall:          "This copy was installed system-wide, so Motty cannot replace it. Update it with your package manager, or run the new installer.",
 	UpdateWhyNoPackage:              "This release has no package for this system.",
+	UpdateWhyPackageUnknown:         "Motty could not verify a package for this system. Try again in a moment, or download it from the release page.",
 	UpdateWhyUnsigned:               "This release is not signed for in-place installation; download it from the release page.",
 	GeneralUpdateInstall:            "Update",
 	UpdateConfirmTitle:              "Install the update and restart?",
