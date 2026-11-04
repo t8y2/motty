@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/vivaui/viva/leaks"
 	"io"
+	"motty/internal/shellkind"
 	"strings"
 	"sync"
 	"time"
@@ -99,7 +100,13 @@ type Shell struct {
 	input   chan []byte
 	pending int
 	closed  bool
+
+	kind shellkind.Kind
 }
+
+// Kind is the family of the shell this session runs, Unknown when the program is
+// not a shell Start recognizes.
+func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
 
 // liveShells counts shells that were started and not yet closed: each holds a
 // pty and three goroutines until Close.
@@ -112,7 +119,7 @@ func Start(config Config) (*Shell, error) {
 		return nil, err
 	}
 	liveShells.Acquire()
-	shell := &Shell{b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}), input: make(chan []byte, 256)}
+	shell := &Shell{b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}), input: make(chan []byte, 256), kind: kindOf(config)}
 	shell.space = sync.NewCond(&shell.mu)
 	go shell.readLoop()
 	go shell.writeLoop()
@@ -124,6 +131,17 @@ func (shell *Shell) wake() {
 	if shell.notify != nil {
 		shell.notify()
 	}
+}
+
+// kindOf names the shell Start runs, from the program alone: the arguments only
+// shape how it starts, and the integration shim on Unix starts Bash or Zsh
+// through sh.
+func kindOf(config Config) shellkind.Kind {
+	program := config.Shell
+	if program == "" {
+		program = defaultShell()
+	}
+	return shellkind.FromProgram(program)
 }
 
 // readLoop moves the program's output into the buffer. It blocks while the
