@@ -6,7 +6,14 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-const commandPaletteVisibleRows = 10
+const (
+	commandPaletteVisibleRows = 10
+	// commandPaletteRowPitch is a row and the gap below it.
+	commandPaletteRowPitch = 34
+	// commandPaletteBarGap is how far the scrollbar's strip sits beyond the
+	// list: in the dialog's padding, so it never covers a row's text.
+	commandPaletteBarGap = 8
+)
 
 func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.commandPalette.connect {
@@ -16,7 +23,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitCommandPaletteDismiss, CloseID: hitCommandPaletteClose, InitialFocusID: hitCommandPaletteSearch,
-		ContentSize: ui.Size{Width: 620, Height: 446},
+		ContentSize: ui.Size{Width: 620, Height: 474},
 	})
 	title, placeholder, empty := state.messages.CommandPaletteTitle, state.messages.CommandPalettePlaceholder, state.messages.CommandPaletteEmpty
 	switch {
@@ -88,12 +95,17 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 	})
 	f.End()
+	palette.bar = components.ScrollAreaGeometry{}
 	if total := len(palette.visible); total > commandPaletteVisibleRows {
-		// A thumb on the right edge says there are more rows above or below.
-		track := ui.Rect{X: layout.Body.X + layout.Body.Width - 4, Y: search.Rect().Y + 48, Width: 3, Height: commandPaletteVisibleRows*34 - 4}
-		thumb := track.Height * commandPaletteVisibleRows / float32(total)
-		at := track.Y + (track.Height-thumb)*float32(palette.top)/float32(total-commandPaletteVisibleRows)
-		canvas.Rounded(ui.Rect{X: track.X, Y: at, Width: track.Width, Height: thumb}, 1.5, withAlpha(state.pal.muted, 0.6))
+		// The bar is a real scrollbar, drawn beside the rows in the dialog's
+		// padding: the rows window by index, so its content is as tall as the
+		// whole list and its offset is the first row shown.
+		list := ui.Rect{X: layout.Body.X, Y: search.Rect().Y + 48, Width: layout.Body.Width + commandPaletteBarGap + 10, Height: commandPaletteVisibleRows*commandPaletteRowPitch - 4}
+		content := ui.Size{Width: list.Width - 10, Height: float32(total)*commandPaletteRowPitch - 4}
+		area := components.BeginScrollArea(canvas, state.Theme(), list, content).
+			Offset(0, float32(palette.top)*commandPaletteRowPitch).
+			VerticalScrollbar(hitCommandPaletteBar, title, "").ReserveScrollbars()
+		palette.bar = area.EndContent()
 	}
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
 		ID: hitCommandPaletteSearch, Label: title, Value: value,

@@ -19,6 +19,7 @@ var (
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
 	hitCommandPaletteSearch  = tree.ID(commandPaletteHits, "command-palette-search")
 	hitCommandPaletteItems   = tree.Sub(commandPaletteHits, tree.Name("command-palette-items"))
+	hitCommandPaletteBar     = tree.ID(commandPaletteHits, "command-palette-scrollbar")
 	// The group headings of the new-tab picker are places too: the pointer over
 	// one shows no choice lit, and a press on one chooses nothing.
 	hitCommandPaletteHeaders = tree.Sub(commandPaletteHits, tree.Name("command-palette-group"))
@@ -49,6 +50,11 @@ type commandPalette struct {
 	// selected and top are places in visible: the choice, and the first row the
 	// list shows; top keeps the selection in view and the wheel moves it.
 	selected, top int
+	// bar is the scrollbar as last painted, and barGrab where on its thumb a
+	// drag took hold; dragging is set from the press on the bar to its release.
+	bar      components.ScrollAreaGeometry
+	barGrab  float32
+	dragging bool
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
 	connect bool
@@ -76,6 +82,7 @@ func (state *State) closeCommandPalette() {
 	state.commandPalette.filtered = false
 	state.commandPalette.entries = nil
 	state.commandPalette.visible = nil
+	state.commandPalette.dragging = false
 	state.commandPalette.selected = 0
 	state.commandPalette.top = 0
 }
@@ -305,15 +312,44 @@ func (state *State) executeCommandPalette(visible int) {
 	state.click(target, false)
 }
 
+// dragCommandPaletteBar turns the thumb's position into the first row shown.
+func (palette *commandPalette) dragBar(y float32) {
+	offset := palette.bar.VerticalOffsetForThumb(y - palette.barGrab)
+	last := max(len(palette.visible)-commandPaletteVisibleRows, 0)
+	palette.top = min(max(int(offset/commandPaletteRowPitch+0.5), 0), last)
+}
+
 func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	if state.modal != modalCommandPalette {
 		return ui.EventResult{}, false
+	}
+	palette := &state.commandPalette
+	// A press on the scrollbar takes the pointer for the drag: until it is
+	// released the rows under it must not take the hover, or the highlight
+	// stays on whichever row the drag started over.
+	switch {
+	case event.Kind == ui.PointerDown && event.Target == hitCommandPaletteBar && event.Button == ui.PointerButtonPrimary:
+		thumb := palette.bar.VerticalThumb
+		palette.barGrab = thumb.Height / 2
+		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
+			palette.barGrab = event.Y - thumb.Y
+		}
+		palette.dragging = true
+		palette.dragBar(event.Y)
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	case palette.dragging:
+		switch event.Kind {
+		case ui.PointerMove:
+			palette.dragBar(event.Y)
+		case ui.PointerUp, ui.PointerExit:
+			palette.dragging = false
+		}
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
 		return ui.EventResult{}, false
 	}
-	palette := &state.commandPalette
 	row := palette.top + visible
 	if row >= len(palette.visible) {
 		return ui.EventResult{}, false

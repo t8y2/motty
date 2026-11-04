@@ -1,3 +1,5 @@
+//go:build windows || darwin || linux
+
 package workbench
 
 import (
@@ -5,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -93,5 +96,87 @@ func TestSnippetPickerDoesNotLeakIntoThePalette(t *testing.T) {
 	state.openCommandPalette()
 	if state.commandPalette.snippets {
 		t.Fatal("the command palette opened as the snippet picker")
+	}
+}
+
+func openPickerView(t *testing.T, state *State, scale float64) *headless.Session {
+	t.Helper()
+	var invalidator app.Invalidator
+	state.options.Invalidate = invalidator.Invalidate
+	view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(view.Close)
+	return view
+}
+
+// The list's scrollbar is a real one: pressing on it and dragging scrolls the
+// rows, a press beyond the thumb jumps there, and while it is held the rows
+// under the pointer do not take the hover (they used to, which left the
+// highlight stuck on the row the drag started over).
+func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
+	for _, scale := range []float64{1, 2} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			for i := 0; i < 60; i++ {
+				state.snippets.list = append(state.snippets.list, snippet{Name: fmt.Sprintf("cmd %d", i), Command: "x"})
+			}
+			state.openSnippetPicker()
+			view := openPickerView(t, state, scale)
+			palette := &state.commandPalette
+			last := len(palette.visible) - commandPaletteVisibleRows
+
+			bar := dualHit(t, view, hitCommandPaletteBar)
+			rows := dualHit(t, view, hitCommandPaletteItems.At(0))
+			if bar.X < rows.X+rows.Width {
+				t.Fatalf("the scrollbar at x=%v overlaps the rows, which end at %v", bar.X, rows.X+rows.Width)
+			}
+			thumb := palette.bar.VerticalThumb
+			x, y := thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2
+			if err := view.Press(x, y); err != nil {
+				t.Fatal(err)
+			}
+			hover := palette.selected
+			if err := view.Move(x, bar.Y+bar.Height-2); err != nil {
+				t.Fatal(err)
+			}
+			if palette.top != last {
+				t.Fatalf("dragging the thumb to the end left the first row at %d, want %d", palette.top, last)
+			}
+			// Across the rows with the button held: the hover stays.
+			if err := view.Move(rows.X+40, rows.Y+rows.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if palette.selected != hover {
+				t.Fatalf("a held drag moved the hover from row %d to %d", hover, palette.selected)
+			}
+			if err := view.Release(rows.X+40, rows.Y+rows.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if palette.dragging {
+				t.Fatal("the drag outlived the release")
+			}
+			// Released, the rows answer the pointer again.
+			second := dualHit(t, view, hitCommandPaletteItems.At(3))
+			if err := view.Move(second.X+40, second.Y+second.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if want := palette.top + 3; palette.selected != want {
+				t.Fatalf("after the drag the hover is on row %d, want %d", palette.selected, want)
+			}
+
+			// A press on the track away from the thumb takes the thumb there.
+			bar = dualHit(t, view, hitCommandPaletteBar)
+			if err := view.Press(bar.X+bar.Width/2, bar.Y+4); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Release(bar.X+bar.Width/2, bar.Y+4); err != nil {
+				t.Fatal(err)
+			}
+			if palette.top > 2 {
+				t.Fatalf("pressing the top of the track left the first row at %d", palette.top)
+			}
+		})
 	}
 }
