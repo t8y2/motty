@@ -676,7 +676,8 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		candidates = append(candidates, candidate)
 	}
 	if state.history.on && state.historyAvailable(session) && !session.host.NoHistory {
-		if rest, ok := cmdhistory.Suggest(state.completionHistory(session), line); ok {
+		// Show up to 5 history matches instead of just the most recent one
+		for _, rest := range cmdhistory.SuggestAll(state.completionHistory(session), line, 5) {
 			add(completion.Candidate{Text: line + rest, Insert: rest, Kind: completion.KindCommand})
 		}
 	}
