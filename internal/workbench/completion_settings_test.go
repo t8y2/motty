@@ -66,7 +66,8 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 				if !ok || !canvasHasText(&canvas, option.Label) {
 					t.Fatalf("completion mode %q is not offered", option.Label)
 				}
-				if want := option.ID == hitSettingsCompletionBoth; hit.Selected != want {
+				// Suggestions are off by default (issue #303).
+				if want := option.ID == hitSettingsCompletionOff; hit.Selected != want {
 					t.Errorf("mode %q selected=%v, want %v by default", option.Label, hit.Selected, want)
 				}
 			}
@@ -124,9 +125,17 @@ func TestEarlierCompletionPreferencesKeepTheirMeaning(t *testing.T) {
 		record string
 		want   completionMode
 	}{
-		{`{}`, completionBoth},
+		// `{}` — neither flag — is the new default now: suggestions off
+		// (issue #303). Only readers who picked against the older default
+		// wrote a flag, and their choices keep their meaning.
+		{`{}`, completionOff},
 		{`{"command_suggest_off":true}`, completionOff},
 		{`{"command_inline_suggest_off":true}`, completionList},
+		// The mode's own record outranks the older flags once present.
+		{`{"command_completion":"both"}`, completionBoth},
+		{`{"command_completion":"list"}`, completionList},
+		{`{"command_completion":"off"}`, completionOff},
+		{`{"command_completion":"both","command_suggest_off":true}`, completionBoth},
 	} {
 		var saved savedState
 		if err := json.Unmarshal([]byte(c.record), &saved); err != nil {
@@ -137,6 +146,24 @@ func TestEarlierCompletionPreferencesKeepTheirMeaning(t *testing.T) {
 		if state.completionMode() != c.want {
 			t.Errorf("%s reads as mode %v, want %v", c.record, state.completionMode(), c.want)
 		}
+	}
+}
+
+// TestAChoiceAgainstTheCompletionDefaultIsPinned covers the reason the mode has
+// its own record: with suggestions off by default (issue #303) the two older
+// flags cannot store an explicit "both" — both false is also how the older
+// default was kept. The record pins the choice, so it survives a restart.
+func TestAChoiceAgainstTheCompletionDefaultIsPinned(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	if state.completionMode() != completionOff {
+		t.Fatalf("a fresh state reads %v, want the new default off", state.completionMode())
+	}
+	state.setCompletionMode(completionBoth)
+	state.save()
+	again := newTestState(t, options)
+	if again.completionMode() != completionBoth {
+		t.Fatalf("an explicit both did not survive a restart: %v", again.completionMode())
 	}
 }
 
@@ -157,6 +184,10 @@ func TestCompletionCatalogStaysUnloadedWhileCompletionIsOff(t *testing.T) {
 
 func TestInlinePreferenceUsesAnIndependentSharedRecord(t *testing.T) {
 	state := newTestState(t, testOptions(t))
+	// The fixture is a reader who picked List: suggestions on, the inline
+	// ghost off. A fresh state starts on the new default (suggestions off),
+	// which would write a suggest flag of its own and defeat the point.
+	state.history.suggestOff = false
 	state.history.inlineOff = true
 	entries, local, err := splitState(state.snapshot(), newConfigBase(), nil)
 	if err != nil {
