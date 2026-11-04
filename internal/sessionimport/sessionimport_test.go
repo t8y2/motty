@@ -493,3 +493,28 @@ func FuzzParsers(f *testing.F) {
 		}
 	})
 }
+
+// The encoding ladder of the shared reader covers the encoding ladder of the shared
+// reader: a BOM-less ANSI export from a Chinese Windows (as Xshell writes them)
+// is GB18030 and must read as Chinese, not as dropped bytes; valid UTF-8 is
+// never reinterpreted; bytes that survive no decoding still drop their bad
+// parts (issue #332).
+func TestDecodingANSIGB18030SessionsAndStillDroppingTheRest(t *testing.T) {
+	encoded, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte("Host=主机.example\r\nUser=管理员\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decode(encoded); got != "Host=主机.example\r\nUser=管理员\r\n" {
+		t.Fatalf("GB18030 text = %q", got)
+	}
+	if got := decode([]byte("Host=utf8 主机\r\n")); got != "Host=utf8 主机\r\n" {
+		t.Fatalf("valid UTF-8 was reinterpreted: %q", got)
+	}
+	if got := decode(utf16le("Host=宽字符\r\n")); got != "Host=宽字符\r\n" {
+		t.Fatalf("UTF-16 BOM text = %q", got)
+	}
+	// 0x80 is neither valid UTF-8 nor GB18030, so only the bad byte drops.
+	if got := decode([]byte{'H', 0x80, 'o'}); got != "Ho" {
+		t.Fatalf("undecodable bytes = %q, want \"Ho\"", got)
+	}
+}
