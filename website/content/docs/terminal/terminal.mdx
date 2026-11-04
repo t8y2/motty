@@ -38,6 +38,14 @@ restored without reconnecting. All of these are palette commands.
 Search the retained history with **Command+F** (**Control+F** elsewhere). HTTP,
 HTTPS and OSC 8 links can be opened from the terminal.
 
+A link to a file, as coding agents print them (`file://` or an editor's
+`vscode://file/` link), opens in the file panel instead: **Command+click**
+(**Control+click** elsewhere) opens its folder there with the file selected, on the
+server the session is connected to. Underlined text that names a file, as an agent
+shows a link when it thinks the terminal has none, works the same way. A name
+without a folder is looked for in the shell's current folder, and in the folders
+below it when it is not there. Right-click a file link for **Download**.
+
 ## Images
 
 Kitty, iTerm2 and SIXEL images are rendered inline.

@@ -17,11 +17,12 @@ import (
 type actionKind uint8
 
 const (
-	actionSSH     actionKind = iota // connect to Target
-	actionBrowser                   // open Target, a web address, in the browser
-	actionCopy                      // copy Target
-	actionFiles                     // show the folder of Target in the file browser
-	actionExtract                   // type the command that unpacks Target
+	actionSSH      actionKind = iota // connect to Target
+	actionBrowser                    // open Target, a web address, in the browser
+	actionCopy                       // copy Target
+	actionFiles                      // show Target, selected in its folder, in the file browser
+	actionExtract                    // type the command that unpacks Target
+	actionDownload                   // download Target, a file on the server
 )
 
 // detected is one thing the menu offers for the text under the pointer.
@@ -29,6 +30,9 @@ type detected struct {
 	kind   actionKind
 	target string // what the action works on
 	label  string // what the menu shows of it: the text as the user sees it
+	// search, for actionFiles, says the path is a guess: when it is not in its
+	// folder, the folder's subfolders are searched for its name.
+	search bool
 }
 
 var (
@@ -172,6 +176,9 @@ func classifyFile(token string) []detected {
 	}
 	if strings.HasPrefix(filename, "/") && len(filename) > 1 {
 		found = append(found, detected{kind: actionFiles, target: filename, label: filename})
+		if !strings.HasSuffix(filename, "/") {
+			found = append(found, detected{kind: actionDownload, target: filename, label: path.Base(filename)})
+		}
 	}
 	if (absolute && len(filename) > 1 || relative && len(filename) > 2) || len(found) > 0 {
 		found = append(found, detected{kind: actionCopy, target: filename, label: filename})

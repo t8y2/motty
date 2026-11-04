@@ -278,7 +278,8 @@ func (state *State) configureTerminal(session *Session) {
 		session.term.resetFolderSync()
 	}
 	session.term.screen.SetPromptToken(session.term.folderToken)
-	session.term.openLink = state.openTerminalLink
+	sessionID := session.ID
+	session.term.openLink = func(target string) { state.openSessionLink(sessionID, target) }
 	session.term.clock = state.now
 	// An image decoded off the window thread asks for the frame that shows it.
 	session.term.screen.SetImageWake(state.options.Invalidate)
@@ -286,7 +287,6 @@ func (state *State) configureTerminal(session *Session) {
 	state.attachCompletion(session)
 	state.stampTerminal(session.term)
 	state.reportTerminalColors(session.term)
-	sessionID := session.ID
 	session.term.screen.SetSyncHold(func(on bool) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			current.term.holdSync(on)
