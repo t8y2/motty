@@ -451,6 +451,9 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 	if result := state.remoteSearchShortcut(event); result.Handled {
 		return result
 	}
+	if result, handled := state.remoteDetailShortcut(event); handled {
+		return result
+	}
 	if state.modal != modalNone {
 		return ui.EventResult{}
 	}

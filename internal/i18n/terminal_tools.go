@@ -662,6 +662,9 @@ type ToolsMessages struct {
 	RemoteProcessVirtualMemory      string
 	RemoteProcessElapsed            string
 	RemoteProcessCommand            string
+	RemoteProcessCommandLoading     string
+	RemoteProcessCommandSummary     string
+	RemoteProcessCommandTooLarge    string
 	RemoteProcessCollectedAt        string
 
 	RemoteProcessEnvironment            string
@@ -669,7 +672,13 @@ type ToolsMessages struct {
 	RemoteProcessEnvironmentValue       string
 	RemoteProcessEnvironmentLoading     string
 	RemoteProcessEnvironmentEmpty       string
+	RemoteProcessEnvironmentTooLarge    string
 	RemoteProcessEnvironmentUnsupported string
+	RemoteProcessEnvironmentUnreadable  string
+	RemoteContainerDetails              string
+	RemoteContainerDetailsTitle         string
+	RemoteContainerOverview             string
+	RemoteContainerEnvironmentEmpty     string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string

@@ -113,7 +113,7 @@ func (state *State) remoteProcessScrollPointer(event ui.PointerEvent) (ui.EventR
 		return result, true
 	}
 	view := &state.remote
-	if !state.remoteToolsVisible() || view.processDetails.open || view.processMenu.open || view.auto.open ||
+	if !state.remoteToolsVisible() || view.processDetails.open || view.containerDetails.open || view.processMenu.open || view.auto.open ||
 		(!view.processScrollDragging &&
 			!(event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary &&
 				event.Target == hitRemoteProcessScroll)) {
@@ -160,14 +160,18 @@ func (state *State) remoteProcessWheel(event ui.ScrollEvent) (ui.EventResult, bo
 	if !state.remoteToolsVisible() {
 		return ui.EventResult{}, false
 	}
-	if view.processDetails.open {
-		if state.remoteProcessDetailTab() == hitRemoteProcessDetailsEnv {
-			if result, handled := state.remoteProcessEnvironmentWheel(event); handled {
-				return result, true
-			}
+	if view.containerDetails.open {
+		if result, handled := state.remoteContainerDetailsWheel(event); handled {
+			return result, true
 		}
-		// The details dialog owns the wheel over its backdrop. Command content
-		// has no wheel range, but it must not move the process list underneath.
+		return ui.EventResult{Handled: true}, true
+	}
+	if view.processDetails.open {
+		if result, handled := state.remoteProcessEnvironmentWheel(event); handled {
+			return result, true
+		}
+		// The details dialog owns the wheel over its backdrop, including when
+		// its selectable document fits and has no range.
 		return ui.EventResult{Handled: true}, true
 	}
 	if view.processMenu.open || view.auto.open {
