@@ -385,6 +385,7 @@ var EnglishMessages = Messages{
 	DeleteHost:    "Delete",
 	MoveHostGroup: "Move Group",
 	HostGroupActions: HostGroupMessages{
+		ExpandAll: "Expand all groups", CollapseAll: "Collapse all groups",
 		Actions: "Group actions", Rename: "Rename group", NewChild: "New child group", Name: "Name", Save: "Save", Create: "Create",
 		InvalidName: "Enter a name without slashes, line breaks or control characters (not . or ..)", Conflict: "A group with this name already exists", Missing: "This group no longer exists",
 		Move: "Move group", Delete: "Delete group", Parent: "Parent group", TopLevel: "Top level", Cycle: "A group cannot be moved into itself or its descendants",

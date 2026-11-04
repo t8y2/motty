@@ -385,6 +385,7 @@ var ChineseMessages = Messages{
 	DeleteHost:    "删除",
 	MoveHostGroup: "移动分组",
 	HostGroupActions: HostGroupMessages{
+		ExpandAll: "展开所有分组", CollapseAll: "收起所有分组",
 		Actions: "分组操作", Rename: "修改分组名称", NewChild: "新建子分组", Name: "名称", Save: "保存", Create: "创建",
 		InvalidName: "名称不能为空，不能含斜杠、换行或控制字符，也不能为 . 或 ..", Conflict: "已存在同名分组", Missing: "该分组已不存在",
 		Move: "移动整个分组", Delete: "删除分组", Parent: "上级分组", TopLevel: "顶层", Cycle: "不能移入分组自身或其子分组",

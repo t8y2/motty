@@ -8,6 +8,7 @@
 package i18n
 
 type HostGroupMessages struct {
+	ExpandAll, CollapseAll                        string
 	Actions, Rename, NewChild, Name, Save, Create string
 	InvalidName, Conflict, Missing                string
 	Move, Delete, Parent, TopLevel, Cycle         string
