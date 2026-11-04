@@ -17,6 +17,9 @@ import (
 
 var documentHits = tree.Feature("document-window")
 var (
+	hitDocumentTabList         = tree.Sub(documentHits, tree.Name("tabs"))
+	hitDocumentTabCloseList    = tree.Sub(documentHits, tree.Name("tab-close"))
+	hitDocumentTabBar          = tree.ID(documentHits, "tabs-scroll")
 	hitDocumentSave            = tree.ID(documentHits, "save")
 	hitDocumentReload          = tree.ID(documentHits, "reload")
 	hitDocumentInput           = tree.ID(documentHits, "editor")
@@ -82,8 +85,10 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	var content, encoding, save flex.Box
 	f := d.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
-			HitWith(hitDocumentLocation, d.name, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+		if d.owner.fileWindows.painting {
+			d.owner.fileWindows.paintTabs(f, size)
+			f.Divider().Background(theme.Border)
+		}
 		if d.problem != "" {
 			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
 		}
@@ -113,6 +118,9 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 		})
 	})
 	f.End()
+	if d.owner.fileWindows.painting {
+		d.owner.fileWindows.paintTabsScrollbar(canvas)
+	}
 	d.ui.saveAnchor = ui.Rect{}
 	if d.image == nil && !d.local {
 		d.ui.saveAnchor = save.Rect()
@@ -369,6 +377,9 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 	dialog.End()
 }
 func (d *fileDocument) click(id ui.ID) {
+	if d.owner.fileWindows.clickTab(id) {
+		return
+	}
 	if d.notices.click(id) {
 		return
 	}
@@ -385,11 +396,18 @@ func (d *fileDocument) click(id ui.ID) {
 	if d.confirm != "" {
 		switch id {
 		case hitDocumentCancel:
+			cancelClose := d.closeCanceled
+			if d.confirm == "close" {
+				d.closeCanceled = nil
+			}
 			d.confirm = ""
 			d.confirmCloseAfter = false
 			d.allowClose = nil
 			d.afterClosed = nil
 			d.closeAfter = false
+			if cancelClose != nil {
+				cancelClose()
+			}
 		case hitDocumentSaveClose:
 			d.saveDirect(true)
 		case hitDocumentSaveDirect:

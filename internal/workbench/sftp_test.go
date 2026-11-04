@@ -890,8 +890,13 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
-	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "/home/test/notes.txt" {
+	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {
 		t.Fatalf("rename dialog = %+v", view)
+	}
+	replaceSFTPDialogText(t, state, "docs/renamed.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogRename || view.dialogError != state.messages.SFTPErrRenameInvalid {
+		t.Fatalf("rename accepted a path: dialog=%d error=%q", view.dialog, view.dialogError)
 	}
 	replaceSFTPDialogText(t, state, "renamed.txt")
 	state.Click(hitSFTPDialogSubmit)
@@ -924,6 +929,58 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	})
 	if !strings.Contains(view.status, "600") {
 		t.Fatalf("chmod completion status = %q", view.status)
+	}
+
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPMove)
+	if view.dialog != sftpDialogMove || view.dialogEditor.String() != "/home/test" {
+		t.Fatalf("move dialog = dialog %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveSame {
+		t.Fatalf("move to the current folder was accepted: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "renamed.txt") < 0
+	})
+	remote.mu.Lock()
+	_, moved := remote.files["/home/test/docs/renamed.txt"]
+	_, oldLocation := remote.files["/home/test/renamed.txt"]
+	remote.mu.Unlock()
+	if !moved || oldLocation {
+		t.Fatalf("move state: moved=%v old=%v", moved, oldLocation)
+	}
+}
+
+func TestRemoteRenameAcceptsOnlyBaseNames(t *testing.T) {
+	for _, value := range []string{"renamed.txt", "配置.yaml", ".env", "with space"} {
+		if !validRemoteBaseName(value) {
+			t.Errorf("valid base name %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", ".", "..", "folder/file", `folder\file`, "nul\x00name"} {
+		if validRemoteBaseName(value) {
+			t.Errorf("path-like name %q was accepted", value)
+		}
+	}
+}
+
+func TestRemoteMoveRejectsItsOwnDirectory(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPMove)
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into itself = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "/home/test/docs/deep")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into its descendant = dialog %d, error %q", view.dialog, view.dialogError)
 	}
 }
 

@@ -853,6 +853,7 @@ type Messages struct {
 	SFTPNewDirectory            string
 	SFTPOpen                    string
 	SFTPRename                  string
+	SFTPMove                    string
 	SFTPDelete                  string
 	SFTPPermissions             string
 	SFTPCancelTransfer          string
@@ -889,11 +890,22 @@ type Messages struct {
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string
 	SFTPRenameDescription       string
-	SFTPDestinationPath         string
+	SFTPNewName                 string
 	SFTPRenameSubmit            string
-	SFTPErrDestinationRequired  string
+	SFTPErrRenameInvalid        string
+	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
+	SFTPMoveTitle               string
+	SFTPMoveDescription         string
+	SFTPMoveDestination         string
+	SFTPMoveSubmit              string
+	SFTPErrMoveRequired         string
+	SFTPErrMoveInvalid          string
+	SFTPErrMoveSame             string
+	SFTPErrMoveInside           string
+	SFTPMovingFmt               string
+	SFTPMovedFmt                string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
