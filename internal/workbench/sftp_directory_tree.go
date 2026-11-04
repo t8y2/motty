@@ -17,14 +17,15 @@ import (
 )
 
 const (
-	sftpDirectoryTreeRowHeight = float32(28)
-	maxDirectoryTreeChildren   = 20000
-	maxDirectoryTreeDepth      = 64
-	directoryTreeMinWidth      = float32(140)
-	directoryListMinWidth      = float32(150)
-	directoryTreeGap           = float32(6)
-	sftpDirectoryTreeIndent    = float32(14)
-	directoryTreeLabelReserve  = float32(80)
+	sftpDirectoryTreeRowHeight   = float32(28)
+	maxDirectoryTreeChildren     = 20000
+	maxDirectoryTreeDepth        = 64
+	directoryTreeMinWidth        = float32(140)
+	directoryListMinWidth        = float32(150)
+	directoryTreeGap             = float32(6)
+	sftpDirectoryTreeIndent      = float32(14)
+	directoryTreeDisclosureWidth = float32(24)
+	directoryTreeLabelReserve    = float32(80)
 	// Tree listings share the worker queue with ordinary navigation. Keep
 	// their IDs in a separate high range so results cannot be consumed by the
 	// wrong cache when both use the same sequence number.
@@ -182,6 +183,18 @@ func directoryTreeToggleDisabled(enabled bool, contentWidth float32) bool {
 func directoryTreeDisplayDepth(depth uint8, width float32) uint8 {
 	maxDepth := int(max((width-directoryTreeLabelReserve)/sftpDirectoryTreeIndent, 0))
 	return uint8(min(int(depth), maxDepth))
+}
+
+// The Viva tree component only reserves the disclosure column for branches.
+// A loaded folder with no children is still a folder in this view, so keep its
+// icon aligned with sibling folders instead of letting it jump left.
+func directoryTreeContentBounds(content ui.Rect, branch bool) ui.Rect {
+	if branch {
+		return content
+	}
+	content.X += directoryTreeDisclosureWidth
+	content.Width = max(0, content.Width-directoryTreeDisclosureWidth)
+	return content
 }
 
 func directoryTreePathKey(local bool, location string) string {
@@ -618,8 +631,9 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 			Expanded:     node.expanded,
 			Selected:     sameDirectoryTreePath(local, node.path, tree.selectedPath),
 		})
+		content := directoryTreeContentBounds(painted.Content, branch)
 		icon := uint8(iconFolderOpen)
-		iconBounds := ui.Rect{X: painted.Content.X + 2, Y: painted.Content.Y + 6, Width: 16, Height: 16}
+		iconBounds := ui.Rect{X: content.X + 2, Y: content.Y + 6, Width: 16, Height: 16}
 		canvas.DrawIcon(lucideIcons[icon], iconBounds, theme.MutedForeground)
 		indicator, indicatorColor := "", theme.MutedForeground
 		switch {
@@ -634,17 +648,17 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 		if indicator != "" {
 			reserved = 40
 		}
-		labelWidth := max(0, painted.Content.Width-reserved)
+		labelWidth := max(0, content.Width-reserved)
 		label := canvas.FitLine(node.name, theme.Metrics.FontSizeS, ui.WeightRegular, labelWidth)
 		color := theme.Foreground
 		if node.err != "" {
 			color = w.owner.pal.danger
 		}
-		canvas.Label(label, ui.Rect{X: iconBounds.X + 20, Y: painted.Content.Y, Width: labelWidth, Height: painted.Content.Height}, ui.TextStyle{
+		canvas.Label(label, ui.Rect{X: iconBounds.X + 20, Y: content.Y, Width: labelWidth, Height: content.Height}, ui.TextStyle{
 			Size: theme.Metrics.FontSizeS, Weight: ui.WeightRegular, Color: color,
 		})
 		if indicator != "" {
-			canvas.Label(indicator, ui.Rect{X: painted.Content.X + painted.Content.Width - 16, Y: painted.Content.Y, Width: 12, Height: painted.Content.Height}, ui.TextStyle{
+			canvas.Label(indicator, ui.Rect{X: content.X + content.Width - 16, Y: content.Y, Width: 12, Height: content.Height}, ui.TextStyle{
 				Size: theme.Metrics.FontSizeS, Weight: ui.WeightMedium, Color: indicatorColor,
 			})
 		}

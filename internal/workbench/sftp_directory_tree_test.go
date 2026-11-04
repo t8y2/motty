@@ -280,6 +280,21 @@ func TestSFTPDirectoryTreeWidthKeepsFileListUsable(t *testing.T) {
 	}
 }
 
+func TestSFTPDirectoryTreeLeafKeepsDisclosureColumn(t *testing.T) {
+	content := ui.Rect{X: 20, Y: 10, Width: 160, Height: 28}
+	branch := directoryTreeContentBounds(content, true)
+	leaf := directoryTreeContentBounds(content, false)
+	if branch != content {
+		t.Fatalf("branch content moved unexpectedly: %+v", branch)
+	}
+	if leaf.X != branch.X+directoryTreeDisclosureWidth {
+		t.Fatalf("leaf folder starts at x=%v, want disclosure-aligned x=%v", leaf.X, branch.X+directoryTreeDisclosureWidth)
+	}
+	if leaf.Width != branch.Width-directoryTreeDisclosureWidth {
+		t.Fatalf("leaf width=%v, want %v", leaf.Width, branch.Width-directoryTreeDisclosureWidth)
+	}
+}
+
 func TestSFTPDirectoryTreeBackgroundLoadKeepsUserSelection(t *testing.T) {
 	_, w, _, _, _ := dualSFTPFixture(t, 1)
 	tree := &w.directoryTree[1]
