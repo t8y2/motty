@@ -38,12 +38,23 @@ func InstalledWindowsShells() []Choice {
 	if git, err := exec.LookPath("git.exe"); err == nil {
 		bash = append(bash, filepath.Join(filepath.Dir(git), "..", "bin", "bash.exe"))
 	}
+	// Cygwin installs to a root of the user's choosing; the setup program's
+	// defaults are the two roots beside the system drive. A bare bash.exe on
+	// the PATH is deliberately not probed: it could be this Cygwin, Git Bash,
+	// or the WSL launcher, and only the path tells them apart (issue #435).
+	cygwin := []string{}
+	if drive := os.Getenv("SystemDrive"); drive != "" {
+		cygwin = append(cygwin,
+			filepath.Join(drive+string(os.PathSeparator), "cygwin64", "bin", "bash.exe"),
+			filepath.Join(drive+string(os.PathSeparator), "cygwin", "bin", "bash.exe"))
+	}
 	system := filepath.Join(os.Getenv("SystemRoot"), "System32")
 	return discoverShells([]shellCandidate{
 		{"PowerShell 7", pwsh},
 		{"Windows PowerShell", []string{"powershell.exe", filepath.Join(system, "WindowsPowerShell", "v1.0", "powershell.exe")}},
 		{"CMD", []string{os.Getenv("COMSPEC"), "cmd.exe", filepath.Join(system, "cmd.exe")}},
 		{"Git Bash", bash},
+		{"Cygwin", cygwin},
 		{"Nushell", nu},
 	}, defaultShell(), exec.LookPath)
 }
