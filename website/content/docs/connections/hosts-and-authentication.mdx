@@ -21,6 +21,16 @@ Motty supports:
 A round that asks several questions, for example a password and a one-time code
 from the same PAM stack, is shown as one dialog with one field per question.
 
+### Private keys
+
+**Keychain > Add Key** offers three ways to bring a key in: **Import from File**
+(the file stays where it is), **Paste Private Key** (no file needed) and
+**Generate New Key** (an Ed25519 pair; the public key is copied so you can add it
+to the server's `~/.ssh/authorized_keys`). Pasted and generated keys are kept
+encrypted in the vault, so they follow the vault to your other computers.
+**Copy Public Key** copies the selected key's public half at any time. Deleting a
+pasted or generated key is final: there is no file to fall back on.
+
 ### Certificates and the agent
 
 Hosts that present a certificate connect without a prompt once their

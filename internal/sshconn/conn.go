@@ -97,6 +97,15 @@ type Authentication struct {
 	Agent bool
 }
 
+// StoredKeyPrefix starts the name of a private key that is not a file but is
+// kept by the application, which Config.StoredKey reads. An absolute path never
+// starts with it.
+const StoredKeyPrefix = "sshkey:"
+
+// IsStoredKey reports whether an entry of an identity list names a key kept by
+// the application and not a file.
+func IsStoredKey(ref string) bool { return strings.HasPrefix(ref, StoredKeyPrefix) }
+
 // AuthMethods is a bit set of SSH authentication methods.
 type AuthMethods uint8
 
@@ -200,6 +209,12 @@ type Config struct {
 	// AdditionalIdentityFiles are tried after IdentityFiles (or the default
 	// identities when IdentityFiles is nil).
 	AdditionalIdentityFiles []string
+	// StoredKey reads the private key the application keeps for itself, named in
+	// the identity lists by a StoredKeyPrefix reference instead of a file path.
+	// It is called from the connection's goroutine, only after the host key is
+	// accepted. Nil means the application keeps none, and such a reference is
+	// skipped.
+	StoredKey func(ref string) ([]byte, error)
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when there is no agent to offer (see AgentAddress).
 	Agent bool

@@ -9,7 +9,8 @@
 click "Keychain"
 settle 400
 openfiles /tmp/motty-e2e.ppk
-click "Import Key"
+click "Add Key"
+click "Import from File"
 settle 400
 texts "ppk"
 click "Hosts"

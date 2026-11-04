@@ -161,7 +161,7 @@ func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.S
 	}
 	paths = append(paths, authentication.AdditionalIdentityFiles...)
 	for _, path := range paths {
-		signer, err := keyidentity.Load(path, nil)
+		signer, err := conn.loadKey(path, nil)
 		if err != nil {
 			var passphrase *ssh.PassphraseMissingError
 			if !errors.As(err, &passphrase) {
@@ -183,6 +183,10 @@ func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.S
 				continue
 			}
 		}
+		if IsStoredKey(path) {
+			signers = append(signers, signer) // no file for a certificate to sit beside
+			continue
+		}
 		// An accompanying certificate file upgrades the signer, as OpenSSH's
 		// default identity pairing does.
 		certified, err := certificateSigner(path, signer)
@@ -193,6 +197,24 @@ func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.S
 		signers = append(signers, certified)
 	}
 	return signers, skipped, nil
+}
+
+// loadKey reads one entry of an identity list: a file, or a key the application
+// keeps for itself. A stored key that is not there reports as an unusable key,
+// not as the absent file that a default identity so often is: the user chose it.
+func (conn *Conn) loadKey(ref string, passphrase []byte) (ssh.Signer, error) {
+	if !IsStoredKey(ref) {
+		return keyidentity.Load(ref, passphrase)
+	}
+	if conn.config.StoredKey == nil {
+		return nil, errors.New("saved keys are not available here")
+	}
+	data, err := conn.config.StoredKey(ref)
+	if err != nil {
+		return nil, fmt.Errorf("saved key: %w", err)
+	}
+	defer clear(data)
+	return keyidentity.Parse(data, passphrase)
 }
 
 func (conn *Conn) unlockIdentity(path string) (ssh.Signer, bool, error) {
@@ -212,7 +234,7 @@ func (conn *Conn) unlockIdentity(path string) (ssh.Signer, bool, error) {
 			return nil, false, fmt.Errorf("sshconn: %d answers for a key passphrase", len(response.answers))
 		}
 		passphrase := []byte(response.answers[0])
-		signer, parseErr := keyidentity.Load(path, passphrase)
+		signer, parseErr := conn.loadKey(path, passphrase)
 		clear(passphrase)
 		response.answers[0] = ""
 		if parseErr == nil {

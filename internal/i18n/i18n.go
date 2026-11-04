@@ -752,6 +752,36 @@ type Messages struct {
 	KeyPassphraseSavedFmt       string
 	KeyPassphraseRemovedFmt     string
 	KeyPassphraseHostHint       string
+	VaultForgetKeysFmt          string
+	KeyAdd                      string
+	KeyPaste                    string
+	KeyGenerate                 string
+	KeyCopyPublic               string
+	KeyPasteTitle               string
+	KeyPasteDescription         string
+	KeyNameLabel                string
+	KeyNamePlaceholder          string
+	KeyTextLabel                string
+	KeyTextPlaceholder          string
+	KeyPasteSubmit              string
+	KeyGenerateTitle            string
+	KeyGenerateDescription      string
+	KeyGenerateNamePlaceholder  string
+	KeyGeneratePassphraseLabel  string
+	KeyGenerateSubmit           string
+	KeyNameRequired             string
+	KeyInvalidTextFmt           string
+	KeyDuplicateFmt             string
+	KeyAddedFmt                 string
+	KeyGeneratedFmt             string
+	KeyGeneratedNotCopiedFmt    string
+	KeyPublicCopiedFmt          string
+	KeyPublicUnavailable        string
+	KeyStoredIn                 string
+	KeyDeleteTitle              string
+	KeyDeleteDescriptionFmt     string
+	KeyDeleteConfirm            string
+	KeyDeletedFmt               string
 
 	// Local SSH port forwarding.
 	ForwardTitle                  string

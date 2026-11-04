@@ -871,3 +871,54 @@ func TestUnusableIdentityIsReportedWithItsReason(t *testing.T) {
 		t.Fatalf("skipped = %q, want only the unreadable key and its reason", status.Skipped)
 	}
 }
+
+func TestStoredKeyAuthenticatesAndAsksForItsPassphraseUnderItsName(t *testing.T) {
+	_, private := newPrivate(t)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ref = StoredKeyPrefix + "work"
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{signer.PublicKey()}; s.password = "unused" })
+	var asked []string
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.StoredKey = func(name string) ([]byte, error) {
+			asked = append(asked, name)
+			return pemEncode(block), nil
+		}
+	})
+	if status := h.phase(PhaseHostKeyPrompt); len(asked) != 0 || status.IdentityPath != "" {
+		t.Fatalf("a stored key was read before the host was trusted: %v", asked)
+	}
+	h.conn.TrustHostKey(false)
+	if prompt := h.phase(PhaseKeyPassphrasePrompt); prompt.IdentityPath != ref {
+		t.Fatalf("prompt names %q, want the stored key's reference", prompt.IdentityPath)
+	}
+	h.conn.SubmitKeyPassphrase("locked")
+	if connected := h.phase(PhaseConnected); connected.Method != "publickey" {
+		t.Fatalf("method = %q", connected.Method)
+	}
+}
+
+func TestMissingStoredKeyIsReportedNotSilentlySkipped(t *testing.T) {
+	_, otherSigner := writeKey(t, t.TempDir())
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{otherSigner.PublicKey()}; s.password = "pw" })
+	const ref = StoredKeyPrefix + "gone"
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.StoredKey = func(string) ([]byte, error) { return nil, errors.New("not saved") }
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	status := h.phase(PhasePasswordPrompt)
+	if len(status.Skipped) != 1 || !strings.Contains(status.Skipped[0], ref) || !strings.Contains(status.Skipped[0], "not saved") {
+		t.Fatalf("skipped = %v", status.Skipped)
+	}
+}

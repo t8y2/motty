@@ -158,10 +158,15 @@ var (
 
 // Key management: its page and the rows of its table.
 var (
-	hitKeysImport     = tree.ID(keysHits, "keys-import")
-	hitKeysRemove     = tree.ID(keysHits, "keys-remove")
-	hitKeysPassphrase = tree.ID(keysHits, "keys-passphrase")
-	hitKeyRowList     = tree.Sub(keysHits, tree.Name("key-row"))
+	hitKeysAdd         = tree.ID(keysHits, "keys-add")
+	hitKeysMenuDismiss = tree.ID(keysHits, "keys-menu-dismiss")
+	hitKeysImport      = tree.ID(keysHits, "keys-import")
+	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
+	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
+	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
+	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
+	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
 
 // Local forwarding: its page and dialog.
@@ -527,29 +532,33 @@ type State struct {
 	hostsContent       float32
 	hostGroupMenu      bool
 	importMenu         bool
-	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
-	terminalMenu       terminalMenu
-	hostGroupEditor    text.Editor
-	groupActions       hostGroupActions
-	tabRename          tabRename
-	tabsClose          tabsClose
-	sessionLink        sessionLink
-	hostDialogMode     hostDialogMode
-	hostDialogID       uint32
-	ruleDelete         ruleDelete
-	hostTest           hostTest
-	hostDialogText     string
-	identityCountText  string
-	forwardCountText   string
-	forwardStarts      chan forwardStartResult
-	proxyCountText     string
-	hostImportResult   hostImportResult
-	sessionImport      sessionImportPreview
-	mobaEncoding       mobaEncodingPrompt
-	knownHosts         knownHostsView
-	knownHostsLayout   flex.View
-	settingsRow        flex.View
-	partLayout         flex.View // a dialog body, a host card or a group header: one at a time
+	// keysMenu is the open menu under the Keychain page's Add Key button, and
+	// keysAddButton where that button was painted.
+	keysMenu          bool
+	keysAddButton     ui.Rect
+	hostsBounds       ui.Rect // the hosts page as last painted; the menus anchor to it
+	terminalMenu      terminalMenu
+	hostGroupEditor   text.Editor
+	groupActions      hostGroupActions
+	tabRename         tabRename
+	tabsClose         tabsClose
+	sessionLink       sessionLink
+	hostDialogMode    hostDialogMode
+	hostDialogID      uint32
+	ruleDelete        ruleDelete
+	hostTest          hostTest
+	hostDialogText    string
+	identityCountText string
+	forwardCountText  string
+	forwardStarts     chan forwardStartResult
+	proxyCountText    string
+	hostImportResult  hostImportResult
+	sessionImport     sessionImportPreview
+	mobaEncoding      mobaEncodingPrompt
+	knownHosts        knownHostsView
+	knownHostsLayout  flex.View
+	settingsRow       flex.View
+	partLayout        flex.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
@@ -2464,6 +2473,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.hostManagementKey(event); handled {
 		return result
 	}
+	if result, handled := state.keysKey(event); handled {
+		return result
+	}
 	if state.modal == modalNewHost && event.Key == ui.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
 		_, composing := state.EditorFor(event.Target).Composition()
 		if !event.Repeat && !composing {
@@ -2542,7 +2554,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitOutboundProxy()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil {
+	if state.modal == modalForm {
+		if result, handled := state.formKey(event); handled {
+			return result
+		}
+	}
+	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

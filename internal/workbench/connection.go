@@ -1109,7 +1109,7 @@ func (state *State) showNextPrompt() {
 					state.keyPassphraseError = state.messages.PasswordSavedRefused
 				}
 			}
-			state.keyPassphraseDescription = fmt.Sprintf(state.messages.KeyPassphraseDescriptionFmt, filepath.Base(session.identity))
+			state.keyPassphraseDescription = fmt.Sprintf(state.messages.KeyPassphraseDescriptionFmt, state.identityLabel(session.identity))
 		}
 		state.raiseSFTPAuthentication(session)
 		return
