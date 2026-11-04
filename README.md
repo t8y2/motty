@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/readme-lockup.png" width="340" alt="Motty" />
 
-  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a></p>
 
   <p><strong>Motty: SSH, SFTP, port forwarding, VNC/RDP and an AI assistant in one native window.</strong></p>
 

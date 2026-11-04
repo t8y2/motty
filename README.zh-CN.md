@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/readme-lockup.png" width="340" alt="Motty" />
 
-  <p><a href="README.md">English</a> | 简体中文</p>
+  <p><a href="README.md">English</a> | 简体中文 | <a href="README.ja.md">日本語</a></p>
 
   <p><strong>Motty：SSH、SFTP、端口转发、VNC/RDP 和 AI 助手，都在一个原生窗口里。</strong></p>
 
