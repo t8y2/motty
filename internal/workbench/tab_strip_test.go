@@ -98,6 +98,28 @@ func TestWheelOverTheTabsScrollsThemAndOnlyThere(t *testing.T) {
 	}
 }
 
+func TestTabShowsFullTitleAsHoverHintWhenLabelIsElided(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	const longTitle = "production-db-replica-01 · /var/lib/postgresql/16/main/data"
+	id, _, err := state.deck.Create(longTitle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.deck.ActivateWorkspace(id)
+	state.activeSessionID = 0
+	state.activeSection = sectionTerminal
+	state.rebuildTabOptions()
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 600, Height: 900})
+	hit, ok := hitByID(&canvas, hitTabList.At(int(id)))
+	if !ok {
+		t.Fatal("the tab is not painted")
+	}
+	if hit.Hint != longTitle {
+		t.Fatalf("hovering the tab should show its full title, got hint %q want %q", hit.Hint, longTitle)
+	}
+}
+
 func TestActivatingATabScrollsItIntoView(t *testing.T) {
 	state, _ := manyTabs(t, 30)
 	state.Scroll(ui.ScrollEvent{X: state.tabStrip.area.X, Y: 10, DeltaX: -100000})

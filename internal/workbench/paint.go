@@ -742,10 +742,12 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	entry.label = label
 	entry.output = state.workspaceOutputAlert(workspace.ID)
 	tabOptions := ui.HitOptions{Role: ui.RoleTab, Selected: active}
+	// Every tab shows its full name as a tooltip on hover, so a long, elided
+	// label (a deep path or a long host label among many tabs) stays readable.
+	// The shared hover tooltip paints Hit, so naming it here is all it takes.
+	tabOptions.Hint = label
 	if workspace.Locked {
 		tabOptions.Hint = m.TabLockedHint
-	} else if vertical {
-		tabOptions.Hint = label
 	}
 	// A desktop keeps its size and protection in the status line under the
 	// picture, which the host may have hidden: the tab says it on hover instead.
