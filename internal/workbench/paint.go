@@ -1508,24 +1508,35 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	}
 	// The list scrolls under the toolbar: the tree starts above its window by the
 	// scrolled distance, and the clip keeps what is out of the window out of sight
-	// and out of reach.
-	state.hostsContent = state.hostListHeight(treeBounds.Width)
+	// and out of reach. The bar is Viva's scroll area: it keeps its own strip out
+	// of the rows and paints nothing at all while the content fits.
+	content := state.hostListHeight(treeBounds.Width)
+	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+	if geometry.MaxOffsetY > 0 {
+		// Taking the bar's strip narrows the list; the cards pack to the width they
+		// are really given, so read the height again at the reserved width.
+		content = state.hostListHeight(geometry.Viewport.Width)
+		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+	}
 	if state.hostRevealID != 0 {
-		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, treeBounds.Width)
+		// The revealed row is found at the width the list really has, bar included.
+		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, geometry.Viewport.Width)
 		canvas.RequestFocus(hitHostList.At(int(state.hostRevealID)))
 		state.hostRevealID = 0
+		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
 	}
-	state.hostsScroll = min(max(state.hostsScroll, 0), max(state.hostsContent-treeBounds.Height, 0))
-	canvas.Clip(treeBounds)
+	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
+	viewport := geometry.Viewport
+	canvas.Clip(viewport)
 	if state.hostView == hostViewGrid {
-		state.paintHostGrid(canvas, treeBounds)
+		state.paintHostGrid(canvas, viewport)
 		state.paintHostGroupDrop(canvas)
-		state.paintHostScrollbar(canvas, treeBounds)
 		canvas.Unclip()
+		area.EndContent()
 		return
 	}
 	tree := components.BeginTree(canvas, state.Theme(), ui.Rect{
-		X: treeBounds.X, Y: treeBounds.Y - state.hostsScroll, Width: treeBounds.Width, Height: treeBounds.Height + state.hostsScroll,
+		X: viewport.X, Y: viewport.Y - state.hostsScroll, Width: viewport.Width, Height: viewport.Height + state.hostsScroll,
 	}).Indent(22)
 	filtering := strings.TrimSpace(state.visibleQuery) != ""
 	for _, entry := range state.hostTreeRows {
@@ -1537,10 +1548,10 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 				ID: hitHostGroupRowList.At(entry.GroupIndex), DisclosureID: hitHostGroupOpenList.At(entry.GroupIndex),
 				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
 			})
-			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+			if row.Bounds.Y >= viewport.Y+viewport.Height {
 				state.paintHostGroupDrop(canvas)
-				state.paintHostScrollbar(canvas, treeBounds)
 				canvas.Unclip()
+				area.EndContent()
 				return
 			}
 			content := row.Content
@@ -1564,10 +1575,10 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			id := hitHostList.At(int(host.ID))
 			tree = tree.RowHeight(hostRowHeight)
 			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
-			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+			if row.Bounds.Y >= viewport.Y+viewport.Height {
 				state.paintHostGroupDrop(canvas)
-				state.paintHostScrollbar(canvas, treeBounds)
 				canvas.Unclip()
+				area.EndContent()
 				return
 			}
 			state.paintHostTreeRow(canvas, row.Bounds, row.Content, host, id)
@@ -1575,8 +1586,8 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 		}
 	}
 	state.paintHostGroupDrop(canvas)
-	state.paintHostScrollbar(canvas, treeBounds)
 	canvas.Unclip()
+	area.EndContent()
 }
 
 // hostListTop is where the list starts under the hosts workspace's top edge: below the toolbar and the row of chips or actions.
@@ -1603,35 +1614,17 @@ func (state *State) hostListHeight(width float32) float32 {
 	return height
 }
 
-// paintHostScrollbar draws the hosts list's scroll indicator: a short track and a
-// thumb whose size and place track the content and the scrolled distance. It is
-// drawn inside the list's clip, so it never leaves the list's window, and only
-// when the content is taller than the window — a list that fits shows nothing.
-func (state *State) paintHostScrollbar(canvas *ui.Canvas, bounds ui.Rect) {
-	content := state.hostsContent
-	visible := bounds.Height
-	if content <= visible {
-		return
-	}
-	pal := state.pal
-	const trackWidth float32 = 6
-	track := ui.Rect{
-		X:      bounds.X + bounds.Width - trackWidth - 2,
-		Y:      bounds.Y + 4,
-		Width:  trackWidth,
-		Height: visible - 8,
-	}
-	canvas.Rounded(track, 3, pal.line)
-	thumbHeight := max(track.Height*min(visible/content, 1), 24)
-	thumbHeight = min(thumbHeight, track.Height)
-	fraction := state.hostsScroll / (content - visible)
-	thumb := ui.Rect{
-		X:      track.X,
-		Y:      track.Y + (track.Height-thumbHeight)*fraction,
-		Width:  track.Width,
-		Height: thumbHeight,
-	}
-	canvas.Rounded(thumb, 3, pal.muted)
+// hostListScrollArea is how the hosts list scrolls: Viva's scroll area owns the
+// bar, keeping its strip out of the rows and painting the thumb from the list's
+// content height. Nothing is painted while the content fits.
+func hostListScrollArea(canvas *ui.Canvas, theme ui.Theme, bounds ui.Rect, content, offset float32) (components.ScrollArea, components.ScrollAreaGeometry) {
+	// Width zero says the list has no horizontal extent of its own: it is laid out
+	// to geometry.Viewport.Width, so no horizontal bar is ever due.
+	area := components.BeginScrollArea(canvas, theme, bounds, ui.Size{Height: content}).
+		Offset(0, offset).
+		ReserveScrollbars().
+		VerticalScrollbar(ui.ID{}, "", "")
+	return area, area.Geometry()
 }
 
 // scrollHosts moves the hosts list with the wheel.

@@ -1,78 +1,183 @@
 package workbench
 
 import (
+	"math"
 	"testing"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
 
-// roundedRects returns the rounded rectangles drawn onto the canvas.
-func roundedRects(canvas *ui.Canvas) []ui.Rectangle {
+// hostListBar is the bar the hosts page paints for the list in bounds, read from
+// the same helper the page uses.
+func hostListBar(state *State, bounds ui.Rect) components.ScrollAreaGeometry {
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, state.hostsContent, state.hostsScroll)
+	return geometry
+}
+
+// paintedIn returns the rectangles painted wholly inside room.
+func paintedIn(canvas *ui.Canvas, room ui.Rect) []ui.Rectangle {
 	var out []ui.Rectangle
 	for _, rect := range canvas.Rectangles() {
-		if rect.Radius > 0 {
+		bounds := rect.Bounds
+		if bounds.X >= room.X-0.01 && bounds.X+bounds.Width <= room.X+room.Width+0.01 &&
+			bounds.Y >= room.Y-0.01 && bounds.Y+bounds.Height <= room.Y+room.Height+0.01 {
 			out = append(out, rect)
 		}
 	}
 	return out
 }
 
-// TestHostScrollbarIsHiddenWhenTheListFits pins the non-intrusive case: a host
-// list shorter than its window paints no scrollbar at all, so the default view
-// is unchanged.
-func TestHostScrollbarIsHiddenWhenTheListFits(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	bounds := ui.Rect{X: 10, Y: 20, Width: 400, Height: 300}
-	state.hostsContent = 200 // shorter than the window
-	state.hostsScroll = 0
+// reservedBarStrip is the room the scroll area keeps for the bar when the list
+// overflows; a probe one pixel taller than the list asks the component, so no
+// bar size is spelled out here.
+func reservedBarStrip(t *testing.T, state *State, bounds ui.Rect) ui.Rect {
+	t.Helper()
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, bounds.Height+1, 0)
+	if geometry.VerticalTrack.Width <= 0 || geometry.VerticalThumb.Width <= 0 {
+		t.Fatalf("the scroll area reserves no strip for a bar: %+v", geometry)
+	}
+	return geometry.VerticalTrack
+}
+
+// An overflowing host list paints Viva's thumb in the strip the scroll area keeps
+// beside the rows, and the rows stay out of that strip.
+func TestTheHostListPaintsTheScrollbarBesideTheRows(t *testing.T) {
+	state := manyHostsState(t, 40)
+	size := ui.Size{Width: 1400, Height: 900}
 	var canvas ui.Canvas
-	state.paintHostScrollbar(&canvas, bounds)
-	if got := roundedRects(&canvas); len(got) != 0 {
-		t.Fatalf("a list that fits painted %d scrollbar rects, want 0", len(got))
+	state.Paint(&canvas, size)
+
+	list := state.chrome.hostList
+	bar := hostListBar(state, list)
+	if bar.MaxOffsetY <= 0 || bar.VerticalThumb.Height <= 0 {
+		t.Fatalf("an overflowing list has no bar: %+v", bar)
+	}
+	if bar.Viewport.Width >= list.Width {
+		t.Fatalf("the bar's strip was not reserved: viewport %v in %v", bar.Viewport, list)
+	}
+	row, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
+	if !ok {
+		t.Fatal("the first host is not painted")
+	}
+	if row.Bounds.X+row.Bounds.Width > bar.Viewport.X+bar.Viewport.Width+0.01 {
+		t.Fatalf("host row %v runs under the bar (viewport %v)", row.Bounds, bar.Viewport)
+	}
+	if thumb := paintedIn(&canvas, bar.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != bar.VerticalThumb {
+		t.Fatalf("painted bar = %+v, want the scroll area's thumb %v", thumb, bar.VerticalThumb)
 	}
 }
 
-// TestHostScrollbarShowsTrackAndThumb checks that an overflowing list paints a
-// track and a thumb, and that scrolling down moves the thumb down and leaves the
-// track where it was.
-func TestHostScrollbarShowsTrackAndThumb(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	bounds := ui.Rect{X: 10, Y: 20, Width: 400, Height: 300}
-	state.hostsContent = 900
-	state.hostsScroll = 0
+// The cards pack into the room left of the bar instead of sitting under it.
+func TestTheHostGridKeepsItsCardsOutOfTheScrollbar(t *testing.T) {
+	state := manyHostsState(t, 40)
+	state.hostView = hostViewGrid
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
 
+	list := state.chrome.hostList
+	bar := hostListBar(state, list)
+	if bar.MaxOffsetY <= 0 || bar.VerticalThumb.Height <= 0 {
+		t.Fatalf("the overflowing grid has no bar: %+v", bar)
+	}
+	for _, host := range state.hosts {
+		card, ok := hitByID(&canvas, hitHostList.At(int(host.ID)))
+		if !ok {
+			continue
+		}
+		if card.Bounds.X+card.Bounds.Width > bar.Viewport.X+bar.Viewport.Width+0.01 {
+			t.Fatalf("card %v runs under the bar (viewport %v)", card.Bounds, bar.Viewport)
+		}
+	}
+	if thumb := paintedIn(&canvas, bar.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != bar.VerticalThumb {
+		t.Fatalf("painted bar = %+v, want %v", thumb, bar.VerticalThumb)
+	}
+}
+
+// The thumb follows the list: scrolling to the end moves it down and leaves it
+// inside its track.
+func TestTheHostListScrollbarFollowsTheScroll(t *testing.T) {
+	state := manyHostsState(t, 40)
+	size := ui.Size{Width: 1400, Height: 900}
 	var top ui.Canvas
-	state.paintHostScrollbar(&top, bounds)
-	rects := roundedRects(&top)
-	if len(rects) != 2 {
-		t.Fatalf("painted %d scrollbar rects, want 2 (track + thumb)", len(rects))
+	state.Paint(&top, size)
+
+	list := state.chrome.hostList
+	atTop := hostListBar(state, list)
+	if atTop.VerticalThumb.Height <= 0 {
+		t.Fatalf("no thumb at the top: %+v", atTop)
 	}
-	track, thumb := rects[0], rects[1]
-	if track.Bounds.Height <= thumb.Bounds.Height {
-		t.Fatalf("track height %v is not taller than thumb %v", track.Bounds.Height, thumb.Bounds.Height)
+	state.hostsScroll = state.hostsContent // past the end: the page clamps it
+	var bottom ui.Canvas
+	state.Paint(&bottom, size)
+
+	atBottom := hostListBar(state, list)
+	if atBottom.VerticalThumb.Y <= atTop.VerticalThumb.Y {
+		t.Fatalf("thumb did not move down: %v then %v", atTop.VerticalThumb, atBottom.VerticalThumb)
 	}
-	// The indicator hugs the right edge of the host list.
-	if want := bounds.X + bounds.Width - track.Bounds.Width - 2; track.Bounds.X != want {
-		t.Fatalf("track x = %v, want %v", track.Bounds.X, want)
+	inset := atBottom.VerticalThumb.X - atBottom.VerticalTrack.X
+	trackBottom := atBottom.VerticalTrack.Y + atBottom.VerticalTrack.Height - inset
+	if math.Abs(float64(atBottom.VerticalThumb.Y+atBottom.VerticalThumb.Height-trackBottom)) > 0.01 {
+		t.Fatalf("the thumb %v does not end at the bottom of its track %v", atBottom.VerticalThumb, atBottom.VerticalTrack)
+	}
+	if thumb := paintedIn(&bottom, atBottom.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != atBottom.VerticalThumb {
+		t.Fatalf("painted bar = %+v, want %v", thumb, atBottom.VerticalThumb)
+	}
+	if _, ok := hitByID(&bottom, hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))); !ok {
+		t.Fatal("the last host is not reachable at the end of the list")
+	}
+}
+
+// A host list that fits paints no bar and keeps the whole width for its rows.
+func TestAShortHostListPaintsNoScrollbar(t *testing.T) {
+	state := manyHostsState(t, 3)
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+
+	list := state.chrome.hostList
+	bar := hostListBar(state, list)
+	if bar.MaxOffsetY != 0 || bar.VerticalThumb != (ui.Rect{}) {
+		t.Fatalf("a list that fits has a bar: %+v", bar)
+	}
+	if bar.Viewport != list {
+		t.Fatalf("a list that fits kept a strip for a bar: viewport %v in %v", bar.Viewport, list)
+	}
+	if painted := paintedIn(&canvas, reservedBarStrip(t, state, list)); len(painted) != 0 {
+		t.Fatalf("a list that fits painted %d bar rects: %+v", len(painted), painted)
+	}
+}
+
+// The bar starts exactly when the content stops fitting: content equal to the
+// window paints nothing, one pixel more paints the thumb.
+func TestTheHostListScrollbarStartsWhenTheContentOverflows(t *testing.T) {
+	bounds := ui.Rect{X: 223, Y: 139, Width: 1151, Height: 13 * hostRowHeight}
+	state := manyHostsState(t, 13)
+	var warm ui.Canvas
+	state.Paint(&warm, ui.Size{Width: 1400, Height: 900}) // the real palette and chrome
+
+	var exact ui.Canvas
+	state.paintHostTable(&exact, bounds)
+	if state.hostsContent != bounds.Height {
+		t.Fatalf("content %v, viewport %v", state.hostsContent, bounds.Height)
+	}
+	if bar := hostListBar(state, bounds); bar.MaxOffsetY != 0 {
+		t.Fatalf("content equal to the window scrolls: %+v", bar)
+	}
+	if painted := paintedIn(&exact, reservedBarStrip(t, state, bounds)); len(painted) != 0 {
+		t.Fatalf("content equal to the window painted a bar: %+v", painted)
 	}
 
-	// Scrolling to the very bottom moves the thumb down but keeps the track fixed.
-	state.hostsScroll = state.hostsContent - bounds.Height
-	var bottom ui.Canvas
-	state.paintHostScrollbar(&bottom, bounds)
-	bottomRects := roundedRects(&bottom)
-	if len(bottomRects) != 2 {
-		t.Fatalf("bottom painted %d rects, want 2", len(bottomRects))
+	short := bounds
+	short.Height--
+	var over ui.Canvas
+	state.paintHostTable(&over, short)
+	bar := hostListBar(state, short)
+	if bar.MaxOffsetY <= 0 || bar.VerticalThumb.Height <= 0 {
+		t.Fatalf("content one pixel taller than the window did not scroll: %+v", bar)
 	}
-	if bottomRects[0].Bounds != track.Bounds {
-		t.Fatal("the track moved while scrolling")
-	}
-	if bottomRects[1].Bounds.Y <= thumb.Bounds.Y {
-		t.Fatalf("bottom thumb y = %v did not move below top thumb y = %v", bottomRects[1].Bounds.Y, thumb.Bounds.Y)
-	}
-	// The thumb stays inside the track at both ends.
-	bottomThumb := bottomRects[1].Bounds
-	if bottomThumb.Y+bottomThumb.Height > track.Bounds.Y+track.Bounds.Height+0.01 {
-		t.Fatal("thumb extends past the bottom of the track")
+	if thumb := paintedIn(&over, bar.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != bar.VerticalThumb {
+		t.Fatalf("painted bar = %+v, want %v", thumb, bar.VerticalThumb)
 	}
 }
