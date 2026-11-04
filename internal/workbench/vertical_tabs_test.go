@@ -94,7 +94,7 @@ func TestVerticalTabsNameTheSessionOverTheWorkspace(t *testing.T) {
 	state := newTestState(t, Options{})
 	openEmptyTab(state)
 	state.setTabOrientation(tabsVertical)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 640}} {
+	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 640}, {Width: 820, Height: 600}} {
 		var canvas ui.Canvas
 		state.Paint(&canvas, size)
 		label := state.windowBarTitle()
@@ -113,11 +113,19 @@ func TestVerticalTabsNameTheSessionOverTheWorkspace(t *testing.T) {
 		if !homeOK || !newTabOK {
 			t.Fatalf("%vx%v: the bar's buttons are missing", size.Width, size.Height)
 		}
-		if name.Bounds.X < home.Bounds.X+home.Bounds.Width || name.Bounds.X+name.Bounds.Width > newTab.Bounds.X {
+		left, right := home.Bounds.X+home.Bounds.Width, newTab.Bounds.X
+		if name.Bounds.X < left || name.Bounds.X+name.Bounds.Width > right {
 			t.Fatalf("%vx%v: the name overlaps the bar's buttons: %+v", size.Width, size.Height, name.Bounds)
 		}
+		// It sits on the workspace's centre whenever the bar leaves the room,
+		// which narrow windows and platforms whose titlebar draws window
+		// controls on the right do not: there it stops at the buttons instead
+		// of covering them.
 		reserve := state.verticalTabsReserve(size)
 		want := reserve + (size.Width-reserve)/2
+		if want-name.Bounds.Width/2 < left || want+name.Bounds.Width/2 > right {
+			continue
+		}
 		if centre := name.Bounds.X + name.Bounds.Width/2; centre < want-2 || centre > want+2 {
 			t.Fatalf("%vx%v: the name is centred at %v, not over the workspace at %v", size.Width, size.Height, centre, want)
 		}
