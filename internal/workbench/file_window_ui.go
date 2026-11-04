@@ -198,16 +198,17 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 		Result: d.comparison.result, ID: hitDocumentInput, Label: m.DiffLabel,
 		Value: value, Language: documentLanguage(d.name), Highlight: uiState.highlighter,
 		AddedColor: theme.Success, RemovedColor: theme.Danger,
+		FontSize: d.owner.terminalFontSize, MonoFace: d.owner.terminalFontFace, TabWidth: d.edit.options.TabWidth,
 		Disabled: d.busy || d.comparison.loading || d.comparison.confirm, Focused: focused,
 		ShowCaret:      selection.Start == selection.End,
-		Caret:          aiByteOffset(value, d.editor.Caret()),
-		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
+		Caret:          d.editor.ByteOffset(d.editor.Caret()),
+		SelectionStart: d.editor.ByteOffset(selection.Start), SelectionEnd: d.editor.ByteOffset(selection.End),
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
 	}
 	if marked, ok := d.editor.Composition(); ok {
-		snapshot.CompositionStart = aiByteOffset(value, marked.Start)
-		snapshot.CompositionEnd = aiByteOffset(value, marked.End)
+		snapshot.CompositionStart = d.editor.ByteOffset(marked.Start)
+		snapshot.CompositionEnd = d.editor.ByteOffset(marked.End)
 	}
 	uiState.diff.Paint(canvas, theme, content.Rect(), snapshot)
 	if d.comparison.confirm {
@@ -639,9 +640,14 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	if event.Target == hitDocumentInput {
+		if command, ok := components.CodeEditorCommandForKey(event); ok && d.ready && !d.busy && command.Apply(&d.editor) {
+			d.scheduleDiff()
+			d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+			return handled
+		}
 		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
 			value := d.editor.String()
-			offset := d.comparison.ui.diff.Move(value, aiByteOffset(value, d.editor.Caret()), movement)
+			offset := d.comparison.ui.diff.Move(value, d.editor.ByteOffset(d.editor.Caret()), movement)
 			d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
 			d.comparison.ui.diff.RevealCaret(value, offset)
 			return handled
@@ -678,6 +684,11 @@ func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release || !d.comparison.active {
 		return ui.EventResult{}
+	}
+	if command, ok := components.CodeEditorCommandForKey(event); ok && event.Target == hitDocumentInput && d.ready && !d.busy && !d.comparison.confirm && command.Apply(&d.editor) {
+		d.scheduleDiff()
+		d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	switch strings.ToLower(event.Text) {
 	case "s":

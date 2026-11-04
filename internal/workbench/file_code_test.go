@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -553,6 +554,29 @@ func TestDocumentCodeEditorScreenshots(t *testing.T) {
 		documentCaretAt(d, 15, 40)
 		view.refresh(t)
 		shoot(view, fmt.Sprintf("nowrap-%.0fx", scale))
+
+		// The same file compared with what the server has, on the same grid.
+		d.local = false
+		d.editor.SetSelection(text.Range{Start: d.editor.RuneIndex(strings.Index(source, "name == ")), End: d.editor.RuneIndex(strings.Index(source, "name == ")) + 4})
+		d.editor.Insert("title")
+		d.comparison.active = true
+		d.comparison.baseline = source
+		d.comparison.result = components.DiffCodeLines(source, d.editor.String())
+		config := d.comparisonConfig()
+		config.Width, config.Height = 1100, 620
+		compare, err := headless.Open(config, nil, headless.Options{Scale: scale})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := compare.Rest(); err != nil {
+			t.Fatal(err)
+		}
+		pane := documentHitBounds(t, codeWindow{Session: compare}, hitDocumentInput)
+		if err := compare.Click(pane.X+120, pane.Y+80); err != nil {
+			t.Fatal(err)
+		}
+		shoot(codeWindow{Session: compare}, fmt.Sprintf("compare-%.0fx", scale))
+		compare.Close()
 	}
 }
 
@@ -571,5 +595,42 @@ func TestDocumentControlHOpensReplaceOnlyWhereItIsNotABackspace(t *testing.T) {
 	}
 	if !handled || !d.edit.findOpen || !d.edit.replacing {
 		t.Fatalf("Control+H did not open the replace form (handled %v, open %v, replacing %v)", handled, d.edit.findOpen, d.edit.replacing)
+	}
+}
+
+func TestDocumentComparisonPaneEditsLikeTheEditor(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc main() {\n\tprintln(1)\n}\n")
+	d.local = false
+	d.comparison.active = true
+	d.comparison.baseline = d.original
+	d.comparison.result = components.DiffCodeLines(d.original, d.editor.String())
+	config := d.comparisonConfig()
+	config.Width, config.Height = 1000, 600
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	pane := documentHitBounds(t, codeWindow{Session: view}, hitDocumentInput)
+	if err := view.Click(pane.X+pane.Width/2, pane.Y+10); err != nil {
+		t.Fatal(err)
+	}
+	driver := view.Driver()
+	documentCaretAt(d, 3, 1)
+	d.editor.SetSelection(text.Range{Start: d.editor.RuneIndex(strings.Index(d.editor.String(), "func")), End: d.editor.RuneIndex(strings.Index(d.editor.String(), "\n}"))})
+	if err := driver.Key(ui.KeyTab, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.editor.String(); !strings.Contains(got, "\t\tprintln(1)") || !strings.Contains(got, "\tfunc main()") {
+		t.Fatalf("Tab in the comparison gave %q", got)
+	}
+	if handled, err := driver.ShortcutChord(documentPrimaryModifier(), '/'); err != nil || !handled {
+		t.Fatalf("the comment chord was not handled in the comparison: %v", err)
+	}
+	if got := d.editor.String(); !strings.Contains(got, "\t// func main() {\n\t// \tprintln(1)") {
+		t.Fatalf("comment in the comparison gave %q", got)
 	}
 }
