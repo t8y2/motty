@@ -480,13 +480,19 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	// terminal keeps its PTY fitted for that rail.
 	viewport := state.visibleWorkspacePixelBounds(size)
 	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, Scope: dialogScope, DismissID: hitAIDrawerDismiss,
+		Layer: drawerLayer, Scope: ui.ID{}, DismissID: hitAIDrawerDismiss,
 		Side: components.DrawerRight, ContentExtent: min(aiPanelWidth, size.Width*0.92),
 		InitialFocusID: hitAIInput,
 	})
 	layout := drawer.Begin("", "")
 	state.paintAIBody(canvas, layout.Content)
 	drawer.End()
+	// A zero Scope keeps the drawer from trapping focus, and Drawer.End only
+	// installs InitialFocusID for a trapped drawer; ask the runtime for the
+	// composer explicitly so typing goes to the assistant when it opens. The
+	// runtime applies one request once, so later frames leave the focus the user
+	// chose alone.
+	canvas.RequestFocus(hitAIInput)
 	state.paintAIMenuOverlay(canvas)
 }
 

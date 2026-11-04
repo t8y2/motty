@@ -1061,6 +1061,9 @@ func (state *State) Resize(size ui.Size) {
 	state.viewport = size
 	state.fitTerminals()
 	state.fitSFTP(size)
+	// Both panels stay open when the window docks them, but a window that grew
+	// too narrow for both must not leave the assistant under the monitor.
+	state.reconcileAIPanelWithMonitor(size)
 }
 
 // terminalSession finds the session whose terminal owns a hit.

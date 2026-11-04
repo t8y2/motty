@@ -155,6 +155,12 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
+	// A panel closed from inside itself returns the keyboard to the terminal it
+	// covered. The request is made once: a later click decides focus again.
+	if state.ai.panel.focusBack && !state.aiPanelVisible() {
+		state.ai.panel.focusBack = false
+		canvas.RequestFocus(state.activeTerminalFocusHit())
+	}
 	// A running dashboard keeps sampling on every page, but only the page it is
 	// on needs the repaint each sample triggers.
 	state.dashboard.visible.Store(state.activeSection == sectionDashboard)
