@@ -1177,3 +1177,24 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 		t.Fatal("Left left the model list open")
 	}
 }
+
+func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
+	state, _ := panelState(t, nil)
+	narrow := ui.Size{Width: 720, Height: 600}
+	state.Resize(narrow)
+	state.setAIPanelOpen(true)
+	canvas, _ := paintAt(state, narrow)
+	if !canvas.TrappedFocusScope().IsZero() {
+		t.Fatalf("AI drawer should not trap focus scope: got %v", canvas.TrappedFocusScope())
+	}
+	foundSidebar := false
+	for _, hit := range canvas.Hits() {
+		if hit.ID == hitAIToggle || hit.ID == hitVerticalTabsNew {
+			foundSidebar = true
+			break
+		}
+	}
+	if !foundSidebar {
+		t.Fatal("sidebar/toolbar controls should be present and interactive")
+	}
+}
