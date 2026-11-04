@@ -1520,6 +1520,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	if state.hostView == hostViewGrid {
 		state.paintHostGrid(canvas, treeBounds)
 		state.paintHostGroupDrop(canvas)
+		state.paintHostScrollbar(canvas, treeBounds)
 		canvas.Unclip()
 		return
 	}
@@ -1538,6 +1539,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
 				state.paintHostGroupDrop(canvas)
+				state.paintHostScrollbar(canvas, treeBounds)
 				canvas.Unclip()
 				return
 			}
@@ -1564,6 +1566,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
 			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
 				state.paintHostGroupDrop(canvas)
+				state.paintHostScrollbar(canvas, treeBounds)
 				canvas.Unclip()
 				return
 			}
@@ -1572,6 +1575,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 		}
 	}
 	state.paintHostGroupDrop(canvas)
+	state.paintHostScrollbar(canvas, treeBounds)
 	canvas.Unclip()
 }
 
@@ -1597,6 +1601,37 @@ func (state *State) hostListHeight(width float32) float32 {
 		}
 	}
 	return height
+}
+
+// paintHostScrollbar draws the hosts list's scroll indicator: a short track and a
+// thumb whose size and place track the content and the scrolled distance. It is
+// drawn inside the list's clip, so it never leaves the list's window, and only
+// when the content is taller than the window — a list that fits shows nothing.
+func (state *State) paintHostScrollbar(canvas *ui.Canvas, bounds ui.Rect) {
+	content := state.hostsContent
+	visible := bounds.Height
+	if content <= visible {
+		return
+	}
+	pal := state.pal
+	const trackWidth float32 = 6
+	track := ui.Rect{
+		X:      bounds.X + bounds.Width - trackWidth - 2,
+		Y:      bounds.Y + 4,
+		Width:  trackWidth,
+		Height: visible - 8,
+	}
+	canvas.Rounded(track, 3, pal.line)
+	thumbHeight := max(track.Height*min(visible/content, 1), 24)
+	thumbHeight = min(thumbHeight, track.Height)
+	fraction := state.hostsScroll / (content - visible)
+	thumb := ui.Rect{
+		X:      track.X,
+		Y:      track.Y + (track.Height-thumbHeight)*fraction,
+		Width:  track.Width,
+		Height: thumbHeight,
+	}
+	canvas.Rounded(thumb, 3, pal.muted)
 }
 
 // scrollHosts moves the hosts list with the wheel.
