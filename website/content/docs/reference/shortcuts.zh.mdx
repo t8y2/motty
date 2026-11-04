@@ -18,13 +18,14 @@ description: 默认快捷键，全部可以修改。
     { action: '打开本地终端', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
     { action: '下一个标签页', mac: 'Control+Tab', other: 'Control+Tab' },
     { action: '上一个标签页', mac: 'Control+Shift+Tab', other: 'Control+Shift+Tab' },
+    { action: '跳到第 1–9 个标签页', mac: 'Command+1…9', other: 'Control+1…9' },
   ]}
 />
 
 切换标签页到头后会循环，按住不放会连续切换。快捷键无需包含 Control 或 Command，可使用单键或任意修饰键组合，例如 `Alt+J`、`Shift+Enter` 或 `F8`。支持字母、数字、标点、空格、Tab、Enter、Backspace、Delete、方向键、Home/End、Page Up/Down、Insert 和 F1–F12。
 录制时按 Esc 取消，点击「删除」移除绑定；Esc 本身可搭配修饰键绑定。重复的绑定会提示冲突。绑定的按键在终端中优先触发对应操作，无 Control/Command 的组合在普通文本框中仍用于编辑。
 弹窗里的「恢复默认」仅重置当前快捷键，页面顶部的「恢复默认」重置全部快捷键。单项重置时，若默认组合已被其他操作占用，会提示冲突。
-在 macOS 上，Command+1 到 Command+9 还可以直接跳到第一到第九个标签页。
+在 macOS 上 Command+1 到 Command+9、在 Windows 和 Linux 上 Control+1 到 Control+9 可以直接跳到第一到第九个标签页。在 Windows 和 Linux 上，该位置没有标签页时按键仍交给终端，因为 Control 加数字在终端里可能是控制字符。
 
 清空屏幕会同时清掉它上方的滚动历史，但光标所在的那一行会保留，正在输入的命令不会丢。
 

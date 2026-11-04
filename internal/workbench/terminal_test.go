@@ -376,32 +376,32 @@ func TestClosingATabReleasesItsConnectionAndPicksANeighbour(t *testing.T) {
 	state.Click(hitTabCloseList.At(999)) // unknown: ignored
 }
 
-func TestCommandChordsDriveTheTabs(t *testing.T) {
+func TestDigitChordsDriveTheTabs(t *testing.T) {
 	state, world, _, _ := liveSession(t)
 	state.Click(hitHosts)
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
 
-	if defaultShortcutModifier() == ui.ModifierMeta {
-		// A tab is a workspace on the tab bar: selecting one has to move the bar,
-		// not only the session the keyboard goes to.
-		workspaces := state.deck.Workspaces(nil)
-		digit := func(text string) {
-			state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: ui.ModifierMeta, Text: text})
-		}
-		digit("1")
-		if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
-			t.Fatal("Command+1 did not select the first tab")
-		}
-		digit("2")
-		if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
-			t.Fatal("Command+2 did not select the second tab")
-		}
-		digit("9") // no ninth tab
-		if state.activeSessionID != second {
-			t.Fatal("a missing tab changed the selection")
-		}
+	// A tab is a workspace on the tab bar: selecting one has to move the bar,
+	// not only the session the keyboard goes to.
+	workspaces := state.deck.Workspaces(nil)
+	digit := func(text string) ui.EventResult {
+		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: text})
+	}
+	digit("1")
+	if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
+		t.Fatal("the first digit did not select the first tab")
+	}
+	digit("2")
+	if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
+		t.Fatal("the second digit did not select the second tab")
+	}
+	if result := digit("9"); result.Handled != (defaultShortcutModifier() == ui.ModifierMeta) {
+		t.Fatalf("a digit with no tab behind it: handled=%v", result.Handled)
+	}
+	if state.activeSessionID != second {
+		t.Fatal("a missing tab changed the selection")
 	}
 	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "t"})
 	if state.modal != modalCommandPalette || !state.commandPalette.connect {

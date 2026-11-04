@@ -23,6 +23,7 @@ const (
 	shortcutCloseTab
 	shortcutNextTab
 	shortcutPreviousTab
+	shortcutTabNumber
 	shortcutPanePrevious
 	shortcutPaneNext
 	shortcutPaneSplitHorizontal
@@ -145,6 +146,9 @@ func defaultShortcuts() shortcutMap {
 	// every platform, the Mac included, where Command+Tab is the system's.
 	shortcuts.chords[shortcutNextTab] = shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyTab}
 	shortcuts.chords[shortcutPreviousTab] = shortcutChord{Modifiers: ui.ModifierControl | ui.ModifierShift, Named: ui.KeyTab}
+	// One binding covers the whole digit row: its modifiers plus 1 through 9.
+	// The stored digit is the one the user pressed, and any digit matches.
+	shortcuts.chords[shortcutTabNumber] = shortcutChord{Modifiers: primary, Key: '1'}
 	shortcuts.chords[shortcutPanePrevious] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'j'}
 	shortcuts.chords[shortcutPaneNext] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'k'}
 	shortcuts.chords[shortcutPaneSplitHorizontal] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'h'}
@@ -165,7 +169,7 @@ func defaultShortcuts() shortcutMap {
 
 func (shortcuts *shortcutMap) refreshLabels() {
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		shortcuts.labels[action] = shortcuts.chords[action].label()
+		shortcuts.labels[action] = shortcuts.chords[action].labelFor(action)
 	}
 }
 
@@ -211,6 +215,15 @@ func (chord shortcutChord) label() string {
 	}
 	label.WriteByte(key)
 	return label.String()
+}
+
+// labelFor is the settings label of a chord: the digit row reads as the whole
+// range it covers, so one row explains all nine keys.
+func (chord shortcutChord) labelFor(action shortcutAction) string {
+	if action == shortcutTabNumber && chord.valid() && tabNumberChord(chord) {
+		return strings.TrimSuffix(chord.label(), string(chord.Key)) + "1…9"
+	}
+	return chord.label()
 }
 
 // keycapText is the text of each key code, made once: converting a rune to a
@@ -297,18 +310,39 @@ func (shortcuts *shortcutMap) actionFor(chord shortcutChord) shortcutAction {
 			return action
 		}
 	}
+	// A digit row is one action: the same modifiers and any digit from 1 to 9.
+	for action := shortcutAction(1); action < shortcutActionCount; action++ {
+		if action == shortcutTabNumber && tabNumberFamily(shortcuts.chords[action], chord) {
+			return action
+		}
+	}
 	return shortcutNone
+}
+
+// tabNumberFamily reports whether chord is a digit the tab-number binding
+// covers: the same modifiers and a digit from 1 to 9.
+func tabNumberFamily(bound, chord shortcutChord) bool {
+	return bound.Modifiers == chord.Modifiers && tabNumberChord(bound) && tabNumberChord(chord)
+}
+
+// tabNumberChord reports whether a chord can be the tab-number binding: a
+// plain digit from 1 to 9, never a named key.
+func tabNumberChord(chord shortcutChord) bool {
+	return chord.Named == ui.KeyUnknown && chord.Key >= '1' && chord.Key <= '9'
 }
 
 func (shortcuts *shortcutMap) bind(action shortcutAction, chord shortcutChord) (shortcutAction, bool) {
 	if action <= shortcutNone || action >= shortcutActionCount || !chord.valid() {
 		return shortcutNone, false
 	}
+	if action == shortcutTabNumber && !tabNumberChord(chord) {
+		return shortcutNone, false
+	}
 	if conflict := shortcuts.actionFor(chord); conflict != shortcutNone && conflict != action {
 		return conflict, false
 	}
 	shortcuts.chords[action] = chord
-	shortcuts.labels[action] = chord.label()
+	shortcuts.labels[action] = chord.labelFor(action)
 	return shortcutNone, true
 }
 
@@ -319,7 +353,7 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 		return false
 	}
 	shortcuts.chords[action] = shortcutChord{}
-	shortcuts.labels[action] = shortcuts.chords[action].label()
+	shortcuts.labels[action] = shortcuts.chords[action].labelFor(action)
 	return true
 }
 
@@ -345,6 +379,8 @@ func (action shortcutAction) String() string {
 		return "next_tab"
 	case shortcutPreviousTab:
 		return "previous_tab"
+	case shortcutTabNumber:
+		return "tab_number"
 	case shortcutPanePrevious:
 		return "pane_previous"
 	case shortcutPaneNext:
@@ -472,13 +508,10 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 			}
 			return ui.EventResult{Handled: true, Repaint: true}
 		}
-		if index, ok := tabNumberChord(chord); ok {
-			if !event.Repeat && state.activateTopTab(index) {
-				return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTopTabFocusHit()}
-			}
-			return ui.EventResult{Handled: true}
-		}
 		return ui.EventResult{}
+	}
+	if action == shortcutTabNumber {
+		return state.tabNumberShortcut(chord, event)
 	}
 	if action == shortcutCopy && chord.Modifiers == ui.ModifierControl && chord.Key == 'c' {
 		// With no selection, Ctrl+C belongs to the foreground terminal
@@ -518,15 +551,18 @@ func (state *State) shortcutTextInput(target ui.ID) bool {
 		state.AIPanelInput(context) != nil
 }
 
-// tabNumberChord reports which tab Command plus a digit names, counting from
-// zero. Only the Mac has a Command key: Control plus a digit is the terminal
-// program's, and Meta on Windows and Linux is the Windows key.
-func tabNumberChord(chord shortcutChord) (int, bool) {
-	if defaultShortcutModifier() != ui.ModifierMeta || chord.Modifiers != ui.ModifierMeta || chord.Named != ui.KeyUnknown ||
-		chord.Key < '1' || chord.Key > '9' {
-		return 0, false
+// tabNumberShortcut jumps to the tab the pressed digit names. A digit with no
+// tab behind it stays with the terminal where Control plus a digit is a control
+// code; Command has no terminal meaning, so the Mac keeps the press.
+func (state *State) tabNumberShortcut(chord shortcutChord, event ui.KeyEvent) ui.EventResult {
+	index := int(chord.Key - '1')
+	if !event.Repeat && state.activateTopTab(index) {
+		return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTopTabFocusHit()}
 	}
-	return int(chord.Key - '1'), true
+	if chord.Modifiers&ui.ModifierMeta == 0 && index >= state.topTabCount() {
+		return ui.EventResult{}
+	}
+	return ui.EventResult{Handled: true}
 }
 
 // captureShortcut binds the chord the shortcut dialog is waiting for, or says
@@ -543,6 +579,8 @@ func (state *State) captureShortcut(event ui.KeyEvent, chord shortcutChord) ui.E
 	if !bound {
 		if conflict != shortcutNone {
 			state.shortcutError = fmt.Sprintf(state.messages.ShortcutsConflictFmt, state.shortcutActionLabel(conflict))
+		} else if state.shortcutCapture == shortcutTabNumber {
+			state.shortcutError = state.messages.ShortcutsTabNumberInvalid
 		} else {
 			state.shortcutError = state.messages.ShortcutsInvalid
 		}

@@ -18,6 +18,7 @@ can be changed in settings.
     { action: 'Open local terminal', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
     { action: 'Next tab', mac: 'Control+Tab', other: 'Control+Tab' },
     { action: 'Previous tab', mac: 'Control+Shift+Tab', other: 'Control+Shift+Tab' },
+    { action: 'Jump to tab 1–9', mac: 'Command+1…9', other: 'Control+1…9' },
   ]}
 />
 
@@ -30,7 +31,10 @@ be bound with modifiers. Duplicate bindings report a conflict. Bound keys take p
 over terminal input; combinations without Control/Command leave ordinary text fields editable.
 Restore defaults in the capture dialog resets only that shortcut; the page header resets
 all shortcuts. Resetting one shortcut reports a conflict if its default is already in use.
-On macOS, Command+1 to Command+9 also jump straight to the first through ninth tab.
+Command+1 to Command+9 on macOS, and Control+1 to Control+9 on Windows and Linux,
+jump straight to the first through ninth tab. On Windows and Linux, when no tab sits
+at that position the key stays with the terminal, where Control plus a digit can be
+a control code.
 
 Clearing the screen also drops the scrollback above it, but the line the cursor
 is on stays, so a command being typed is not lost.
