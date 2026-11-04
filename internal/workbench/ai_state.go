@@ -77,6 +77,7 @@ type aiAnswer struct {
 
 // aiRun is one request to the model in flight.
 type aiRun struct {
+	stats      aiRunStats
 	target     gate.SessionInfo
 	extras     []gate.SessionInfo
 	targetKey  string
@@ -169,6 +170,7 @@ type aiState struct {
 	// provider does not always report usage, so zeros mean unknown.
 	lastUsage  llm.Usage
 	totalUsage llm.Usage
+	lastRun    *aiRunStats
 	// rename is the conversation-rename dialog's state.
 	rename aiRenameDialog
 
@@ -754,7 +756,9 @@ func (state *State) aiSend() {
 	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default, the other connections the user selected and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID, target: target, extras: extras, targetKey: targetKey, attachments: refs}
+	run.stats.startedAt = state.now()
 	ai.run = run
+	ai.lastRun = nil
 	ai.panel.autoMenu = false // the scope is fixed while the request runs
 	if backend.defaultDone != nil && len(backend.bindings) == 1 {
 		go state.aiWatchTarget(ctx, run, backend.defaultDone)
@@ -775,6 +779,7 @@ func (state *State) aiSend() {
 // aiStop cancels the request in flight.
 func (state *State) aiStop() {
 	if run := state.ai.run; run != nil {
+		run.stats.phase = aiRunStopping
 		run.cancel()
 	}
 }
@@ -790,6 +795,10 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 	if ai.run != run {
 		return
 	}
+	if event.Usage != (llm.Usage{}) {
+		run.stats.usage = event.Usage
+	}
+	run.stats.usageIncomplete = run.stats.usageIncomplete || event.UsageIncomplete
 	appendText := func(kind aiItemKind, delta string) {
 		if run.open >= 0 && run.open < len(ai.items) && ai.items[run.open].kind == kind {
 			item := &ai.items[run.open]
@@ -812,10 +821,19 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 	}
 	switch event.Kind {
 	case agent.EventText:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunAnswering
+		}
 		appendText(aiAssistant, event.Text)
 	case agent.EventReasoning:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunAnalyzing
+		}
 		appendText(aiReasoning, event.Text)
 	case agent.EventToolStart:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase, run.stats.tool = aiRunUsingTool, event.Call.Name
+		}
 		run.open = -1
 		item := aiItem{kind: aiTool, call: event.Call, status: aiToolRunning}
 		if event.Call.Name == "terminal_exec" || event.Call.Name == "terminal_exec_many" {
@@ -828,6 +846,9 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		}
 		ai.items = append(ai.items, item)
 	case agent.EventToolDone:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunWaitingModel
+		}
 		run.open = -1
 		for index := len(ai.items) - 1; index >= 0; index-- {
 			item := &ai.items[index]
@@ -867,8 +888,6 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		ai.approvals = append(ai.approvals, &aiApproval{request: request, escalation: true})
 		ai.scroll.ScrollToEnd()
 	case agent.EventDone:
-		ai.lastUsage = event.Usage
-		ai.totalUsage = ai.totalUsage.Add(event.Usage)
 		if llm.StopsAtLimit(event.StopReason) {
 			// Half an answer must not look like the whole of it.
 			ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.AnswerTruncated})
@@ -919,8 +938,39 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 	if ai.run != run {
 		return
 	}
+	run.stats.duration = max(state.now()-run.stats.startedAt, 0)
+	run.stats.usageIncomplete = run.stats.usageIncomplete || err != nil
+	switch {
+	case errors.Is(err, context.Canceled):
+		run.stats.phase = aiRunStopped
+	case err != nil:
+		run.stats.phase = aiRunFailed
+	default:
+		run.stats.phase = aiRunCompleted
+		for _, approval := range ai.approvals {
+			if approval.escalation {
+				run.stats.phase = aiRunNeedsApproval
+				break
+			}
+		}
+	}
+	ai.lastUsage = run.stats.usage
+	ai.totalUsage = ai.totalUsage.Add(run.stats.usage)
+	stats := run.stats
+	ai.lastRun = &stats
 	ai.run = nil
 	run.cancel()
+	if err != nil {
+		for index := range ai.items {
+			item := &ai.items[index]
+			if item.kind == aiTool && (item.status == aiToolRunning || item.status == aiToolWaiting) {
+				item.status = aiToolFailed
+				if item.result == "" && errors.Is(err, context.Canceled) {
+					item.result = state.messages.AIPanel.RunStopped
+				}
+			}
+		}
+	}
 	kept := ai.approvals[:0]
 	for _, approval := range ai.approvals {
 		if approval.escalation {
@@ -1025,6 +1075,7 @@ func (state *State) aiNewConversation() {
 	ai.retry = false
 	ai.answerOnly = false
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
+	ai.lastRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 }
@@ -1053,6 +1104,7 @@ func (state *State) aiOpenConversation(id int64) {
 	ai.retry, ai.answerOnly = false, false
 	state.dropEscalationApprovals()
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
+	ai.lastRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 	for _, row := range stored {

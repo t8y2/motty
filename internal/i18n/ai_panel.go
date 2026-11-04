@@ -38,9 +38,23 @@ type AIPanelMessages struct {
 	RenameSubmit      string
 	RenameRequired    string
 
-	UsageFmt       string
-	UsageTotalFmt  string
-	UsageCachedFmt string
+	UsageFmt                string
+	UsageTotalFmt           string
+	UsageCachedFmt          string
+	RunWaiting              string
+	RunWaitingLong          string
+	RunAnswering            string
+	RunToolFmt              string
+	RunApproval             string
+	RunStopping             string
+	RunCompleted            string
+	RunStopped              string
+	RunElapsedFmt           string
+	RunTotalTimeFmt         string
+	RunUsageFmt             string
+	RunUsageUnknown         string
+	RunUsageIncomplete      string
+	RunUsageConversationFmt string
 
 	ModeAsk   string
 	ModeAgent string
