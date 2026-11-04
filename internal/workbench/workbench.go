@@ -428,6 +428,7 @@ type State struct {
 	fileWindows       fileWindowManager
 	fileNotices       fileNotices
 	revealResults     chan revealResult
+	revealBusy        bool // only the window thread changes it; a worker returns over revealResults
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
 	reveal      secretReveal
@@ -914,7 +915,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
-		revealResults:         make(chan revealResult, 16),
+		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
 		nextIdentityID:        1,

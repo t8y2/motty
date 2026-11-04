@@ -105,20 +105,41 @@ func TestTransferCenterRevealsOnlyCompletedDownloads(t *testing.T) {
 		t.Fatal("test download should represent closed-connection history")
 	}
 	opened := make(chan string, 3)
+	release := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
 	state.options.RevealPath = func(path string) error {
 		opened <- path
+		<-release
 		return nil
 	}
 	reveal := hitTransfersReveal.At(completed.id)
 	state.Click(reveal)
 	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeyEnter})
 	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeySpace})
-	waitFor(t, state, func() bool { return len(opened) == 3 })
-	for range 3 {
-		if got := <-opened; got != completed.snapshot.Destination {
-			t.Fatalf("opened=%q want=%q", got, completed.snapshot.Destination)
-		}
+	for range 20 {
+		state.Click(reveal)
 	}
+	waitFor(t, state, func() bool { return len(opened) == 1 })
+	if got := <-opened; got != completed.snapshot.Destination {
+		t.Fatalf("opened=%q want=%q", got, completed.snapshot.Destination)
+	}
+	if !state.revealBusy {
+		t.Fatal("repeated reveal did not keep a single pending request")
+	}
+	close(release)
+	waitFor(t, state, func() bool { return !state.revealBusy })
+	state.Click(reveal)
+	waitFor(t, state, func() bool { return len(opened) == 1 })
+	if got := <-opened; got != completed.snapshot.Destination {
+		t.Fatalf("opened=%q want=%q after first reveal completed", got, completed.snapshot.Destination)
+	}
+	waitFor(t, state, func() bool { return !state.revealBusy })
 	for _, index := range []int{1, 2, 3} {
 		state.Click(hitTransfersReveal.At(state.transfers.entries[index].id))
 	}
@@ -152,7 +173,7 @@ func TestTransferCenterReportsRevealFailure(t *testing.T) {
 func TestTransferCenterExplainsWhenARevealTargetIsGone(t *testing.T) {
 	state := transferPreviewState(t)
 	state.options.RevealPath = func(path string) error {
-		return fmt.Errorf("%w: %q", errRevealPathMissing, path)
+		return fmt.Errorf("%w: %q", os.ErrNotExist, path)
 	}
 	state.Click(hitTransfersReveal.At(state.transfers.entries[0].id))
 	waitFor(t, state, func() bool { return state.status == state.messages.Transfers.ShowInFolderMissing })

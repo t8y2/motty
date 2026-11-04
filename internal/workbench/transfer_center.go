@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"path/filepath"
 	"slices"
@@ -108,8 +109,12 @@ type revealResult struct {
 }
 
 func (state *State) revealTransferPath(path string) {
+	if state.revealBusy {
+		return
+	}
+	state.revealBusy = true
 	if state.revealResults == nil {
-		state.revealResults = make(chan revealResult, 16)
+		state.revealResults = make(chan revealResult, 1)
 	}
 	reveal := state.options.RevealPath
 	go func() {
@@ -133,11 +138,12 @@ func (state *State) pumpRevealResults() {
 	for {
 		select {
 		case result := <-state.revealResults:
+			state.revealBusy = false
 			if result.err == nil {
 				continue
 			}
 			detail := state.messages.Transfers.ShowInFolderFailed
-			if errors.Is(result.err, errRevealPathMissing) {
+			if errors.Is(result.err, fs.ErrNotExist) {
 				detail = state.messages.Transfers.ShowInFolderMissing
 			}
 			state.showActionFailure(state.messages.Transfers.ShowInFolder, result.err, detail)
