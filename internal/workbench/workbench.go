@@ -516,6 +516,7 @@ type State struct {
 	hostTreeRows       []hostTreeRow
 	hostsScroll        float32
 	tabDrag            tabDrag
+	tabPreview         tabPreview
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
@@ -864,6 +865,7 @@ func (state *State) Close() {
 	}
 	state.callbacksClosed.Store(true)
 	state.closed = true
+	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
 	state.remote.serial++
@@ -2306,6 +2308,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if state.tabDrag.active && event.Key == ui.KeyEscape {
+		state.closeTabPreview()
 		state.tabDrag = tabDrag{}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

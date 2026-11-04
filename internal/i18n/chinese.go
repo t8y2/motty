@@ -541,6 +541,8 @@ var ChineseMessages = Messages{
 	MenuCloseTabsToRight:           "关闭右侧标签页",
 	MenuCloseTabsBelow:             "关闭下方标签页",
 	MenuDuplicateTab:               "复制标签页",
+	MenuMoveTabToNewWindow:         "移动到新窗口",
+	TabTearOffHint:                 "松开以在新窗口中打开",
 	MenuRenameTab:                  "重命名",
 	MenuRenameTerminal:             "重命名终端",
 	MenuLockTab:                    "锁定标签页",

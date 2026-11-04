@@ -144,6 +144,13 @@ func openRemoteFiles(conn Connection, mode transferMode) (sftpclient.Remote, err
 }
 
 // Options configures the parts of the workbench that touch the outside world.
+// DragPreview is a picture that follows a drag outside every window.
+type DragPreview interface {
+	// MoveTo puts the picture's top-left at origin, in screen coordinates.
+	MoveTo(origin ui.Point)
+	Close()
+}
+
 type Options struct {
 	// DevelopmentSource offers a one-way import into an unused development
 	// profile. Nil disables discovery, including for explicit test profiles.
@@ -220,6 +227,11 @@ type Options struct {
 	// what dropping a tab outside every window does. Nil means a tab cannot be
 	// torn off.
 	TearOff func(origin ui.Point, adopt func(*State)) error
+	// OpenDragPreview shows a picture of size at origin (screen coordinates),
+	// drawn by paint, above every window; it is what follows a tab dragged out
+	// of every window, where no window can draw it. An error, or nil, means the
+	// platform cannot, and the window shows what it can at its own edge.
+	OpenDragPreview func(size ui.Size, origin ui.Point, paint func(canvas *ui.Canvas, size ui.Size)) (DragPreview, error)
 	// Blank starts the window empty: no tabs are restored into it.
 	Blank bool
 	// RememberWindowFrame saves where this window's content area is, and opens

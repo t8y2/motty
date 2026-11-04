@@ -541,6 +541,8 @@ var EnglishMessages = Messages{
 	MenuCloseTabsToRight:           "Close Tabs to the Right",
 	MenuCloseTabsBelow:             "Close Tabs Below",
 	MenuDuplicateTab:               "Duplicate Tab",
+	MenuMoveTabToNewWindow:         "Move to New Window",
+	TabTearOffHint:                 "Release to open in a new window",
 	MenuRenameTab:                  "Rename",
 	MenuRenameTerminal:             "Rename Terminal",
 	MenuLockTab:                    "Lock Tab",

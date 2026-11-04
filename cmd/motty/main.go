@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -267,6 +268,15 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		RememberWindowFrame: place.rememberFrame,
 		TearOff: func(origin ui.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
+		},
+		OpenDragPreview: func(size ui.Size, origin ui.Point, paint func(*ui.Canvas, ui.Size)) (workbench.DragPreview, error) {
+			preview, err := application.OpenDragPreview(app.DragPreviewConfig{
+				Width: int(math.Ceil(float64(size.Width))), Height: int(math.Ceil(float64(size.Height))), Origin: origin, Paint: paint,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return preview, nil
 		},
 		CloseWindow:        func() { requestClose(func() { mainWindow.Close() }) },
 		KnownHostsPath:     knownHostsPath(datadir.Current().Dir),

@@ -553,10 +553,15 @@ type Messages struct {
 	MenuCloseTabsToRight string
 	MenuCloseTabsBelow   string
 	MenuDuplicateTab     string
-	MenuRenameTab        string
-	MenuRenameTerminal   string
-	MenuLockTab          string
-	MenuUnlockTab        string
+	// MenuMoveTabToNewWindow is the tab menu's choice that gives the tab a
+	// window of its own; TabTearOffHint is what a drag says while the pointer is
+	// out of every window and letting go would do the same.
+	MenuMoveTabToNewWindow string
+	TabTearOffHint         string
+	MenuRenameTab          string
+	MenuRenameTerminal     string
+	MenuLockTab            string
+	MenuUnlockTab          string
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string
