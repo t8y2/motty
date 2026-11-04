@@ -34,6 +34,7 @@ func TestLocalProxyDialogJourneyInBothLanguages(t *testing.T) {
 			state.Wake()
 			state.openLocalProxy(session)
 			var nativeInput app.TextInput
+			// CheckLayout uses reference metrics, so layout must use them too.
 			view, err := headless.Open(app.Config{
 				Title: "Local proxy", Width: 900, Height: 640, Tree: Tree(),
 				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
@@ -47,7 +48,7 @@ func TestLocalProxyDialogJourneyInBothLanguages(t *testing.T) {
 					}
 					return nil
 				},
-			}, nil, headless.Options{Scale: 1})
+			}, nil, headless.Options{Scale: 1, ReferenceText: true})
 			if err != nil {
 				t.Fatal(err)
 			}
