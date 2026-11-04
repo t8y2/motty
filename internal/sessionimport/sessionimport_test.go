@@ -172,6 +172,24 @@ func TestMobaXtermChineseEncoding(t *testing.T) {
 	}
 }
 
+// The visible import path must read a BOM-less .xsh a Chinese Windows writes
+// as GB18030: its host and user arrive as Chinese, not as dropped bytes
+// (issue #332).
+func TestParseXshellReadsBOMLessGB18030Sessions(t *testing.T) {
+	text := "[CONNECTION]\r\nHost=生产主机.example\r\nPort=22\r\nProtocol=SSH\r\n[CONNECTION:AUTHENTICATION]\r\nUserName=管理员\r\n"
+	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ParseXshell(write(t, t.TempDir(), "中文会话.xsh", legacy))
+	if err != nil || len(result.Entries) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0]; got.Name != "中文会话" || got.Host != "生产主机.example" || got.User != "管理员" {
+		t.Fatalf("entry = %+v", got)
+	}
+}
+
 func TestMobaXtermMalformedLegacyEncodingDoesNotDropBytes(t *testing.T) {
 	path := write(t, t.TempDir(), "broken.mxtsessions", append([]byte("[Bookmarks]\n"), []byte{'x', 0x81, '=', '#', '1', '#', '0', '%', 'h', '%', '2', '2', '%', 'u', '%', '\n'}...))
 	if _, err := ParseMobaXterm(path); err == nil {
@@ -494,8 +512,8 @@ func FuzzParsers(f *testing.F) {
 	})
 }
 
-// The encoding ladder of the shared reader covers the encoding ladder of the shared
-// reader: a BOM-less ANSI export from a Chinese Windows (as Xshell writes them)
+// This test covers the encoding ladder of the shared reader: a BOM-less ANSI
+// export from a Chinese Windows (as Xshell writes them)
 // is GB18030 and must read as Chinese, not as dropped bytes; valid UTF-8 is
 // never reinterpreted; bytes that survive no decoding still drop their bad
 // parts (issue #332).
