@@ -47,6 +47,7 @@ func (h *minSizeHost) AddStatusItem(app.StatusItemConfig) (app.StatusItemControl
 	return nil, errors.New("not used")
 }
 func (h *minSizeHost) SetDockBadge(string) {}
+func (h *minSizeHost) SetProgress(float32) {}
 
 func (h *minSizeHost) Quit() {
 	for _, w := range h.windows {

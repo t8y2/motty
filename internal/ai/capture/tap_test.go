@@ -2,10 +2,13 @@ package capture
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
+
+	"motty/internal/shellkind"
 )
 
 const testNonce = "abc123"
@@ -374,5 +377,78 @@ func BenchmarkTap1MiB(b *testing.B) {
 		if !tp.Result().Done {
 			b.Fatal("not done")
 		}
+	}
+}
+
+func TestWrapForRefusesShellsWithNoWrapper(t *testing.T) {
+	for _, kind := range []shellkind.Kind{shellkind.Cmd, shellkind.Fish, shellkind.Nushell} {
+		sent, err := WrapFor(kind, "hostname", "n1")
+		var unsupported ErrUnsupportedShell
+		if !errors.As(err, &unsupported) || unsupported.Kind != kind || sent != nil {
+			t.Errorf("%v: WrapFor = %q, %v; want ErrUnsupportedShell and nothing to type", kind, sent, err)
+		}
+		if !strings.Contains(err.Error(), kind.String()) {
+			t.Errorf("%v: the error does not name the shell: %v", kind, err)
+		}
+	}
+}
+
+func TestWrapForUnknownShellKeepsThePOSIXWrapper(t *testing.T) {
+	got, err := WrapFor(shellkind.Unknown, "echo hi", "n1")
+	if err != nil || string(got) != string(Wrap("echo hi", "n1")) {
+		t.Fatalf("WrapFor(Unknown) = %q, %v; want the POSIX wrapper", got, err)
+	}
+}
+
+func TestPowerShellWrapperInvariants(t *testing.T) {
+	for _, command := range []string{"hostname", "a\nb", `dir C:\`, "", "x `"} {
+		sent, err := WrapFor(shellkind.PowerShell, command, "n1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(sent)
+		// What is typed ends the line the way Enter does, and has no bare line
+		// feed that PSReadLine would not take as a line break.
+		if strings.Contains(text, "\n") || !strings.HasSuffix(text, "\r") {
+			t.Errorf("%q: lines must be separated by carriage returns only: %q", command, text)
+		}
+		// The terminal's echo must never contain the contiguous marker.
+		if strings.Contains(text, markerPrefix+"n1") {
+			t.Errorf("%q: the echoed line contains the marker: %q", command, text)
+		}
+	}
+	if got := DisplayCommandFor(shellkind.PowerShell, `dir C:\`); got != `dir C:\` {
+		t.Errorf("a trailing backslash is part of a PowerShell path, got %q", got)
+	}
+	if got := DisplayCommandFor(shellkind.PowerShell, "dir `"); got != "dir" {
+		t.Errorf("a pending backtick continuation is dropped, got %q", got)
+	}
+	if got := DisplayCommandFor(shellkind.PowerShell, ""); got != "$null" {
+		t.Errorf("an empty command is a no-op, got %q", got)
+	}
+}
+
+// A PowerShell echo that repeats the line, as PSReadLine redraws it, must not
+// stop the tap from finding the marker, and the echo stays out of the output.
+func TestPowerShellEchoIsLeftOutOfTheOutput(t *testing.T) {
+	sent, err := WrapFor(shellkind.PowerShell, "hostname", "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(sent), "\r"), "\r")
+	stream := "PS C:\\> " + lines[0] + "\r\n>> " + lines[1] + "\r\nBOX\r\n\r\nGOPAI_n10\r\nPS C:\\> "
+	tp := NewTap("n1", 4096)
+	tp.SetEcho(sent)
+	var shown []byte
+	for i := 0; i < len(stream); i += 7 {
+		display, _ := tp.Feed([]byte(stream[i:min(i+7, len(stream))]))
+		shown = append(shown, display...)
+	}
+	r := tp.Result()
+	if !r.Done || r.ExitCode != 0 || r.Output != "BOX" {
+		t.Fatalf("got %+v", r)
+	}
+	if strings.Contains(string(shown), "GOPAI_n1") {
+		t.Fatalf("the marker was shown: %q", shown)
 	}
 }

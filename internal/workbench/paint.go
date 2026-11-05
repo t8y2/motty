@@ -155,6 +155,12 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
+	// A panel closed from inside itself returns the keyboard to the terminal it
+	// covered. The request is made once: a later click decides focus again.
+	if state.ai.panel.focusBack && !state.aiPanelVisible() {
+		state.ai.panel.focusBack = false
+		canvas.RequestFocus(state.activeTerminalFocusHit())
+	}
 	// A running dashboard keeps sampling on every page, but only the page it is
 	// on needs the repaint each sample triggers.
 	state.dashboard.visible.Store(state.activeSection == sectionDashboard)
@@ -394,6 +400,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintWorkspaceSaveDialog(canvas, viewport)
 	case modalWorkspaceTemplateDelete:
 		state.paintWorkspaceTemplateDelete(canvas, viewport)
+	case modalLocalProxy:
+		state.paintLocalProxyDialog(canvas, viewport)
 	}
 	if state.knownHosts.action != knownHostsActionNone {
 		state.paintKnownHostsDialog(canvas, viewport)
@@ -415,6 +423,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
+	state.paintLocalProxyFocus(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
@@ -464,17 +473,25 @@ const (
 	barButtonSize = float32(28) // the square hit area of a window-bar button
 	barMargin     = float32(12)
 	barTabHeight  = float32(28)
-	barGap        = float32(4)
-	barTabMin     = float32(96)
-	barTabMax     = float32(170)
+	// barTabReach is how far a horizontal tab's click region extends above and
+	// below its painted body: the rest of the bar's height. The body floats in the
+	// bar, and the strip above it must still switch tabs when the pointer is thrown
+	// against the window's top edge (Fitts's law), as in Chrome and Edge.
+	barTabReach = (TitlebarHeight - barTabHeight) / 2
+	barGap      = float32(4)
+	barTabMin   = float32(96)
+	barTabMax   = float32(170)
 )
 
 // windowBar keeps the places the window bar's own painters need once it is laid
-// out: the assistant's button and, for each tab, where its system and its light go.
+// out: the assistant's button, the room the active session's name is drawn in,
+// and, for each tab, where its system and its light go.
 type windowBar struct {
-	assistant flex.Box
-	transfers flex.Box
-	tabs      []barTab
+	assistant  flex.Box
+	transfers  flex.Box
+	title      flex.Box
+	titleLabel string
+	tabs       []barTab
 }
 
 type barTab struct {
@@ -558,6 +575,8 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		}
 	}
 	bar.tabs = bar.tabs[:0]
+	bar.title = flex.Box{}
+	bar.titleLabel = ""
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
 	}
@@ -573,20 +592,14 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	row.Children(func() {
 		state.barButton(f, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
 		if state.tabOrientation == tabsVertical {
-			if !probe {
-				label := m.TrayTitle
-				if manager := state.activeSFTPWindow(); manager != nil {
-					label = state.sftpFileTabTitle(manager)
-				} else if state.terminalPage() {
-					for _, tab := range state.workspaceTabs {
-						if tab.ID == state.deck.ActiveWorkspace() {
-							label = state.tabLabel(tab)
-						}
-					}
-				}
-				f.Text(label).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1).Basis(0)
-			} else {
+			if probe {
 				f.Spacer()
+			} else {
+				// The name is drawn after the bar is laid out, centred over the
+				// workspace it names: see paintWindowBarTitle. The slot keeps the
+				// height of a tab so the drawn line sits on the row's middle.
+				bar.title = f.Slot().Grow(1).Height(barTabHeight)
+				bar.titleLabel = state.windowBarTitle()
 			}
 		}
 		// The room of the tabs and the new-tab button. The tabs stay as wide as they
@@ -598,12 +611,14 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		}
 		tabRoom.Children(func() {
 			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
-			f.Row().Fill().Children(func() {
+			f.Row().Fill().Items(flex.Center).Children(func() {
 				tabs := f.Row()
 				if probe {
 					chrome.probeRow = tabs
 				} else {
-					tabs.Width(geometry.row.Width).Shrink(0).Clip()
+					// As tall as the bar, so the clip that scrolls the tabs sideways does
+					// not cut off the click regions that reach the bar's top edge.
+					tabs.Width(geometry.row.Width).Height(windowBarHeight).Items(flex.Center).Shrink(0).Clip()
 				}
 				tabs.Children(func() {
 					for index := range state.workspaceTabs {
@@ -677,7 +692,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 						}
 						label := state.sftpFileTabTitle(fileTab)
 						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-							PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
+							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, ui.HitOptions{Role: ui.RoleTab, Selected: active}).Children(func() {
 							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
 							f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
@@ -760,7 +775,7 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	if vertical {
 		row.MarginSides(first, 0, barGap, 0)
 	} else {
-		row.MarginSides(0, barGap, 0, first)
+		row.MarginSides(0, barGap, 0, first).HitOutset(barTabReach, 0, barTabReach, 0)
 	}
 	row.
 		PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
@@ -832,11 +847,56 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 
 // paintWindowBarParts draws what the bar's tabs and assistant button hold that is
 // drawn rather than declared: the system of a session and its light, in the room
-// the layout kept for them.
+// the layout kept for them, and the session's name.
 func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 	bar := &state.chrome.bar
 	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
+	state.paintWindowBarTitle(canvas)
 	state.paintToolbarDockTop(canvas)
+}
+
+// windowBarTitle names what the window shows when the tabs are in the sidebar:
+// the file tab in front, else the active session, else the app's own name.
+func (state *State) windowBarTitle() string {
+	if manager := state.activeSFTPWindow(); manager != nil {
+		return state.sftpFileTabTitle(manager)
+	}
+	if state.terminalPage() {
+		for _, tab := range state.workspaceTabs {
+			if tab.ID == state.deck.ActiveWorkspace() {
+				return state.tabLabel(tab)
+			}
+		}
+	}
+	return state.messages.TrayTitle
+}
+
+// paintWindowBarTitle draws that name in the bar's free room, centred over the
+// workspace the name belongs to. With the tabs in the left sidebar the middle of
+// the bar is empty: a name left against the hosts button reads as part of that
+// group of buttons rather than as the name of what is on screen, and one name in
+// a wide empty strip reads as the strip's own title.
+func (state *State) paintWindowBarTitle(canvas *ui.Canvas) {
+	bar := &state.chrome.bar
+	if bar.titleLabel == "" {
+		return
+	}
+	band := bar.title.Rect()
+	const pad = float32(10)
+	room := band.Width - 2*pad
+	if room < 24 {
+		return
+	}
+	label := elide(canvas, bar.titleLabel, metrics.FontSizeS, ui.WeightRegular, room)
+	width := canvas.TextWidth(label, metrics.FontSizeS)
+	// The workspace is what the name is about: centre it over that column rather
+	// than over the whole bar, which carries the sidebar on its left. File tabs
+	// share the band, so the name still stops at the band's ends.
+	column := state.verticalTabsColumn(state.viewport)
+	center := column + (state.viewport.Width-column)/2
+	x := min(max(center-width/2, band.X+pad), band.X+band.Width-pad-width)
+	canvas.Label(label, ui.Rect{X: x, Y: band.Y, Width: width, Height: band.Height},
+		ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
 }
 
 // elide shortens text to fit width, ending it with an ellipsis. Weight is the
@@ -1531,23 +1591,35 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	}
 	// The list scrolls under the toolbar: the tree starts above its window by the
 	// scrolled distance, and the clip keeps what is out of the window out of sight
-	// and out of reach.
-	state.hostsContent = state.hostListHeight(treeBounds.Width)
+	// and out of reach. The bar is Viva's scroll area: it keeps its own strip out
+	// of the rows and paints nothing at all while the content fits.
+	content := state.hostListHeight(treeBounds.Width)
+	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+	if geometry.MaxOffsetY > 0 {
+		// Taking the bar's strip narrows the list; the cards pack to the width they
+		// are really given, so read the height again at the reserved width.
+		content = state.hostListHeight(geometry.Viewport.Width)
+		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+	}
 	if state.hostRevealID != 0 {
-		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, treeBounds.Width)
+		// The revealed row is found at the width the list really has, bar included.
+		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, geometry.Viewport.Width)
 		canvas.RequestFocus(hitHostList.At(int(state.hostRevealID)))
 		state.hostRevealID = 0
+		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
 	}
-	state.hostsScroll = min(max(state.hostsScroll, 0), max(state.hostsContent-treeBounds.Height, 0))
-	canvas.Clip(treeBounds)
+	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
+	viewport := geometry.Viewport
+	canvas.Clip(viewport)
 	if state.hostView == hostViewGrid {
-		state.paintHostGrid(canvas, treeBounds)
+		state.paintHostGrid(canvas, viewport)
 		state.paintHostGroupDrop(canvas)
 		canvas.Unclip()
+		area.EndContent()
 		return
 	}
 	tree := components.BeginTree(canvas, state.Theme(), ui.Rect{
-		X: treeBounds.X, Y: treeBounds.Y - state.hostsScroll, Width: treeBounds.Width, Height: treeBounds.Height + state.hostsScroll,
+		X: viewport.X, Y: viewport.Y - state.hostsScroll, Width: viewport.Width, Height: viewport.Height + state.hostsScroll,
 	}).Indent(22)
 	filtering := strings.TrimSpace(state.visibleQuery) != ""
 	for _, entry := range state.hostTreeRows {
@@ -1559,9 +1631,10 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 				ID: hitHostGroupRowList.At(entry.GroupIndex), DisclosureID: hitHostGroupOpenList.At(entry.GroupIndex),
 				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
 			})
-			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+			if row.Bounds.Y >= viewport.Y+viewport.Height {
 				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
+				area.EndContent()
 				return
 			}
 			content := row.Content
@@ -1585,9 +1658,10 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			id := hitHostList.At(int(host.ID))
 			tree = tree.RowHeight(hostRowHeight)
 			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
-			if row.Bounds.Y >= treeBounds.Y+treeBounds.Height {
+			if row.Bounds.Y >= viewport.Y+viewport.Height {
 				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
+				area.EndContent()
 				return
 			}
 			state.paintHostTreeRow(canvas, row.Bounds, row.Content, host, id)
@@ -1596,6 +1670,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	}
 	state.paintHostGroupDrop(canvas)
 	canvas.Unclip()
+	area.EndContent()
 }
 
 // hostListTop is the base list offset below the toolbar and group filters;
@@ -1621,6 +1696,19 @@ func (state *State) hostListHeight(width float32) float32 {
 		}
 	}
 	return height
+}
+
+// hostListScrollArea is how the hosts list scrolls: Viva's scroll area owns the
+// bar, keeping its strip out of the rows and painting the thumb from the list's
+// content height. Nothing is painted while the content fits.
+func hostListScrollArea(canvas *ui.Canvas, theme ui.Theme, bounds ui.Rect, content, offset float32) (components.ScrollArea, components.ScrollAreaGeometry) {
+	// Width zero says the list has no horizontal extent of its own: it is laid out
+	// to geometry.Viewport.Width, so no horizontal bar is ever due.
+	area := components.BeginScrollArea(canvas, theme, bounds, ui.Size{Height: content}).
+		Offset(0, offset).
+		ReserveScrollbars().
+		VerticalScrollbar(ui.ID{}, "", "")
+	return area, area.Geometry()
 }
 
 // scrollHosts moves the hosts list with the wheel.

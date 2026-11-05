@@ -43,6 +43,11 @@ type Messages struct {
 	FileWindow     FileWindowMessages
 	SFTPWindow     SFTPWindowMessages
 	Transfers      TransferCenterMessages
+	// LocalProxy holds the compact SSH reverse-proxy panel.
+	LocalProxy LocalProxyMessages
+	// CodeEditor holds the code editor of the file window: find, replace and the
+	// status line.
+	CodeEditor CodeEditorMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages
@@ -365,6 +370,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string
 	ShortcutFilesPath                    string
@@ -375,6 +381,7 @@ type Messages struct {
 	ShortcutCloseTab                     string
 	ShortcutNextTab                      string
 	ShortcutPreviousTab                  string
+	ShortcutTabNumber                    string
 	ShortcutClearScreen                  string
 	RecordingStart                       string
 	RecordingStop                        string
@@ -549,10 +556,15 @@ type Messages struct {
 	MenuCloseTabsToRight string
 	MenuCloseTabsBelow   string
 	MenuDuplicateTab     string
-	MenuRenameTab        string
-	MenuRenameTerminal   string
-	MenuLockTab          string
-	MenuUnlockTab        string
+	// MenuMoveTabToNewWindow is the tab menu's choice that gives the tab a
+	// window of its own; TabTearOffHint is what a drag says while the pointer is
+	// out of every window and letting go would do the same.
+	MenuMoveTabToNewWindow string
+	TabTearOffHint         string
+	MenuRenameTab          string
+	MenuRenameTerminal     string
+	MenuLockTab            string
+	MenuUnlockTab          string
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string
@@ -743,6 +755,36 @@ type Messages struct {
 	KeyPassphraseSavedFmt       string
 	KeyPassphraseRemovedFmt     string
 	KeyPassphraseHostHint       string
+	VaultForgetKeysFmt          string
+	KeyAdd                      string
+	KeyPaste                    string
+	KeyGenerate                 string
+	KeyCopyPublic               string
+	KeyPasteTitle               string
+	KeyPasteDescription         string
+	KeyNameLabel                string
+	KeyNamePlaceholder          string
+	KeyTextLabel                string
+	KeyTextPlaceholder          string
+	KeyPasteSubmit              string
+	KeyGenerateTitle            string
+	KeyGenerateDescription      string
+	KeyGenerateNamePlaceholder  string
+	KeyGeneratePassphraseLabel  string
+	KeyGenerateSubmit           string
+	KeyNameRequired             string
+	KeyInvalidTextFmt           string
+	KeyDuplicateFmt             string
+	KeyAddedFmt                 string
+	KeyGeneratedFmt             string
+	KeyGeneratedNotCopiedFmt    string
+	KeyPublicCopiedFmt          string
+	KeyPublicUnavailable        string
+	KeyStoredIn                 string
+	KeyDeleteTitle              string
+	KeyDeleteDescriptionFmt     string
+	KeyDeleteConfirm            string
+	KeyDeletedFmt               string
 
 	// Local SSH port forwarding.
 	ForwardTitle                  string
@@ -854,6 +896,7 @@ type Messages struct {
 	SFTPNewDirectory            string
 	SFTPOpen                    string
 	SFTPRename                  string
+	SFTPMove                    string
 	SFTPDelete                  string
 	SFTPPermissions             string
 	SFTPCancelTransfer          string
@@ -890,11 +933,22 @@ type Messages struct {
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string
 	SFTPRenameDescription       string
-	SFTPDestinationPath         string
+	SFTPNewName                 string
 	SFTPRenameSubmit            string
-	SFTPErrDestinationRequired  string
+	SFTPErrRenameInvalid        string
+	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
+	SFTPMoveTitle               string
+	SFTPMoveDescription         string
+	SFTPMoveDestination         string
+	SFTPMoveSubmit              string
+	SFTPErrMoveRequired         string
+	SFTPErrMoveInvalid          string
+	SFTPErrMoveSame             string
+	SFTPErrMoveInside           string
+	SFTPMovingFmt               string
+	SFTPMovedFmt                string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
@@ -911,6 +965,12 @@ type Messages struct {
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string
 	SFTPPermissionsSubmit       string
+	SFTPPermissionsOwner        string
+	SFTPPermissionsGroup        string
+	SFTPPermissionsOthers       string
+	SFTPPermissionsRead         string
+	SFTPPermissionsWrite        string
+	SFTPPermissionsExecute      string
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string

@@ -177,6 +177,15 @@ func canonicalExistingCase(path string) (string, error) {
 				actual = entry.Name()
 				break
 			}
+			// A link has an identity of its own: on Windows a junction is a
+			// reparse point, and Lstat describes that point rather than the
+			// directory it names. The path continues through the target, which
+			// is what wanted already is, so the link matches when its target
+			// does. Scoop installs every version behind such a junction.
+			if target, statErr := os.Stat(filepath.Join(current, entry.Name())); statErr == nil && os.SameFile(target, wanted) {
+				actual = entry.Name()
+				break
+			}
 		}
 		if actual == "" {
 			return "", fmt.Errorf("cannot determine on-disk case for %s", filepath.Join(current, part))

@@ -404,8 +404,8 @@ func TestSessionLogsNavigationAndRestore(t *testing.T) {
 	first.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: "session logs"}.Apply(first.EditorFor(hitCommandPaletteSearch))
 	first.refreshCommandPalette()
-	if first.commandPalette.visibleCount != 1 {
-		t.Fatalf("palette commands for %q = %d", "session logs", first.commandPalette.visibleCount)
+	if len(first.commandPalette.visible) != 1 {
+		t.Fatalf("palette commands for %q = %d", "session logs", len(first.commandPalette.visible))
 	}
 	if hit, ok := sessionLogHit(paintedCanvas(t, first), hitCommandPaletteItems.At(0)); !ok || hit.Label != first.messages.SessionLogs.Title {
 		t.Fatalf("palette entry = %+v, ok=%v", hit, ok)

@@ -460,9 +460,12 @@ func TestSharedTerminalToolbarPlacesLatencyBeforeActions(t *testing.T) {
 
 	var canvas ui.Canvas
 	state.Paint(&canvas, size)
-	first, ok := hitByID(&canvas, hitPaneSplitHorizontal)
+	if session.term.railCount == 0 {
+		t.Fatal("the rail painted no actions")
+	}
+	first, ok := hitByID(&canvas, session.term.railIDs[0])
 	if !ok {
-		t.Fatal("first split control is missing")
+		t.Fatal("first rail action is missing")
 	}
 	wantTop := session.term.railViewport.Y + 4
 	if first.Bounds.Y != wantTop || first.Bounds.Width != terminalBarToolSize {

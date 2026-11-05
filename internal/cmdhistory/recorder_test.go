@@ -382,3 +382,26 @@ func TestSuggestContinuesWithTheMostRecentCommandThatStartsTheSame(t *testing.T)
 		t.Fatal("a line that reads like a secret was suggested for")
 	}
 }
+
+func TestSuggestAllReturnsUpToMaxMatchesNewestFirst(t *testing.T) {
+	entries := []Entry{{Command: "git status"}, {Command: "git checkout main"}, {Command: "git checkout dev"}, {Command: "git config"}}
+	matches := SuggestAll(entries, "git c", 2)
+	if len(matches) != 2 || matches[0] != "heckout main" || matches[1] != "heckout dev" {
+		t.Fatalf("matches = %q", matches)
+	}
+	if got := SuggestAll(entries, "git c", 10); len(got) != 3 {
+		t.Fatalf("without the cap every match returns, got %q", got)
+	}
+	if got := SuggestAll(entries, "git c", 0); got != nil {
+		t.Fatalf("a zero cap returns nothing, got %q", got)
+	}
+	if got := SuggestAll(entries, "", 5); got != nil {
+		t.Fatalf("an empty line returns nothing, got %q", got)
+	}
+	if got := SuggestAll([]Entry{{Command: "mysql --password hunter2"}}, "mysql --password", 5); got != nil {
+		t.Fatal("a line that reads like a secret was suggested for")
+	}
+	if got := SuggestAll(entries, "git status", 5); got != nil {
+		t.Fatal("a command that is already complete has nothing to add")
+	}
+}

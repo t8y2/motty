@@ -138,12 +138,6 @@ jobs:
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
-      - name: Install CJK fonts
-        # The workbench layout checks compare measured text with painted text.
-        # Without a CJK font, fontconfig measures the glyphs it cannot find and
-        # paints them with a fallback, and CheckLayout reports the difference as
-        # text spilling out of its dialog.
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Test release build
         working-directory: motty
         run: go test ./... -count=1
@@ -170,12 +164,6 @@ jobs:
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
-      - name: Install CJK fonts
-        # The workbench layout checks compare measured text with painted text.
-        # Without a CJK font, fontconfig measures the glyphs it cannot find and
-        # paints them with a fallback, and CheckLayout reports the difference as
-        # text spilling out of its dialog.
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Test development components
         working-directory: motty
         run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
@@ -340,12 +328,6 @@ jobs:
             go-race-${{ matrix.cache }}-${{ hashFiles('motty/go.sum') }}-
             go-race-${{ matrix.cache }}-
             go-race-
-      - name: Install CJK fonts
-        # The workbench layout checks compare measured text with painted text.
-        # Without a CJK font, fontconfig measures the glyphs it cannot find and
-        # paints them with a fallback, and CheckLayout reports the difference as
-        # text spilling out of its dialog.
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Run the race detector
         working-directory: motty
         env:

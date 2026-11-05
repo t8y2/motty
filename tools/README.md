@@ -7,7 +7,7 @@ in a package.
 
 | Path | What it does |
 | --- | --- |
-| `headless_drive.py` | Drives a `-tags vivahead` build through the headless line protocol: `click`, `type`, `key`, `waitfor`, `shot`, `texts`, `layout`. `--build` and `--watch` add the `dev` tag, so the interface they iterate has the component gallery. |
+| `headless_drive.py` | Drives a `-tags vivahead` build through the headless line protocol: `click`, `type`, `key`, `waitfor`, `shot`, `texts`, `layout`, and the checks `tree` and `expect` (`expect text "Connected" within 5000`, `expect layout clean`). A script runs in the language it was written for (a `# lang: zh-CN` line, else Chinese when its commands contain Chinese, else English) and a failed run ends with each failed command and its line; `--fail-fast` stops at the first. `--build` and `--watch` add the `dev` tag, so the interface they iterate has the component gallery. |
 | `dev.sh` | Builds, signs and launches a real `-tags dev` window. `--once` runs one build; the default mode rebuilds and restarts when Go files here or in `../viva` change and needs `fswatch`. `make run` and `make dev` are shortcuts. |
 | `dev_launch.sh` | Shared launch observation for `dev.sh`. It waits for the application's real window-created message instead of treating a child PID as ready, and distinguishes start, hand-off, timeout and failure. |
 | `macos_dev_signing.sh` | Creates or reuses the private local macOS development identity, signs the executable, and verifies its identifier and certificate-bound designated requirement. `MOTTY_DEV_SIGN_IDENTITY` overrides the identity; `none` explicitly disables signing. |

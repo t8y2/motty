@@ -45,6 +45,7 @@ func (h *remoteWindowHost) AddStatusItem(app.StatusItemConfig) (app.StatusItemCo
 	return nil, errors.New("not used")
 }
 func (h *remoteWindowHost) SetDockBadge(string) {}
+func (h *remoteWindowHost) SetProgress(float32) {}
 
 func (h *remoteWindowHost) Quit() {
 	for _, w := range h.windows {

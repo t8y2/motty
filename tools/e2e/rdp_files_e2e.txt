@@ -1,0 +1,64 @@
+# End to end: files dropped on an RDP picture are pasted in the remote Explorer.
+# Against a real Windows machine (the Viva test VM, see ../viva/tools/testenv):
+# the RDP port is reachable from the developer's machine, and the account is a
+# throwaway local user that may sign in over Remote Desktop. The UI language of
+# the machine decides the labels below; these are the Chinese ones.
+#
+# Before: files to copy, and an empty folder the account can write to on the server.
+#
+#   mkdir -p /tmp/motty-rdp-files/folder/deeper && cd /tmp/motty-rdp-files
+#   printf 'hello' > hello-中文.txt; head -c 3145745 /dev/urandom > big.bin
+#   printf inner > folder/inner.txt; head -c 204800 /dev/urandom > folder/deeper/x.bin
+#   (find . -type f -exec shasum -a 256 {} \; | sort -k2) > /tmp/motty-rdp-files.sha
+#   # on the server: an empty C:\Users\Public\mottypaste that everyone may write to
+#
+# Run, with the server's address, port, account and password in place of the words in
+# capitals (the file holds no secret):
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   sed -e s/RDP_HOST/172.26.129.233/ -e s/RDP_PORT/20062/ -e s/RDP_USER/mottyrdp/ \
+#       -e "s/RDP_PASSWORD/$PASSWORD/" tools/e2e/rdp_files_e2e.txt > /tmp/rdp-files-run.txt
+#   python3 tools/headless_drive.py "$(mktemp -d)" /tmp/rdp-files-run.txt
+#
+# After: every file of the folder on the server must have the SHA-256 in
+# /tmp/motty-rdp-files.sha (Get-FileHash on the server). The drop answers with a
+# notice naming the number of items; Cmd+V is the paste shortcut of this machine,
+# which pastes the dropped files in the remote with its own Ctrl+V.
+
+click "新建主机"
+click "RDP"
+click 500 225
+type win-files
+click 500 295
+type RDP_HOST
+click 960 295
+key cmd+a
+type RDP_PORT
+click 500 365
+type RDP_USER
+click 800 365
+type RDP_PASSWORD
+click "与远程桌面共享剪贴板"
+click "添加主机"
+dblclick 400 145
+waitfor "信任此主机" 30000
+click "信任并保存"
+waitfor "TLS" 90000
+settle 5000
+drop 700 450 /tmp/motty-rdp-files/hello-中文.txt /tmp/motty-rdp-files/big.bin /tmp/motty-rdp-files/folder
+waitfor "已把 6 项" 20000
+shot /tmp/rdp-files-dropped.png
+settle 3000
+# Win+R, the folder, Enter: an Explorer window on it; maximised, with the pointer in its
+# empty list so the keyboard is there and the paste goes to the list.
+key cmd+r
+settle 2500
+type explorer C:\Users\Public\mottypaste
+key enter
+settle 6000
+key cmd+up
+settle 2000
+click 700 600
+key cmd+v
+settle 25000
+shot /tmp/rdp-files-pasted.png

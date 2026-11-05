@@ -50,6 +50,10 @@ type ToolsMessages struct {
 
 	// Snippets.
 	SnippetsTitle             string
+	SnippetTip                string
+	SnippetPickerPlaceholder  string
+	SnippetPickerEmpty        string
+	SnippetPickerAdd          string
 	SnippetsPageDescription   string
 	SnippetEmpty              string
 	SnippetEmptySub           string
@@ -444,6 +448,17 @@ type ToolsMessages struct {
 	DropTerminalUploadFmt           string
 	DropTerminalDoneFmt             string
 	DropTerminalFailedFmt           string
+	DropDesktopFiles                string
+	DesktopFilesTitle               string
+	DesktopFilesOfferedFmt          string // count, size
+	DesktopFilesSkippedFmt          string // count, first path
+	DesktopFilesUnsupported         string
+	DesktopFilesClipboardOff        string
+	DesktopFilesNotReady            string
+	DesktopFilesNothing             string
+	DesktopFilesTooManyFmt          string // limit
+	DesktopFilesPathTooLongFmt      string // path
+	DesktopFilesFailedFmt           string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
@@ -478,6 +493,7 @@ type ToolsMessages struct {
 	UpdateWhyTranslocated           string
 	UpdateWhySystemInstall          string
 	UpdateWhyNoPackage              string
+	UpdateWhyPackageUnknown         string
 	UpdateWhyUnsigned               string
 	GeneralUpdateInstall            string
 	UpdateConfirmTitle              string
@@ -488,6 +504,7 @@ type ToolsMessages struct {
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
+	UpdateBlockedBySystem           string
 	UpdateOpenPage                  string
 	UpdateNoReleaseText             string
 	ActionSSHFmt                    string

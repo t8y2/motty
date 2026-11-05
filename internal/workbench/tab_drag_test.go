@@ -244,3 +244,51 @@ func TestACrowdedTabCannotBeDockedPastTheLimit(t *testing.T) {
 		t.Fatalf("a full workspace takes a drop: %+v", state.tabDrag.drop)
 	}
 }
+
+func TestDraggingAPaneBarToTheTabsPullsItOutAsATab(t *testing.T) {
+	state, ids := threeTabs(t)
+	frame := state.workspacePixelBounds(state.viewport)
+	// Dock tab 0 beside the tab on show so the workspace is split.
+	target := hitTabList.At(int(ids[0]))
+	press(state, target, tabCenter(state, ids[0]))
+	at := ui.Point{X: frame.X + frame.Width*0.1, Y: frame.Y + frame.Height/2}
+	dragTo(state, target, at)
+	release(state, target, at)
+	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	panes := state.deck.Panes(ids[2], nil)
+	if len(panes) != 2 {
+		t.Fatalf("panes %+v", panes)
+	}
+	moved := panes[0].SessionID
+
+	state.refreshWorkspaceViews()
+	bar := pixelBounds(frame, state.panes[0].Bounds)
+	from := ui.Point{X: bar.X + bar.Width/2, Y: bar.Y + infoBarHeight/2}
+	ground := hitPaneActivateList.At(0)
+	press(state, ground, from)
+	// A drag over the terminal is not a drop.
+	dragTo(state, ground, ui.Point{X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2})
+	if !state.tabDrag.active || state.tabDrag.drop.kind != dropNone {
+		t.Fatalf("drag %+v", state.tabDrag)
+	}
+	end := ui.Point{X: state.tabStrip.origin + state.tabStrip.pitch*0.5, Y: windowBarHeight / 2}
+	dragTo(state, ground, end)
+	if state.tabDrag.drop.kind != dropReorder {
+		t.Fatalf("no drop among the tabs: %+v", state.tabDrag.drop)
+	}
+	release(state, ground, end)
+
+	if got := state.deck.Panes(ids[2], nil); len(got) != 1 {
+		t.Fatalf("source keeps %+v", got)
+	}
+	workspace, _, ok := state.deck.PaneForSession(moved)
+	if !ok || workspace == ids[2] || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("session in tab %d (ok %v), active %d", workspace, ok, state.deck.ActiveWorkspace())
+	}
+	if state.activeSessionID != uint32(moved) {
+		t.Fatalf("active session %d, want %d", state.activeSessionID, moved)
+	}
+	if _, ok := state.sessionByIDPointer(uint32(moved)); !ok {
+		t.Fatal("the session was lost")
+	}
+}

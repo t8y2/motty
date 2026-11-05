@@ -1061,6 +1061,9 @@ func (state *State) Resize(size ui.Size) {
 	state.viewport = size
 	state.fitTerminals()
 	state.fitSFTP(size)
+	// Both panels stay open when the window docks them, but a window that grew
+	// too narrow for both must not leave the assistant under the monitor.
+	state.reconcileAIPanelWithMonitor(size)
 }
 
 // terminalSession finds the session whose terminal owns a hit.
@@ -1337,6 +1340,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 			return result
 		}
 	}
+	if state.modal == modalLocalProxy {
+		return state.scrollLocalProxy(event)
+	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
@@ -1377,6 +1383,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	if state.modal == modalForm {
+		return state.scrollForm(event)
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)

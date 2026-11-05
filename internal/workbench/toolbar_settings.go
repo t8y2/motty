@@ -34,11 +34,13 @@ var toolbarCatalog = [3][]toolbarSpec{
 	},
 	toolbarTerminal: {
 		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
+		{"snippets", hitTerminalSnippets, iconNote},
 		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
 		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
 		{"save-output", hitTerminalSaveOutput, iconSave},
 		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
-		{"files", hitSFTPOpen, iconFolderOpen}, {"file-transfer", hitSFTPDetach, iconSFTPTransfer},
+		{"files", hitSFTPOpen, iconFolderOpen}, {"local-proxy", hitLocalProxyOpen, iconGlobe},
+		{"file-transfer", hitSFTPDetach, iconSFTPTransfer},
 		{"remote-tools", hitProcessToolsOpen, iconProcess},
 	},
 	toolbarSFTP: {
@@ -172,6 +174,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.NavSettings
 	case hitBroadcast:
 		return m.Tools.BroadcastStart
+	case hitTerminalSnippets:
+		return m.Tools.SnippetTip
 	case hitPaneSplitHorizontal:
 		return m.PaneSplitHorizontal
 	case hitPaneSplitVertical:
@@ -194,6 +198,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.ConnExportLog
 	case hitSFTPOpen:
 		return m.TipFiles
+	case hitLocalProxyOpen:
+		return m.LocalProxy.Title
 	case hitSFTPDetach:
 		return m.SFTPWindow.Open
 	case hitSFTPUpload:

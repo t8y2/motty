@@ -117,6 +117,16 @@ func (forwards *remoteForwardSet) cancel(payload []byte) (string, bool) {
 	return address, true
 }
 
+func (forwards *remoteForwardSet) directTargets() []directTarget {
+	forwards.mu.Lock()
+	defer forwards.mu.Unlock()
+	targets := make([]directTarget, 0, len(forwards.listeners))
+	for _, listener := range forwards.listeners {
+		targets = append(targets, directTarget{requested: listener.address, dial: listener.address})
+	}
+	return targets
+}
+
 func (forwards *remoteForwardSet) serve(listener *remoteListener) {
 	for {
 		incoming, err := listener.listener.Accept()

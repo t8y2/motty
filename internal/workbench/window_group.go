@@ -20,11 +20,19 @@ type Group struct {
 	members          []*State
 	completionStores map[string]*completion.CatalogStore
 	historyClears    map[string]*historyClearJob
+	shareOnce        sync.Once
+	shares           *localProxyManager
 	// frame is where the process's windows were last seen. It lives here, not
 	// in one window, so any window's save writes the newest place rather than
 	// the one it read at start.
 	frame    ui.Rect
 	hasFrame bool
+	// reportProgress is what the desktop is told about the work the windows are
+	// doing, and progressStep is the hundredth of the whole it was last told,
+	// with -1 for no bar; progressReported says it was told anything at all.
+	reportProgress   func(active int, fraction float32)
+	progressStep     int
+	progressReported bool
 }
 
 // setWindowFrame remembers where the windows are, for the next save.
@@ -55,6 +63,20 @@ func (group *Group) ClipboardChanged() {
 	group.mu.Unlock()
 	for _, member := range members {
 		member.ClipboardChanged()
+	}
+}
+
+// LocalProxyChanged wakes every live window that may show a shared tunnel. The
+// operation belongs to the process rather than to the window which started it.
+func (group *Group) LocalProxyChanged() {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		if !member.callbacksClosed.Load() && member.options.Invalidate != nil {
+			member.options.Invalidate()
+		}
 	}
 }
 
@@ -90,12 +112,19 @@ func (group *Group) join(state *State) {
 
 func (group *Group) leave(state *State) {
 	group.mu.Lock()
-	defer group.mu.Unlock()
+	left := false
 	for index, member := range group.members {
 		if member == state {
 			group.members = slices.Delete(group.members, index, index+1)
-			return
+			left = true
+			break
 		}
+	}
+	group.mu.Unlock()
+	if left {
+		// The work the window was doing left with it: the icon stands for the
+		// windows that remain.
+		group.reportTransferProgress()
 	}
 }
 

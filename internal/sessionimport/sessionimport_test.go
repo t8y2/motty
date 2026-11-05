@@ -172,6 +172,24 @@ func TestMobaXtermChineseEncoding(t *testing.T) {
 	}
 }
 
+// The visible import path must read a BOM-less .xsh a Chinese Windows writes
+// as GB18030: its host and user arrive as Chinese, not as dropped bytes
+// (issue #332).
+func TestParseXshellReadsBOMLessGB18030Sessions(t *testing.T) {
+	text := "[CONNECTION]\r\nHost=生产主机.example\r\nPort=22\r\nProtocol=SSH\r\n[CONNECTION:AUTHENTICATION]\r\nUserName=管理员\r\n"
+	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ParseXshell(write(t, t.TempDir(), "中文会话.xsh", legacy))
+	if err != nil || len(result.Entries) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0]; got.Name != "中文会话" || got.Host != "生产主机.example" || got.User != "管理员" {
+		t.Fatalf("entry = %+v", got)
+	}
+}
+
 func TestMobaXtermMalformedLegacyEncodingDoesNotDropBytes(t *testing.T) {
 	path := write(t, t.TempDir(), "broken.mxtsessions", append([]byte("[Bookmarks]\n"), []byte{'x', 0x81, '=', '#', '1', '#', '0', '%', 'h', '%', '2', '2', '%', 'u', '%', '\n'}...))
 	if _, err := ParseMobaXterm(path); err == nil {
@@ -492,4 +510,29 @@ func FuzzParsers(f *testing.F) {
 			}
 		}
 	})
+}
+
+// This test covers the encoding ladder of the shared reader: a BOM-less ANSI
+// export from a Chinese Windows (as Xshell writes them)
+// is GB18030 and must read as Chinese, not as dropped bytes; valid UTF-8 is
+// never reinterpreted; bytes that survive no decoding still drop their bad
+// parts (issue #332).
+func TestDecodingANSIGB18030SessionsAndStillDroppingTheRest(t *testing.T) {
+	encoded, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte("Host=主机.example\r\nUser=管理员\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decode(encoded); got != "Host=主机.example\r\nUser=管理员\r\n" {
+		t.Fatalf("GB18030 text = %q", got)
+	}
+	if got := decode([]byte("Host=utf8 主机\r\n")); got != "Host=utf8 主机\r\n" {
+		t.Fatalf("valid UTF-8 was reinterpreted: %q", got)
+	}
+	if got := decode(utf16le("Host=宽字符\r\n")); got != "Host=宽字符\r\n" {
+		t.Fatalf("UTF-16 BOM text = %q", got)
+	}
+	// 0x80 is neither valid UTF-8 nor GB18030, so only the bad byte drops.
+	if got := decode([]byte{'H', 0x80, 'o'}); got != "Ho" {
+		t.Fatalf("undecodable bytes = %q, want \"Ho\"", got)
+	}
 }

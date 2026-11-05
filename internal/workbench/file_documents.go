@@ -20,10 +20,23 @@ import (
 )
 
 type fileWindowManager struct {
-	mu        sync.Mutex
-	closed    bool
-	events    []fileDocumentEvent
-	documents map[string]*fileDocument // UI thread only
+	mu          sync.Mutex
+	closed      bool
+	events      []fileDocumentEvent
+	documents   map[string]*fileDocument // UI thread only
+	window      *app.ContentWindow       // UI thread only
+	windowEpoch uint64                   // UI thread only; rejects stale OnClosed callbacks
+	order       []string                 // open tabs, UI thread only
+	active      string                   // UI thread only
+	// pending is the last document the user asked to open: a slow load that
+	// finishes after another one must not take the visible tab back.
+	pending    string // UI thread only
+	painting   bool   // UI thread only
+	tabStrip   tabStrip
+	tabs       fileWindowTabUI
+	closingAll bool     // UI thread only
+	closeQueue []string // UI thread only
+	closeDone  func()   // UI thread only
 }
 type fileDocumentEvent struct {
 	document                     *fileDocument
@@ -72,6 +85,7 @@ type fileDocument struct {
 	revision                         sftpclient.Revision
 	format                           filecontent.Format
 	editor                           text.Editor
+	edit                             documentEditing
 	original, pending                string
 	image                            *filecontent.Image
 	ready, busy, closed              bool
@@ -79,6 +93,7 @@ type fileDocument struct {
 	encodingOpen                     bool
 	confirm                          string
 	allowClose, afterClosed          func()
+	closeCanceled                    func()
 	closeAfter                       bool
 	confirmCloseAfter                bool
 	notices                          fileNotices
@@ -123,9 +138,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	}
 	key := fmt.Sprintf("%d:%t:%s", session.ID, local, location)
 	if existing := state.fileWindows.documents[key]; existing != nil {
-		if existing.window != nil {
-			existing.window.Show()
-		}
+		state.fileWindows.activate(existing.cacheKey)
 		return
 	}
 	if len(state.fileWindows.documents) >= 8 {
@@ -144,6 +157,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	d := &fileDocument{owner: state, cacheKey: key, location: location, name: name, source: source, local: local, view: view, status: state.messages.FileWindow.Loading}
 	d.origin = view.detached
 	state.fileWindows.documents[key] = d
+	state.fileWindows.pending = key
 	if local {
 		go func() {
 			data, err := readLocalDocument(location)
@@ -228,9 +242,13 @@ func (state *State) pumpFileWindows() {
 		}
 		if event.err != nil && !errors.Is(event.err, filecontent.ErrChooseEncoding) {
 			if d.window != nil {
+				failedClose := d.closeAfter
 				d.busy = false
 				d.closeAfter = false
 				d.afterClosed = nil
+				if failedClose {
+					d.cancelFailedClose()
+				}
 				d.problem = state.fileProblem(event.err)
 				d.notices.show(d.name, d.problem, components.ToastError)
 				d.invalidateWindows()
@@ -246,18 +264,12 @@ func (state *State) pumpFileWindows() {
 		}
 		d.raw, d.revision, d.image = event.data, sftpclient.Revision(sha256.Sum256(event.data)), event.image
 		d.setText(event.decoded, event.err)
-		if d.window == nil {
-			window, err := state.options.OpenContentWindow(d.config(), nil)
-			if err != nil {
+		if !m.hasTab(d) {
+			if err := m.present(d); err != nil {
 				state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, err.Error(), components.ToastError)
-				delete(m.documents, d.cacheKey)
-				d.closed = true
-				if d.worker != nil {
-					d.worker.Close()
-				}
+				m.forgetDocument(d)
 				continue
 			}
-			d.window = window
 		} else {
 			d.invalidateWindows()
 		}
@@ -297,6 +309,7 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 		d.format = filecontent.Format{}
 		d.original = ""
 		d.editor = text.Editor{}
+		d.ui.code = components.CodeEditor{}
 		d.status = d.owner.messages.FileWindow.ChooseEncoding
 		return
 	}
@@ -305,9 +318,7 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 		return
 	}
 	d.format, d.original = decoded.Format, decoded.Value
-	d.editor = text.Editor{}
-	d.editor.Insert(decoded.Value)
-	d.ui.code.Layout = components.TextareaLayout{}
+	d.loadEditor(decoded.Value)
 	d.status = d.owner.messages.FileWindow.Ready
 	if d.image != nil {
 		d.status = d.owner.messages.FileWindow.ReadOnly
@@ -373,6 +384,9 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 	data, err := filecontent.Encode(d.editor.String(), d.format)
 	if err != nil {
 		d.afterClosed = nil
+		if closeAfter {
+			d.cancelFailedClose()
+		}
 		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.format.Encoding)
 		if !errors.Is(err, filecontent.ErrEncoding) {
 			d.problem = d.owner.fileProblem(err)
@@ -397,6 +411,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		d.busy = false
 		d.closeAfter = false
 		d.afterClosed = nil
+		d.cancelFailedClose()
 		d.problem = d.owner.messages.SFTPUnavailable
 		d.notices.show(d.name, d.problem, components.ToastError)
 	}
@@ -417,8 +432,12 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 	}
 	d.busy = false
 	if event.err != nil {
+		failedClose := d.closeAfter
 		d.closeAfter = false
 		d.afterClosed = nil
+		if failedClose {
+			d.cancelFailedClose()
+		}
 		d.problem = d.owner.fileProblem(event.err)
 		d.notices.show(d.name, d.problem, components.ToastError)
 		if d.comparison.saving && errors.Is(event.err, sftpclient.ErrRemoteChanged) {
@@ -479,8 +498,19 @@ func (d *fileDocument) reload() {
 		d.busy = false
 		d.closeAfter = false
 		d.afterClosed = nil
+		d.cancelFailedClose()
 		d.problem = d.owner.messages.SFTPUnavailable
 		d.notices.show(d.name, d.problem, components.ToastError)
+	}
+}
+
+func (d *fileDocument) cancelFailedClose() {
+	d.closeAfter = false
+	d.allowClose = nil
+	cancel := d.closeCanceled
+	d.closeCanceled = nil
+	if cancel != nil {
+		cancel()
 	}
 }
 
@@ -521,6 +551,7 @@ func (d *fileDocument) requestClose(allow func()) {
 	allow()
 }
 func (d *fileDocument) closeAllowed() {
+	d.closeCanceled = nil
 	if d.allowClose != nil {
 		allow := d.allowClose
 		d.allowClose = nil
@@ -530,11 +561,12 @@ func (d *fileDocument) closeAllowed() {
 	}
 }
 
-func (d *fileDocument) onClosed() {
+func (d *fileDocument) dispose() {
 	if d.closed {
 		return
 	}
 	d.closed = true
+	d.closeCanceled = nil
 	d.stopComparison()
 	if d.worker != nil {
 		d.worker.Close()
@@ -550,6 +582,10 @@ func (d *fileDocument) onClosed() {
 		d.afterClosed = nil
 		next()
 	}
+}
+
+func (d *fileDocument) onClosed() {
+	d.dispose()
 }
 
 func (d *fileDocument) beginComparison() {
@@ -927,37 +963,33 @@ func (state *State) closeFileWindows() {
 	m.closed = true
 	m.events = nil
 	m.mu.Unlock()
-	for _, d := range m.documents {
-		d.afterClosed = nil
-		d.stopComparison()
-		if d.worker != nil {
-			d.worker.Close()
-		}
-		if d.window != nil {
-			d.window.Close()
-		}
-		d.closed = true
-	}
-	m.documents = nil
+	m.forceClose()
 }
 
 // ConfirmDocumentClose serializes dirty-document confirmation before closing a
 // source window or quitting. Cancel leaves the application and edits alive.
 func (state *State) ConfirmDocumentClose(allow func()) bool {
-	for _, d := range state.fileWindows.documents {
+	m := &state.fileWindows
+	for _, key := range m.order {
+		d := m.documents[key]
+		if d == nil {
+			continue
+		}
 		if d.dirty() || d.busy {
+			m.activate(d.cacheKey)
 			d.afterClosed = func() {
 				if !state.ConfirmDocumentClose(allow) {
 					allow()
 				}
 			}
 			d.requestClose(func() {
-				if d.window != nil {
-					d.window.Close()
-				}
+				m.forgetDocument(d)
 			})
-			if d.window != nil {
-				d.window.Show()
+			d.closeCanceled = func() {
+				d.afterClosed = nil
+			}
+			if m.window != nil {
+				m.window.Show()
 			}
 			return true
 		}

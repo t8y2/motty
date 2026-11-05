@@ -1,4 +1,4 @@
-//go:build vivahead && (darwin || windows)
+//go:build vivahead && (darwin || windows || linux)
 
 package main
 

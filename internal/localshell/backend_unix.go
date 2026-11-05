@@ -11,13 +11,18 @@ import (
 	"github.com/creack/pty"
 )
 
+// defaultShell is the user's login shell, else sh.
+func defaultShell() string {
+	if program := os.Getenv("SHELL"); program != "" {
+		return program
+	}
+	return "/bin/sh"
+}
+
 func startBackend(config Config) (backend, error) {
 	program := config.Shell
 	if program == "" {
-		program = os.Getenv("SHELL")
-	}
-	if program == "" {
-		program = "/bin/sh"
+		program = defaultShell()
 	}
 	args := config.Args
 	if args == nil {
