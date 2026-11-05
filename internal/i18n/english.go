@@ -4,9 +4,15 @@ package i18n
 
 var EnglishMessages = Messages{
 	ActionFeedback: englishActionFeedback,
-	Monitor:        englishMonitor,
-	Dashboard:      englishDashboard,
-	SessionLogs:    englishSessionLogs,
+	HostBrowser: HostBrowserMessages{
+		Title: "Browser", Address: "Web address", AddressPlaceholder: "Internal service URL", Close: "Close browser",
+		Back: "Back", Forward: "Forward", Reload: "Reload", Go: "Go", OpenExternal: "Open directly in system browser", Retry: "Reconnect",
+		Connecting: "Opening a private SSH route…", Disconnected: "The SSH connection is closed.", Unavailable: "The secure browser route is unavailable.",
+		InvalidAddress: "Enter a valid HTTP or HTTPS address without credentials.", Unsupported: "Secure browser routing is not supported on this platform.",
+	},
+	Monitor:     englishMonitor,
+	Dashboard:   englishDashboard,
+	SessionLogs: englishSessionLogs,
 	SFTPWindow: SFTPWindowMessages{
 		LocalPlaces: "Favorites and places", DirectoryFavorites: "Folder favorites", CommonFolders: "Quick access", LocalDrives: "Drives", FavoriteAdd: "Bookmark current folder", FavoriteRemove: "Remove current folder bookmark", FavoriteLimit: "The folder bookmark limit has been reached. Remove an unused bookmark first.",
 		LocalHome: "Home", LocalDesktop: "Desktop", LocalDownloads: "Downloads", LocalDocuments: "Documents", LocalPictures: "Pictures", LocalMusic: "Music", LocalVideos: "Videos", LocalMovies: "Movies", LocalApplications: "Applications",

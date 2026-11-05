@@ -20,7 +20,7 @@ func sftpPanelSideString(side layoutcore.ContextSide) string {
 // A cold application restore deliberately starts from the configured defaults.
 func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring bool) {
 	context, ok := state.deck.Context(id)
-	if !ok || context.Kind != layoutcore.ContextNone && (!restoring || context.Kind != layoutcore.ContextSFTP) {
+	if !ok || context.Kind != layoutcore.ContextNone && (!restoring || context.Kind != layoutcore.ContextSFTP && context.Kind != layoutcore.ContextBrowser) {
 		return
 	}
 	pane, _ := state.deck.Pane(id, state.deck.ActivePane(id))

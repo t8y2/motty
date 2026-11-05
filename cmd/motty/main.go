@@ -360,6 +360,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		TitlebarHeight: workbench.TitlebarHeight,
 		WindowControls: state.WindowControlsStyle,
 		TextInput:      resolveInput,
+		Web:            state.HostBrowserWebHost(),
 		Invalidator:    &invalidator,
 		OnWake: func() {
 			state.Wake()

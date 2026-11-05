@@ -312,10 +312,34 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 	if !ok || !context.Open || state.monitorDrawer(size) {
 		return
 	}
-	if context.Kind != layoutcore.ContextSFTP {
+	if context.Kind != layoutcore.ContextSFTP && context.Kind != layoutcore.ContextBrowser {
 		return
 	}
 	session := state.contextSession()
+	if context.Kind == layoutcore.ContextBrowser {
+		if session == nil || session.browser == nil || !session.browser.open {
+			return
+		}
+		if size.Width < contextDrawerAt {
+			drawer := components.BeginDrawer(canvas, state.Theme(), state.baseWorkspacePixelBounds(size), components.DrawerOptions{
+				Layer: drawerLayer, Scope: dialogScope, DismissID: hitHostBrowserClose, CloseID: hitHostBrowserClose,
+				Side: components.DrawerRight, ContentExtent: min(context.Width, size.Width*0.82),
+				InitialFocusID: hitHostBrowserClose,
+			})
+			layout := drawer.Begin(state.messages.HostBrowser.Title, session.Title)
+			state.paintHostBrowserPanel(canvas, layout.Body, session)
+			drawer.End()
+			return
+		}
+		resizable := state.sftpPanelResizable(canvas, size, context)
+		layout := resizable.Paint(state.messages.HostBrowser.Title)
+		panel := layout.First
+		if context.Side == layoutcore.ContextRight {
+			panel = layout.Second
+		}
+		state.paintHostBrowserPanel(canvas, panel, session)
+		return
+	}
 	// A dialog belongs to the window, not to the narrow panel that raised it.
 	if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
 		defer state.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, session.files)

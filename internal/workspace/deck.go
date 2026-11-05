@@ -35,6 +35,7 @@ const (
 	ContextAI
 	ContextMonitor
 	ContextSessionDetails
+	ContextBrowser
 )
 
 // ContextSide is the edge at which a workspace's context panel is docked.
@@ -566,7 +567,7 @@ func normalizeContext(context ContextState) ContextState {
 }
 
 func validateContext(context ContextState) error {
-	if context.Kind > ContextSessionDetails || context.Side > ContextRight || context.Open && context.Kind == ContextNone ||
+	if context.Kind > ContextBrowser || context.Side > ContextRight || context.Open && context.Kind == ContextNone ||
 		context.Width != context.Width || context.Width != 0 && (context.Width < MinContextWidth || context.Width > MaxContextWidth) {
 		return ErrInvalidLayout
 	}

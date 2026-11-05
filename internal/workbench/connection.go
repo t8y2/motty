@@ -523,6 +523,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
 	state.stopSessionForwards(session.ID, false)
+	state.closeHostBrowserTunnel(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.term != nil && session.term.shell != nil {
@@ -839,6 +840,9 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.sayStreamOpened(session)
 			state.startPendingForwards(session)
 			state.joinLocalProxy(session)
+			if session.browser != nil && session.browser.open {
+				state.startHostBrowserTunnel(session)
+			}
 		}
 		state.status = state.messages.StatusConnectedFmt + session.Title
 		if weak := status.Negotiated.Weak(); len(weak) > 0 && previousPhase != sshconn.PhaseConnected {
@@ -854,6 +858,10 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		if session.browser != nil {
+			session.browser.err = state.messages.HostBrowser.Disconnected
+		}
+		state.closeHostBrowserTunnel(session)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
 		if status.Err != nil && !session.disconnected {
@@ -867,6 +875,10 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		if session.browser != nil {
+			session.browser.err = state.messages.HostBrowser.Disconnected
+		}
+		state.closeHostBrowserTunnel(session)
 		state.closeSFTP(session)
 		session.tone = toneFail
 		state.tell(session, toldEnded, status)

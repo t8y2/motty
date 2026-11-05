@@ -4,9 +4,15 @@ package i18n
 
 var ChineseMessages = Messages{
 	ActionFeedback: chineseActionFeedback,
-	Monitor:        chineseMonitor,
-	Dashboard:      chineseDashboard,
-	SessionLogs:    chineseSessionLogs,
+	HostBrowser: HostBrowserMessages{
+		Title: "浏览器", Address: "网页地址", AddressPlaceholder: "内网服务网址", Close: "关闭浏览器",
+		Back: "后退", Forward: "前进", Reload: "刷新", Go: "访问", OpenExternal: "在系统浏览器中直接打开（不经过 SSH）", Retry: "重新连接",
+		Connecting: "正在建立 SSH 专用网络通道…", Disconnected: "SSH 连接已断开。", Unavailable: "安全浏览器通道不可用。",
+		InvalidAddress: "请输入有效的 HTTP 或 HTTPS 地址，且不要包含账号或密码。", Unsupported: "当前平台不支持安全浏览器网络通道。",
+	},
+	Monitor:     chineseMonitor,
+	Dashboard:   chineseDashboard,
+	SessionLogs: chineseSessionLogs,
 	SFTPWindow: SFTPWindowMessages{
 		LocalPlaces: "收藏与快捷位置", DirectoryFavorites: "目录收藏", CommonFolders: "常用目录", LocalDrives: "磁盘", FavoriteAdd: "收藏当前目录", FavoriteRemove: "取消收藏当前目录", FavoriteLimit: "目录收藏已达上限，请先移除不再使用的收藏。",
 		LocalHome: "主目录", LocalDesktop: "桌面", LocalDownloads: "下载", LocalDocuments: "文档", LocalPictures: "图片", LocalMusic: "音乐", LocalVideos: "视频", LocalMovies: "影片", LocalApplications: "应用程序",

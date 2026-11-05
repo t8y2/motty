@@ -430,7 +430,11 @@ const (
 // Paint reads it synchronously and never starts work or allocates background
 // resources.
 type State struct {
-	dashboard dashboardState
+	browserHost             hostBrowserHost
+	hostBrowserCanvas       ui.Canvas
+	hostBrowserLayout       flex.View
+	hostBrowserStatusLayout flex.View
+	dashboard               dashboardState
 	// clipboardDirty says the system clipboard changed since the desktop
 	// sessions were last offered it. It is set from any goroutine
 	// (ClipboardChanged) and cleared on the window's thread (Wake).
@@ -938,6 +942,7 @@ func (state *State) Close() {
 	state.dropExternalEdits(0)
 	for index := range state.sessions {
 		session := &state.sessions[index]
+		state.closeHostBrowser(session)
 		state.cancelReconnect(session)
 		state.closeSFTP(session)
 		state.stopRemoteStats(session)
@@ -1186,6 +1191,11 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search
 		}
+		if hit == hitHostBrowserAddress && state.activeSection == sectionTerminal {
+			if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.browser != nil {
+				return &session.browser.address
+			}
+		}
 		if hit == hitSessionLogsSearch && state.activeSection == sectionSessionLogs {
 			return &state.sessionLogs.view.search
 		}
@@ -1365,6 +1375,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 			state.save()
 		}
 		id = local
+	}
+	if state.clickHostBrowser(id) {
+		return
 	}
 	messages := state.messages
 	if state.clickTransferCenter(id) {
@@ -1768,6 +1781,7 @@ func (state *State) closeSession(id uint32) {
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)
 	state.cancelReconnect(session)
 	state.stopSessionForwards(session.ID, false)
+	state.closeHostBrowser(session)
 	if session.term != nil && session.term.shell != nil {
 		session.term.recording.stop()
 		releaseShell(session.term.shell)
@@ -2504,6 +2518,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.sessionLogsKey(event); handled {
+		return result
+	}
+	if result, handled := state.hostBrowserKey(event); handled {
 		return result
 	}
 	if result, handled := state.updateKey(event); handled {

@@ -281,6 +281,9 @@ func (state *State) filesPanelShown() bool {
 func (state *State) showFilesPanel(session *Session) {
 	workspace := state.deck.ActiveWorkspace()
 	context, _ := state.deck.Context(workspace)
+	if context.Kind == layoutcore.ContextBrowser {
+		state.closeHostBrowser(session)
+	}
 	context.Kind = layoutcore.ContextSFTP
 	context.Open = true
 	if state.sftpPanelWidth > 0 && (context.Width <= 0 || context.Width == layoutcore.DefaultContextWidth) {
