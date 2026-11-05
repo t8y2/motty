@@ -42,9 +42,9 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	value := state.commandPalette.search.String()
 	focused := canvas.Focused() == hitCommandPaletteSearch
 	palette := &state.commandPalette
-	count := min(len(palette.visible)-palette.top, commandPaletteVisibleRows)
+	count := len(palette.visible)
 
-	var search flex.Box
+	var search, list flex.Box
 	f := state.paletteLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
 		search = f.Slot().Height(36).FillWidth().Shrink(0)
@@ -52,9 +52,25 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 			f.Text(empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).TextCenter().MarginSides(36, 0, 0, 0)
 			return
 		}
-		f.Column().Gap(4).MarginSides(12, 0, 0, 0).Children(func() {
-			for visible := 0; visible < count; visible++ {
-				entry := palette.entries[palette.visible[palette.top+visible]]
+		list = f.Slot().Height(commandPaletteListHeight).FillWidth().Shrink(0).MarginSides(12, 0, 0, 0)
+	})
+	f.End()
+	palette.listRect = ui.Rect{}
+	if count > 0 {
+		palette.listRect = list.Rect()
+		area := components.BeginScrollArea(canvas, state.Theme(), palette.listRect, ui.Size{Width: palette.listRect.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).HoverScrollbars(false)
+		geometry := area.BeginContent()
+		palette.scroll = geometry.OffsetY
+		// Lay out only the visible window, including the partially exposed last row.
+		first := int(geometry.OffsetY / commandPaletteRowStep)
+		last := min(count, first+commandPaletteVisibleRows+1)
+		content := geometry.Content
+		content.Y += float32(first) * commandPaletteRowStep
+		content.Height = float32(last-first) * commandPaletteRowStep
+		f := state.paletteListLayout.Begin(canvas, state.Theme(), content)
+		f.Column().Gap(4).FillWidth().Children(func() {
+			for visible := first; visible < last; visible++ {
+				entry := palette.entries[palette.visible[visible]]
 				if entry.header {
 					f.Row().Height(30).PadX(10).Gap(6).Items(flex.Center).Shrink(0).
 						HitOutset(2, 0, 2, 0).
@@ -68,7 +84,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					continue
 				}
 				id := hitCommandPaletteItems.At(visible)
-				selected := palette.selected == palette.top+visible
+				selected := palette.selected == visible
 				color, detailColor := state.pal.muted, state.pal.faint
 				if selected {
 					color, detailColor = state.pal.onAccent, state.pal.onAccent
@@ -110,20 +126,18 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 				})
 			}
 		})
-	})
-	f.End()
+		f.End()
+		area.EndContent()
+	}
 	palette.bar = components.ScrollAreaGeometry{}
-	if total := len(palette.visible); total > commandPaletteVisibleRows {
-		// The bar is a real scrollbar, drawn beside the rows in the dialog's
-		// padding: the rows window by index, so its content is as tall as the
-		// whole list and its offset is the first row shown.
-		list := ui.Rect{X: layout.Body.X, Y: search.Rect().Y + 48, Width: layout.Body.Width + commandPaletteBarGap + commandPaletteBarWidth, Height: commandPaletteVisibleRows*commandPaletteRowPitch - 4}
-		content := ui.Size{Width: list.Width, Height: float32(total)*commandPaletteRowPitch - 4}
-		area := components.BeginScrollArea(canvas, state.Theme(), list, content).
-			Offset(0, float32(palette.top)*commandPaletteRowPitch).
-			VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
+	if palette.maxScroll() > 0 {
+		// Keep the upstream draggable bar beside, rather than over, the rows.
+		bounds := palette.listRect
+		bounds.Width += commandPaletteBarGap + commandPaletteBarWidth
+		area := components.BeginScrollArea(canvas, state.Theme(), bounds, ui.Size{Width: bounds.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
 		palette.bar = area.EndContent()
 	}
+
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
 		ID: hitCommandPaletteSearch, Label: title, Value: value,
 		Placeholder: placeholder, Focused: focused, PlatformEditing: focused && value != "",

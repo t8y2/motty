@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -487,6 +488,9 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 	if result := state.remoteSearchShortcut(event); result.Handled {
 		return result
 	}
+	if result, handled := state.remoteDetailShortcut(event); handled {
+		return result
+	}
 	if state.modal != modalNone {
 		return ui.EventResult{}
 	}
@@ -764,7 +768,22 @@ func (state *State) pasteIntoTerminal(session *Session) {
 	if state.pasteClipboardImage(session) {
 		return
 	}
-	if err != nil {
-		state.status = fmt.Sprintf(state.messages.StatusClipboardReadFailedFmt, err)
+	if err == nil || state.clipboardHoldsImage() {
+		// Nothing travels as text, but a program that reads pictures from the
+		// clipboard itself (OpenCode, for one) waits for a paste with no content
+		// to do so, as it gets from iTerm2, Ghostty and kitty. Without bracketed
+		// paste an empty paste is no event at all, so nothing is sent.
+		if session.term.screen.Modes().BracketedPaste {
+			state.typed(session, encodeTerminalPaste("", session.term))
+		}
+		return
 	}
+	state.status = fmt.Sprintf(state.messages.StatusClipboardReadFailedFmt, err)
+}
+
+// clipboardHoldsImage reports whether the system clipboard has a picture, for a
+// text request that failed on it: some systems answer that with an error.
+func (state *State) clipboardHoldsImage() bool {
+	_, err := state.options.ClipboardImagePNG()
+	return err == nil || errors.Is(err, app.ErrTooLarge)
 }

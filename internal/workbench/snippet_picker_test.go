@@ -125,7 +125,7 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			state.openSnippetPicker()
 			view := openPickerView(t, state, scale)
 			palette := &state.commandPalette
-			last := len(palette.visible) - commandPaletteVisibleRows
+			last := palette.maxScroll()
 
 			bar := dualHit(t, view, hitCommandPaletteBar)
 			rows := dualHit(t, view, hitCommandPaletteItems.At(0))
@@ -141,8 +141,8 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			if err := view.Move(x, bar.Y+bar.Height-2); err != nil {
 				t.Fatal(err)
 			}
-			if palette.top != last {
-				t.Fatalf("dragging the thumb to the end left the first row at %d, want %d", palette.top, last)
+			if palette.scroll != last {
+				t.Fatalf("dragging the thumb to the end left the offset at %g, want %g", palette.scroll, last)
 			}
 			// Across the rows with the button held: the hover stays.
 			if err := view.Move(rows.X+40, rows.Y+rows.Height/2); err != nil {
@@ -158,11 +158,11 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 				t.Fatal("the drag outlived the release")
 			}
 			// Released, the rows answer the pointer again.
-			second := dualHit(t, view, hitCommandPaletteItems.At(3))
+			second := dualHit(t, view, hitCommandPaletteItems.At(int(palette.scroll/commandPaletteRowStep)+3))
 			if err := view.Move(second.X+40, second.Y+second.Height/2); err != nil {
 				t.Fatal(err)
 			}
-			if want := palette.top + 3; palette.selected != want {
+			if want := int(palette.scroll/commandPaletteRowStep) + 3; palette.selected != want {
 				t.Fatalf("after the drag the hover is on row %d, want %d", palette.selected, want)
 			}
 
@@ -174,8 +174,8 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			if err := view.Release(bar.X+bar.Width/2, bar.Y+4); err != nil {
 				t.Fatal(err)
 			}
-			if palette.top > 2 {
-				t.Fatalf("pressing the top of the track left the first row at %d", palette.top)
+			if palette.scroll > 2*commandPaletteRowStep {
+				t.Fatalf("pressing the top of the track left the offset at %g", palette.scroll)
 			}
 		})
 	}

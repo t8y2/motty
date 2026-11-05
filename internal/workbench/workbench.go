@@ -311,8 +311,10 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -808,9 +810,10 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout flex.View
 	// area: terminal and workspace panes
-	terminalPageLayout flex.View
-	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   flex.View
+	fontPickerListLayout flex.View
+	fontPickerLayout     flex.View // the font picker's list and sample
+	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
@@ -823,6 +826,7 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            flex.View
 	keysLayout            flex.View
+	paletteListLayout     flex.View
 	paletteLayout         flex.View
 	importLayout          flex.View
 	knownHostsTableLayout flex.View
@@ -899,6 +903,7 @@ func (state *State) Close() {
 	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
@@ -2232,6 +2237,15 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.remoteProcessMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
+		return result
+	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
 	}
@@ -2389,6 +2403,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := state.remoteProcessTableKey(event); handled {

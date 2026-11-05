@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -47,9 +46,10 @@ type commandPalette struct {
 	// long as the saved snippets or hosts costs nothing once it is closed.
 	entries []commandPaletteEntry
 	visible []int
-	// selected and top are places in visible: the choice, and the first row the
-	// list shows; top keeps the selection in view and the wheel moves it.
-	selected, top int
+	// selected is a logical row in visible; scroll is the pixel offset.
+	selected int
+	scroll   float32
+	listRect ui.Rect
 	// bar is the scrollbar as last painted, and barGrab where on its thumb a
 	// drag took hold; dragging is set from the press on the bar to its release.
 	bar      components.ScrollAreaGeometry
@@ -84,14 +84,14 @@ func (state *State) closeCommandPalette() {
 	state.commandPalette.visible = nil
 	state.commandPalette.dragging = false
 	state.commandPalette.selected = 0
-	state.commandPalette.top = 0
+	state.commandPalette.scroll = 0
 }
 
 func (state *State) rebuildCommandPalette() {
 	state.ensureWorkspaceDeck()
 	palette := &state.commandPalette
 	palette.entries = palette.entries[:0]
-	palette.selected, palette.top = 0, 0
+	palette.selected, palette.scroll = 0, 0
 	messages := state.messages
 	if palette.connect {
 		state.rebuildConnectPicker()
@@ -221,7 +221,7 @@ func (state *State) refreshCommandPalette() {
 		palette.visible = append(palette.visible, index)
 	}
 	palette.selected = max(palette.choiceAt(0, 1), 0)
-	palette.top = 0
+	palette.scroll = 0
 }
 
 // choiceAt returns the first choice from index and in direction, stepping over
@@ -236,38 +236,38 @@ func (palette *commandPalette) choiceAt(index, direction int) int {
 	return -1
 }
 
-// followCommandPalette moves the window of rows so that the selected one shows.
-func (palette *commandPalette) follow() {
-	if palette.selected < palette.top {
-		palette.top = palette.selected
-	}
-	if palette.selected >= palette.top+commandPaletteVisibleRows {
-		palette.top = palette.selected - commandPaletteVisibleRows + 1
-	}
+const commandPaletteRowStep float32 = commandPaletteRowPitch
+const commandPaletteListHeight float32 = commandPaletteVisibleRows*commandPaletteRowStep - 4
+
+func (palette *commandPalette) contentHeight() float32 {
+	return max(0, float32(len(palette.visible))*commandPaletteRowStep-4)
 }
 
-// scrollCommandPalette is the wheel over the open palette: the list moves by a row.
+func (palette *commandPalette) maxScroll() float32 {
+	return max(0, palette.contentHeight()-commandPaletteListHeight)
+}
+
+// follow reveals the selected row only when keyboard navigation asks for it.
+func (palette *commandPalette) follow() {
+	top := float32(palette.selected) * commandPaletteRowStep
+	palette.scroll = min(max(palette.scroll, top+30-commandPaletteListHeight), top)
+	palette.scroll = min(max(palette.scroll, 0), palette.maxScroll())
+}
+
 func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	beforeTop, beforeSelected := palette.top, palette.selected
-	last := max(len(palette.visible)-commandPaletteVisibleRows, 0)
-	// A notch moves one row; a long gesture moves as many rows as it spans.
-	rows := max(int(math.Abs(float64(event.DeltaY))/34), 1)
-	switch {
-	case event.DeltaY > 0:
-		palette.top = min(palette.top+rows, last)
-	case event.DeltaY < 0:
-		palette.top = max(palette.top-rows, 0)
-	}
-	target := event.Target
-	if visible, ok := target.In(hitCommandPaletteItems); ok {
-		row := palette.top + visible
-		if row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
+	before, selected := palette.scroll, palette.selected
+	palette.scroll = min(max(palette.scroll+event.StepY(commandPaletteRowStep), 0), palette.maxScroll())
+	// The new-tab picker keeps its selection while scrolling, like the font picker.
+	// Other palettes resolve the row at the pointer after moving content.
+	if !palette.connect && !palette.dragging && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
+		row := int((event.Y - palette.listRect.Y + palette.scroll + 2) / commandPaletteRowStep)
+		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
 			palette.selected = row
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: palette.top != beforeTop || palette.selected != beforeSelected}
+	return ui.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
 }
 
 func (state *State) clickCommandPalette(id ui.ID) {
@@ -296,7 +296,6 @@ func (state *State) clickCommandPalette(id ui.ID) {
 			return
 		}
 		state.refreshCommandPalette()
-		visible += state.commandPalette.top
 		if visible >= len(state.commandPalette.visible) {
 			return
 		}
@@ -319,11 +318,9 @@ func (state *State) executeCommandPalette(visible int) {
 	state.click(target, false)
 }
 
-// dragCommandPaletteBar turns the thumb's position into the first row shown.
+// dragBar keeps scrollbar dragging as precise as trackpad scrolling.
 func (palette *commandPalette) dragBar(y float32) {
-	offset := palette.bar.VerticalOffsetForThumb(y - palette.barGrab)
-	last := max(len(palette.visible)-commandPaletteVisibleRows, 0)
-	palette.top = min(max(int(offset/commandPaletteRowPitch+0.5), 0), last)
+	palette.scroll = min(max(palette.bar.VerticalOffsetForThumb(y-palette.barGrab), 0), palette.maxScroll())
 }
 
 func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
@@ -357,7 +354,7 @@ func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult
 	if !ok {
 		return ui.EventResult{}, false
 	}
-	row := palette.top + visible
+	row := visible
 	if row >= len(palette.visible) {
 		return ui.EventResult{}, false
 	}
@@ -436,7 +433,7 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		}
 		return ui.EventResult{
 			Handled: true, Repaint: true,
-			Focus: hitCommandPaletteItems.At(palette.selected - palette.top), FocusVisible: true,
+			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {

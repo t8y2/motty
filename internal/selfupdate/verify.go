@@ -14,6 +14,11 @@ import (
 // compared with, so there is nothing to hold an update to.
 var ErrUnsigned = errors.New("selfupdate: this copy of Motty is not signed by a developer certificate, so an update cannot be checked against it")
 
+// ErrNotAccepted means the system refused to run the new version. A ticket that
+// is not stapled to the download, and a machine that cannot reach the notarization
+// service, both end here, so the caller cannot tell them apart and says so.
+var ErrNotAccepted = errors.New("selfupdate: the system will not run the new version")
+
 // Identity is who signed a program: on macOS the Developer ID team, on Windows
 // the certificate's subject.
 type Identity struct {
@@ -22,8 +27,11 @@ type Identity struct {
 }
 
 // run runs a command and returns what it printed, standard error included:
-// codesign writes its report there.
-func run(ctx context.Context, env []string, name string, args ...string) (string, error) {
+// codesign writes its report there. Tests replace it to stand in for the
+// system's verdict.
+var run = execCommand
+
+func execCommand(ctx context.Context, env []string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
 	hide(cmd)
@@ -80,7 +88,7 @@ func verifyMac(ctx context.Context, app string, want Identity) error {
 		return fmt.Errorf("selfupdate: the new version is signed by team %s, not %s", got.Team, want.Team)
 	}
 	if output, err := run(ctx, nil, "/usr/sbin/spctl", "--assess", "--type", "execute", app); err != nil {
-		return fmt.Errorf("selfupdate: the system would not run the new version: %s", firstLine(output))
+		return fmt.Errorf("%w: %s", ErrNotAccepted, firstLine(output))
 	}
 	return nil
 }

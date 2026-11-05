@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -231,6 +232,32 @@ func TestAnInstallThatFailsStaysOnTheDialogWithItsReasonAndTheReleasePage(t *tes
 	state.Click(hitUpdateProgressCancel)
 	if state.modal != modalNone {
 		t.Fatal("the failure could not be closed")
+	}
+}
+
+// The system's refusal reads the same whether the download carries no ticket
+// or this Mac cannot reach Apple, so the dialog explains both and leaves the
+// release page at hand instead of quoting the system.
+func TestAUpdateTheSystemRefusesIsExplainedInsteadOfQuoted(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	updater.prepare = func(context.Context, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
+		return selfupdate.Staged{}, fmt.Errorf("%w: Motty.app: rejected", selfupdate.ErrNotAccepted)
+	}
+	state := updateWindow(t, updater, &quits, &opened)
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return state.update.install.phase == installFailed })
+	_, texts := paintedTexts(state)
+	m := state.messages.Tools
+	// The paragraph wraps, so it reads as several painted lines.
+	painted := strings.Join(texts, " ")
+	if !strings.Contains(painted, strings.Fields(m.UpdateBlockedBySystem)[0]) {
+		t.Fatalf("the dialog does not explain the refusal: %q", painted)
+	}
+	if strings.Contains(painted, "rejected") {
+		t.Fatalf("the dialog quotes the system: %q", painted)
+	}
+	if !contains(texts, m.UpdateOpenPage) {
+		t.Fatalf("the release page is gone: %q", texts)
 	}
 }
 
