@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -63,8 +64,13 @@ func newTestState(t testing.TB, options Options) *State {
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
-	// distributions, the way a computer with only a default shell would.
+	// distributions, the way a computer with only a default shell would. On a
+	// Unix test binary the Windows executable cannot run, so the fixture leaves
+	// detection to the platform default.
 	state.localShellMenu.discover = func() []localshell.Choice {
+		if runtime.GOOS != "windows" {
+			return nil
+		}
 		return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
 	}
 	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }

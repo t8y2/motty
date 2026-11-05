@@ -46,6 +46,9 @@ func (state *State) startupHostSelected(host Host) bool {
 // resolveStartupShell names the shell a launch would open: the detected shell
 // whose program is startupShell, or nothing when the list has not reached it.
 func (state *State) resolveStartupShell() localshell.Choice {
+	if !state.localShellMenu.loaded {
+		state.refreshLocalShells()
+	}
 	for _, choice := range state.localShellMenu.choices {
 		if strings.EqualFold(choice.Path, state.startupShell) {
 			return choice
@@ -202,6 +205,14 @@ func (state *State) clickStartupHosts(id ui.ID) bool {
 	}
 	state.save() // the choice holds while the menu stays open
 	return true
+}
+
+// startupWanted reports whether the first Wake has anything to open: the
+// restored tabs, or the launch choice — a local terminal, a picked shell or
+// hosts. A launch with only a picked shell counts.
+func (state *State) startupWanted() bool {
+	return state.restoreConnect != restoreConnectOff ||
+		(state.startupEnabled && (state.startupLocal || state.startupShell != "" || len(state.startupHosts) > 0))
 }
 
 // openStartupSessions opens what the settings ask a launch to open: a local

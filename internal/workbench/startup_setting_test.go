@@ -1,9 +1,11 @@
 package workbench
 
 import (
+	"context"
 	"testing"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/localshell"
 )
 
 // TestStartupOpensWhatTheSettingsAsk checks that the first Wake opens the local
@@ -87,5 +89,50 @@ func TestStartupSettingsRespondToClicks(t *testing.T) {
 	}
 	if state.startupSummary() == state.messages.SettingsStartupNone {
 		t.Fatalf("summary %q: the chosen host must show", state.startupSummary())
+	}
+}
+
+// TestStartupShellOpensWithoutOpeningTheSettings checks the launch path that
+// never visits the settings page: the shell list must be detected before the
+// chosen shell is resolved, or the launch silently runs the default shell.
+func TestStartupShellOpensWithoutOpeningTheSettings(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	shells := []localshell.Choice{
+		{Name: "sh", Path: "/bin/sh", Default: true},
+		{Name: "bash", Path: "/bin/bash"},
+	}
+	state.localShellMenu.discover = func() []localshell.Choice { return shells }
+	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+	state.localShellMenu.loaded = false
+	state.startupEnabled = true
+	state.startupShell = shells[1].Path
+	state.startupHosts = nil
+
+	state.openStartupSessions()
+
+	if len(state.sessions) == 0 {
+		t.Fatal("a launch with only a picked shell opened nothing")
+	}
+	local := state.sessions[len(state.sessions)-1]
+	if local.host.localShell != shells[1].Path {
+		t.Fatalf("opened shell %q, want %q", local.host.localShell, shells[1].Path)
+	}
+}
+
+// TestStartupWantedWithOnlyAPickedShell checks the first-Wake guard: a picked
+// shell, with no local terminal and no hosts, still asks the launch to run.
+func TestStartupWantedWithOnlyAPickedShell(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.restoreConnect = restoreConnectOff
+	state.startupEnabled = true
+	state.startupLocal = false
+	state.startupHosts = nil
+	state.startupShell = "/bin/sh"
+	if !state.startupWanted() {
+		t.Fatal("a picked shell alone must count as startup work")
+	}
+	state.startupShell = ""
+	if state.startupWanted() {
+		t.Fatal("no launch choice must not count as startup work")
 	}
 }

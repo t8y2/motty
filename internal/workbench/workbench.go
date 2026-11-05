@@ -1039,7 +1039,7 @@ func New(options Options) *State {
 	// Dialing waits for the first Wake: the window does not exist yet, so the
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
-	state.restorePending = state.restoreConnect != restoreConnectOff || (state.startupEnabled && (state.startupLocal || len(state.startupHosts) > 0))
+	state.restorePending = state.startupWanted()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)

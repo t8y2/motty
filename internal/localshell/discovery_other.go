@@ -3,7 +3,6 @@
 package localshell
 
 import (
-	"os"
 	"os/exec"
 )
 
