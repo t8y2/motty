@@ -9,7 +9,7 @@ const (
 	iconButtonQuiet  iconButtonStyle = iota // muted until the pointer is on it
 	iconButtonDanger                        // a destructive or recording action
 	iconButtonActive                        // a switch that is on
-	iconButtonUpdate                        // a green disc: news that is waiting, such as an update
+	iconButtonUpdate                        // a green ring around a solid arrow: an update is waiting
 )
 
 // paintIconButton draws a square icon button on the surface behind. The hint is
@@ -42,23 +42,16 @@ func (state *State) paintIconButtonWithOptions(canvas *ui.Canvas, id ui.ID, icon
 		foreground = pal.accent
 		soft = pal.accentSoft
 	case iconButtonUpdate:
-		foreground = ui.RGB(255, 255, 255)
-		soft = pal.success
+		foreground = updateGreen
 	}
 	switch {
 	case pressed:
 		wash = pal.surfaceHot
-		if style == iconButtonUpdate {
-			wash = withAlpha(ui.RGB(0, 0, 0), 0.3)
-		}
 		if style == iconButtonQuiet {
 			foreground = pal.text
 		}
 	case hovered:
 		wash = withAlpha(pal.surfaceHot, 0.7)
-		if style == iconButtonUpdate {
-			wash = withAlpha(ui.RGB(0, 0, 0), 0.15)
-		}
 		if style == iconButtonQuiet {
 			foreground = pal.text
 		}
@@ -87,11 +80,45 @@ func (state *State) paintIconButtonWithOptions(canvas *ui.Canvas, id ui.ID, icon
 		if wash.Alpha > 0 {
 			f.Row().Fill().Radius(shape).Background(wash)
 		}
-		glyph := f.Icon(lucideIcons[icon])
+		glyphIcon := lucideIcons[icon]
+		if style == iconButtonUpdate {
+			glyphIcon = updateIcon
+		}
+		glyph := f.Icon(glyphIcon)
 		if iconSize > 0 {
 			glyph.Size(iconSize, iconSize)
 		}
 		glyph.Color(foreground)
 	})
 	f.End()
+}
+
+// updateGreen is the deep green of the update button, the same on both themes:
+// dark enough to read as a status rather than a highlight, light enough to keep
+// its contrast on the dark window bar.
+var updateGreen = ui.RGB(22, 163, 74)
+
+// updateIcon is a ring with a solid down arrow inside it and the space between
+// left empty. The ring is the icon's stroke, painted in the tint; the arrow is a
+// filled layer, which carries its own color, so both are updateGreen.
+var updateIcon = ui.Icon{
+	ViewBox: 24,
+	Stroke:  2,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(22, 12),
+		ui.CubicTo(22, 17.523, 17.523, 22, 12, 22),
+		ui.CubicTo(6.477, 22, 2, 17.523, 2, 12),
+		ui.CubicTo(2, 6.477, 6.477, 2, 12, 2),
+		ui.CubicTo(17.523, 2, 22, 6.477, 22, 12),
+		ui.ClosePath(),
+	},
+	Layers: []ui.IconLayer{{
+		Fill: updateGreen,
+		Commands: []ui.PathCommand{
+			ui.MoveTo(10.4, 6.5), ui.LineTo(13.6, 6.5), ui.LineTo(13.6, 11.5), ui.LineTo(16.5, 11.5),
+			ui.LineTo(12, 16.5), ui.LineTo(7.5, 11.5), ui.LineTo(10.4, 11.5), ui.ClosePath(),
+		},
+	}},
 }
