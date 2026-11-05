@@ -72,6 +72,8 @@ func (m *fileWindowManager) activate(key string) {
 	if d == nil || d.closed || !m.hasTab(d) {
 		return
 	}
+	// A tab the user picked now outranks a document that is still loading.
+	m.pending = ""
 	m.active = key
 	if d.window != nil {
 		d.window.Show()
@@ -86,7 +88,15 @@ func (m *fileWindowManager) present(d *fileDocument) error {
 	if !m.hasTab(d) {
 		m.order = append(m.order, d.cacheKey)
 	}
-	m.active = d.cacheKey
+	// Only the document the user asked for last becomes visible when it
+	// finishes; an earlier, slower load keeps whatever tab is already shown.
+	requested := m.pending == d.cacheKey
+	if requested {
+		m.pending = ""
+	}
+	if m.active == "" || requested {
+		m.active = d.cacheKey
+	}
 	if m.window == nil {
 		m.windowEpoch++
 		epoch := m.windowEpoch
@@ -130,6 +140,9 @@ func (m *fileWindowManager) forgetDocument(d *fileDocument) {
 	}
 	if m.documents[key] == d {
 		delete(m.documents, key)
+	}
+	if m.pending == key {
+		m.pending = ""
 	}
 	if m.active == key {
 		m.active = ""
@@ -256,6 +269,7 @@ func (m *fileWindowManager) onWindowClosed(epoch uint64) {
 	m.window = nil
 	m.windowEpoch = 0
 	m.active = ""
+	m.pending = ""
 	m.order = nil
 	m.resetTabNavigation()
 	m.closingAll = false
@@ -281,6 +295,7 @@ func (m *fileWindowManager) forceClose() {
 	m.window = nil
 	m.windowEpoch = 0
 	m.active = ""
+	m.pending = ""
 	m.order = nil
 	m.resetTabNavigation()
 	m.closingAll = false
@@ -342,6 +357,9 @@ func (m *fileWindowManager) discardPendingDocuments() {
 	for _, d := range documents {
 		if m.documents[d.cacheKey] == d {
 			delete(m.documents, d.cacheKey)
+		}
+		if m.pending == d.cacheKey {
+			m.pending = ""
 		}
 		d.dispose()
 	}

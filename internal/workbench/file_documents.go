@@ -28,12 +28,15 @@ type fileWindowManager struct {
 	windowEpoch uint64                   // UI thread only; rejects stale OnClosed callbacks
 	order       []string                 // open tabs, UI thread only
 	active      string                   // UI thread only
-	painting    bool                     // UI thread only
-	tabStrip    tabStrip
-	tabs        fileWindowTabUI
-	closingAll  bool     // UI thread only
-	closeQueue  []string // UI thread only
-	closeDone   func()   // UI thread only
+	// pending is the last document the user asked to open: a slow load that
+	// finishes after another one must not take the visible tab back.
+	pending    string // UI thread only
+	painting   bool   // UI thread only
+	tabStrip   tabStrip
+	tabs       fileWindowTabUI
+	closingAll bool     // UI thread only
+	closeQueue []string // UI thread only
+	closeDone  func()   // UI thread only
 }
 type fileDocumentEvent struct {
 	document                     *fileDocument
@@ -154,6 +157,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	d := &fileDocument{owner: state, cacheKey: key, location: location, name: name, source: source, local: local, view: view, status: state.messages.FileWindow.Loading}
 	d.origin = view.detached
 	state.fileWindows.documents[key] = d
+	state.fileWindows.pending = key
 	if local {
 		go func() {
 			data, err := readLocalDocument(location)
