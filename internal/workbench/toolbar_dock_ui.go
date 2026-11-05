@@ -180,15 +180,16 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 }
 
 // terminalToolbarShowsOnSide reports whether this physical side has actual
-// content: a usable tool or a latency badge backed by an RTT sample. This sits
-// on the steady-state paint path, so it scans preferences directly instead of
-// building and ordering the complete barTool slice.
+// content: a tool the bar paints there, or a latency badge backed by an RTT
+// sample. It runs on the steady-state paint path, so it scans preferences
+// directly; a tool this does not know yet counts as offered rather than
+// vanishing from the rail (see terminalToolbarOffers).
 func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool {
 	if session == nil {
 		return false
 	}
 	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
-	capacity := min(3, max(0, int((state.viewport.Width-144)/(barToolSize+barToolGap))-1))
+	capacity := workspacePaneToolsCapacity(state.viewport.Width)
 	compactCount := 0
 	compactMenu := false
 	entries := state.toolbars.entries(toolbarTerminal)
@@ -223,6 +224,16 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 			return true
 		}
 	}
+	// A running proxy keeps its button on the default rail even while the
+	// tool's preference is off: toolbarDockTools adds it after the catalog.
+	if !state.toolbarVisible(toolbarTerminal, hitLocalProxyOpen) {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			switch state.localProxySnapshot(session).Phase {
+			case localProxyConnecting, localProxyConnected, localProxyFailed:
+				return true
+			}
+		}
+	}
 	if state.latencyAvailable(session) {
 		return (state.terminalToolbarPosition == terminalToolbarLeft) == left
 	}
@@ -230,14 +241,19 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 }
 
 // terminalToolbarOffers mirrors the context filters in activeTerminalTools.
-// Disabled actions still count because their icon remains visible.
+// Disabled actions still count because their icon remains visible. A tool the
+// switch does not name is offered: a catalog entry added later must not
+// disappear from the rail just because this list was not updated.
 func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
 	switch id {
 	case hitSFTPDetach:
 		return session.host.isSSH() && !session.isLocal()
 	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
-		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal:
+		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal,
+		hitTerminalSnippets:
 		return true
+	case hitLocalProxyOpen:
+		return state.localProxyActionVisible(session)
 	case hitRemoteStats:
 		_, _, offered := state.remoteStatsToggle(session)
 		return offered
@@ -246,7 +262,7 @@ func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
 	case hitBroadcast:
 		return state.paneInSplit(session.ID) && !state.workspaceManaged(state.deck.ActiveWorkspace())
 	default:
-		return false
+		return true
 	}
 }
 

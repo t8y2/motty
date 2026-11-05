@@ -943,3 +943,43 @@ func TestToolbarDockZoneButtonFitsItsLabel(t *testing.T) {
 		t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label overflows its padding", label, need, hit.Bounds.Width)
 	}
 }
+
+func TestToolbarDockPresenceMatchesThePaintedTerminalTools(t *testing.T) {
+	size := ui.Size{Width: 1200, Height: 800}
+	for _, spec := range toolbarCatalog[toolbarTerminal] {
+		t.Run(spec.key, func(t *testing.T) {
+			state, _, _, _ := liveSession(t)
+			state.activeSection = sectionTerminal
+			state.terminalToolbarPosition = terminalToolbarRight
+			entries := state.toolbars.customize(toolbarTerminal)
+			for index := range entries {
+				entries[index].Enabled = entries[index].Key == spec.key
+			}
+			state.Resize(size)
+			var canvas ui.Canvas
+			state.Paint(&canvas, size)
+			// 0 is the left side, 1 the right.
+			var painted [2]bool
+			for _, other := range toolbarCatalog[toolbarTerminal] {
+				hit, ok := hitByID(&canvas, other.id)
+				if !ok {
+					continue
+				}
+				if hit.Bounds.X+hit.Bounds.Width/2 < size.Width/2 {
+					painted[0] = true
+				} else {
+					painted[1] = true
+				}
+			}
+			for _, side := range []struct {
+				left bool
+				at   int
+			}{{true, 0}, {false, 1}} {
+				reserved := state.toolbarDockSideReserveFor(side.left, true) > 0
+				if reserved != painted[side.at] {
+					t.Fatalf("%s: reserve(left=%v)=%v, painted=%v", spec.key, side.left, reserved, painted[side.at])
+				}
+			}
+		})
+	}
+}
