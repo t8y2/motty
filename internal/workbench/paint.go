@@ -611,7 +611,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		}
 		tabRoom.Children(func() {
 			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
-			f.Row().Fill().Children(func() {
+			f.Row().Fill().Items(flex.Center).Children(func() {
 				tabs := f.Row()
 				if probe {
 					chrome.probeRow = tabs

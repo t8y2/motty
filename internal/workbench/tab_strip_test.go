@@ -147,3 +147,12 @@ func TestTabClickRegionReachesTheWindowTopEdge(t *testing.T) {
 		}
 	}
 }
+
+func TestNewTabButtonSitsOnTheTabsCentreLine(t *testing.T) {
+	state, canvas := manyTabs(t, 2)
+	plus, _ := hitByID(canvas, hitNewTab)
+	tab, _ := hitByID(canvas, hitTabList.At(int(state.workspaceTabs[0].ID)))
+	if plus.Bounds.Y+plus.Bounds.Height/2 != tab.Bounds.Y+tab.Bounds.Height/2 {
+		t.Fatalf("new-tab button %+v is off the tabs' centre line %+v", plus.Bounds, tab.Bounds)
+	}
+}
