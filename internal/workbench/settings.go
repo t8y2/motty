@@ -472,6 +472,23 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setCompletionMode(completionList)
 	case hitSettingsCompletionBoth:
 		changed = state.setCompletionMode(completionBoth)
+	case hitSettingsCompletionAuto:
+		state.completion.autoPopup = !state.completion.autoPopup
+		changed = true
+	case hitSettingsCompletionProbe:
+		state.completion.probeEnabled = !state.completion.probeEnabled
+		if !state.completion.probeEnabled {
+			state.cancelCompletionProbe()
+			state.cancelCompletionDiscovery()
+			state.cancelCompletionPath()
+		}
+		changed = true
+	case hitSettingsCompletionPreview:
+		state.completion.previewEnabled = !state.completion.previewEnabled
+		if !state.completion.previewEnabled {
+			state.cancelCompletionPreview()
+		}
+		changed = true
 	case hitSettingsClipboardBlock:
 		changed = state.terminalClipboard != terminalClipboardBlock
 		state.terminalClipboard = terminalClipboardBlock

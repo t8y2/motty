@@ -38,3 +38,21 @@ func TestInputEnvironmentRequiresOwnedTokenAndValidatedFields(t *testing.T) {
 	screen.SetInputEnvironment(func(InputEnvironment) { t.Fatal("unowned terminal trusted environment") })
 	screen.Write([]byte("\x1b]777;motty-input;;other;C.UTF-8\x07"))
 }
+
+func TestInputEnvironmentReportsVerifiedLineClearOnlyFromOwnedToken(t *testing.T) {
+	screen := New(80, 24, 0)
+	screen.SetPromptToken("owner")
+	var editing []bool
+	screen.SetInputEnvironment(func(environment InputEnvironment) { editing = append(editing, environment.LineClear) })
+	for _, report := range []string{
+		"motty-input;owner;utf8;;ctrl-u",
+		"motty-input;owner;utf8;;unsupported",
+		"motty-input;other;utf8;;ctrl-u",
+		"motty-input;owner;utf8;;ctrl-u;extra",
+	} {
+		screen.Write([]byte("\x1b]777;" + report + "\x07"))
+	}
+	if len(editing) != 2 || !editing[0] || editing[1] {
+		t.Fatalf("untrusted or malformed line-clear reports accepted: %v", editing)
+	}
+}

@@ -60,6 +60,11 @@ func (h *minSizeHost) Quit() {
 func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(datadir.Variable, dir)
+	driver, err := app.NewDriver(app.Config{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
 	host := &minSizeHost{}
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
 	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })

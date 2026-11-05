@@ -256,3 +256,80 @@ func TestCompletionListPaintsInANarrowWindow(t *testing.T) {
 		t.Fatal("the first row is not painted in a narrow window")
 	}
 }
+
+func TestCompletionCommonMatrixRoots(t *testing.T) {
+	w := newCompletionWorld(t)
+	groups := []string{
+		"cat ls cd cp mv rm mkdir chmod chown grep sed awk find head tail sort uniq cut wc tee xargs du df tar gzip",
+		"ssh scp rsync curl wget ping ip ss netstat ps kill top systemctl journalctl apt dnf yum",
+		"git docker kubectl make gcc go cargo rustc java javac npm yarn pnpm node python pip brew",
+		"pwsh powershell cmd dir Get-Command Get-ChildItem",
+	}
+	for _, group := range groups {
+		for _, name := range strings.Fields(group) {
+			prefix := name[:len(name)-1]
+			candidates := w.state.completionCandidates(w.session, prefix)
+			found := false
+			for _, candidate := range candidates {
+				if candidate.Text == name && candidate.FromCatalog && completion.SafeInsert(candidate.Insert) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("no safe root candidate for %q from %q", name, prefix)
+			}
+		}
+	}
+}
+
+func TestCompletionCommonOptionsAndDescriptions(t *testing.T) {
+	w := newCompletionWorld(t)
+	for _, test := range []struct {
+		line string
+		want []string
+	}{
+		{"cat -", []string{"-b", "-e", "-n", "-s", "-t", "-u", "-v"}},
+		{"ls -", []string{"-a", "-l", "-h"}},
+		{"kill -", []string{"-s", "-l"}},
+		{"ip ", []string{"addr", "link", "route"}},
+		{"ss --", []string{"--all", "--listening", "--numeric"}},
+		{"netstat --", []string{"--tcp", "--udp", "--listening"}},
+	} {
+		t.Run(test.line, func(t *testing.T) {
+			candidates := w.state.completionCandidates(w.session, test.line)
+			for _, want := range test.want {
+				found := false
+				for _, candidate := range candidates {
+					if candidate.Text == want && candidate.Desc != "" && candidate.FromCatalog && completion.SafeInsert(candidate.Insert) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%q lacks safe described %q: %+v", test.line, want, candidates)
+				}
+			}
+		})
+	}
+}
+
+func TestCompletionCommonSurvivesPublicCatalogReplacement(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.completion.catalog = completionTestCatalog(t, 120, 0)
+	candidates := w.state.completionCandidates(w.session, "cat -")
+	for _, candidate := range candidates {
+		if candidate.Text == "-n" && candidate.FromCatalog {
+			return
+		}
+	}
+	t.Fatalf("the common cat options vanished after replacing the public catalog: %+v", candidates)
+}
+
+func TestCompletionCommonUniqueGhost(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("yum inst")
+	if rest, ok := w.state.commandGhost(w.session); !ok || rest != "all" {
+		t.Fatalf("supplemental command ghost = %q, ok=%v; want all", rest, ok)
+	}
+}

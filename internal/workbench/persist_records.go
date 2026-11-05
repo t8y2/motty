@@ -225,6 +225,10 @@ var syncedSettings = map[string]bool{
 	"sftp_panel_side":              true,
 	"command_history":              true,
 	"command_suggest_off":          true,
+	"command_completion":           true,
+	"command_auto_popup":           true,
+	"command_probe":                true,
+	"command_preview":              true,
 	"command_inline_suggest_off":   true,
 }
 

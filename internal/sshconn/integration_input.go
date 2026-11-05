@@ -34,6 +34,36 @@ const inputEnvironmentFunction = `__motty_input_report() {
             fi
         fi
     fi
-    printf '\033]777;motty-input;__MOTTY_INPUT_TOKEN__;%s;%s\007' "$_motty_input_charset" "$_motty_input_locale"
+    local _motty_line_clear=unsupported _motty_edit_binding _motty_edit_line _motty_edit_map
+    if [[ -n ${BASH_VERSION-} ]] && shopt -q -o emacs; then
+        _motty_edit_binding=$(bind -m emacs-standard -p 2>/dev/null)
+        while IFS= read -r _motty_edit_line; do
+            case $_motty_edit_line in
+                '"\C-u": unix-line-discard') _motty_line_clear=ctrl-u ;;
+                '"\C-u'*) _motty_line_clear=unsupported; break ;;
+            esac
+        done <<< "$_motty_edit_binding"
+        if [[ $_motty_line_clear == ctrl-u ]]; then
+            for _motty_edit_map in -s -X; do
+                _motty_edit_binding=$(bind -m emacs-standard "$_motty_edit_map" 2>/dev/null) || { _motty_line_clear=unsupported; break; }
+                while IFS= read -r _motty_edit_line; do
+                    case $_motty_edit_line in
+                        '"\C-u'*) _motty_line_clear=unsupported; break ;;
+                    esac
+                done <<< "$_motty_edit_binding"
+                [[ $_motty_line_clear == ctrl-u ]] || break
+            done
+        fi
+    elif [[ -n ${ZSH_VERSION-} ]] && [[ $(bindkey -lL main 2>/dev/null) == 'bindkey -A emacs main' ]] &&
+         ! zle -l zle-line-init >/dev/null 2>&1 && ! zle -l zle-keymap-select >/dev/null 2>&1; then
+        _motty_edit_binding=$(bindkey -M main 2>/dev/null)
+        while IFS= read -r _motty_edit_line; do
+            case $_motty_edit_line in
+                '"^U" kill-whole-line'|'"^U" backward-kill-line') _motty_line_clear=ctrl-u ;;
+                '"^U'*) _motty_line_clear=unsupported; break ;;
+            esac
+        done <<< "$_motty_edit_binding"
+    fi
+    printf '\033]777;motty-input;__MOTTY_INPUT_TOKEN__;%s;%s;%s\007' "$_motty_input_charset" "$_motty_input_locale" "$_motty_line_clear"
 }
 `

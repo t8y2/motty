@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/shellkind"
+	"motty/internal/sshconn"
 )
 
 // Command completion: the offline command/option catalog next to the command
@@ -20,9 +23,8 @@ import (
 // a terminal shows and what bytes reach the shell stay the application's. The
 // list itself is a Viva popover painted over the grid, anchored to the cursor.
 //
-// The catalog is data: nothing in it is executed and no completion runs a
-// command, looks at files, or asks the shell what it supports. History is read
-// only while the learning switch is on; the catalog works without it.
+// The catalog is data and never executes its specs. Optional host queries run
+// separately, only after the user enables them; offline suggestions need none.
 
 // completionHits is the place of the controls this file paints.
 var completionHits = tree.Feature("command-completion")
@@ -33,9 +35,12 @@ var (
 	hitCompletionList    = tree.Sub(completionHits, tree.Name("completion-list"))
 	hitCompletionUpdate  = tree.ID(completionHits, "completion-update")
 
-	hitSettingsCompletionOff  = tree.ID(settingsHits, "settings-completion-off")
-	hitSettingsCompletionList = tree.ID(settingsHits, "settings-completion-list")
-	hitSettingsCompletionBoth = tree.ID(settingsHits, "settings-completion-both")
+	hitSettingsCompletionOff     = tree.ID(settingsHits, "settings-completion-off")
+	hitSettingsCompletionList    = tree.ID(settingsHits, "settings-completion-list")
+	hitSettingsCompletionBoth    = tree.ID(settingsHits, "settings-completion-both")
+	hitSettingsCompletionAuto    = tree.ID(settingsHits, "settings-completion-auto")
+	hitSettingsCompletionProbe   = tree.ID(settingsHits, "settings-completion-probe")
+	hitSettingsCompletionPreview = tree.ID(settingsHits, "settings-completion-preview")
 )
 
 // completionMode is how much of command completion is on. It is stored in two
@@ -61,17 +66,47 @@ func (state *State) completionMode() completionMode {
 	}
 }
 
+func (mode completionMode) record() string {
+	switch mode {
+	case completionOff:
+		return "off"
+	case completionList:
+		return "list"
+	default:
+		return "both"
+	}
+}
+
+func completionModeFromRecord(record string) (completionMode, bool) {
+	switch record {
+	case "off":
+		return completionOff, true
+	case "list":
+		return completionList, true
+	case "both":
+		return completionBoth, true
+	default:
+		return completionOff, false
+	}
+}
+
 // setCompletionMode reports whether the mode changed. Turning completion on
 // starts the work it needs here, in answer to the user, because nothing is
 // loaded while it is off.
 func (state *State) setCompletionMode(mode completionMode) bool {
-	if state.completionMode() == mode {
+	if state.completionMode() == mode && state.completion.choice == mode.record() {
 		return false
 	}
+	state.completion.choice = mode.record()
 	state.history.suggestOff = mode == completionOff
 	state.history.inlineOff = mode == completionList
 	if mode == completionOff {
 		state.closeCompletionList()
+		state.cancelCompletionPreview()
+		state.cancelCompletionProbe()
+		state.cancelCompletionDiscovery()
+		state.cancelCompletionPath()
+		state.cancelAutoCompletion()
 		state.forgetCompletionHistory()
 		return true
 	}
@@ -114,13 +149,26 @@ const (
 	// commands in the popover.
 	completionHistoryRows = 5
 	// completionRowHeight is one candidate row.
-	completionRowHeight = float32(24)
-	completionMinWidth  = float32(240)
-	completionMaxWidth  = float32(560)
+	completionRowHeight    = float32(24)
+	completionMinWidth     = float32(240)
+	completionMaxWidth     = float32(560)
+	completionDetailHeight = float32(100)
+	completionDetailWidth  = float32(240)
 )
 
 // completionUI is the catalog, its loads, and the open list.
 type completionUI struct {
+	defaultOff     bool
+	choice         string
+	autoPopup      bool
+	probeEnabled   bool
+	previewEnabled bool
+	probe          completionProbe
+	discovery      completionDiscovery
+	path           completionPath
+	auto           completionAuto
+	preview        completionPreview
+	previewWriting bool
 	ctx            context.Context
 	cancel         context.CancelFunc
 	workers        sync.WaitGroup
@@ -186,9 +234,11 @@ type completionPopup struct {
 	active bool
 	suggestionSnapshot
 
-	candidates []completion.Candidate
-	selected   int
-	top        int
+	candidates  []completion.Candidate
+	selected    int
+	top         int
+	visibleRows int
+	hovered     int
 }
 
 // completionCatalog only reads a prepared snapshot. Wake owns background work;
@@ -240,6 +290,9 @@ func (state *State) completionStore() *completion.CatalogStore {
 // adoptCompletion runs only on the UI thread. Every window reads the same
 // per-directory store; a late load result cannot publish over a newer install.
 func (state *State) adoptCompletion() {
+	state.adoptCompletionProbe()
+	state.adoptCompletionDiscovery()
+	state.adoptCompletionPath()
 	// With completion off nothing needs the catalog, so it is not decoded. A
 	// decoded catalog keeps only its root commands until one is used.
 	if state.history.suggestOff && !state.completion.updatePending {
@@ -560,8 +613,17 @@ func (state *State) attachCompletion(session *Session) {
 		return ok && state.completionFeed(owner)
 	}
 	t.completionInput = func() {
+		if state.completion.previewWriting {
+			return
+		}
+		if state.completion.preview.owner == t {
+			state.cancelCompletionPreview()
+		}
 		if state.completion.list.active && state.completion.list.sessionID == sessionID {
 			state.closeCompletionList()
+		}
+		if owner, ok := state.sessionByIDPointer(sessionID); ok && owner.term == t {
+			state.scheduleAutoCompletion(owner)
 		}
 	}
 	if state.history.on {
@@ -600,18 +662,26 @@ func (state *State) openCompletionList(session *Session) {
 		return
 	}
 	candidates := state.completionCandidates(session, line)
-	if len(candidates) == 0 {
+	_, canPath := state.completionCanPath(session, line)
+	if len(candidates) == 0 && !state.completionCanDiscover(session, line) && !canPath {
 		return
 	}
 	state.completion.list = completionPopup{
 		active:             true,
 		suggestionSnapshot: state.captureSuggestion(session, line),
 		candidates:         candidates,
+		hovered:            -1,
 	}
+	state.startCompletionProbe(session)
+	state.startCompletionDiscovery(session, line)
+	state.startCompletionPath(session, line)
 }
 
 // closeCompletionList forgets the list; no data is touched.
 func (state *State) closeCompletionList() {
+	state.cancelCompletionPreview()
+	state.stopCompletionDiscovery()
+	state.stopCompletionPath()
 	state.completion.list = completionPopup{}
 }
 
@@ -630,16 +700,23 @@ func (state *State) completionRebuild(session *Session) {
 		return
 	}
 	candidates := state.completionCandidates(session, line)
-	if len(candidates) == 0 {
+	_, canPath := state.completionCanPath(session, line)
+	if len(candidates) == 0 && !state.completionCanDiscover(session, line) && !canPath {
 		state.closeCompletionList()
 		return
 	}
 	list.suggestionSnapshot = state.captureSuggestion(session, line)
 	list.candidates = candidates
+	list.hovered = -1
 	if list.selected >= len(candidates) {
 		list.selected = len(candidates) - 1
 	}
-	list.clamp()
+	if len(candidates) > 0 {
+		list.clamp()
+	}
+	state.startCompletionProbe(session)
+	state.startCompletionDiscovery(session, line)
+	state.startCompletionPath(session, line)
 }
 
 // completionRefresh follows output that may have changed the prompt. It is
@@ -647,6 +724,9 @@ func (state *State) completionRebuild(session *Session) {
 func (state *State) completionRefresh(session *Session) {
 	t := session.term
 	if t == nil || !state.completion.list.active || state.completion.list.sessionID != session.ID {
+		return
+	}
+	if state.completion.preview.phase != previewIdle && state.completion.preview.owner == t {
 		return
 	}
 	if state.modal != modalNone || !state.completionEligible(session) {
@@ -683,10 +763,74 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 			add(completion.Candidate{Text: line + rest, Insert: rest, Kind: completion.KindCommand})
 		}
 	}
-	if catalog := state.completionCatalog(); catalog != nil {
-		if result := completion.Complete(catalog, line); !result.Suppressed {
-			for _, candidate := range result.Candidates {
-				add(candidate)
+	historyRows := len(candidates)
+	for _, candidate := range state.discoveredCompletionCandidates(session, line) {
+		add(candidate)
+	}
+	for _, candidate := range state.cachedCompletionPath(session, line) {
+		add(candidate)
+	}
+	for _, candidate := range state.staticCompletionCandidates(session, line) {
+		root, token := candidate.Text, ""
+		if index := strings.IndexByte(line, ' '); index >= 0 {
+			root, token = line[:index], candidate.Text
+		}
+		if description := completion.LocalizedDescription(state.language.String(), root, token); description != "" {
+			candidate.Desc = description
+		}
+		add(candidate)
+	}
+	if !strings.ContainsRune(line, ' ') {
+		state.rankCompletionAvailability(session, line, candidates, historyRows)
+	}
+	return candidates
+}
+
+func (state *State) staticCompletionCandidates(session *Session, line string) []completion.Candidate {
+	var candidates []completion.Candidate
+	seen := make(map[string]bool)
+	common, _ := completion.Common()
+	root, _, hasArguments := strings.Cut(line, " ")
+	kind := session.term.shellKind()
+	system := session.host.System
+	if session.isLocal() {
+		switch runtime.GOOS {
+		case "darwin":
+			system = sshconn.SystemDarwin
+		case "windows":
+			system = sshconn.SystemWindows
+		default:
+			system = sshconn.SystemLinux
+		}
+	}
+	for _, catalog := range []*completion.Catalog{state.completionCatalog(), common} {
+		if catalog == nil {
+			continue
+		}
+		if hasArguments && root == "dir" {
+			switch {
+			case kind == shellkind.PowerShell, kind == shellkind.Unknown && system == sshconn.SystemWindows:
+				continue
+			case kind == shellkind.Cmd && catalog != common:
+				continue
+			case (kind == shellkind.POSIX || kind == shellkind.Unknown && system != sshconn.SystemUnknown) && catalog == common:
+				continue
+			}
+		}
+		result := completion.Complete(catalog, line)
+		if result.Suppressed {
+			continue
+		}
+		for _, candidate := range result.Candidates {
+			if root == "tail" && (system == sshconn.SystemDarwin || system == sshconn.SystemFreeBSD) && strings.HasPrefix(candidate.Text, "--") {
+				continue
+			}
+			if len(candidates) >= completion.MaxCandidates {
+				return candidates
+			}
+			if !seen[candidate.Insert] {
+				seen[candidate.Insert] = true
+				candidates = append(candidates, candidate)
 			}
 		}
 	}
@@ -698,6 +842,13 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 func (state *State) completionKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	list := &state.completion.list
 	if !list.active {
+		return ui.EventResult{}, false
+	}
+	if len(list.candidates) == 0 {
+		state.closeCompletionList()
+		if event.Key == ui.KeyEscape {
+			return ui.EventResult{Handled: true, Repaint: true}, true
+		}
 		return ui.EventResult{}, false
 	}
 	if state.modal != modalNone {
@@ -712,6 +863,9 @@ func (state *State) completionKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
 	case ui.KeyEscape:
+		if state.restoreCompletionPreview(session) {
+			return handled, true
+		}
 		state.closeCompletionList()
 		return handled, true
 	case ui.KeyEnter:
@@ -721,6 +875,9 @@ func (state *State) completionKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		if event.Modifiers != 0 {
 			state.closeCompletionList()
 			return ui.EventResult{}, false
+		}
+		if state.confirmCompletionPreview(session) {
+			return handled, true
 		}
 		state.acceptCompletion(session)
 		return handled, true
@@ -750,16 +907,22 @@ func (state *State) completionKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return handled, true
 	case ui.KeyHome:
 		list.selected, list.top = 0, 0
+		state.previewCompletion(session, list.selected)
 		return handled, true
 	case ui.KeyEnd:
 		list.selected = len(list.candidates) - 1
 		list.clamp()
+		state.previewCompletion(session, list.selected)
 		return handled, true
 	}
 	return ui.EventResult{}, false
 }
 
 func (list *completionPopup) clamp() {
+	rows := list.visibleRows
+	if rows == 0 {
+		rows = completionRows
+	}
 	if list.selected < 0 {
 		list.selected = 0
 	}
@@ -769,10 +932,10 @@ func (list *completionPopup) clamp() {
 	if list.selected < list.top {
 		list.top = list.selected
 	}
-	if list.selected >= list.top+completionRows {
-		list.top = list.selected - completionRows + 1
+	if list.selected >= list.top+rows {
+		list.top = list.selected - rows + 1
 	}
-	if top := len(list.candidates) - completionRows; list.top > top {
+	if top := len(list.candidates) - rows; list.top > top {
 		list.top = max(top, 0)
 	}
 	if list.top < 0 {
@@ -786,7 +949,27 @@ func (state *State) completionMove(delta int) {
 		return
 	}
 	list.selected += delta
+	list.hovered = -1
 	list.clamp()
+	if session := state.completionSession(); session != nil {
+		state.previewCompletion(session, list.selected)
+	}
+}
+
+func (state *State) completionTrackPointer(event ui.PointerEvent) bool {
+	list := &state.completion.list
+	if !list.active || event.Kind != ui.PointerMove {
+		return false
+	}
+	index, ok := event.Target.In(hitCompletionList)
+	if !ok || index < 0 || index >= len(list.candidates) {
+		index = -1
+	}
+	if list.hovered == index {
+		return false
+	}
+	list.hovered = index
+	return true
 }
 
 // acceptCompletion inserts the selected suffix, and only that. Before typing it
@@ -829,6 +1012,10 @@ func (state *State) clickCompletion(id ui.ID) bool {
 	}
 	list.selected = index
 	if session := state.completionSession(); session != nil {
+		state.previewCompletion(session, index)
+		if state.confirmCompletionPreview(session) {
+			return true
+		}
 		state.acceptCompletion(session)
 	}
 	return true
@@ -855,7 +1042,28 @@ func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geo
 
 	visible := min(len(list.candidates), completionRows)
 	width := state.completionWidth(canvas)
+	sideDetail := area.Width >= 760
+	detailHeight := completionDetailHeight
+	if area.Height < 250 {
+		detailHeight = min(detailHeight, max(82, area.Height*0.5))
+	}
+	if sideDetail {
+		width += completionDetailWidth
+	}
+	width = min(width, max(area.Width-16, 1))
+	availableRows := int((area.Height - 44) / completionRowHeight)
+	if !sideDetail {
+		availableRows = int((area.Height - detailHeight - 64) / completionRowHeight)
+	}
+	visible = min(visible, max(1, availableRows))
+	list.visibleRows = visible
+	list.clamp()
 	bodyHeight := float32(visible)*completionRowHeight + 4
+	if sideDetail {
+		bodyHeight = max(bodyHeight, detailHeight)
+	} else {
+		bodyHeight += detailHeight
+	}
 	popover := components.BeginPopover(canvas, state.Theme(), area, anchor, components.PopoverOptions{
 		Layer:       dialogLayer,
 		Scope:       completionScope.ID(tree.Name("popover")),
@@ -867,8 +1075,64 @@ func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geo
 		BodyHeight:  bodyHeight,
 	})
 	layout := popover.Begin(state.messages.Completion.Title, "")
-	state.paintCompletionRows(canvas, layout.Body, visible)
+	listBounds, detailBounds := layout.Body, layout.Body
+	if sideDetail {
+		detailBounds.X = layout.Body.X + max(layout.Body.Width-completionDetailWidth, 0)
+		detailBounds.Width = layout.Body.X + layout.Body.Width - detailBounds.X
+		listBounds.Width = max(detailBounds.X-listBounds.X-4, 1)
+	} else {
+		listBounds.Height = float32(visible)*completionRowHeight + 4
+		detailBounds.Y = listBounds.Y + listBounds.Height
+		detailBounds.Height = max(layout.Body.Y+layout.Body.Height-detailBounds.Y, 0)
+	}
+	state.paintCompletionRows(canvas, listBounds, visible)
+	state.paintCompletionDetail(canvas, detailBounds)
 	popover.End()
+}
+
+func (state *State) paintCompletionDetail(canvas *ui.Canvas, bounds ui.Rect) {
+	list := &state.completion.list
+	index := list.selected
+	if list.hovered >= 0 && list.hovered < len(list.candidates) {
+		index = list.hovered
+	}
+	if bounds.Width < 40 || bounds.Height < 28 || index < 0 || index >= len(list.candidates) {
+		return
+	}
+	candidate := list.candidates[index]
+	source := state.messages.Completion.SourceHistory
+	if candidate.FromCatalog {
+		source = state.messages.Completion.SourceCatalog
+		if candidate.Kind == completion.KindPath {
+			source = state.messages.Completion.SourcePath
+		} else if state.completionAvailable(state.completionSession(), candidate) {
+			source = state.messages.Completion.SourceAvailable
+		}
+	}
+	description := candidate.Desc
+	if candidate.Kind == completion.KindPath {
+		description = state.messages.Completion.PathFile
+		if candidate.IsDirectory {
+			description = state.messages.Completion.PathDirectory
+		}
+	}
+	content := bounds.Inset(ui.All(6))
+	canvas.Clip(content)
+	heading := fmt.Sprintf("%s - %s  %d/%d", candidate.Text, source, index+1, len(list.candidates))
+	if canvas.TextWidth(heading, metrics.FontSizeS) > content.Width {
+		heading = fmt.Sprintf("%s  %d/%d", source, index+1, len(list.candidates))
+		if description == "" {
+			description = candidate.Text
+		} else {
+			description = candidate.Text + "\n" + description
+		}
+	}
+	canvas.Label(heading, ui.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: 20}, ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.text})
+	lines := canvas.WrapLines(nil, description, metrics.FontSizeS, ui.WeightRegular, content.Width, 4)
+	for index, line := range lines {
+		canvas.Label(line, ui.Rect{X: content.X, Y: content.Y + 22 + float32(index)*16, Width: content.Width, Height: 16}, ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.faint})
+	}
+	canvas.Unclip()
 }
 
 func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible int) {
@@ -887,6 +1151,8 @@ func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible
 		selected := index == list.selected
 		if selected {
 			canvas.Rounded(bounds, radius.item, state.pal.accent)
+		} else if index == list.hovered {
+			canvas.Rounded(bounds, radius.item, state.pal.surfaceHot)
 		}
 		canvas.HitWithOptions(hitCompletionList.At(index), bounds, candidate.Text, ui.HitOptions{Role: ui.RoleOption, SkipTab: true, Selected: selected})
 		text := ui.Rect{X: bounds.X + 8, Y: bounds.Y + 3, Width: bounds.Width - 16, Height: bounds.Height - 6}
@@ -903,7 +1169,13 @@ func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible
 			}
 		}
 		canvas.Clip(text)
-		canvas.Label(candidate.Text, text, textStyle)
+		label := candidate.Text
+		if canvas.TextWidth(label, metrics.FontSizeS) > text.Width {
+			if lines := canvas.WrapLines(nil, label, metrics.FontSizeS, ui.WeightRegular, text.Width, 1); len(lines) > 0 {
+				label = lines[0]
+			}
+		}
+		canvas.Label(label, text, textStyle)
 		canvas.Unclip()
 	}
 }
@@ -927,13 +1199,9 @@ func (state *State) staticGhost(session *Session, line string) (string, bool) {
 	if strings.TrimSpace(line) == "" || cmdhistory.Secret(line) || !state.completionEligible(session) {
 		return "", false
 	}
-	catalog := state.completionCatalog()
-	if catalog == nil {
+	candidates := state.staticCompletionCandidates(session, line)
+	if len(candidates) != 1 {
 		return "", false
 	}
-	result := completion.Complete(catalog, line)
-	if result.Suppressed || len(result.Candidates) != 1 {
-		return "", false
-	}
-	return result.Candidates[0].Insert, result.Candidates[0].Insert != ""
+	return candidates[0].Insert, candidates[0].Insert != ""
 }

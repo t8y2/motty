@@ -1,0 +1,6 @@
+source: Motty common command supplement
+version: v1.0.0
+license: Apache-2.0
+scope: Missing command names and conservative static options from issue #510's coverage matrix.
+provenance: Original short descriptions based on standard command usage; no Netcatty source or dynamic generator is included.
+limitations: Availability and supported options depend on the connected host and command implementation. Suggestions are references, not proof that a command is installed.

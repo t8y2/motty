@@ -75,6 +75,7 @@ func (state *State) sendSuggestion(session *Session, suffix string, fromCatalog 
 	}
 	if session.term.sendInput([]byte(suffix), false) {
 		session.term.suggestionPending = &suggestionEcho{line: line + suffix, token: session.term.folderToken, epoch: session.term.inputGuard.epoch}
+		state.cancelAutoCompletion()
 	}
 }
 

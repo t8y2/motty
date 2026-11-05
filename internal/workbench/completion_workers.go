@@ -14,6 +14,11 @@ func (state *State) completionContext() context.Context {
 }
 
 func (state *State) closeCompletionWorkers() {
+	state.cancelCompletionPreview()
+	state.cancelAutoCompletion()
+	state.cancelCompletionProbe()
+	state.cancelCompletionDiscovery()
+	state.cancelCompletionPath()
 	if state.completion.cancel != nil {
 		state.completion.cancel()
 	}

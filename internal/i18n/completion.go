@@ -8,6 +8,19 @@ type CompletionMessages struct {
 	ModeOff               string
 	ModeList              string
 	ModeBoth              string
+	AutoPopupRow          string
+	AutoPopupDescription  string
+	ProbeRow              string
+	ProbeDescription      string
+	PreviewRow            string
+	PreviewDescription    string
+	SourceHistory         string
+	SourceCatalog         string
+	SourceAvailable       string
+	SourcePath            string
+	PathFile              string
+	PathDirectory         string
+	PreviewUncertain      string
 	KeysGroup             string
 	KeysAccept            string
 	KeysAcceptWord        string

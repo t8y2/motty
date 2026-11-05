@@ -339,6 +339,7 @@ func (state *State) receiveInputEnvironment(sessionID uint32, environment term.I
 	if session, ok := state.sessionByIDPointer(sessionID); ok && session.term != nil {
 		g := &session.term.inputGuard
 		g.environment = environment
+		session.term.previewClearPending = environment.LineClear
 		if g.repairing {
 			g.repairing = false
 			message, kind := state.messages.TerminalInput.LocaleFailed, components.ToastWarning

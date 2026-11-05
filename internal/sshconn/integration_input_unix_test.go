@@ -113,7 +113,7 @@ func TestInputEnvironmentProbePreservesErrexitWhenLocaleFails(t *testing.T) {
 	command := exec.Command(program, "--noprofile", "--norc", "-c", script)
 	command.Env = []string{"PATH=" + bin, "LC_ALL=C"}
 	output, err := command.CombinedOutput()
-	if err != nil || !strings.Contains(string(output), ";unknown;\a") || !strings.Contains(string(output), "__SURVIVED__") {
+	if err != nil || !strings.Contains(string(output), ";unknown;;unsupported\a") || !strings.Contains(string(output), "__SURVIVED__") {
 		t.Fatalf("read-only probe changed errexit/liveness: %q %v", output, err)
 	}
 }
@@ -133,6 +133,81 @@ func TestInputEnvironmentProbeReadsUnexportedShellLocale(t *testing.T) {
 			output, err := command.CombinedOutput()
 			if err != nil || !strings.Contains(string(output), ";input-test;other;") || !strings.Contains(string(output), "__COUNT__6") || !strings.Contains(string(output), "__VALUE__C") {
 				t.Fatalf("unexported actual shell locale was ignored or changed: %q %v", output, err)
+			}
+		})
+	}
+}
+
+func TestIntegrationRealPTYReportsOnlySafeLineClearBindings(t *testing.T) {
+	for _, test := range []struct {
+		name, shell, profile string
+		allowed              bool
+	}{
+		{"bash-emacs", "bash", "PS1='preview> '\n", true},
+		{"bash-rebound", "bash", "bind '\"\\C-u\": accept-line'\nPS1='preview> '\n", false},
+		{"bash-prefix-binding", "bash", "bind '\"\\C-up\": accept-line'\nPS1='preview> '\n", false},
+		{"bash-prefix-macro", "bash", "bind '\"\\C-up\": \"unexpected\"'\nPS1='preview> '\n", false},
+		{"bash-vi", "bash", "set -o vi\nPS1='preview> '\n", false},
+		{"zsh-emacs", "zsh", "bindkey -e\nPS1='preview> '\n", true},
+		{"zsh-rebound", "zsh", "bindkey '^U' accept-line\nPS1='preview> '\n", false},
+		{"zsh-prefix-binding", "zsh", "bindkey '^Up' accept-line\nPS1='preview> '\n", false},
+		{"zsh-line-init-rebound", "zsh", "switchmap() { bindkey '^U' accept-line; }\nzle -N zle-line-init switchmap\nPS1='preview> '\n", false},
+		{"zsh-vi", "zsh", "bindkey -v\nPS1='preview> '\n", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			program, err := exec.LookPath(test.shell)
+			if err != nil {
+				t.Skipf("%s unavailable: %v", test.shell, err)
+			}
+			home := t.TempDir()
+			profileName := ".bash_profile"
+			if test.shell == "zsh" {
+				profileName = ".zshrc"
+			}
+			if err := os.WriteFile(filepath.Join(home, profileName), []byte(test.profile), 0600); err != nil {
+				t.Fatal(err)
+			}
+			shell, err := localshell.Start(localshell.Config{Shell: "/bin/sh", Args: IntegrationArgs(program, "preview-test"), Dir: home,
+				Env: []string{"HOME=" + home, "ZDOTDIR=" + home, "SHELL=" + program, "LANG=C.UTF-8", "INPUTRC=/dev/null"}, Cols: 120, Rows: 24})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(shell.Close)
+			screen := term.New(120, 24, 0)
+			screen.SetPromptToken("preview-test")
+			var environment term.InputEnvironment
+			ready := 0
+			output := ""
+			screen.SetInputEnvironment(func(value term.InputEnvironment) { environment = value })
+			screen.SetPromptReady(func() { ready++ })
+			await := func(want string, done func() bool) {
+				t.Helper()
+				deadline := time.Now().Add(8 * time.Second)
+				for time.Now().Before(deadline) {
+					data := shell.Drain(nil)
+					output += string(data)
+					screen.Write(data)
+					if done() {
+						return
+					}
+					time.Sleep(time.Millisecond)
+				}
+				t.Fatalf("waiting for %s, output=%q", want, output)
+			}
+			await("prompt and binding report", func() bool { return ready > 0 })
+			if environment.LineClear != test.allowed {
+				t.Fatalf("line-clear capability=%v want=%v; output=%q", environment.LineClear, test.allowed, output)
+			}
+			if test.allowed {
+				before := ready
+				output = ""
+				shell.Write([]byte("printf '__WRONG__'\x15printf '__RIGHT__'\r"))
+				await("safe Ctrl-U line replacement", func() bool {
+					return ready > before && strings.Contains(output, "\x1b]133;C;motty=preview-test\a__RIGHT__")
+				})
+				if strings.Contains(output, "\x1b]133;C;motty=preview-test\a__WRONG__") {
+					t.Fatalf("the preceding line ran despite a safe binding: %q", output)
+				}
 			}
 		})
 	}

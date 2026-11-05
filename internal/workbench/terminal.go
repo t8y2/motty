@@ -79,6 +79,8 @@ type terminal struct {
 	folderToken           string
 	folderIntegrationSeen bool
 	commandReporting      bool
+	previewClearPending   bool
+	previewClearBound     bool
 	submittedLines        int
 	blink                 cursorBlink
 	wheelX                float32            // horizontal wheel travel not yet worth a whole cell
@@ -313,6 +315,8 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetPromptStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			current.term.inputGuard.start()
+			current.term.previewClearBound = current.term.previewClearPending
+			current.term.previewClearPending = false
 			current.term.promptVersion++
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
@@ -340,6 +344,7 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			current.outputAlert.commandRunning = current.outputAlert.promptSeen
 			t.commandReporting = true
+			t.previewClearBound, t.previewClearPending = false, false
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false
 			t.inputLine = false
@@ -362,6 +367,7 @@ func (t *terminal) resetFolderSync() {
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
 	t.inputLine = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
+	t.previewClearBound, t.previewClearPending = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.submittedLines, t.followPath = 0, ""
 	t.promptVersion++
