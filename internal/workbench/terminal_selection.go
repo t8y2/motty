@@ -49,6 +49,8 @@ type selectionEdge struct {
 const (
 	selectionScrollInterval = 50 * time.Millisecond
 	selectionScrollMaxLines = 8
+	// selectionScrollMaxSteps caps what one frame may pay back after a stall.
+	selectionScrollMaxSteps = 4
 )
 
 func (selection *terminalSelection) clear() bool {
@@ -367,19 +369,28 @@ func (state *State) armSelectionScroll(session *Session, event ui.PointerEvent, 
 	selection.edge = edge
 }
 
-// stepSelectionScroll scrolls a dragging terminal toward the pointer, once per
-// interval, and moves the selection's focus onto the row it uncovers. It runs
-// from Wake, where state may change, on the frames paint asked for.
+// stepSelectionScroll scrolls a dragging terminal toward the pointer, at the
+// rate the edge asked for, and moves the selection's focus onto the row it
+// uncovers. It runs from Wake, where state may change, on the frames paint
+// asked for. A frame arrives when the compositor has one, so how many intervals
+// have passed decides the step: a frame a little early is not a lost step, and
+// a stalled one is not paid back all at once.
 func (state *State) stepSelectionScroll(terminal *terminal, now time.Duration) {
 	selection := &terminal.selection
 	edge := selection.edge
 	if !selection.dragging || edge.direction == 0 {
 		return
 	}
-	if edge.stepped && now-edge.last < selectionScrollInterval {
-		return
+	steps, next := 1, now
+	if edge.stepped {
+		elapsed := now - edge.last
+		if elapsed < selectionScrollInterval {
+			return
+		}
+		steps = min(int(elapsed/selectionScrollInterval), selectionScrollMaxSteps)
+		next = edge.last + time.Duration(steps)*selectionScrollInterval
 	}
-	if !terminal.screen.Scroll(edge.direction * edge.lines) {
+	if !terminal.screen.Scroll(edge.direction * edge.lines * steps) {
 		selection.edge = selectionEdge{}
 		return
 	}
@@ -388,7 +399,7 @@ func (state *State) stepSelectionScroll(terminal *terminal, now time.Duration) {
 		_, rows := terminal.screen.Size()
 		row = rows - 1
 	}
-	selection.edge.last, selection.edge.stepped = now, true
+	selection.edge.last, selection.edge.stepped = next, true
 	selection.extendUnit(terminal.screen, terminal.screen.PointAt(term.Position{Row: row, Column: edge.column}))
 }
 

@@ -382,6 +382,36 @@ func fillHistory(t *testing.T, terminal *terminal, lines int) {
 	}
 }
 
+// A frame arrives when the compositor has one, not exactly on the interval the
+// drag asked for. A frame a millisecond early must not cost a whole step, or a
+// drag held at the edge scrolls at half the rate it asked for.
+func TestFramesArrivingEarlyDoNotHalveTheDragScrollRate(t *testing.T) {
+	state, session, geometry := selectionState()
+	terminal := session.term
+	fillHistory(t, terminal, 300)
+	terminal.screen.Scroll(200)
+	hit := hitTerminalList.At(int(session.ID))
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	// Just below the grid: one line per interval, so the count of lines is the
+	// rate the pointer asked for.
+	belowY := geometry.top + 5*state.cellHeight + state.cellHeight/2
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: belowY, Viewport: state.viewport})
+	if lines := terminal.selection.edge.lines; lines != 1 {
+		t.Fatalf("a pointer just below the grid asks for %d lines per step", lines)
+	}
+	before := terminal.screen.ViewOffset()
+	const frames = 21
+	var at time.Duration
+	for range frames {
+		at += selectionScrollInterval - time.Millisecond
+		state.stepSelectionScroll(terminal, at)
+	}
+	if scrolled := before - terminal.screen.ViewOffset(); scrolled < frames-2 {
+		t.Fatalf("%d frames %v apart scrolled %d lines", frames, selectionScrollInterval-time.Millisecond, scrolled)
+	}
+}
+
 func TestDraggingBelowTheGridScrollsAndSelectsHistory(t *testing.T) {
 	state, session, geometry := selectionState()
 	terminal := session.term
