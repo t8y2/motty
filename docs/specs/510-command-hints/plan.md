@@ -134,7 +134,7 @@
 
 **Files:** Modify `docs/specs/510-command-hints/verification.md`, `docs/specs/510-command-hints/research.md` and task-owned screenshots. No unrelated source changes.
 
-- [ ] Run focused red/green coverage, real local Bash/Zsh and loopback SSH headless acceptance including unknown command, path, platform and locale cases; inspect screenshots and visual/pixel layout.
-- [ ] Run full offline `go test ./... -count=1 -timeout=180s`, affected race tests, `go vet`, macOS/Linux/Windows builds and Windows test cross-compilation; record actual skips and unavailable runtime checks.
+- [x] Run focused red/green coverage, real local Bash/Zsh and loopback SSH headless acceptance including unknown command, path, platform and locale cases; inspect screenshots and visual/pixel layout.
+- [x] Run full offline `go test ./... -count=1 -timeout=180s`, affected race tests, `go vet`, macOS/Linux/Windows builds and Windows test cross-compilation; record actual skips and unavailable runtime checks.
 - [ ] Inspect diff and worktree ownership, fetch upstream for the target-base check, create a `codex/` feature branch from the isolated worktree, commit only this issue's files, push to the fork and create a PR against `t8y2/motty:main` closing #510.
 - [ ] Observe PR CI and report whether Windows/Linux runners pass; do not merge, deploy, or claim external bastion/native Windows runtime acceptance from cross-compilation.
