@@ -1,6 +1,6 @@
 # Issue #510 Headless Acceptance
 
-Worktree: isolated Motty `codex/issue-510-command-hints` branch rebased onto upstream/main `be033c6`, with clean Viva sibling `8916e4f`. No production SSH host or native Windows app was used. Issue #510 is OPEN, assigned to `caichangqing1120`, and `/claim` received the bot's success response. PR/CI evidence is recorded separately when available.
+Worktree: isolated Motty `codex/issue-510-command-hints` branch rebased onto upstream/main `be033c6`, with clean Viva sibling `8916e4f`. No production SSH host or native Windows app was used. Issue #510 is OPEN, assigned to `caichangqing1120`, and `/claim` received the bot's success response. [PR #526](https://github.com/t8y2/motty/pull/526) is open against that base; CI was pending when this record was written.
 
 ## Coverage Audit
 
