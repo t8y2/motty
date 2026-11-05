@@ -1,7 +1,9 @@
 package workbench
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/ui"
@@ -40,6 +42,12 @@ const (
 	// project onto the plane.
 	iconAxisReveal
 	iconAxisStretch
+	// iconAxisTrim writes part of one contour on, measured along the contour.
+	// It is read by a part track; a whole-glyph track cannot trim one contour.
+	iconAxisTrim
+	// iconAxisFade hides one contour while it travels, so a pulse can leave the
+	// drawing at its outer edge without a detached line lingering there.
+	iconAxisFade
 )
 
 // iconMotionStop is one keyframe of an axis: the value it holds at milliseconds
@@ -75,7 +83,17 @@ type iconMotion struct {
 	duration time.Duration
 	tracks   []iconMotionTrack
 	parts    []iconPartMotion
+	// clipToBox keeps a part that travels beyond the icon's view box from
+	// painting over the control beside it.
+	clipToBox bool
 }
+
+// iconHoverStretch widens every icon gesture without changing its shape. The
+// dwell is deliberately unchanged: waiting longer before an icon answers makes
+// it feel late, while a slightly longer pass makes the gesture legible at 14 to
+// 18px. Hover and click read the same stretched timeline, so one drawing never
+// moves at two speeds.
+const iconHoverStretch = 1.18
 
 // at returns the transform the motion paints at progress through it. A motion
 // with parts allocates them: they belong to the frame being built, and two rows
@@ -83,21 +101,32 @@ type iconMotion struct {
 func (motion iconMotion) at(progress float32) ui.IconTransform {
 	elapsed := progress * float32(motion.duration/time.Millisecond)
 	transform := readPose(motion.tracks, elapsed).transform()
+	transform.ClipToBox = motion.clipToBox
 	if len(motion.parts) > 0 {
 		transform.Parts = make([]ui.IconPart, len(motion.parts))
 		for index, part := range motion.parts {
 			own := readPose(part.tracks, elapsed)
-			transform.Parts[index] = ui.IconPart{
-				Contour: part.contour,
-				Rotate:  own.turn,
-				Scale:   own.scale,
-				ScaleX:  own.stretch,
-				Offset:  ui.Point{X: own.across, Y: own.down},
-				Anchor:  part.anchor,
+			movement := ui.IconPart{
+				Contour:   part.contour,
+				Rotate:    own.turn,
+				Scale:     own.scale,
+				ScaleX:    own.stretch,
+				Translate: ui.Point{X: own.across, Y: own.down},
+				Anchor:    part.anchor,
+				Fade:      own.fade,
 			}
+			if own.trimmed {
+				movement.Trim = ui.IconTrim{Active: true, From: 0, To: own.trim}
+			}
+			transform.Parts[index] = movement
 		}
 	}
 	return transform
+}
+
+// span is the time the motion takes once the shared hover stretch is applied.
+func (motion iconMotion) span() time.Duration {
+	return time.Duration(float64(motion.duration) * iconHoverStretch)
 }
 
 // pose is what one set of axes holds at one instant: the four values a motion
@@ -105,6 +134,9 @@ func (motion iconMotion) at(progress float32) ui.IconTransform {
 type pose struct {
 	turn, scale, across, down float32
 	reveal, stretch           float32
+	trim                      float32
+	fade                      float32
+	trimmed                   bool
 }
 
 // readPose reads one set of axes at elapsed milliseconds into the motion.
@@ -124,6 +156,10 @@ func readPose(tracks []iconMotionTrack, elapsed float32) (values pose) {
 			values.reveal = value
 		case iconAxisStretch:
 			values.stretch = value
+		case iconAxisTrim:
+			values.trim, values.trimmed = value, true
+		case iconAxisFade:
+			values.fade = value
 		}
 	}
 	return values
@@ -193,6 +229,20 @@ var (
 // iconSpine is the middle of a glyph's view box, where an open book is drawn
 // from: the line a page turns over.
 var iconSpine = ui.Point{X: 12, Y: 12}
+
+// iconClockFace is the centre of the clock inside the session-log glyph.
+var iconClockFace = ui.Point{X: 8, Y: 16}
+
+// iconStickyFold is where the sticky note's folded corner meets its top edge.
+var iconStickyFold = ui.Point{X: 15, Y: 3}
+
+// iconFolderHinge is where the folder's lip meets the body on the left of the
+// mouth. The lip turns about this point; the pocket stays as the fixed frame.
+var iconFolderHinge = ui.Point{X: 6, Y: 14}
+
+// iconBroadcastSource is the centre of the aerial. Every wave expands from this
+// point, rather than growing around the centre of its own bounds.
+var iconBroadcastSource = ui.Point{X: 12, Y: 9}
 
 var (
 	// iconMotionTurn turns a gear half way round, slowly, while it settles. Half a
@@ -417,23 +467,62 @@ var (
 		},
 	}
 
-	// iconMotionFold closes a ledger half way on its spine and opens it again: known
-	// hosts is a book, and a book is the one glyph here that hinges. The outline is
-	// a single contour that wraps both pages, and the spine is the line the two
-	// halves meet on, so stretching the outline across about the spine folds the
-	// pages toward it while the spine itself stays where it is drawn.
+	// iconMotionFold turns the right page of a ledger toward its spine. The spine
+	// and left page stay put; only the page carrying the motion narrows, holds as
+	// if being read, then opens again with a small overshoot.
 	iconMotionFold = iconMotion{
-		duration: 960 * time.Millisecond,
+		duration: 920 * time.Millisecond,
 		parts: []iconPartMotion{
-			{contour: 1, anchor: &iconSpine, tracks: []iconMotionTrack{
+			{contour: 2, anchor: &iconSpine, tracks: []iconMotionTrack{
 				{axis: iconAxisStretch, stops: []iconMotionStop{
 					{at: 0, value: 1, ease: easeSqueeze},
-					// Half closed: the pages meet in the middle of the book, still wide
-					// enough to read as a book rather than as the row going out.
-					{at: 300, value: 0.5},
-					// It is held half closed for a moment, the way it is while it is read.
-					{at: 520, value: 0.5, ease: easeLand},
-					{at: 960, value: 1},
+					{at: 70, value: 0.96, ease: easeSink},
+					{at: 300, value: 0.62, ease: easeLand},
+					{at: 520, value: 0.62, ease: easeRockOut},
+					{at: 760, value: 1.03, ease: easeLand},
+					{at: 920, value: 1},
+				}},
+			}},
+		},
+	}
+
+	// iconMotionClock advances the hands of the session-log clock through four
+	// quarter turns. Each step is followed by a real hold, so the icon reads as
+	// recorded time passing rather than as a drawing being rotated.
+	iconMotionClock = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			{contour: 3, anchor: &iconClockFace, tracks: []iconMotionTrack{
+				{axis: iconAxisTurn, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeTurn},
+					{at: 120, value: turn(90), ease: easeTurn},
+					{at: 240, value: turn(90), ease: easeTurn},
+					{at: 360, value: turn(180), ease: easeTurn},
+					{at: 480, value: turn(180), ease: easeTurn},
+					{at: 600, value: turn(270), ease: easeTurn},
+					{at: 720, value: turn(270), ease: easeTurn},
+					{at: 840, value: turn(360)},
+					// The full turn and zero are the same picture. Reset on a
+					// millisecond so the final frame is exactly the still glyph.
+					{at: 841, value: 0},
+				}},
+			}},
+		},
+	}
+
+	// iconMotionPeel lifts the sticky note's folded corner, holds it open for a
+	// beat, then lets it fall back onto the page.
+	iconMotionPeel = iconMotion{
+		duration: 860 * time.Millisecond,
+		parts: []iconPartMotion{
+			{contour: 1, anchor: &iconStickyFold, tracks: []iconMotionTrack{
+				{axis: iconAxisTurn, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 90, value: turn(2), ease: easeSink},
+					{at: 280, value: turn(-18), ease: easeLand},
+					{at: 480, value: turn(-18), ease: easeRockOut},
+					{at: 700, value: turn(2), ease: easeLand},
+					{at: 860, value: 0},
 				}},
 			}},
 		},
@@ -451,20 +540,844 @@ var (
 		},
 	}
 
-	// iconMotionSink opens a folder and lets it drop into place: down, held while
-	// the contents settle, then back.
-	iconMotionSink = iconMotion{
-		duration: 1250 * time.Millisecond,
+	// iconMotionColumns pulls the split seam toward the new pane, holds it there
+	// long enough to read as a second column, then lets the frame close again.
+	// Only the divider moves; the rounded frame is the fixed reference.
+	iconMotionColumns = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 80, value: -0.5, ease: easeSink},
+				{at: 300, value: 3, ease: easeLand},
+				{at: 500, value: 3, ease: easeRockOut},
+				{at: 760, value: -0.35, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionFolderOpen swings only the upper lip around the point where it
+	// meets the pocket. The body holds still; the lip opens, waits as if a file
+	// is being taken out, then drops back with one small overshoot.
+	iconMotionFolderOpen = iconMotion{
+		duration: 940 * time.Millisecond,
+		parts: []iconPartMotion{
+			{
+				contour: 0,
+				anchor:  &iconFolderHinge,
+				tracks: []iconMotionTrack{
+					{axis: iconAxisTurn, stops: []iconMotionStop{
+						{at: 0, value: 0, ease: easeSink},
+						{at: 80, value: turn(1.6), ease: easeSqueeze},
+						{at: 320, value: turn(-13), ease: easeRockOut},
+						{at: 520, value: turn(-13), ease: easeRockIn},
+						{at: 760, value: turn(2.5), ease: easeLand},
+						{at: 940, value: 0},
+					}},
+				},
+			},
+		},
+	}
+
+	// iconMotionSwap trades the arrows of a transfer mark without turning the
+	// frame around them.
+	iconMotionSwap = iconMotion{
+		duration: 880 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.4, ease: easeLand},
+				{at: 880, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.4, ease: easeLand},
+				{at: 880, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.4, ease: easeLand},
+				{at: 880, value: 0},
+			}}),
+			part(3, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.4, ease: easeLand},
+				{at: 880, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionInspect sweeps a lens across what it is examining and turns it
+	// slightly toward the thing underneath.
+	iconMotionInspect = iconMotion{
+		duration: 820 * time.Millisecond,
 		tracks: []iconMotionTrack{
-			{axis: iconAxisDown, stops: []iconMotionStop{
-				{at: 0, value: 0, ease: easeSink},
-				{at: 210, value: 2.6},
-				{at: 1060, value: 2.6, ease: easeRockOut},
-				{at: 1250, value: 0},
+			{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 820, value: 0},
+			}},
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: turn(-7), ease: easeLand},
+				{at: 820, value: 0},
 			}},
 		},
 	}
+
+	// iconMotionRays lets a sun's rays travel outward from the still disc.
+	iconMotionRays = iconMotion{
+		duration: 860 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.1, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(3,
+				iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: -0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+				iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: -0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+			),
+			part(4,
+				iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: 0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+				iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: 0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+			),
+			part(5, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(6, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.1, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(7,
+				iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: 0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+				iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: -0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+			),
+			part(8,
+				iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: -0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+				iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 220, value: 0.6, ease: easeLand},
+					{at: 860, value: 0},
+				}},
+			),
+		},
+	}
+
+	// iconMotionCrescent rocks the moon on its curve instead of rotating it like
+	// a generic switch.
+	iconMotionCrescent = iconMotion{
+		duration: 820 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: turn(9), ease: easeLand},
+				{at: 820, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionCross separates and recloses the two strokes of a close mark.
+	iconMotionCross = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: turn(-7), ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: turn(7), ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionBroadcast emits two waves from the aerial. The inner pair leaves
+	// first, the outer pair follows a beat later, and each fades before it can
+	// become a detached line at the edge of the box. The tower and its base stay
+	// still; the waves return invisibly at rest.
+	iconMotionBroadcast = iconMotion{
+		duration:  820 * time.Millisecond,
+		clipToBox: true,
+		parts: []iconPartMotion{
+			broadcastArc(1, 0),
+			broadcastArc(3, 0),
+			broadcastArc(0, 80),
+			broadcastArc(4, 80),
+		},
+	}
+
+	// iconMotionDivider nudges the horizontal divider of a row layout down and
+	// seats it back in the frame.
+	iconMotionDivider = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.2, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionRecord pulses the dot inside a record ring.
+	iconMotionRecord = iconMotion{
+		duration: 820 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 220, value: 1.4, ease: easeLand},
+				{at: 820, value: 1},
+			}}),
+		},
+	}
+
+	// iconMotionRecordStop compresses the square that ends a recording.
+	iconMotionRecordStop = iconMotion{
+		duration: 820 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 220, value: 0.8, ease: easeLand},
+				{at: 820, value: 1},
+			}}),
+		},
+	}
+
+	// iconMotionFilm advances the sprocket rows of a film strip one frame and
+	// lets them settle back.
+	iconMotionFilm = iconMotion{
+		duration: 860 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(3, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(4, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(6, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(7, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionSave lowers an arrow into its tray, and iconMotionExport and
+	// iconMotionUpload move theirs in the other direction.
+	iconMotionSave = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.2, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.2, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	iconMotionExport = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.1, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+			part(3, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 1.1, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	iconMotionUpload = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionFolderUp carries a folder's arrow out of the folder.
+	iconMotionFolderUp = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.0, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.0, ease: easeLand},
+				{at: 840, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionFolderPlus opens the plus inside a folder without moving the
+	// folder itself.
+	iconMotionFolderPlus = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 220, value: 1.28, ease: easeLand},
+				{at: 840, value: 1},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 220, value: 1.28, ease: easeLand},
+				{at: 840, value: 1},
+			}}),
+		},
+	}
+
+	// iconMotionFileTransfer exchanges the arrows of the file-transfer mark.
+	iconMotionFileTransfer = iconMotion{
+		duration: 860 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: 0.9, ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionBrackets opens the frame around one workload pulse, holds it
+	// open, then closes it again. The translation is in this glyph's 1024-unit
+	// view box: at 16px, 78 units is about 1.2px per side.
+	iconMotionBrackets = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 70, value: -14, ease: easeSink},
+				{at: 250, value: 78, ease: easeRockOut},
+				{at: 520, value: 78, ease: easeRockIn},
+				{at: 780, value: -12, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 70, value: 14, ease: easeSink},
+				{at: 250, value: -78, ease: easeRockOut},
+				{at: 520, value: -78, ease: easeRockIn},
+				{at: 780, value: 12, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 70, value: 0.96, ease: easeSink},
+				{at: 270, value: 1.16, ease: easeLand},
+				{at: 520, value: 1.16, ease: easeRockOut},
+				{at: 780, value: 0.99, ease: easeLand},
+				{at: 900, value: 1},
+			}}),
+		},
+	}
+
+	// iconMotionRefresh indexes a driven turn clockwise and returns.
+	iconMotionRefresh = iconMotion{
+		duration: 820 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: turn(11), ease: easeLand},
+				{at: 820, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionRise and iconMotionFall make an arrow travel the way it points,
+	// then settle back onto its baseline.
+	iconMotionRise = iconMotion{
+		duration: 820 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: -1.3, ease: easeLand},
+				{at: 820, value: 0},
+			}},
+		},
+	}
+
+	iconMotionFall = iconMotion{
+		duration: 820 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: 1.3, ease: easeLand},
+				{at: 820, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionPlus opens the two arms of a plus away from their crossing and
+	// closes them on their original drawing.
+	iconMotionPlus = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 230, value: 1.22, ease: easeLand},
+				{at: 840, value: 1},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 230, value: 1.22, ease: easeLand},
+				{at: 840, value: 1},
+			}}),
+		},
+	}
+
+	// iconMotionDots lets the dots of an ellipsis gather attention in sequence
+	// without moving the control.
+	iconMotionDots = iconMotion{
+		duration: 840 * time.Millisecond,
+		parts: []iconPartMotion{
+			dotPulse(0, 0),
+			dotPulse(1, 70),
+			dotPulse(2, 140),
+		},
+	}
+
+	// iconMotionClip flexes a paperclip as if it were being opened over a sheet.
+	iconMotionClip = iconMotion{
+		duration: 840 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 230, value: turn(-8), ease: easeLand},
+				{at: 840, value: 0},
+			}},
+			{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 230, value: 1.08, ease: easeLand},
+				{at: 840, value: 1},
+			}},
+		},
+	}
+
+	// iconMotionInquire rocks the question mark of a help mark while its dot
+	// acknowledges the pointer.
+	iconMotionInquire = iconMotion{
+		duration: 860 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 230, value: turn(8), ease: easeLand},
+				{at: 860, value: 0},
+			}}),
+			dotPulse(2, 120),
+		},
+	}
+
+	// iconMotionDraw tilts a pencil onto the surface and lays its nib back down.
+	// The body and nib line move together, so it reads as one drawing stroke.
+	iconMotionDraw = iconMotion{
+		duration: 960 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: turn(-8), ease: easeLand},
+				{at: 960, value: 0},
+			}},
+			{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: 0.8, ease: easeLand},
+				{at: 960, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionLid lifts a bin's lid clear of its body and closes it again.
+	iconMotionLid = iconMotion{
+		duration: 960 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: -2.2, ease: easeLand},
+				{at: 960, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionStar makes a star swell once, the way its outline lights up when
+	// it becomes a favourite. Star and StarSolid share it so the two states move
+	// alike even though their drawings differ.
+	iconMotionStar = iconMotion{
+		duration: 920 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 260, value: 1.16, ease: easeLand},
+				{at: 920, value: 1},
+			}},
+		},
+	}
+
+	// iconMotionPlay nudges a play triangle in the direction it points.
+	iconMotionPlay = iconMotion{
+		duration: 920 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: 1.2, ease: easeLand},
+				{at: 920, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionPause lets the two bars fall inward toward each other and settle
+	// apart again: the drawing of a pause starting.
+	iconMotionPause = iconMotion{
+		duration: 920 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: -0.7, ease: easeLand},
+				{at: 920, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: 0.7, ease: easeLand},
+				{at: 920, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionRewind turns a history clock's hand back, then lets it settle on
+	// the recorded time.
+	iconMotionRewind = iconMotion{
+		duration: 960 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(2, iconMotionTrack{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: turn(16), ease: easeLand},
+				{at: 960, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: -0.5, ease: easeLand},
+				{at: 960, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionCopy slides the page being copied off the page underneath.
+	iconMotionCopy = iconMotion{
+		duration: 940 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: 1.2, ease: easeLand},
+				{at: 940, value: 0},
+			}}, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: 1.2, ease: easeLand},
+				{at: 940, value: 0},
+			}}),
+		},
+	}
+
+	// The chevrons lean the way they point and come back onto their centre.
+	iconMotionNudgeRight = iconMotion{
+		duration: 880 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: 1.2, ease: easeLand},
+				{at: 880, value: 0},
+			}},
+		},
+	}
+
+	iconMotionNudgeLeft = iconMotion{
+		duration: 880 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: -1.2, ease: easeLand},
+				{at: 880, value: 0},
+			}},
+		},
+	}
+
+	iconMotionNudgeDown = iconMotion{
+		duration: 880 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: 1.2, ease: easeLand},
+				{at: 880, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionSliders moves the three knobs along their own tracks, each by the
+	// distance its track has room for.
+	iconMotionSliders = iconMotion{
+		duration: 980 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(6, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: -2.2, ease: easeLand},
+				{at: 980, value: 0},
+			}}),
+			part(7, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 40, value: 0, ease: easeSqueeze},
+				{at: 300, value: 2.2, ease: easeLand},
+				{at: 980, value: 0},
+			}}),
+			part(8, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 80, value: 0, ease: easeSqueeze},
+				{at: 340, value: -2.6, ease: easeLand},
+				{at: 980, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionEye looks left and right inside the still outline.
+	iconMotionEye = iconMotion{
+		duration: 940 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 220, value: -1.1, ease: easeLand},
+				{at: 520, value: 1.1, ease: easeLand},
+				{at: 940, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionEyeOff draws the slash a little farther across, as if closing the
+	// view, and lets it return.
+	iconMotionEyeOff = iconMotion{
+		duration: 940 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(3,
+				iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 250, value: 0.8, ease: easeLand},
+					{at: 940, value: 0},
+				}},
+				iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeSqueeze},
+					{at: 250, value: 0.8, ease: easeLand},
+					{at: 940, value: 0},
+				}},
+			),
+		},
+	}
+
+	// iconMotionPicture lets the sun in a photograph brighten while the mountains
+	// settle by a pixel.
+	iconMotionPicture = iconMotion{
+		duration: 960 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: 0, value: 1, ease: easeSqueeze},
+				{at: 250, value: 1.25, ease: easeLand},
+				{at: 960, value: 1},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 250, value: 0.8, ease: easeLand},
+				{at: 960, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionProfiles fans three saved places apart and closes them into a
+	// single column again: the glyph is a stack of cards, so the stack is what
+	// moves.
+	iconMotionProfiles = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(0, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: -1.2, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+			part(1, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 30, value: 0, ease: easeSqueeze},
+				{at: 290, value: -1.2, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 60, value: 0, ease: easeSqueeze},
+				{at: 320, value: 1.2, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionSync turns the two halves of a browse-sync mark in opposite
+	// directions, the way a pair of folders trade their contents.
+	iconMotionSync = iconMotion{
+		duration: 920 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: -0.8, ease: easeLand},
+				{at: 920, value: 0},
+			}}),
+			part(2, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 60, value: 0, ease: easeSqueeze},
+				{at: 320, value: 0.8, ease: easeLand},
+				{at: 920, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionDrive tilts a drive's platter and settles it back level.
+	iconMotionDrive = iconMotion{
+		duration: 880 * time.Millisecond,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisTurn, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: turn(-3), ease: easeLand},
+				{at: 880, value: 0},
+			}},
+		},
+	}
+
+	// iconMotionCompose lifts the nib of a square pen away from its page and
+	// brings it back down, the gesture of opening an editor on a file.
+	iconMotionCompose = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisAcross, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: 0.9, ease: easeLand},
+				{at: 900, value: 0},
+			}}, iconMotionTrack{axis: iconAxisDown, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 240, value: -0.9, ease: easeLand},
+				{at: 900, value: 0},
+			}}),
+		},
+	}
+
+	// iconMotionConfirm draws a check inside its still ring and leaves it there:
+	// the completed check is the answer a re-trust action gives. It must not
+	// retrace to an empty ring.
+	iconMotionConfirm = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			part(1, iconMotionTrack{axis: iconAxisTrim, stops: []iconMotionStop{
+				{at: 0, value: 0, ease: easeSqueeze},
+				{at: 260, value: 1, ease: easeLand},
+				{at: 620, value: 1},
+			}}),
+		},
+	}
 )
+
+// broadcastArc spreads one pair of waves from the aerial and hides it before
+// the expanded contour reaches the icon's edge. The arc is reset while faded,
+// then fades back in at rest so the next hover starts from the same picture.
+func broadcastArc(contour int, delay float32) iconPartMotion {
+	return iconPartMotion{
+		contour: contour,
+		anchor:  &iconBroadcastSource,
+		tracks: []iconMotionTrack{
+			{axis: iconAxisScale, stops: []iconMotionStop{
+				{at: delay, value: 1, ease: easeSqueeze},
+				{at: delay + 20, value: 1},
+				{at: delay + 350, value: 1.30, ease: easeLand},
+				{at: delay + 390, value: 1.34},
+				{at: delay + 440, value: 1},
+				{at: 820, value: 1},
+			}},
+			{axis: iconAxisFade, stops: []iconMotionStop{
+				{at: delay, value: 0},
+				{at: delay + 120, value: 0},
+				{at: delay + 350, value: 0.72},
+				{at: delay + 390, value: 1},
+				{at: delay + 440, value: 1},
+				{at: delay + 600, value: 1},
+				{at: delay + 700, value: 0},
+				{at: 820, value: 0},
+			}},
+		},
+	}
+}
 
 // keyPress is one key of the keyboard glyph going down and coming back up, start
 // milliseconds into the motion.
@@ -486,48 +1399,495 @@ func eyeBlink(contour int, start float32) iconPartMotion {
 	}})
 }
 
-// iconMotionFor is the motion choosing a row with this icon plays. Two rows can
-// share an icon — Settings in the sidebar and the general entries of the settings
-// list — and they play the same motion. A motion with parts names contours of one
-// particular glyph, so an icon that gains or loses a contour when it is
-// regenerated has to keep the parts table honest: the test draws every part's
-// contour from the icon itself.
-func iconMotionFor(icon uint8) (iconMotion, bool) {
-	switch icon {
-	case iconSettings:
-		return iconMotionTurn, true
-	case iconTerminal:
-		return iconMotionCursor, true
-	case iconForward:
-		return iconMotionExchange, true
-	case iconFolderOpen:
-		return iconMotionSink, true
-	case iconArchive:
-		return iconMotionUnlid, true
-	case iconLink:
-		return iconMotionRock, true
-	case iconKnown:
-		return iconMotionFold, true
-	case iconActivity:
-		return iconMotionTrace, true
-	case iconLock:
-		return iconMotionUnlock, true
-	case iconKey:
-		return iconMotionKey, true
-	case iconGlobe:
-		return iconMotionWorld, true
-	case iconHosts:
-		return iconMotionRack, true
-	case iconKeyboard:
-		return iconMotionType, true
-	case iconBot:
-		return iconMotionBlink, true
-	case iconPlug:
-		return iconMotionPlug, true
-	case iconColumns2, iconNote, iconInfo, iconBug, iconFileClock:
-		return iconMotionSquash, true
+// dotPulse enlarges one dot and lets it settle, start milliseconds into the
+// motion.
+func dotPulse(contour int, start float32) iconPartMotion {
+	return part(contour, iconMotionTrack{axis: iconAxisScale, stops: []iconMotionStop{
+		{at: start, value: 1, ease: easeSqueeze},
+		{at: start + 150, value: 1.45, ease: easeLand},
+		{at: start + 390, value: 1},
+	}})
+}
+
+// iconGlyphGroup names one actual drawing, not one screen or action. Every kind
+// that paints the same drawing belongs to the same group and therefore plays
+// the same gesture: Settings in the sidebar, the window bar and settings rows;
+// Terminal in the local-terminal row and every compact terminal action; the
+// globe in Proxies and the local proxy.
+type iconGlyphGroup uint8
+
+const (
+	iconGlyphSettings iconGlyphGroup = iota
+	iconGlyphTerminal
+	iconGlyphForward
+	iconGlyphFolderOpen
+	iconGlyphArchive
+	iconGlyphLink
+	iconGlyphBook
+	iconGlyphActivity
+	iconGlyphLock
+	iconGlyphKey
+	iconGlyphGlobe
+	iconGlyphServer
+	iconGlyphKeyboard
+	iconGlyphBot
+	iconGlyphPlug
+	iconGlyphColumns
+	iconGlyphNote
+	iconGlyphInfo
+	iconGlyphBug
+	iconGlyphFileClock
+	iconGlyphGrid
+	iconGlyphTransfer
+	iconGlyphSearch
+	iconGlyphSun
+	iconGlyphMoon
+	iconGlyphClose
+	iconGlyphBroadcast
+	iconGlyphDivider
+	iconGlyphRecord
+	iconGlyphStop
+	iconGlyphFilm
+	iconGlyphDownload
+	iconGlyphFileDown
+	iconGlyphFileTransfer
+	iconGlyphProcess
+	iconGlyphUpload
+	iconGlyphFolderUp
+	iconGlyphFolderPlus
+	iconGlyphRefresh
+	iconGlyphArrowUp
+	iconGlyphArrowDown
+	iconGlyphPlus
+	iconGlyphEllipsis
+	iconGlyphPaperclip
+	iconGlyphHelp
+	iconGlyphPencil
+	iconGlyphTrash
+	iconGlyphStar
+	iconGlyphStarSolid
+	iconGlyphPlay
+	iconGlyphPause
+	iconGlyphHistory
+	iconGlyphCopy
+	iconGlyphChevronRight
+	iconGlyphChevronLeft
+	iconGlyphChevronDown
+	iconGlyphSliders
+	iconGlyphEye
+	iconGlyphEyeOff
+	iconGlyphImage
+	iconGlyphProfiles
+	iconGlyphSync
+	iconGlyphDrive
+	iconGlyphCompose
+	iconGlyphConfirm
+)
+
+// iconGlyphs is one motion per drawing. Aliases share an entry: Settings has one
+// gesture, not one for each place it is painted.
+var iconGlyphs = map[iconGlyphGroup]iconMotion{
+	iconGlyphSettings:     iconMotionTurn,
+	iconGlyphTerminal:     iconMotionCursor,
+	iconGlyphForward:      iconMotionExchange,
+	iconGlyphFolderOpen:   iconMotionFolderOpen,
+	iconGlyphArchive:      iconMotionUnlid,
+	iconGlyphLink:         iconMotionRock,
+	iconGlyphBook:         iconMotionFold,
+	iconGlyphActivity:     iconMotionTrace,
+	iconGlyphLock:         iconMotionUnlock,
+	iconGlyphKey:          iconMotionKey,
+	iconGlyphGlobe:        iconMotionWorld,
+	iconGlyphServer:       iconMotionRack,
+	iconGlyphKeyboard:     iconMotionType,
+	iconGlyphBot:          iconMotionBlink,
+	iconGlyphPlug:         iconMotionPlug,
+	iconGlyphColumns:      iconMotionColumns,
+	iconGlyphNote:         iconMotionPeel,
+	iconGlyphInfo:         iconMotionSquash,
+	iconGlyphBug:          iconMotionSquash,
+	iconGlyphFileClock:    iconMotionClock,
+	iconGlyphGrid:         iconMotionSquash,
+	iconGlyphTransfer:     iconMotionSwap,
+	iconGlyphSearch:       iconMotionInspect,
+	iconGlyphSun:          iconMotionRays,
+	iconGlyphMoon:         iconMotionCrescent,
+	iconGlyphClose:        iconMotionCross,
+	iconGlyphBroadcast:    iconMotionBroadcast,
+	iconGlyphDivider:      iconMotionDivider,
+	iconGlyphRecord:       iconMotionRecord,
+	iconGlyphStop:         iconMotionRecordStop,
+	iconGlyphFilm:         iconMotionFilm,
+	iconGlyphDownload:     iconMotionSave,
+	iconGlyphFileDown:     iconMotionExport,
+	iconGlyphFileTransfer: iconMotionFileTransfer,
+	iconGlyphProcess:      iconMotionBrackets,
+	iconGlyphUpload:       iconMotionUpload,
+	iconGlyphFolderUp:     iconMotionFolderUp,
+	iconGlyphFolderPlus:   iconMotionFolderPlus,
+	iconGlyphRefresh:      iconMotionRefresh,
+	iconGlyphArrowUp:      iconMotionRise,
+	iconGlyphArrowDown:    iconMotionFall,
+	iconGlyphPlus:         iconMotionPlus,
+	iconGlyphEllipsis:     iconMotionDots,
+	iconGlyphPaperclip:    iconMotionClip,
+	iconGlyphHelp:         iconMotionInquire,
+	iconGlyphPencil:       iconMotionDraw,
+	iconGlyphTrash:        iconMotionLid,
+	iconGlyphStar:         iconMotionStar,
+	iconGlyphStarSolid:    iconMotionStar,
+	iconGlyphPlay:         iconMotionPlay,
+	iconGlyphPause:        iconMotionPause,
+	iconGlyphHistory:      iconMotionRewind,
+	iconGlyphCopy:         iconMotionCopy,
+	iconGlyphChevronRight: iconMotionNudgeRight,
+	iconGlyphChevronLeft:  iconMotionNudgeLeft,
+	iconGlyphChevronDown:  iconMotionNudgeDown,
+	iconGlyphSliders:      iconMotionSliders,
+	iconGlyphEye:          iconMotionEye,
+	iconGlyphEyeOff:       iconMotionEyeOff,
+	iconGlyphImage:        iconMotionPicture,
+	iconGlyphProfiles:     iconMotionProfiles,
+	iconGlyphSync:         iconMotionSync,
+	iconGlyphDrive:        iconMotionDrive,
+	iconGlyphCompose:      iconMotionCompose,
+	iconGlyphConfirm:      iconMotionConfirm,
+}
+
+// iconGlyphMembers declares every kind by the drawing it paints. A kind absent
+// here has no gesture, which is how static badges and illustrations stay still.
+var iconGlyphMembers = map[iconGlyphGroup][]uint8{
+	iconGlyphSettings: {
+		iconSettings,
+	},
+	iconGlyphTerminal: {
+		iconTerminal,
+	},
+	iconGlyphForward: {
+		iconForward,
+	},
+	iconGlyphFolderOpen: {
+		iconFolderOpen,
+	},
+	iconGlyphArchive: {
+		iconArchive,
+	},
+	iconGlyphLink: {
+		iconLink,
+	},
+	iconGlyphBook: {
+		iconKnown,
+	},
+	iconGlyphActivity: {
+		iconActivity,
+	},
+	iconGlyphLock: {
+		iconLock,
+	},
+	iconGlyphKey: {
+		iconKey,
+	},
+	iconGlyphGlobe: {
+		iconGlobe,
+	},
+	iconGlyphServer: {
+		iconHosts,
+	},
+	iconGlyphKeyboard: {
+		iconKeyboard,
+	},
+	iconGlyphBot: {
+		iconBot,
+	},
+	iconGlyphPlug: {
+		iconPlug,
+	},
+	iconGlyphColumns: {
+		iconColumns2,
+	},
+	iconGlyphNote: {
+		iconNote,
+	},
+	iconGlyphInfo: {
+		iconInfo,
+	},
+	iconGlyphBug: {
+		iconBug,
+	},
+	iconGlyphFileClock: {
+		iconFileClock,
+	},
+	iconGlyphGrid: {
+		iconGrid2x2,
+		iconHome,
+	},
+	iconGlyphTransfer: {
+		iconTransfer,
+	},
+	iconGlyphSearch: {
+		iconSearch,
+	},
+	iconGlyphSun: {
+		iconSun,
+	},
+	iconGlyphMoon: {
+		iconMoon,
+	},
+	iconGlyphClose: {
+		iconClose,
+	},
+	iconGlyphBroadcast: {
+		iconRadio,
+	},
+	iconGlyphDivider: {
+		iconRows2,
+	},
+	iconGlyphRecord: {
+		iconRecord,
+	},
+	iconGlyphStop: {
+		iconStop,
+		iconRecordStop,
+	},
+	iconGlyphFilm: {
+		iconFilm,
+	},
+	iconGlyphDownload: {
+		iconDownload,
+		iconSave,
+	},
+	iconGlyphFileDown: {
+		iconFileDown,
+	},
+	iconGlyphFileTransfer: {
+		iconSFTPTransfer,
+	},
+	iconGlyphProcess: {
+		iconProcess,
+	},
+	iconGlyphUpload: {
+		iconUpload,
+	},
+	iconGlyphFolderUp: {
+		iconFolderUp,
+	},
+	iconGlyphFolderPlus: {
+		iconFolderPlus,
+	},
+	iconGlyphRefresh: {
+		iconRefresh,
+	},
+	iconGlyphArrowUp: {
+		iconArrowUp,
+	},
+	iconGlyphArrowDown: {
+		iconArrowDown,
+	},
+	iconGlyphPlus: {
+		iconPlus,
+	},
+	iconGlyphEllipsis: {
+		iconEllipsis,
+	},
+	iconGlyphPaperclip: {
+		iconPaperclip,
+	},
+	iconGlyphHelp: {
+		iconHelp,
+	},
+	iconGlyphPencil: {
+		iconPencil,
+	},
+	iconGlyphTrash: {
+		iconTrash,
+	},
+	iconGlyphStar: {
+		iconStar,
+	},
+	iconGlyphStarSolid: {
+		iconStarSolid,
+	},
+	iconGlyphPlay: {
+		iconPlay,
+	},
+	iconGlyphPause: {
+		iconPause,
+	},
+	iconGlyphHistory: {
+		iconHistory,
+	},
+	iconGlyphCopy: {
+		iconCopy,
+	},
+	iconGlyphChevronRight: {
+		iconChevronRight,
+	},
+	iconGlyphChevronLeft: {
+		iconChevronLeft,
+	},
+	iconGlyphChevronDown: {
+		iconChevronDown,
+	},
+	iconGlyphSliders: {
+		iconSliders,
+	},
+	iconGlyphEye: {
+		iconEye,
+	},
+	iconGlyphEyeOff: {
+		iconEyeOff,
+	},
+	iconGlyphImage: {
+		iconImage,
+	},
+	iconGlyphProfiles: {
+		iconSFTPProfiles,
+	},
+	iconGlyphSync: {
+		iconSFTPBrowseSync,
+	},
+	iconGlyphDrive: {
+		iconHardDrive,
+	},
+	iconGlyphCompose: {
+		iconExternal,
+	},
+	iconGlyphConfirm: {
+		iconCircleCheck,
+	},
+}
+
+var iconGlyphByKind = func() map[uint8]iconGlyphGroup {
+	resolved := make(map[uint8]iconGlyphGroup, len(lucideIcons))
+	for group, kinds := range iconGlyphMembers {
+		for _, kind := range kinds {
+			if first, ok := resolved[kind]; ok && first != group {
+				panic(fmt.Sprintf("icon kind %d belongs to glyph groups %d and %d", kind, first, group))
+			}
+			resolved[kind] = group
+		}
 	}
-	return iconMotion{}, false
+	return resolved
+}()
+
+// iconDrawingKey identifies a glyph without allocating on the paint path.
+// Compiled icons share immutable command and layer storage across their kinds,
+// so that storage plus its length is the drawing's identity.
+type iconDrawingKey struct {
+	viewBox, viewHeight, stroke float32
+	cap                         ui.StrokeCap
+	join                        ui.StrokeJoin
+	commands                    *ui.PathCommand
+	layers                      *ui.IconLayer
+	commandCount, layerCount    int
+}
+
+func iconDrawingKeyOf(icon ui.Icon) iconDrawingKey {
+	key := iconDrawingKey{
+		viewBox: icon.ViewBox, viewHeight: icon.ViewHeight, stroke: icon.Stroke,
+		cap: icon.Cap, join: icon.Join, commandCount: len(icon.Commands), layerCount: len(icon.Layers),
+	}
+	if len(icon.Commands) > 0 {
+		key.commands = &icon.Commands[0]
+	}
+	if len(icon.Layers) > 0 {
+		key.layers = &icon.Layers[0]
+	}
+	return key
+}
+
+// iconDrawingContent spells the drawing for a copy that does not share the
+// compiled storage. It is only needed on a storage-index miss.
+func iconDrawingContent(icon ui.Icon) string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%.3f/%.3f/%.3f/%d/%d/%d/", icon.ViewBox, icon.ViewHeight, icon.Stroke, icon.Cap, icon.Join, len(icon.Commands))
+	for _, command := range icon.Commands {
+		fmt.Fprintf(&builder, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f;", command.Kind,
+			command.Point.X, command.Point.Y, command.Control1.X, command.Control1.Y, command.Control2.X, command.Control2.Y)
+	}
+	fmt.Fprintf(&builder, "/%d/", len(icon.Layers))
+	for _, layer := range icon.Layers {
+		fmt.Fprintf(&builder, "%d,%.3f,%.3f,%.3f,%.3f,%d;", layer.FillRule,
+			layer.Fill.Red, layer.Fill.Green, layer.Fill.Blue, layer.Fill.Alpha, len(layer.Commands))
+		if gradient := layer.Gradient; gradient != nil {
+			fmt.Fprintf(&builder, "gradient:%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f;",
+				gradient.Start.X, gradient.Start.Y, gradient.End.X, gradient.End.Y,
+				gradient.From.Red, gradient.From.Green, gradient.From.Blue, gradient.From.Alpha,
+				gradient.To.Red, gradient.To.Green, gradient.To.Blue, gradient.To.Alpha)
+		}
+		for _, command := range layer.Commands {
+			fmt.Fprintf(&builder, "%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f;", command.Kind,
+				command.Point.X, command.Point.Y, command.Control1.X, command.Control1.Y, command.Control2.X, command.Control2.Y)
+		}
+	}
+	return builder.String()
+}
+
+// iconGlyphFor resolves a kind through the drawing group that owns it.
+func iconGlyphFor(kind uint8) (iconGlyphGroup, bool) {
+	group, ok := iconGlyphByKind[kind]
+	return group, ok
+}
+
+// iconGlyphKinds returns the kinds in a group.
+func iconGlyphKinds(group iconGlyphGroup) []uint8 {
+	return iconGlyphMembers[group]
+}
+
+// iconGlyphByDrawing resolves the exact drawing a control holds to its glyph
+// group. Building it once keeps a paint pass from comparing every registered
+// icon, and means Viva components and raw drawing share the same decision as a
+// Motty icon kind.
+var iconGlyphByDrawing, iconGlyphByContent = func() (map[iconDrawingKey]iconGlyphGroup, map[string]iconGlyphGroup) {
+	byStorage := make(map[iconDrawingKey]iconGlyphGroup, len(lucideIcons))
+	byContent := make(map[string]iconGlyphGroup, len(lucideIcons))
+	for kind := range lucideIcons {
+		group, ok := iconGlyphFor(uint8(kind))
+		if !ok {
+			continue
+		}
+		icon := lucideIcons[kind]
+		storageKey, contentKey := iconDrawingKeyOf(icon), iconDrawingContent(icon)
+		if first, exists := byStorage[storageKey]; exists && first != group {
+			panic(fmt.Sprintf("the same drawing storage belongs to glyph groups %d and %d", first, group))
+		}
+		if first, exists := byContent[contentKey]; exists && first != group {
+			panic(fmt.Sprintf("the same drawing belongs to glyph groups %d and %d", first, group))
+		}
+		byStorage[storageKey], byContent[contentKey] = group, group
+	}
+	return byStorage, byContent
+}()
+
+// iconMotionForDrawing resolves an externally held drawing through the same
+// glyph groups as the compiled icon kinds. A drawing absent from the groups has
+// no gesture.
+func iconMotionForDrawing(icon ui.Icon) (iconMotion, bool) {
+	group, ok := iconGlyphForDrawing(icon)
+	if !ok {
+		return iconMotion{}, false
+	}
+	motion, ok := iconGlyphs[group]
+	return motion, ok
+}
+
+// iconGlyphForDrawing resolves the drawing group of an externally held icon.
+func iconGlyphForDrawing(icon ui.Icon) (iconGlyphGroup, bool) {
+	if group, ok := iconGlyphByDrawing[iconDrawingKeyOf(icon)]; ok {
+		return group, true
+	}
+	group, ok := iconGlyphByContent[iconDrawingContent(icon)]
+	return group, ok
+}
+
+// iconMotionFor is the motion a glyph plays, whichever control owns it.
+func iconMotionFor(icon uint8) (iconMotion, bool) {
+	group, ok := iconGlyphFor(icon)
+	if !ok {
+		return iconMotion{}, false
+	}
+	motion, ok := iconGlyphs[group]
+	return motion, ok
 }
 
 // iconMotionRun is where one row is in the motion a click started.
@@ -596,7 +1956,7 @@ func (state *State) iconMotion(canvas *ui.Canvas, id ui.ID, icon uint8) ui.IconT
 		canvas.Animate(id, iconMotionSlot, 0, ui.Motion{})
 		state.iconMotions[id] = iconMotionPlaying
 	}
-	progress := canvas.Animate(id, iconMotionSlot, 1, ui.Motion{Duration: motion.duration, Easing: ui.EaseLinear})
+	progress := canvas.Animate(id, iconMotionSlot, 1, ui.Motion{Duration: motion.span(), Easing: ui.EaseLinear})
 	if progress >= 1 {
 		// Over, or never started: reduced motion, a still preview and a canvas
 		// without a frame clock all arrive here with 1.

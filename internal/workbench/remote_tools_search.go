@@ -133,7 +133,9 @@ func (state *State) paintRemoteSearch(canvas *ui.Canvas, bounds ui.Rect) {
 	clearSlot := components.InputGroupSlot{}
 	if query != "" {
 		clearSlot = components.InputGroupSlot{Kind: components.InputGroupSlotButton, ID: hitRemoteSearchClear,
-			Icon: lucideIcons[iconClose], Label: state.messages.Tools.RemoteSearchClear, ButtonSize: components.InputGroupButtonIconXS}
+			Icon: lucideIcons[iconClose], Label: state.messages.Tools.RemoteSearchClear,
+			ButtonSize:    components.InputGroupButtonIconXS,
+			IconTransform: state.iconHover(canvas, hitRemoteSearchClear, iconClose, false)}
 	}
 	components.PaintInputGroup(canvas, state.Theme(), ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 32}, components.InputGroupSnapshot{
 		ID: hitRemoteSearch, Label: state.messages.Tools.RemoteSearch, Value: query,

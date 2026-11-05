@@ -206,17 +206,22 @@ func (s *State) paintDashboard(c *ui.Canvas, b ui.Rect) {
 	toggleBox := ui.Rect{X: x + w - toggleW, Y: y, Width: toggleW, Height: dashboardActionHeight}
 	panelW := min(float32(240), max(120, newBox.X-x-132))
 	d.selectBounds[0] = ui.Rect{X: x, Y: y, Width: panelW, Height: 36}
-	components.BeginButton(c, theme, hitDashboardEdit, ui.Rect{X: x + panelW + 8, Y: y + 2, Width: 32}).WithIcon(icons.Pencil).Icon().Ghost(m.Edit)
-	sortButton := components.BeginButton(c, theme, hitDashboardSort, ui.Rect{X: x + panelW + 44, Y: y + 2, Width: 32}).WithIcon(icons.ArrowUpDown).Icon()
+	components.BeginButton(c, theme, hitDashboardEdit, ui.Rect{X: x + panelW + 8, Y: y + 2, Width: 32}).WithIcon(icons.Pencil).Icon().
+		IconTransform(s.iconHoverIcon(c, hitDashboardEdit, icons.Pencil, false)).Ghost(m.Edit)
+	sortButton := components.BeginButton(c, theme, hitDashboardSort, ui.Rect{X: x + panelW + 44, Y: y + 2, Width: 32}).WithIcon(icons.ArrowUpDown).Icon().
+		IconTransform(s.iconHoverIcon(c, hitDashboardSort, icons.ArrowUpDown, len(p.Hosts) < 2))
 	if len(p.Hosts) < 2 {
 		sortButton = sortButton.Disabled()
 	}
 	sortButton.Ghost(m.Sort)
-	components.BeginButton(c, theme, hitDashboardDelete, ui.Rect{X: x + panelW + 80, Y: y + 2, Width: 32}).WithIcon(icons.Trash2).Icon().Ghost(m.Delete)
+	components.BeginButton(c, theme, hitDashboardDelete, ui.Rect{X: x + panelW + 80, Y: y + 2, Width: 32}).WithIcon(icons.Trash2).Icon().
+		IconTransform(s.iconHoverIcon(c, hitDashboardDelete, icons.Trash2, false)).Ghost(m.Delete)
 	newButton := components.BeginButton(c, actionTheme, hitDashboardNew, newBox).WithIcon(icons.Plus)
 	toggleButton := components.BeginButton(c, actionTheme, hitDashboardToggle, toggleBox).WithIcon(toggleIcon)
 	if compact {
 		newButton, toggleButton = newButton.Icon(), toggleButton.Icon()
+		newButton = newButton.IconTransform(s.iconHoverIcon(c, hitDashboardNew, icons.Plus, false))
+		toggleButton = toggleButton.IconTransform(s.iconHoverIcon(c, hitDashboardToggle, toggleIcon, false))
 	}
 	newButton.Default(m.New)
 	if running {

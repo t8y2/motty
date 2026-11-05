@@ -343,7 +343,9 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 					} else {
 						arrow := lucideIcons[icon]
 						arrow.Stroke = 3 // the glyph's 2 reads thin on a filled button
-						f.Icon(arrow).Size(16, 16).Color(foreground)
+						f.Icon(arrow).Size(16, 16).
+							IconTransform(state.iconHover(canvas, hitAISend, icon, disabled)).
+							Color(foreground)
 					}
 				})
 			})

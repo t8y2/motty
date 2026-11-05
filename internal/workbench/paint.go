@@ -105,6 +105,7 @@ const (
 	iconImage
 	iconSave
 	iconProcess
+	iconArrowDown
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -713,7 +714,9 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 							}
 							f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 								HitWith(closeID, m.LabelCloseTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
-								f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+								f.Icon(lucideIcons[iconClose]).Size(14, 14).
+									IconTransform(state.iconHover(f.Canvas(), closeID, iconClose, false)).
+									Color(foreground)
 							})
 						})
 						bar.tabs = append(bar.tabs, entry)
@@ -818,7 +821,9 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 		}
 		f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 			HitWith(closeID, m.LabelCloseTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
-			f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+			f.Icon(lucideIcons[iconClose]).Size(14, 14).
+				IconTransform(state.iconHover(f.Canvas(), closeID, iconClose, false)).
+				Color(foreground)
 		})
 	})
 	entry.compact = compact
@@ -843,7 +848,9 @@ func (state *State) barButton(f *flex.Frame, probe bool, id ui.ID, icon uint8, l
 	}
 	return f.Row().Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
 		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[icon]).Color(foreground)
+		f.Icon(lucideIcons[icon]).
+			IconTransform(state.iconHover(canvas, id, icon, false)).
+			Color(foreground)
 	})
 }
 
@@ -1006,10 +1013,11 @@ func (state *State) declareNavigation(f *flex.Frame) {
 // it is the page on show or the pointer is on it.
 func (state *State) navigationItem(f *flex.Frame, id ui.ID, icon uint8, label string, active bool, below float32) {
 	pal := state.pal
+	hovered := f.Canvas().Hovered() == id
 	var fill ui.Color
 	if active {
 		fill = pal.surfaceHot
-	} else if f.Canvas().Hovered() == id {
+	} else if hovered {
 		fill = pal.surfaceSoft
 	}
 	f.Row().Height(36).MarginSides(0, 9, below, 9).PadSides(0, 9, 0, 15).Gap(12).Items(flex.Center).Radius(radius.control).Background(fill).
@@ -1243,7 +1251,8 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 			}
 			button := components.BeginButton(canvas, theme, action.id, buttons[index].Rect())
 			if actionsCondensed {
-				button = button.WithIcon(lucideIcons[action.icon]).Icon()
+				button = button.WithIcon(lucideIcons[action.icon]).Icon().
+					IconTransform(state.iconHover(canvas, action.id, action.icon, !action.enabled))
 			}
 			if !action.enabled {
 				button = button.Disabled()
@@ -1528,7 +1537,9 @@ func (state *State) paintButtonSized(canvas *ui.Canvas, id ui.ID, bounds ui.Rect
 	f.Row().Fill().Center().Radius(radius.control).Border(1, border.Over(pal.workspace)).Background(background.Over(pal.workspace)).
 		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Disabled: !enabled, Hint: hint}).Children(func() {
 		if iconOnly {
-			f.Icon(lucideIcons[icon]).Color(foreground)
+			f.Icon(lucideIcons[icon]).
+				IconTransform(state.iconHover(canvas, id, icon, !enabled)).
+				Color(foreground)
 			return
 		}
 		if icon == 0 {
@@ -1989,6 +2000,7 @@ var lucideIcons = [...]ui.Icon{
 	iconSFTPProfiles:   icons.SftpProfiles,
 	iconFileClock:      icons.FileClock,
 	iconClock:          icons.Clock3,
+	iconArrowDown:      icons.ArrowDown,
 }
 
 func paintIcon(canvas *ui.Canvas, kind uint8, bounds ui.Rect, foreground ui.Color) {

@@ -606,6 +606,10 @@ type State struct {
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
 	iconMotions map[ui.ID]iconMotionRun
+	// iconHovers are the controls whose glyph is playing the gesture of a
+	// hover, by hit id; the value remembers which drawing owns the timeline, so
+	// changing the drawing starts a new gesture (icon_hover.go).
+	iconHovers map[ui.ID]iconHoverState
 
 	// area: AI panel
 	aiFlex aiFlexViews // the assistant panel's layouts, see ai_panel_paint.go

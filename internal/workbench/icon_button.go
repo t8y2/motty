@@ -88,7 +88,7 @@ func (state *State) paintIconButtonWithOptions(canvas *ui.Canvas, id ui.ID, icon
 		if iconSize > 0 {
 			glyph.Size(iconSize, iconSize)
 		}
-		glyph.Color(foreground)
+		glyph.IconTransform(state.iconHover(canvas, id, icon, disabled)).Color(foreground)
 	})
 	f.End()
 }

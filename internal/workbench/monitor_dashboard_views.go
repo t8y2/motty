@@ -77,7 +77,10 @@ func (s *State) paintDashboardHeading(c *ui.Canvas, p *monitoring.Panel, h Host,
 		}
 	}
 	if h.ID != 0 {
-		components.BeginButton(c, s.Theme(), hitDashboardTerminalList.At(int(h.ID)), ui.Rect{X: b.X + b.Width - 38, Y: y + 5, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().Ghost(s.messages.Dashboard.Terminal)
+		id := hitDashboardTerminalList.At(int(h.ID))
+		components.BeginButton(c, s.Theme(), id, ui.Rect{X: b.X + b.Width - 38, Y: y + 5, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().
+			IconTransform(s.iconHoverIcon(c, id, lucideIcons[iconTerminal], false)).
+			Ghost(s.messages.Dashboard.Terminal)
 	}
 	return header
 }

@@ -352,7 +352,12 @@ func (state *State) paintHelpIcon(canvas *ui.Canvas, id ui.ID, hint string, boun
 		return
 	}
 	canvas.HitWithOptions(id, bounds, hint, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: hint})
-	paintIcon(canvas, iconHelp, insetRect(bounds, 0.08), state.pal.muted)
+	canvas.DrawIconTransformed(
+		lucideIcons[iconHelp],
+		insetRect(bounds, 0.08),
+		state.pal.muted,
+		state.iconHover(canvas, id, iconHelp, false),
+	)
 }
 
 // paintDialogCheckbox paints the checkbox of a declared row and makes the words
