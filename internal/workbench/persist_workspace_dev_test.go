@@ -342,8 +342,8 @@ func TestDevelopmentIncrementalSaveMatchesFullEncoding(t *testing.T) {
 	if string(releaseFields["workspace"]) != `"settings"` || !bytesContain(releaseFields["sessions"], "Release Session") {
 		t.Fatalf("release workspace in state = %s", incrementalLocal[localKey])
 	}
-	if !bytesContain([]byte(incrementalLocal[developmentWorkspaceKey]), "Dev Session") {
-		t.Fatalf("development workspace = %s", incrementalLocal[developmentWorkspaceKey])
+	if !bytesContain([]byte(incrementalLocal[windowKey(1, true)]), "Dev Session") {
+		t.Fatalf("development workspace = %s", incrementalLocal[windowKey(1, true)])
 	}
 }
 
@@ -368,14 +368,16 @@ func TestDevelopmentSyncReloadRetainsItsWorkspaceBaseline(t *testing.T) {
 	if err := state.reloadShared(); err != nil {
 		t.Fatal(err)
 	}
-	if !bytesContain(state.configBase.development, "Dev Session") {
-		t.Fatalf("sync reload dropped the development baseline: %s", state.configBase.development)
+	// The development workspace a window holds is its own record now, so a sync
+	// reload has to carry that over rather than the old device document.
+	if !bytesContain(state.configBase.window, "Dev Session") {
+		t.Fatalf("sync reload dropped the development baseline: %s", state.configBase.window)
 	}
 
 	state.activeSection = sectionHosts
 	state.save()
 	var development map[string]json.RawMessage
-	if err := json.Unmarshal(localConfigValue(t, options.StatePath, developmentWorkspaceKey), &development); err != nil {
+	if err := json.Unmarshal(localConfigValue(t, options.StatePath, windowKey(1, true)), &development); err != nil {
 		t.Fatal(err)
 	}
 	if !bytesContain(development["sessions"], "Dev Session") || !bytesContain(development["deck"], `"title":"Dev Session"`) {
@@ -414,7 +416,7 @@ func TestDevelopmentWorkspaceLayoutsStayWithTheirOwnDeck(t *testing.T) {
 		t.Fatal(err)
 	}
 	var gotDevelopment savedWorkspace
-	if err := json.Unmarshal(localConfigValue(t, options.StatePath, developmentWorkspaceKey), &gotDevelopment); err != nil {
+	if err := json.Unmarshal(localConfigValue(t, options.StatePath, windowKey(1, true)), &gotDevelopment); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(gotRelease.WorkspaceLayouts, release.WorkspaceLayouts) || len(gotDevelopment.WorkspaceLayouts) != 1 || gotDevelopment.WorkspaceLayouts[0].Columns != 2 || !gotDevelopment.WorkspaceLayouts[0].Temporary {
@@ -608,8 +610,8 @@ func TestDevelopmentWorkspaceOnlySaveKeepsSharedRecordsAndDoesNotScheduleSync(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytesContain(afterLocal[developmentWorkspaceKey], `"debug"`) {
-		t.Fatalf("development workspace was not saved: %s", afterLocal[developmentWorkspaceKey])
+	if !bytesContain(afterLocal[windowKey(1, true)], `"debug"`) {
+		t.Fatalf("development workspace was not saved: %s", afterLocal[windowKey(1, true)])
 	}
 	if !reflect.DeepEqual(afterLocal[localKey], releaseState) {
 		t.Fatalf("development workspace save changed release state:\n got %s\nwant %s", afterLocal[localKey], releaseState)
@@ -692,8 +694,8 @@ func TestDevelopmentIncrementalCommitFailureDoesNotAdvanceBase(t *testing.T) {
 		t.Fatalf("retry: handled=%t err=%v", handled, err)
 	}
 	_, local := persistedDevelopmentConfig(t, path)
-	if !bytesContain([]byte(local[developmentWorkspaceKey]), "Dev Session") {
-		t.Fatalf("retry did not save the development workspace: %s", local[developmentWorkspaceKey])
+	if !bytesContain([]byte(local[windowKey(1, true)]), "Dev Session") {
+		t.Fatalf("retry did not save the development workspace: %s", local[windowKey(1, true)])
 	}
 	if !bytesContain([]byte(local[localKey]), `"terminal_font_size":17`) {
 		t.Fatalf("retry did not save common settings: %s", local[localKey])

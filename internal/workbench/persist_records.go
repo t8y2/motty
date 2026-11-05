@@ -1032,11 +1032,18 @@ func openConfig(path string, id int) (store *configstore.Store, saved savedState
 			base.windowName = windowKey(id, buildinfo.Development)
 			base.window = local[base.windowName]
 			saved = applyWindowState(saved, base.window, id)
-		}
-		if err == nil && buildinfo.Development && len(base.window) == 0 {
-			clearSavedWorkspace(&saved)
-			if raw, ok := local[developmentWorkspaceKey]; ok {
-				report.workspaceErr = applySavedWorkspace(&saved, raw)
+			if buildinfo.Development {
+				// A development build used to keep its workspace in a document of
+				// its own; that document is read once for a window that has no
+				// record yet, and a damaged one is reported the same either way.
+				// The workspace is cleared first, so a record that does not read
+				// leaves the window empty instead of half restored.
+				clearSavedWorkspace(&saved)
+				if len(base.window) > 0 {
+					report.workspaceErr = applySavedWorkspace(&saved, base.window)
+				} else if raw, ok := local[developmentWorkspaceKey]; ok {
+					report.workspaceErr = applySavedWorkspace(&saved, raw)
+				}
 				base.developmentDamaged = report.workspaceErr != nil
 			}
 		}
