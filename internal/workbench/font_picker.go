@@ -532,7 +532,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		// Enter confirms the focused row, so list navigation must move focus too.
 		// Navigation from the search field keeps its text editor focused.
 		if _, onRow := event.Target.In(hitFontPickerItemList); onRow && len(state.fonts.filtered) > 0 {
-			handled.Focus = hitFontPickerItemList.At(state.fonts.selected - state.fonts.top)
+			handled.Focus = hitFontPickerItemList.At(state.fonts.selected)
 			handled.FocusVisible = true
 		}
 		return handled, true
@@ -677,7 +677,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	focused := canvas.Focused() == hitFontPickerSearch
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
-		Focused: focused, PlatformEditing: focused && value != "",
+		Focused: focused, PlatformEditing: focused && value != "", NavigationKeys: true,
 	})
 	confirmDisabled := !state.canConfirmFont()
 	dialog.Actions(layout,

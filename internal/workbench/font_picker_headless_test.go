@@ -40,7 +40,7 @@ func TestFontPickerNavigationConfirmsTheHighlightedFont(t *testing.T) {
 			if state.fonts.selected != test.want {
 				t.Fatalf("highlighted %d, want %d", state.fonts.selected, test.want)
 			}
-			wantFocus := hitFontPickerItemList.At(test.want - state.fonts.top)
+			wantFocus := hitFontPickerItemList.At(test.want)
 			if got := view.Snapshot().Focused; got != wantFocus {
 				t.Errorf("focus %v, want highlighted row %v", got, wantFocus)
 			}
