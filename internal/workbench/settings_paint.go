@@ -6,6 +6,8 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+
+	"motty/internal/i18n"
 )
 
 // Settings are laid out as titled groups: one card per group, its rows
@@ -255,8 +257,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	messages := state.messages
 	language := state.settingsLanguageOptions()
 	selectedLanguage := hitSettingsLanguageEnglish
-	if state.language.String() == "zh-CN" {
+	switch state.language {
+	case i18n.Chinese:
 		selectedLanguage = hitSettingsLanguageChinese
+	case i18n.TraditionalChinese:
+		selectedLanguage = hitSettingsLanguageTraditional
 	}
 	appearance := state.settingsAppearanceOptions()
 	selectedAppearance := hitSettingsAppearanceSystem

@@ -285,7 +285,7 @@ func (state *State) systemLanguage() i18n.Language {
 		primary, _, _ := strings.Cut(strings.ToLower(tag), "-")
 		switch primary {
 		case "zh":
-			return i18n.Chinese
+			return i18n.ChineseVariant(tag)
 		case "en":
 			return i18n.English
 		}
@@ -346,6 +346,8 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseLanguage(i18n.English)
 	case hitSettingsLanguageChinese:
 		changed = state.chooseLanguage(i18n.Chinese)
+	case hitSettingsLanguageTraditional:
+		changed = state.chooseLanguage(i18n.TraditionalChinese)
 	case hitSettingsAppearanceSystem:
 		changed = state.chooseAppearanceMode(appearanceFollowSystem)
 	case hitSettingsAppearanceDark:
@@ -528,10 +530,11 @@ func (state *State) setTerminalScrollback(value int) bool {
 	return true
 }
 
-func (state *State) settingsLanguageOptions() [2]components.SegmentOption {
+func (state *State) settingsLanguageOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
 		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
+		{ID: hitSettingsLanguageTraditional, Label: state.messages.SettingsLanguageTraditionalChinese},
 	}
 }
 
@@ -684,7 +687,7 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		options := state.settingsPathOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
+	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsLanguageTraditional:
 		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:

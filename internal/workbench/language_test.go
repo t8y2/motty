@@ -18,7 +18,8 @@ func TestFirstRunFollowsTheSystemLanguage(t *testing.T) {
 		want      i18n.Language
 	}{
 		{"simplified Chinese", []string{"zh-Hans-CN", "en-US"}, i18n.Chinese},
-		{"traditional Chinese uses the Chinese catalog", []string{"zh-TW"}, i18n.Chinese},
+		{"traditional Chinese uses its own catalog", []string{"zh-TW"}, i18n.TraditionalChinese},
+		{"traditional script", []string{"zh-Hant-HK", "en-US"}, i18n.TraditionalChinese},
 		{"English first", []string{"en-GB", "zh-CN"}, i18n.English},
 		{"the first language with a catalog wins", []string{"fr-FR", "zh-CN"}, i18n.Chinese},
 		{"none with a catalog", []string{"fr-FR", "de-DE"}, i18n.English},
@@ -73,6 +74,23 @@ func TestChoosingTheLanguageAlreadyShowingStillCountsAsAChoice(t *testing.T) {
 	second := newTestState(t, withSystemLanguages(options, "en-US"))
 	if second.language != i18n.Chinese {
 		t.Fatalf("a deliberate Chinese was overridden by the system: %v", second.language)
+	}
+}
+
+func TestChoosingTraditionalChineseSurvivesARestart(t *testing.T) {
+	options := withSystemLanguages(freshOptions(t), "en-US")
+	first := newTestState(t, options)
+	first.Click(hitSettings)
+	first.Click(hitSettingsLanguageTraditional)
+	if first.language != i18n.TraditionalChinese || !first.languageChosen {
+		t.Fatalf("language %v chosen %v", first.language, first.languageChosen)
+	}
+	if first.messages.NavHosts != i18n.For(i18n.TraditionalChinese).NavHosts {
+		t.Fatal("the catalog did not follow the choice")
+	}
+	second := newTestState(t, options)
+	if second.language != i18n.TraditionalChinese || !second.languageChosen {
+		t.Fatalf("after a restart: language %v chosen %v", second.language, second.languageChosen)
 	}
 }
 
