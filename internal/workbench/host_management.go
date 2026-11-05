@@ -333,7 +333,6 @@ func (state *State) submitHostDialog() {
 	state.hosts = append(state.hosts, host)
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
-	state.modal = modalNone
 	state.dialogError = ""
 	if state.hostDialogMode == hostDialogCopy {
 		state.status = state.messages.HostCopied + host.Label
@@ -347,17 +346,17 @@ func (state *State) submitHostDialog() {
 	state.hostDataChanged()
 	state.save()
 	state.showNextPrompt()
+	state.restoreAfterHostDialog()
 }
 
 func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...string) {
 	index := state.hostIndex(state.hostDialogID)
 	if index < 0 {
-		state.modal = modalNone
+		state.restoreAfterHostDialog()
 		return
 	}
 	state.replaceHost(index, previous, updated)
 	state.cancelHostTest()
-	state.modal = modalNone
 	state.dialogError = ""
 	state.status = state.messages.HostUpdated + updated.Label
 	state.commitOTP(updated)
@@ -367,6 +366,7 @@ func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...s
 	state.hostDataChanged()
 	state.save()
 	state.showNextPrompt()
+	state.restoreAfterHostDialog()
 }
 
 // replaceHost puts updated in the place of previous, the host at index, and
@@ -691,6 +691,7 @@ func (state *State) hostDataChanged() {
 	state.reconcileDashboard()
 	state.sshSyncMark()
 	state.visible = nil
+	state.workspaceViewCacheID = 0
 	state.refreshHostGroups()
 	state.pruneHostSelections()
 	selected, ok := state.hostByID(state.selectedHostID)

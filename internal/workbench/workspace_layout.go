@@ -170,6 +170,39 @@ func (state *State) ActivatePane(session uint32) bool {
 	return true
 }
 
+// restoreEmptyPaneActive finds an empty pane (SessionID==0) in the active
+// workspace and activates it. Called after the host-editor modal closes so
+// the New-Tab-Page paint returns instead of only a small "New tab" label.
+func (state *State) restoreEmptyPaneActive() {
+	workspace := state.deck.ActiveWorkspace()
+	if workspace == 0 {
+		return
+	}
+	var scratch [layoutcore.MaxPanes]layoutcore.Pane
+	for _, p := range state.deck.Panes(workspace, scratch[:0]) {
+		if p.SessionID == 0 {
+			state.deck.ActivatePane(workspace, p.ID)
+			state.syncActiveSession()
+			return
+		}
+	}
+}
+
+// restoreAfterHostDialog closes the host-edit modal and restores whatever was
+// open underneath it: the connect picker (command palette in connect mode) or
+// nothing. Also ensures any empty pane stays active so the New-Tab-Page paints.
+func (state *State) restoreAfterHostDialog() {
+	if state.commandPalette.connect {
+		// Came from the new-tab connect picker: rebuild it so edited/added
+		// hosts show up (refreshCommandPalette caches on search query).
+		state.modal = modalCommandPalette
+		state.rebuildCommandPalette()
+	} else {
+		state.modal = modalNone
+	}
+	state.restoreEmptyPaneActive()
+}
+
 func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) bool {
 	previous := state.deck.ActivePane(workspaceID)
 	if !state.deck.ActivatePane(workspaceID, paneID) {
