@@ -5,7 +5,7 @@
 [app]
 name = "Motty"
 id = "dev.motty.app"
-version = "0.3.2"
+version = "0.3.3"
 executable = "motty"
 package = "./cmd/motty"
 icon = "assets/icon.png"
