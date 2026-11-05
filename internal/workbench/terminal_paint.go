@@ -432,8 +432,13 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	cursor := t.presentedCursor()
 	composing := t.preedit.Composing
-	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay()
+	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay(state.now())
 	predicting = predicting && !composing && cursor.Visible && t.sync == nil
+	if remaining, ok := t.prediction.expiry(state.now()); ok && predicting {
+		// A guess the server never echoes is taken back at its deadline, not at
+		// the next key.
+		canvas.RequestFrameIn(max(remaining, time.Millisecond))
+	}
 	if t.sync != nil && t.clock != nil {
 		canvas.RequestFrameIn(t.syncRemaining())
 	}

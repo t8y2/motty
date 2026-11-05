@@ -127,6 +127,10 @@ type terminal struct {
 	integrated bool
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
+	// inputLine is set between the end of this shell's prompt and the next
+	// command start or control key: the cursor is on the line being typed, which
+	// is what lets typed text be shown before its echo (see terminalPrediction).
+	inputLine bool
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
 	// passwordHint is the sudo prompt line the saved password is on offer at: set
@@ -313,6 +317,7 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
+			current.term.inputLine = false
 			current.outputAlert.promptSeen = true
 		}
 	})
@@ -321,6 +326,8 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			t.promptReady = t.promptStarted && !t.promptDirty && t.commandReporting && t.submittedLines == 0
 			t.inputGuard.active = t.promptReady
+			t.inputLine = true
+			t.prediction.newPrompt()
 		}
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
@@ -335,6 +342,7 @@ func (state *State) configureTerminal(session *Session) {
 			t.commandReporting = true
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false
+			t.inputLine = false
 			t.promptVersion++
 			if t.submittedLines > 0 {
 				t.submittedLines--
@@ -352,6 +360,7 @@ func (t *terminal) resetFolderSync() {
 	t.folderToken = rand.Text()
 	t.screen.SetPromptToken(t.folderToken)
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
+	t.inputLine = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.submittedLines, t.followPath = 0, ""
@@ -402,13 +411,13 @@ func (t *terminal) write(p []byte) {
 	t.screen.Write(p)
 }
 
-// writeRemote commits the shell's output. Unlike write it first lets the
-// prediction see the bytes, so an echo of what was typed confirms the overlay
-// instead of dropping it.
+// writeRemote commits the shell's output. Unlike write it then lets the
+// prediction compare the screen with what was typed, so an echo of it confirms
+// the overlay instead of dropping it.
 func (t *terminal) writeRemote(p []byte, now time.Duration) {
 	t.selection.clear()
-	t.prediction.observe(p, now)
 	t.screen.Write(p)
+	t.prediction.reconcile(t.screen, now)
 	if t.inputGuard.active && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
 		t.inputGuard.start()
 	}
@@ -499,6 +508,9 @@ func (t *terminal) sendSecret(p []byte) bool {
 
 func (t *terminal) noteShellInput(p []byte) {
 	t.passwordHint = ""
+	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
+	}
 	t.inputGuard.observe(p)
 	atPrompt := t.promptReady
 	t.promptReady, t.promptStarted = false, false
@@ -1111,7 +1123,7 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	t := session.term
 	geometry := state.layoutForSession(session.ID)
 	cursor := t.screen.Cursor()
-	if _, _, cells, ok := t.prediction.overlay(); ok {
+	if _, _, cells, ok := t.prediction.overlay(state.now()); ok {
 		cursor.X += cells
 	}
 	cells := 1
@@ -1169,7 +1181,7 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			// The typed text is drawn at once, ahead of the server's echo; the
 			// event asks for that frame, which committed terminal text otherwise
 			// never gets.
-			redraw = t.prediction.input(t.screen, input, state.now())
+			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal())
 		}
 	case app.TextPaste:
 		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {
