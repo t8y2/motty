@@ -121,6 +121,12 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 				}
 			}
 		} else if pane, session, ok := state.paneBarAt(event); ok {
+			if event.ClickCount == 2 && (session.term == nil || !session.term.find.open) {
+				// A double click on the bar names the pane, as it does in a tab
+				// strip or a file manager; the context menu is not the only way.
+				state.openTerminalRename(session)
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
 			*drag = tabDrag{pressed: true, workspace: state.deck.ActiveWorkspace(), pane: pane, title: session.Title, panes: 1, start: ui.Point{X: event.X, Y: event.Y}, host: session.host, hasHost: true}
 			if drag.title == "" {
 				drag.title = session.Address
