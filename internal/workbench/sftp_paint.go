@@ -215,6 +215,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 							add(hitSFTPEditExternal, iconExternal, messages.Tools.ExtEditButton, false)
 						}
 						add(hitSFTPRename, iconPencil, messages.SFTPRename, false)
+						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
 						add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 						if _, archive := state.selectedArchive(session, view); archive {
@@ -738,8 +739,13 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 	case sftpDialogRename:
 		title = messages.SFTPRenameTitle
 		description = messages.SFTPRenameDescription
-		fieldLabel = messages.SFTPDestinationPath
+		fieldLabel = messages.SFTPNewName
 		submitLabel = messages.SFTPRenameSubmit
+	case sftpDialogMove:
+		title = messages.SFTPMoveTitle
+		description = messages.SFTPMoveDescription
+		fieldLabel = messages.SFTPMoveDestination
+		submitLabel = messages.SFTPMoveSubmit
 	case sftpDialogDelete:
 		title = messages.SFTPDeleteFileTitle
 		description = fmt.Sprintf(messages.SFTPDeleteDescriptionFmt, view.dialogEntry.Name)
@@ -788,7 +794,7 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 		submitLabel = messages.SFTPEditReloadConfirm
 		initialFocus = hitSFTPDialogCancel
 	}
-	fieldDialog := view.dialog == sftpDialogCreateDirectory || view.dialog == sftpDialogRename || view.dialog == sftpDialogChmod ||
+	fieldDialog := view.dialog == sftpDialogCreateDirectory || view.dialog == sftpDialogRename || view.dialog == sftpDialogMove || view.dialog == sftpDialogChmod ||
 		view.dialog == sftpDialogSymlink || view.dialog == sftpDialogExtract || view.dialog == sftpDialogCompress
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
 	body := float32(0) // a confirmation is only its text
@@ -796,8 +802,9 @@ func (state *State) paintSFTPDialog(canvas *ui.Canvas, viewport ui.Rect, view *s
 	case view.dialog == sftpDialogSymlink:
 		body = 6 + 64 + 8 + 64 // the link's name and where it points
 	case view.dialog == sftpDialogChmod:
-		// The octal field and the three permission rows under it.
-		body = 6 + 64 + 8 + 3*24
+		// The octal field, then the permission grid: a 16px header row and
+		// three 24px rows, with a 4px gap between them.
+		body = 6 + 64 + 8 + 16 + 3*24 + 3*4
 	case fieldDialog:
 		body = 6 + 64
 	case showError:
@@ -915,6 +922,9 @@ func (state *State) paintSFTPChmodGrid(canvas *ui.Canvas, view *sftpView, boxes 
 		rect := boxes[index].Rect()
 		checked := ok && mode&(1<<uint(8-index)) != 0
 		checkbox := components.BeginCheckbox(canvas, state.Theme(), hitSFTPChmodBits.At(index), rect, checked)
+		// The grid is tighter than the checkbox's 40x32 default target, whose
+		// neighbours would overlap; keep a 24px target on the 28px pitch.
+		checkbox = checkbox.HitBounds(ui.Rect{X: rect.X - 4, Y: rect.Y - 4, Width: 24, Height: 24})
 		if !ok {
 			checkbox = checkbox.Disabled()
 		}

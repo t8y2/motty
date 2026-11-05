@@ -308,6 +308,7 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
 	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
