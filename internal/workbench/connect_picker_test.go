@@ -162,6 +162,25 @@ func clickPickerRow(t *testing.T, state *State, label string) {
 	t.Fatalf("the picker has no row for %q", label)
 }
 
+func TestPickerPencilOpensTheHostForEditing(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	before := len(state.deck.Workspaces(nil))
+	host := state.hosts[0]
+	state.Click(hitNewTab)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitConnectPickEdit.At(int(host.ID))); !ok {
+		t.Fatal("the host's row has no pencil")
+	}
+	state.Click(hitConnectPickEdit.At(int(host.ID)))
+	if state.modal != modalNewHost || state.hostDialogMode != hostDialogEdit || state.hostDialogID != host.ID {
+		t.Fatalf("modal %d mode %d id %d: the pencil must open host %d for editing", state.modal, state.hostDialogMode, state.hostDialogID, host.ID)
+	}
+	if len(state.deck.Workspaces(nil)) != before {
+		t.Fatalf("tabs %d: opening the dialog must create no tab", len(state.deck.Workspaces(nil)))
+	}
+}
+
 func TestNewTabPickerKeyboardStepsOverGroupHeadings(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)

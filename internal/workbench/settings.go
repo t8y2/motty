@@ -331,7 +331,7 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) {
+	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -485,6 +485,14 @@ func (state *State) clickSettings(id ui.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
+	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+		state.clickStartupHosts(id)
+	case hitSettingsCursorBlock:
+		changed = state.setTerminalCursorStyle(cursorBlock)
+	case hitSettingsCursorBar:
+		changed = state.setTerminalCursorStyle(cursorBar)
+	case hitSettingsCursorUnderline:
+		changed = state.setTerminalCursorStyle(cursorUnderline)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
 	case hitSessionLogsSettingsToggle:
@@ -639,6 +647,14 @@ func (state *State) settingsClipboardOptions() [3]components.SegmentOption {
 		{ID: hitSettingsClipboardBlock, Label: state.messages.SettingsTerminalClipboardBlock},
 		{ID: hitSettingsClipboardAsk, Label: state.messages.SettingsTerminalClipboardAsk},
 		{ID: hitSettingsClipboardAllow, Label: state.messages.SettingsTerminalClipboardAllow},
+	}
+}
+
+func (state *State) settingsCursorStyleOptions() []components.SegmentOption {
+	return []components.SegmentOption{
+		{ID: hitSettingsCursorBlock, Label: state.messages.Tools.CursorShapeBlock},
+		{ID: hitSettingsCursorBar, Label: state.messages.Tools.CursorShapeBar},
+		{ID: hitSettingsCursorUnderline, Label: state.messages.Tools.CursorShapeUnderline},
 	}
 }
 

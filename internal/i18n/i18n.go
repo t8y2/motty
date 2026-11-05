@@ -323,6 +323,16 @@ type Messages struct {
 	VaultCorruptFmt                        string
 	VaultCleared                           string
 	SettingsRestore                        string
+	SettingsStartupRow                     string
+	SettingsStartupEnable                  string
+	SettingsStartupEnableDescription       string
+	SettingsStartupDisabled                string
+	SettingsStartupDescription             string
+	SettingsStartupReuse                   string
+	SettingsStartupReuseDescription        string
+	SettingsStartupNone                    string
+	SettingsStartupJoiner                  string
+	SettingsStartupHostsCount              string
 	SettingsSSHAgent                       string
 	SettingsSSHAgentDescription            string
 	SettingsSSHAgentUsingFmt               string

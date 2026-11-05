@@ -117,6 +117,11 @@ type ToolsMessages struct {
 	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
+	CursorShapeRow             string
+	CursorShapeDescription     string
+	CursorShapeBlock           string
+	CursorShapeBar             string
+	CursorShapeUnderline       string
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string

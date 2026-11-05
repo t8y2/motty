@@ -14,6 +14,11 @@ var (
 	hitNewTabLocal    = tree.ID(newtabPageHits, "new-tab-local")
 	hitNewTabShells   = tree.ID(newtabPageHits, "new-tab-shells")
 	hitNewTabHostList = tree.Sub(newtabPageHits, tree.Name("new-tab-host"))
+	// hitNewTabHostEdit is the pencil of a host row, by the row's place: it
+	// opens the host for editing instead of connecting.
+	hitNewTabHostEdit = tree.Sub(newtabPageHits, tree.Name("new-tab-host-edit"))
+	// hitNewTabHostNew adds a host right from the page.
+	hitNewTabHostNew = tree.ID(newtabPageHits, "new-tab-host-new")
 )
 
 const (
@@ -40,12 +45,13 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 	room := int((bounds.Height - newTabTitle - newTabFooter - 48) / newTabRowHeight)
 	rows := min(max(room, 1), newTabMaxHosts+1)
 	hosts := min(rows-1, len(state.hosts))
+	addHosts := toolbarButtonWidth(canvas, m.AddHost, false)
 	allHosts := toolbarButtonWidth(canvas, m.NewTabAllHosts, false)
 
 	local := localHost(m.LocalTerminalTitle)
 	chrome := &state.chrome
 	chrome.newTabBadges = chrome.newTabBadges[:0]
-	var all flex.Box
+	var all, add flex.Box
 	f := chrome.newTab.Begin(canvas, state.Theme(), bounds)
 	// The block sits a little above the middle, and never closer than 16 to the top.
 	f.Column().Fill().PadSides(16, 0, 0, 0).Items(flex.Center).Justify(flex.Center).Background(pal.workspace).Children(func() {
@@ -61,7 +67,10 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 					}
 				})
 			})
-			all = f.Slot().Size(allHosts, 32).Self(flex.Center).MarginSides(16, 0, newTabFooter-48, 0)
+			f.Row().Shrink(0).Gap(8).MarginSides(0, 0, newTabFooter-48, 0).Children(func() {
+				add = f.Slot().Size(addHosts, 32).Self(flex.Center)
+				all = f.Slot().Size(allHosts, 32).Self(flex.Center)
+			})
 		})
 	})
 	f.End()
@@ -72,17 +81,23 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 		}
 		state.paintHostCatalogIcon(canvas, state.hosts[index-1], badge.Rect(), pal.workspace)
 	}
+	state.paintButton(canvas, hitNewTabHostNew, add.Rect(), m.AddHost, 0, false, false, true)
 	state.paintButton(canvas, hitPaneChooseHost, all.Rect(), m.NewTabAllHosts, 0, false, false, true)
 }
 
 // newTabRow declares one place a tab can connect to: its system, its name and,
 // at the far end, where it is. The system's badge is drawn into the slot kept for it.
-// A row with shells also has an arrow after the address, which opens the menu of
-// the shells this computer can start; a secondary press on the row does too.
+// A host row also has a pencil that opens the host for editing, and takes a
+// secondary press as its menu; a row with shells has an arrow after the address,
+// which opens the menu of the shells this computer can start. A secondary press
+// on the row does too.
 func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address string, separator bool, width float32, shells bool) {
 	pal, m := state.pal, state.messages
 	if shells {
 		state.openLocalShellPickerOn(f.Canvas(), id, true)
+	}
+	if id.Scope() == hitNewTabHostList {
+		state.openHostMenuOn(f.Canvas(), id, host)
 	}
 	var wash ui.Color
 	if f.Canvas().Hovered() == id || f.Canvas().FocusVisible() == id {
@@ -95,6 +110,19 @@ func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address
 			f.Text(title).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(22).Ellipsis()
 			f.Spacer()
 			f.Text(address).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).Ellipsis().Shrink(0).MaxWidth(width*0.4).MarginSides(0, 0, 0, 12)
+			if id.Scope() == hitNewTabHostList {
+				edit := hitNewTabHostEdit.At(item(id))
+				var editWash ui.Color
+				if f.Canvas().Hovered() == edit || f.Canvas().FocusVisible() == edit {
+					editWash = pal.line
+				}
+				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(edit, m.EditHost, ui.HitOptions{Role: ui.RoleButton, Hint: m.EditHost}).Children(func() {
+					f.Row().Fill().Radius(radius.control).Background(editWash)
+					f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+						f.Icon(lucideIcons[iconPencil]).Size(14, 14).Color(pal.muted).Shrink(0)
+					})
+				})
+			}
 			if shells {
 				var arrowWash ui.Color
 				if f.Canvas().Hovered() == hitNewTabShells || f.Canvas().FocusVisible() == hitNewTabShells {
@@ -129,6 +157,14 @@ func (state *State) clickNewTabPage(id ui.ID) bool {
 		state.pendingWorkspace = state.deck.ActiveWorkspace()
 		state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
 		state.openLocalTerminal()
+		return true
+	case id.Scope() == hitNewTabHostEdit:
+		if index := item(id); index < len(state.hosts) {
+			state.openEditHostID(state.hosts[index].ID)
+		}
+		return true
+	case id == hitNewTabHostNew:
+		state.openHostDialog()
 		return true
 	case id.Scope() == hitNewTabHostList:
 		index := item(id)

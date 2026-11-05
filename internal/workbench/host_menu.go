@@ -66,12 +66,13 @@ func (state *State) openHostOn(canvas *ui.Canvas, id ui.ID, host Host) {
 }
 
 // openHostMenuOn is called while painting a host row: when this paint is the event
-// pass of a secondary press on that row it opens the host's menu there. A right
+// pass of a secondary press on that row it opens the host's menu there — in the
+// host list, or on the new tab page, whose rows hand it their host too. A right
 // click never checks a host: an unchecked host is the menu's temporary target,
 // while a checked host keeps the checked set as the target of group actions.
 func (state *State) openHostMenuOn(canvas *ui.Canvas, id ui.ID, host Host) {
 	event, ok := canvas.PointerOn(id)
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || state.modal != modalNone || state.activeSection != sectionHosts {
+	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || state.modal != modalNone {
 		return
 	}
 	state.selectedHostID = host.ID
