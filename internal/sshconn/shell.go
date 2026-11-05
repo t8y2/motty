@@ -37,6 +37,10 @@ type ShellConfig struct {
 	IntegrateShell bool
 	// IntegrationToken binds prompt readiness to this shell, not nested logins.
 	IntegrationToken string
+	// StartDirectory is the absolute directory an integrated shell starts in. A
+	// shell that cannot be integrated, or a directory the server does not have,
+	// starts where it always does.
+	StartDirectory string
 	// Notify is called after output arrives and when the shell ends. It may be
 	// called from any goroutine and must not block; the owner then calls Drain
 	// on its own thread.
@@ -85,7 +89,7 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	// shell, and a gateway that refuses a second channel ends the whole
 	// connection, so only an implementation the banner names is probed.
 	if command == "" && config.IntegrateShell && standardImplementation(conn.Status().ServerVersion) {
-		command = conn.shellIntegrationCommand(config.IntegrationToken)
+		command = conn.shellIntegrationCommand(config.IntegrationToken, config.StartDirectory)
 	}
 	// What the shell is decides how a command can be typed into it. The
 	// integration command starts Bash or Zsh; a command of the user's own starts

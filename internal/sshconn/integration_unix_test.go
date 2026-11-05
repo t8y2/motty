@@ -24,8 +24,11 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 	}
 	home := t.TempDir()
 	target := filepath.Join(home, "ssh dir%#")
-	if err := os.Mkdir(target, 0700); err != nil {
-		t.Fatal(err)
+	start := filepath.Join(home, "start dir")
+	for _, directory := range []string{target, start} {
+		if err := os.Mkdir(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	server := startServer(t, func(server *testServer) {
 		server.password, server.shell = "secret", echoShell
@@ -63,7 +66,7 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 		}
 	})
 	h := connect(t, server)
-	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "pty-test-token"})
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "pty-test-token", StartDirectory: start})
 	screen := term.New(80, 24, 0)
 	screen.SetPromptToken("pty-test-token")
 	ready, consumed := 0, 0
@@ -73,6 +76,9 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 		consumed = len(output)
 	}
 	w.until("integrated SSH prompt", func(output string) bool { parse(output); return ready > 0 })
+	if cwd, ok := screen.WorkingDirectory(); !ok || cwd.Path != start {
+		t.Fatalf("the first prompt reports %q (ok %v), want the start directory %q", cwd.Path, ok, start)
+	}
 	w.shell.Write([]byte("cd -- '" + target + "'\r"))
 	w.until("SSH cd report", func(output string) bool {
 		parse(output)

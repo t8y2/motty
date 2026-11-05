@@ -870,6 +870,10 @@ type State struct {
 	workspaceStatusPanes  [layoutcore.MaxPanes]layoutcore.Pane
 	pendingWorkspace      layoutcore.WorkspaceID
 	pendingPane           layoutcore.PaneID
+	// pendingDirectory is where the shell of the next session starts: set by a
+	// split from the directory of the pane it came from, taken by the session
+	// that opens in the new pane.
+	pendingDirectory string
 
 	// Prompt state, filled when a connection asks a question.
 	hostKeyDescription       string
@@ -2708,6 +2712,8 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
+	directory := state.pendingDirectory
+	state.pendingDirectory = ""
 	if pane, ok := state.deck.Pane(workspaceID, paneID); !ok || pane.SessionID != 0 {
 		var err error
 		workspaceID, paneID, err = state.deck.Create(title)
@@ -2719,6 +2725,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	if session == nil {
 		return nil
 	}
+	session.setStartDirectory(directory)
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title

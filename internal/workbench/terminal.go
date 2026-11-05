@@ -564,6 +564,9 @@ func (state *State) openShell(session *Session) {
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow))
 	config.IntegrationToken = t.folderToken
+	if !session.isLocal() {
+		config.StartDirectory = session.startDirectory
+	}
 	t.integrated = config.IntegrateShell
 	if session.host.ForwardX11 && session.host.isSSH() {
 		environ := x11fwd.CurrentEnviron()
