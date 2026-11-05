@@ -189,16 +189,19 @@ func (state *State) restoreEmptyPaneActive() {
 }
 
 // restoreAfterHostDialog closes the host-edit modal and restores whatever was
-// open underneath it: the connect picker (command palette in connect mode) or
-// nothing. Also ensures any empty pane stays active so the New-Tab-Page paints.
+// open underneath it: a prompt that waited for the dialog, then the connect
+// picker (command palette in connect mode), or nothing. Also ensures any empty
+// pane stays active so the New-Tab-Page paints.
 func (state *State) restoreAfterHostDialog() {
-	if state.commandPalette.connect {
+	state.modal = modalNone
+	// A prompt that arrived while the dialog was up could not open; it takes
+	// precedence over the picker, which the answer may well replace.
+	state.showNextPrompt()
+	if state.modal == modalNone && state.commandPalette.connect {
 		// Came from the new-tab connect picker: rebuild it so edited/added
 		// hosts show up (refreshCommandPalette caches on search query).
 		state.modal = modalCommandPalette
 		state.rebuildCommandPalette()
-	} else {
-		state.modal = modalNone
 	}
 	state.restoreEmptyPaneActive()
 }

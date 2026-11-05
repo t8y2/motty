@@ -345,7 +345,6 @@ func (state *State) submitHostDialog() {
 	state.appendStatusNote(proxyNote)
 	state.hostDataChanged()
 	state.save()
-	state.showNextPrompt()
 	state.restoreAfterHostDialog()
 }
 
@@ -365,7 +364,6 @@ func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...s
 	}
 	state.hostDataChanged()
 	state.save()
-	state.showNextPrompt()
 	state.restoreAfterHostDialog()
 }
 
