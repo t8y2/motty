@@ -14,4 +14,5 @@ type FileWindowMessages struct {
 	Uploading, SavingChanges                                                   string
 	SaveConfirmTitle, SaveConfirmDescription, SaveDirect                       string
 	SaveConfirmFinalTitle, SaveConfirmFinalDescription                         string
+	CloseTabFmt, TabsScrollbar                                                 string
 }

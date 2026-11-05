@@ -98,7 +98,7 @@ func TestAWordFileWithNoTextIsEmpty(t *testing.T) {
 }
 
 func TestADocumentWithTooMuchTextIsRefusedNotCut(t *testing.T) {
-	body := strings.Repeat(`<w:p><w:r><w:t>`+strings.Repeat("x", 1000)+`</w:t></w:r></w:p>`, 300)
+	body := strings.Repeat(`<w:p><w:r><w:t>`+strings.Repeat("x", 1000)+`</w:t></w:r></w:p>`, 4500)
 	_, err := Decode("big.docx", makeZip(t, map[string]string{"word/document.xml": `<w:document ` + wordNS + `><w:body>` + body + `</w:body></w:document>`}))
 	if !errors.Is(err, ErrTextTooLarge) {
 		t.Fatalf("err = %v", err)

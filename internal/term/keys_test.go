@@ -17,6 +17,11 @@ func TestEncodeKey(t *testing.T) {
 		want      string
 	}{
 		{"enter", ui.KeyEnter, 0, "", false, "\r"},
+		{"shift+enter", ui.KeyEnter, shift, "", false, "\x1b[13;2u"},
+		{"ctrl+enter", ui.KeyEnter, control, "", false, "\x1b[13;5u"},
+		{"alt+enter", ui.KeyEnter, alt, "", false, "\x1b\r"},
+		{"shift+alt+enter", ui.KeyEnter, shift | alt, "", false, "\x1b[13;4u"},
+		{"ctrl+alt+enter", ui.KeyEnter, control | alt, "", false, "\x1b[13;7u"},
 		{"tab", ui.KeyTab, 0, "", false, "\t"},
 		{"shift+tab", ui.KeyTab, shift, "", false, "\x1b[Z"},
 		{"escape", ui.KeyEscape, 0, "", false, "\x1b"},

@@ -30,6 +30,34 @@ func TestNewTabPageOffersThisComputerAndTheSavedHosts(t *testing.T) {
 	}
 }
 
+// TestNewTabPageEditsAndAddsHosts checks the pencil and the footer's add
+// button: the first opens the row's host for editing, the second adds one.
+func TestNewTabPageEditsAndAddsHosts(t *testing.T) {
+	state := newTabState(t)
+	before := len(state.deck.Workspaces(nil))
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitNewTabHostEdit.At(0)); !ok {
+		t.Fatal("the host's row has no pencil")
+	}
+	if _, ok := hitByID(&canvas, hitNewTabHostNew); !ok {
+		t.Fatal("the footer has no way to add a host")
+	}
+	host := state.hosts[0]
+	state.Click(hitNewTabHostEdit.At(0))
+	if state.modal != modalNewHost || state.hostDialogMode != hostDialogEdit || state.hostDialogID != host.ID {
+		t.Fatalf("modal %d mode %d id %d: the pencil must open host %d for editing", state.modal, state.hostDialogMode, state.hostDialogID, host.ID)
+	}
+	state.modal = modalNone
+	state.Click(hitNewTabHostNew)
+	if state.modal != modalNewHost || state.hostDialogMode != hostDialogAdd {
+		t.Fatalf("modal %d mode %d: the footer button must open the add dialog", state.modal, state.hostDialogMode)
+	}
+	if len(state.deck.Workspaces(nil)) != before {
+		t.Fatalf("tabs %d -> %d: opening the dialogs must create no tab", before, len(state.deck.Workspaces(nil)))
+	}
+}
+
 func TestNewTabPageConnectsAHostInThisTab(t *testing.T) {
 	state := newTabState(t)
 	before := len(state.workspaceTabs)

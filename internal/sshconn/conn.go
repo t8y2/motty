@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
+	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -96,6 +97,15 @@ type Authentication struct {
 	// Agent controls whether the running ssh-agent is offered.
 	Agent bool
 }
+
+// StoredKeyPrefix starts the name of a private key that is not a file but is
+// kept by the application, which Config.StoredKey reads. An absolute path never
+// starts with it.
+const StoredKeyPrefix = "sshkey:"
+
+// IsStoredKey reports whether an entry of an identity list names a key kept by
+// the application and not a file.
+func IsStoredKey(ref string) bool { return strings.HasPrefix(ref, StoredKeyPrefix) }
 
 // AuthMethods is a bit set of SSH authentication methods.
 type AuthMethods uint8
@@ -200,6 +210,12 @@ type Config struct {
 	// AdditionalIdentityFiles are tried after IdentityFiles (or the default
 	// identities when IdentityFiles is nil).
 	AdditionalIdentityFiles []string
+	// StoredKey reads the private key the application keeps for itself, named in
+	// the identity lists by a StoredKeyPrefix reference instead of a file path.
+	// It is called from the connection's goroutine, only after the host key is
+	// accepted. Nil means the application keeps none, and such a reference is
+	// skipped.
+	StoredKey func(ref string) ([]byte, error)
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when there is no agent to offer (see AgentAddress).
 	Agent bool
@@ -278,6 +294,12 @@ type Conn struct {
 	doneOnce      sync.Once
 	// pingPending is set while a keepalive probe sent by Ping is unanswered.
 	pingPending atomic.Bool
+
+	// kind is the family of the server's default shell, learned once per client
+	// by defaultShellKind.
+	kindMu     sync.Mutex
+	kindClient *ssh.Client
+	kind       shellkind.Kind
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and

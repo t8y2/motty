@@ -5,6 +5,10 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"motty/internal/shellkind"
 )
 
 const shellIntegrationProbe = `printf '\036motty-shell:%s\037' "$SHELL"`
@@ -25,6 +29,26 @@ func (conn *Conn) shellIntegrationCommand(token string) string {
 		return ""
 	}
 	return integrationCommand(shell, token)
+}
+
+// defaultShellKind asks the server's default shell what it is, once per client:
+// a command channel runs in the same shell an interactive session starts. A host
+// that does not answer in time stays Unknown, and nothing is cached, so the next
+// shell asks again.
+func (conn *Conn) defaultShellKind(client *ssh.Client) shellkind.Kind {
+	conn.kindMu.Lock()
+	defer conn.kindMu.Unlock()
+	if conn.kindClient == client {
+		return conn.kind
+	}
+	ctx, cancel := context.WithTimeout(conn.ctx, 2*time.Second)
+	defer cancel()
+	data, err := conn.RunCommand(ctx, shellkind.Probe, 4096)
+	if err != nil {
+		return shellkind.Unknown
+	}
+	conn.kindClient, conn.kind = client, shellkind.ParseProbe(string(data))
+	return conn.kind
 }
 
 // IntegrationArgs is how a shell of this machine starts with directory and

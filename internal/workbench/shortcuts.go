@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -304,7 +305,36 @@ func shortcutChordFromKey(event ui.KeyEvent) (shortcutChord, bool) {
 	return chord, event.Key != ui.KeyUnknown && chord.valid()
 }
 
+// clipboardAliases are the classic clipboard chords every terminal and text
+// editor on Windows and Linux honours next to the primary-modifier ones. They
+// are fixed rather than bindable, and only apply while no action owns the
+// chord, so rebinding Paste leaves Shift+Insert pasting and a user who gives
+// Shift+Insert another job takes it over.
+var clipboardAliases = [...]struct {
+	chord  shortcutChord
+	action shortcutAction
+}{
+	{shortcutChord{Modifiers: ui.ModifierShift, Named: ui.KeyInsert}, shortcutPaste},
+	{shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyInsert}, shortcutCopy},
+}
+
+// actionFor is the action a chord runs: the one bound to it, or else the
+// clipboard alias it stands for.
 func (shortcuts *shortcutMap) actionFor(chord shortcutChord) shortcutAction {
+	if action := shortcuts.boundAction(chord); action != shortcutNone {
+		return action
+	}
+	for _, alias := range clipboardAliases {
+		if alias.chord == chord {
+			return alias.action
+		}
+	}
+	return shortcutNone
+}
+
+// boundAction is actionFor without the built-in aliases: the action the user's
+// table binds to the chord, which is what a new binding can conflict with.
+func (shortcuts *shortcutMap) boundAction(chord shortcutChord) shortcutAction {
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
 		if shortcuts.chords[action] == chord {
 			return action
@@ -338,7 +368,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord shortcutChord) (
 	if action == shortcutTabNumber && !tabNumberChord(chord) {
 		return shortcutNone, false
 	}
-	if conflict := shortcuts.actionFor(chord); conflict != shortcutNone && conflict != action {
+	if conflict := shortcuts.boundAction(chord); conflict != shortcutNone && conflict != action {
 		return conflict, false
 	}
 	shortcuts.chords[action] = chord
@@ -485,6 +515,9 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 		return ui.EventResult{}
 	}
 	if result := state.remoteSearchShortcut(event); result.Handled {
+		return result
+	}
+	if result, handled := state.remoteDetailShortcut(event); handled {
 		return result
 	}
 	if state.modal != modalNone {
@@ -764,7 +797,22 @@ func (state *State) pasteIntoTerminal(session *Session) {
 	if state.pasteClipboardImage(session) {
 		return
 	}
-	if err != nil {
-		state.status = fmt.Sprintf(state.messages.StatusClipboardReadFailedFmt, err)
+	if err == nil || state.clipboardHoldsImage() {
+		// Nothing travels as text, but a program that reads pictures from the
+		// clipboard itself (OpenCode, for one) waits for a paste with no content
+		// to do so, as it gets from iTerm2, Ghostty and kitty. Without bracketed
+		// paste an empty paste is no event at all, so nothing is sent.
+		if session.term.screen.Modes().BracketedPaste {
+			state.typed(session, encodeTerminalPaste("", session.term))
+		}
+		return
 	}
+	state.status = fmt.Sprintf(state.messages.StatusClipboardReadFailedFmt, err)
+}
+
+// clipboardHoldsImage reports whether the system clipboard has a picture, for a
+// text request that failed on it: some systems answer that with an error.
+func (state *State) clipboardHoldsImage() bool {
+	_, err := state.options.ClipboardImagePNG()
+	return err == nil || errors.Is(err, app.ErrTooLarge)
 }

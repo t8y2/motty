@@ -43,9 +43,13 @@ type remoteServer struct {
 	failures map[string]error
 	// containers replaces the default container fixture when non-empty, so a
 	// test can show a container appearing while a tool window stays open.
-	containers  string
-	identities  string
-	environment string
+	containers           string
+	identities           string
+	environment          string
+	containerEnvironment string
+	environmentFailure   string
+	processCommand       string
+	commandFailure       string
 }
 
 func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byte, error) {
@@ -60,6 +64,9 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 		return []byte(processIdentityFixture), nil
 	case strings.HasPrefix(command, "# motty-process-environment\n"):
 		if err := server.failures["environment"]; err != nil {
+			if server.environmentFailure != "" {
+				return []byte(server.environmentFailure), err
+			}
 			return []byte("permission denied\n"), err
 		}
 		match := processEnvironmentPID.FindStringSubmatch(command)
@@ -89,6 +96,51 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			"motty-env-before " + boot + " " + ticks + "\n" +
 				base64.StdEncoding.EncodeToString([]byte(environment)) +
 				"\nmotty-env-after " + boot + " " + ticks + "\n",
+		), nil
+	case strings.HasPrefix(command, "# motty-process-command\n"):
+		if err := server.failures["command"]; err != nil {
+			if server.commandFailure != "" {
+				return []byte(server.commandFailure), err
+			}
+			return []byte("permission denied\n"), err
+		}
+		match := processEnvironmentPID.FindStringSubmatch(command)
+		if len(match) != 2 {
+			return nil, errors.New("malformed command protocol")
+		}
+		identities := server.identities
+		if identities == "" {
+			identities = processIdentityFixture
+		}
+		ticks := ""
+		for _, line := range strings.Split(identities, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 && fields[0] == match[1] {
+				ticks = fields[1]
+			}
+		}
+		if ticks == "" {
+			return nil, errors.New("process identity is missing")
+		}
+		processCommand := server.processCommand
+		if processCommand == "" {
+			switch match[1] {
+			case "1":
+				processCommand = "/sbin/init"
+			case "2211":
+				processCommand = "nginx: worker process"
+			case "3000":
+				processCommand = "/usr/bin/python3 /srv/app.py"
+			}
+		}
+		if processCommand == "" {
+			return nil, errors.New("process command is missing")
+		}
+		const boot = "12345678-1234-1234-1234-123456789abc"
+		return []byte(
+			"motty-command-before " + boot + " " + ticks + "\n" +
+				base64.StdEncoding.EncodeToString([]byte(processCommand)) +
+				"\nmotty-command-after " + boot + " " + ticks + "\n",
 		), nil
 	case strings.HasPrefix(command, "# motty-process-guard\n"):
 		marker, action := processGuardMarker.FindString(command), processGuardAction.FindStringSubmatch(command)
@@ -134,6 +186,14 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containers), nil
 		}
 		return []byte(containerFixture), nil
+	case strings.HasPrefix(command, "docker inspect --format '{{json .Config.Env}}'"):
+		if err := server.failures["docker inspect --format '{{json .Config.Env}}'"]; err != nil {
+			return []byte("denied by the test\nsecond line"), err
+		}
+		if server.containerEnvironment != "" {
+			return []byte(server.containerEnvironment), nil
+		}
+		return []byte(`["PATH=/usr/local/sbin:/usr/local/bin","SERVICE=web","EMPTY="]`), nil
 	case strings.HasPrefix(command, "docker inspect --format"):
 		return []byte("0f1e2d3c4b5a" + strings.Repeat("0", 52) + "\n"), nil
 	case strings.HasPrefix(command, "docker images"):

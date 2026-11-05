@@ -278,6 +278,7 @@ func (state *State) configureTerminal(session *Session) {
 		session.term.resetFolderSync()
 	}
 	session.term.screen.SetPromptToken(session.term.folderToken)
+	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
 	// An image decoded off the window thread asks for the frame that shows it.
@@ -1383,6 +1384,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	if state.modal == modalForm {
+		return state.scrollForm(event)
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)

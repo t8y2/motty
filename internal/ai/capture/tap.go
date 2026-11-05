@@ -62,7 +62,7 @@ func NewTap(nonce string, maxOutput int) *Tap {
 func (t *Tap) SetEcho(sent []byte) {
 	t.rec.setEcho(sent)
 	t.echoLines = t.echoLines[:0]
-	for _, line := range bytes.Split(bytes.TrimRight(sent, "\n"), []byte{'\n'}) {
+	for _, line := range splitEcho(sent) {
 		t.echoLines = append(t.echoLines, bytes.TrimSpace(line))
 	}
 }

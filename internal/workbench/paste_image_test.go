@@ -231,3 +231,45 @@ func TestAPastedPathIsOneWordToAShell(t *testing.T) {
 		t.Fatalf("escaped %q", got)
 	}
 }
+
+// OpenCode reads a clipboard picture itself, and only when a paste arrives with
+// nothing in it: the terminal must send that paste when the clipboard has no text
+// and Motty has no use for the picture (a local shell).
+func TestAnImageOnlyClipboardIsAnEmptyPasteForPicturesTheProgramReadsItself(t *testing.T) {
+	for name, text := range map[string]func() (string, error){
+		"empty":  func() (string, error) { return "", nil },
+		"errors": func() (string, error) { return "", errors.New("no text format") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			state.pasteImageOff = true // the picture is not Motty's to upload
+			state.options.ClipboardText = text
+			state.options.ClipboardImagePNG = func() ([]byte, error) { return pastedPNG, nil }
+			session, _ := state.sessionByIDPointer(state.activeSessionID)
+
+			state.pasteIntoTerminal(session)
+			if got := shell.typed(); got != "" {
+				t.Fatalf("typed %q without bracketed paste: an empty paste is no event then", got)
+			}
+			shell.say("\x1b[?2004h")
+			state.Wake()
+			state.pasteIntoTerminal(session)
+			if got := shell.typed(); got != "\x1b[200~\x1b[201~" {
+				t.Fatalf("typed %q, want an empty bracketed paste", got)
+			}
+		})
+	}
+}
+
+func TestAClipboardWithNeitherTextNorPictureSaysWhyOnAReadError(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	shell.say("\x1b[?2004h")
+	state.Wake()
+	state.options.ClipboardText = func() (string, error) { return "", errors.New("clipboard busy") }
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return nil, app.ErrNoImage }
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	state.pasteIntoTerminal(session)
+	if got := shell.typed(); got != "" || !strings.Contains(state.status, "clipboard busy") {
+		t.Fatalf("typed %q, status %q", got, state.status)
+	}
+}

@@ -1,6 +1,10 @@
 package workbench
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/vivaui/viva/ui"
+)
 
 // TestTerminalCursorThicknessDefaultsToNormal pins the default: without a saved
 // choice the bar and the underline draw exactly as they always have, so every
@@ -37,5 +41,40 @@ func TestTerminalCursorThicknessPersistsRoundTrip(t *testing.T) {
 	}
 	if reloaded.terminalCursorThickness.bar() != cursorThick.bar() || reloaded.terminalCursorThickness.underline() != cursorThick.underline() {
 		t.Fatalf("reloaded sizes = %v/%v, want %v/%v", reloaded.terminalCursorThickness.bar(), reloaded.terminalCursorThickness.underline(), cursorThick.bar(), cursorThick.underline())
+	}
+}
+
+// TestCursorThicknessControlMarksTheStoredStep pins the settings control's
+// selected segment to the stored choice. The segments are drawn in enum order,
+// so a table written in a different order silently highlights the wrong step
+// while the persisted value stays correct.
+func TestCursorThicknessControlMarksTheStoredStep(t *testing.T) {
+	for _, step := range []cursorThickness{cursorNormal, cursorThin, cursorThick} {
+		t.Run(step.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.setTerminalCursorThickness(step)
+			state.Click(hitSettings)
+			state.selectSettingsCategory(settingsTerminal)
+			var canvas ui.Canvas
+			state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
+			want := map[cursorThickness]ui.ID{
+				cursorNormal: hitSettingsCursorNormal,
+				cursorThin:   hitSettingsCursorThin,
+				cursorThick:  hitSettingsCursorThick,
+			}[step]
+			for id, label := range map[ui.ID]string{
+				hitSettingsCursorThin:   "thin",
+				hitSettingsCursorNormal: "normal",
+				hitSettingsCursorThick:  "thick",
+			} {
+				hit, ok := hitByID(&canvas, id)
+				if !ok {
+					t.Fatalf("the %s step is not on the settings page", label)
+				}
+				if hit.Selected != (id == want) {
+					t.Errorf("%s selected=%v, want %v", label, hit.Selected, id == want)
+				}
+			}
+		})
 	}
 }

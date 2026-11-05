@@ -120,6 +120,7 @@ func TestQuestionWordingIsRecognised(t *testing.T) {
 	for question, want := range map[string]bool{
 		"Verification code: ": true, "Enter OTP:": true, "Authenticator code": true, "Duo passcode or option (1-3):": true,
 		"请输入动态口令:": true, "请输入登录口令:": false, "Password: ": false, "Password for alice@host:": false, "": false,
+		"請輸入驗證碼：": true, "請輸入一次性密碼：": true, "請輸入登入密碼：": false,
 	} {
 		if got := LooksLikeQuestion(question); got != want {
 			t.Errorf("%q: %v", question, got)

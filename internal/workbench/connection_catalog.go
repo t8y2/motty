@@ -324,6 +324,9 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		Notify:                  env.Notify,
 		Proxy:                   proxy,
 	}
+	if env.Passwords != nil {
+		config.StoredKey = storedKeyReader(env.Passwords)
+	}
 	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
 	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
 	if catalog.connectionKeepAlive > 0 {

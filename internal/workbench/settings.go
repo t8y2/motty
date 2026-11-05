@@ -285,7 +285,7 @@ func (state *State) systemLanguage() i18n.Language {
 		primary, _, _ := strings.Cut(strings.ToLower(tag), "-")
 		switch primary {
 		case "zh":
-			return i18n.Chinese
+			return i18n.ChineseVariant(tag)
 		case "en":
 			return i18n.English
 		}
@@ -331,7 +331,7 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) {
+	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -346,6 +346,8 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseLanguage(i18n.English)
 	case hitSettingsLanguageChinese:
 		changed = state.chooseLanguage(i18n.Chinese)
+	case hitSettingsLanguageTraditional:
+		changed = state.chooseLanguage(i18n.TraditionalChinese)
 	case hitSettingsAppearanceSystem:
 		changed = state.chooseAppearanceMode(appearanceFollowSystem)
 	case hitSettingsAppearanceDark:
@@ -491,6 +493,14 @@ func (state *State) clickSettings(id ui.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
+	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+		state.clickStartupHosts(id)
+	case hitSettingsCursorBlock:
+		changed = state.setTerminalCursorStyle(cursorBlock)
+	case hitSettingsCursorBar:
+		changed = state.setTerminalCursorStyle(cursorBar)
+	case hitSettingsCursorUnderline:
+		changed = state.setTerminalCursorStyle(cursorUnderline)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
 	case hitSessionLogsSettingsToggle:
@@ -526,10 +536,11 @@ func (state *State) setTerminalScrollback(value int) bool {
 	return true
 }
 
-func (state *State) settingsLanguageOptions() [2]components.SegmentOption {
+func (state *State) settingsLanguageOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
 		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
+		{ID: hitSettingsLanguageTraditional, Label: state.messages.SettingsLanguageTraditionalChinese},
 	}
 }
 
@@ -657,6 +668,14 @@ func (state *State) settingsClipboardOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsCursorStyleOptions() []components.SegmentOption {
+	return []components.SegmentOption{
+		{ID: hitSettingsCursorBlock, Label: state.messages.Tools.CursorShapeBlock},
+		{ID: hitSettingsCursorBar, Label: state.messages.Tools.CursorShapeBar},
+		{ID: hitSettingsCursorUnderline, Label: state.messages.Tools.CursorShapeUnderline},
+	}
+}
+
 func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return ui.EventResult{}, false
@@ -683,7 +702,7 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		options := state.settingsPathOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
+	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsLanguageTraditional:
 		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:

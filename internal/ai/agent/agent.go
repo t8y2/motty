@@ -43,12 +43,13 @@ const (
 
 // Event is one item reported to the caller.
 type Event struct {
-	Kind   EventKind
-	Text   string
-	Call   llm.ToolCall
-	Result gate.Result
-	Step   int // 1-based model turn the event belongs to
-	Usage  llm.Usage
+	Kind            EventKind
+	Text            string
+	Call            llm.ToolCall
+	Result          gate.Result
+	Step            int // 1-based model turn the event belongs to
+	Usage           llm.Usage
+	UsageIncomplete bool
 	// StopReason is why the provider ended the turn EventDone reports, such as
 	// "stop", "length" or "tool_calls".
 	StopReason string
@@ -229,11 +230,12 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 	}
 
 	var (
-		usage     llm.Usage
-		nextID    int
-		lastKey   string
-		streak    int
-		toolSteps int
+		usage           llm.Usage
+		usageIncomplete bool
+		nextID          int
+		lastKey         string
+		streak          int
+		toolSteps       int
 	)
 	newMsgs := func() []llm.Message { return append([]llm.Message(nil), msgs[base:safe]...) }
 
@@ -253,11 +255,12 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		}
 		text, calls, u, stop, err := stream(ctx, cfg.Provider, req, turn, emit)
 		usage = usage.Add(u)
+		usageIncomplete = usageIncomplete || u == (llm.Usage{})
 		if ctx.Err() != nil {
 			return newMsgs(), ctx.Err()
 		}
 		if err != nil {
-			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 			return newMsgs(), err
 		}
 		if cfg.Mode != ModeAgent {
@@ -272,14 +275,14 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 				}
 			}
 			if escalation != nil && !final {
-				emit(Event{Kind: EventAgentModeRequest, Call: *escalation, Step: turn, Usage: usage})
+				emit(Event{Kind: EventAgentModeRequest, Call: *escalation, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), nil
 			}
 			// A call to anything else cannot run, and with no prose beside it
 			// the turn would end on nothing the user can read.
 			if len(calls) > 0 && strings.TrimSpace(text) == "" {
 				err := fmt.Errorf("agent: the model called %q, which this mode does not offer", calls[0].Name)
-				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), err
 			}
 			calls = nil // nothing else was offered, so nothing is run
@@ -289,12 +292,12 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			// instead of ending on an empty bubble.
 			if strings.TrimSpace(text) == "" {
 				err := errors.New("agent: the model returned an empty answer")
-				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), err
 			}
 			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text})
 			safe = len(msgs)
-			emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop})
+			emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop, UsageIncomplete: usageIncomplete})
 			return newMsgs(), nil
 		}
 		toolSteps++
@@ -328,12 +331,12 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			case stuck:
 				res = gate.Result{Text: "not executed: the run was stopped", IsError: true}
 			default:
-				emit(Event{Kind: EventToolStart, Call: call, Step: turn})
+				emit(Event{Kind: EventToolStart, Call: call, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				res = runTool(ctx, cfg, offered, call)
 				if ctx.Err() != nil {
 					return newMsgs(), ctx.Err()
 				}
-				emit(Event{Kind: EventToolDone, Call: call, Result: res, Step: turn})
+				emit(Event{Kind: EventToolDone, Call: call, Result: res, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				key := call.Name + "\x00" + call.Arguments
 				switch {
 				case !res.IsError:
@@ -358,7 +361,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		safe = len(msgs)
 		if stuck {
 			err := fmt.Errorf("agent: the model repeated the same failing call %d times", stuckLimit)
-			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 			return newMsgs(), err
 		}
 	}

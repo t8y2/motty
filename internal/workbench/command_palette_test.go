@@ -135,7 +135,7 @@ func TestCommandPaletteReachesEntriesBelowTheTenRowsItShows(t *testing.T) {
 	if total <= commandPaletteVisibleRows {
 		t.Fatalf("only %d entries; the test needs more than the %d rows shown", total, commandPaletteVisibleRows)
 	}
-	last := hitCommandPaletteItems.At(commandPaletteVisibleRows - 1)
+	last := hitCommandPaletteItems.At(total - 1)
 	if _, ok := hitByID(&canvas, hitCommandPaletteItems.At(commandPaletteVisibleRows)); ok {
 		t.Fatal("an eleventh row is painted before anything scrolled")
 	}
@@ -153,11 +153,11 @@ func TestCommandPaletteReachesEntriesBelowTheTenRowsItShows(t *testing.T) {
 		t.Fatalf("the last row is %q, want the last entry %q", hit.Label, want)
 	}
 	// The wheel moves the list back, and a click on a row runs the entry that row shows.
-	if r := state.Scroll(ui.ScrollEvent{DeltaY: -1000, Target: hitCommandPaletteItems.At(0)}); !r.Repaint || state.commandPalette.top != 0 {
-		t.Fatalf("wheel up: %+v top=%d", r, state.commandPalette.top)
+	if r := state.Scroll(ui.ScrollEvent{DeltaY: -1000, Target: hitCommandPaletteItems.At(0)}); !r.Repaint || state.commandPalette.scroll != 0 {
+		t.Fatalf("wheel up: %+v scroll=%g", r, state.commandPalette.scroll)
 	}
 	state.Scroll(ui.ScrollEvent{DeltaY: 1000})
-	state.Click(hitCommandPaletteItems.At(commandPaletteVisibleRows - 1))
+	state.Click(last)
 	if state.modal != modalNone || state.activeSessionID != 3 {
 		t.Fatalf("clicking the last row: modal=%d active session %d, want the last session", state.modal, state.activeSessionID)
 	}
@@ -358,12 +358,12 @@ func TestCommandPaletteMoveWheelRepaintEnterOnLongList(t *testing.T) {
 	}
 
 	// 2. Scroll Settings under the pointer, which stays over slot 2.
-	scrollRes := state.Scroll(ui.ScrollEvent{DeltaY: float32(34 * scrollRows), Target: slot2})
+	scrollRes := state.Scroll(ui.ScrollEvent{DeltaY: float32(34 * scrollRows), Target: slot2, X: state.commandPalette.listRect.X + 10, Y: state.commandPalette.listRect.Y + 2*34 + 15})
 	if !scrollRes.Handled || !scrollRes.Repaint {
 		t.Fatalf("scroll: result=%+v", scrollRes)
 	}
-	if state.commandPalette.top != scrollRows {
-		t.Fatalf("after scroll: top=%d, want %d", state.commandPalette.top, scrollRows)
+	if state.commandPalette.scroll != float32(34*scrollRows) {
+		t.Fatalf("after scroll: scroll=%g, want %d", state.commandPalette.scroll, 34*scrollRows)
 	}
 	wantSelected := settingsRow
 	if state.commandPalette.selected != wantSelected {

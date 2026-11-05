@@ -129,7 +129,7 @@ type fontsUI struct {
 	entries  []fontEntry
 	filtered []int32 // indices into entries
 	selected int     // index into filtered
-	top      int     // first filtered row shown
+	scroll   float32 // pixel offset of the filtered list
 	built    bool
 
 	// text is the description the settings row shows; textFor and textLang are what
@@ -348,10 +348,10 @@ func (state *State) refreshFontPicker() {
 		}
 		fonts.filtered = append(fonts.filtered, int32(index))
 	}
-	fonts.selected, fonts.top = 0, 0
+	fonts.selected, fonts.scroll = 0, 0
 	if first && current >= 0 {
 		fonts.selected = current
-		fonts.top = max(min(current-fontPickerVisibleRows/2, len(fonts.filtered)-fontPickerVisibleRows), 0)
+		fonts.scroll = min(float32(max(current-fontPickerVisibleRows/2, 0))*fontPickerRowStep, fonts.maxScroll())
 	}
 }
 
@@ -363,24 +363,28 @@ func (state *State) moveFontSelection(delta int) {
 		return
 	}
 	fonts.selected = min(max(fonts.selected+delta, 0), len(fonts.filtered)-1)
-	if fonts.selected < fonts.top {
-		fonts.top = fonts.selected
-	}
-	if fonts.selected >= fonts.top+fontPickerVisibleRows {
-		fonts.top = fonts.selected - fontPickerVisibleRows + 1
-	}
+	top := float32(fonts.selected) * fontPickerRowStep
+	fonts.scroll = min(max(fonts.scroll, top+30-fontPickerListHeight), top)
+	fonts.scroll = min(max(fonts.scroll, 0), fonts.maxScroll())
+}
+
+const fontPickerRowStep float32 = 32
+const fontPickerListHeight float32 = fontPickerVisibleRows * fontPickerRowStep
+
+func (fonts *fontsUI) contentHeight() float32 {
+	return max(0, float32(len(fonts.filtered))*fontPickerRowStep-2)
+}
+
+func (fonts *fontsUI) maxScroll() float32 {
+	return max(0, fonts.contentHeight()-fontPickerListHeight)
 }
 
 func (state *State) scrollFontPicker(event ui.ScrollEvent) ui.EventResult {
-	fonts := &state.fonts
 	state.refreshFontPicker()
-	before := fonts.top
-	step := 1
-	if event.DeltaY < 0 {
-		step = -1
-	}
-	fonts.top = min(max(fonts.top+step, 0), max(len(fonts.filtered)-fontPickerVisibleRows, 0))
-	return ui.EventResult{Handled: true, Repaint: fonts.top != before}
+	fonts := &state.fonts
+	before := fonts.scroll
+	fonts.scroll = min(max(before+event.StepY(fontPickerRowStep), 0), fonts.maxScroll())
+	return ui.EventResult{Handled: true, Repaint: fonts.scroll != before}
 }
 
 // selectFont updates the highlighted row so the sample previews it.
@@ -513,7 +517,7 @@ func (state *State) clickFontPicker(id ui.ID) {
 		state.confirmFont()
 	case id.Scope() == hitFontPickerItemList:
 		state.refreshFontPicker()
-		state.selectFont(state.fonts.top + item(id))
+		state.selectFont(item(id))
 	}
 }
 
@@ -523,22 +527,28 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	move := func(delta int) (ui.EventResult, bool) {
+		state.moveFontSelection(delta)
+		// Enter confirms the focused row, so list navigation must move focus too.
+		// Navigation from the search field keeps its text editor focused.
+		if _, onRow := event.Target.In(hitFontPickerItemList); onRow && len(state.fonts.filtered) > 0 {
+			handled.Focus = hitFontPickerItemList.At(state.fonts.selected)
+			handled.FocusVisible = true
+		}
+		return handled, true
+	}
 	switch event.Key {
 	case ui.KeyEscape:
 		state.cancelFontPicker()
 		return handled, true
 	case ui.KeyUp:
-		state.moveFontSelection(-1)
-		return handled, true
+		return move(-1)
 	case ui.KeyDown:
-		state.moveFontSelection(1)
-		return handled, true
+		return move(1)
 	case ui.KeyPageUp:
-		state.moveFontSelection(-fontPickerVisibleRows)
-		return handled, true
+		return move(-fontPickerVisibleRows)
 	case ui.KeyPageDown:
-		state.moveFontSelection(fontPickerVisibleRows)
-		return handled, true
+		return move(fontPickerVisibleRows)
 	case ui.KeyEnter:
 		// Enter confirms from the search field and the list. On any other control, the
 		// Cancel and close buttons, it is that control's own activation.
@@ -549,7 +559,7 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		if !event.Repeat {
 			if onRow {
 				state.refreshFontPicker()
-				state.selectFont(state.fonts.top + row)
+				state.selectFont(row)
 			}
 			state.confirmFont()
 		}
@@ -567,7 +577,7 @@ func (state *State) confirmFontOnDoubleClick(canvas *ui.Canvas) bool {
 	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.ClickCount != 2 {
 		return false
 	}
-	state.selectFont(state.fonts.top + index)
+	state.selectFont(index)
 	canvas.Consume()
 	if !state.canConfirmFont() {
 		return false
@@ -595,37 +605,14 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 		title = state.messages.SettingsInterfaceFont
 	}
 	layout := dialog.Begin(title, "")
-	rows := max(min(len(fonts.filtered)-fonts.top, fontPickerVisibleRows), 0)
-	var search flex.Box
+	rows := len(fonts.filtered)
+	var search, list flex.Box
 	// The list keeps room for all its rows, so the sample under it stays where it is;
 	// what the list lacks is said under the rows it has.
 	f := state.fontPickerLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
 		search = f.Slot().Height(36)
-		f.Column().Height(fontPickerVisibleRows*32).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
-			for visible := 0; visible < rows; visible++ {
-				row := fonts.top + visible
-				entry := fonts.entries[fonts.filtered[row]]
-				selected := row == fonts.selected
-				inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
-				color := pal.text
-				line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(flex.Center).Radius(radius.item).
-					HitWith(hitFontPickerItemList.At(visible), entry.label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
-				if selected {
-					line.Background(pal.accent)
-					color = pal.onAccent
-				} else {
-					line.HoverBackground(pal.surfaceHot)
-				}
-				line.Children(func() {
-					f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
-					if inUse {
-						f.Icon(lucideIcons[iconCheck]).Size(16, 16).Color(color)
-					} else {
-						f.Spacer().Size(16, 16).Grow(0)
-					}
-				})
-			}
+		list = f.Column().Height(fontPickerListHeight).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
 			switch {
 			case state.pickerList().loading:
 				f.Text(m.FontPickerLoading).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
@@ -649,11 +636,48 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	})
 	f.End()
 
+	area := components.BeginScrollArea(canvas, state.Theme(), list.Rect(), ui.Size{Width: list.Rect().Width, Height: fonts.contentHeight()}).Offset(0, fonts.scroll).HoverScrollbars(false)
+	geometry := area.BeginContent()
+	fonts.scroll = geometry.OffsetY
+	// Keep layout work bounded by the viewport while retaining logical row IDs.
+	first := int(geometry.OffsetY / fontPickerRowStep)
+	last := min(rows, first+fontPickerVisibleRows+1)
+	content := geometry.Content
+	content.Y += float32(first) * fontPickerRowStep
+	content.Height = float32(last-first) * fontPickerRowStep
+	f = state.fontPickerListLayout.Begin(canvas, state.Theme(), content)
+	f.Column().FillWidth().Children(func() {
+		for row := first; row < last; row++ {
+			entry := fonts.entries[fonts.filtered[row]]
+			selected := row == fonts.selected
+			inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
+			color := pal.text
+			line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(flex.Center).Radius(radius.item).
+				HitWith(hitFontPickerItemList.At(row), entry.label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+			if selected {
+				line.Background(pal.accent)
+				color = pal.onAccent
+			} else {
+				line.HoverBackground(pal.surfaceHot)
+			}
+			line.Children(func() {
+				f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
+				if inUse {
+					f.Icon(lucideIcons[iconCheck]).Size(16, 16).Color(color)
+				} else {
+					f.Spacer().Size(16, 16).Grow(0)
+				}
+			})
+		}
+	})
+	f.End()
+	area.EndContent()
+
 	value := fonts.search.String()
 	focused := canvas.Focused() == hitFontPickerSearch
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
-		Focused: focused, PlatformEditing: focused && value != "",
+		Focused: focused, PlatformEditing: focused && value != "", NavigationKeys: true,
 	})
 	confirmDisabled := !state.canConfirmFont()
 	dialog.Actions(layout,

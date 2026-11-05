@@ -240,8 +240,8 @@ func (state *State) completionStore() *completion.CatalogStore {
 // adoptCompletion runs only on the UI thread. Every window reads the same
 // per-directory store; a late load result cannot publish over a newer install.
 func (state *State) adoptCompletion() {
-	// With completion off nothing needs the catalog, so it is not decoded: it
-	// costs about ten megabytes of heap per process.
+	// With completion off nothing needs the catalog, so it is not decoded. A
+	// decoded catalog keeps only its root commands until one is used.
 	if state.history.suggestOff && !state.completion.updatePending {
 		state.adoptCompletionUpdate()
 		state.adoptCompletionHistory()

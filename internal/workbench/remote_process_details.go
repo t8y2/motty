@@ -25,27 +25,31 @@ var (
 	hitRemoteProcessDetailsClose    = tree.ID(remoteToolsHits, "remote-process-details-close")
 	hitRemoteProcessDetailsCommand  = tree.ID(remoteToolsHits, "remote-process-details-command")
 	hitRemoteProcessDetailsEnv      = tree.ID(remoteToolsHits, "remote-process-details-environment")
+	hitRemoteProcessDetailsText     = tree.ID(remoteToolsHits, "remote-process-details-text")
+	hitRemoteProcessDetailsScroll   = tree.ID(remoteToolsHits, "remote-process-details-scroll")
 )
 
 type remoteProcessDetails struct {
-	open                   bool
-	process                remotetools.Process
-	tab                    ui.ID
-	collectedAt            time.Time
-	serial                 uint64
-	loading                bool
-	failed                 bool
-	status                 string
-	environmentLoaded      bool
-	environmentRequest     uint64
-	environmentCancel      func()
-	environment            []remotetools.ProcessEnvironmentVariable
-	environmentScroll      float32
-	environmentScrollBar   components.ScrollAreaGeometry
-	environmentDragging    bool
-	environmentGrab        float32
-	environmentScrollValue string
-	environmentBounds      ui.Rect
+	open               bool
+	process            remotetools.Process
+	tab                ui.ID
+	collectedAt        time.Time
+	serial             uint64
+	loading            bool
+	failed             bool
+	status             string
+	commandValue       string
+	commandLoaded      bool
+	commandLoading     bool
+	commandFailed      bool
+	commandStatus      string
+	commandRequest     uint64
+	commandCancel      func()
+	environmentLoaded  bool
+	environmentRequest uint64
+	environmentCancel  func()
+	environment        []remotetools.ProcessEnvironmentVariable
+	text               remoteDetailText
 }
 
 type remoteProcessMenu struct {
@@ -66,16 +70,20 @@ func (state *State) remoteProcessByKey(key string) (remotetools.Process, bool) {
 func (state *State) openRemoteProcessDetails(process remotetools.Process) {
 	state.remote.processMenu = remoteProcessMenu{}
 	state.cancelRemoteProcessEnvironment()
+	state.cancelRemoteProcessCommand()
 	state.remote.processDetailsSerial++
 	serial := state.remote.processDetailsSerial
 	state.remote.processDetails = remoteProcessDetails{
 		open: true, process: process, collectedAt: state.remote.collectedAt,
-		tab: hitRemoteProcessDetailsCommand, serial: serial,
+		tab: hitRemoteProcessDetailsCommand, serial: serial, commandValue: process.Command,
+		commandStatus: state.messages.Tools.RemoteProcessCommandLoading,
 	}
+	state.loadRemoteProcessCommand()
 }
 
 func (state *State) closeRemoteProcessDetails() {
 	state.cancelRemoteProcessEnvironment()
+	state.cancelRemoteProcessCommand()
 	state.remote.processDetails = remoteProcessDetails{}
 }
 
@@ -87,15 +95,22 @@ func (state *State) selectRemoteProcessDetailTab(tab ui.ID) {
 	if details.tab == tab {
 		if tab == hitRemoteProcessDetailsEnv {
 			state.loadRemoteProcessEnvironment()
+		} else {
+			state.loadRemoteProcessCommand()
 		}
 		return
 	}
 	if details.tab == hitRemoteProcessDetailsEnv {
 		state.cancelRemoteProcessEnvironment()
+	} else {
+		state.cancelRemoteProcessCommand()
 	}
 	details.tab = tab
+	details.text.reset()
 	if tab == hitRemoteProcessDetailsEnv {
 		state.loadRemoteProcessEnvironment()
+	} else {
+		state.loadRemoteProcessCommand()
 	}
 }
 
@@ -433,7 +448,16 @@ func (state *State) remoteProcessDetailsKey(event ui.KeyEvent) (ui.EventResult, 
 		return ui.EventResult{}, false
 	}
 	if state.remote.processDetails.open {
+		if result, handled := state.remoteDetailTextShortcut(event, &state.remote.processDetails.text); handled {
+			return result, true
+		}
 		details := &state.remote.processDetails
+		if result, handled := state.remoteDetailKeyboardScroll(
+			event, &details.text,
+			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
+		); handled {
+			return result, true
+		}
 		options := state.remoteProcessDetailTabs()
 		if event.Target == hitRemoteProcessDetailsCommand || event.Target == hitRemoteProcessDetailsEnv {
 			if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
@@ -478,6 +502,22 @@ func (state *State) remoteProcessDetailsKey(event ui.KeyEvent) (ui.EventResult, 
 	return ui.EventResult{}, false
 }
 
+func (state *State) remoteProcessDetailsTextPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	details := &state.remote.processDetails
+	if !details.open {
+		return ui.EventResult{}, false
+	}
+	return state.remoteDetailTextPointer(event, &details.text, hitRemoteProcessDetailsText)
+}
+
+func (state *State) remoteProcessDetailsScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	details := &state.remote.processDetails
+	if !details.open {
+		return ui.EventResult{}, false
+	}
+	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
+}
+
 func (state *State) remoteProcessMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	if !state.remoteToolsVisible() || !state.remote.processMenu.open ||
 		event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary ||
@@ -493,6 +533,15 @@ func (w *remoteToolsWindow) pointer(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true}
 	}
 	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteContainerDetailsScrollPointer(event); handled {
 		return result
 	}
 	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {

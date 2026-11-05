@@ -107,19 +107,24 @@ func auditSoft(c *Catalog) AuditReport {
 	var report AuditReport
 	auditShape(&report, c)
 	for _, root := range c.roots {
-		walk(root, func(n *Node) {
-			auditDescription(&report, n.Desc)
-			for _, flags := range [2][]Flag{n.Flags, n.Persistent} {
-				for _, flag := range flags {
-					auditDescription(&report, flag.Desc)
-					for _, value := range flag.Values {
-						auditDescription(&report, value.Desc)
-					}
-				}
-			}
-		})
+		auditSoftTree(&report, root)
 	}
 	return report
+}
+
+// auditSoftTree adds the soft findings of one command tree to report.
+func auditSoftTree(report *AuditReport, root *Node) {
+	walk(root, func(n *Node) {
+		auditDescription(report, n.Desc)
+		for _, flags := range [2][]Flag{n.Flags, n.Persistent} {
+			for _, flag := range flags {
+				auditDescription(report, flag.Desc)
+				for _, value := range flag.Values {
+					auditDescription(report, value.Desc)
+				}
+			}
+		}
+	})
 }
 
 func auditNode(report *AuditReport, n *Node, depth int) {
@@ -127,6 +132,7 @@ func auditNode(report *AuditReport, n *Node, depth int) {
 		report.addHard("catalog contains a nil command")
 		return
 	}
+	n.load()
 	if depth > maxDepth {
 		report.addHard("command %q nests deeper than %d levels", n.Token, maxDepth)
 	}
