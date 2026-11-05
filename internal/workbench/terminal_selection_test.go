@@ -534,3 +534,92 @@ func TestShiftClickWithoutAnythingToExtendDoesNothing(t *testing.T) {
 		t.Fatalf("selection = %+v", session.term.selection)
 	}
 }
+
+// press, drag and release drive one gesture the way the runtime delivers it: a
+// press with its click count, moves captured by the press, then the release.
+func gesture(state *State, session *Session, geometry terminalGeometry, clicks int, down [2]int, moves ...[2]int) {
+	hit := hitTerminalList.At(int(session.ID))
+	at := func(cell [2]int) (float32, float32) {
+		return cellPoint(geometry, cell[0], cell[1], state.cellWidth, state.cellHeight)
+	}
+	x, y := at(down)
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	last := down
+	for _, cell := range moves {
+		x, y = at(cell)
+		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
+		last = cell
+	}
+	x, y = at(last)
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
+}
+
+func selectedText(session *Session) string {
+	return session.term.selection.text(session.term.screen)
+}
+
+func TestDoubleClickThenDragGrowsTheSelectionByWholeWords(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("one two three four\r\n"))
+
+	gesture(state, session, geometry, 2, [2]int{0, 5})
+	if got := selectedText(session); got != "two" {
+		t.Fatalf("double click selected %q", got)
+	}
+	// Pressing inside the word and dragging forward ends on the word under the pointer.
+	gesture(state, session, geometry, 2, [2]int{0, 5}, [2]int{0, 9})
+	if got := selectedText(session); got != "two three" {
+		t.Fatalf("forward drag selected %q", got)
+	}
+	// Dragging backward keeps the clicked word and takes the word before it.
+	gesture(state, session, geometry, 2, [2]int{0, 9}, [2]int{0, 5}, [2]int{0, 1})
+	if got := selectedText(session); got != "one two three" {
+		t.Fatalf("backward drag selected %q", got)
+	}
+	// Coming back to the clicked word shrinks to just it.
+	gesture(state, session, geometry, 2, [2]int{0, 9}, [2]int{0, 1}, [2]int{0, 10})
+	if got := selectedText(session); got != "three" {
+		t.Fatalf("returning to the clicked word selected %q", got)
+	}
+}
+
+func TestTripleClickSelectsTheWholeLineAndDragsByLines(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("first line\r\nsecond line\r\nthird line\r\n"))
+
+	gesture(state, session, geometry, 3, [2]int{1, 3})
+	if got := selectedText(session); got != "second line" {
+		t.Fatalf("triple click selected %q", got)
+	}
+	gesture(state, session, geometry, 3, [2]int{1, 3}, [2]int{2, 0})
+	if got := selectedText(session); got != "second line\nthird line" {
+		t.Fatalf("drag down selected %q", got)
+	}
+	gesture(state, session, geometry, 3, [2]int{1, 3}, [2]int{0, 9})
+	if got := selectedText(session); got != "first line\nsecond line" {
+		t.Fatalf("drag up selected %q", got)
+	}
+}
+
+func TestTripleClickTakesEveryRowOfASoftWrappedLine(t *testing.T) {
+	state, session, geometry := selectionState()
+	// 45 characters at 20 columns wrap onto three rows; the next line is separate.
+	long := strings.Repeat("0123456789", 4) + "abcde"
+	session.term.write([]byte(long + "\r\nnext\r\n"))
+
+	gesture(state, session, geometry, 3, [2]int{1, 4})
+	if got := selectedText(session); got != long {
+		t.Fatalf("triple click on a wrapped row selected %q, want the whole logical line", got)
+	}
+}
+
+func TestAPlainClickAfterAWordSelectionGoesBackToCells(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("one two three\r\n"))
+
+	gesture(state, session, geometry, 2, [2]int{0, 5})
+	gesture(state, session, geometry, 1, [2]int{0, 0}, [2]int{0, 5})
+	if got := selectedText(session); got != "one tw" {
+		t.Fatalf("a cell drag after a word selection selected %q", got)
+	}
+}

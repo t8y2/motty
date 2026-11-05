@@ -20,7 +20,21 @@ type terminalSelection struct {
 	// view was scrolled in between.
 	mark   term.Point
 	marked bool
+	// unit is how far one step of a drag reaches: a cell, or, after a double or
+	// triple click, a whole word or line. origin is the word or line that was
+	// clicked; the drag keeps it selected whichever way it goes.
+	unit   selectionUnit
+	origin [2]term.Point
 }
+
+// selectionUnit is the granularity a drag snaps to.
+type selectionUnit uint8
+
+const (
+	unitCell selectionUnit = iota
+	unitWord
+	unitLine
+)
 
 // selectionEdge is the auto-scroll a drag asks for while the pointer is held
 // beyond the top or bottom of the grid.
@@ -50,6 +64,47 @@ func (selection *terminalSelection) dismiss() bool {
 	changed := selection.clear()
 	selection.mark, selection.marked = mark, marked
 	return changed
+}
+
+// beginUnit selects the word or line at point and leaves the drag running, so
+// that holding the button and moving on grows the selection by words or lines.
+func (selection *terminalSelection) beginUnit(screen *term.Terminal, point term.Point, unit selectionUnit) {
+	selection.clear()
+	selection.unit = unit
+	selection.origin[0], selection.origin[1] = selection.unitRange(screen, point)
+	selection.anchor, selection.focus = selection.origin[0], selection.origin[1]
+	selection.dragging, selection.selected = true, true
+	selection.mark, selection.marked = selection.origin[0], true
+}
+
+// unitRange is the word or line around point, by the selection's unit.
+func (selection *terminalSelection) unitRange(screen *term.Terminal, point term.Point) (term.Point, term.Point) {
+	if selection.unit == unitLine {
+		return screen.LineRange(point)
+	}
+	return screen.WordRange(point)
+}
+
+// extendUnit moves the drag's focus to point, snapped to whole words or lines.
+// The clicked word or line stays inside the selection: dragging before it
+// anchors at its end, and dragging after it anchors at its start.
+func (selection *terminalSelection) extendUnit(screen *term.Terminal, point term.Point) bool {
+	if selection.unit == unitCell {
+		return selection.extend(point)
+	}
+	if !selection.dragging {
+		return false
+	}
+	start, end := selection.unitRange(screen, point)
+	anchor, focus := selection.origin[0], end
+	if pointBefore(point, selection.origin[0]) {
+		anchor, focus = selection.origin[1], start
+	}
+	if selection.anchor == anchor && selection.focus == focus {
+		return false
+	}
+	selection.anchor, selection.focus = anchor, focus
+	return true
 }
 
 func (selection *terminalSelection) begin(point term.Point) bool {
@@ -91,6 +146,7 @@ func (selection *terminalSelection) extendTo(point term.Point) (changed, ok bool
 	}
 	previous := *selection
 	selection.anchor, selection.focus = anchor, point
+	selection.unit = unitCell
 	selection.dragging = true
 	selection.selected = anchor != point
 	selection.mark, selection.marked = anchor, true
@@ -126,6 +182,7 @@ func (selection *terminalSelection) selectRange(anchor, focus term.Point) {
 	selection.focus = focus
 	selection.dragging = false
 	selection.selected = true
+	selection.unit = unitCell
 	selection.edge = selectionEdge{}
 }
 
@@ -198,8 +255,14 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 		state.terminalMenu.open = false
 		if event.ClickCount >= 2 {
 			terminal.links.clear()
-			start, end := terminal.screen.WordBounds(position)
-			selection.selectRange(terminal.screen.PointAt(start), terminal.screen.PointAt(end))
+			// A double click takes the word, a triple click the whole line, soft
+			// wraps included. The button is still down, so the drag goes on by
+			// the same unit.
+			unit := unitWord
+			if event.ClickCount >= 3 {
+				unit = unitLine
+			}
+			selection.beginUnit(terminal.screen, terminal.screen.PointAt(position), unit)
 			result := ui.EventResult{Handled: true, Repaint: true}
 			if state.terminalCopyOnSelect {
 				result.ClipboardText = selection.text(terminal.screen)
@@ -227,7 +290,7 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			_, hovered := terminal.links.hoveredLink(terminal.screen)
 			return ui.EventResult{Handled: hovered, Repaint: changed}
 		}
-		changed := selection.extend(terminal.screen.PointAt(position))
+		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
 		state.armSelectionScroll(session, event, position.Column)
 		if changed {
 			changed = terminal.links.clear() || changed
@@ -245,7 +308,7 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			changed := terminal.links.clear()
 			return ui.EventResult{Handled: event.Captured, Repaint: changed}
 		}
-		changed := selection.extend(terminal.screen.PointAt(position))
+		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
 		selection.dragging = false
 		selection.edge = selectionEdge{}
 		open := false
@@ -326,7 +389,7 @@ func (state *State) stepSelectionScroll(terminal *terminal, now time.Duration) {
 		row = rows - 1
 	}
 	selection.edge.last, selection.edge.stepped = now, true
-	selection.extend(terminal.screen.PointAt(term.Position{Row: row, Column: edge.column}))
+	selection.extendUnit(terminal.screen, terminal.screen.PointAt(term.Position{Row: row, Column: edge.column}))
 }
 
 func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent, position term.Position) (ui.EventResult, bool) {
