@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -14,6 +15,7 @@ import (
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 )
 
 // Files and pictures dropped on the assistant, or chosen with its paperclip, wait
@@ -32,8 +34,8 @@ const (
 	// aiMaxAttachments is how many files one message takes, which is also how
 	// many remove buttons the panel can hit.
 	aiMaxAttachments = 6
-	// aiMaxAttachedText is all the text of one message, supporting modern 1M+ token context windows.
-	aiMaxAttachedText = 16 << 20
+	// aiMaxAttachedText includes the serialized headings around attached text.
+	aiMaxAttachedText = store.MaxTextBytes
 	aiChipHeight      = float32(24)
 	aiChipGap         = float32(6)
 	aiChipTextMax     = float32(150)
@@ -141,7 +143,11 @@ const (
 // isLongAIText reports whether text pasted into the assistant is large enough to
 // attach as a file rather than inserting into the message box.
 func isLongAIText(text string) bool {
-	return len(text) >= aiLongTextChars || strings.Count(text, "\n") >= aiLongTextLines
+	lines := strings.Count(text, "\n") + 1
+	if strings.HasSuffix(text, "\n") {
+		lines--
+	}
+	return utf8.RuneCountInString(text) >= aiLongTextChars || lines >= aiLongTextLines
 }
 
 // aiPasteText attaches text as a file waiting in the message box.
@@ -177,7 +183,7 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 	var problems []string
 	text := 0
 	for _, existing := range ai.attachments {
-		text += len(existing.file.Text)
+		text += aiAttachmentContextBytes(existing.file)
 	}
 	for _, item := range loaded {
 		name := filepath.Base(item.path)
@@ -191,10 +197,10 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 			// The same file twice is one attachment.
 		case len(ai.attachments) >= aiMaxAttachments:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTooManyFmt, aiMaxAttachments))
-		case text+len(item.file.Text) > aiMaxAttachedText:
+		case text+aiAttachmentContextBytes(item.file) > aiMaxAttachedText:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTotalTextFmt, name, formatBytes(aiMaxAttachedText)))
 		default:
-			text += len(item.file.Text)
+			text += aiAttachmentContextBytes(item.file)
 			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file})
 		}
 	}
@@ -288,6 +294,17 @@ func aiAttachmentName(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// aiAttachmentContextBytes is the exact serialized size the attachment adds to
+// the user message without allocating its potentially large text.
+func aiAttachmentContextBytes(file attach.File) int {
+	name := aiAttachmentName(file.Name)
+	if file.Kind == attach.KindImage {
+		return len(attachedMarker) + len("image ") + len(name) + len("]")
+	}
+	return len(attachedMarker) + len("file ") + len(name) + len(" (") +
+		len(strconv.Itoa(file.Lines)) + len(" lines):]\n") + len(file.Text)
 }
 
 // aiAttachmentContext is what the attachments add to a question: a heading and

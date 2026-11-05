@@ -1058,6 +1058,8 @@ var chineseAIPanel = AIPanelMessages{
 	PastedImageName:          "粘贴的图片",
 	PastedTextName:           "粘贴的文本",
 	AttachPastedTruncatedFmt: "%s 超过 %s,已自动截取前 %s 作为附件。",
+	MessageTooLargeFmt:       "消息及其上下文超过 %s 历史记录限制。请移除部分文本或附件。",
+	HistorySaveFailedFmt:     "无法保存助手历史记录:%s",
 
 	EmptyTitle:     "就这个终端提问",
 	EmptyHint:      "助手能看到屏幕上的内容;在代理模式下,它还可以替你执行命令。",

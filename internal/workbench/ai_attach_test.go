@@ -16,7 +16,9 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
+	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
 )
 
@@ -402,6 +404,109 @@ func TestPastingLongTextAttachesItAndLeavesTheTextAlone(t *testing.T) {
 	second := state.ai.attachments[1].file
 	if second.Kind != attach.KindText || second.Name != "pasted-text-2.txt" || second.Lines != 25 {
 		t.Fatalf("second attachment = %+v", second)
+	}
+}
+
+func TestLongPastedTextCountsCharactersAndLines(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"1999 CJK characters", strings.Repeat("界", aiLongTextChars-1), false},
+		{"2000 CJK characters", strings.Repeat("界", aiLongTextChars), true},
+		{"19 lines without a trailing newline", strings.Repeat("line\n", aiLongTextLines-2) + "line", false},
+		{"20 lines without a trailing newline", strings.Repeat("line\n", aiLongTextLines-1) + "line", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isLongAIText(test.text); got != test.want {
+				t.Fatalf("isLongAIText() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func maximumTextAttachments(t *testing.T) []aiAttachment {
+	t.Helper()
+	const count = 4
+	attachments := make([]aiAttachment, count)
+	overhead := 0
+	for index := range attachments {
+		attachments[index].file = attach.File{
+			Name:  "part-" + string(rune('a'+index)) + ".txt",
+			Kind:  attach.KindText,
+			Lines: 1,
+		}
+		overhead += aiAttachmentContextBytes(attachments[index].file)
+	}
+	body := aiMaxAttachedText - overhead
+	for index := range attachments {
+		size := body / (count - index)
+		if size > attach.MaxTextBytes {
+			t.Fatalf("part %d needs %d bytes, file limit is %d", index, size, attach.MaxTextBytes)
+		}
+		attachments[index].file.Text = strings.Repeat("x", size)
+		body -= size
+	}
+	context, _, _ := aiAttachmentContext(attachments, false)
+	if len(context) != aiMaxAttachedText {
+		t.Fatalf("serialized attachment context = %d bytes, want %d", len(context), aiMaxAttachedText)
+	}
+	return attachments
+}
+
+func TestMaximumAttachmentContextIsSavedAndReopened(t *testing.T) {
+	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("ok") }}
+	state := openedPanel(t, model)
+	state.ai.attachments = maximumTextAttachments(t)
+	ask(state, "", agent.ModeAgent)
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	if state.ai.notice != "" {
+		t.Fatalf("maximum attachment context was not saved: %q", state.ai.notice)
+	}
+	id := state.ai.conv
+	state.aiNewConversation()
+	state.aiOpenConversation(id)
+	user := firstQuestion(t, state)
+	if user.text != "" || len(user.attachments) != 4 {
+		t.Fatalf("reopened question = %q, attachments = %+v", user.text, user.attachments)
+	}
+}
+
+func TestOversizedMessageKeepsTheQuestionAndAttachments(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("unused") }})
+	state.ai.attachments = maximumTextAttachments(t)
+	state.ai.input.Insert("x")
+	state.ai.mode = agent.ModeAgent
+	state.aiSend()
+	if state.ai.run != nil || state.ai.input.String() != "x" || len(state.ai.attachments) != 4 {
+		t.Fatalf("run=%v input=%q attachments=%d", state.ai.run, state.ai.input.String(), len(state.ai.attachments))
+	}
+	if !strings.Contains(state.ai.notice, formatBytes(store.MaxTextBytes)) {
+		t.Fatalf("notice = %q", state.ai.notice)
+	}
+}
+
+func TestAHistoryWriteFailureDoesNotAppendLaterMessages(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("unused") }})
+	conversation, err := state.ai.store.CreateConversation("failure", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.ai.conv = conversation.ID
+	state.aiPersist([]llm.Message{
+		{Role: llm.RoleUser, Text: strings.Repeat("x", store.MaxTextBytes+1)},
+		{Role: llm.RoleAssistant, Text: "must not be stored"},
+	}, gate.SessionInfo{}, nil, "", nil)
+	if !strings.Contains(state.ai.notice, strings.TrimSuffix(state.messages.AIPanel.HistorySaveFailedFmt, "%s")) {
+		t.Fatalf("notice = %q", state.ai.notice)
+	}
+	messages, err := state.ai.store.Messages(conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("stored messages = %+v", messages)
 	}
 }
 

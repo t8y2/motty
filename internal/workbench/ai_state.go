@@ -693,16 +693,11 @@ func (state *State) aiSend() {
 	if !ready {
 		return // keep both the question and target while the vault is unlocked
 	}
-	ai.notice = ""
-	ai.needLogin = ""
 	retry := ai.retry
 	answerOnly := ai.answerOnly
-	ai.retry = false
-	ai.answerOnly = false
-	ai.input = text.Editor{}
 	var attachments []aiAttachment // a retry continues a question that already has its own
 	if !retry {
-		attachments, ai.attachments = ai.attachments, nil
+		attachments = ai.attachments
 	}
 	attachedText, images, refs := aiAttachmentContext(attachments, ai.settings.redact)
 	targetKey := ""
@@ -715,13 +710,6 @@ func (state *State) aiSend() {
 			targetKey += "," + extra.ID
 		}
 	}
-	if !retry {
-		state.dropEscalationApprovals()
-		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
-		ai.items[len(ai.items)-1].attachments = refs
-	}
-	ai.scroll.ScrollToEnd()
-
 	sent := question + attachedText
 	var attached uint32 // the session whose text already went with the question
 	if !retry && ai.mode == agent.ModeAsk {
@@ -735,6 +723,23 @@ func (state *State) aiSend() {
 	if !retry {
 		sent += state.aiMentionContext(question, attached)
 	}
+	if !retry && ai.settings.keepHistory && ai.store != nil && len(sent) > store.MaxTextBytes {
+		ai.notice = fmt.Sprintf(state.messages.AIPanel.MessageTooLargeFmt, formatBytes(store.MaxTextBytes))
+		return
+	}
+	ai.notice = ""
+	ai.needLogin = ""
+	ai.retry = false
+	ai.answerOnly = false
+	ai.input = text.Editor{}
+	if !retry {
+		ai.attachments = nil
+		state.dropEscalationApprovals()
+		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
+		ai.items[len(ai.items)-1].attachments = refs
+	}
+	ai.scroll.ScrollToEnd()
+
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
 		Model:             model,
@@ -962,6 +967,7 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 		}
 		conversation, err := ai.store.CreateConversation(strings.TrimSpace(title), label)
 		if err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
 			return
 		}
 		ai.conv = conversation.ID
@@ -978,7 +984,10 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 			}
 			stored.ToolJSON, _ = json.Marshal(metadata)
 		}
-		_, _ = ai.store.AppendMessage(ai.conv, stored)
+		if _, err := ai.store.AppendMessage(ai.conv, stored); err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
+			return
+		}
 	}
 }
 

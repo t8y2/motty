@@ -79,6 +79,8 @@ type AIPanelMessages struct {
 	PastedImageName          string // the name a picture pasted from the clipboard goes by
 	PastedTextName           string // the name a long text pasted from the clipboard goes by
 	AttachPastedTruncatedFmt string // takes the name, limit and truncated size when huge pasted text is capped
+	MessageTooLargeFmt       string // takes the saved-message size limit
+	HistorySaveFailedFmt     string // takes the system's reason
 
 	EmptyTitle     string
 	EmptyHint      string

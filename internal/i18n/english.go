@@ -1058,6 +1058,8 @@ var englishAIPanel = AIPanelMessages{
 	PastedImageName:          "pasted-image",
 	PastedTextName:           "pasted-text",
 	AttachPastedTruncatedFmt: "%s is larger than %s; truncated to the first %s.",
+	MessageTooLargeFmt:       "The message and its context exceed the %s history limit. Remove some text or attachments.",
+	HistorySaveFailedFmt:     "The assistant history could not be saved: %s",
 
 	EmptyTitle:     "Ask about this terminal",
 	EmptyHint:      "The assistant sees what is on your screen. In Agent mode it can also run commands for you.",
