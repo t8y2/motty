@@ -57,6 +57,38 @@ func (menu *localShellSelect) rebuild() {
 	menu.choices = append(slices.Clone(menu.shells), menu.distros...)
 }
 
+// defaultShellChoice is the shell the shell setting shows as the default: the
+// detected one marked Default, or the first found, so what the setting displays
+// is what a terminal without a choice of its own runs.
+func (state *State) defaultShellChoice() localshell.Choice {
+	for _, choice := range state.localShellMenu.choices {
+		if choice.Default {
+			return choice
+		}
+	}
+	if len(state.localShellMenu.choices) > 0 {
+		return state.localShellMenu.choices[0]
+	}
+	return localshell.Choice{}
+}
+
+// resolveLocalShell names the program a local terminal runs: the tab's own
+// shell, the settings' default, then this machine's detected default. Without
+// the last step a shell that was never picked would fall to a PATH lookup,
+// which can land on another program than the setting shows.
+func (state *State) resolveLocalShell(host Host) string {
+	if host.localShell != "" {
+		return host.localShell
+	}
+	if state.localShell != "" {
+		return state.localShell
+	}
+	if !state.localShellMenu.loaded {
+		state.refreshLocalShells()
+	}
+	return state.defaultShellChoice().Path
+}
+
 // listWSLDistros asks for the installed distributions without waiting: the
 // shells are found by looking at files, but naming distributions takes wsl.exe,
 // which may take a moment, or start WSL. Their entries join the list when the

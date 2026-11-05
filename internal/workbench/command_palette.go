@@ -284,6 +284,13 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	case hitCommandPaletteSearch:
 		return
 	default:
+		// The pencil of a host row opens the host for editing instead of
+		// connecting: the palette closes and the edit dialog takes over.
+		if id.Scope() == hitConnectPickEdit {
+			state.closeCommandPalette()
+			state.openEditHostID(uint32(item(id)))
+			return
+		}
 		visible, ok := id.In(hitCommandPaletteItems)
 		if !ok {
 			return

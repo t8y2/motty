@@ -297,6 +297,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
 	state.paintEditorSelect(canvas)
+	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
