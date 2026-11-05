@@ -170,12 +170,15 @@ type ToolsMessages struct {
 	NotifyDescription string
 
 	// Pasting an image into a terminal on a server.
-	PasteImageRow         string
-	PasteImageDescription string
-	PasteImageUploading   string
-	PasteImageDoneFmt     string // the path on the server
-	PasteImageFailedFmt   string // the reason
-	PasteImageTooLarge    string
+	PasteImageRow           string
+	PasteImageDescription   string
+	PasteImageUploading     string
+	PasteImageDoneFmt       string // the path on the server
+	PasteImageFailedFmt     string // the reason
+	PasteImageTooLarge      string
+	PasswordHintRow         string
+	PasswordHintDescription string
+	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.
 	ProxyRow                    string

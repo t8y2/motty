@@ -1588,6 +1588,10 @@ var chineseTools = ToolsMessages{
 	PasteImageFailedFmt:   "无法上传剪贴板里的图片：%v",
 	PasteImageTooLarge:    "剪贴板里的图片太大，无法上传。",
 
+	PasswordHintRow:         "密码提示辅助",
+	PasswordHintDescription: "sudo 要求输入密码时，在提示符后提供该主机已保存的密码。按下 Enter 之前不会发送任何内容。",
+	PasswordHintGhost:       "按 Enter 粘贴已保存的密码",
+
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。每个终端每秒最多一条。",
 

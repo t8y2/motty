@@ -129,6 +129,9 @@ type terminal struct {
 	prediction terminalPrediction
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
+	// passwordHint is the sudo prompt line the saved password is on offer at: set
+	// while that line is still under the cursor and nothing was sent since.
+	passwordHint string
 	// recorder decides which typed lines the command history may keep; it is
 	// only fed while historyOn says the history is wanted for this terminal.
 	recorder  cmdhistory.Recorder
@@ -495,6 +498,7 @@ func (t *terminal) sendSecret(p []byte) bool {
 }
 
 func (t *terminal) noteShellInput(p []byte) {
+	t.passwordHint = ""
 	t.inputGuard.observe(p)
 	atPrompt := t.promptReady
 	t.promptReady, t.promptStarted = false, false
@@ -763,6 +767,7 @@ func (state *State) pump(session *Session) {
 		if state.autofillRules.armed {
 			t.autofill.Output(state.now())
 		}
+		state.notePasswordPrompt(session)
 		t.login.output(state.now())
 		state.goLive(session)
 	}
@@ -1237,7 +1242,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && state.ghostKey(session, event) {
+	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
 		return handled
 	}
 	var bytes []byte

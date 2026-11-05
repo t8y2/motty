@@ -1591,6 +1591,10 @@ var englishTools = ToolsMessages{
 	PasteImageFailedFmt:   "Could not upload the clipboard image: %v",
 	PasteImageTooLarge:    "The clipboard image is too large to upload.",
 
+	PasswordHintRow:         "Password prompt assist",
+	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password after the prompt. Nothing is sent until you press Enter.",
+	PasswordHintGhost:       "Press Enter to paste the saved password",
+
 	ProxyRow:                    "Outbound proxy",
 	ProxyConfigure:              "Configure",
 	ProxyDescriptionNone:        "Connect directly. A SOCKS5 or HTTP proxy can carry the first connection of every session.",

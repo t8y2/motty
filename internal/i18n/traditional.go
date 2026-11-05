@@ -1588,6 +1588,10 @@ var traditionalTools = ToolsMessages{
 	PasteImageFailedFmt:   "無法上傳剪貼簿裡的圖片：%v",
 	PasteImageTooLarge:    "剪貼簿裡的圖片太大，無法上傳。",
 
+	PasswordHintRow:         "密碼提示輔助",
+	PasswordHintDescription: "sudo 要求輸入密碼時，在提示符後提供該主機已儲存的密碼。按下 Enter 之前不會傳送任何內容。",
+	PasswordHintGhost:       "按 Enter 貼上已儲存的密碼",
+
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。每個終端機每秒最多一條。",
 

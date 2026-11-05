@@ -787,12 +787,14 @@ type State struct {
 	notifyOff      bool
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
-	fonts         fontsUI
-	uiFont        interfaceFontUI
-	proxyForm     outboundProxyForm
-	agentSetting  agentDescriptionCache
-	form          formDialog
-	formSerial    uint32
+	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
+	passwordHintOff bool
+	fonts           fontsUI
+	uiFont          interfaceFontUI
+	proxyForm       outboundProxyForm
+	agentSetting    agentDescriptionCache
+	form            formDialog
+	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
 	syncEpoch  uint32
@@ -1683,6 +1685,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.splitWithCurrentHost(layoutcore.Vertical)
 	case id == hitPaneClose:
 		state.closeActivePane()
+	case id == hitPaneRename:
+		state.renameActiveTerminal()
 	case state.clickNewTabPage(id), state.clickConnectPick(id):
 	case id == hitPaneChooseHost:
 		state.pendingWorkspace = state.deck.ActiveWorkspace()

@@ -165,6 +165,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.BellRow, tools.BellDescription)
 	row(settingsTerminal, tools.TabTitleRow, tools.TabTitleDescription)
 	row(settingsTerminal, tools.PasteImageRow, tools.PasteImageDescription)
+	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
 	group(settingsTerminal, m.Completion.Group, m.Completion.Group, "")
 	row(settingsTerminal, m.Completion.CatalogRow, "")

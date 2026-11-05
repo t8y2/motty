@@ -590,7 +590,9 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		canvas.Fill(ui.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
 	if !sensitive && focused && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.passwordHintGhost(session); ok {
+			state.paintGhost(canvas, t, geometry, cursor, rest, block)
+		} else if rest, ok := state.commandGhost(session); ok {
 			state.paintGhost(canvas, t, geometry, cursor, rest, block)
 		}
 	}
