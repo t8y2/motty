@@ -20,9 +20,10 @@ import (
 )
 
 // vncAccount is the name under which a VNC password is asked for and kept in the
-// vault: "vnc@host:port". There is no user in VNC; the name keeps the secret
-// apart from an SSH account on the same machine.
+// vault prompt: "vnc@host:port". RealVNC system accounts use the separate prefix.
 const vncAccount = "vnc"
+
+const vncAccountPrefix = "vnc:"
 
 // rdpAccountPrefix starts the name of an RDP account in an endpoint: "rdp:alice"
 // is alice's RDP login, whose password is kept in the vault as
@@ -50,15 +51,17 @@ type desktopRequest struct {
 	// address is then dialed from the SSH server, as its own loopback.
 	Tunnel Connection
 	// Ask is called when the server wants a password; see desktop.Options.
-	Ask    func() (string, error)
-	Notify func()
+	Ask            func() (string, error)
+	Notify         func()
+	AskCredentials func() (username, password string, err error)
 	// Width, Height and Scale are the desktop the pane asks for, in device
 	// pixels and display scale; see desktop.Options.
 	Width, Height int
 	Scale         float32
 	// Verify decides on the certificate an RDP server presents; see
 	// desktop.Options.VerifyCertificate.
-	Verify func(address string, der []byte) error
+	Verify          func(address string, der []byte) error
+	VerifyServerKey func(address string, publicKeyDER []byte) error
 }
 
 // openDesktopSession is the production opener.
@@ -96,6 +99,16 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		}
 		return session, nil
 	}
+	if !host.tunneled() {
+		options.Username = host.User
+	}
+	options.AskCredentials = request.AskCredentials
+	if request.VerifyServerKey != nil {
+		typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
+		options.VerifyServerKey = func(_ string, publicKeyDER []byte) error {
+			return request.VerifyServerKey(typedAddress, publicKeyDER)
+		}
+	}
 	session, err := vnc.Open(ctx, dial, address, options)
 	if err != nil {
 		return nil, err // not the typed nil a Session would hold
@@ -121,11 +134,14 @@ type desktopConn struct {
 	open    func(context.Context, desktopRequest) (desktop.Session, error)
 	inner   Connection // the SSH tunnel, nil for a direct connection
 
-	mu      sync.Mutex
-	status  sshconn.Status
-	session desktop.Session
-	answers chan string
-	asking  bool // the open question is the VNC password's, not the SSH tunnel's
+	mu               sync.Mutex
+	status           sshconn.Status
+	session          desktop.Session
+	answers          chan []string
+	asking           bool // the open question is the VNC password's, not the SSH tunnel's
+	credentialUser   string
+	credentialMode   bool
+	credentialFields int
 	// certs keeps the certificates the user trusted; trusted holds those accepted
 	// for this connection (the library connects more than once while it
 	// negotiates), and certAsking says the open question is about a certificate.
@@ -146,10 +162,17 @@ type desktopConn struct {
 func newDesktopConn(host Host, notify func(), open func(context.Context, desktopRequest) (desktop.Session, error), timeout time.Duration, proxy *sshconn.Proxy, certs *rdp.Pins) *desktopConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	conn := &desktopConn{
-		notify: notify, ctx: ctx, cancel: cancel, open: open, answers: make(chan string, 1),
+		notify: notify, ctx: ctx, cancel: cancel, open: open, answers: make(chan []string, 1),
 		certs: certs, trusted: map[string]bool{}, certAnswers: make(chan certReply, 1),
 	}
-	conn.request = desktopRequest{Host: host, Timeout: timeout, Proxy: proxy, Ask: conn.ask, Notify: notify, Verify: conn.verifyCertificate}
+	if !host.tunneled() {
+		conn.credentialUser = host.User
+	}
+	conn.request = desktopRequest{
+		Host: host, Timeout: timeout, Proxy: proxy, Ask: conn.ask, Notify: notify,
+		AskCredentials: conn.askCredentials,
+		Verify:         conn.verifyCertificate, VerifyServerKey: conn.verifyServerKey,
+	}
 	conn.status = sshconn.Status{Version: 1, Phase: sshconn.PhaseConnecting, Endpoint: conn.endpoint()}
 	return conn
 }
@@ -158,6 +181,9 @@ func (conn *desktopConn) endpoint() sshconn.Endpoint {
 	host := conn.request.Host
 	if host.Protocol == protocolRDP {
 		return sshconn.Endpoint{Host: host.Address, Port: host.Port, User: rdpAccountPrefix + host.User}
+	}
+	if conn.credentialMode {
+		return sshconn.Endpoint{Host: host.Address, Port: host.Port, User: vncAccountPrefix + conn.credentialUser}
 	}
 	return sshconn.Endpoint{Host: host.Address, Port: host.Port, User: vncAccount}
 }
@@ -171,28 +197,37 @@ type certReply struct{ accept, save bool }
 // the connection. It blocks until the question is answered or the connection
 // cancelled.
 func (conn *desktopConn) verifyCertificate(address string, der []byte) error {
+	return conn.verifyIdentity(address, address, rdpCertificateType, der)
+}
+
+func (conn *desktopConn) verifyServerKey(address string, publicKeyDER []byte) error {
+	return conn.verifyIdentity(address, "vnc:"+address, vncServerKeyType, publicKeyDER)
+}
+
+func (conn *desktopConn) verifyIdentity(address, pinAddress, keyType string, der []byte) error {
 	fingerprint := rdp.Fingerprint(der)
+	trustedName := pinAddress + "\x00" + fingerprint
 	conn.mu.Lock()
-	known := conn.trusted[fingerprint]
+	known := conn.trusted[trustedName]
 	conn.mu.Unlock()
 	if known {
 		return nil
 	}
 	var previous string
 	if conn.certs != nil {
-		pinned, err := conn.certs.Lookup(address)
+		pinned, err := conn.certs.Lookup(pinAddress)
 		if err != nil {
 			return fmt.Errorf("reading the trusted certificates: %w", err)
 		}
 		if pinned == fingerprint {
 			conn.mu.Lock()
-			conn.trusted[fingerprint] = true
+			conn.trusted[trustedName] = true
 			conn.mu.Unlock()
 			return nil
 		}
 		previous = pinned
 	}
-	info := sshconn.HostKeyInfo{Address: address, Type: rdpCertificateType, Fingerprint: fingerprint}
+	info := sshconn.HostKeyInfo{Address: address, Type: keyType, Fingerprint: fingerprint}
 	if previous != "" {
 		info.Known = []string{previous}
 	}
@@ -218,18 +253,20 @@ func (conn *desktopConn) verifyCertificate(address string, der []byte) error {
 		return sshconn.ErrHostKeyRejected
 	}
 	if reply.save && conn.certs != nil {
-		if err := conn.certs.Remember(address, fingerprint); err != nil {
+		if err := conn.certs.Remember(pinAddress, fingerprint); err != nil {
 			return fmt.Errorf("remembering the certificate: %w", err)
 		}
 	}
 	conn.mu.Lock()
-	conn.trusted[fingerprint] = true
+	conn.trusted[trustedName] = true
 	conn.mu.Unlock()
 	return nil
 }
 
 // rdpCertificateType is what the host-key dialog calls an RDP server's key.
 const rdpCertificateType = "RDP certificate (X.509)"
+
+const vncServerKeyType = "VNC server key (RSA)"
 
 // startDirect begins dialing the VNC server.
 func (conn *desktopConn) startDirect() { go conn.run() }
@@ -250,6 +287,7 @@ func (conn *desktopConn) ask() (string, error) {
 	conn.mu.Lock()
 	conn.attempt++
 	conn.asking = true
+	conn.credentialMode, conn.credentialFields = false, 1
 	conn.status = sshconn.Status{
 		Version: conn.status.Version, Phase: sshconn.PhasePasswordPrompt, Endpoint: conn.endpoint(), Attempt: conn.attempt,
 		// A remote desktop asks one plain secret question. Autofill and the
@@ -259,14 +297,48 @@ func (conn *desktopConn) ask() (string, error) {
 	}
 	conn.publish()
 	select {
-	case password := <-conn.answers:
+	case answers := <-conn.answers:
 		conn.mu.Lock()
 		conn.asking = false
 		conn.status = sshconn.Status{Version: conn.status.Version, Phase: sshconn.PhaseConnecting, Endpoint: conn.endpoint()}
 		conn.publish()
-		return password, nil
+		return answers[0], nil
 	case <-conn.ctx.Done():
 		return "", sshconn.ErrCanceled
+	}
+}
+
+// askCredentials keeps system-account passwords separate from password-only
+// VNC, including when a user switches between these schemes on one server.
+func (conn *desktopConn) askCredentials() (username, password string, err error) {
+	conn.mu.Lock()
+	questions := []sshconn.Question{{Secret: true}}
+	if conn.credentialUser == "" || conn.attempt > 0 {
+		questions = []sshconn.Question{{}, {Secret: true}}
+	}
+	conn.attempt++
+	conn.asking, conn.credentialMode = true, true
+	conn.credentialFields = len(questions)
+	conn.status = sshconn.Status{
+		Version: conn.status.Version, Phase: sshconn.PhasePasswordPrompt,
+		Endpoint: conn.endpoint(), Attempt: conn.attempt, Questions: questions,
+	}
+	conn.publish()
+	select {
+	case answers := <-conn.answers:
+		conn.mu.Lock()
+		if len(answers) == 2 {
+			conn.credentialUser, password = answers[0], answers[1]
+		} else {
+			password = answers[0]
+		}
+		username = conn.credentialUser
+		conn.asking = false
+		conn.status = sshconn.Status{Version: conn.status.Version, Phase: sshconn.PhaseConnecting, Endpoint: conn.endpoint()}
+		conn.publish()
+		return username, password, nil
+	case <-conn.ctx.Done():
+		return "", "", sshconn.ErrCanceled
 	}
 }
 
@@ -427,13 +499,17 @@ func (conn *desktopConn) RejectHostKey() {
 func (conn *desktopConn) SubmitPassword(password string) {
 	conn.mu.Lock()
 	vncQuestion := conn.asking
+	fields := conn.credentialFields
 	conn.mu.Unlock()
 	if !vncQuestion && conn.inner != nil {
 		conn.inner.SubmitPassword(password)
 		return
 	}
+	if !vncQuestion || fields != 1 {
+		return
+	}
 	select {
-	case conn.answers <- password:
+	case conn.answers <- []string{password}:
 	default:
 	}
 }
@@ -451,11 +527,14 @@ func (conn *desktopConn) SubmitAnswers(answers []string) {
 		}
 		return
 	}
-	if len(answers) == 0 {
+	conn.mu.Lock()
+	fields := conn.credentialFields
+	conn.mu.Unlock()
+	if len(answers) != fields {
 		return
 	}
 	select {
-	case conn.answers <- answers[0]:
+	case conn.answers <- append([]string(nil), answers...):
 	default:
 	}
 }
@@ -516,6 +595,8 @@ func (conn *desktopConn) StreamCommand(context.Context, string, int, func([]byte
 // next to the SSH known-hosts file.
 const rdpCertificatesFile = "rdp_certificates"
 
+const vncServerKeysFile = "vnc_server_keys"
+
 // gatewayFor is the SSH host a tunneled desktop goes through: the saved SSH host
 // with the same address and account, so its port, algorithms and jump route
 // apply, or else plain SSH on the default port. An RDP host has no SSH account of
@@ -553,7 +634,11 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 	}
 	var certs *rdp.Pins
 	if state.options.KnownHostsPath != "" {
-		certs = rdp.NewPins(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
+		file := rdpCertificatesFile
+		if host.Protocol == protocolVNC {
+			file = vncServerKeysFile
+		}
+		certs = rdp.NewPins(filepath.Join(filepath.Dir(state.options.KnownHostsPath), file))
 	}
 	conn := newDesktopConn(host, notify, open, state.connectionTimeout, state.proxyForHost(host), certs)
 	target := state.desktopTargetFor(session)

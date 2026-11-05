@@ -463,9 +463,6 @@ func (host *Host) normalizeEndpoint() {
 		host.User, host.Port = "", 0
 		return
 	}
-	if host.Protocol == protocolVNC && !host.ViaSSH {
-		host.User = "" // the account is the SSH tunnel's
-	}
 	if host.Port == 0 {
 		host.Port = host.defaultPort()
 	}
@@ -523,7 +520,11 @@ func (state *State) sayStreamOpened(session *Session) {
 	case protocolTelnet:
 		session.term.say(sgrWarn, m.TelnetPlaintext)
 	case protocolVNC:
-		if !session.host.tunneled() {
+		protected := session.host.tunneled()
+		if source, ok := session.conn.(desktopSource); ok && source.Desktop() != nil {
+			protected = protected || source.Desktop().Info().Encrypted
+		}
+		if !protected {
 			session.term.say(sgrWarn, state.messages.Desktop.VNCPlaintext)
 		}
 	case protocolSerial:

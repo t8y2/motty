@@ -58,9 +58,10 @@ type Session interface {
   keysyms, `internal/desktop/vnc/keysym.go`; RDP: scancodes or Unicode events).
   `SendText` types characters that are not keys.
 * Passwords are asked through `Options.AskPassword` during the handshake, on the
-  same connection. The workbench answers it with the ordinary password dialog,
-  the vault autofill (name `password:vnc@host:port`), and "save password" which
-  writes to the vault. A password never reaches the settings file.
+  same connection. RealVNC system accounts use `Options.AskCredentials` after
+  server-key verification. The ordinary password dialog supports vault autofill
+  and saving; system-account passwords are kept separately from a host's
+  traditional VNC password. A password never reaches the settings file.
 * `Dialer` is the byte stream: direct TCP, an HTTP/SOCKS proxy, or a channel of
   an SSH connection. A backend never dials by itself.
 
@@ -126,10 +127,22 @@ and return it from `openDesktopSession`. The host editor's VNC rows
 
 ## VNC specifics
 
-Spoken: RFB 3.3/3.7/3.8; security None and VNC Authentication; a 32-bit true
+Spoken: RFB 3.3/3.7/3.8, including negotiating RealVNC's 5.0 banner down to 3.8;
+security None, VNC Authentication, and RSA-AES (type 5); a 32-bit true
 colour pixel format asked from the server, so no pixel is converted; encodings
 Raw, CopyRect, RRE, Hextile and ZRLE (one zlib stream for the connection);
 DesktopSize; pointer, key and cut-text messages.
+
+* **RealVNC RSA-AES** authenticates the server's RSA public key before asking
+  for credentials and keeps authentication, framebuffer, input, and clipboard
+  messages encrypted with AES-128-EAX. A server using **Always on** encryption
+  and **UNIX password** authentication asks for its system username/password.
+  Direct VNC hosts have an optional username field; if omitted, the connection
+  asks for both fields. A tunneled host's saved username continues to name the
+  SSH account; the VNC system account is asked for separately.
+  The first key and changed keys raise a trust question; saved VNC pins live in
+  `vnc_server_keys`, separately from RDP certificates. RSA-AES rejection never
+  retries with a weaker security type. See [RealVNC support](vnc-realvnc.md).
 
 * **VNC Authentication is weak**: DES with at most eight password characters and a
   challenge that crosses the network in the clear, so a captured exchange can be
@@ -174,8 +187,14 @@ machine (None and VNC Authentication, every encoding, window moves drawn,
 DesktopSize, key events seen by `xev`) and TigerVNC in Docker (the same, plus
 the headless application: password dialog, picture, pointer position, typed text,
 through an SSH tunnel to the e2e SSH fixture). `tools/e2e/vnc_e2e.txt` drives the
-headless application. Not exercised: a real window, physical keyboards, IME
-composition, hidden or covered windows, macOS Screen Sharing, a Windows server.
+headless application.
+
+Windows testing against a Raspberry Pi also verified system-account login,
+desktop display, and clipboard sharing. See
+[RealVNC support](vnc-realvnc.md) for the protocol probe and test coverage.
+Physical keyboard and pointer interaction in a native window, IME composition,
+hidden or covered windows, macOS Screen Sharing, and a Windows server still need
+manual testing.
 
 ## RDP
 

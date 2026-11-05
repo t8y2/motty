@@ -6,11 +6,21 @@ A remote-desktop host opens as a tab that shows a picture instead of a terminal.
 
 ## Supported
 
-- RFB 3.3, 3.7 and 3.8
-- Security types None and VNC Authentication
+- RFB 3.3, 3.7 and 3.8, including negotiation from RealVNC's 5.0 banner to 3.8
+- Security types None, VNC Authentication, and RealVNC RSA-AES
 - Encodings Raw, CopyRect, RRE, Hextile and ZRLE
 - Desktop resize
 - Pointer, keyboard and text clipboard
+
+## RealVNC system accounts
+
+A RealVNC server using **Always on** encryption and **UNIX password**
+authentication can use RSA-AES. Enter its system username in the optional VNC
+username field, or supply username and password when connecting.
+
+The server-key dialog appears before credentials are requested. A saved key
+change requires confirmation. System-account passwords are stored separately
+from traditional VNC passwords, and the session remains encrypted after login.
 
 ## Connect through SSH
 
@@ -29,7 +39,7 @@ route), or plain SSH on port 22, asks the SSH questions first, and opens
 - Fit-to-window or 100% scaling; at 100% a larger picture pans with the pointer.
 - While the picture has focus, Motty's shortcuts do not run and keys go to the
   remote. **Ctrl+Alt+G** releases the keyboard and takes it again.
-- The status line shows the remote size, scale, "Through SSH" or "Not encrypted",
+- The status line shows the remote size, scale, "Through SSH", encrypted VNC, or "Not encrypted",
   clipboard sharing and the escape chord.
 - A lost connection keeps the last picture, dimmed, with a Reconnect button.
 
@@ -45,9 +55,18 @@ VeNCrypt/TLS, Apple Remote Desktop authentication (macOS Screen Sharing needs
 images in the clipboard, audio, file transfer, changing the remote resolution and
 multiple screens. KasmVNC cannot be driven because it reads pointer events in a
 non-standard format; TigerVNC and any server that follows RFC 6143 work.
+Other RealVNC security schemes, including servers that offer only type 13, are
+not supported by this RSA-AES implementation.
 
 ## What was verified
 
 KasmVNC `Xvnc` on a Linux machine and TigerVNC in Docker, including through an SSH
-tunnel. Not exercised: a real window, physical keyboards, input-method composition,
-hidden or covered windows, macOS Screen Sharing and a Windows VNC server.
+tunnel. Physical keyboard and pointer interaction in a native window,
+input-method composition, hidden or covered windows, macOS Screen Sharing and a
+Windows VNC server still need manual testing.
+An additional credential-free RealVNC Server 7.13.1.57 probe verified version
+negotiation, its RSA-AES server proof, and system-account authentication selection.
+Windows testing against a Raspberry Pi verified system-account login, desktop
+display and clipboard sharing. Chinese text
+still has the Latin-1 clipboard limitation. Reconnection and extended sessions
+on that server still need manual testing.

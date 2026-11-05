@@ -71,6 +71,17 @@ func (state *State) passwordName(session *Session) string {
 	return state.passwordSecret(session.host, session.endpoint, session.role)
 }
 
+func vncSystemPasswordPart(username string) string { return "vnc-system-password:" + username }
+
+func passwordPart(host Host, endpoint sshconn.Endpoint) string {
+	if host.Protocol == protocolVNC {
+		if username, ok := strings.CutPrefix(endpoint.User, vncAccountPrefix); ok {
+			return vncSystemPasswordPart(username)
+		}
+	}
+	return hostPasswordPart
+}
+
 func (state *State) otpSecretName(session *Session) string {
 	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), hostOTPPart)
 }

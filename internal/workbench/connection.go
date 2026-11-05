@@ -1116,6 +1116,8 @@ func (state *State) showNextPrompt() {
 			state.hostKeyDescription = fmt.Sprintf(state.messages.HostKeyDescriptionFmt, session.hostKey.Address)
 			if session.hostKey.Type == rdpCertificateType {
 				state.hostKeyDescription = state.rdpCertificateDescription(session.hostKey)
+			} else if session.hostKey.Type == vncServerKeyType {
+				state.hostKeyDescription = state.vncKeyDescription(session.hostKey)
 			}
 		case sshconn.PhasePasswordPrompt:
 			state.modal = modalPassword

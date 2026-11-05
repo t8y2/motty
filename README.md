@@ -275,7 +275,8 @@ Xauthority cookie.
 
 ### Remote desktops
 
-VNC supports RFB 3.3/3.7/3.8, None and VNC Authentication, Raw/CopyRect/RRE/
+VNC supports RFB 3.3/3.7/3.8 (including RealVNC's 5.0 banner), None, VNC
+Authentication and RealVNC RSA-AES system-account login, Raw/CopyRect/RRE/
 Hextile/ZRLE, desktop resize, pointer, keyboard and text clipboard. RDP uses TLS
 with NLA preferred and pins the server certificate after an explicit trust
 decision; it also copies files to the server (paste them in the remote or drop

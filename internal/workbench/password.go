@@ -26,7 +26,14 @@ func (state *State) preparePassword(session *Session) {
 		questions = []sshconn.Question{{Secret: true}}
 	}
 	state.passwordQuestions = questions
+	if isVNCCredentialsQuestion(session) {
+		state.passwordQuestions = append([]sshconn.Question(nil), questions...)
+		state.passwordQuestions[0].Text = state.messages.Desktop.VNCSystemUser
+	}
 	state.passwordFields = make([]text.Editor, len(questions))
+	if isVNCCredentialsQuestion(session) {
+		state.passwordFields[0].Insert(strings.TrimPrefix(session.endpoint.User, vncAccountPrefix))
+	}
 	state.passwordRects = make([]ui.Rect, len(questions))
 	state.passwordBoxes = make([]flex.Box, len(questions))
 	state.passwordError = ""
@@ -67,7 +74,15 @@ func passwordDialogAddress(state *State, session *Session) string {
 	if account, ok := strings.CutPrefix(session.endpoint.User, rdpAccountPrefix); ok && session.host.Protocol == protocolRDP {
 		address = fmt.Sprintf("RDP %s@%s:%d", account, session.endpoint.Host, session.endpoint.Port)
 	}
+	if account, ok := strings.CutPrefix(session.endpoint.User, vncAccountPrefix); ok && session.host.Protocol == protocolVNC {
+		address = fmt.Sprintf("VNC %s@%s:%d", account, session.endpoint.Host, session.endpoint.Port)
+	}
 	return fmt.Sprintf(state.messages.PasswordDescription, address)
+}
+
+func isVNCCredentialsQuestion(session *Session) bool {
+	return session.host.Protocol == protocolVNC && strings.HasPrefix(session.endpoint.User, vncAccountPrefix) &&
+		len(session.questions) == 2 && !session.questions[0].Secret && session.questions[1].Secret
 }
 
 // passwordQuestionIndex is the question whose answer is the account password:
@@ -134,6 +149,15 @@ func (state *State) submitPassword() {
 	answers := make([]string, len(state.passwordFields))
 	for index := range state.passwordFields {
 		answers[index] = state.passwordFields[index].String()
+	}
+	if isVNCCredentialsQuestion(session) {
+		if answers[0] == "" {
+			state.passwordError = state.messages.Desktop.ErrVNCUser
+			return
+		}
+		// Name the saved secret after the account the user actually submitted,
+		// before publishing the answers to the connection goroutine.
+		session.endpoint.User = vncAccountPrefix + answers[0]
 	}
 	session.conn.SubmitAnswers(answers)
 	if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 && index < len(answers) {

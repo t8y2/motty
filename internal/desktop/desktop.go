@@ -297,6 +297,9 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
+	// AskCredentials obtains a system account and its password for RealVNC
+	// RSA-AES authentication. It is distinct from a legacy VNC password.
+	AskCredentials func() (username, password string, err error)
 	// Notify is called, from any goroutine, when the session has something new:
 	// a changed picture, a clipboard, the end of the connection. It must not
 	// block.
@@ -313,8 +316,8 @@ type Options struct {
 	// happens when someone is already at the console is its decision, not the
 	// client's. VNC has no such session.
 	Console bool
-	// Username and Domain are the account a protocol with accounts (RDP) signs
-	// in as; VNC has none.
+	// Username and Domain are the account a protocol with accounts signs in as.
+	// RealVNC system authentication uses Username; Domain belongs to RDP.
 	Username, Domain string
 	// Width and Height are the size, in device pixels, of the desktop to ask for
 	// when the protocol lets the client choose it (RDP); zero lets the backend
@@ -332,6 +335,9 @@ type Options struct {
 	// what the user typed (the name the pin is kept under), not necessarily where
 	// the bytes went. Nil accepts any certificate, which only tests do.
 	VerifyCertificate func(address string, der []byte) error
+	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
+	// before the client sends credentials. Nil does not trust an RSA-AES server.
+	VerifyServerKey func(address string, publicKeyDER []byte) error
 }
 
 // Dialer opens the byte stream to the server: a direct TCP connection, or a
