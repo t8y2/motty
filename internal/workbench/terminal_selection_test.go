@@ -613,6 +613,44 @@ func TestTripleClickTakesEveryRowOfASoftWrappedLine(t *testing.T) {
 	}
 }
 
+// A program killed before it could restore its modes must not leave them on the
+// shell's prompt: moving the pointer would type escape sequences at the prompt,
+// and the wheel would walk the line editor's history instead of the scrollback.
+// The owning shell's prompt marker is where the terminal is taken back.
+func TestTheOwnersPromptTakesBackTheModesAKilledProgramLeft(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{}
+	session.term.shell = shell
+	screen := session.term.screen
+	screen.SetPromptToken("tok")
+	for line := 0; line < 20; line++ {
+		screen.Write([]byte("line\r\n"))
+	}
+	// A prompt, then a full-screen program arming the modes it wants.
+	screen.Write([]byte("\x1b]133;A;motty=tok\a$ \x1b]133;B;motty=tok\a\x1b]133;C;motty=tok\a"))
+	screen.Write([]byte("\x1b[?1049h\x1b[?1003h\x1b[?1006h"))
+	// It is killed: no teardown arrives, and its modes are still armed.
+	if modes := screen.Modes(); !modes.AltScreen || modes.Mouse != term.MouseAny {
+		t.Fatalf("the program's modes were not taken: %+v", modes)
+	}
+	screen.Write([]byte("\x1b]133;D;130;motty=tok\a\x1b]133;A;motty=tok\a$ \x1b]133;B;motty=tok\a"))
+
+	hit := hitTerminalList.At(int(session.ID))
+	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
+	if result := state.Pointer(ui.PointerEvent{
+		Kind: ui.PointerMove, X: x, Y: y, Target: hit, Viewport: state.viewport,
+	}); shell.typed() != "" {
+		t.Fatalf("moving the pointer at the prompt typed %q (result=%+v)", shell.typed(), result)
+	}
+	result := state.Scroll(ui.ScrollEvent{
+		X: x, Y: y, DeltaY: -state.cellHeight,
+		Viewport: state.viewport, Target: hit, Precise: true,
+	})
+	if !result.Handled || !result.Repaint || shell.typed() != "" || screen.ViewOffset() == 0 {
+		t.Fatalf("wheel at the prompt: result=%+v input=%q offset=%d", result, shell.typed(), screen.ViewOffset())
+	}
+}
+
 func TestAPlainClickAfterAWordSelectionGoesBackToCells(t *testing.T) {
 	state, session, geometry := selectionState()
 	session.term.write([]byte("one two three\r\n"))

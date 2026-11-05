@@ -504,20 +504,35 @@ func (t *Terminal) endOSC() {
 		if t.promptToken != "" {
 			suffix = ";motty=" + t.promptToken
 		}
-		if string(text) == "A"+suffix && t.promptStartFn != nil {
-			t.promptStartFn()
+		// The owning shell's prompt is drawn after the command it just finished,
+		// so this is where a program that never restored its modes loses them.
+		// A token is required: without one, markers a program echoes are
+		// indistinguishable from the shell's own.
+		own := t.promptToken != ""
+		value := string(text)
+		if value == "A"+suffix {
+			if own {
+				t.reclaimApplicationModes()
+			}
+			if t.promptStartFn != nil {
+				t.promptStartFn()
+			}
 		}
-		if string(text) == "B"+suffix && t.promptReadyFn != nil {
+		if value == "B"+suffix && t.promptReadyFn != nil {
 			t.promptReadyFn()
 		}
-		if string(text) == "C"+suffix && t.commandStartFn != nil {
+		if value == "C"+suffix && t.commandStartFn != nil {
 			t.commandStartFn()
 		}
-		value := string(text)
-		if t.commandFinishedFn != nil && strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
-				t.commandFinishedFn(code)
+				if own {
+					t.reclaimApplicationModes()
+				}
+				if t.commandFinishedFn != nil {
+					t.commandFinishedFn(code)
+				}
 			}
 		}
 	case 777:
