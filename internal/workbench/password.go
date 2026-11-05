@@ -31,8 +31,21 @@ func (state *State) preparePassword(session *Session) {
 		state.passwordQuestions[0].Text = state.messages.Desktop.VNCSystemUser
 	}
 	state.passwordFields = make([]text.Editor, len(questions))
+	passwordName := state.passwordName(session)
 	if isVNCCredentialsQuestion(session) {
-		state.passwordFields[0].Insert(strings.TrimPrefix(session.endpoint.User, vncAccountPrefix))
+		username := strings.TrimPrefix(session.endpoint.User, vncAccountPrefix)
+		if username == "" && session.attempt == 1 {
+			if saved, ok := state.singleSavedVNCAccount(session); ok {
+				username = saved
+			} else {
+				passwordName = "" // no unique account to prefill, including an empty one
+			}
+		}
+		state.passwordFields[0].Insert(username)
+		if passwordName != "" {
+			owner := state.secretOwner(session.host, session.endpoint, session.role)
+			passwordName = hostSecretName(owner, vncSystemPasswordPart(username))
+		}
 	}
 	state.passwordRects = make([]ui.Rect, len(questions))
 	state.passwordBoxes = make([]flex.Box, len(questions))
@@ -59,7 +72,32 @@ func (state *State) preparePassword(session *Session) {
 		state.passwordError = state.messages.PasswordRetryFactor
 	}
 	state.passwordDescription = passwordDialogAddress(state, session)
-	state.prefillPasswordAnswers(session)
+	state.prefillPasswordAnswers(session, passwordName)
+}
+
+// singleSavedVNCAccount recovers an account entered only at login. Keep the
+// two-field confirmation and never guess between accounts or legacy passwords.
+func (state *State) singleSavedVNCAccount(session *Session) (string, bool) {
+	vaultFile := state.secrets.vault
+	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
+		return "", false
+	}
+	names, err := vaultFile.Names()
+	if err != nil {
+		return "", false
+	}
+	owner := state.secretOwner(session.host, session.endpoint, session.role)
+	prefix := hostSecretName(owner, "vnc-system-password:")
+	username, found := "", false
+	for _, name := range names {
+		if account, ok := strings.CutPrefix(name, prefix); ok {
+			if found {
+				return "", false
+			}
+			username, found = account, true
+		}
+	}
+	return username, found
 }
 
 // passwordDialogAddress names the account the dialog is asking about.
@@ -111,7 +149,7 @@ func otpQuestionIndex(questions []sshconn.Question) int {
 // a multi-question round is confirmed by the user, and a code sent by itself
 // would be spent if the dialog was dismissed. A single question keeps the
 // existing autofill path, which may answer and submit on its own.
-func (state *State) prefillPasswordAnswers(session *Session) {
+func (state *State) prefillPasswordAnswers(session *Session, passwordName string) {
 	if len(state.passwordQuestions) < 2 || session.attempt > 1 {
 		return
 	}
@@ -119,8 +157,8 @@ func (state *State) prefillPasswordAnswers(session *Session) {
 	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
 		return
 	}
-	if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 {
-		if value, found, err := vaultFile.Get(state.passwordName(session)); err == nil && found {
+	if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 && passwordName != "" {
+		if value, found, err := vaultFile.Get(passwordName); err == nil && found {
 			state.passwordFields[index].Insert(value)
 		}
 	}
@@ -150,11 +188,13 @@ func (state *State) submitPassword() {
 	for index := range state.passwordFields {
 		answers[index] = state.passwordFields[index].String()
 	}
-	if isVNCCredentialsQuestion(session) {
-		if answers[0] == "" {
-			state.passwordError = state.messages.Desktop.ErrVNCUser
+	if session.host.Protocol == protocolVNC && (session.endpoint.User == vncAccount || strings.HasPrefix(session.endpoint.User, vncAccountPrefix)) {
+		if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 && index < len(answers) && answers[index] == "" {
+			state.passwordError = state.messages.Desktop.ErrVNCPassword
 			return
 		}
+	}
+	if isVNCCredentialsQuestion(session) {
 		// Name the saved secret after the account the user actually submitted,
 		// before publishing the answers to the connection goroutine.
 		session.endpoint.User = vncAccountPrefix + answers[0]

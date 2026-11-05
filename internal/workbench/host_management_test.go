@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -349,7 +350,7 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	state.Click(hitDialogSubmit)
 
 	updated := state.hosts[0]
-	if state.sessions[0].host != updated || state.sessions[0].Title != updated.Label || !strings.Contains(state.sessions[0].Address, updated.Address) {
+	if !reflect.DeepEqual(state.sessions[0].host, updated) || state.sessions[0].Title != updated.Label || !strings.Contains(state.sessions[0].Address, updated.Address) {
 		t.Fatalf("session reference = %+v", state.sessions[0])
 	}
 	forward := state.forwards[0]

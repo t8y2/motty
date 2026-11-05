@@ -1,98 +1,89 @@
-# RealVNC RSA-AES support
+# RealVNC RA2 support
 
-RealVNC servers may announce `RFB 005.000` while accepting the standard
-`RFB 003.008` client version. Motty negotiates this known banner down to 3.8;
-3.3, 3.7, 3.8, and newer 3.x minor versions retain their existing behavior.
-Other major versions remain unsupported.
+Motty supports RealVNC RSA-AES **RA2 (security type 5)** for servers using
+system-account authentication with session encryption, such as **Always on**
+encryption and **UNIX password** authentication on a Raspberry Pi.
 
-## Connecting
+| Security scheme | RFB type | Authentication | Session encryption |
+| --- | --- | --- | --- |
+| None | 1 | None | None |
+| VNC Authentication | 2 | Traditional VNC password | None |
+| RA2 | 5 | System username/password or VNC password | AES-128-EAX |
 
-For a RealVNC server using **Always on** encryption and **UNIX password**
-authentication, enter the server's system username in the optional VNC username
-field. If it is empty, the connection asks for username and password together.
-The system password is separate from a traditional VNC-specific password.
+RA2 is selected ahead of unencrypted authentication when offered. Rejection of
+the server key, cancellation, or a cryptographic error ends the connection;
+Motty does not retry with a weaker scheme after that failure. Legacy-only
+servers retain their existing None/VNC Authentication selection behavior.
 
-Confirm the server's RSA key before entering credentials. The identity dialog
-offers rejection, trust for this connection, and trust with saving. A saved key
-change requires a new decision. Saved keys are named by the user-entered server
-address and port, including when an SSH tunnel dials the server's loopback.
-They use `vnc_server_keys`, separately from SSH known hosts and RDP certificates.
+## Connecting and trust
 
-The connection uses AES-128 encryption for the handshake and the entire RFB
-session. Its status reports encrypted VNC rather than TLS. Server-side
-authentication or encryption settings do not need to be weakened for this mode.
+Enter the optional VNC system username, or answer the username/password prompt
+during connection. A host reached through SSH keeps its SSH username separate
+from the VNC system account. Saved system-account passwords belong to the host
+and account and are separate from traditional VNC passwords.
 
-## Protocol boundaries
+When no account was configured and exactly one account password is saved for
+the host, the credential prompt prefills that account and password for user
+confirmation. Multiple saved accounts are left for the user to choose.
 
-Supported encrypted security: **RA2, type 5**. If it is offered alongside None
-or traditional VNC Authentication, RA2 is preferred. Rejecting a server key,
-canceling, or detecting a cryptographic error never falls back to unencrypted
-authentication.
+The server's RSA key is verified before credentials are sent. The identity
+dialog offers rejection, trust for this connection, and trust with saving. A
+saved key change stops the connection, as a changed SSH host key does. Library
+callers must supply `VerifyServerKey`; a missing callback rejects RA2.
 
-The handshake exchanges RSA public keys, RSAES-PKCS1-v1.5-encrypted random
-values, directional SHA-1-derived AES keys, and authenticated public-key
-transcript proofs before asking for credentials. It uses a new 2048-bit client
-RSA key per attempt and accepts valid 1024–8192-bit server keys. Every EAX
-record authenticates its length and ciphertext before making plaintext
-available. The two directions have separate little-endian 128-bit record
-counters; authentication and session messages share their counters.
+Saved pins are public SHA-256 fingerprints in the host's configuration record.
+They follow its catalog identity through backup, sync, copying and deletion.
+The entered server host and port remain part of the pin's scope even when an
+SSH tunnel dials loopback. Changing the destination does not reuse trust from
+the previous destination. VNC pins cannot reuse SSH or RDP identities.
 
-Username and password lengths are UTF-8 byte counts, each limited to 255 bytes.
-Oversized or invalid UTF-8 credentials are rejected rather than truncated.
-Both system UserPass and VNC password-only RA2 subtypes are supported.
+If saving an identity fails, the host was deleted, or another window saved a
+different identity, authentication does not start.
 
-RA2ne, RA256, type 13, VeNCrypt/TLS, and other proprietary security schemes are
-not supported. A server offering type 13 together with type 5 can use type 5;
-type 13 alone remains unsupported. Text clipboard sharing retains the existing
-Latin-1 behavior.
+## Protocol and cryptographic boundaries
+
+The known RealVNC `RFB 005.000` banner negotiates to `RFB 003.008`. Existing RFB
+3.3, 3.7, 3.8 and newer 3.x minor-version negotiation is preserved. Other major
+versions, including `RFB 004.001`, are rejected. RA2 requires RFB 3.7 or newer;
+RFB 3.3 supports only None/VNC Authentication.
+
+RA2 exchanges RSAES-PKCS1-v1.5-encrypted 16-byte random values and binds the
+public keys with authenticated transcript proofs. Each attempt generates a
+2048-bit client RSA key and accepts valid 1024–8192-bit server keys. SHA-1 is
+required by the RA2 wire protocol for these proofs and directional key
+derivation; it is not used as a password hash or certificate signature.
+
+Authentication and the subsequent framebuffer, input and clipboard traffic
+use AES-128-EAX. Each record authenticates its length and ciphertext before
+releasing plaintext. Each direction has its own little-endian 128-bit counter,
+used continuously across authentication and session traffic.
+
+RA2 supports both UserPass and password-only credential subtypes. Username and
+password lengths are measured in UTF-8 bytes and limited to 255 bytes each.
+Oversized or invalid UTF-8 values are rejected without truncation.
+
+RA256, RA2ne/RA256ne, VeNCrypt/TLS, RealVNC private type 13 and other vendor
+authentication extensions are outside this implementation's scope. Text
+clipboard sharing retains its existing Latin-1 behavior; UTF-8 clipboard
+support belongs to a separate change.
 
 ## Verification
 
-Coverage includes independent published AES-EAX known-answer vectors,
-encrypted authentication and framebuffer updates, legacy version/security
-negotiation, key rejection and changes, cancellation, account/password vault
-separation, frame tampering, replay, truncation, fragmentation, and concurrent
-reads/writes.
+Automated tests cover the ten published AES-128-EAX vectors, split input and
+record boundaries, fuzzing of authentication and record parsing, both RA2
+credential subtypes, framebuffer traffic, tampering, replay, truncation,
+cancellation and concurrent reads/writes. Workbench tests cover trust decisions,
+separate passwords, backup/restart, host copying, destination changes, deletion
+and failed identity saves.
 
-A credential-free probe against RealVNC Server 7.13.1.57 verified negotiation
-from the 5.0 banner to 3.8, the RSA-AES server proof, and the UserPass subtype.
-It stopped before sending a username or password.
+A credential-free probe against RealVNC Server 7.13.1.57 verified 5.0-to-3.8
+negotiation, the server's RSA-AES proof and the UserPass subtype. A Windows
+client was then used with a real Raspberry Pi system account to complete RA2
+login, display the encrypted desktop and share text through the clipboard.
 
-Windows testing against a Raspberry Pi verified system-account login, desktop
-display, and clipboard sharing. Physical
-keyboard and pointer interaction, the encrypted-status indicator, reconnection,
-and extended sessions still need manual testing. Chinese clipboard text remains
-subject to the Latin-1 limitation.
+The latest password and identity persistence changes still need a real-server
+retest. Other server versions, reconnects and long sessions also need manual
+interoperability testing; scripted peers do not establish those results.
 
-Protocol versions and server product versions are separate compatibility axes:
-
-| Protocol banner or server | Authentication/security | Verification |
-| --- | --- | --- |
-| RFB 3.3 | None and VNC Authentication | Scripted handshake tests; RSA-AES is not supported with this version |
-| RFB 3.7 and 3.8 | None, VNC Authentication, RSA-AES UserPass and password-only | Scripted handshake tests |
-| RealVNC RFB 5.0 banner | Negotiated to 3.8; None, VNC Authentication, RSA-AES | Scripted handshake tests |
-| RFB 3.9 banner | Negotiated to 3.8; None, VNC Authentication, RSA-AES UserPass and password-only | Scripted handshake tests |
-| Nonstandard RFB 3.5 banner | Negotiated to 3.3; None and VNC Authentication | Scripted handshake tests |
-| Vendor RFB 3.889 banner | Negotiated to 3.8 with standard security; private type 30 remains unsupported | Scripted handshake and rejection tests; no macOS compatibility claim |
-| RFB 4.0, 5.1 and 6.0 banners | Unsupported protocol version | Rejection tests |
-| RA2 offered with other types, in different orders or repeated | Prefer type 5; stop on key rejection | Scripted negotiation tests, with and without a cached password |
-| Type 13, RA2ne, RA256, TLS or VeNCrypt alone | Unsupported security | Rejection tests without asking for credentials |
-| RealVNC Server 7.13.1.57 | RSA-AES UserPass | Credential-free live protocol probe |
-| Raspberry Pi server | System account | Windows client testing verified login, desktop display and clipboard sharing |
-| Other RealVNC product versions and other servers' RSA-AES implementations | Depends on their offered protocol and security types | Not verified on real servers |
-
-Authentication-failure tests also cover the version-specific SecurityResult
-format: RFB 3.3/3.7 omit a reason string, while negotiated 3.8 includes it.
-Both RSA-AES subtypes are tested for failures under 3.7, 3.8, and the 3.9/5.0
-banners negotiated to 3.8. Connection-refusal tests separately cover the 32-bit
-3.3 security field and the 3.7/3.8 security-type list. A 3.3 server offering an
-extended or out-of-range security type is rejected without asking for credentials.
-RFB 3.8 None authentication failure is also checked for its reason string.
-
-Workbench regression tests cover independent password storage when copying a
-host, preservation of the source password, and protection against automatically
-transferring a prefilled password to a changed account or authentication mode.
-
-Protocol references: [TigerVNC RSA-AES client](https://github.com/TigerVNC/tigervnc/blob/master/common/rfb/CSecurityRSAAES.cxx),
-[noVNC shared RSA-AES handshake](https://github.com/novnc/noVNC/blob/master/core/ra2.js),
+Protocol references: [TigerVNC RSA-AES](https://github.com/TigerVNC/tigervnc/blob/009df04af8fe3843176636da5ea297cf6b7c7a98/common/rfb/CSecurityRSAAES.cxx)
 and the [EAX specification](https://web.cs.ucdavis.edu/~rogaway/papers/eax.pdf).

@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -312,6 +313,9 @@ func (state *State) submitHostDialog() {
 		candidateID = previous.ID
 	}
 	candidate := state.editor.host(candidateID)
+	if source != nil && source.Protocol == protocolVNC && candidate.Protocol == protocolVNC {
+		candidate.VNCKeys = slices.Clone(source.VNCKeys)
+	}
 	if previous != nil {
 		candidate.CatalogID, candidate.System = previous.CatalogID, previous.System
 	} else {

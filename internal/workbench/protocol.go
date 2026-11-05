@@ -130,10 +130,11 @@ type savedTransport struct {
 	// a desktop host's: its page shows the picture without the bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
-	ViaSSH     bool `json:"via_ssh,omitempty"`
-	Clipboard  bool `json:"clipboard,omitempty"`
-	Console    bool `json:"console,omitempty"`
-	Chromeless bool `json:"chromeless,omitempty"`
+	ViaSSH     bool         `json:"via_ssh,omitempty"`
+	Clipboard  bool         `json:"clipboard,omitempty"`
+	Console    bool         `json:"console,omitempty"`
+	Chromeless bool         `json:"chromeless,omitempty"`
+	VNCKeys    []vncHostKey `json:"vnc_keys,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -144,6 +145,7 @@ func (host Host) transport() savedTransport {
 		return transport
 	case protocolVNC:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
+		transport.VNCKeys = slices.Clone(host.VNCKeys)
 		return transport
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
@@ -173,6 +175,7 @@ func (host Host) transport() savedTransport {
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
 	host.Credential = strings.TrimSpace(transport.Credential)
+	host.VNCKeys = nil
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
@@ -193,6 +196,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
+		host.VNCKeys = slices.Clone(transport.VNCKeys)
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console

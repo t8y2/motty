@@ -7,7 +7,7 @@ A remote-desktop host opens as a tab that shows a picture instead of a terminal.
 ## Supported
 
 - RFB 3.3, 3.7 and 3.8, including negotiation from RealVNC's 5.0 banner to 3.8
-- Security types None, VNC Authentication, and RealVNC RSA-AES
+- Security types None, VNC Authentication and RealVNC RA2 (RSA-AES, type 5)
 - Encodings Raw, CopyRect, RRE, Hextile and ZRLE
 - Desktop resize
 - Pointer, keyboard and text clipboard
@@ -15,11 +15,12 @@ A remote-desktop host opens as a tab that shows a picture instead of a terminal.
 ## RealVNC system accounts
 
 A RealVNC server using **Always on** encryption and **UNIX password**
-authentication can use RSA-AES. Enter its system username in the optional VNC
+authentication can use RA2. Enter its system username in the optional VNC
 username field, or supply username and password when connecting.
 
 The server-key dialog appears before credentials are requested. A saved key
-change requires confirmation. System-account passwords are stored separately
+change stops the connection. Saved public identity pins follow the host through
+backup, sync, copying and deletion. System-account passwords are stored separately
 from traditional VNC passwords, and the session remains encrypted after login.
 
 ## Connect through SSH
@@ -50,8 +51,8 @@ sent as `?`.
 
 ## Not supported
 
-VeNCrypt/TLS, Apple Remote Desktop authentication (macOS Screen Sharing needs
-"VNC viewers may control screen with password"), Tight/JPEG, extended clipboard,
+RA256, RA2ne/RA256ne, VeNCrypt/TLS, Apple Remote Desktop authentication (macOS
+Screen Sharing needs "VNC viewers may control screen with password"), Tight/JPEG, extended clipboard,
 images in the clipboard, audio, file transfer, changing the remote resolution and
 multiple screens. KasmVNC cannot be driven because it reads pointer events in a
 non-standard format; TigerVNC and any server that follows RFC 6143 work.
@@ -68,5 +69,6 @@ An additional credential-free RealVNC Server 7.13.1.57 probe verified version
 negotiation, its RSA-AES server proof, and system-account authentication selection.
 Windows testing against a Raspberry Pi verified system-account login, desktop
 display and clipboard sharing. Chinese text
-still has the Latin-1 clipboard limitation. Reconnection and extended sessions
-on that server still need manual testing.
+still has the Latin-1 clipboard limitation. Reconnection, extended sessions and
+the latest password and server-key persistence changes still need manual testing
+on that server.

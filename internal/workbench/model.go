@@ -68,6 +68,9 @@ type Host struct {
 	Clipboard  bool
 	Console    bool
 	Chromeless bool
+	// VNCKeys are public identity pins owned by this catalog entry. The target
+	// and identity kind keep address changes and TLS/RSA identities separate.
+	VNCKeys []vncHostKey
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the

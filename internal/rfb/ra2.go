@@ -219,7 +219,7 @@ func (client *Client) ra2Credentials(config Config, subtype byte) ([]byte, error
 				return nil, err
 			}
 		}
-		if username == "" || password == "" {
+		if password == "" {
 			return nil, ErrAuthRequired
 		}
 	case ra2Password:

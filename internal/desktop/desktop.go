@@ -297,8 +297,8 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
-	// AskCredentials obtains a system account and its password for RealVNC
-	// RSA-AES authentication. It is distinct from a legacy VNC password.
+	// AskCredentials obtains a VNC RSA-AES account and its password, separately
+	// from a legacy VNC password.
 	AskCredentials func() (username, password string, err error)
 	// Notify is called, from any goroutine, when the session has something new:
 	// a changed picture, a clipboard, the end of the connection. It must not
@@ -317,7 +317,7 @@ type Options struct {
 	// client's. VNC has no such session.
 	Console bool
 	// Username and Domain are the account a protocol with accounts signs in as.
-	// RealVNC system authentication uses Username; Domain belongs to RDP.
+	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string
 	// Width and Height are the size, in device pixels, of the desktop to ask for
 	// when the protocol lets the client choose it (RDP); zero lets the backend
@@ -328,12 +328,9 @@ type Options struct {
 	// its interface at that scale (RDP), so that text and controls come out the
 	// size the user's own display makes them; zero is 1.
 	Scale float32
-	// VerifyCertificate is called with the DER certificate a server presents over
-	// TLS (RDP), after the handshake and before any secret is sent. A server's
-	// self-signed certificate cannot be checked against an authority, so the
-	// caller decides, typically by pinning: an error ends the attempt. address is
-	// what the user typed (the name the pin is kept under), not necessarily where
-	// the bytes went. Nil accepts any certificate, which only tests do.
+	// VerifyCertificate checks an RDP server's DER certificate before any
+	// secret is sent. address is the user-entered name used for pinning.
+	// A callback error ends the connection. Nil is only used by tests.
 	VerifyCertificate func(address string, der []byte) error
 	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
 	// before the client sends credentials. Nil does not trust an RSA-AES server.

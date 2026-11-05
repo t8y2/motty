@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -146,6 +147,7 @@ type desktopConn struct {
 	// for this connection (the library connects more than once while it
 	// negotiates), and certAsking says the open question is about a certificate.
 	certs        *rdp.Pins
+	identityFile string
 	trusted      map[string]bool
 	certAnswers  chan certReply
 	certAsking   bool
@@ -214,7 +216,12 @@ func (conn *desktopConn) verifyIdentity(address, pinAddress, keyType string, der
 		return nil
 	}
 	var previous string
-	if conn.certs != nil {
+	if conn.request.Host.Protocol == protocolVNC {
+		previous = conn.request.Host.vncFingerprint(address, keyType)
+		if previous == fingerprint {
+			return nil
+		}
+	} else if conn.certs != nil {
 		pinned, err := conn.certs.Lookup(pinAddress)
 		if err != nil {
 			return fmt.Errorf("reading the trusted certificates: %w", err)
@@ -227,9 +234,15 @@ func (conn *desktopConn) verifyIdentity(address, pinAddress, keyType string, der
 		}
 		previous = pinned
 	}
-	info := sshconn.HostKeyInfo{Address: address, Type: keyType, Fingerprint: fingerprint}
+	info := sshconn.HostKeyInfo{Address: address, Type: keyType, Fingerprint: fingerprint, File: conn.identityFile}
 	if previous != "" {
 		info.Known = []string{previous}
+		if conn.request.Host.Protocol == protocolVNC {
+			conn.mu.Lock()
+			conn.status.HostKey = info
+			conn.publish()
+			return fmt.Errorf("%w for %s", sshconn.ErrHostKeyChanged, address)
+		}
 	}
 	conn.mu.Lock()
 	conn.certAsked++
@@ -252,7 +265,7 @@ func (conn *desktopConn) verifyIdentity(address, pinAddress, keyType string, der
 	if !reply.accept {
 		return sshconn.ErrHostKeyRejected
 	}
-	if reply.save && conn.certs != nil {
+	if reply.save && conn.request.Host.Protocol != protocolVNC && conn.certs != nil {
 		if err := conn.certs.Remember(pinAddress, fingerprint); err != nil {
 			return fmt.Errorf("remembering the certificate: %w", err)
 		}
@@ -595,8 +608,6 @@ func (conn *desktopConn) StreamCommand(context.Context, string, int, func([]byte
 // next to the SSH known-hosts file.
 const rdpCertificatesFile = "rdp_certificates"
 
-const vncServerKeysFile = "vnc_server_keys"
-
 // gatewayFor is the SSH host a tunneled desktop goes through: the saved SSH host
 // with the same address and account, so its port, algorithms and jump route
 // apply, or else plain SSH on the default port. An RDP host has no SSH account of
@@ -627,20 +638,26 @@ func (state *State) gatewayFor(host Host) Host {
 
 // newDesktopConn creates the connection of a VNC host.
 func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
+	if host.Protocol == protocolVNC {
+		// A deleted catalog entry cannot lend its old trust to a new dial.
+		host.VNCKeys = nil
+		if saved, ok := state.hostByCatalogID(host.CatalogID); ok && saved.Protocol == protocolVNC {
+			host.VNCKeys = slices.Clone(saved.VNCKeys)
+		}
+	}
 	notify := state.notifyFor(session)
 	open := state.dialDesktop
 	if open == nil {
 		open = openDesktopSession
 	}
 	var certs *rdp.Pins
-	if state.options.KnownHostsPath != "" {
-		file := rdpCertificatesFile
-		if host.Protocol == protocolVNC {
-			file = vncServerKeysFile
-		}
-		certs = rdp.NewPins(filepath.Join(filepath.Dir(state.options.KnownHostsPath), file))
+	if state.options.KnownHostsPath != "" && host.Protocol != protocolVNC {
+		certs = rdp.NewPins(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
 	}
 	conn := newDesktopConn(host, notify, open, state.connectionTimeout, state.proxyForHost(host), certs)
+	if host.Protocol == protocolVNC {
+		conn.identityFile = state.options.StatePath
+	}
 	target := state.desktopTargetFor(session)
 	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
 	if !host.tunneled() {

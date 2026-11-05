@@ -36,7 +36,7 @@ func realVNCState(t *testing.T, user string, open func(context.Context, desktopR
 	return state, host
 }
 
-func TestVNCServerKeyPinIsSeparateAndAChangedKeyNeedsConsent(t *testing.T) {
+func TestVNCServerKeyPinIsSeparateAndAChangedKeyIsRefused(t *testing.T) {
 	key := []byte("canonical RSA key")
 	state, _ := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 		if err := request.VerifyServerKey("pi.example.com:5900", key); err != nil {
@@ -52,12 +52,11 @@ func TestVNCServerKeyPinIsSeparateAndAChangedKeyNeedsConsent(t *testing.T) {
 	}
 	state.Click(hitHostKeyTrust)
 	waitUntil(t, state, "encrypted VNC picture", func() bool { return session.desk != nil })
-	path := filepath.Join(filepath.Dir(state.options.KnownHostsPath), vncServerKeysFile)
-	pinned, err := os.ReadFile(path)
-	if err != nil || !strings.HasPrefix(string(pinned), "vnc:pi.example.com:5900 SHA256:") {
-		t.Fatalf("server-key file = %q, %v", pinned, err)
+	pinned, ok := state.hostByCatalogID(session.host.CatalogID)
+	if !ok || pinned.vncFingerprint("pi.example.com:5900", vncServerKeyType) != rdp.Fingerprint(key) {
+		t.Fatal("the VNC host did not save its own server identity")
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), rdpCertificatesFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)); !os.IsNotExist(err) {
 		t.Fatalf("VNC wrote the RDP certificate file: %v", err)
 	}
 	if strip := state.desktopStripLeft(session.desk, session); !strings.Contains(strip, state.messages.Desktop.StripVNCEncrypted) || strings.Contains(strip, "TLS") {
@@ -77,18 +76,16 @@ func TestVNCServerKeyPinIsSeparateAndAChangedKeyNeedsConsent(t *testing.T) {
 	key = []byte("changed canonical RSA key")
 	session.desk.session.Close()
 	state.reconnect(session)
-	waitUntil(t, state, "changed VNC key", func() bool { return state.modal == modalHostKey })
-	if len(session.hostKey.Known) != 1 || !strings.Contains(state.hostKeyDescription, session.hostKey.Known[0]) {
-		t.Fatalf("key change not described: %+v, %q", session.hostKey, state.hostKeyDescription)
+	waitUntil(t, state, "changed VNC key", func() bool { return session.phase == sshconn.PhaseFailed })
+	if len(session.hostKey.Known) != 1 || state.modal == modalHostKey {
+		t.Fatalf("changed key offered for override: %+v", session.hostKey)
 	}
-	state.Click(hitHostKeyReject)
-	waitUntil(t, state, "refused VNC key", func() bool { return session.phase == sshconn.PhaseFailed })
-	if !errors.Is(session.err, sshconn.ErrHostKeyRejected) {
+	if !errors.Is(session.err, sshconn.ErrHostKeyChanged) {
 		t.Fatalf("refusal = %v", session.err)
 	}
-	pinnedAfter, err := os.ReadFile(path)
-	if err != nil || string(pinnedAfter) != string(pinned) {
-		t.Fatalf("rejecting a key changed the saved pin: %q, %v", pinnedAfter, err)
+	pinnedAfter, ok := state.hostByCatalogID(session.host.CatalogID)
+	if !ok || pinnedAfter.vncFingerprint("pi.example.com:5900", vncServerKeyType) != pinned.VNCKeys[0].Fingerprint {
+		t.Fatal("rejecting a changed key replaced the saved pin")
 	}
 }
 
@@ -132,8 +129,8 @@ func TestVNCTrustOnceRejectDismissAndCancelProtectCredentials(t *testing.T) {
 				default:
 				}
 			}
-			if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.KnownHostsPath), vncServerKeysFile)); !os.IsNotExist(err) {
-				t.Fatalf("one-time trust/refusal saved a key: %v", err)
+			if host, ok := state.hostByCatalogID(session.host.CatalogID); !ok || len(host.VNCKeys) != 0 {
+				t.Fatal("one-time trust/refusal saved a key")
 			}
 		})
 	}
@@ -205,9 +202,9 @@ func TestVNCUnknownSystemUserAsksBothFieldsAndSavesForTheAnsweredAccount(t *test
 	}
 	state.Click(hitPasswordSubmit)
 	if state.modal != modalPassword || state.passwordError == "" {
-		t.Fatal("an empty username was submitted")
+		t.Fatal("missing VNC credentials were submitted")
 	}
-	state.secrets.save = true
+	state.Click(hitPasswordSave)
 	state.passwordFields[0].Insert("bob")
 	state.passwordFields[1].Insert("bob password")
 	state.Click(hitPasswordSubmit)
@@ -220,6 +217,22 @@ func TestVNCUnknownSystemUserAsksBothFieldsAndSavesForTheAnsweredAccount(t *test
 	}
 	if value, found := vaultValue(t, state, legacy); !found || value != "legacy password" {
 		t.Fatalf("system account changed legacy secret: %q, %v", value, found)
+	}
+	session.desk.session.Close()
+	state.reconnect(session)
+	waitUntil(t, state, "saved account prompt", func() bool { return state.modal == modalPassword })
+	if len(state.passwordFields) != 2 || state.passwordFields[0].String() != "bob" || state.passwordFields[1].String() != "bob password" {
+		t.Fatal("the saved VNC account and password were not prefilled on reconnect")
+	}
+	select {
+	case <-answers:
+		t.Fatal("the saved account was sent without confirmation")
+	default:
+	}
+	state.Click(hitPasswordSubmit)
+	waitUntil(t, state, "confirmed saved account", func() bool { return session.desk != nil })
+	if got := <-answers; got != [2]string{"bob", "bob password"} {
+		t.Fatalf("reconnected credentials = %q", got)
 	}
 }
 

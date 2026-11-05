@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestAIApprovalUsesTheDialedAddressAfterSavedHostEdits(t *testing.T) {
 	updated := previous
 	updated.Address, updated.User, updated.Port = "next.example.com", "next-user", 2222
 	state.replaceHost(1, previous, updated)
-	if b.Address != dialed || aiSessionInfo(b).Address != dialed || b.host != updated {
+	if b.Address != dialed || aiSessionInfo(b).Address != dialed || !reflect.DeepEqual(b.host, updated) {
 		t.Fatal("editing the next dial relabelled the live transport")
 	}
 	state.aiChooseOnlyTarget(hitAITargets.At(int(a.ID)))

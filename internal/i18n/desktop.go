@@ -10,6 +10,7 @@ type DesktopMessages struct {
 	FieldVNCUser              string
 	VNCUserHint               string
 	ErrVNCUser                string
+	ErrVNCPassword            string
 	VNCAccountPasswordChanged string
 	VNCSystemUser             string
 	VNCKeyNewFmt              string

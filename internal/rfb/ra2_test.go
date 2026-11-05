@@ -41,6 +41,15 @@ type ra2PeerOptions struct {
 	badRandomLength bool
 }
 
+// ra2PeerHash implements the peer's SHA-1 digest independently of the client.
+func ra2PeerHash(parts ...[]byte) []byte {
+	h := sha1.New()
+	for _, part := range parts {
+		_, _ = h.Write(part)
+	}
+	return h.Sum(nil)
+}
+
 // ra2Peer is a scripted server for authentication and encrypted session tests.
 // Independent published EAX vectors and the credential-free live RealVNC
 // probe supplement the two-sided integration coverage here.
@@ -113,7 +122,7 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 	if _, err := raw.Write(message); err != nil {
 		return nil, err
 	}
-	secured, err := newEAXConn(raw, ra2Hash(serverRandom, clientRandom)[:16], ra2Hash(clientRandom, serverRandom)[:16])
+	secured, err := newEAXConn(raw, ra2PeerHash(serverRandom, clientRandom)[:16], ra2PeerHash(clientRandom, serverRandom)[:16])
 	if err != nil {
 		return nil, err
 	}
@@ -121,10 +130,10 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 	if _, err := io.ReadFull(secured, proof); err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(proof, ra2Hash(clientWire, wire)) {
+	if !bytes.Equal(proof, ra2PeerHash(clientWire, wire)) {
 		return nil, errors.New("client public key proof mismatch")
 	}
-	proof = ra2Hash(wire, clientWire)
+	proof = ra2PeerHash(wire, clientWire)
 	if options.badProof {
 		proof[0] ^= 1
 	}
@@ -458,7 +467,7 @@ func TestRA2SecurityOfferOrderAndDuplicatesNeverWeakenKeyRejection(t *testing.T)
 }
 
 func TestRA2UnsupportedSecurityOffersDoNotAskForCredentials(t *testing.T) {
-	for _, offered := range [][]byte{{13}, {6}, {129}, {18}, {19}, {13, 6, 129, 18, 19}} {
+	for _, offered := range [][]byte{{13}, {6}, {129}, {130}, {18}, {19}, {13, 6, 129, 130, 18, 19}} {
 		t.Run(fmt.Sprint(offered), func(t *testing.T) {
 			_, err := connect(t, Config{
 				Password: "cached password",
@@ -554,7 +563,7 @@ func TestRealVNCBannerDowngradePreservesLegacyAuthentication(t *testing.T) {
 			}
 		})
 	}
-	for _, banner := range []string{"RFB 004.000\n", "RFB 005.001\n", "RFB 006.000\n"} {
+	for _, banner := range []string{"RFB 004.000\n", "RFB 004.001\n", "RFB 005.001\n", "RFB 006.000\n"} {
 		_, err := connect(t, Config{}, func(s *server) { s.write([]byte(banner)) })
 		if !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%q:error=%v", banner, err)
@@ -572,7 +581,7 @@ func TestRA2CredentialsByteLimitsAndCallbacks(t *testing.T) {
 		{"max UTF8", strings.Repeat("中", 85), strings.Repeat("p", 255), 1, true},
 		{"user too long", strings.Repeat("中", 86), "secret", 1, false},
 		{"password too long", "pi", strings.Repeat("p", 256), 1, false},
-		{"invalid UTF8", "pi", "\xff", 1, false}, {"missing account", "", "secret", 1, false},
+		{"invalid UTF8", "pi", "\xff", 1, false}, {"empty account", "", "secret", 1, true},
 		{"missing password", "pi", "", 1, false}, {"unknown subtype", "pi", "secret", 99, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

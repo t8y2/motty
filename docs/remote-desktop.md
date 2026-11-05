@@ -128,21 +128,22 @@ and return it from `openDesktopSession`. The host editor's VNC rows
 ## VNC specifics
 
 Spoken: RFB 3.3/3.7/3.8, including negotiating RealVNC's 5.0 banner down to 3.8;
-security None, VNC Authentication, and RSA-AES (type 5); a 32-bit true
+security None, VNC Authentication, and RealVNC RA2 (type 5); a 32-bit true
 colour pixel format asked from the server, so no pixel is converted; encodings
 Raw, CopyRect, RRE, Hextile and ZRLE (one zlib stream for the connection);
 DesktopSize; pointer, key and cut-text messages.
 
-* **RealVNC RSA-AES** authenticates the server's RSA public key before asking
+* **RealVNC RA2** authenticates the server's RSA public key before asking
   for credentials and keeps authentication, framebuffer, input, and clipboard
   messages encrypted with AES-128-EAX. A server using **Always on** encryption
   and **UNIX password** authentication asks for its system username/password.
   Direct VNC hosts have an optional username field; if omitted, the connection
   asks for both fields. A tunneled host's saved username continues to name the
   SSH account; the VNC system account is asked for separately.
-  The first key and changed keys raise a trust question; saved VNC pins live in
-  `vnc_server_keys`, separately from RDP certificates. RSA-AES rejection never
-  retries with a weaker security type. See [RealVNC support](vnc-realvnc.md).
+  A new key raises a trust question; a changed saved key stops the connection.
+  VNC pins live in the host configuration record and follow its backup, sync,
+  copy and deletion lifecycle, separately from RDP certificates. RSA-AES rejection
+  never retries with a weaker security type. See [RealVNC support](vnc-realvnc.md).
 
 * **VNC Authentication is weak**: DES with at most eight password characters and a
   challenge that crosses the network in the clear, so a captured exchange can be
@@ -163,8 +164,9 @@ DesktopSize; pointer, key and cut-text messages.
   once; local to remote is sent when the pointer is pressed or a paste chord is
   typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
   with the system paste shortcut types the clipboard on the remote instead.
-* Not supported: VeNCrypt/TLS, Apple Remote Desktop authentication (macOS Screen
-  Sharing needs "VNC viewers may control screen with password"), Tight/JPEG,
+* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Apple Remote Desktop
+  authentication (macOS Screen Sharing needs "VNC viewers may control screen with
+  password"), Tight/JPEG,
   extended clipboard, images in the clipboard, audio, file transfer, changing the
   remote resolution, multiple screens.
 * Key releases reach the remote on macOS, Windows and X11; they were exercised
@@ -192,6 +194,8 @@ headless application.
 Windows testing against a Raspberry Pi also verified system-account login,
 desktop display, and clipboard sharing. See
 [RealVNC support](vnc-realvnc.md) for the protocol probe and test coverage.
+The latest password and server-key persistence changes still need a real-server
+retest.
 Physical keyboard and pointer interaction in a native window, IME composition,
 hidden or covered windows, macOS Screen Sharing, and a Windows server still need
 manual testing.
