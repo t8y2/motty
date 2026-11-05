@@ -706,11 +706,32 @@ func syncAndWait(t *testing.T, state *State, id ui.ID, want string) {
 	t.Helper()
 	state.status = ""
 	state.Click(id)
-	waitFor(t, state, func() bool {
+	// A complete sync includes HTTP, storage and window wake-ups. Give it a
+	// bounded operation budget without relaxing short waits in UI-only tests.
+	waitForWithin(t, state, 15*time.Second, func() bool {
 		return state.status != "" && state.status != state.messages.Tools.SyncWorking || state.modal == modalForm
 	})
 	if want != "" && state.status != want {
 		t.Fatalf("status %q, want %q", state.status, want)
+	}
+}
+
+func TestSyncWaitAllowsSlowServer(t *testing.T) {
+	server, dav := newFakeDAV(t)
+	state, _, _ := backupTestState(t)
+	configureSync(t, state, server)
+	gate := make(chan struct{})
+	var release sync.Once
+	dav.mu.Lock()
+	dav.gate = gate
+	dav.mu.Unlock()
+	// A successful server response can take longer than the UI-only helper's
+	// three-second deadline. Keep the response bounded and deterministic.
+	timer := time.AfterFunc(3200*time.Millisecond, func() { release.Do(func() { close(gate) }) })
+	t.Cleanup(func() { timer.Stop(); release.Do(func() { close(gate) }) })
+	syncAndWait(t, state, hitSyncNow, state.messages.Tools.SyncDone)
+	if dav.putCount() != 1 {
+		t.Fatal("slow sync did not upload its backup")
 	}
 }
 

@@ -24,10 +24,15 @@ func fontOptions(t testing.TB, families []string) Options {
 // read off the window thread and arrives through them.
 func waitFor(t testing.TB, state *State, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	waitForWithin(t, state, 3*time.Second, condition)
+}
+
+func waitForWithin(t testing.TB, state *State, timeout time.Duration, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for !condition() {
 		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for the window")
+			t.Fatalf("timed out waiting for the window after %s", timeout)
 		}
 		state.Wake()
 		time.Sleep(2 * time.Millisecond)

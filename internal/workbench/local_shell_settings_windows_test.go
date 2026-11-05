@@ -40,6 +40,13 @@ func shellSelectState(t *testing.T, choices []localshell.Choice) *State {
 func paintShellSettings(state *State) *ui.Canvas {
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible && state.settingsCategory == settingsTerminal {
+		// More terminal settings can push this row below the viewport. Reach it
+		// through the page's scroll handling before testing the native select.
+		state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		canvas.Reset()
+		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	}
 	return &canvas
 }
 
