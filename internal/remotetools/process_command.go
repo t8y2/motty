@@ -146,5 +146,11 @@ func parseProcessCommandOutput(output []byte, expectedIdentity string) (string, 
 	}
 	value := strings.TrimRight(string(raw), "\x00")
 	value = strings.ReplaceAll(value, "\x00", " ")
-	return strings.ToValidUTF8(value, "�"), nil
+	value = strings.ToValidUTF8(value, "�")
+	if strings.TrimSpace(value) == "" {
+		// Kernel threads and zombies have a readable but empty cmdline: the
+		// caller falls back to the ps summary instead of a blank field.
+		return "", ErrProcessCommandUnsupported
+	}
+	return value, nil
 }

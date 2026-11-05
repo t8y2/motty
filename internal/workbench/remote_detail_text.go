@@ -449,22 +449,10 @@ func (state *State) remoteDetailTextShortcut(event ui.KeyEvent, text *remoteDeta
 	}
 	if !event.Repeat {
 		if value, selected := text.selectedText(); selected {
-			copyText := state.options.SetClipboardText
-			if state.remoteWindow != nil && state.remoteWindow.owner != nil {
-				copyText = state.remoteWindow.owner.options.SetClipboardText
-			}
-			if copyText != nil {
-				if err := copyText(value); err != nil {
-					state.remote.failed = true
-					state.remote.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
-				} else {
-					state.remote.failed = false
-					state.remote.status = state.messages.StatusClipboardCopied
-				}
-			}
+			state.copyRemoteProcessValue(value)
 		}
 	}
-	return ui.EventResult{Handled: true}, true
+	return ui.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) remoteDetailShortcut(event ui.KeyEvent) (ui.EventResult, bool) {

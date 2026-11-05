@@ -202,3 +202,17 @@ func TestReadProcessCommandFallsBackOnlyForUnsupportedHosts(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestReadProcessCommandFallsBackForAnEmptyCommandLine(t *testing.T) {
+	const identity = "linux:12345678-1234-1234-1234-123456789abc:432101"
+	// A kernel thread's /proc/<pid>/cmdline is readable but empty.
+	runner := &environmentRunner{output: []byte(
+		"motty-command-before 12345678-1234-1234-1234-123456789abc 432101\n" +
+			base64.StdEncoding.EncodeToString([]byte("\x00")) +
+			"\nmotty-command-after 12345678-1234-1234-1234-123456789abc 432101\n",
+	)}
+	_, err := ReadProcessCommand(context.Background(), runner, Process{PID: 4321, StartIdentity: identity})
+	if !errors.Is(err, ErrProcessCommandUnsupported) {
+		t.Fatalf("err=%v, want ErrProcessCommandUnsupported", err)
+	}
+}
