@@ -26,6 +26,8 @@ This permits one instance to act as a jump host for another local fixture:
 
 With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a pty, as sshd does, which is how Motty starts its folder-reporting shell. `E2E_LOGIN_SHELL=/path/to/bash` makes that shell the account's login shell: `$SHELL` names it for the client's probe, and a plain shell request starts it too. Use it to check Bash versions older than the system's.
 
+`E2E_HANG_EXEC=1` accepts every command except the resource-monitor one and never answers it. A client that probes the host for its system therefore has to give up at its own timeout, and the session must be left open: closing a session whose command still runs ends the whole connection on a minimal server such as dropbear. The fixture only stops answering — it never ends the connection itself — so an e2e run shows the client keeps the session, not that it survives dropbear tearing the connection down.
+
 `E2E_NO_SFTP=1` makes it a server without an SFTP subsystem: the subsystem request is refused and the only commands accepted are the `scp -f`/`scp -t` source and sink and the fixed listing, `mkdir`, `rm`, `rmdir`, `mv`, `chmod` and `ln` commands of Motty's SCP backend, matched by exact shape, run without a shell and confined to the fixture root (see `tools/e2e/scp_e2e.txt`).
 
 `E2E_MAX_SFTP=n` refuses an SFTP subsystem request while n are open, as a server with a small `MaxSessions` does; every subsystem opened, refused or closed is logged. Use it to see how a second channel for a folder search behaves (see `tools/e2e/sftp_search_e2e.txt`).

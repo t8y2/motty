@@ -199,6 +199,45 @@ func TestTypingNarrowsTheHostListAndTheCount(t *testing.T) {
 	}
 }
 
+func TestHostSearchMatchesAllWordsInOneHost(t *testing.T) {
+	options := testOptions(t)
+	if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
+		{ID: "office", Label: "Office VNC", Group: "Desktops", Address: "172.26.129.163", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
+		{ID: "other-address", Label: "Other VNC", Group: "Desktops", Address: "172.26.129.99", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
+		{ID: "other-label", Label: "163 Router", Address: "10.0.0.1", Port: 22},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	for _, test := range []struct {
+		query string
+		want  string
+	}{
+		{"172 163", "Office VNC"},
+		{"  vNc   163  ", "Office VNC"},
+		{"DESKTOPS 163", "Office VNC"},
+		{"172.26.129.163", "Office VNC"},
+		{"172 999", ""},
+	} {
+		state.search = text.Editor{}
+		typeSearch(state, test.query)
+		if test.want == "" {
+			if len(state.visible) != 0 {
+				t.Errorf("%q matches %v, want none", test.query, state.visible)
+			}
+			continue
+		}
+		if len(state.visible) != 1 || state.hosts[state.visible[0]].Label != test.want {
+			t.Errorf("%q matches %v, want %q", test.query, state.visible, test.want)
+			continue
+		}
+		canvas, _ := paintedTexts(state)
+		if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[state.visible[0]].ID))); !ok {
+			t.Errorf("%q did not render the matching host row", test.query)
+		}
+	}
+}
+
 func TestDoubleClickingARowConnectsToIt(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

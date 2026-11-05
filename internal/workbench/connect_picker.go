@@ -19,13 +19,16 @@ var (
 	// hitConnectPickShells is a local terminal running one particular shell, by
 	// its place among the shells this computer lists.
 	hitConnectPickShells = tree.Sub(connectPickerHits, tree.Name("connect-pick-shell"))
+	// hitConnectPickEdit is the pencil of a host row, by the host's ID too: it
+	// opens the host's edit dialog instead of connecting.
+	hitConnectPickEdit = tree.Sub(connectPickerHits, tree.Name("connect-pick-edit"))
 )
 
 func (state *State) openConnectPicker() {
 	if localShellSettingVisible() {
 		state.refreshLocalShells()
 	}
-	state.commandPalette.connect = true
+	state.commandPalette.connect, state.commandPalette.snippets = true, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
@@ -98,12 +101,21 @@ func (state *State) shellsListed() {
 		return
 	}
 	palette := &state.commandPalette
-	selected, top := palette.selected, palette.top
+	selected, scroll := palette.selected, palette.scroll
 	state.rebuildCommandPalette()
-	if palette.visibleCount > 0 {
-		palette.selected = min(selected, palette.visibleCount-1)
-		palette.top = min(top, palette.selected)
+	if len(palette.visible) > 0 {
+		palette.selected = min(selected, len(palette.visible)-1)
+		palette.scroll = min(scroll, palette.maxScroll())
 	}
+}
+
+// connectPickEdit is the pencil of a host row, named by the host: zero for the
+// rows that are not a saved host.
+func connectPickEdit(target ui.ID) ui.ID {
+	if target.Scope() != hitConnectPickList {
+		return ui.ID{}
+	}
+	return hitConnectPickEdit.At(item(target))
 }
 
 // clickConnectPick connects the picker's choice in a tab of its own.

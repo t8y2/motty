@@ -3,12 +3,14 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
@@ -165,15 +167,15 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	state.openCommandPalette()
 	found := -1
 	palette := &state.commandPalette
-	for index := uint8(0); index < palette.entryCount; index++ {
+	for index := 0; index < len(palette.entries); index++ {
 		if palette.entries[index].label == state.messages.AIPanel.Toggle {
-			found = int(index)
+			found = index
 		}
 	}
 	if found < 0 {
 		t.Fatal("the command palette has no assistant entry")
 	}
-	state.executeCommandPalette(uint8(found))
+	state.executeCommandPalette(found)
 	if !state.ai.open || state.modal != modalNone {
 		t.Fatalf("palette entry: open=%v modal=%v", state.ai.open, state.modal)
 	}
@@ -1065,6 +1067,123 @@ func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
 	}
 }
 
+func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := ui.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+
+	if state.ai.panelWidth != 530 {
+		t.Fatalf("state.ai.panelWidth after drag = %v, want 530", state.ai.panelWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIPanelWidth != 530 {
+		t.Fatalf("saved.AIPanelWidth = %v, err = %v", saved.AIPanelWidth, err)
+	}
+	restored := newTestState(t, state.options)
+	if restored.ai.panelWidth != 530 {
+		t.Fatalf("restored.ai.panelWidth = %v, want 530", restored.ai.panelWidth)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.rect.Width != 530 {
+		t.Fatalf("restored.ai.panel.rect.Width = %v, want 530", restored.ai.panel.rect.Width)
+	}
+
+	// Test dragging on section page (e.g. hosts page)
+	sectionState := newTestState(t, state.options)
+	sectionState.activeSection = sectionHosts
+	sectionState.ai.open = true
+	canvasSection, _ := paintAt(sectionState, wide)
+	dividerSection := panelHit(t, canvasSection, hitAIDivider)
+	sx, sy := dividerSection.Bounds.X+dividerSection.Bounds.Width/2, dividerSection.Bounds.Y+100
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	if sectionState.ai.panelWidth != 610 {
+		t.Fatalf("sectionState.ai.panelWidth after drag = %v, want 610", sectionState.ai.panelWidth)
+	}
+	restoredSection := newTestState(t, sectionState.options)
+	if restoredSection.ai.panelWidth != 610 {
+		t.Fatalf("restoredSection.ai.panelWidth = %v, want 610", restoredSection.ai.panelWidth)
+	}
+}
+
+func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	// Narrow window triggers drawer mode (< aiDockAt = 900)
+	narrow := ui.Size{Width: 800, Height: 600}
+	canvas, _ := paintAt(state, narrow)
+	// In drawer mode, divider is placed at the left edge of the drawer
+	initialWidth := state.ai.panel.rect.Width
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	// Drag divider to resize drawer by 70px wider
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+
+	wantWidth := initialWidth + 70
+	if math.Abs(float64(state.ai.panelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("state.ai.panelWidth after drawer drag = %v, want %v", state.ai.panelWidth, wantWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || math.Abs(float64(saved.AIPanelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("saved.AIPanelWidth = %v, want %v, err = %v", saved.AIPanelWidth, wantWidth, err)
+	}
+
+	// Restored state in narrow window opens drawer with remembered width
+	restored := newTestState(t, state.options)
+	restored.ai.open = true
+	paintAt(restored, narrow)
+	if math.Abs(float64(restored.ai.panel.rect.Width-wantWidth)) > 0.01 {
+		t.Fatalf("restored drawer width = %v, want %v", restored.ai.panel.rect.Width, wantWidth)
+	}
+}
+
+func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := ui.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+
+	grip := panelHit(t, canvas, hitAIComposerGrip)
+	gx, gy := grip.Bounds.X+grip.Bounds.Width/2, grip.Bounds.Y+grip.Bounds.Height/2
+	initialHeight := state.ai.panel.boxHeight
+	// Drag grip upward to increase composer height
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+
+	wantHeight := initialHeight + 60
+	if state.ai.composerHeight != wantHeight {
+		t.Fatalf("state.ai.composerHeight = %v, want %v", state.ai.composerHeight, wantHeight)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIComposerHeight != wantHeight {
+		t.Fatalf("saved.AIComposerHeight = %v, want %v, err = %v", saved.AIComposerHeight, wantHeight, err)
+	}
+
+	restored := newTestState(t, state.options)
+	if restored.ai.composerHeight != wantHeight {
+		t.Fatalf("restored.ai.composerHeight = %v, want %v", restored.ai.composerHeight, wantHeight)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.boxHeight != wantHeight {
+		t.Fatalf("restored.ai.panel.boxHeight = %v, want %v", restored.ai.panel.boxHeight, wantHeight)
+	}
+}
+
 func TestAThoughtInProgressShowsItIsThinkingAndAFinishedOneDoesNot(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
@@ -1175,5 +1294,87 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 	canvas, _ = paintAt(state, panelWide)
 	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
 		t.Fatal("Left left the model list open")
+	}
+}
+
+func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
+	state, _ := panelState(t, nil)
+	narrow := ui.Size{Width: 720, Height: 600}
+	state.Resize(narrow)
+	state.setAIPanelOpen(true)
+	canvas, _ := paintAt(state, narrow)
+	if !canvas.TrappedFocusScope().IsZero() {
+		t.Fatalf("AI drawer should not trap focus scope: got %v", canvas.TrappedFocusScope())
+	}
+	foundSidebar := false
+	for _, hit := range canvas.Hits() {
+		if hit.ID == hitAIToggle || hit.ID == hitVerticalTabsNew {
+			foundSidebar = true
+			break
+		}
+	}
+	if !foundSidebar {
+		t.Fatal("sidebar/toolbar controls should be present and interactive")
+	}
+}
+
+func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
+	state, _ := panelState(t, nil)
+	size := ui.Size{Width: 720, Height: 600}
+	view, err := headless.Open(app.Config{
+		Width: 1000, Height: 700, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.setAIPanelOpen(true)
+	// The drawer appears once the window is too narrow to dock the panel, which
+	// is also the frame that shows where opening it put the keyboard.
+	if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if focused := view.Snapshot().Focused; focused != hitAIInput {
+		t.Fatalf("narrow assistant focused %v, want the composer %v", focused, hitAIInput)
+	}
+
+	// Leaving the composer is the user's choice; repainting the drawer must not
+	// drag focus back into it.
+	if err := view.Keys("tab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	afterTab := view.Snapshot().Focused
+	if afterTab == hitAIInput || afterTab.IsZero() {
+		t.Fatalf("focus after Tab = %v, want a control beside the composer", afterTab)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != afterTab {
+		t.Fatalf("focus moved from %v to %v: the drawer must ask for focus once", afterTab, got)
+	}
+
+	// A press on the terminal is the drawer's dismiss target; closing from inside
+	// the panel gives the keyboard back to the terminal instead of nowhere.
+	if err := view.Click(200, 300); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("a press on the terminal should dismiss the assistant drawer")
+	}
+	if focused := view.Snapshot().Focused; focused.IsZero() || focused == hitAIInput {
+		t.Fatalf("focus after dismissing = %v, want the terminal", focused)
 	}
 }

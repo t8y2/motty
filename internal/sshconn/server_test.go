@@ -35,10 +35,14 @@ type testServer struct {
 	version    string // identification string; empty keeps SSH-2.0-GopTest
 	// oneChannel ends the connection when a second channel is opened, the way
 	// a restricted gateway does.
-	oneChannel  bool
-	port        uint16 // fixed port to listen on; zero picks one
-	direct      string // exact direct-tcpip destination; empty refuses forwarding
-	exec        func(string) (string, uint32)
+	oneChannel bool
+	port       uint16 // fixed port to listen on; zero picks one
+	direct     string // exact direct-tcpip destination; empty refuses forwarding
+	exec       func(string) (string, uint32)
+	// execChannel, when set, is handed the channel of an accepted system probe
+	// before its command runs, so a test can watch whether the client closes a
+	// session whose command is still running.
+	execChannel func(ssh.Channel)
 	remote      bool // permits loopback-only tcpip-forward requests
 	blockDirect bool // leaves direct-tcpip requests unanswered
 	// envFatal ends the connection on an env request, the way a gateway with a
@@ -631,6 +635,9 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 			if accepted {
 				started = true
 				if system {
+					if server.execChannel != nil {
+						server.execChannel(channel)
+					}
 					output, status := server.exec(payload.Command)
 					_, _ = channel.Write([]byte(output))
 					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))

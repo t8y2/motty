@@ -148,3 +148,19 @@ func TestOnlyDistributionsAndLinuxAreLinux(t *testing.T) {
 		}
 	}
 }
+
+// TestTheProbeStopsBufferingAtItsLimit guards what a probe left to a talkative
+// host holds: the session outlives its timeout, so its writer must stop growing
+// instead of keeping everything the host sends for the rest of the connection.
+func TestTheProbeStopsBufferingAtItsLimit(t *testing.T) {
+	output := &probeOutput{}
+	chunk := []byte(strings.Repeat("x", 1024))
+	for round := 0; round < 100; round++ {
+		if n, err := output.Write(chunk); n != len(chunk) || err != nil {
+			t.Fatalf("write %d: %d, %v", round, n, err)
+		}
+	}
+	if got := len(output.Bytes()); got != maxProbeOutput {
+		t.Fatalf("the probe buffered %d bytes, want the %d byte limit", got, maxProbeOutput)
+	}
+}

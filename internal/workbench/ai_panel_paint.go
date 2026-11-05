@@ -479,14 +479,29 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	// A section page has no visible terminal rail, even while a background
 	// terminal keeps its PTY fitted for that rail.
 	viewport := state.visibleWorkspacePixelBounds(size)
+	extent := state.aiPanelExtent(size)
+	drawerExtent := min(extent, size.Width*0.92)
 	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, Scope: dialogScope, DismissID: hitAIDrawerDismiss,
-		Side: components.DrawerRight, ContentExtent: min(aiPanelWidth, size.Width*0.92),
+		Layer: drawerLayer, Scope: ui.ID{}, DismissID: hitAIDrawerDismiss,
+		Side: components.DrawerRight, ContentExtent: drawerExtent,
 		InitialFocusID: hitAIInput,
 	})
 	layout := drawer.Begin("", "")
+	if layout.Content.Width > 0 && layout.Content.Height > 0 {
+		theme := state.Theme()
+		theme.Border = ui.Color{}
+		window := ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: viewport.Height}
+		components.BeginResizable(canvas, theme, hitAIDivider, window, (layout.Content.X-viewport.X)/max(viewport.Width-1, 1)).
+			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
+	}
 	state.paintAIBody(canvas, layout.Content)
 	drawer.End()
+	// A zero Scope keeps the drawer from trapping focus, and Drawer.End only
+	// installs InitialFocusID for a trapped drawer; ask the runtime for the
+	// composer explicitly so typing goes to the assistant when it opens. The
+	// runtime applies one request once, so later frames leave the focus the user
+	// chose alone.
+	canvas.RequestFocus(hitAIInput)
 	state.paintAIMenuOverlay(canvas)
 }
 

@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -43,6 +44,15 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.FontFamilies == nil {
 		options.FontFamilies = func() []string { return nil }
 	}
+	if options.ClipboardText == nil {
+		// The clipboard a test reads is its own: the real one is asked on the
+		// window's main thread, which a test does not have.
+		options.ClipboardText = func() (string, error) { return "", nil }
+	}
+	if options.ClipboardFiles == nil {
+		// Nor does a test read the files the developer last copied.
+		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
+	}
 	if options.Keystore == nil {
 		// Left nil, the vault's key store is the machine's own: a test binary is
 		// not the signed application, so macOS asks for the login keychain's
@@ -54,8 +64,13 @@ func newTestState(t testing.TB, options Options) *State {
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
-	// distributions, the way a computer with only a default shell would.
+	// distributions, the way a computer with only a default shell would. On a
+	// Unix test binary the Windows executable cannot run, so the fixture leaves
+	// detection to the platform default.
 	state.localShellMenu.discover = func() []localshell.Choice {
+		if runtime.GOOS != "windows" {
+			return nil
+		}
 		return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
 	}
 	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }

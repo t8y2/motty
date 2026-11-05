@@ -50,6 +50,10 @@ type ToolsMessages struct {
 
 	// Snippets.
 	SnippetsTitle             string
+	SnippetTip                string
+	SnippetPickerPlaceholder  string
+	SnippetPickerEmpty        string
+	SnippetPickerAdd          string
 	SnippetsPageDescription   string
 	SnippetEmpty              string
 	SnippetEmptySub           string
@@ -113,6 +117,11 @@ type ToolsMessages struct {
 	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
+	CursorShapeRow             string
+	CursorShapeDescription     string
+	CursorShapeBlock           string
+	CursorShapeBar             string
+	CursorShapeUnderline       string
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
@@ -444,6 +453,17 @@ type ToolsMessages struct {
 	DropTerminalUploadFmt           string
 	DropTerminalDoneFmt             string
 	DropTerminalFailedFmt           string
+	DropDesktopFiles                string
+	DesktopFilesTitle               string
+	DesktopFilesOfferedFmt          string // count, size
+	DesktopFilesSkippedFmt          string // count, first path
+	DesktopFilesUnsupported         string
+	DesktopFilesClipboardOff        string
+	DesktopFilesNotReady            string
+	DesktopFilesNothing             string
+	DesktopFilesTooManyFmt          string // limit
+	DesktopFilesPathTooLongFmt      string // path
+	DesktopFilesFailedFmt           string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
@@ -478,6 +498,7 @@ type ToolsMessages struct {
 	UpdateWhyTranslocated           string
 	UpdateWhySystemInstall          string
 	UpdateWhyNoPackage              string
+	UpdateWhyPackageUnknown         string
 	UpdateWhyUnsigned               string
 	GeneralUpdateInstall            string
 	UpdateConfirmTitle              string
@@ -488,6 +509,7 @@ type ToolsMessages struct {
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
+	UpdateBlockedBySystem           string
 	UpdateOpenPage                  string
 	UpdateNoReleaseText             string
 	ActionSSHFmt                    string
@@ -662,6 +684,9 @@ type ToolsMessages struct {
 	RemoteProcessVirtualMemory      string
 	RemoteProcessElapsed            string
 	RemoteProcessCommand            string
+	RemoteProcessCommandLoading     string
+	RemoteProcessCommandSummary     string
+	RemoteProcessCommandTooLarge    string
 	RemoteProcessCollectedAt        string
 
 	RemoteProcessEnvironment            string
@@ -669,7 +694,13 @@ type ToolsMessages struct {
 	RemoteProcessEnvironmentValue       string
 	RemoteProcessEnvironmentLoading     string
 	RemoteProcessEnvironmentEmpty       string
+	RemoteProcessEnvironmentTooLarge    string
 	RemoteProcessEnvironmentUnsupported string
+	RemoteProcessEnvironmentUnreadable  string
+	RemoteContainerDetails              string
+	RemoteContainerDetailsTitle         string
+	RemoteContainerOverview             string
+	RemoteContainerEnvironmentEmpty     string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string

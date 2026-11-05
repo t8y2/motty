@@ -142,18 +142,21 @@ func (session *Session) resetLatency() {
 
 // latencyInfo returns the latency text and status color (<100ms green, <200ms yellow, >=200ms red).
 func (state *State) latencyInfo(session *Session) (text string, color ui.Color, ok bool) {
-	if !state.terminalShowLatency || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
-		return "", ui.Color{}, false
-	}
-	if atomic.LoadInt32(&session.rttAvailable) != 1 {
+	if !state.latencyAvailable(session) {
 		return "", ui.Color{}, false
 	}
 	ms := atomic.LoadInt64(&session.rttMs)
-	if ms < 0 {
-		return "", ui.Color{}, false
-	}
 	text = fmt.Sprintf("RTT %dms", ms)
 	return text, state.latencyColor(ms), true
+}
+
+// latencyAvailable is the allocation-free presence check used while deciding
+// whether the shared side rail needs to reserve space.
+func (state *State) latencyAvailable(session *Session) bool {
+	return state.terminalShowLatency && session != nil && !session.isLocal() &&
+		session.phase == sshconn.PhaseConnected &&
+		atomic.LoadInt32(&session.rttAvailable) == 1 &&
+		atomic.LoadInt64(&session.rttMs) >= 0
 }
 
 func (state *State) latencyColor(ms int64) ui.Color {

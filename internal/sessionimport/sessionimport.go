@@ -225,19 +225,19 @@ func readMobaFile(path string, encoding MobaEncoding) (string, error) {
 			return "", problem
 		}
 		if encoding == MobaAuto {
-			if other, ok := decodeMobaGB18030(data); ok && other != string(data) {
+			if other, ok := decodeGB18030Verified(data); ok && other != string(data) {
 				return "", ErrAmbiguousMobaEncoding
 			}
 		}
 		return string(data), nil
 	}
-	if decoded, ok := decodeMobaGB18030(data); ok {
+	if decoded, ok := decodeGB18030Verified(data); ok {
 		return decoded, nil
 	}
 	return "", problem
 }
 
-func decodeMobaGB18030(data []byte) (string, bool) {
+func decodeGB18030Verified(data []byte) (string, bool) {
 	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data)
 	if err == nil {
 		var encoded []byte
@@ -250,8 +250,11 @@ func decodeMobaGB18030(data []byte) (string, bool) {
 }
 
 // decode turns a file's bytes into text: UTF-16 with a byte-order mark (what
-// Windows tools write), or UTF-8 with or without one. Anything that is neither
-// is read as UTF-8 with its bad bytes dropped.
+// Windows tools write), or UTF-8 with or without one. Bytes that are neither
+// get one more chance — the round-trip-verified GB18030 the MobaXterm reader
+// uses, since ANSI exports from a Chinese Windows (Xshell's among them) keep
+// their text in that encoding — and only what survives none of those is read
+// as UTF-8 with its bad bytes dropped (issue #332).
 func decode(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
@@ -263,6 +266,9 @@ func decode(data []byte) string {
 	}
 	if utf8.Valid(data) {
 		return string(data)
+	}
+	if decoded, ok := decodeGB18030Verified(data); ok {
+		return decoded
 	}
 	return strings.ToValidUTF8(string(data), "")
 }

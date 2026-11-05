@@ -378,7 +378,7 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	// It is on the command palette, and choosing it types into the active shell.
 	state.openCommandPalette()
 	found := false
-	for index := 0; index < int(state.commandPalette.entryCount); index++ {
+	for index := 0; index < len(state.commandPalette.entries); index++ {
 		if strings.Contains(state.commandPalette.entries[index].label, "Restart nginx") {
 			found = true
 		}

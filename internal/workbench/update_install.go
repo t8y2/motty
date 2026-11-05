@@ -39,8 +39,12 @@ const (
 type updateInstall struct {
 	phase    installPhase
 	progress selfupdate.Progress
-	failure  string
-	cancel   context.CancelFunc
+	// failure is what to show the user: the system's refusal is explained
+	// rather than quoted, since the same sentence covers a missing ticket and
+	// a machine that cannot reach Apple.
+	failure string
+	err     error
+	cancel  context.CancelFunc
 	// serial tells an answer from a cancelled attempt from the current one.
 	serial int
 	text   struct {
@@ -82,7 +86,10 @@ func (state *State) whyNoInstall() string {
 		return m.UpdateWhySystemInstall
 	}
 	if !state.update.release.Asset.Has() {
-		return m.UpdateWhyNoPackage
+		if state.update.release.PlatformPackageChecked {
+			return m.UpdateWhyNoPackage
+		}
+		return m.UpdateWhyPackageUnknown
 	}
 	if !state.update.release.Asset.Signed() {
 		return m.UpdateWhyUnsigned
@@ -162,7 +169,11 @@ func (state *State) finishInstall(serial int, staged selfupdate.Staged, err erro
 		err = state.options.Updater.Launch(staged)
 	}
 	if err != nil {
-		install.phase, install.failure = installFailed, strings.TrimPrefix(err.Error(), "selfupdate: ")
+		install.phase, install.err = installFailed, err
+		install.failure = strings.TrimPrefix(err.Error(), "selfupdate: ")
+		if errors.Is(err, selfupdate.ErrNotAccepted) {
+			install.failure = state.messages.Tools.UpdateBlockedBySystem
+		}
 		return
 	}
 	install.phase = installRestarting

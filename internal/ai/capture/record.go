@@ -54,7 +54,7 @@ func newRecorder(maxOutput int) *recorder {
 
 func (r *recorder) setEcho(sent []byte) {
 	r.echo = r.echo[:0]
-	for _, l := range bytes.Split(bytes.TrimRight(sent, "\n"), []byte{'\n'}) {
+	for _, l := range splitEcho(sent) {
 		r.echo = append(r.echo, bytes.TrimSpace(l))
 	}
 	r.echoIdx = 0

@@ -2,12 +2,16 @@
 // plain data: the state carries one Messages value and every paint reads
 // from it, so switching languages is one assignment plus a repaint.
 //
-// The catalogs live one per language (english.go, chinese.go); the message
-// structs stay with the area they describe (terminal_tools.go, ai_panel.go,
-// and so on), so adding a string touches its struct and both catalogs.
+// The catalogs live one per language: english.go, chinese.go, and the
+// generated traditional.go (see tools/zhtw/gen.py). The message structs stay
+// with the area they describe (terminal_tools.go, ai_panel.go, and so on);
+// adding a string touches its struct and every catalog.
 package i18n
 
+import "strings"
+
 type HostGroupMessages struct {
+	ExpandAll, CollapseAll                        string
 	Actions, Rename, NewChild, Name, Save, Create string
 	InvalidName, Conflict, Missing                string
 	Move, Delete, Parent, TopLevel, Cycle         string
@@ -21,6 +25,7 @@ type Language uint8
 const (
 	English Language = iota
 	Chinese
+	TraditionalChinese
 )
 
 // String returns the BCP-ish tag for persistence or debugging.
@@ -28,9 +33,34 @@ func (language Language) String() string {
 	switch language {
 	case Chinese:
 		return "zh-CN"
+	case TraditionalChinese:
+		return "zh-TW"
 	default:
 		return "en"
 	}
+}
+
+// ChineseVariant picks the catalog a Chinese language tag reads: "zh-TW",
+// "zh-Hant-HK" and a locale like "zh_TW.UTF-8" are Traditional, and a tag that
+// names neither a script nor a Traditional region is Simplified. A script wins
+// over a region, so "zh-Hans-TW" stays Simplified.
+func ChineseVariant(tag string) Language {
+	tag, _, _ = strings.Cut(strings.ToLower(tag), ".")
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "hans":
+			return Chinese
+		case "hant":
+			return TraditionalChinese
+		}
+	}
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "tw", "hk", "mo":
+			return TraditionalChinese
+		}
+	}
+	return Chinese
 }
 
 // Messages is the complete set of user-visible workbench strings. Adding a
@@ -42,6 +72,11 @@ type Messages struct {
 	FileWindow     FileWindowMessages
 	SFTPWindow     SFTPWindowMessages
 	Transfers      TransferCenterMessages
+	// LocalProxy holds the compact SSH reverse-proxy panel.
+	LocalProxy LocalProxyMessages
+	// CodeEditor holds the code editor of the file window: find, replace and the
+	// status line.
+	CodeEditor CodeEditorMessages
 	// AIPanel and AISettings hold the assistant's texts; see ai_panel.go and
 	// ai_settings.go.
 	AIPanel    AIPanelMessages
@@ -220,6 +255,7 @@ type Messages struct {
 	SettingsLanguage                       string
 	SettingsLanguageEnglish                string
 	SettingsLanguageChinese                string
+	SettingsLanguageTraditionalChinese     string
 	SettingsAppearance                     string
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
@@ -247,6 +283,7 @@ type Messages struct {
 	VerticalTabGroupCountFmt               string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
+	VerticalTabsScrollbar                  string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
@@ -316,6 +353,16 @@ type Messages struct {
 	VaultCorruptFmt                        string
 	VaultCleared                           string
 	SettingsRestore                        string
+	SettingsStartupRow                     string
+	SettingsStartupEnable                  string
+	SettingsStartupEnableDescription       string
+	SettingsStartupDisabled                string
+	SettingsStartupDescription             string
+	SettingsStartupReuse                   string
+	SettingsStartupReuseDescription        string
+	SettingsStartupNone                    string
+	SettingsStartupJoiner                  string
+	SettingsStartupHostsCount              string
 	SettingsSSHAgent                       string
 	SettingsSSHAgentDescription            string
 	SettingsSSHAgentUsingFmt               string
@@ -363,6 +410,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string
 	ShortcutFilesPath                    string
@@ -373,6 +421,7 @@ type Messages struct {
 	ShortcutCloseTab                     string
 	ShortcutNextTab                      string
 	ShortcutPreviousTab                  string
+	ShortcutTabNumber                    string
 	ShortcutClearScreen                  string
 	RecordingStart                       string
 	RecordingStop                        string
@@ -547,10 +596,15 @@ type Messages struct {
 	MenuCloseTabsToRight string
 	MenuCloseTabsBelow   string
 	MenuDuplicateTab     string
-	MenuRenameTab        string
-	MenuRenameTerminal   string
-	MenuLockTab          string
-	MenuUnlockTab        string
+	// MenuMoveTabToNewWindow is the tab menu's choice that gives the tab a
+	// window of its own; TabTearOffHint is what a drag says while the pointer is
+	// out of every window and letting go would do the same.
+	MenuMoveTabToNewWindow string
+	TabTearOffHint         string
+	MenuRenameTab          string
+	MenuRenameTerminal     string
+	MenuLockTab            string
+	MenuUnlockTab          string
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string
@@ -741,6 +795,36 @@ type Messages struct {
 	KeyPassphraseSavedFmt       string
 	KeyPassphraseRemovedFmt     string
 	KeyPassphraseHostHint       string
+	VaultForgetKeysFmt          string
+	KeyAdd                      string
+	KeyPaste                    string
+	KeyGenerate                 string
+	KeyCopyPublic               string
+	KeyPasteTitle               string
+	KeyPasteDescription         string
+	KeyNameLabel                string
+	KeyNamePlaceholder          string
+	KeyTextLabel                string
+	KeyTextPlaceholder          string
+	KeyPasteSubmit              string
+	KeyGenerateTitle            string
+	KeyGenerateDescription      string
+	KeyGenerateNamePlaceholder  string
+	KeyGeneratePassphraseLabel  string
+	KeyGenerateSubmit           string
+	KeyNameRequired             string
+	KeyInvalidTextFmt           string
+	KeyDuplicateFmt             string
+	KeyAddedFmt                 string
+	KeyGeneratedFmt             string
+	KeyGeneratedNotCopiedFmt    string
+	KeyPublicCopiedFmt          string
+	KeyPublicUnavailable        string
+	KeyStoredIn                 string
+	KeyDeleteTitle              string
+	KeyDeleteDescriptionFmt     string
+	KeyDeleteConfirm            string
+	KeyDeletedFmt               string
 
 	// Local SSH port forwarding.
 	ForwardTitle                  string
@@ -852,6 +936,7 @@ type Messages struct {
 	SFTPNewDirectory            string
 	SFTPOpen                    string
 	SFTPRename                  string
+	SFTPMove                    string
 	SFTPDelete                  string
 	SFTPPermissions             string
 	SFTPCancelTransfer          string
@@ -888,11 +973,22 @@ type Messages struct {
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string
 	SFTPRenameDescription       string
-	SFTPDestinationPath         string
+	SFTPNewName                 string
 	SFTPRenameSubmit            string
-	SFTPErrDestinationRequired  string
+	SFTPErrRenameInvalid        string
+	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
+	SFTPMoveTitle               string
+	SFTPMoveDescription         string
+	SFTPMoveDestination         string
+	SFTPMoveSubmit              string
+	SFTPErrMoveRequired         string
+	SFTPErrMoveInvalid          string
+	SFTPErrMoveSame             string
+	SFTPErrMoveInside           string
+	SFTPMovingFmt               string
+	SFTPMovedFmt                string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
@@ -909,6 +1005,12 @@ type Messages struct {
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string
 	SFTPPermissionsSubmit       string
+	SFTPPermissionsOwner        string
+	SFTPPermissionsGroup        string
+	SFTPPermissionsOthers       string
+	SFTPPermissionsRead         string
+	SFTPPermissionsWrite        string
+	SFTPPermissionsExecute      string
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string
@@ -1001,6 +1103,17 @@ func For(language Language) Messages {
 		messages.SSHSync = chineseSSHSync
 		messages.Desktop = chineseDesktop
 		messages.About = chineseAbout
+		return messages
+	case TraditionalChinese:
+		messages := TraditionalMessages
+		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
+		messages.Toolbars = traditionalToolbars
+		messages.Autofill = traditionalAutofill
+		messages.History = traditionalHistory
+		messages.Completion = traditionalCompletion
+		messages.SSHSync = traditionalSSHSync
+		messages.Desktop = traditionalDesktop
+		messages.About = traditionalAbout
 		return messages
 	default:
 		messages := EnglishMessages

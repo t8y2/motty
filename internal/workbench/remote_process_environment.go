@@ -3,18 +3,11 @@ package workbench
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
-)
-
-var (
-	hitRemoteProcessEnvironment     = tree.ID(remoteToolsHits, "remote-process-environment")
-	hitRemoteProcessEnvironmentBar  = tree.ID(remoteToolsHits, "remote-process-environment-bar")
-	hitRemoteProcessEnvironmentRows = tree.Sub(remoteToolsHits, tree.Name("remote-process-environment-rows"))
 )
 
 func (state *State) cancelRemoteProcessEnvironment() {
@@ -30,7 +23,7 @@ func (state *State) cancelRemoteProcessEnvironment() {
 func (state *State) loadRemoteProcessEnvironment() {
 	details := &state.remote.processDetails
 	if !details.open || details.tab != hitRemoteProcessDetailsEnv ||
-		details.loading || details.environmentLoaded {
+		details.loading || details.environmentLoaded && !details.failed {
 		return
 	}
 	view := &state.remote
@@ -98,8 +91,8 @@ func (state *State) applyRemoteProcessEnvironment(
 	details.failed = false
 	details.status = ""
 	details.environment = environment
-	details.environmentScroll = 0
-	details.environmentScrollValue = ""
+	details.text.clearSelection()
+	details.text.scroll = 0
 }
 
 func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.Rect, process remotetools.Process, collectedAt time.Time) {
@@ -143,144 +136,62 @@ func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.R
 	if panelBounds.Height <= 0 {
 		return
 	}
-	if state.remoteProcessDetailTab() == hitRemoteProcessDetailsEnv {
-		state.paintRemoteProcessEnvironment(canvas, panelBounds)
-	} else {
-		state.paintRemoteProcessCommand(canvas, panelBounds, process.Command)
-	}
-}
-
-func (state *State) paintRemoteProcessCommand(canvas *ui.Canvas, bounds ui.Rect, command string) {
-	if bounds.Width <= 0 || bounds.Height <= 0 {
+	details, m := &state.remote.processDetails, state.messages.Tools
+	if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
+		commandBounds := panelBounds
+		if details.commandStatus != "" && commandBounds.Height > 0 {
+			statusHeight := min(float32(28), commandBounds.Height)
+			color := state.pal.muted
+			if details.commandFailed {
+				color = state.pal.danger
+			}
+			status := canvas.FitLine(
+				details.commandStatus,
+				theme.Metrics.FontSizeM,
+				ui.WeightRegular,
+				commandBounds.Width,
+			)
+			canvas.Label(status, ui.Rect{
+				X: commandBounds.X, Y: commandBounds.Y,
+				Width: commandBounds.Width, Height: statusHeight,
+			}, ui.TextStyle{
+				Size: theme.Metrics.FontSizeM, Weight: ui.WeightRegular, Color: color,
+			})
+			commandBounds.Y += statusHeight
+			commandBounds.Height = max(commandBounds.Height-statusHeight, 0)
+		}
+		if commandBounds.Height <= 0 {
+			return
+		}
+		state.paintRemoteDetailCode(
+			canvas, commandBounds, &details.text, processText(details.commandValue),
+			m.RemoteProcessDetailsTitle, m.RemoteProcessDetailsTitle,
+			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
+		)
 		return
 	}
-	theme, pal := state.Theme(), state.pal
-	canvas.RoundedBorder(bounds, radius.control, 1, pal.line, pal.workspace)
-	f := state.settingsRow.Begin(canvas, theme, bounds)
-	f.Column().Fill().PadSides(12, 9, 12, 9).Children(func() {
-		f.Wrap(processText(command)).FontSize(theme.Metrics.FontSizeM).LineHeight(19).Color(pal.text)
-	})
-	f.End()
-}
-
-func (state *State) paintRemoteProcessEnvironment(canvas *ui.Canvas, bounds ui.Rect) {
-	details, m, theme, pal := &state.remote.processDetails, state.messages.Tools, state.Theme(), state.pal
-	tableBounds := bounds
-	headerHeight := components.TableHeaderHeight(theme)
-	rowHeight := components.TableRowHeight(theme)
-	keyWidth := min(float32(300), max(tableBounds.Width*0.36, 140))
-	columns := []components.TableColumn{{Width: keyWidth}, {Width: 0}}
-	headerBounds := ui.Rect{
-		X: tableBounds.X, Y: tableBounds.Y, Width: tableBounds.Width,
-		Height: min(headerHeight, tableBounds.Height),
-	}
-	header := components.BeginTable(canvas, theme, headerBounds, columns).HeaderHeight(headerHeight)
-	header.Header([]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
-
-	bodyBounds := ui.Rect{
-		X: tableBounds.X, Y: headerBounds.Bottom(), Width: tableBounds.Width,
-		Height: max(tableBounds.Height-headerBounds.Height, 0),
-	}
-	details.environmentBounds = bodyBounds
-	message, color := "", pal.muted
-	switch {
-	case details.loading:
-		message = m.RemoteProcessEnvironmentLoading
-	case details.failed:
-		message, color = details.status, pal.danger
-	case len(details.environment) == 0:
-		message = m.RemoteProcessEnvironmentEmpty
-	}
-	if message != "" {
-		canvas.LabelCenter(message, bodyBounds, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: color})
-		return
-	}
-
-	contentHeight := float32(len(details.environment)) * rowHeight
-	area := components.BeginScrollArea(canvas, theme, bodyBounds, ui.Size{Width: bodyBounds.Width, Height: contentHeight}).
-		Offset(0, details.environmentScroll).
-		Viewport(hitRemoteProcessEnvironment, m.RemoteProcessEnvironment).
-		VerticalScrollbar(hitRemoteProcessEnvironmentBar, m.RemoteProcessEnvironment, details.environmentScrollValue)
-	geometry := area.Geometry()
-	details.environmentScroll = geometry.OffsetY
-	details.environmentScrollBar = geometry
-	details.environmentScrollValue = strconv.Itoa(1+int(geometry.OffsetY/rowHeight)) + "/" + strconv.Itoa(len(details.environment))
-	geometry = area.BeginContent()
-	details.environmentScroll = geometry.OffsetY
-
-	first := int(geometry.OffsetY / rowHeight)
-	first = min(max(first, 0), len(details.environment))
-	visible := int(geometry.Viewport.Height/rowHeight) + 2
-	last := min(first+visible, len(details.environment))
-	remainder := geometry.OffsetY - float32(first)*rowHeight
-	rowsBounds := ui.Rect{
-		X: geometry.Viewport.X, Y: geometry.Viewport.Y - remainder, Width: geometry.Viewport.Width,
-		Height: min(geometry.Viewport.Height+rowHeight, float32(last-first)*rowHeight),
-	}
-	table := components.BeginTable(canvas, theme, rowsBounds, columns).RowHeight(rowHeight)
-	for index := first; index < last; index++ {
-		item := details.environment[index]
-		table.Row(hitRemoteProcessEnvironmentRows.At(index), []string{item.Name, item.Value}, false)
-	}
-	area.EndContent()
+	state.paintRemoteEnvironmentView(
+		canvas, panelBounds, &details.text,
+		details.loading, details.failed, details.status, m.RemoteProcessEnvironmentEmpty,
+		details.environment,
+		[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue},
+		m.RemoteProcessEnvironment, m.RemoteProcessEnvironment,
+		hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
+	)
 }
 
 func (state *State) remoteProcessEnvironmentScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	details := &state.remote.processDetails
-	if !details.open || state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv ||
-		len(details.environment) == 0 ||
-		(!details.environmentDragging &&
-			!(event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary &&
-				event.Target == hitRemoteProcessEnvironmentBar)) {
+	if !details.open {
 		return ui.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
-	}
-	geometry := details.environmentScrollBar
-	before := details.environmentScroll
-	switch event.Kind {
-	case ui.PointerDown:
-		details.environmentDragging = true
-		details.environmentGrab = geometry.VerticalThumb.Height / 2
-		if event.Y >= geometry.VerticalThumb.Y &&
-			event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
-			details.environmentGrab = event.Y - geometry.VerticalThumb.Y
-		} else {
-			details.environmentScroll = geometry.VerticalOffsetForThumb(event.Y - details.environmentGrab)
-		}
-	case ui.PointerMove:
-		if !event.Captured {
-			return ui.EventResult{}, true
-		}
-		details.environmentScroll = geometry.VerticalOffsetForThumb(event.Y - details.environmentGrab)
-	case ui.PointerUp:
-		details.environmentDragging = false
-	case ui.PointerExit:
-		if !event.Captured {
-			details.environmentDragging = false
-		}
-	default:
-		return ui.EventResult{}, false
-	}
-	return ui.EventResult{Handled: true, Repaint: before != details.environmentScroll}, true
+	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
 }
 
 func (state *State) remoteProcessEnvironmentWheel(event ui.ScrollEvent) (ui.EventResult, bool) {
 	details := &state.remote.processDetails
-	if !details.open || state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv ||
-		details.environmentScrollBar.MaxOffsetY <= 0 {
+	if !details.open {
 		return ui.EventResult{}, false
 	}
-	inside := pointInRect(event.X, event.Y, details.environmentBounds) ||
-		event.Target == hitRemoteProcessEnvironment ||
-		event.Target == hitRemoteProcessEnvironmentBar ||
-		event.Target.Scope() == hitRemoteProcessEnvironmentRows
-	if !inside {
-		return ui.EventResult{}, false
-	}
-	_, rowHeight := state.remoteProcessTableMetrics()
-	before := details.environmentScroll
-	details.environmentScroll = min(max(details.environmentScroll+event.StepY(rowHeight), 0), details.environmentScrollBar.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != details.environmentScroll}, true
+	return state.remoteDetailWheel(event, &details.text, hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll)
 }

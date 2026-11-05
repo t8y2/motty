@@ -188,3 +188,52 @@ func TestShowInFilesKeepsAnOpenPanelOpen(t *testing.T) {
 		t.Fatalf("showing a folder closed the panel: %+v", context)
 	}
 }
+
+func TestSFTPPanelRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	divider, ok := hitByID(&canvas, hitContextDivider)
+	if !ok {
+		t.Fatal("context divider is missing")
+	}
+	base := state.baseWorkspacePixelBounds(size)
+	dragX := base.X + 420 + 0.5
+	y := divider.Bounds.Y + divider.Bounds.Height/2
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+
+	if state.sftpPanelWidth < 419 || state.sftpPanelWidth > 421 {
+		t.Fatalf("state.sftpPanelWidth = %v, want ~420", state.sftpPanelWidth)
+	}
+
+	// Toggling the panel closed and open again in the same workspace remembers the width.
+	state.Click(hitSFTPOpen)
+	state.Click(hitSFTPOpen)
+	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	if context.Width < 419 || context.Width > 421 {
+		t.Fatalf("reopened panel width = %v, want ~420", context.Width)
+	}
+
+	// Opening a new workspace remembers the adjusted width.
+	second := state.newHostSession(state.hosts[1])
+	secondWorkspace := state.deck.ActiveWorkspace()
+	secondContext, _ := state.deck.Context(secondWorkspace)
+	if secondContext.Width < 419 || secondContext.Width > 421 {
+		t.Fatalf("new workspace panel width = %v, want ~420 (session %v)", secondContext.Width, second.ID)
+	}
+
+	// Restoring the app remembers the adjusted width.
+	restored := newTestState(t, state.options)
+	if restored.sftpPanelWidth < 419 || restored.sftpPanelWidth > 421 {
+		t.Fatalf("restored.sftpPanelWidth = %v, want ~420", restored.sftpPanelWidth)
+	}
+	third := restored.newHostSession(restored.hosts[0])
+	thirdContext, _ := restored.deck.Context(restored.deck.ActiveWorkspace())
+	if thirdContext.Width < 419 || thirdContext.Width > 421 {
+		t.Fatalf("restored new workspace panel width = %v, want ~420 (session %v)", thirdContext.Width, third.ID)
+	}
+	_ = session
+}

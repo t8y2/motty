@@ -20,7 +20,7 @@ import (
 )
 
 // Current is the version of this build. A test keeps it equal to viva.toml's.
-const Current = "0.3.0"
+const Current = "0.3.3"
 
 // Feed is the GitHub release the project publishes its builds to.
 const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
@@ -39,8 +39,13 @@ type Release struct {
 	Version string // without a leading v
 	URL     string // the page to download it from
 	Notes   string // the release notes as published (Markdown), possibly cut short
+	// PlatformPackageChecked reports whether the answer included the feed's
+	// package list for the platform that asked. A GitHub page fallback can
+	// announce a release without proving whether that release has a package.
+	PlatformPackageChecked bool
 	// Asset is the package for the platform that asked, when the feed names one.
-	// The zero value means there is none, and the page is all there is.
+	// The zero value means there is none: either the feed checked and this
+	// platform has none, or PlatformPackageChecked is false and it never said.
 	Asset Asset
 }
 
@@ -129,11 +134,15 @@ func cutUTF8(text string, limit int) string {
 // answer, GitHub. The package is chosen for goos and goarch; a GitHub answer has
 // none, because it carries no checksums to hold a download to.
 func Check(ctx context.Context, client *http.Client, goos, goarch string) (Release, error) {
-	release, err := LatestMirror(ctx, client, MirrorFeed, goos, goarch)
+	return checkFeeds(ctx, client, MirrorFeed, Feed, goos, goarch)
+}
+
+func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string) (Release, error) {
+	release, err := LatestMirror(ctx, client, mirrorFeed, goos, goarch)
 	if err == nil {
 		return release, nil
 	}
-	if fallback, fallbackErr := Latest(ctx, client, Feed); fallbackErr == nil || errors.Is(fallbackErr, ErrNoRelease) {
+	if fallback, fallbackErr := Latest(ctx, client, githubFeed); fallbackErr == nil || errors.Is(fallbackErr, ErrNoRelease) {
 		return fallback, fallbackErr
 	}
 	return Release{}, err
@@ -206,13 +215,21 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 	if !strings.HasPrefix(body.Source, "https://") {
 		return Release{}, errors.New("update: the release page is not an https address")
 	}
-	release := Release{Version: body.Version, URL: body.Source, Notes: cutUTF8(body.Notes, maxNotesBytes)}
+	release := Release{
+		Version: body.Version, URL: body.Source, Notes: cutUTF8(body.Notes, maxNotesBytes),
+		PlatformPackageChecked: true,
+	}
 	stable := StableName(goos, goarch)
 	for _, file := range body.Files {
 		if stable == "" || file.Name != stable {
 			continue
 		}
 		if !sha256Pattern.MatchString(file.SHA256) || file.Size <= 0 || file.Size > maxAssetBytes {
+			// The feed names this platform's file but nothing that could hold a
+			// download to it. The list is there, the answer is not: calling the
+			// release package-less would be the same wrong claim a bare page
+			// fallback makes.
+			release.PlatformPackageChecked = false
 			break
 		}
 		name := strings.Replace(stable, "motty-", "motty-"+body.Version+"-", 1)

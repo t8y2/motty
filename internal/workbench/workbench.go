@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -156,10 +158,15 @@ var (
 
 // Key management: its page and the rows of its table.
 var (
-	hitKeysImport     = tree.ID(keysHits, "keys-import")
-	hitKeysRemove     = tree.ID(keysHits, "keys-remove")
-	hitKeysPassphrase = tree.ID(keysHits, "keys-passphrase")
-	hitKeyRowList     = tree.Sub(keysHits, tree.Name("key-row"))
+	hitKeysAdd         = tree.ID(keysHits, "keys-add")
+	hitKeysMenuDismiss = tree.ID(keysHits, "keys-menu-dismiss")
+	hitKeysImport      = tree.ID(keysHits, "keys-import")
+	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
+	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
+	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
+	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
+	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
 
 // Local forwarding: its page and dialog.
@@ -188,67 +195,71 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitSettingsLanguageEnglish  = tree.ID(settingsHits, "settings-language-english")
-	hitSettingsLanguageChinese  = tree.ID(settingsHits, "settings-language-chinese")
-	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
-	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
-	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
-	hitSettingsTextSmall        = tree.ID(settingsHits, "settings-text-small")
-	hitSettingsTextRegular      = tree.ID(settingsHits, "settings-text-regular")
-	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
-	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
-	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
-	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
-	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
-	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
-	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
-	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
-	hitSettingsOptionMeta       = tree.ID(settingsHits, "settings-option-meta")
-	hitSettingsFontSizeDown     = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset    = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp       = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
-	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
-	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
-	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
-	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
-	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
-	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
-	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
-	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
-	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
-	hitSettingsGutterBoth       = tree.ID(settingsHits, "settings-gutter-both")
-	hitSettingsScrollback1000   = tree.ID(settingsHits, "settings-scrollback1000")
-	hitSettingsScrollback5000   = tree.ID(settingsHits, "settings-scrollback5000")
-	hitSettingsScrollback10000  = tree.ID(settingsHits, "settings-scrollback10000")
-	hitSettingsTimeout5         = tree.ID(settingsHits, "settings-timeout5")
-	hitSettingsTimeout10        = tree.ID(settingsHits, "settings-timeout10")
-	hitSettingsTimeout30        = tree.ID(settingsHits, "settings-timeout30")
-	hitSettingsKeepAliveOff     = tree.ID(settingsHits, "settings-keep-alive-off")
-	hitSettingsKeepAlive30      = tree.ID(settingsHits, "settings-keep-alive30")
-	hitSettingsKeepAlive60      = tree.ID(settingsHits, "settings-keep-alive60")
-	hitSettingsReconnectOff     = tree.ID(settingsHits, "settings-reconnect-off")
-	hitSettingsReconnectThree   = tree.ID(settingsHits, "settings-reconnect-three")
-	hitSettingsReconnectForever = tree.ID(settingsHits, "settings-reconnect-forever")
-	hitSettingsClipboardBlock   = tree.ID(settingsHits, "settings-clipboard-block")
-	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
-	hitSettingsLatencyToggle    = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick   = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsClipboardAsk     = tree.ID(settingsHits, "settings-clipboard-ask")
-	hitSettingsClipboardAllow   = tree.ID(settingsHits, "settings-clipboard-allow")
-	hitSettingsRestoreActive    = tree.ID(settingsHits, "settings-restore-active")
-	hitSettingsAgentSystem      = tree.ID(settingsHits, "settings-agent-system")
-	hitSettingsAgentOnePassword = tree.ID(settingsHits, "settings-agent-1password")
-	hitSettingsAgentBitwarden   = tree.ID(settingsHits, "settings-agent-bitwarden")
-	hitSettingsAgentCustom      = tree.ID(settingsHits, "settings-agent-custom")
-	hitSettingsRestoreOff       = tree.ID(settingsHits, "settings-restore-off")
-	hitSettingsRestoreAll       = tree.ID(settingsHits, "settings-restore-all")
-	hitSettingsShareToggle      = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget      = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert     = tree.ID(settingsHits, "settings-vault-convert")
+	hitSettingsLanguageEnglish     = tree.ID(settingsHits, "settings-language-english")
+	hitSettingsLanguageChinese     = tree.ID(settingsHits, "settings-language-chinese")
+	hitSettingsLanguageTraditional = tree.ID(settingsHits, "settings-language-traditional")
+	hitSettingsAppearanceSystem    = tree.ID(settingsHits, "settings-appearance-system")
+	hitSettingsAppearanceDark      = tree.ID(settingsHits, "settings-appearance-dark")
+	hitSettingsAppearanceLight     = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsTextSmall           = tree.ID(settingsHits, "settings-text-small")
+	hitSettingsTextRegular         = tree.ID(settingsHits, "settings-text-regular")
+	hitSettingsTextLarge           = tree.ID(settingsHits, "settings-text-large")
+	hitSettingsNetworkSystem       = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect       = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft         = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight        = tree.ID(settingsHits, "settings-toolbar-right")
+	hitSettingsCloseTray           = tree.ID(settingsHits, "settings-close-tray")
+	hitSettingsCloseQuit           = tree.ID(settingsHits, "settings-close-quit")
+	hitSettingsOptionText          = tree.ID(settingsHits, "settings-option-text")
+	hitSettingsOptionMeta          = tree.ID(settingsHits, "settings-option-meta")
+	hitSettingsFontSizeDown        = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset       = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp          = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsPadCompact          = tree.ID(settingsHits, "settings-pad-compact")
+	hitSettingsPadNormal           = tree.ID(settingsHits, "settings-pad-normal")
+	hitSettingsPadRoomy            = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth         = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright       = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold         = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain        = tree.ID(settingsHits, "settings-intense-plain")
+	hitSettingsGutterOff           = tree.ID(settingsHits, "settings-gutter-off")
+	hitSettingsGutterNumbers       = tree.ID(settingsHits, "settings-gutter-numbers")
+	hitSettingsGutterTime          = tree.ID(settingsHits, "settings-gutter-time")
+	hitSettingsGutterBoth          = tree.ID(settingsHits, "settings-gutter-both")
+	hitSettingsScrollback1000      = tree.ID(settingsHits, "settings-scrollback1000")
+	hitSettingsScrollback5000      = tree.ID(settingsHits, "settings-scrollback5000")
+	hitSettingsScrollback10000     = tree.ID(settingsHits, "settings-scrollback10000")
+	hitSettingsTimeout5            = tree.ID(settingsHits, "settings-timeout5")
+	hitSettingsTimeout10           = tree.ID(settingsHits, "settings-timeout10")
+	hitSettingsTimeout30           = tree.ID(settingsHits, "settings-timeout30")
+	hitSettingsKeepAliveOff        = tree.ID(settingsHits, "settings-keep-alive-off")
+	hitSettingsKeepAlive30         = tree.ID(settingsHits, "settings-keep-alive30")
+	hitSettingsKeepAlive60         = tree.ID(settingsHits, "settings-keep-alive60")
+	hitSettingsReconnectOff        = tree.ID(settingsHits, "settings-reconnect-off")
+	hitSettingsReconnectThree      = tree.ID(settingsHits, "settings-reconnect-three")
+	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
+	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
+	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorBlock         = tree.ID(settingsHits, "settings-cursor-shape-block")
+	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
+	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
+	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
+	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsClipboardAsk        = tree.ID(settingsHits, "settings-clipboard-ask")
+	hitSettingsClipboardAllow      = tree.ID(settingsHits, "settings-clipboard-allow")
+	hitSettingsRestoreActive       = tree.ID(settingsHits, "settings-restore-active")
+	hitSettingsAgentSystem         = tree.ID(settingsHits, "settings-agent-system")
+	hitSettingsAgentOnePassword    = tree.ID(settingsHits, "settings-agent-1password")
+	hitSettingsAgentBitwarden      = tree.ID(settingsHits, "settings-agent-bitwarden")
+	hitSettingsAgentCustom         = tree.ID(settingsHits, "settings-agent-custom")
+	hitSettingsRestoreOff          = tree.ID(settingsHits, "settings-restore-off")
+	hitSettingsRestoreAll          = tree.ID(settingsHits, "settings-restore-all")
+	hitSettingsShareToggle         = tree.ID(settingsHits, "settings-share")
+	hitSettingsVaultForget         = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultConvert        = tree.ID(settingsHits, "settings-vault-convert")
 )
 
 // Jump-host routing: its page and dialog.
@@ -301,8 +312,10 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -427,6 +440,8 @@ type State struct {
 	hostCatalog
 	fileWindows       fileWindowManager
 	fileNotices       fileNotices
+	revealResults     chan revealResult
+	revealBusy        bool // only the window thread changes it; a worker returns over revealResults
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
 	reveal      secretReveal
@@ -512,6 +527,7 @@ type State struct {
 	hostTreeRows       []hostTreeRow
 	hostsScroll        float32
 	tabDrag            tabDrag
+	tabPreview         tabPreview
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
@@ -522,29 +538,33 @@ type State struct {
 	hostsContent       float32
 	hostGroupMenu      bool
 	importMenu         bool
-	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
-	terminalMenu       terminalMenu
-	hostGroupEditor    text.Editor
-	groupActions       hostGroupActions
-	tabRename          tabRename
-	tabsClose          tabsClose
-	sessionLink        sessionLink
-	hostDialogMode     hostDialogMode
-	hostDialogID       uint32
-	ruleDelete         ruleDelete
-	hostTest           hostTest
-	hostDialogText     string
-	identityCountText  string
-	forwardCountText   string
-	forwardStarts      chan forwardStartResult
-	proxyCountText     string
-	hostImportResult   hostImportResult
-	sessionImport      sessionImportPreview
-	mobaEncoding       mobaEncodingPrompt
-	knownHosts         knownHostsView
-	knownHostsLayout   flex.View
-	settingsRow        flex.View
-	partLayout         flex.View // a dialog body, a host card or a group header: one at a time
+	// keysMenu is the open menu under the Keychain page's Add Key button, and
+	// keysAddButton where that button was painted.
+	keysMenu          bool
+	keysAddButton     ui.Rect
+	hostsBounds       ui.Rect // the hosts page as last painted; the menus anchor to it
+	terminalMenu      terminalMenu
+	hostGroupEditor   text.Editor
+	groupActions      hostGroupActions
+	tabRename         tabRename
+	tabsClose         tabsClose
+	sessionLink       sessionLink
+	hostDialogMode    hostDialogMode
+	hostDialogID      uint32
+	ruleDelete        ruleDelete
+	hostTest          hostTest
+	hostDialogText    string
+	identityCountText string
+	forwardCountText  string
+	forwardStarts     chan forwardStartResult
+	proxyCountText    string
+	hostImportResult  hostImportResult
+	sessionImport     sessionImportPreview
+	mobaEncoding      mobaEncodingPrompt
+	knownHosts        knownHostsView
+	knownHostsLayout  flex.View
+	settingsRow       flex.View
+	partLayout        flex.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
@@ -607,6 +627,7 @@ type State struct {
 	appearance          appearance
 	appearanceMode      appearanceMode
 	networkProxy        networkProxyMode
+	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	recentConnectSort   bool
@@ -620,8 +641,27 @@ type State struct {
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
+	terminalCursorStyle terminalCursorStyle
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
+	// What a launch opens once, from the first Wake (see openStartupSessions):
+	// a local terminal, and the saved hosts to connect, by catalog id.
+	// startupLocal opens the machine's default local terminal at a launch;
+	// startupShell opens a specific one of the detected shells instead. At
+	// most one of the two holds.
+	startupLocal bool
+	startupShell string
+	startupHosts []string
+	// startupEnabled is the feature switch of what a launch opens: off, the
+	// launch opens nothing but the choices are kept for when it turns on again.
+	startupEnabled bool
+	// startupReuse says a launch focuses what it was asked to open when that
+	// terminal or host is already open, instead of opening another one.
+	startupReuse  bool
+	startupPicker struct {
+		open   bool
+		bounds ui.Rect // the chooser's place on the settings page
+	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)
 	// dialDesktop opens the remote desktop of a VNC host; tests replace it.
@@ -662,7 +702,9 @@ type State struct {
 	monitorResizeWorkspace layoutcore.WorkspaceID
 	monitorResizeSession   uint32
 	monitorMenuSession     uint32
+	monitorWidth           float32
 	sftpPanelSide          layoutcore.ContextSide
+	sftpPanelWidth         float32
 	sftpBookmarks          []sftpBookmark
 	sftpLocalBookmarks     []string
 	transferLeftover       []byte
@@ -769,9 +811,10 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout flex.View
 	// area: terminal and workspace panes
-	terminalPageLayout flex.View
-	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   flex.View
+	fontPickerListLayout flex.View
+	fontPickerLayout     flex.View // the font picker's list and sample
+	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
@@ -784,6 +827,7 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            flex.View
 	keysLayout            flex.View
+	paletteListLayout     flex.View
 	paletteLayout         flex.View
 	importLayout          flex.View
 	knownHostsTableLayout flex.View
@@ -838,7 +882,15 @@ type State struct {
 	// does not allocate its nodes.
 	sessionLogsLayout flex.View
 	// ai is the built-in assistant; see ai_state.go.
-	ai aiState
+	ai                 aiState
+	localProxyPort     uint16
+	localProxyPortSet  bool
+	localProxyUI       localProxyUI
+	localProxyOnce     sync.Once
+	localProxyFallback *localProxyManager
+	// callbacksClosed prevents process-owned workers from reading UI-thread
+	// close state when they wake windows after their owner has gone away.
+	callbacksClosed atomic.Bool
 }
 
 // Close releases connections, transfers, monitors, and forwards owned by this
@@ -847,9 +899,12 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.callbacksClosed.Store(true)
 	state.closed = true
+	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
@@ -866,6 +921,7 @@ func (state *State) Close() {
 	}
 	state.closeCompletionWorkers()
 	state.stopUpdateCheck()
+	state.closeLocalProxySessions()
 	if state.options.Group != nil {
 		state.options.Group.leave(state)
 	}
@@ -913,6 +969,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
+		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
 		nextIdentityID:        1,
@@ -926,6 +983,8 @@ func New(options Options) *State {
 		viewport:              ui.Size{Width: 1400, Height: 900},
 		terminalFontSize:      termFontSize,
 		terminalScrollback:    scrollbackLines,
+		startupReuse:          true,
+		startupEnabled:        true,
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second},
 		sftpParallel:          DefaultSFTPParallel,
 		sftpColumns:           defaultSFTPColumnPreferences(),
@@ -934,6 +993,8 @@ func New(options Options) *State {
 		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
+		localProxyPort:        defaultLocalProxyPort,
+		lookupSystemProxy:     systemproxy.Lookup,
 		syncDelay:             syncDelayDefault,
 		syncRetryBase:         syncRetryBaseDefault,
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
@@ -979,7 +1040,7 @@ func New(options Options) *State {
 	// Dialing waits for the first Wake: the window does not exist yet, so the
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
-	state.restorePending = state.restoreConnect != restoreConnectOff
+	state.restorePending = state.startupWanted()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
@@ -1243,6 +1304,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitWorkspaceSaveName {
 			return &state.workspaceSave.name
 		}
+	case modalLocalProxy:
+		if hit == hitLocalProxyPort && !state.localProxyUIPortLocked() {
+			return &state.localProxyUI.port
+		}
 	}
 	if editor := state.terminalFindEditor(hit); editor != nil {
 		return editor
@@ -1448,12 +1513,24 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalWorkspaceTemplateDelete:
 		state.clickWorkspaceTemplateDelete(id)
 		return
+	case modalLocalProxy:
+		state.clickLocalProxy(id)
+		return
 	}
 	if state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
+		return
+	}
+	if id == hitTerminalSnippets {
+		state.openSnippetPicker()
+		return
+	}
+	if id == hitLocalProxyOpen {
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		state.openLocalProxy(session)
 		return
 	}
 	if state.clickVerticalTabGroup(id) {
@@ -1685,6 +1762,7 @@ func (state *State) closeSession(id uint32) {
 	defer state.save()
 	defer memoryTrim.request()
 	session := &state.sessions[index]
+	state.leaveLocalProxy(session)
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)
@@ -1883,29 +1961,18 @@ func (state *State) syncVisible() {
 		return
 	}
 	state.visibleQuery, state.visibleHosts = query, len(state.hosts)
-	needle := strings.ToLower(strings.TrimSpace(query))
+	words := strings.Fields(strings.ToLower(query))
 	state.visible = state.visible[:0]
 	if state.visible == nil {
 		state.visible = make([]int, 0, len(state.hosts))
 	}
 	for index, host := range state.hosts {
-		if needle == "" || matchesHost(host, needle) {
+		if len(words) == 0 || matchesHost(host, words) {
 			state.visible = append(state.visible, index)
 		}
 	}
 	state.refreshHostSelection()
 	state.rebuildHostTreeRows()
-}
-
-// matchesHost reports whether needle (lower case) occurs in any text the host
-// shows.
-func matchesHost(host Host, needle string) bool {
-	for _, value := range [...]string{host.Label, host.Address, host.User, host.Group, host.Tags, host.Icon.String()} {
-		if strings.Contains(strings.ToLower(value), needle) {
-			return true
-		}
-	}
-	return false
 }
 
 // hostIsVisible reports whether the search box currently lets a host through.
@@ -2014,8 +2081,14 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		}
 		return ui.EventResult{Handled: true}
 	}
+	if result, handled := state.localProxyPointer(event); handled {
+		return result
+	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
+	}
+	if result, handled := state.verticalTabsScrollPointer(event); handled {
+		return result
 	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
@@ -2165,6 +2238,15 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.remoteProcessMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
+		return result
+	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
 	}
@@ -2278,6 +2360,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if state.tabDrag.active && event.Key == ui.KeyEscape {
+		state.closeTabPreview()
 		state.tabDrag = tabDrag{}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
@@ -2321,6 +2404,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := state.remoteProcessTableKey(event); handled {
@@ -2405,6 +2491,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.aiKey(event); handled {
 		return result
 	}
+	if result, handled := state.localProxyKey(event); handled {
+		return result
+	}
 	if result, handled := state.commandPaletteKey(event); handled {
 		return result
 	}
@@ -2424,6 +2513,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.hostManagementKey(event); handled {
+		return result
+	}
+	if result, handled := state.keysKey(event); handled {
 		return result
 	}
 	if state.modal == modalNewHost && event.Key == ui.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
@@ -2504,7 +2596,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitOutboundProxy()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil {
+	if state.modal == modalForm {
+		if result, handled := state.formKey(event); handled {
+			return result
+		}
+	}
+	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

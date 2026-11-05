@@ -6,7 +6,17 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-const commandPaletteVisibleRows = 10
+const (
+	commandPaletteVisibleRows = 10
+	// commandPaletteRowPitch is a row and the gap below it.
+	commandPaletteRowPitch = 34
+	// commandPaletteBarGap is how far the scrollbar's strip sits beyond the
+	// list: in the dialog's padding, so it never covers a row's text.
+	commandPaletteBarGap = 8
+	// commandPaletteBarWidth is the slim bar's strip, as the scroll area's
+	// overlay style draws it; the thumb is a little narrower.
+	commandPaletteBarWidth = 6
+)
 
 func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.commandPalette.connect {
@@ -16,11 +26,14 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitCommandPaletteDismiss, CloseID: hitCommandPaletteClose, InitialFocusID: hitCommandPaletteSearch,
-		ContentSize: ui.Size{Width: 620, Height: 446},
+		ContentSize: ui.Size{Width: 620, Height: 474},
 	})
 	title, placeholder, empty := state.messages.CommandPaletteTitle, state.messages.CommandPalettePlaceholder, state.messages.CommandPaletteEmpty
-	if state.commandPalette.connect {
+	switch {
+	case state.commandPalette.connect:
 		title, placeholder, empty = state.messages.LabelNewTab, state.messages.NewTabPickerPlaceholder, state.messages.NewTabPickerEmpty
+	case state.commandPalette.snippets:
+		title, placeholder, empty = state.messages.Tools.SnippetsTitle, state.messages.Tools.SnippetPickerPlaceholder, state.messages.Tools.SnippetPickerEmpty
 	}
 	layout := dialog.Begin(title, "")
 	if state.commandPalette.connect {
@@ -29,9 +42,9 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	value := state.commandPalette.search.String()
 	focused := canvas.Focused() == hitCommandPaletteSearch
 	palette := &state.commandPalette
-	count := min(int(palette.visibleCount)-int(palette.top), commandPaletteVisibleRows)
+	count := len(palette.visible)
 
-	var search flex.Box
+	var search, list flex.Box
 	f := state.paletteLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
 		search = f.Slot().Height(36).FillWidth().Shrink(0)
@@ -39,9 +52,25 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 			f.Text(empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).TextCenter().MarginSides(36, 0, 0, 0)
 			return
 		}
-		f.Column().Gap(4).MarginSides(12, 0, 0, 0).Children(func() {
-			for visible := 0; visible < count; visible++ {
-				entry := palette.entries[palette.visible[int(palette.top)+visible]]
+		list = f.Slot().Height(commandPaletteListHeight).FillWidth().Shrink(0).MarginSides(12, 0, 0, 0)
+	})
+	f.End()
+	palette.listRect = ui.Rect{}
+	if count > 0 {
+		palette.listRect = list.Rect()
+		area := components.BeginScrollArea(canvas, state.Theme(), palette.listRect, ui.Size{Width: palette.listRect.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).HoverScrollbars(false)
+		geometry := area.BeginContent()
+		palette.scroll = geometry.OffsetY
+		// Lay out only the visible window, including the partially exposed last row.
+		first := int(geometry.OffsetY / commandPaletteRowStep)
+		last := min(count, first+commandPaletteVisibleRows+1)
+		content := geometry.Content
+		content.Y += float32(first) * commandPaletteRowStep
+		content.Height = float32(last-first) * commandPaletteRowStep
+		f := state.paletteListLayout.Begin(canvas, state.Theme(), content)
+		f.Column().Gap(4).FillWidth().Children(func() {
+			for visible := first; visible < last; visible++ {
+				entry := palette.entries[palette.visible[visible]]
 				if entry.header {
 					f.Row().Height(30).PadX(10).Gap(6).Items(flex.Center).Shrink(0).
 						HitOutset(2, 0, 2, 0).
@@ -55,7 +84,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					continue
 				}
 				id := hitCommandPaletteItems.At(visible)
-				selected := palette.selected == palette.top+uint8(visible)
+				selected := palette.selected == visible
 				color, detailColor := state.pal.muted, state.pal.faint
 				if selected {
 					color, detailColor = state.pal.onAccent, state.pal.onAccent
@@ -80,18 +109,35 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					if entry.detail != "" {
 						f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(detailColor).Ellipsis().MaxWidth(layout.Body.Width * 0.45).Shrink(0)
 					}
+					// A saved host can be opened for editing from its own row: the
+					// pencil opens the host's dialog instead of connecting.
+					if edit := connectPickEdit(entry.target); !edit.IsZero() {
+						var editWash ui.Color
+						if canvas.Hovered() == edit {
+							editWash = state.pal.line
+						}
+						f.Stack().Size(24, 24).Shrink(0).HitWith(edit, state.messages.EditHost, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: state.messages.EditHost}).Children(func() {
+							f.Row().Fill().Radius(radius.item).Background(editWash)
+							f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+								f.Icon(lucideIcons[iconPencil]).Size(14, 14).Color(state.pal.muted).Shrink(0)
+							})
+						})
+					}
 				})
 			}
 		})
-	})
-	f.End()
-	if total := int(palette.visibleCount); total > commandPaletteVisibleRows {
-		// A thumb on the right edge says there are more rows above or below.
-		track := ui.Rect{X: layout.Body.X + layout.Body.Width - 4, Y: search.Rect().Y + 48, Width: 3, Height: commandPaletteVisibleRows*34 - 4}
-		thumb := track.Height * commandPaletteVisibleRows / float32(total)
-		at := track.Y + (track.Height-thumb)*float32(palette.top)/float32(total-commandPaletteVisibleRows)
-		canvas.Rounded(ui.Rect{X: track.X, Y: at, Width: track.Width, Height: thumb}, 1.5, withAlpha(state.pal.muted, 0.6))
+		f.End()
+		area.EndContent()
 	}
+	palette.bar = components.ScrollAreaGeometry{}
+	if palette.maxScroll() > 0 {
+		// Keep the upstream draggable bar beside, rather than over, the rows.
+		bounds := palette.listRect
+		bounds.Width += commandPaletteBarGap + commandPaletteBarWidth
+		area := components.BeginScrollArea(canvas, state.Theme(), bounds, ui.Size{Width: bounds.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
+		palette.bar = area.EndContent()
+	}
+
 	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
 		ID: hitCommandPaletteSearch, Label: title, Value: value,
 		Placeholder: placeholder, Focused: focused, PlatformEditing: focused && value != "",

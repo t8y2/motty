@@ -98,6 +98,14 @@ func fatalText(language i18n.Language, err error, logDir string) (title, body st
 		}
 		return title, body
 	}
+	if language == i18n.TraditionalChinese {
+		title = buildinfo.ProductName + " 無法啟動"
+		body = fmt.Sprintf("%v", err)
+		if logDir != "" {
+			body += "\n\n記錄儲存在：\n" + filepath.ToSlash(logDir) + "\n回報問題時請附上其中的 motty.log。"
+		}
+		return title, body
+	}
 	title = buildinfo.ProductName + " could not start"
 	body = fmt.Sprintf("%v", err)
 	if logDir != "" {

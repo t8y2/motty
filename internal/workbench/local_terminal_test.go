@@ -262,7 +262,7 @@ func TestLocalTerminalHasAFixedEntryInTheSidebarAndTheCommandPalette(t *testing.
 	state.openCommandPalette()
 	found := false
 	palette := &state.commandPalette
-	for index := 0; index < int(palette.entryCount); index++ {
+	for index := 0; index < len(palette.entries); index++ {
 		if palette.entries[index].target == hitLocalTerminal {
 			found = true
 		}

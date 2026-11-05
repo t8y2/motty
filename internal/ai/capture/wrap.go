@@ -5,16 +5,21 @@
 // output, removes the completion marker from what the user sees, and records
 // the command's plain-text output and exit status.
 //
-// The wrapper targets POSIX-style interactive shells (sh, bash, zsh, dash,
-// ksh). Shells without "{ ...; }" groups and "$?" (fish, nushell, cmd.exe,
-// PowerShell) never print the marker, so the tap never completes and the caller
-// must time out.
+// The wrapper is chosen by the shell's family (see [WrapFor]): POSIX-style
+// shells (sh, bash, zsh, dash, ksh) and PowerShell are supported. Shells that
+// have neither "{ ...; }" groups with "$?" nor PowerShell's syntax (fish,
+// nushell, cmd.exe) would never print the marker, so [WrapFor] refuses them
+// instead of letting the caller wait for a timeout.
 package capture
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strings"
+
+	"motty/internal/shellkind"
 )
 
 const markerPrefix = "GOPAI_"
@@ -71,7 +76,64 @@ func cleanNonce(n string) string {
 //     [Tap.Abort] and interrupts the shell (Ctrl-C) itself.
 //   - An empty command becomes ":" because an empty group is a syntax error.
 func Wrap(command, nonce string) []byte {
-	cmd := sanitizeCommand(command)
+	return wrapPOSIX(sanitizeCommand(command, shellkind.POSIX), nonce)
+}
+
+// ErrUnsupportedShell is returned by [WrapFor] for a shell whose syntax has no
+// wrapper, so that the command was never typed.
+type ErrUnsupportedShell struct{ Kind shellkind.Kind }
+
+func (err ErrUnsupportedShell) Error() string {
+	return fmt.Sprintf("terminal_exec cannot run commands in %s; open a session whose shell is a POSIX shell or PowerShell", err.Kind)
+}
+
+// WrapFor is [Wrap] for the shell family the terminal is running. An Unknown
+// family gets the POSIX wrapper, which is what every shell got before the
+// family was known.
+//
+// PowerShell gets
+//
+//	$global:LASTEXITCODE = 0; $global:__motty_ok = $false; try { . { <command>
+//	$global:__motty_ok = $? } } catch { $_ }; & { param($ok, $code) ... } $global:__motty_ok $LASTEXITCODE; Remove-Variable __motty_ok -Scope Global
+//
+// The command is dot-sourced, so its variables stay in the user's session as
+// they do in a POSIX brace group, and the closing brace is on its own line for
+// the same reason as there. "$?" after a script block is always true, so the
+// status is stored by the block's last statement, where it still describes the
+// command. A terminating error (throw) would end the whole line, marker
+// included, so it is caught and shown the way PowerShell shows it, and the
+// status stays false. The printed status is 0 on success, the native program's
+// exit code when one failed, and 1 for a failed cmdlet or expression. A
+// negative code (a Windows NTSTATUS) is printed as the unsigned number it is.
+// As in the POSIX wrapper the marker is built from split string literals, so
+// the echoed line never contains it. Lines are separated by carriage returns,
+// which is what Enter sends: PSReadLine does not take a bare line feed as a
+// line break on Unix. A command that does not parse is never run and so never
+// completes, which the caller's timeout reports, as for the POSIX wrapper.
+func WrapFor(kind shellkind.Kind, command, nonce string) ([]byte, error) {
+	switch kind {
+	case shellkind.Unknown, shellkind.POSIX:
+		return wrapPOSIX(sanitizeCommand(command, shellkind.POSIX), nonce), nil
+	case shellkind.PowerShell:
+		return wrapPowerShell(sanitizeCommand(command, shellkind.PowerShell), nonce), nil
+	}
+	return nil, ErrUnsupportedShell{kind}
+}
+
+func wrapPowerShell(cmd, nonce string) []byte {
+	var sb strings.Builder
+	sb.Grow(len(cmd) + 256)
+	sb.WriteString("$global:LASTEXITCODE = 0; $global:__motty_ok = $false; try { . { ")
+	sb.WriteString(cmd)
+	sb.WriteString("\n$global:__motty_ok = $? } } catch { $_ }; & { param($ok, $code) \"`n{0}{1}{2}`n\" -f '")
+	sb.WriteString(markerPrefix)
+	sb.WriteString("', '")
+	sb.WriteString(cleanNonce(nonce))
+	sb.WriteString("', $(if ($ok) { 0 } elseif ($code -lt 0) { $code + 4294967296 } elseif ($code) { $code } else { 1 }) } $global:__motty_ok $LASTEXITCODE; Remove-Variable __motty_ok -Scope Global\n")
+	return []byte(strings.ReplaceAll(sb.String(), "\n", "\r"))
+}
+
+func wrapPOSIX(cmd, nonce string) []byte {
 	var sb strings.Builder
 	sb.Grow(len(cmd) + 64)
 	sb.WriteString("{ ")
@@ -88,10 +150,19 @@ func Wrap(command, nonce string) []byte {
 // terminal shows this instead of the wrapper, so the text is cleaned exactly as
 // the shell receives it.
 func DisplayCommand(command string) string {
-	return sanitizeCommand(command)
+	return sanitizeCommand(command, shellkind.POSIX)
 }
 
-func sanitizeCommand(command string) string {
+// DisplayCommandFor is [DisplayCommand] for the shell family [WrapFor] used.
+func DisplayCommandFor(kind shellkind.Kind, command string) string {
+	return sanitizeCommand(command, kind)
+}
+
+// sanitizeCommand cleans command for the shell of kind. The empty command is
+// the shell's no-op, and the line continuation dropped from the end is the
+// shell's own: a backslash in POSIX shells, a backtick in PowerShell, where a
+// trailing backslash is just the end of a path.
+func sanitizeCommand(command string, kind shellkind.Kind) string {
 	b := make([]byte, 0, len(command))
 	for i := 0; i < len(command); i++ {
 		c := command[i]
@@ -106,16 +177,36 @@ func sanitizeCommand(command string) string {
 		}
 	}
 	s := strings.TrimRight(string(b), "\n \t")
-	// Drop one pending line continuation (odd number of trailing backslashes).
+	// Drop one pending line continuation (odd number of trailing escapes).
+	escape := byte('\\')
+	if kind == shellkind.PowerShell {
+		escape = '`'
+	}
 	n := 0
-	for n < len(s) && s[len(s)-1-n] == '\\' {
+	for n < len(s) && s[len(s)-1-n] == escape {
 		n++
 	}
 	if n%2 == 1 {
 		s = strings.TrimRight(s[:len(s)-1], " \t")
 	}
 	if strings.TrimSpace(s) == "" {
+		if kind == shellkind.PowerShell {
+			return "$null"
+		}
 		return ":"
 	}
 	return s
+}
+
+// splitEcho splits the bytes that were typed into the lines the terminal will
+// echo, trimmed. Lines end with a line feed or, for PowerShell, a carriage
+// return, which is what Enter sends.
+func splitEcho(sent []byte) [][]byte {
+	sent = bytes.ReplaceAll(sent, []byte("\r\n"), []byte("\n"))
+	sent = bytes.ReplaceAll(sent, []byte("\r"), []byte("\n"))
+	lines := bytes.Split(bytes.TrimRight(sent, "\n"), []byte{'\n'})
+	for i := range lines {
+		lines[i] = bytes.TrimSpace(lines[i])
+	}
+	return lines
 }

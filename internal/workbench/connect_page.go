@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"path/filepath"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -192,7 +191,7 @@ func (state *State) describe(session *Session) {
 	case session.phase == sshconn.PhasePasswordPrompt:
 		session.details[stageLogin] = m.ConnDetailPasswordAsk
 	case session.phase == sshconn.PhaseKeyPassphrasePrompt:
-		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, filepath.Base(session.identity))
+		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, state.identityLabel(session.identity))
 	case session.phase == sshconn.PhaseConnected && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	case session.stage == stageLogin:

@@ -41,9 +41,9 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 			prepare:     func(state *State) { state.dashboard.panels, state.dashboard.active = nil, "" },
 		},
 		{
-			name: "keys", section: sectionKeys, action: hitKeysImport, hasAction: true,
+			name: "keys", section: sectionKeys, action: hitKeysAdd, hasAction: true,
 			title:       func(state *State) string { return state.messages.KeyEmpty },
-			actionLabel: func(state *State) string { return state.messages.KeyImport },
+			actionLabel: func(state *State) string { return state.messages.KeyAdd },
 			prepare:     func(state *State) { state.identities, state.selectedIdentityID = nil, 0 },
 		},
 		{

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,6 +95,93 @@ func TestTransferCenterOnlyFillsTheBarAfterCommitCompletes(t *testing.T) {
 	state.describeTransfer(entry)
 	if entry.status != state.messages.Transfers.Completed || transferFraction(entry.snapshot) != 1 {
 		t.Fatal("completed transfer does not fill the bar")
+	}
+}
+
+func TestTransferCenterRevealsOnlyCompletedDownloads(t *testing.T) {
+	state := transferPreviewState(t)
+	completed := &state.transfers.entries[0]
+	if completed.owner != nil {
+		t.Fatal("test download should represent closed-connection history")
+	}
+	opened := make(chan string, 3)
+	release := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	state.options.RevealPath = func(path string) error {
+		opened <- path
+		<-release
+		return nil
+	}
+	reveal := hitTransfersReveal.At(completed.id)
+	state.Click(reveal)
+	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeyEnter})
+	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeySpace})
+	for range 20 {
+		state.Click(reveal)
+	}
+	waitFor(t, state, func() bool { return len(opened) == 1 })
+	if got := <-opened; got != completed.snapshot.Destination {
+		t.Fatalf("opened=%q want=%q", got, completed.snapshot.Destination)
+	}
+	if !state.revealBusy {
+		t.Fatal("repeated reveal did not keep a single pending request")
+	}
+	close(release)
+	waitFor(t, state, func() bool { return !state.revealBusy })
+	state.Click(reveal)
+	waitFor(t, state, func() bool { return len(opened) == 1 })
+	if got := <-opened; got != completed.snapshot.Destination {
+		t.Fatalf("opened=%q want=%q after first reveal completed", got, completed.snapshot.Destination)
+	}
+	waitFor(t, state, func() bool { return !state.revealBusy })
+	for _, index := range []int{1, 2, 3} {
+		state.Click(hitTransfersReveal.At(state.transfers.entries[index].id))
+	}
+	completedUpload := transferEntry{
+		id: 5,
+		snapshot: sftpclient.TransferSnapshot{
+			Operation: sftpclient.OperationUpload, State: sftpclient.TransferCompleted, Destination: "/srv/upload.txt",
+		},
+	}
+	state.transfers.entries = append(state.transfers.entries, completedUpload)
+	state.Click(hitTransfersReveal.At(completedUpload.id))
+	time.Sleep(10 * time.Millisecond)
+	if len(opened) != 0 {
+		t.Fatal("non-download records opened a local path")
+	}
+}
+
+func TestTransferCenterReportsRevealFailure(t *testing.T) {
+	state := transferPreviewState(t)
+	state.options.RevealPath = func(string) error { return errors.New("file manager unavailable") }
+	state.Click(hitTransfersReveal.At(state.transfers.entries[0].id))
+	waitFor(t, state, func() bool { return state.status == state.messages.Transfers.ShowInFolderFailed })
+	if len(state.fileNotices.items) != 1 {
+		t.Fatalf("status=%q notices=%d", state.status, len(state.fileNotices.items))
+	}
+	if got := state.fileNotices.items[0]; got.title != state.messages.Transfers.ShowInFolder || got.detail != state.messages.Transfers.ShowInFolderFailed {
+		t.Fatalf("unexpected notice: %+v", got)
+	}
+}
+
+func TestTransferCenterExplainsWhenARevealTargetIsGone(t *testing.T) {
+	state := transferPreviewState(t)
+	state.options.RevealPath = func(path string) error {
+		return fmt.Errorf("%w: %q", os.ErrNotExist, path)
+	}
+	state.Click(hitTransfersReveal.At(state.transfers.entries[0].id))
+	waitFor(t, state, func() bool { return state.status == state.messages.Transfers.ShowInFolderMissing })
+	if len(state.fileNotices.items) != 1 {
+		t.Fatalf("status=%q notices=%d", state.status, len(state.fileNotices.items))
+	}
+	if got := state.fileNotices.items[0]; got.detail != state.messages.Transfers.ShowInFolderMissing {
+		t.Fatalf("unexpected notice: %+v", got)
 	}
 }
 

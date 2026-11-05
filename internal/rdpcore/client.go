@@ -2204,6 +2204,9 @@ func (c *Client) resetForReconnect() {
 		c.egfxHandler.Close()
 	}
 	c.egfxHandler = nil
+	if c.clipHandler != nil {
+		c.clipHandler.Close()
+	}
 	c.clipHandler = nil
 	c.dispHandler = nil
 	c.dispReady.Store(false)
@@ -5108,6 +5111,38 @@ func (c *Client) SetClipboardImage(pngData []byte) error {
 		return ErrNotConnected
 	}
 	return c.clipHandler.SetLocalImage(pngData)
+}
+
+// ClipboardFileOffer says what SetClipboardFiles put on the clipboard.
+type ClipboardFileOffer = cliprdr.Offer
+
+// Why SetClipboardFiles may refuse; a caller tells the user which.
+var (
+	ErrClipboardFilesUnsupported = cliprdr.ErrFileClipUnsupported
+	ErrClipboardNotReady         = cliprdr.ErrNotReady
+	ErrClipboardOff              = cliprdr.ErrClipboardDisabled
+	ErrNothingToOffer            = cliprdr.ErrNothingToOffer
+	ErrTooManyFiles              = cliprdr.ErrTooManyFiles
+	ErrFileNameTooLong           = cliprdr.ErrNameTooLong
+)
+
+// SetClipboardFiles makes the files and folders at paths what this side's
+// clipboard holds, and tells the server, which pastes them when its user does
+// and reads their contents from this computer then. The list is made before it
+// returns and walks the folders, so a caller does not call it from its UI
+// goroutine. It fails when the server did not negotiate file transfer.
+func (c *Client) SetClipboardFiles(paths []string) (ClipboardFileOffer, error) {
+	handler := c.clipHandler
+	if handler == nil {
+		return ClipboardFileOffer{}, ErrNotConnected
+	}
+	return handler.SetLocalFiles(paths)
+}
+
+// ClipboardFilesInForce reports whether the server negotiated file transfer.
+func (c *Client) ClipboardFilesInForce() bool {
+	handler := c.clipHandler
+	return handler != nil && handler.FileClipboardInForce()
 }
 
 // RequestClipboard sends a request to the server for its clipboard text.

@@ -54,7 +54,10 @@ jobs:
             echo "::error::$TAG is not a release tag like v0.2.9"
             exit 1
           fi
-          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          # GITHUB_ENV only reaches the next step, so the checks below need it
+          # here as well as the render and publish steps after this one.
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
           if [ "$draft" != "false" ]; then
             echo "::error::$TAG is still a draft; publish it before the package managers follow it"
@@ -109,7 +112,10 @@ jobs:
             exit 0
           fi
           git -C "$dir" commit -m "motty ${VERSION}"
-          git -C "$dir" push
+          if ! git -C "$dir" push; then
+            echo "::error::the tap refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/homebrew-tap"
+            exit 1
+          fi
           echo "::notice::homebrew-tap Casks/motty.rb is at $TAG"
 
       - name: Publish the Scoop manifest
@@ -137,5 +143,8 @@ jobs:
             exit 0
           fi
           git -C "$dir" commit -m "motty ${VERSION}"
-          git -C "$dir" push
+          if ! git -C "$dir" push; then
+            echo "::error::the bucket refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/scoop-bucket"
+            exit 1
+          fi
           echo "::notice::scoop-bucket motty.json is at $TAG"

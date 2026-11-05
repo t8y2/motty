@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -497,7 +498,13 @@ func (b *agentBackend) dial(ctx context.Context, host Host) (*sshconn.Conn, erro
 	if secrets != nil {
 		env.Passwords = secrets
 	}
-	config, _, valid := b.catalog.sshConfigFor(host, host, env)
+	catalog := b.catalog
+	if secrets != nil {
+		// The keys kept in the vault are the agent's to use like the key files.
+		stored := storedIdentities(secrets, uint32(len(catalog.identities))+1, keyMessagesIn(i18n.For(i18n.English)))
+		catalog.identities = append(slices.Clone(catalog.identities), stored...)
+	}
+	config, _, valid := catalog.sshConfigFor(host, host, env)
 	if !valid {
 		return nil, fmt.Errorf("%s: its jump route is broken; fix it in Motty", host.Label)
 	}

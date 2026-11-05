@@ -86,6 +86,52 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 	}
 }
 
+// The bar names the session the window shows. With the tabs down the left
+// sidebar the bar has nothing else on its left, so a name drawn against the
+// hosts button read as part of that button group: it belongs over the workspace
+// column it names, and clear of the buttons on both of its sides.
+func TestVerticalTabsNameTheSessionOverTheWorkspace(t *testing.T) {
+	state := newTestState(t, Options{})
+	openEmptyTab(state)
+	state.setTabOrientation(tabsVertical)
+	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 640}, {Width: 820, Height: 600}} {
+		var canvas ui.Canvas
+		state.Paint(&canvas, size)
+		label := state.windowBarTitle()
+		var name ui.Text
+		found := false
+		for _, text := range canvas.Texts() {
+			if text.Value == label && text.Bounds.Y < windowBarHeight {
+				name, found = text, true
+			}
+		}
+		if !found {
+			t.Fatalf("%vx%v: the bar does not name the session", size.Width, size.Height)
+		}
+		home, homeOK := hitByID(&canvas, hitHome)
+		newTab, newTabOK := hitByID(&canvas, hitNewTab)
+		if !homeOK || !newTabOK {
+			t.Fatalf("%vx%v: the bar's buttons are missing", size.Width, size.Height)
+		}
+		left, right := home.Bounds.X+home.Bounds.Width, newTab.Bounds.X
+		if name.Bounds.X < left || name.Bounds.X+name.Bounds.Width > right {
+			t.Fatalf("%vx%v: the name overlaps the bar's buttons: %+v", size.Width, size.Height, name.Bounds)
+		}
+		// It sits on the workspace's centre whenever the bar leaves the room,
+		// which narrow windows and platforms whose titlebar draws window
+		// controls on the right do not: there it stops at the buttons instead
+		// of covering them.
+		reserve := state.verticalTabsReserve(size)
+		want := reserve + (size.Width-reserve)/2
+		if want-name.Bounds.Width/2 < left || want+name.Bounds.Width/2 > right {
+			continue
+		}
+		if centre := name.Bounds.X + name.Bounds.Width/2; centre < want-2 || centre > want+2 {
+			t.Fatalf("%vx%v: the name is centred at %v, not over the workspace at %v", size.Width, size.Height, centre, want)
+		}
+	}
+}
+
 func TestVerticalTabsScrollNavigateAndReorder(t *testing.T) {
 	state := newTestState(t, Options{})
 	for range 20 {
@@ -247,5 +293,83 @@ func TestVerticalTabsLeaveRoomForFilesAndAssistant(t *testing.T) {
 			side == layoutcore.ContextRight && panes.X+panes.Width > files.X {
 			t.Fatalf("files overlap terminal panes: files=%+v panes=%+v", files, panes)
 		}
+	}
+}
+
+// The sidebar scrollbar is an overlay revealed by hovering, not a permanent
+// gutter: the tabs keep the full list width, the bar appears only while the
+// pointer is over the sidebar, and it can be dragged to move the list.
+func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
+	state := newTestState(t, Options{})
+	for range 20 {
+		openEmptyTab(state)
+	}
+	state.setTabOrientation(tabsVertical)
+	size := ui.Size{Width: 1000, Height: 600}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if _, ok := hitByID(&canvas, hitVerticalTabsBar); ok {
+		t.Fatal("the scrollbar is painted before the pointer is over the sidebar")
+	}
+	list := state.tabStrip.area
+	if state.tabStrip.max <= 0 {
+		t.Fatal("expected an overflowing tab list")
+	}
+	visible := 0
+	for _, tab := range state.verticalTabs.tabs {
+		hit, ok := hitByID(&canvas, hitTabList.At(int(tab.workspace.ID)))
+		if !ok {
+			continue
+		}
+		visible++
+		if hit.Bounds.Width != list.Width {
+			t.Fatalf("tab %d is narrower than the list: %v != %v", tab.workspace.ID, hit.Bounds.Width, list.Width)
+		}
+	}
+	if visible == 0 {
+		t.Fatal("no tab is on screen")
+	}
+
+	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: list.X + 20, Y: list.Y + 20, Viewport: size})
+	if !result.Repaint {
+		t.Fatal("hovering the sidebar must repaint to reveal its scrollbar")
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	bar, ok := hitByID(&canvas, hitVerticalTabsBar)
+	if !ok || bar.Role != ui.RoleSeparator {
+		t.Fatalf("hover did not reveal the scrollbar: %+v", bar)
+	}
+	if bar.Bounds.Width >= 10 {
+		t.Fatalf("the hover bar must be narrow: %+v", bar.Bounds)
+	}
+	side := state.verticalTabs.bounds
+	thumb := state.verticalTabs.barGeometry.VerticalThumb
+	if thumb.X < list.X+list.Width || thumb.X+thumb.Width > side.X+side.Width {
+		t.Fatalf("the hover bar must float outside the rows: thumb %+v rows %+v sidebar %+v", thumb, list, side)
+	}
+
+	geometry := state.verticalTabs.barGeometry
+	before := state.tabStrip.offset
+	grab := ui.Point{X: geometry.VerticalThumb.X + 1, Y: geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2}
+	if result := press(state, hitVerticalTabsBar, grab); !result.Handled {
+		t.Fatal("pressing the scrollbar was not handled")
+	}
+	dragTo(state, hitVerticalTabsBar, ui.Point{X: grab.X, Y: grab.Y - 120})
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if state.tabStrip.offset >= before {
+		t.Fatalf("dragging the scrollbar did not scroll the list: %v -> %v", before, state.tabStrip.offset)
+	}
+	if _, ok := hitByID(&canvas, hitVerticalTabsBar); !ok {
+		t.Fatal("the scrollbar hid while it was being dragged")
+	}
+	release(state, hitVerticalTabsBar, ui.Point{X: grab.X, Y: grab.Y - 120})
+
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerExit, X: size.Width + 10, Y: size.Height + 10, Viewport: size})
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if _, ok := hitByID(&canvas, hitVerticalTabsBar); ok {
+		t.Fatal("the scrollbar stayed after the pointer left the sidebar")
 	}
 }

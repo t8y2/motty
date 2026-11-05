@@ -93,6 +93,10 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.setHostFilter(false, "")
 	case hitHostFilterMore:
 		state.hostFilterMenu = true
+	case hitHostGroupsExpandAll:
+		state.setHostGroupsExpanded(true)
+	case hitHostGroupsCollapseAll:
+		state.setHostGroupsExpanded(false)
 	case hitEditHost:
 		state.openEditHost()
 	case hitCopyHost:
