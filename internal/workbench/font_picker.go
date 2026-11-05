@@ -523,22 +523,28 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	move := func(delta int) (ui.EventResult, bool) {
+		state.moveFontSelection(delta)
+		// Enter confirms the focused row, so list navigation must move focus too.
+		// Navigation from the search field keeps its text editor focused.
+		if _, onRow := event.Target.In(hitFontPickerItemList); onRow && len(state.fonts.filtered) > 0 {
+			handled.Focus = hitFontPickerItemList.At(state.fonts.selected - state.fonts.top)
+			handled.FocusVisible = true
+		}
+		return handled, true
+	}
 	switch event.Key {
 	case ui.KeyEscape:
 		state.cancelFontPicker()
 		return handled, true
 	case ui.KeyUp:
-		state.moveFontSelection(-1)
-		return handled, true
+		return move(-1)
 	case ui.KeyDown:
-		state.moveFontSelection(1)
-		return handled, true
+		return move(1)
 	case ui.KeyPageUp:
-		state.moveFontSelection(-fontPickerVisibleRows)
-		return handled, true
+		return move(-fontPickerVisibleRows)
 	case ui.KeyPageDown:
-		state.moveFontSelection(fontPickerVisibleRows)
-		return handled, true
+		return move(fontPickerVisibleRows)
 	case ui.KeyEnter:
 		// Enter confirms from the search field and the list. On any other control, the
 		// Cancel and close buttons, it is that control's own activation.
