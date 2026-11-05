@@ -68,6 +68,24 @@ func waitRealCompletion(t *testing.T, state *State, session *Session, want strin
 		session.term.previewClearBound, state.completion.preview.phase, session.term.screen.Text())
 }
 
+func waitRealCompletionPrompt(t *testing.T, state *State, session *Session, ready func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	version := session.term.screen.Version()
+	quietSince := time.Now()
+	for time.Now().Before(deadline) {
+		state.Wake()
+		if current := session.term.screen.Version(); current != version {
+			version, quietSince = current, time.Now()
+		}
+		if ready() && len(session.term.rx) == 0 && time.Since(quietSince) >= 200*time.Millisecond {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("real shell prompt never settled: ready=%v screen=%q", ready(), session.term.screen.Text())
+}
+
 func TestHeadlessCompletionPreviewWithRealLocalBash(t *testing.T) {
 	for _, test := range []struct {
 		name, profile string
@@ -78,19 +96,11 @@ func TestHeadlessCompletionPreviewWithRealLocalBash(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state, session, view := realCompletionLocal(t, test.profile)
-			deadline := time.Now().Add(8 * time.Second)
-			for time.Now().Before(deadline) {
-				state.Wake()
-				if session.term.promptReady && session.term.inputGuard.known {
-					break
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
-			if !session.term.promptReady || session.term.previewClearBound != test.preview {
+			waitRealCompletionPrompt(t, state, session, func() bool { return session.term.promptReady && session.term.inputGuard.known })
+			if session.term.previewClearBound != test.preview {
 				t.Fatalf("real prompt ready=%v, safe binding=%v; screen=%q", session.term.promptReady,
 					session.term.previewClearBound, session.term.screen.Text())
 			}
-			time.Sleep(cmdhistory.QuietBefore + 20*time.Millisecond)
 			if err := view.Type("cat -"); err != nil {
 				t.Fatal(err)
 			}
@@ -157,18 +167,7 @@ func TestHeadlessCompletionProbeWithRealLocalBash(t *testing.T) {
 	state, session, view := realCompletionLocal(t, "")
 	state.completion.previewEnabled = false
 	state.completion.probeEnabled = true
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		state.Wake()
-		if session.term.promptReady {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if !session.term.promptReady {
-		t.Fatal("real Bash prompt was not ready")
-	}
-	time.Sleep(cmdhistory.QuietBefore + 20*time.Millisecond)
+	waitRealCompletionPrompt(t, state, session, func() bool { return session.term.promptReady })
 	if err := view.Type("ca"); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +176,7 @@ func TestHeadlessCompletionProbeWithRealLocalBash(t *testing.T) {
 	if !state.completion.list.active {
 		t.Fatal("no catalog candidate to probe")
 	}
-	deadline = time.Now().Add(8 * time.Second)
+	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if !state.completion.probe.pending && state.completion.probe.available["cat"] {
@@ -230,18 +229,7 @@ func TestHeadlessCompletionDiscoversRealLocalExecutable(t *testing.T) {
 	state, session, view := realCompletionLocal(t, "")
 	state.completion.probeEnabled = true
 	state.completion.previewEnabled = false
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		state.Wake()
-		if session.term.promptReady {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if !session.term.promptReady {
-		t.Fatal("real Bash prompt was not ready")
-	}
-	time.Sleep(cmdhistory.QuietBefore + 20*time.Millisecond)
+	waitRealCompletionPrompt(t, state, session, func() bool { return session.term.promptReady })
 	if err := view.Type("zqmotty"); err != nil {
 		t.Fatal(err)
 	}
@@ -293,18 +281,9 @@ func TestHeadlessCompletionListsRealLocalPaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "lo bad"), []byte("unsafe\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		state.Wake()
-		if session.term.promptReady && session.term.reportedDirectory.Path == resolved {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if !session.term.promptReady || session.term.reportedDirectory.Path != resolved {
-		t.Fatalf("real CWD not confirmed: %+v", session.term.reportedDirectory)
-	}
-	time.Sleep(cmdhistory.QuietBefore + 20*time.Millisecond)
+	waitRealCompletionPrompt(t, state, session, func() bool {
+		return session.term.promptReady && session.term.reportedDirectory.Path == resolved
+	})
 	if err := view.Type("tail -f ./lo"); err != nil {
 		t.Fatal(err)
 	}

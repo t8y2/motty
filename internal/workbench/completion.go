@@ -1160,7 +1160,7 @@ func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible
 		if selected {
 			textStyle, detailStyle = selectedText, selectedDesc
 		}
-		if candidate.Desc != "" {
+		if candidate.Desc != "" && strings.IndexFunc(candidate.Desc, func(value rune) bool { return value >= 128 }) < 0 {
 			detailWidth := canvas.TextWidth(candidate.Desc, metrics.FontSizeS)
 			if detailWidth < bounds.Width*0.55 {
 				text.Width = max(bounds.Width-16-detailWidth-10, 10)

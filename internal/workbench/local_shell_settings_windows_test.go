@@ -39,7 +39,7 @@ func shellSelectState(t *testing.T, choices []localshell.Choice) *State {
 
 func paintShellSettings(state *State) *ui.Canvas {
 	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 3200})
 	return &canvas
 }
 

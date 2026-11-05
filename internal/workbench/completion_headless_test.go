@@ -57,6 +57,15 @@ func TestHeadlessCompletionLocalizedDetailsInNarrowAndWideLayouts(t *testing.T) 
 				if !strings.Contains(strings.Join(view.Texts(), " "), want) {
 					t.Fatalf("localized description %q missing: %q", want, view.Texts())
 				}
+				count := 0
+				for _, text := range view.Texts() {
+					if text == want {
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatalf("localized description must live in the detail panel once, got %d copies", count)
+				}
 				for _, problem := range headless.CheckLayout(view.Snapshot()) {
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == hitCompletionList.At(0) && intersectRect(problem.Bounds, hit.Bounds).Width > 0 {
