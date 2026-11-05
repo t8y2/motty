@@ -100,6 +100,112 @@ func TestAIRunDurationIncludesToolAndApprovalWaitsAndFreezesAtFinish(t *testing.
 	}
 }
 
+func clockedEscalationState(t *testing.T) (*State, *scriptedModel, *time.Duration) {
+	t.Helper()
+	model := &scriptedModel{turn: func(index int, _ llm.Request) []llm.Event {
+		if index == 0 {
+			return []llm.Event{
+				{Kind: llm.EventToolCall, ToolCall: &llm.ToolCall{
+					ID: "switch", Name: tools.NameRequestAgentMode,
+					Arguments: `{"reason":"inspect host","command":"inspect"}`,
+				}},
+				{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 30, OutputTokens: 5}},
+			}
+		}
+		return []llm.Event{
+			{Kind: llm.EventText, Text: "finished"},
+			{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 40, OutputTokens: 6}},
+		}
+	}}
+	state, _ := assistantTestSession(t, model)
+	state.setLanguage(i18n.English)
+	state.ai.open = true
+	now := 2 * time.Second
+	state.options.Now = func() time.Duration { return now }
+	ask(state, "inspect host", agent.ModeAsk)
+	pumpUntil(t, state, "the escalation approval", func() bool {
+		return state.ai.run == nil && state.ai.pendingRun != nil && len(state.ai.approvals) == 1
+	})
+	return state, model, &now
+}
+
+func TestAIRunPendingEscalationKeepsElapsedTimeAdvancing(t *testing.T) {
+	state, _, now := clockedEscalationState(t)
+	*now = 11 * time.Second
+
+	status, usage := state.aiRunStatusText()
+	if !strings.Contains(status, "Waiting for your approval") || !strings.Contains(status, "Elapsed 9.0s") {
+		t.Fatalf("pending status = %q", status)
+	}
+	if usage != "" {
+		t.Fatalf("pending approval exposed final usage: %q", usage)
+	}
+	if state.ai.lastUsage != (llm.Usage{}) || state.ai.totalUsage != (llm.Usage{}) {
+		t.Fatalf("pending leg was accounted as a finished request: last=%+v total=%+v", state.ai.lastUsage, state.ai.totalUsage)
+	}
+	canvas, _ := paintAt(state, panelWide)
+	if _, scheduled := canvas.NextFrame(); !scheduled {
+		t.Fatal("pending approval left elapsed time frozen")
+	}
+}
+
+func TestAIRunApprovedEscalationKeepsOneRequestTimeline(t *testing.T) {
+	state, _, now := clockedEscalationState(t)
+	*now = 7 * time.Second
+	state.aiAnswerApproval(true)
+	status, _ := state.aiRunStatusText()
+	if !strings.Contains(status, "Elapsed 5.0s") {
+		t.Fatalf("approved retry reset elapsed time: %q", status)
+	}
+	*now = 13 * time.Second
+	pumpUntil(t, state, "the approved retry", func() bool { return state.ai.run == nil })
+
+	wantUsage := llm.Usage{InputTokens: 70, OutputTokens: 11}
+	if state.ai.pendingRun != nil || state.ai.mode != agent.ModeAgent {
+		t.Fatalf("approved lifecycle is still pending: mode=%v pending=%+v", state.ai.mode, state.ai.pendingRun)
+	}
+	if state.ai.lastRun == nil || state.ai.lastRun.duration != 11*time.Second || state.ai.lastRun.phase != aiRunCompleted {
+		t.Fatalf("approved final metrics = %+v", state.ai.lastRun)
+	}
+	if state.ai.lastUsage != wantUsage || state.ai.totalUsage != wantUsage {
+		t.Fatalf("approved usage last=%+v total=%+v, want %+v", state.ai.lastUsage, state.ai.totalUsage, wantUsage)
+	}
+	status, _ = state.aiRunStatusText()
+	if !strings.Contains(status, "Total time 11.0s") {
+		t.Fatalf("approved final status = %q", status)
+	}
+}
+
+func TestAIRunDeclinedEscalationKeepsOneRequestTimeline(t *testing.T) {
+	state, model, now := clockedEscalationState(t)
+	*now = 9 * time.Second
+	state.aiAnswerApproval(false)
+	status, _ := state.aiRunStatusText()
+	if !strings.Contains(status, "Elapsed 7.0s") {
+		t.Fatalf("declined retry reset elapsed time: %q", status)
+	}
+	*now = 15 * time.Second
+	pumpUntil(t, state, "the declined retry", func() bool { return state.ai.run == nil })
+
+	if state.ai.pendingRun != nil || state.ai.mode != agent.ModeAsk {
+		t.Fatalf("declined lifecycle is still pending: mode=%v pending=%+v", state.ai.mode, state.ai.pendingRun)
+	}
+	if len(model.requests) != 2 || len(model.requests[1].Tools) != 0 {
+		t.Fatalf("declined retry requests = %+v", model.requests)
+	}
+	if state.ai.lastRun == nil || state.ai.lastRun.duration != 13*time.Second || state.ai.lastRun.phase != aiRunCompleted {
+		t.Fatalf("declined final metrics = %+v", state.ai.lastRun)
+	}
+	wantUsage := llm.Usage{InputTokens: 70, OutputTokens: 11}
+	if state.ai.lastUsage != wantUsage || state.ai.totalUsage != wantUsage {
+		t.Fatalf("declined usage last=%+v total=%+v, want %+v", state.ai.lastUsage, state.ai.totalUsage, wantUsage)
+	}
+	status, _ = state.aiRunStatusText()
+	if !strings.Contains(status, "Total time 13.0s") {
+		t.Fatalf("declined final status = %q", status)
+	}
+}
+
 func TestAIRunRetainsReportedUsageOnEveryExit(t *testing.T) {
 	for _, scenario := range []struct {
 		name  string
@@ -109,7 +215,6 @@ func TestAIRunRetainsReportedUsageOnEveryExit(t *testing.T) {
 		{name: "completed", event: agent.Event{Kind: agent.EventDone}},
 		{name: "failed", event: agent.Event{Kind: agent.EventError, Text: "connection lost"}, err: errors.New("connection lost")},
 		{name: "cancelled during tool", event: agent.Event{Kind: agent.EventToolStart, Call: llm.ToolCall{ID: "tool", Name: tools.NameTerminalRead}}, err: context.Canceled},
-		{name: "agent approval", event: agent.Event{Kind: agent.EventAgentModeRequest, Call: llm.ToolCall{Name: tools.NameRequestAgentMode, Arguments: `{"reason":"inspect host"}`}}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			state, _ := panelState(t, nil)

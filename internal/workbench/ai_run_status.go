@@ -33,16 +33,18 @@ type aiRunStats struct {
 func (state *State) aiRunStatusText() (status, usage string) {
 	ai, messages := &state.ai, state.messages.AIPanel
 	stats := ai.lastRun
-	running := ai.run != nil
-	if running {
+	active := state.aiRunActive()
+	if ai.run != nil {
 		stats = &ai.run.stats
+	} else if ai.pendingRun != nil {
+		stats = ai.pendingRun
 	}
 	if stats == nil {
 		return "", ""
 	}
 	duration := stats.duration
 	phase := stats.phase
-	if running {
+	if active {
 		duration = max(state.now()-stats.startedAt, 0)
 		if phase != aiRunStopping && len(ai.approvals) > 0 {
 			phase = aiRunNeedsApproval
@@ -80,11 +82,11 @@ func (state *State) aiRunStatusText() (status, usage string) {
 		label = messages.RunApproval
 	}
 	durationFormat := messages.RunTotalTimeFmt
-	if running {
+	if active {
 		durationFormat = messages.RunElapsedFmt
 	}
 	status = label + " · " + fmt.Sprintf(durationFormat, aiRunDurationText(duration))
-	if running {
+	if active {
 		return status, ""
 	}
 	usage = messages.RunUsageUnknown
@@ -102,6 +104,28 @@ func (state *State) aiRunStatusText() (status, usage string) {
 		usage += "\n" + fmt.Sprintf(messages.RunUsageConversationFmt, groupDigits(total.InputTokens+total.OutputTokens))
 	}
 	return status, usage
+}
+
+func (state *State) aiRunActive() bool {
+	return state.ai.run != nil || state.ai.pendingRun != nil
+}
+
+func (state *State) aiRecordFinishedRun(stats *aiRunStats) {
+	ai := &state.ai
+	ai.lastUsage = stats.usage
+	ai.totalUsage = ai.totalUsage.Add(stats.usage)
+	ai.lastRun = stats
+}
+
+func (state *State) aiFinishPendingRun(phase aiRunPhase) {
+	stats := state.ai.pendingRun
+	if stats == nil {
+		return
+	}
+	state.ai.pendingRun = nil
+	stats.duration = max(state.now()-stats.startedAt, 0)
+	stats.phase = phase
+	state.aiRecordFinishedRun(stats)
 }
 
 func aiRunDurationText(duration time.Duration) string {

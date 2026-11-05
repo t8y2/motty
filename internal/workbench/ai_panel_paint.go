@@ -929,7 +929,7 @@ func (state *State) paintAIRunStatus(canvas *ui.Canvas, bounds ui.Rect, label st
 		}
 	})
 	f.End()
-	if state.ai.run != nil {
+	if state.aiRunActive() {
 		components.PaintSpinner(canvas, state.Theme(), activity.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
 		canvas.RequestFrameIn(spinnerStep)
 	} else {

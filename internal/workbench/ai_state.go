@@ -75,9 +75,11 @@ type aiAnswer struct {
 	text     string
 }
 
-// aiRun is one request to the model in flight.
+// aiRun is one model leg in flight. An Ask escalation and its retry share
+// request-level statistics across two legs.
 type aiRun struct {
 	stats      aiRunStats
+	usageBase  llm.Usage
 	target     gate.SessionInfo
 	extras     []gate.SessionInfo
 	targetKey  string
@@ -171,6 +173,9 @@ type aiState struct {
 	lastUsage  llm.Usage
 	totalUsage llm.Usage
 	lastRun    *aiRunStats
+	// pendingRun is the request-level state retained after an Ask leg requests
+	// Agent mode. The approval wait and either retry remain one timed request.
+	pendingRun *aiRunStats
 	// rename is the conversation-rename dialog's state.
 	rename aiRenameDialog
 
@@ -453,7 +458,7 @@ func (state *State) aiSetAutoUpTo(level risk.Level) {
 // request in flight was started under it, and an approval waiting for an answer
 // belongs to one.
 func (state *State) aiScopeLocked() bool {
-	return state.ai.run != nil || len(state.ai.approvals) > 0
+	return state.ai.run != nil || state.ai.pendingRun != nil || len(state.ai.approvals) > 0
 }
 
 // aiApprover is called from the agent's goroutine. It shows the question in the
@@ -542,14 +547,21 @@ func (state *State) aiApproveEscalation() {
 	}
 	if question == "" {
 		ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.EscalationMissing})
+		state.aiFinishPendingRun(aiRunCompleted)
 		return
 	}
 	state.setAIMode(agent.ModeAgent)
+	if ai.pendingRun != nil {
+		ai.pendingRun.phase = aiRunWaitingModel
+		ai.pendingRun.tool = ""
+	}
 	ai.retry = true
 	ai.answerOnly = false
 	ai.input = text.Editor{}
 	ai.input.Insert(question)
-	state.aiSend()
+	if !state.aiSend() {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiAnswerAfterDecline retries the same Ask question with no tools, so declining
@@ -565,13 +577,20 @@ func (state *State) aiAnswerAfterDecline() {
 	}
 	if question == "" {
 		ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.EscalationMissing})
+		state.aiFinishPendingRun(aiRunCompleted)
 		return
+	}
+	if ai.pendingRun != nil {
+		ai.pendingRun.phase = aiRunWaitingModel
+		ai.pendingRun.tool = ""
 	}
 	ai.retry = true
 	ai.answerOnly = true
 	ai.input = text.Editor{}
 	ai.input.Insert(question)
-	state.aiSend()
+	if !state.aiSend() {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiContext attaches the locked default session's recent text in Ask mode.
@@ -655,29 +674,35 @@ func (state *State) setAIMode(mode agent.Mode) {
 // or a new conversation makes them stale; normal gate approvals are left alone.
 func (state *State) dropEscalationApprovals() {
 	kept := state.ai.approvals[:0]
+	removed := false
 	for _, approval := range state.ai.approvals {
 		if !approval.escalation {
 			kept = append(kept, approval)
+		} else {
+			removed = true
 		}
 	}
 	clear(state.ai.approvals[len(kept):])
 	state.ai.approvals = kept
+	if removed {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiSend starts a request with the text in the input box.
-func (state *State) aiSend() {
+func (state *State) aiSend() bool {
 	ai := &state.ai
 	if ai.run != nil {
-		return
+		return false
 	}
 	question := strings.TrimSpace(ai.input.String())
 	if question == "" || ai.attaching > 0 && !ai.retry {
-		return
+		return false
 	}
 	provider, model, err := state.aiModel()
 	if err != nil {
 		ai.notice = err.Error()
-		return
+		return false
 	}
 	target := state.aiTarget()
 	extras := state.aiExtraTargets()
@@ -685,12 +710,12 @@ func (state *State) aiSend() {
 	backend, err := state.aiTargetBackend(target, references...)
 	if err != nil {
 		ai.notice = state.messages.AIPanel.TargetUnavailable
-		return
+		return false
 	}
 	ai.target, ai.extras, ai.targetSet = target, extras, true
-	provider, ready := state.aiKeyedProvider(provider, state.aiSend)
+	provider, ready := state.aiKeyedProvider(provider, func() { state.aiSend() })
 	if !ready {
-		return // keep both the question and target while the vault is unlocked
+		return true // keep both the question and target while the vault is unlocked
 	}
 	ai.notice = ""
 	ai.needLogin = ""
@@ -755,8 +780,20 @@ func (state *State) aiSend() {
 	config.Gate.Backend = backend
 	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default, the other connections the user selected and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID, target: target, extras: extras, targetKey: targetKey, attachments: refs}
-	run.stats.startedAt = state.now()
+	stats := aiRunStats{startedAt: state.now()}
+	var usageBase llm.Usage
+	if retry && ai.pendingRun != nil {
+		stats = *ai.pendingRun
+		stats.duration = 0
+		stats.phase = aiRunWaitingModel
+		stats.tool = ""
+		usageBase = stats.usage
+		ai.pendingRun = nil
+	}
+	run := &aiRun{
+		stats: stats, usageBase: usageBase, cancel: cancel, open: -1, providerID: provider.ID,
+		target: target, extras: extras, targetKey: targetKey, attachments: refs,
+	}
 	ai.run = run
 	ai.lastRun = nil
 	ai.panel.autoMenu = false // the scope is fixed while the request runs
@@ -774,6 +811,7 @@ func (state *State) aiSend() {
 		})
 		state.aiPost(func(s *State) { s.aiFinished(run, messages, err) })
 	}()
+	return true
 }
 
 // aiStop cancels the request in flight.
@@ -796,7 +834,7 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		return
 	}
 	if event.Usage != (llm.Usage{}) {
-		run.stats.usage = event.Usage
+		run.stats.usage = run.usageBase.Add(event.Usage)
 	}
 	run.stats.usageIncomplete = run.stats.usageIncomplete || event.UsageIncomplete
 	appendText := func(kind aiItemKind, delta string) {
@@ -940,6 +978,7 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 	}
 	run.stats.duration = max(state.now()-run.stats.startedAt, 0)
 	run.stats.usageIncomplete = run.stats.usageIncomplete || err != nil
+	pendingApproval := false
 	switch {
 	case errors.Is(err, context.Canceled):
 		run.stats.phase = aiRunStopped
@@ -950,14 +989,18 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 		for _, approval := range ai.approvals {
 			if approval.escalation {
 				run.stats.phase = aiRunNeedsApproval
+				pendingApproval = true
 				break
 			}
 		}
 	}
-	ai.lastUsage = run.stats.usage
-	ai.totalUsage = ai.totalUsage.Add(run.stats.usage)
 	stats := run.stats
-	ai.lastRun = &stats
+	if pendingApproval {
+		ai.pendingRun = &stats
+		ai.lastRun = ai.pendingRun
+	} else {
+		state.aiRecordFinishedRun(&stats)
+	}
 	ai.run = nil
 	run.cancel()
 	if err != nil {
@@ -1076,6 +1119,7 @@ func (state *State) aiNewConversation() {
 	ai.answerOnly = false
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.lastRun = nil
+	ai.pendingRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 }
@@ -1105,6 +1149,7 @@ func (state *State) aiOpenConversation(id int64) {
 	state.dropEscalationApprovals()
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.lastRun = nil
+	ai.pendingRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 	for _, row := range stored {

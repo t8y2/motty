@@ -60,6 +60,12 @@ func TestAIRunStatusHeadlessLayoutAndScreenshots(t *testing.T) {
 					if name == "waiting" && strings.Contains(status.Label, "Token") {
 						t.Fatalf("waiting frame shows token details: %q", status.Label)
 					}
+					if name == "approval" && !strings.Contains(status.Label, state.messages.AIPanel.RunApproval) {
+						t.Fatalf("approval frame shows the wrong status: %q", status.Label)
+					}
+					if name == "approval" && strings.Contains(status.Label, "Token") {
+						t.Fatalf("approval frame shows token details: %q", status.Label)
+					}
 					if name == "completed" && !strings.Contains(status.Label, "12,284") {
 						t.Fatalf("completion frame lost final token usage: %q", status.Label)
 					}
@@ -82,6 +88,11 @@ func TestAIRunStatusHeadlessLayoutAndScreenshots(t *testing.T) {
 				state.aiEvent(run, agent.Event{Kind: agent.EventDone, Usage: llm.Usage{InputTokens: 12000, OutputTokens: 284, CacheReadTokens: 9800}})
 				state.aiFinished(run, nil, nil)
 				check("completed")
+				pending := aiRunStats{startedAt: 2 * time.Second, phase: aiRunNeedsApproval}
+				state.ai.lastRun, state.ai.pendingRun = &pending, &pending
+				state.ai.approvals = []*aiApproval{{escalation: true}}
+				state.options.Now = func() time.Duration { return 20 * time.Second }
+				check("approval")
 			})
 		}
 	}
