@@ -61,6 +61,7 @@ var (
 	hitAISetFormPresetItems   = tree.Sub(aiSettingsHits, tree.Name("ai-set-form-preset-item"))
 	hitAISetFormName          = tree.ID(aiSettingsHits, "ai-set-form-name")
 	hitAISetFormURL           = tree.ID(aiSettingsHits, "ai-set-form-url")
+	hitAISetFormModelsURL     = tree.ID(aiSettingsHits, "ai-set-form-models-url")
 	hitAISetFormKey           = tree.ID(aiSettingsHits, "ai-set-form-key")
 	hitAISetFormCLIPath       = tree.ID(aiSettingsHits, "ai-set-form-cli-path")
 	hitAISetConfirmCancel     = tree.ID(aiSettingsHits, "ai-set-confirm-cancel")
@@ -170,6 +171,7 @@ type aiSettingsUI struct {
 	presetOpen     bool
 	name           text.Editor
 	baseURL        text.Editor
+	modelsURL      text.Editor
 	apiKey         text.Editor
 	cliPath        text.Editor
 	cliAutoPath    string
@@ -564,7 +566,7 @@ func (state *State) aiCloseDialog() {
 	cfg := &state.ai.cfg
 	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey, cfg.presetOpen = aiDialogNone, "", "", "", false, false
 	cfg.notice = ""
-	cfg.name, cfg.baseURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}
+	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle, cfg.apiFormat = text.Editor{}, "", ""
 	cfg.cliAutoPath, cfg.cliPathMissing = "", false
 	// The import candidates hold credentials in memory; closing the dialog is
@@ -606,7 +608,7 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	}
 	if event.Key == ui.KeyEnter && !event.Repeat {
 		switch {
-		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
+		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormModelsURL || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
 			state.aiSubmitProvider()
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		case cfg.dialog == aiDialogNone && event.Target == hitAISetModelInput:
@@ -684,6 +686,8 @@ func (state *State) aiSettingsEditor(hit ui.ID) *text.Editor {
 		return &cfg.cliPath
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormURL && !store.IsCLIKind(cfg.kind):
 		return &cfg.baseURL
+	case cfg.dialog == aiDialogProvider && hit == hitAISetFormModelsURL && !store.IsCLIKind(cfg.kind):
+		return &cfg.modelsURL
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormKey && !store.IsCLIKind(cfg.kind):
 		return &cfg.apiKey
 	case cfg.dialog == aiDialogNone && hit == hitAISetModelInput:
@@ -850,6 +854,7 @@ func (state *State) aiOpenProviderForm(id string) {
 	// The importer accepts a base URL up to MaxURLRunes; the editor must not
 	// silently shorten such a provider when it is opened for an unrelated edit.
 	cfg.baseURL.Restrict(printableLine, aiproviderimport.MaxURLRunes)
+	cfg.modelsURL.Restrict(printableLine, aiproviderimport.MaxURLRunes)
 	cfg.apiKey.Restrict(printableLine, 600)
 	cfg.cliPath.Restrict(printableLine, 4096)
 	if id == "" {
@@ -864,6 +869,7 @@ func (state *State) aiOpenProviderForm(id string) {
 	cfg.authStyle, cfg.apiFormat = provider.AuthStyle, provider.APIFormat
 	cfg.name.Insert(provider.Name)
 	cfg.baseURL.Insert(provider.BaseURL)
+	cfg.modelsURL.Insert(provider.ModelsURL)
 	cfg.cliPath.Insert(provider.CLIPath)
 	state.aiDiscoverCLIPath()
 }
@@ -898,10 +904,11 @@ func (state *State) aiSubmitProvider() {
 	m := state.messages.AISettings
 	name := strings.TrimSpace(cfg.name.String())
 	base := strings.TrimSpace(cfg.baseURL.String())
+	modelsURL := strings.TrimSpace(cfg.modelsURL.String())
 	key := strings.TrimSpace(cfg.apiKey.String())
 	cliProvider := store.IsCLIKind(cfg.kind)
 	if cliProvider {
-		base, key = "", ""
+		base, modelsURL, key = "", "", ""
 	}
 	switch {
 	case name == "":
@@ -910,11 +917,14 @@ func (state *State) aiSubmitProvider() {
 	case !cliProvider && base != "" && !validBaseURL(base):
 		cfg.formErr = m.ErrFormBaseURL
 		return
+	case !cliProvider && modelsURL != "" && !validBaseURL(modelsURL):
+		cfg.formErr = m.ErrFormModelsURL
+		return
 	case !cliProvider && base == "" && key == "" && !cfg.hadKey:
 		cfg.formErr = m.ErrFormKey
 		return
 	}
-	provider := store.Provider{ID: cfg.editID, Name: name, Kind: cfg.kind, BaseURL: base, APIKey: key, HasKey: key != "", Enabled: true}
+	provider := store.Provider{ID: cfg.editID, Name: name, Kind: cfg.kind, BaseURL: base, ModelsURL: modelsURL, APIKey: key, HasKey: key != "", Enabled: true}
 	if cliProvider {
 		provider.CLIPath = strings.TrimSpace(cfg.cliPath.String())
 		if provider.CLIPath == cfg.cliAutoPath {
@@ -935,7 +945,7 @@ func (state *State) aiSubmitProvider() {
 		if key == "" && !cliProvider {
 			provider.APIKey, provider.HasKey = old.APIKey, old.HasKey // the field is left empty to keep the key
 		}
-		refetch = provider.Kind != old.Kind || provider.BaseURL != old.BaseURL || provider.APIKey != old.APIKey || provider.CLIPath != old.CLIPath
+		refetch = provider.Kind != old.Kind || provider.BaseURL != old.BaseURL || provider.ModelsURL != old.ModelsURL || provider.APIKey != old.APIKey || provider.CLIPath != old.CLIPath
 		resetAuth = cliProvider && (provider.Kind != old.Kind || provider.CLIPath != old.CLIPath)
 	}
 	db, err := state.aiStore()

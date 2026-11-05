@@ -21,7 +21,11 @@ type openAIResponses struct {
 // empty BaseURL selects https://api.openai.com/v1.
 func NewOpenAIResponses(cfg Config) Provider {
 	u, err := openAIBase(cfg.BaseURL)
-	return &openAIResponses{openAI{base: newBase(cfg, u), baseErr: err}}
+	p := &openAIResponses{openAI{base: newBase(cfg, u), baseErr: err}}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = openAIModelsBase(cfg.ModelsURL)
+	}
+	return p
 }
 
 // rsItem is one element of the request's input list: a message, a function
