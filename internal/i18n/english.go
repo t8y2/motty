@@ -1926,6 +1926,8 @@ var englishTools = ToolsMessages{
 	UpdateWhyPackageUnknown:         "Motty could not verify a package for this system. Try again in a moment, or download it from the release page.",
 	UpdateWhyUnsigned:               "This release is not signed for in-place installation; download it from the release page.",
 	GeneralUpdateInstall:            "Update",
+	UpdateNoticeDetail:              "Your sessions are not interrupted. Update whenever you are ready.",
+	UpdateNoticeAction:              "View",
 	UpdateConfirmTitle:              "Install the update and restart?",
 	UpdateConfirmDescriptionFmt:     "%d open sessions will be disconnected while Motty restarts.",
 	UpdateConfirmSubmit:             "Disconnect and update",

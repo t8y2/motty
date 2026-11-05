@@ -18,6 +18,9 @@ type fileNotice struct {
 	id            ui.ID
 	title, detail string
 	kind          components.ToastType
+	// action is the button beside the text, when the notice offers one.
+	action      ui.ID
+	actionLabel string
 }
 type fileNotices struct {
 	queue components.ToastQueue
@@ -42,6 +45,35 @@ func (notices *fileNotices) show(title, detail string, kind components.ToastType
 	if evicted, ok := notices.queue.Add(id, now, false); ok {
 		notices.removeItem(evicted)
 		notices.items = append(notices.items, fileNotice{id: id, title: title, detail: detail, kind: kind})
+	}
+}
+
+// showAction queues a notice with an action button. It is how news that needs
+// no immediate answer is announced without a dialog taking the keyboard from
+// what the user is doing; whatever it announces must also have a lasting place,
+// since the notice expires.
+func (notices *fileNotices) showAction(title, detail string, kind components.ToastType, action ui.ID, actionLabel string) {
+	for _, item := range notices.items {
+		if item.title == title && item.detail == detail {
+			return
+		}
+	}
+	notices.next++
+	id := hitFileNotices.At(notices.next)
+	if evicted, ok := notices.queue.Add(id, time.Now(), false); ok {
+		notices.removeItem(evicted)
+		notices.items = append(notices.items, fileNotice{id: id, title: title, detail: detail, kind: kind, action: action, actionLabel: actionLabel})
+	}
+}
+
+// dismissAction removes the notice whose button is action.
+func (notices *fileNotices) dismissAction(action ui.ID) {
+	for _, item := range notices.items {
+		if item.action == action {
+			notices.queue.Remove(item.id)
+			notices.removeItem(item.id)
+			return
+		}
 	}
 }
 
@@ -110,7 +142,7 @@ func (notices *fileNotices) paint(canvas *ui.Canvas, theme ui.Theme, bounds ui.R
 	offset := float32(0)
 	for _, item := range notices.items {
 		snapshot := components.ToastSnapshot{Title: item.title, Description: item.detail, Type: item.kind, OffsetY: offset}
-		layout := components.PaintToast(canvas, theme, bounds, snapshot, components.ToastOptions{Layer: tooltipLayer + 1, DismissID: item.id, Position: components.ToastTopCenter})
+		layout := components.PaintToast(canvas, theme, bounds, snapshot, components.ToastOptions{Layer: tooltipLayer + 1, DismissID: item.id, ActionID: item.action, ActionLabel: item.actionLabel, Position: components.ToastTopCenter})
 		offset += layout.Bounds.Height + 8
 		if canvas.Hovered() == item.id || canvas.Focused() == item.id {
 			notices.queue.Pause(item.id, now)

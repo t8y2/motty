@@ -501,6 +501,8 @@ type ToolsMessages struct {
 	UpdateWhyPackageUnknown         string
 	UpdateWhyUnsigned               string
 	GeneralUpdateInstall            string
+	UpdateNoticeDetail              string
+	UpdateNoticeAction              string
 	UpdateConfirmTitle              string
 	UpdateConfirmDescriptionFmt     string
 	UpdateConfirmSubmit             string

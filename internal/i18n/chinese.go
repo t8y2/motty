@@ -1926,6 +1926,8 @@ var chineseTools = ToolsMessages{
 	UpdateWhyPackageUnknown:         "暂时无法确认此版本是否有适用于当前系统的安装包，请稍后重试，或从发布页下载。",
 	UpdateWhyUnsigned:               "此版本没有用于自更新的签名，请从下载页安装。",
 	GeneralUpdateInstall:            "更新",
+	UpdateNoticeDetail:              "不会打断当前会话，准备好时再更新即可。",
+	UpdateNoticeAction:              "查看",
 	UpdateConfirmTitle:              "安装更新并重启？",
 	UpdateConfirmDescriptionFmt:     "重启期间会断开 %d 个已打开的会话。",
 	UpdateConfirmSubmit:             "断开并更新",

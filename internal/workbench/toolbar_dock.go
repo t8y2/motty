@@ -149,6 +149,15 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 			}
 		}
 	}
+	// An available update stays in the bar until it is installed or skipped, and
+	// is absent otherwise. Like connection progress it is not a customizable
+	// tool: it comes and goes with state, so it has no catalog entry to hide.
+	if zone == state.defaultToolbarDockZone(toolbarWindow) && state.updateIndicatorVisible() {
+		tools = append(tools, barTool{
+			id: hitUpdateToolbar, icon: iconDownload, style: iconButtonActive,
+			hint: fmt.Sprintf(state.messages.Tools.UpdateAvailableFmt, state.update.release.Version),
+		})
+	}
 	appendEntry := func(group toolbarGroup, key string) {
 		spec, ok := toolbarSpecFor(group, key)
 		if !ok || !state.toolbarVisible(group, spec.id) {

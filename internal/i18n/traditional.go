@@ -1926,6 +1926,8 @@ var traditionalTools = ToolsMessages{
 	UpdateWhyPackageUnknown:         "暫時無法確認此版本是否有適用於目前系統的安裝包，請稍後重試，或從釋出頁下載。",
 	UpdateWhyUnsigned:               "此版本沒有用於自更新的簽名，請從下載頁安裝。",
 	GeneralUpdateInstall:            "更新",
+	UpdateNoticeDetail:              "不會打斷目前連線，準備好時再更新即可。",
+	UpdateNoticeAction:              "查看",
 	UpdateConfirmTitle:              "安裝更新並重啟？",
 	UpdateConfirmDescriptionFmt:     "重啟期間會中斷 %d 個已開啟的工作階段。",
 	UpdateConfirmSubmit:             "中斷並更新",
