@@ -53,11 +53,28 @@ type proxyEditor struct {
 	jumpOpen   bool
 	viaShell   bool
 	relay      text.Editor
+	editing    bool
+	routeID    uint32
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
 	*editor = proxyEditor{targetID: targetID, jumpID: jumpID}
 	editor.relay.Insert(defaultRelayCommand)
+}
+
+func (editor *proxyEditor) load(route proxyRecord) {
+	*editor = proxyEditor{
+		targetID: route.TargetID,
+		jumpID:   route.JumpID,
+		viaShell: route.ViaShell,
+		editing:  true,
+		routeID:  route.ID,
+	}
+	relay := route.Relay
+	if relay == "" {
+		relay = defaultRelayCommand
+	}
+	editor.relay.Insert(relay)
 }
 
 func (editor *proxyEditor) relayCommand() string {
@@ -75,11 +92,11 @@ func (editor *proxyEditor) validate(state *State) string {
 		return state.messages.ErrProxySameHost
 	}
 	for _, route := range state.proxies {
-		if route.TargetID == editor.targetID {
+		if (!editor.editing || route.ID != editor.routeID) && route.TargetID == editor.targetID {
 			return state.messages.ErrProxyTargetTaken
 		}
 	}
-	if state.proxyWouldCycle(editor.targetID, editor.jumpID) {
+	if state.proxyWouldCycleExcluding(editor.targetID, editor.jumpID, editor.routeID) {
 		return state.messages.ErrProxyCycle
 	}
 	if editor.viaShell && sshconn.CheckRelay(sshconn.Relay{Command: editor.relayCommand()}) != nil {
@@ -119,6 +136,24 @@ func (state *State) openProxyDialog() {
 	state.modal = modalNewProxy
 }
 
+func (state *State) openEditProxy() {
+	if state.selectedProxyID == 0 {
+		return
+	}
+	state.openEditProxyID(state.selectedProxyID)
+}
+
+func (state *State) openEditProxyID(id uint32) {
+	route, ok := state.proxyByID(id)
+	if !ok {
+		return
+	}
+	state.selectedProxyID = id
+	state.proxyEditor.load(route)
+	state.proxyDialogError = ""
+	state.modal = modalNewProxy
+}
+
 func (state *State) clickProxyDialog(id ui.ID) {
 	if state.proxyEditor.targetOpen || state.proxyEditor.jumpOpen {
 		switch {
@@ -149,7 +184,7 @@ func (state *State) clickProxyDialog(id ui.ID) {
 			}
 		case id.Scope() == hitProxyTargetItemList:
 			hostID := uint32(item(id))
-			if _, ok := state.hostByID(hostID); ok && !state.proxyTargetConfigured(hostID) {
+			if _, ok := state.hostByID(hostID); ok && !state.proxyTargetConfiguredExcluding(hostID, state.proxyEditor.routeID) {
 				if hostID == state.proxyEditor.jumpID {
 					state.proxyEditor.jumpID = state.proxyEditor.targetID
 				}
@@ -181,6 +216,27 @@ func (state *State) submitProxyDialog() {
 	if state.proxyDialogError = state.proxyEditor.validate(state); state.proxyDialogError != "" {
 		return
 	}
+	if state.proxyEditor.editing {
+		for index := range state.proxies {
+			if state.proxies[index].ID != state.proxyEditor.routeID {
+				continue
+			}
+			route := &state.proxies[index]
+			route.TargetID = state.proxyEditor.targetID
+			route.JumpID = state.proxyEditor.jumpID
+			if state.proxyEditor.viaShell {
+				route.ViaShell, route.Relay = true, state.proxyEditor.relayCommand()
+			} else {
+				route.ViaShell, route.Relay = false, ""
+			}
+			state.sshSyncMark()
+			state.refreshProxies()
+			state.status = state.messages.ProxyUpdated + route.label
+			state.closeProxyDialog()
+			state.save()
+			return
+		}
+	}
 	route := proxyRecord{ID: state.nextProxyID, TargetID: state.proxyEditor.targetID, JumpID: state.proxyEditor.jumpID}
 	if state.proxyEditor.viaShell {
 		route.ViaShell, route.Relay = true, state.proxyEditor.relayCommand()
@@ -208,6 +264,8 @@ func (state *State) clickProxies(id ui.ID) {
 	switch {
 	case id == hitProxyAdd:
 		state.openProxyDialog()
+	case id == hitProxyEdit:
+		state.openEditProxy()
 	case id == hitProxyStartStop:
 		state.toggleSelectedProxy()
 	case id == hitProxyRemove:

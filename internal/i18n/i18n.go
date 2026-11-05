@@ -880,6 +880,10 @@ type Messages struct {
 	ForwardLocalDestinationHint   string
 	ForwardRemoteListenerFmt      string
 	ForwardCreate                 string
+	ForwardEdit                   string
+	ForwardEditDialogTitle        string
+	ForwardSave                   string
+	ForwardUpdated                string
 	ErrForwardNameRequired        string
 	ErrForwardHostRequired        string
 	ErrForwardPortInvalid         string
@@ -892,6 +896,7 @@ type Messages struct {
 	ProxyTitle                 string
 	ProxyDescription           string
 	ProxyAdd                   string
+	ProxyEdit                  string
 	ProxyStart                 string
 	ProxyStop                  string
 	ProxyRemove                string
@@ -910,9 +915,12 @@ type Messages struct {
 	ProxyStoppedStatus         string
 	ProxyRemoved               string
 	ProxyDialogTitle           string
+	ProxyEditDialogTitle       string
 	ProxyFieldTarget           string
 	ProxyFieldJump             string
 	ProxyCreate                string
+	ProxyRouteSave             string
+	ProxyUpdated               string
 	ErrProxyHostsRequired      string
 	ErrProxyTargetRequired     string
 	ErrProxyJumpRequired       string

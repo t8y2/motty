@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
@@ -247,6 +248,63 @@ func TestJumpRouteRejectsSelfAndDuplicateTargets(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	if state.proxyDialogError != state.messages.ErrProxyTargetTaken || len(state.proxies) != 1 {
 		t.Fatalf("duplicate target error=%q routes=%+v", state.proxyDialogError, state.proxies)
+	}
+}
+
+func TestProxyEditModifiesAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	target := state.hosts[0]
+	jump1 := state.hosts[1]
+	jump2 := state.hosts[2]
+	addProxyRoute(t, state, target.ID, jump1.ID)
+
+	state.selectedProxyID = state.proxies[0].ID
+	state.Click(hitProxyEdit)
+	if state.modal != modalNewProxy || !state.proxyEditor.editing || state.proxyEditor.routeID != state.proxies[0].ID {
+		t.Fatalf("proxy edit modal=%d editing=%v routeID=%d", state.modal, state.proxyEditor.editing, state.proxyEditor.routeID)
+	}
+	if state.proxyEditor.targetID != target.ID || state.proxyEditor.jumpID != jump1.ID {
+		t.Fatalf("proxy editor prefill: target=%d jump=%d", state.proxyEditor.targetID, state.proxyEditor.jumpID)
+	}
+
+	// Keeping own target should be valid
+	if err := state.proxyEditor.validate(state); err != "" {
+		t.Fatalf("validating unchanged proxy route failed: %q", err)
+	}
+
+	// Change jump host to jump2, enable viaShell
+	state.proxyEditor.jumpID = jump2.ID
+	state.Click(hitProxyDialogViaShell)
+	if !state.proxyEditor.viaShell {
+		t.Fatal("viaShell should be enabled")
+	}
+	state.proxyEditor.relay = text.Editor{}
+	state.proxyEditor.relay.Insert("ssh %r@%h")
+
+	state.Click(hitProxyDialogSubmit)
+	if state.modal != modalNone || state.proxyDialogError != "" {
+		t.Fatalf("submit edit proxy: modal=%d error=%q", state.modal, state.proxyDialogError)
+	}
+	if len(state.proxies) != 1 {
+		t.Fatalf("proxies count = %d, want 1", len(state.proxies))
+	}
+	edited := state.proxies[0]
+	if edited.TargetID != target.ID || edited.JumpID != jump2.ID || !edited.ViaShell || edited.Relay != "ssh %r@%h" {
+		t.Fatalf("edited route = %+v", edited)
+	}
+	if !strings.HasPrefix(state.status, state.messages.ProxyUpdated) {
+		t.Fatalf("status = %q, want prefix %q", state.status, state.messages.ProxyUpdated)
+	}
+
+	// Verify persistence
+	restarted := newTestState(t, options)
+	if len(restarted.proxies) != 1 {
+		t.Fatalf("restored proxies count = %d, want 1", len(restarted.proxies))
+	}
+	restored := restarted.proxies[0]
+	if restored.TargetID != target.ID || restored.JumpID != jump2.ID || !restored.ViaShell || restored.Relay != "ssh %r@%h" {
+		t.Fatalf("restored route = %+v", restored)
 	}
 }
 

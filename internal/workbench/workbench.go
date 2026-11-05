@@ -172,6 +172,7 @@ var (
 // Local forwarding: its page and dialog.
 var (
 	hitForwardAdd                   = tree.ID(forwardsHits, "forward-add")
+	hitForwardEdit                  = tree.ID(forwardsHits, "forward-edit")
 	hitForwardRemove                = tree.ID(forwardsHits, "forward-remove")
 	hitForwardStartStop             = tree.ID(forwardsHits, "forward-start-stop")
 	hitForwardDialogClose           = tree.ID(forwardsHits, "forward-dialog-close")
@@ -271,6 +272,7 @@ var (
 // Jump-host routing: its page and dialog.
 var (
 	hitProxyAdd            = tree.ID(proxiesHits, "proxy-add")
+	hitProxyEdit           = tree.ID(proxiesHits, "proxy-edit")
 	hitProxyStartStop      = tree.ID(proxiesHits, "proxy-start-stop")
 	hitProxyRemove         = tree.ID(proxiesHits, "proxy-remove")
 	hitProxyDialogClose    = tree.ID(proxiesHits, "proxy-dialog-close")

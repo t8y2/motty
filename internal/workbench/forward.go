@@ -147,6 +147,8 @@ type forwardEditor struct {
 	hostOpen        bool
 	hostOffset      int
 	mode            portforward.Mode
+	editing         bool
+	forwardID       uint32
 }
 
 type forwardField uint8
@@ -184,6 +186,26 @@ func (editor *forwardEditor) reset(hostID uint32) {
 	editor.destinationPort.Insert("80")
 }
 
+func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
+	*editor = forwardEditor{
+		hostID:    hostID,
+		mode:      forward.Mode,
+		editing:   true,
+		forwardID: forward.ID,
+	}
+	digits := func(value rune) bool { return value >= '0' && value <= '9' }
+	editor.localPort.Restrict(digits, 5)
+	editor.destinationPort.Restrict(digits, 5)
+	editor.label.Insert(forward.Label)
+	editor.localPort.Insert(strconv.Itoa(int(forward.LocalPort)))
+	if forward.DestinationHost != "" {
+		editor.destinationHost.Insert(forward.DestinationHost)
+	}
+	if forward.DestinationPort != 0 {
+		editor.destinationPort.Insert(strconv.Itoa(int(forward.DestinationPort)))
+	}
+}
+
 func (editor *forwardEditor) usesClientDestination() bool {
 	return editor.mode == portforward.ModeSOCKS5 || editor.mode == portforward.ModeHTTPConnect
 }
@@ -218,6 +240,9 @@ func (editor *forwardEditor) validate(state *State) string {
 		}
 	}
 	for _, forward := range state.forwards {
+		if editor.editing && forward.ID == editor.forwardID {
+			continue
+		}
 		if strings.EqualFold(forward.Label, editor.value(forwardFieldLabel)) {
 			return state.messages.ErrForwardNameTaken
 		}
@@ -268,6 +293,36 @@ func (state *State) openForwardDialog() {
 		return
 	}
 	state.forwardEditor.reset(hostID)
+	state.forwardDialogError = ""
+	state.modal = modalNewForward
+}
+
+func (state *State) openEditForward() {
+	if state.selectedForwardID == 0 {
+		return
+	}
+	state.openEditForwardID(state.selectedForwardID)
+}
+
+func (state *State) openEditForwardID(id uint32) {
+	forward, ok := state.forwardByID(id)
+	if !ok {
+		return
+	}
+	state.selectedForwardID = id
+	hostID := uint32(0)
+	if host, ok := state.forwardHost(forward); ok {
+		hostID = host.ID
+	}
+	if hostID == 0 {
+		for _, host := range state.hosts {
+			if host.isSSH() {
+				hostID = host.ID
+				break
+			}
+		}
+	}
+	state.forwardEditor.load(forward, hostID)
 	state.forwardDialogError = ""
 	state.modal = modalNewForward
 }
@@ -347,6 +402,36 @@ func (state *State) submitForwardDialog() {
 		return
 	}
 	host, _ := state.hostByID(state.forwardEditor.hostID)
+	if state.forwardEditor.editing {
+		for index := range state.forwards {
+			if state.forwards[index].ID != state.forwardEditor.forwardID {
+				continue
+			}
+			f := &state.forwards[index]
+			f.stop()
+			localPort, _ := state.forwardEditor.port(forwardFieldLocalPort)
+			f.Label = state.forwardEditor.value(forwardFieldLabel)
+			f.Mode = state.forwardEditor.mode
+			f.HostLabel = host.Label
+			f.HostAddress = host.Address
+			f.HostUser = host.User
+			f.HostPort = host.Port
+			f.LocalPort = localPort
+			f.lastError = ""
+			if !state.forwardEditor.usesClientDestination() {
+				f.DestinationHost = state.forwardEditor.value(forwardFieldDestinationHost)
+				f.DestinationPort, _ = state.forwardEditor.port(forwardFieldDestinationPort)
+			} else {
+				f.DestinationHost = ""
+				f.DestinationPort = 0
+			}
+			f.refresh(state.messages, true)
+			state.status = state.messages.ForwardUpdated + f.Label
+			state.closeForwardDialog()
+			state.save()
+			return
+		}
+	}
 	forward := state.forwardEditor.record(state.nextForwardID, host)
 	forward.refresh(state.messages, true)
 	state.forwards = append(state.forwards, forward)
@@ -371,6 +456,8 @@ func (state *State) clickForwards(id ui.ID) {
 	switch {
 	case id == hitForwardAdd:
 		state.openForwardDialog()
+	case id == hitForwardEdit:
+		state.openEditForward()
 	case id == hitForwardRemove:
 		state.removeSelectedForward()
 	case id == hitForwardStartStop:

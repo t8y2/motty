@@ -181,10 +181,15 @@ func (catalog *hostCatalog) algorithmsFor(target Host, jumps []Host) map[string]
 }
 
 func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
+	return catalog.proxyTargetConfiguredExcluding(hostID, 0)
+}
+
+func (catalog *hostCatalog) proxyTargetConfiguredExcluding(hostID, excludeRouteID uint32) bool {
 	for _, route := range catalog.proxies {
-		if route.TargetID == hostID {
-			return true
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != hostID {
+			continue
 		}
+		return true
 	}
 	return false
 }
@@ -224,8 +229,12 @@ func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, b
 }
 
 func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
+	return catalog.proxyJumpExcluding(targetID, runningOnly, 0)
+}
+
+func (catalog *hostCatalog) proxyJumpExcluding(targetID uint32, runningOnly bool, excludeRouteID uint32) (Host, bool, bool) {
 	for _, route := range catalog.proxies {
-		if route.TargetID != targetID {
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != targetID {
 			continue
 		}
 		if runningOnly && route.Stopped {
@@ -238,12 +247,16 @@ func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, 
 }
 
 func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
+	return catalog.proxyWouldCycleExcluding(targetID, jumpID, 0)
+}
+
+func (catalog *hostCatalog) proxyWouldCycleExcluding(targetID, jumpID, excludeRouteID uint32) bool {
 	current := jumpID
 	for range len(catalog.proxies) + 1 {
 		if current == targetID {
 			return true
 		}
-		jump, routed, valid := catalog.proxyJump(current, false)
+		jump, routed, valid := catalog.proxyJumpExcluding(current, false, excludeRouteID)
 		if !routed {
 			return false
 		}

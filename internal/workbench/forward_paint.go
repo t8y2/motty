@@ -26,10 +26,11 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.ForwardRemove, false) + gap + toolbarButtonWidth(canvas, actionLabel, false) +
-		gap + toolbarButtonWidth(canvas, messages.ForwardAdd, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.ForwardRemove, false) + gap + toolbarButtonWidth(canvas, messages.ForwardEdit, false) +
+		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ForwardAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
 	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.ForwardRemove, 0, iconTrash, condensed)
+	editWidth, editIcon := toolbarButtonLayout(canvas, messages.ForwardEdit, 0, iconPencil, condensed)
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ForwardAdd, iconPlus, iconPlus, condensed)
 	detailColor := pal.muted
@@ -37,7 +38,7 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		detailColor = pal.danger
 	}
 
-	var content, emptyIcon, emptyAdd, remove, action, add flex.Box
+	var content, emptyIcon, emptyAdd, remove, edit, action, add flex.Box
 	f := state.forwardLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
@@ -46,6 +47,7 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 				f.Paragraph(messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
+			edit = f.Slot().Size(editWidth, toolbarHeight)
 			action = f.Slot().Size(actionWidth, toolbarHeight)
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
@@ -65,6 +67,7 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	f.End()
 
 	state.paintToolbarButton(canvas, hitForwardRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ForwardRemove, removeIcon, false, hasSelection, condensed)
+	state.paintToolbarButton(canvas, hitForwardEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ForwardEdit, editIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitForwardStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitForwardAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ForwardAdd, addIcon, true, canAdd, condensed)
 
@@ -101,7 +104,13 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		InitialFocusID: hitForwardDialogLabel,
 		ContentSize:    ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2, state.forwardDialogError), // four rows of fields
 	})
-	layout := dialog.Begin(messages.ForwardDialogTitle, messages.ForwardDialogDescription)
+	dialogTitle := messages.ForwardDialogTitle
+	submitLabel := messages.ForwardCreate
+	if state.forwardEditor.editing {
+		dialogTitle = messages.ForwardEditDialogTitle
+		submitLabel = messages.ForwardSave
+	}
+	layout := dialog.Begin(dialogTitle, messages.ForwardDialogDescription)
 
 	// Four rows of fields; the last holds the port beside the destination,
 	// 24% / 44% / 24% of the row with 4% between.
@@ -154,7 +163,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitForwardDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitForwardDialogSubmit, Label: messages.ForwardCreate},
+		components.ButtonAction{ID: hitForwardDialogSubmit, Label: submitLabel},
 	)
 	dialog.End()
 }

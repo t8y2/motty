@@ -847,6 +847,74 @@ func readForwardTestBytes(t testing.TB, reader io.Reader, want []byte) {
 	}
 }
 
+func TestForwardEditModifiesAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	port1 := freePort(t)
+	port2 := freePort(t)
+	addForwardRule(t, state, "Web", port1, "web.internal", 8080)
+	addForwardRule(t, state, "Database", port2, "db.internal", 5432)
+
+	// Select first forward and edit
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != state.forwards[0].ID {
+		t.Fatalf("edit forward modal=%d editing=%v forwardID=%d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID)
+	}
+	if state.forwardEditor.value(forwardFieldLabel) != "Web" || state.forwardEditor.value(forwardFieldLocalPort) != fmt.Sprint(port1) {
+		t.Fatalf("editor prefill: label=%q port=%q", state.forwardEditor.value(forwardFieldLabel), state.forwardEditor.value(forwardFieldLocalPort))
+	}
+
+	// Keeping own label and port should be valid
+	if err := state.forwardEditor.validate(state); err != "" {
+		t.Fatalf("validating own unchanged forward failed: %q", err)
+	}
+
+	// Renaming to another existing forward's label should fail validation
+	replaceForwardField(state, hitForwardDialogLabel, "Database")
+	if err := state.forwardEditor.validate(state); err != state.messages.ErrForwardNameTaken {
+		t.Fatalf("expected ErrForwardNameTaken, got %q", err)
+	}
+
+	// Modify to unique values
+	newPort := freePort(t)
+	replaceForwardField(state, hitForwardDialogLabel, "Web Service")
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(newPort))
+	replaceForwardField(state, hitForwardDialogDestination, "web2.internal")
+	replaceForwardField(state, hitForwardDialogDestinationPort, "8443")
+
+	state.Click(hitForwardDialogSubmit)
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("submit edit forward: modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+	if len(state.forwards) != 2 {
+		t.Fatalf("forwards count = %d, want 2", len(state.forwards))
+	}
+	edited := state.forwards[0]
+	if edited.Label != "Web Service" || edited.LocalPort != newPort || edited.DestinationHost != "web2.internal" || edited.DestinationPort != 8443 {
+		t.Fatalf("edited forward = %+v", edited)
+	}
+	if !strings.HasPrefix(state.status, state.messages.ForwardUpdated) {
+		t.Fatalf("status = %q, want prefix %q", state.status, state.messages.ForwardUpdated)
+	}
+
+	// Verify persistence
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 2 {
+		t.Fatalf("restored forwards count = %d, want 2: %+v", len(restarted.forwards), restarted.forwards)
+	}
+	var restored forwardRecord
+	for _, f := range restarted.forwards {
+		if f.Label == "Web Service" {
+			restored = f
+			break
+		}
+	}
+	if restored.Label != "Web Service" || restored.LocalPort != newPort || restored.DestinationHost != "web2.internal" || restored.DestinationPort != 8443 {
+		t.Fatalf("restored forward = %+v", restored)
+	}
+}
+
 func readForwardHTTPConnectResponse(t testing.TB, reader *bufio.Reader, wantStatus string) {
 	t.Helper()
 	status, err := reader.ReadString('\n')

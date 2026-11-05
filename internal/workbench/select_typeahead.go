@@ -109,7 +109,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 		for _, host := range state.hosts {
 			items = append(items, components.MenuTypeaheadItem{
 				ID: hitProxyTargetItemList.At(int(host.ID)), Label: host.Label,
-				Disabled: !host.isSSH() || state.proxyTargetConfigured(host.ID),
+				Disabled: !host.isSSH() || state.proxyTargetConfiguredExcluding(host.ID, state.proxyEditor.routeID),
 			})
 		}
 		return items, func(id ui.ID) bool {
@@ -196,7 +196,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 // is SSH and not already the target of another route.
 func (state *State) proxyTargetSelectable(id uint32) bool {
 	host, ok := state.hostByID(id)
-	return ok && host.isSSH() && !state.proxyTargetConfigured(id)
+	return ok && host.isSSH() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
 }
 
 // chooseProxyTarget and chooseProxyJump apply the same choices as the open
