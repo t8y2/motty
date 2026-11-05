@@ -1887,6 +1887,7 @@ var chineseTools = ToolsMessages{
 	UpdateRestarting:                "正在安装并重启…",
 	UpdateFailedTitle:               "更新没有完成",
 	UpdateFailedBodyFmt:             "%s\n\nMotty 仍是原来的版本。可以到发布页下载新版本。",
+	UpdateBlockedBySystem:           "系统拒绝运行新版本：它没有附带公证票据，而且现在查不到 Apple 的票据。请检查网络或代理设置后重试，或到发布页下载 DMG 安装。",
 	UpdateOpenPage:                  "打开发布页",
 	UpdateNoReleaseText:             "还没有找到已发布的版本。",
 	ActionSSHFmt:                    "SSH 连接 %s",

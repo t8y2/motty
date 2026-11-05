@@ -1887,6 +1887,7 @@ var englishTools = ToolsMessages{
 	UpdateRestarting:                "Installing and restarting…",
 	UpdateFailedTitle:               "The update did not finish",
 	UpdateFailedBodyFmt:             "%s\n\nMotty is still the version you had. You can download the new one from the release page.",
+	UpdateBlockedBySystem:           "The system refused to run the new version: it carries no notarization ticket, and Apple's ticket service cannot be reached right now. Check your network or proxy, or download the DMG from the release page.",
 	UpdateOpenPage:                  "Open release page",
 	UpdateNoReleaseText:             "No published release was found yet.",
 	ActionSSHFmt:                    "SSH to %s",
