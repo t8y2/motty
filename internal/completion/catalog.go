@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 // FormatVersion is the layout of the encoded catalog. A cache written by an
@@ -74,6 +75,7 @@ type Node struct {
 	Children   []*Node
 
 	parent *Node
+	lazy   *lazyTree // a root of a decoded catalog whose tree is built on first use
 }
 
 // Path returns the tokens from the root command to this node.
@@ -101,7 +103,7 @@ type Catalog struct {
 	License string
 
 	roots []*Node
-	index map[string]*Node
+	index map[string]*Node // eager catalogs: every node; decoded ones: the roots
 
 	nodeCount  int
 	flagCount  int
@@ -240,7 +242,22 @@ func (c *Catalog) Lookup(path []string) *Node {
 	if len(path) == 0 {
 		return nil
 	}
-	return c.index[nodeKey(path)]
+	node := c.index[nodeKey(path[:1])]
+	for _, token := range path[1:] {
+		if node == nil {
+			return nil
+		}
+		node.load()
+		var next *Node
+		for _, child := range node.Children {
+			if child.Token == token {
+				next = child
+				break
+			}
+		}
+		node = next
+	}
+	return node
 }
 
 // Root resolves a root command token or alias.
@@ -264,6 +281,7 @@ func (c *Catalog) VisibleFlags(node *Node) []Flag {
 	if node == nil {
 		return nil
 	}
+	node.load()
 	var chain []*Node
 	for n := node; n != nil; n = n.parent {
 		chain = append(chain, n)
@@ -337,6 +355,7 @@ func (c *Catalog) Encode() []byte {
 }
 
 func encodeNode(b *strings.Builder, n *Node, depth int) {
+	n.load()
 	fmt.Fprintf(b, "N\t%d\t%s\t%s\t%d\t%s\n", depth, n.Token, strings.Join(n.Aliases, ","), boolInt(n.Hidden), n.Desc)
 	for _, f := range n.Flags {
 		encodeFlag(b, "f", f)
@@ -380,11 +399,19 @@ func boolInt(v bool) int {
 // Decode parses and validates an encoded catalog. Every bound is enforced here
 // as well as in the importer: a cache file is untrusted input.
 func Decode(data []byte) (*Catalog, error) {
-	headerEnd := strings.Index(string(data), "\n\n")
+	// The catalog keeps strings that point into data, so data must stay
+	// unmodified for as long as the catalog lives. The built-in snapshot is
+	// read-only program data; a cache file is read once and not reused.
+	var whole string
+	if len(data) > 0 {
+		whole = unsafe.String(&data[0], len(data))
+	}
+	headerEnd := strings.Index(whole, "\n\n")
 	if headerEnd < 0 {
 		return nil, errors.New("completion: truncated catalog header")
 	}
-	header := string(data[:headerEnd])
+	header := whole[:headerEnd]
+	text := whole[headerEnd+2:]
 	body := data[headerEnd+2:]
 
 	meta := make(map[string]string, 10)
@@ -422,82 +449,11 @@ func Decode(data []byte) (*Catalog, error) {
 		Release: meta["release"],
 		Commit:  meta["commit"],
 		License: meta["license"],
-		index:   make(map[string]*Node, 8192),
+		index:   make(map[string]*Node, 1024),
 	}
-	var stack []*Node
-	var last *Node
-	var nodes, flags, values int
-	lines := strings.Split(string(body), "\n")
-	for number, line := range lines {
-		if line == "" {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		switch fields[0] {
-		case "N":
-			if len(fields) != 6 {
-				return nil, fmt.Errorf("completion: malformed node line %d", number+1)
-			}
-			depth, err := strconv.Atoi(fields[1])
-			if err != nil || depth < 0 || depth > maxDepth {
-				return nil, fmt.Errorf("completion: invalid node depth on line %d", number+1)
-			}
-			n := &Node{
-				Token:   fields[2],
-				Aliases: nil,
-				Hidden:  fields[4] == "1",
-				Desc:    NormalizeText(fields[5], maxDescRunes),
-			}
-			if fields[3] != "" {
-				n.Aliases = strings.Split(fields[3], ",")
-			}
-			// The digest only detects damage; a node name is typed into the
-			// shell, so it must be as plain as the importer insists.
-			if !validTokenPart(n.Token) {
-				return nil, fmt.Errorf("completion: command name on line %d is not a plain token", number+1)
-			}
-			for _, alias := range n.Aliases {
-				if !validTokenPart(alias) {
-					return nil, fmt.Errorf("completion: command alias on line %d is not a plain token", number+1)
-				}
-			}
-			if depth > len(stack) {
-				return nil, fmt.Errorf("completion: inconsistent node depth on line %d", number+1)
-			}
-			stack = stack[:depth]
-			if depth == 0 {
-				c.roots = append(c.roots, n)
-			} else {
-				parent := stack[depth-1]
-				parent.Children = append(parent.Children, n)
-			}
-			stack = append(stack, n)
-			last = n
-			nodes++
-			if nodes > maxCatalogNodes {
-				return nil, fmt.Errorf("completion: catalog has more than %d nodes", maxCatalogNodes)
-			}
-		case "F":
-			if len(fields) != 7 || last == nil || stack[len(stack)-1] != last {
-				return nil, fmt.Errorf("completion: malformed flag line %d", number+1)
-			}
-			f, err := decodeFlag(fields[2], fields[3], fields[4], fields[5], fields[6])
-			if err != nil {
-				return nil, fmt.Errorf("completion: line %d: %w", number+1, err)
-			}
-			switch fields[1] {
-			case "f":
-				last.Flags = append(last.Flags, f)
-			case "p":
-				last.Persistent = append(last.Persistent, f)
-			default:
-				return nil, fmt.Errorf("completion: unknown flag kind %q on line %d", fields[1], number+1)
-			}
-			flags++
-			values += len(f.Values)
-		default:
-			return nil, fmt.Errorf("completion: unknown catalog record %q on line %d", fields[0], number+1)
-		}
+	nodes, flags, values, soft, err := c.scan(text)
+	if err != nil {
+		return nil, err
 	}
 	if nodes != want["nodes"] || len(c.roots) != want["roots"] || flags != want["flags"] || values != want["values"] {
 		return nil, errors.New("completion: catalog counts do not match the header")
@@ -505,21 +461,10 @@ func Decode(data []byte) (*Catalog, error) {
 	if len(c.roots) == 0 {
 		return nil, errors.New("completion: catalog has no root commands")
 	}
-	// Rebuild the index from the decoded tree, which also validates paths and
-	// rejects duplicates a corrupt body might hide; count() then re-derives the
-	// totals so a tampered body cannot keep a wrong header alive.
-	decodedRoots := c.roots
-	c.roots = nil
-	for _, root := range decodedRoots {
-		if err := c.indexTree(root, nil); err != nil {
-			return nil, err
-		}
-	}
-	c.count()
-	if c.nodeCount != nodes || c.flagCount != flags || c.valueCount != values {
-		return nil, errors.New("completion: catalog counts are inconsistent")
-	}
-	c.auditWarnings = auditSoft(c).SoftCount
+	c.nodeCount, c.flagCount, c.valueCount = nodes, flags, values
+	shape := AuditReport{}
+	auditShape(&shape, c)
+	c.auditWarnings = soft + shape.SoftCount
 	if data, present := meta["import-stats"]; present {
 		var stats ImportStats
 		if err := json.Unmarshal([]byte(data), &stats); err != nil {

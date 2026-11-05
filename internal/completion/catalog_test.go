@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -109,5 +110,42 @@ func TestDecodeRejectsCommandNamesThatAreNotPlainTokens(t *testing.T) {
 				t.Fatal("a catalog with an unsafe command name was accepted")
 			}
 		})
+	}
+}
+
+// A decoded catalog builds each command tree when something first reads below
+// it, possibly from several goroutines at once (every window shares one
+// catalog). Concurrent first reads must agree with each other and with a
+// catalog read after a full walk.
+func TestDecodedCatalogLoadsTreesOnDemandAcrossGoroutines(t *testing.T) {
+	decoded, err := Decode(BuiltinBytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{"git sta", "git commit --a", "docker cont", "tar --", "git "}
+	var wg sync.WaitGroup
+	results := make([][]int, 8)
+	for worker := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, line := range lines {
+				results[worker] = append(results[worker], len(Complete(decoded, line).Candidates))
+			}
+		}()
+	}
+	wg.Wait()
+	for worker := 1; worker < len(results); worker++ {
+		if fmt.Sprint(results[worker]) != fmt.Sprint(results[0]) {
+			t.Fatalf("goroutine %d saw %v, goroutine 0 saw %v", worker, results[worker], results[0])
+		}
+	}
+	for index, line := range lines {
+		if results[0][index] == 0 {
+			t.Errorf("%q completed to nothing", line)
+		}
+	}
+	if decoded.NodeCount() == 0 || decoded.Lookup([]string{"git", "commit"}) == nil {
+		t.Error("a nested command was not reachable after the lazy load")
 	}
 }

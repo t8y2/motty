@@ -323,6 +323,7 @@ func ensureChild(parent *Node, path []string, stats *ImportStats) (*Node, bool) 
 }
 
 func walk(n *Node, fn func(*Node)) {
+	n.load()
 	fn(n)
 	for _, child := range n.Children {
 		walk(child, fn)
