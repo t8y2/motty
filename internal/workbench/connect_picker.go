@@ -98,11 +98,11 @@ func (state *State) shellsListed() {
 		return
 	}
 	palette := &state.commandPalette
-	selected, top := palette.selected, palette.top
+	selected, scroll := palette.selected, palette.scroll
 	state.rebuildCommandPalette()
 	if len(palette.visible) > 0 {
 		palette.selected = min(selected, len(palette.visible)-1)
-		palette.top = min(top, palette.selected)
+		palette.scroll = min(scroll, palette.maxScroll())
 	}
 }
 
