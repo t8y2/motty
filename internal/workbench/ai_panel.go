@@ -1249,6 +1249,14 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 		result.Redraw = true // the chips changed, not the editor
 		return result
 	}
+	if (event.Kind == app.TextPaste || event.Kind == app.TextInsert) && isLongAIText(event.Text) {
+		// Long text is attached as a file rather than dumped into the message box,
+		// keeping the composer responsive and preventing renderer overflow.
+		state.aiPasteText(event.Text)
+		result := app.TextStateOf(&ai.input)
+		result.Redraw = true
+		return result
+	}
 	_, composing := ai.input.Composition()
 	if event.Kind == app.TextCommandEvent && !composing && (event.Command == app.TextInsertNewline || event.Command == app.TextInsertTab) {
 		if state.aiAcceptSelectedMention() {

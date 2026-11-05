@@ -159,6 +159,7 @@ type aiState struct {
 	attachments []aiAttachment
 	attaching   int
 	pasted      int         // pictures pasted so far, which numbers their names
+	pastedText  int         // text snippets pasted so far, which numbers their names
 	confirm     text.Editor // the word a critical action asks to be typed
 	run         *aiRun
 	approvals   []*aiApproval
@@ -698,7 +699,7 @@ func (state *State) aiSend() bool {
 		return false
 	}
 	question := strings.TrimSpace(ai.input.String())
-	if question == "" || ai.attaching > 0 && !ai.retry {
+	if (question == "" && len(ai.attachments) == 0) || ai.attaching > 0 && !ai.retry {
 		return false
 	}
 	provider, model, err := state.aiModel()
@@ -719,16 +720,11 @@ func (state *State) aiSend() bool {
 	if !ready {
 		return true // keep both the question and target while the vault is unlocked
 	}
-	ai.notice = ""
-	ai.needLogin = ""
 	retry := ai.retry
 	answerOnly := ai.answerOnly
-	ai.retry = false
-	ai.answerOnly = false
-	ai.input = text.Editor{}
 	var attachments []aiAttachment // a retry continues a question that already has its own
 	if !retry {
-		attachments, ai.attachments = ai.attachments, nil
+		attachments = ai.attachments
 	}
 	attachedText, images, refs := aiAttachmentContext(attachments, ai.settings.redact)
 	targetKey := ""
@@ -741,13 +737,6 @@ func (state *State) aiSend() bool {
 			targetKey += "," + extra.ID
 		}
 	}
-	if !retry {
-		state.dropEscalationApprovals()
-		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
-		ai.items[len(ai.items)-1].attachments = refs
-	}
-	ai.scroll.ScrollToEnd()
-
 	sent := question + attachedText
 	var attached uint32 // the session whose text already went with the question
 	if !retry && ai.mode == agent.ModeAsk {
@@ -761,6 +750,23 @@ func (state *State) aiSend() bool {
 	if !retry {
 		sent += state.aiMentionContext(question, attached)
 	}
+	if !retry && ai.settings.keepHistory && ai.store != nil && len(sent) > store.MaxTextBytes {
+		ai.notice = fmt.Sprintf(state.messages.AIPanel.MessageTooLargeFmt, formatBytes(store.MaxTextBytes))
+		return false
+	}
+	ai.notice = ""
+	ai.needLogin = ""
+	ai.retry = false
+	ai.answerOnly = false
+	ai.input = text.Editor{}
+	if !retry {
+		ai.attachments = nil
+		state.dropEscalationApprovals()
+		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
+		ai.items[len(ai.items)-1].attachments = refs
+	}
+	ai.scroll.ScrollToEnd()
+
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
 		Model:             model,
@@ -1054,6 +1060,7 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 		}
 		conversation, err := ai.store.CreateConversation(strings.TrimSpace(title), label)
 		if err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
 			return
 		}
 		ai.conv = conversation.ID
@@ -1070,7 +1077,10 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 			}
 			stored.ToolJSON, _ = json.Marshal(metadata)
 		}
-		_, _ = ai.store.AppendMessage(ai.conv, stored)
+		if _, err := ai.store.AppendMessage(ai.conv, stored); err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
+			return
+		}
 	}
 }
 
