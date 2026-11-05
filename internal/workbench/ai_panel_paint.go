@@ -781,6 +781,17 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	m := state.messages.AIPanel
 	rowW := list.Width - 2*aiPad
 	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+	status, usage := state.aiRunStatusText()
+	statusHeight := float32(0)
+	if status != "" {
+		panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, ui.WeightRegular, max(rowW-20, 1), 4)
+		panel.usageLines = panel.usageLines[:0]
+		statusHeight = float32(len(panel.statusLines)) * aiSmallLine
+		if usage != "" {
+			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, ui.WeightRegular, max(rowW-20, 1), 8)
+			statusHeight += float32(len(panel.usageLines))*aiSmallLine + 4
+		}
+	}
 
 	for len(panel.rows) < len(ai.items) {
 		panel.rows = append(panel.rows, aiRowView{})
@@ -843,6 +854,9 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 		y += view.height + aiGap
 	}
 	content := y
+	if statusHeight > 0 {
+		content += statusHeight + aiGap
+	}
 	panel.maxScroll = max(content-list.Height, 0)
 	scroll := ai.scroll.Resolve(list.Height, content)
 
@@ -863,17 +877,22 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	// under the clip of the viewport, so that a row's hits are followed by its
 	// copy buttons, in the order the keyboard visits them.
 	panel.rowSlots = panel.rowSlots[:0]
+	var statusSlot flex.Box
 	f := state.aiFlex.messages.Begin(canvas, state.Theme(), list)
 	f.Scroll(scroll).Fill().PadX(aiPad).Children(func() {
 		if first < 0 {
-			return
+			f.Column().Height(y)
+		} else {
+			f.Column().Height(panel.rows[first].top)
+			for index := first; index <= last; index++ {
+				panel.rowSlots = append(panel.rowSlots, f.Slot().Height(panel.rows[index].height).MarginSides(0, 0, aiGap, 0))
+			}
+			end := &panel.rows[last]
+			f.Column().Height(y - (end.top + end.height + aiGap))
 		}
-		f.Column().Height(panel.rows[first].top)
-		for index := first; index <= last; index++ {
-			panel.rowSlots = append(panel.rowSlots, f.Slot().Height(panel.rows[index].height).MarginSides(0, 0, aiGap, 0))
+		if statusHeight > 0 {
+			statusSlot = f.Slot().Height(statusHeight).MarginSides(0, 0, aiGap, 0)
 		}
-		end := &panel.rows[last]
-		f.Column().Height(content - (end.top + end.height + aiGap))
 	})
 	f.End()
 
@@ -897,7 +916,44 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 			canvas.RequestFrameIn(spinnerStep)
 		}
 	}
+	if statusHeight > 0 {
+		label := status
+		if usage != "" {
+			label += "\n" + usage
+		}
+		state.paintAIRunStatus(canvas, statusSlot.Rect(), label)
+	}
 	panel.scrollbar.geometry = scroller.EndContent()
+}
+
+func (state *State) paintAIRunStatus(canvas *ui.Canvas, bounds ui.Rect, label string) {
+	panel, pal := &state.ai.panel, state.pal
+	var activity flex.Box
+	f := state.aiFlex.status.Begin(canvas, state.Theme(), bounds)
+	f.Column().Fill().Gap(4).HitWith(hitAIRunStatus, label, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true}).Children(func() {
+		f.Row().Gap(8).Children(func() {
+			activity = f.Slot().Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
+			f.Column().Grow(1).Children(func() {
+				aiTextLines(f, panel.statusLines, aiSmallSize, aiSmallLine, pal.muted)
+			})
+		})
+		if len(panel.usageLines) > 0 {
+			f.Column().Children(func() {
+				aiTextLines(f, panel.usageLines, aiSmallSize, aiSmallLine, pal.muted)
+			})
+		}
+	})
+	f.End()
+	if state.aiRunActive() {
+		components.PaintSpinner(canvas, state.Theme(), activity.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
+		canvas.RequestFrameIn(spinnerStep)
+	} else {
+		icon := iconCircleCheck
+		if state.ai.lastRun != nil && state.ai.lastRun.phase != aiRunCompleted {
+			icon = iconBot
+		}
+		canvas.DrawIcon(lucideIcons[icon], activity.Rect(), pal.muted)
+	}
 }
 
 // aiThinking reports whether row index is a thought the model is still writing:
@@ -1174,8 +1230,6 @@ func (state *State) paintAIAssistant(canvas *ui.Canvas, bounds, list ui.Rect, vi
 	}
 }
 
-// paintAIAnswerActions draws the hover-only copy and token row under the last
-// answer. The row's height was reserved when the row was measured.
 func (state *State) paintAIAnswerActions(canvas *ui.Canvas, bounds, list ui.Rect, index int) {
 	panel, pal := &state.ai.panel, state.pal
 	m := state.messages.AIPanel
@@ -1198,11 +1252,6 @@ func (state *State) paintAIAnswerActions(canvas *ui.Canvas, bounds, list ui.Rect
 		}
 	}
 	state.paintIconButton(canvas, hitAICopyAnswer, icon, button, m.CopyAnswer, false, iconButtonQuiet, pal.workspace)
-	if state.ai.lastUsage.InputTokens > 0 || state.ai.lastUsage.OutputTokens > 0 {
-		usage := state.aiUsageText()
-		canvas.Label(usage, ui.Rect{X: button.X + 26, Y: button.Y + 1, Width: max(action.Width-26, 0), Height: 18},
-			ui.TextStyle{Size: aiSmallSize, Color: pal.faint})
-	}
 }
 
 // aiCopySlot is where the copy button of a code block goes, once flex has placed it.
@@ -1217,4 +1266,5 @@ type aiFlexViews struct {
 	shell, barButton                          flex.View
 	history, historyRows, messages            flex.View
 	row                                       flex.View // one row of the history or of the conversation, declared into its slot
+	status                                    flex.View
 }

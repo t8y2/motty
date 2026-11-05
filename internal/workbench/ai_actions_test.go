@@ -10,10 +10,7 @@ import (
 	"motty/internal/ai/llm"
 )
 
-// TestLastAnswerShowsCopyAndUsageOnHover proves the action row belongs to the
-// last answer: hovering the message reveals a copy button and the run's token
-// usage, and the button copies the answer.
-func TestLastAnswerShowsCopyAndUsageOnHover(t *testing.T) {
+func TestLastAnswerShowsCopyOnHoverAndUsageAtRest(t *testing.T) {
 	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event {
 		return []llm.Event{
 			{Kind: llm.EventText, Text: "the answer"},
@@ -29,6 +26,15 @@ func TestLastAnswerShowsCopyAndUsageOnHover(t *testing.T) {
 	var first ui.Canvas
 	first.SetClock(func() time.Duration { return time.Second })
 	state.Paint(&first, ui.Size{Width: 1400, Height: 900})
+	status, ok := canvasHit(first.Hits(), hitAIRunStatus)
+	if !ok {
+		t.Fatal("usage is missing before hovering the answer")
+	}
+	for _, want := range []string{"2,081", "1,991", "90"} {
+		if !strings.Contains(status.Label, want) {
+			t.Fatalf("usage before hover did not show %q: %q", want, status.Label)
+		}
+	}
 	slots := state.ai.panel.rowSlots
 	if len(slots) == 0 {
 		t.Fatal("the conversation painted no rows")
@@ -43,16 +49,8 @@ func TestLastAnswerShowsCopyAndUsageOnHover(t *testing.T) {
 	if _, ok := canvasHit(canvas.Hits(), hitAICopyAnswer); !ok {
 		t.Fatal("the hovered answer has no copy button")
 	}
-	usage := state.aiUsageText()
-	found := false
-	for _, text := range canvas.Texts() {
-		if strings.Contains(text.Value, usage) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("the answer action row did not show %q", usage)
+	if _, ok := canvasHit(canvas.Hits(), hitAIRunStatus); !ok {
+		t.Fatal("hovering hid the persistent usage summary")
 	}
 
 	var copied string

@@ -374,3 +374,41 @@ func showShortcutSettings(state *State) {
 	state.activeSection = sectionSettings
 	state.settingsCategory = settingsShortcuts
 }
+
+// Shift+Insert and Ctrl+Insert are the Windows and Linux clipboard chords. They
+// stand for Paste and Copy whatever those are bound to, and yield to an action
+// the user binds to the same chord.
+func TestClipboardInsertChordsAliasPasteAndCopy(t *testing.T) {
+	shiftInsert := shortcutChord{Modifiers: ui.ModifierShift, Named: ui.KeyInsert}
+	ctrlInsert := shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyInsert}
+	shortcuts := defaultShortcuts()
+	if got := shortcuts.actionFor(shiftInsert); got != shortcutPaste {
+		t.Fatalf("Shift+Insert = %v, want paste", got)
+	}
+	if got := shortcuts.actionFor(ctrlInsert); got != shortcutCopy {
+		t.Fatalf("Ctrl+Insert = %v, want copy", got)
+	}
+	shortcuts.unbind(shortcutPaste)
+	if got := shortcuts.actionFor(shiftInsert); got != shortcutPaste {
+		t.Fatalf("Shift+Insert stopped pasting once Paste was unbound: %v", got)
+	}
+	// Another action may take the chord; the alias is not a conflict.
+	if conflict, ok := shortcuts.bind(shortcutClearScreen, shiftInsert); !ok {
+		t.Fatalf("binding Shift+Insert was refused by %v", conflict)
+	}
+	if got := shortcuts.actionFor(shiftInsert); got != shortcutClearScreen {
+		t.Fatalf("explicit binding lost to the alias: %v", got)
+	}
+}
+
+func TestShiftInsertPastesIntoLiveTerminal(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	state.options.ClipboardText = func() (string, error) { return "echo hi", nil }
+	event := ui.KeyEvent{Target: terminalHit(state, 0), Key: ui.KeyInsert, Modifiers: ui.ModifierShift}
+	if result := state.Key(event); !result.Handled {
+		t.Fatal("Shift+Insert reached the terminal as a key instead of pasting")
+	}
+	if got := shell.typed(); !strings.Contains(got, "echo hi") || strings.Contains(got, "\x1b[2") {
+		t.Fatalf("terminal received %q", got)
+	}
+}

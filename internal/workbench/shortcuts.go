@@ -305,7 +305,36 @@ func shortcutChordFromKey(event ui.KeyEvent) (shortcutChord, bool) {
 	return chord, event.Key != ui.KeyUnknown && chord.valid()
 }
 
+// clipboardAliases are the classic clipboard chords every terminal and text
+// editor on Windows and Linux honours next to the primary-modifier ones. They
+// are fixed rather than bindable, and only apply while no action owns the
+// chord, so rebinding Paste leaves Shift+Insert pasting and a user who gives
+// Shift+Insert another job takes it over.
+var clipboardAliases = [...]struct {
+	chord  shortcutChord
+	action shortcutAction
+}{
+	{shortcutChord{Modifiers: ui.ModifierShift, Named: ui.KeyInsert}, shortcutPaste},
+	{shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyInsert}, shortcutCopy},
+}
+
+// actionFor is the action a chord runs: the one bound to it, or else the
+// clipboard alias it stands for.
 func (shortcuts *shortcutMap) actionFor(chord shortcutChord) shortcutAction {
+	if action := shortcuts.boundAction(chord); action != shortcutNone {
+		return action
+	}
+	for _, alias := range clipboardAliases {
+		if alias.chord == chord {
+			return alias.action
+		}
+	}
+	return shortcutNone
+}
+
+// boundAction is actionFor without the built-in aliases: the action the user's
+// table binds to the chord, which is what a new binding can conflict with.
+func (shortcuts *shortcutMap) boundAction(chord shortcutChord) shortcutAction {
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
 		if shortcuts.chords[action] == chord {
 			return action
@@ -339,7 +368,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord shortcutChord) (
 	if action == shortcutTabNumber && !tabNumberChord(chord) {
 		return shortcutNone, false
 	}
-	if conflict := shortcuts.actionFor(chord); conflict != shortcutNone && conflict != action {
+	if conflict := shortcuts.boundAction(chord); conflict != shortcutNone && conflict != action {
 		return conflict, false
 	}
 	shortcuts.chords[action] = chord
