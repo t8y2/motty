@@ -1229,12 +1229,44 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 }
 
 func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
+	if view.dialog == sftpDialogChmod && id.Scope() == hitSFTPChmodBits {
+		// A permission checkbox flips one bit of the octal field, so the typed
+		// value and the checkboxes always agree (issue #392).
+		index := item(id)
+		if index < 0 || index > 8 {
+			return
+		}
+		mode, ok := sftpChmodFromDialog(view)
+		if !ok {
+			return
+		}
+		mask := uint32(1) << uint(8-index)
+		state.setSFTPChmodDialog(view, mode^mask)
+	}
 	switch id {
 	case hitSFTPDialogClose, hitSFTPDialogCancel:
 		state.closeSFTPDialog(view)
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)
 	}
+}
+
+// sftpChmodFromDialog reads the dialog's octal field; ok is false while the
+// text is not a usable mode.
+func sftpChmodFromDialog(view *sftpView) (uint32, bool) {
+	mode, err := strconv.ParseUint(strings.TrimSpace(view.dialogEditor.String()), 8, 12)
+	if err != nil || mode > 0o777 {
+		return 0, false
+	}
+	return uint32(mode), true
+}
+
+// setSFTPChmodDialog replaces the octal field with mode, under the same
+// restrictions the dialog opened with.
+func (state *State) setSFTPChmodDialog(view *sftpView, mode uint32) {
+	view.dialogEditor = text.Editor{}
+	view.dialogEditor.Restrict(func(value rune) bool { return value >= '0' && value <= '7' }, 3)
+	view.dialogEditor.Insert(fmt.Sprintf("%03o", mode))
 }
 
 func (state *State) submitSFTPDialog(view *sftpView) {

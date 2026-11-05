@@ -311,6 +311,7 @@ var (
 	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
