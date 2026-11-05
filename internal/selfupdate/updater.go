@@ -79,7 +79,7 @@ func (updater *Updater) clean() {
 		return
 	}
 	for _, entry := range entries {
-		if entry.Name() != failureFile {
+		if entry.Name() != failureFile && entry.Name() != lastFailureFile {
 			os.RemoveAll(filepath.Join(updater.Dir, entry.Name()))
 		}
 	}

@@ -92,6 +92,10 @@ func copyTree(src, dst string) error {
 // applyWindows runs the installer silently in the detected installation's exact
 // directory. The helper has already waited for the running program to quit.
 func (job Job) applyWindows() error {
+	return replaceWindowsExecutable(job.Root, filepath.Base(job.Exe), job.runWindowsInstaller)
+}
+
+func (job Job) runWindowsInstaller() error {
 	// installerCommandLine builds the whole command line: Go's argument quoting
 	// would wrap /D= and NSIS would then install to the default directory.
 	cmd := exec.Command(job.Staged)
