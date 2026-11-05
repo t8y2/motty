@@ -152,7 +152,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		tools = append(tools, barTool{id: hitHostBrowserOpen, icon: iconGlobe, hint: state.messages.HostBrowser.Title, disabled: session.phase != sshconn.PhaseConnected, style: style})
 	}
 	if state.localProxyActionVisible(session) {
-		tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title}
+		tool := barTool{id: hitLocalProxyOpen, icon: iconNetwork, hint: state.messages.LocalProxy.Title}
 		if snapshot := state.localProxySnapshot(session); snapshot.Phase != localProxyDisconnected {
 			tool.style = iconButtonActive
 			if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {

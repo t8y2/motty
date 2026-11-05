@@ -709,6 +709,7 @@ type State struct {
 	monitorWidth           float32
 	sftpPanelSide          layoutcore.ContextSide
 	sftpPanelWidth         float32
+	browserPanelWidth      float32
 	sftpBookmarks          []sftpBookmark
 	sftpLocalBookmarks     []string
 	transferLeftover       []byte
@@ -1193,7 +1194,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 		if hit == hitHostBrowserAddress && state.activeSection == sectionTerminal {
 			if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.browser != nil {
-				return &session.browser.address
+				if tab := session.browser.current(); tab != nil {
+					return &tab.address
+				}
 			}
 		}
 		if hit == hitSessionLogsSearch && state.activeSection == sectionSessionLogs {

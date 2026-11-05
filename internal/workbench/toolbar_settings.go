@@ -39,7 +39,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
 		{"save-output", hitTerminalSaveOutput, iconSave},
 		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
-		{"files", hitSFTPOpen, iconFolderOpen}, {"browser", hitHostBrowserOpen, iconGlobe}, {"local-proxy", hitLocalProxyOpen, iconGlobe},
+		{"files", hitSFTPOpen, iconFolderOpen}, {"browser", hitHostBrowserOpen, iconGlobe}, {"local-proxy", hitLocalProxyOpen, iconNetwork},
 		{"file-transfer", hitSFTPDetach, iconSFTPTransfer},
 		{"remote-tools", hitProcessToolsOpen, iconProcess},
 	},

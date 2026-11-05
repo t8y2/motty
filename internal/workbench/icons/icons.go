@@ -7160,6 +7160,51 @@ var Moon = ui.Icon{
 	},
 }
 
+// network is a compiled vector icon.
+var Network = ui.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(21.0, 16.0),
+		ui.CubicTo(21.5523, 16.0, 22.0, 16.4477, 22.0, 17.0),
+		ui.LineTo(22.0, 21.0),
+		ui.CubicTo(22.0, 21.5523, 21.5523, 22.0, 21.0, 22.0),
+		ui.LineTo(17.0, 22.0),
+		ui.CubicTo(16.4477, 22.0, 16.0, 21.5523, 16.0, 21.0),
+		ui.LineTo(16.0, 17.0),
+		ui.CubicTo(16.0, 16.4477, 16.4477, 16.0, 17.0, 16.0),
+		ui.ClosePath(),
+		ui.MoveTo(7.0, 16.0),
+		ui.CubicTo(7.55228, 16.0, 8.0, 16.4477, 8.0, 17.0),
+		ui.LineTo(8.0, 21.0),
+		ui.CubicTo(8.0, 21.5523, 7.55228, 22.0, 7.0, 22.0),
+		ui.LineTo(3.0, 22.0),
+		ui.CubicTo(2.44772, 22.0, 2.0, 21.5523, 2.0, 21.0),
+		ui.LineTo(2.0, 17.0),
+		ui.CubicTo(2.0, 16.4477, 2.44772, 16.0, 3.0, 16.0),
+		ui.ClosePath(),
+		ui.MoveTo(14.0, 2.0),
+		ui.CubicTo(14.5523, 2.0, 15.0, 2.44772, 15.0, 3.0),
+		ui.LineTo(15.0, 7.0),
+		ui.CubicTo(15.0, 7.55228, 14.5523, 8.0, 14.0, 8.0),
+		ui.LineTo(10.0, 8.0),
+		ui.CubicTo(9.44771, 8.0, 9.0, 7.55228, 9.0, 7.0),
+		ui.LineTo(9.0, 3.0),
+		ui.CubicTo(9.0, 2.44772, 9.44771, 2.0, 10.0, 2.0),
+		ui.ClosePath(),
+		ui.MoveTo(5.0, 16.0),
+		ui.LineTo(5.0, 13.0),
+		ui.CubicTo(5.0, 12.4477, 5.44772, 12.0, 6.0, 12.0),
+		ui.LineTo(18.0, 12.0),
+		ui.CubicTo(18.5523, 12.0, 19.0, 12.4477, 19.0, 13.0),
+		ui.LineTo(19.0, 16.0),
+		ui.MoveTo(12.0, 12.0),
+		ui.LineTo(12.0, 8.0),
+	},
+}
+
 // nixos is a compiled vector icon.
 var Nixos = ui.Icon{
 	ViewBox: 24.0,

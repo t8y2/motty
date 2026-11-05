@@ -29,6 +29,9 @@ func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring boo
 	if !capable && context.Kind == layoutcore.ContextNone {
 		return // an empty tab can initialize when a file-capable host is bound
 	}
+	if context.Kind == layoutcore.ContextBrowser {
+		context.Width = state.sftpPanelWidth
+	}
 	context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, capable && state.sftpPanelAutoOpen, state.sftpPanelSide
 	if !restoring {
 		if state.sftpPanelWidth > 0 {
@@ -75,8 +78,8 @@ func (state *State) toggleSFTPPanelSide() {
 func (state *State) sftpPanelResizable(canvas *ui.Canvas, size ui.Size, context layoutcore.ContextState) components.Resizable {
 	base := state.baseWorkspacePixelBounds(size)
 	width := state.contextPanelWidth(base, context)
-	minimum := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	maximum := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
+	minimum := state.contextPanelExtent(base, context.Kind, layoutcore.MinContextWidth)
+	maximum := state.contextPanelExtent(base, context.Kind, layoutcore.MaxContextWidthFor(context.Kind))
 	base.Width -= state.aiReserve(state.deck.ActiveWorkspace(), size)
 	base.Width -= state.independentMonitorReserve(state.deck.ActiveWorkspace(), size)
 	if context.MonitorLeft {

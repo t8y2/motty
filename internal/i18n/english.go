@@ -9,6 +9,7 @@ var EnglishMessages = Messages{
 		Back: "Back", Forward: "Forward", Reload: "Reload", Go: "Go", OpenExternal: "Open directly in system browser", Retry: "Reconnect",
 		Connecting: "Opening a private SSH route…", Disconnected: "The SSH connection is closed.", Unavailable: "The secure browser route is unavailable.",
 		InvalidAddress: "Enter a valid HTTP or HTTPS address without credentials.", Unsupported: "Secure browser routing is not supported on this platform.",
+		NewTab: "New tab", CloseTab: "Close tab", BlankPage: "Enter an address above to open a service on the host's network through SSH.",
 	},
 	Monitor:     englishMonitor,
 	Dashboard:   englishDashboard,

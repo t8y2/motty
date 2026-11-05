@@ -27,7 +27,15 @@ var (
 	hitHostBrowserGo       = tree.ID(hostBrowserHits, "go")
 	hitHostBrowserExternal = tree.ID(hostBrowserHits, "external")
 	hitHostBrowserRetry    = tree.ID(hostBrowserHits, "retry")
+	hitHostBrowserNewTab   = tree.ID(hostBrowserHits, "new-tab")
+
+	hostBrowserTabList      = tree.Sub(hostBrowserHits, tree.Name("tab"))
+	hostBrowserTabCloseList = tree.Sub(hostBrowserHits, tree.Name("tab-close"))
 )
+
+// A page opens wider than a file list; dragging it is limited to two thirds of
+// the terminal area (contextPanelMaximum).
+const defaultBrowserPanelWidth = float32(640)
 
 type hostBrowserView interface {
 	ID() ui.NativeViewID
@@ -51,17 +59,80 @@ func (host systemHostBrowserHost) Open(config app.WebViewConfig) (hostBrowserVie
 	return host.host.Open(config)
 }
 
+// hostBrowser is the browser of one SSH session: every tab is its own page, and
+// all of them reach the network through the session's one SOCKS5 forward.
 type hostBrowser struct {
 	open         bool
 	host         hostBrowserHost
 	ready        bool
-	view         hostBrowserView
 	tunnel       *portforward.Forward
-	address      text.Editor
-	url          string
 	err          string
-	editing      bool
+	tabs         []*hostBrowserTab
+	active       int
+	nextTab      int
 	focusAddress bool
+}
+
+// hostBrowserTab is one page. A tab without an address is blank: it has no
+// view until the user enters one.
+type hostBrowserTab struct {
+	id      int
+	view    hostBrowserView
+	address text.Editor
+	url     string
+	err     string
+	editing bool
+}
+
+func (browser *hostBrowser) newTab() *hostBrowserTab {
+	browser.nextTab++
+	tab := &hostBrowserTab{id: browser.nextTab}
+	browser.tabs = append(browser.tabs, tab)
+	browser.active = len(browser.tabs) - 1
+	browser.focusAddress = true
+	return tab
+}
+
+// current is the active tab, or nil once the browser is closed.
+func (browser *hostBrowser) current() *hostBrowserTab {
+	if len(browser.tabs) == 0 {
+		return nil
+	}
+	browser.active = min(max(browser.active, 0), len(browser.tabs)-1)
+	return browser.tabs[browser.active]
+}
+
+func (browser *hostBrowser) tabIndex(id int) int {
+	for index, tab := range browser.tabs {
+		if tab.id == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func (browser *hostBrowser) closeViews() {
+	for _, tab := range browser.tabs {
+		if tab.view != nil {
+			tab.view.Close()
+			tab.view = nil
+		}
+	}
+}
+
+// problem is the error to show above the active page: the route's, else the tab's.
+func (browser *hostBrowser) problem(tab *hostBrowserTab) string {
+	if browser.err != "" {
+		return browser.err
+	}
+	return tab.err
+}
+
+func (tab *hostBrowserTab) title(blank string) string {
+	if parsed, err := url.Parse(tab.url); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return blank
 }
 
 var hostBrowserPort = regexp.MustCompile(`^[^/:]+:\d+(?:[/?#]|$)`)
@@ -125,7 +196,7 @@ func (state *State) HostBrowserWebHost() *app.WebHost {
 			if state.sessions[index].browser != nil {
 				state.sessions[index].browser.host = state.browserHost
 				state.sessions[index].browser.ready = true
-				state.openHostBrowserPage(&state.sessions[index])
+				state.openHostBrowserPages(&state.sessions[index])
 			}
 		}
 	}
@@ -162,11 +233,15 @@ func (state *State) toggleHostBrowser() {
 			state.releaseIdleSFTP(session)
 		}
 		browser.open = true
+		if len(browser.tabs) == 0 {
+			browser.newTab()
+		}
 		context.Kind = layoutcore.ContextBrowser
 		context.Open = true
 		context.Side = layoutcore.ContextRight
-		if context.Width < 360 {
-			context.Width = 420
+		context.Width = defaultBrowserPanelWidth
+		if state.browserPanelWidth > 0 {
+			context.Width = state.browserPanelWidth
 		}
 		state.startHostBrowserTunnel(session)
 	}
@@ -180,10 +255,8 @@ func (state *State) closeHostBrowser(session *Session) {
 	}
 	browser := session.browser
 	browser.open = false
-	if browser.view != nil {
-		browser.view.Close()
-		browser.view = nil
-	}
+	browser.closeViews()
+	browser.tabs, browser.active = nil, 0
 	if browser.tunnel != nil {
 		browser.tunnel.CloseAsync()
 		browser.tunnel = nil
@@ -205,60 +278,87 @@ func (state *State) startHostBrowserTunnel(session *Session) {
 	}
 	browser.tunnel = tunnel
 	browser.err = ""
-	state.openHostBrowserPage(session)
+	state.openHostBrowserPages(session)
 }
 
-func (state *State) openHostBrowserPage(session *Session) {
+func (state *State) openHostBrowserPages(session *Session) {
 	browser := state.hostBrowserFor(session)
-	if !browser.open || browser.view != nil || browser.tunnel == nil || !browser.ready || browser.host == nil || state.closed {
+	for _, tab := range browser.tabs {
+		state.openHostBrowserPage(browser, tab)
+	}
+}
+
+// openHostBrowserPage opens the page of a tab that has an address; a blank tab
+// stays without a view.
+func (state *State) openHostBrowserPage(browser *hostBrowser, tab *hostBrowserTab) {
+	if !browser.open || tab.view != nil || tab.url == "" || browser.tunnel == nil || !browser.ready || browser.host == nil || state.closed {
 		return
 	}
 	proxy := browser.tunnel.Status().ListenAddress
-	target := browser.url
-	if target == "" {
-		target = "http://127.0.0.1/"
-	}
-	view, err := browser.host.Open(app.WebViewConfig{URL: target, Proxy: proxy, OnLoad: func(load app.WebLoad) {
+	view, err := browser.host.Open(app.WebViewConfig{URL: tab.url, Proxy: proxy, OnLoad: func(load app.WebLoad) {
 		if normalized, normalizeErr := normalizeHostBrowserURL(load.URL); normalizeErr == nil {
-			browser.url = normalized
-			if !browser.editing {
-				state.setHostBrowserAddress(browser, normalized)
+			tab.url = normalized
+			if !tab.editing {
+				tab.address = *text.NewEditor(normalized)
 			}
 		}
 		if load.Phase == app.WebLoadStarted {
-			browser.err = ""
+			tab.err = ""
 		}
 	}})
 	if err != nil {
-		browser.err = state.messages.HostBrowser.Unsupported
+		tab.err = state.messages.HostBrowser.Unsupported
 		return
 	}
-	browser.err = ""
-	browser.url = target
-	state.setHostBrowserAddress(browser, target)
-	browser.view = view
+	tab.err = ""
+	tab.view = view
 }
 
 func (state *State) setHostBrowserAddress(browser *hostBrowser, target string) {
-	browser.address = *text.NewEditor(target)
+	if tab := browser.current(); tab != nil {
+		tab.address = *text.NewEditor(target)
+	}
 }
 
 func (state *State) navigateHostBrowser(session *Session) {
 	browser := state.hostBrowserFor(session)
-	target, err := normalizeHostBrowserURL(browser.address.String())
-	if err != nil {
-		browser.err = state.messages.HostBrowser.InvalidAddress
+	tab := browser.current()
+	if tab == nil {
 		return
 	}
-	browser.err = ""
-	browser.url = target
-	state.setHostBrowserAddress(browser, target)
-	if browser.view != nil {
-		browser.view.Load(target)
-		browser.view.Focus()
-	} else {
-		state.openHostBrowserPage(session)
+	tab.editing = false
+	target, err := normalizeHostBrowserURL(tab.address.String())
+	if err != nil {
+		tab.err = state.messages.HostBrowser.InvalidAddress
+		return
 	}
+	tab.err = ""
+	tab.url = target
+	tab.address = *text.NewEditor(target)
+	if tab.view != nil {
+		tab.view.Load(target)
+	} else {
+		state.openHostBrowserPage(browser, tab)
+	}
+	if tab.view != nil {
+		tab.view.Focus()
+	}
+}
+
+func (state *State) closeHostBrowserTab(session *Session, index int) {
+	browser := session.browser
+	if tab := browser.tabs[index]; tab.view != nil {
+		tab.view.Close()
+	}
+	browser.tabs = append(browser.tabs[:index], browser.tabs[index+1:]...)
+	if len(browser.tabs) == 0 {
+		state.clickHostBrowser(hitHostBrowserClose)
+		return
+	}
+	if browser.active > index || browser.active == len(browser.tabs) {
+		browser.active--
+	}
+	browser.focusAddress = browser.current().url == ""
 }
 
 func (state *State) clickHostBrowser(id ui.ID) bool {
@@ -273,6 +373,19 @@ func (state *State) clickHostBrowser(id ui.ID) bool {
 		return false
 	}
 	browser := session.browser
+	if tabID, found := id.In(hostBrowserTabList); found {
+		if index := browser.tabIndex(tabID); index >= 0 {
+			browser.active = index
+			browser.focusAddress = browser.tabs[index].url == ""
+		}
+		return true
+	}
+	if tabID, found := id.In(hostBrowserTabCloseList); found {
+		if index := browser.tabIndex(tabID); index >= 0 {
+			state.closeHostBrowserTab(session, index)
+		}
+		return true
+	}
 	switch id {
 	case hitHostBrowserClose:
 		context, found := state.deck.Context(state.deck.ActiveWorkspace())
@@ -283,51 +396,63 @@ func (state *State) clickHostBrowser(id ui.ID) bool {
 		state.closeHostBrowser(session)
 		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 		return true
+	case hitHostBrowserNewTab:
+		browser.newTab()
+		return true
 	case hitHostBrowserAddress:
-		browser.editing = true
+		if tab := browser.current(); tab != nil {
+			tab.editing = true
+		}
 		return true
 	case hitHostBrowserGo:
-		browser.editing = false
 		state.navigateHostBrowser(session)
-		return true
-	case hitHostBrowserBack:
-		if browser.view != nil {
-			browser.editing = false
-			browser.view.Back()
-		}
-		return true
-	case hitHostBrowserForward:
-		if browser.view != nil {
-			browser.editing = false
-			browser.view.Forward()
-		}
-		return true
-	case hitHostBrowserReload:
-		if browser.view != nil {
-			browser.editing = false
-			browser.err = ""
-			browser.view.Reload()
-		}
-		return true
-	case hitHostBrowserExternal:
-		if target, err := normalizeHostBrowserURL(browser.address.String()); err == nil {
-			state.openExternal(target)
-		}
 		return true
 	case hitHostBrowserRetry:
 		state.closeHostBrowserTunnel(session)
+		for _, tab := range browser.tabs {
+			tab.err = ""
+		}
 		state.startHostBrowserTunnel(session)
+		return true
+	}
+	tab := browser.current()
+	if tab == nil {
+		return false
+	}
+	switch id {
+	case hitHostBrowserBack:
+		if tab.view != nil {
+			tab.editing = false
+			tab.view.Back()
+		}
+		return true
+	case hitHostBrowserForward:
+		if tab.view != nil {
+			tab.editing = false
+			tab.view.Forward()
+		}
+		return true
+	case hitHostBrowserReload:
+		if tab.view != nil {
+			tab.editing = false
+			tab.err = ""
+			tab.view.Reload()
+		}
+		return true
+	case hitHostBrowserExternal:
+		if target, err := normalizeHostBrowserURL(tab.address.String()); err == nil {
+			state.openExternal(target)
+		}
 		return true
 	}
 	return false
 }
 
+// closeHostBrowserTunnel drops the pages and the forward but keeps the tabs, so
+// reconnecting reopens them.
 func (state *State) closeHostBrowserTunnel(session *Session) {
 	browser := state.hostBrowserFor(session)
-	if browser.view != nil {
-		browser.view.Close()
-		browser.view = nil
-	}
+	browser.closeViews()
 	if browser.tunnel != nil {
 		browser.tunnel.CloseAsync()
 		browser.tunnel = nil
@@ -340,19 +465,18 @@ func (state *State) hostBrowserKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return ui.EventResult{}, false
 	}
 	browser := session.browser
-	if event.Target == hitHostBrowserAddress {
+	if tab := browser.current(); tab != nil && event.Target == hitHostBrowserAddress {
 		switch event.Key {
 		case ui.KeyEnter:
-			if _, composing := browser.address.Composition(); composing {
+			if _, composing := tab.address.Composition(); composing {
 				return ui.EventResult{}, false
 			}
-			browser.editing = false
 			state.navigateHostBrowser(session)
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		case ui.KeyEscape:
-			browser.editing = false
-			state.setHostBrowserAddress(browser, browser.url)
-			browser.err = ""
+			tab.editing = false
+			tab.address = *text.NewEditor(tab.url)
+			tab.err = ""
 			return ui.EventResult{Handled: true, Repaint: true}, true
 		}
 	}

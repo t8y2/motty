@@ -9,6 +9,7 @@ var ChineseMessages = Messages{
 		Back: "后退", Forward: "前进", Reload: "刷新", Go: "访问", OpenExternal: "在系统浏览器中直接打开（不经过 SSH）", Retry: "重新连接",
 		Connecting: "正在建立 SSH 专用网络通道…", Disconnected: "SSH 连接已断开。", Unavailable: "安全浏览器通道不可用。",
 		InvalidAddress: "请输入有效的 HTTP 或 HTTPS 地址，且不要包含账号或密码。", Unsupported: "当前平台不支持安全浏览器网络通道。",
+		NewTab: "新标签页", CloseTab: "关闭标签页", BlankPage: "在上方输入网址，通过 SSH 访问主机网络中的服务。",
 	},
 	Monitor:     chineseMonitor,
 	Dashboard:   chineseDashboard,

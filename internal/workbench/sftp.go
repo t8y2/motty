@@ -283,6 +283,7 @@ func (state *State) showFilesPanel(session *Session) {
 	context, _ := state.deck.Context(workspace)
 	if context.Kind == layoutcore.ContextBrowser {
 		state.closeHostBrowser(session)
+		context.Width = state.sftpPanelWidth
 	}
 	context.Kind = layoutcore.ContextSFTP
 	context.Open = true

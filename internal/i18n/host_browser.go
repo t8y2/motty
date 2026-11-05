@@ -4,5 +4,5 @@ type HostBrowserMessages struct {
 	Title, Address, AddressPlaceholder, Close             string
 	Back, Forward, Reload, Go, OpenExternal, Retry        string
 	Connecting, Disconnected, Unavailable, InvalidAddress string
-	Unsupported                                           string
+	Unsupported, NewTab, CloseTab, BlankPage              string
 }

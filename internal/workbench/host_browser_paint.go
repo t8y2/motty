@@ -23,14 +23,39 @@ func (state *State) paintHostBrowserPanel(canvas *ui.Canvas, bounds ui.Rect, ses
 
 func (state *State) paintHostBrowser(canvas *ui.Canvas, bounds ui.Rect, session *Session) {
 	browser := state.hostBrowserFor(session)
+	tab := browser.current()
+	if tab == nil {
+		return
+	}
 	m, pal := state.messages.HostBrowser, state.pal
-	var address, back, forward, reload, goTo, external, closeButton, content flex.Box
+	var address, back, forward, reload, goTo, external, closeButton, newTab, content flex.Box
+	tabCloses := make([]flex.Box, len(browser.tabs))
 	f := state.hostBrowserLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().Background(pal.workspace).Children(func() {
-		f.Row().Height(infoBarHeight).Shrink(0).PadSides(0, 8, 0, 8).Gap(7).Items(flex.Center).Children(func() {
-			f.Icon(lucideIcons[iconGlobe]).Size(16, 16).Color(pal.accent)
-			f.Text(m.Title).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-			closeButton = f.Slot().Size(24, 24)
+		f.Row().Height(infoBarHeight).Shrink(0).PadSides(0, 8, 0, 8).Gap(4).Items(flex.Center).Children(func() {
+			f.Icon(lucideIcons[iconGlobe]).Size(16, 16).Color(pal.accent).Shrink(0).MarginSides(0, 3, 0, 0)
+			f.Row().Grow(1).Basis(0).MinWidth(0).Height(28).Gap(2).Items(flex.Center).Clip().Children(func() {
+				for index, page := range browser.tabs {
+					id := hostBrowserTabList.At(page.id)
+					title := page.title(m.NewTab)
+					active := index == browser.active
+					fill, foreground := ui.Color{}, pal.muted
+					switch {
+					case active:
+						fill, foreground = pal.surface, pal.text
+					case canvas.Hovered() == id || canvas.Hovered() == hostBrowserTabCloseList.At(page.id):
+						fill, foreground = withAlpha(pal.surfaceHot, 0.7), pal.text
+					}
+					f.Row().Height(26).Basis(160).MinWidth(64).Shrink(1).PadSides(0, 4, 0, 8).Gap(2).Items(flex.Center).
+						Radius(radius.control).Background(fill).
+						HitWith(id, title, ui.HitOptions{Role: ui.RoleTab, Selected: active}).Children(func() {
+						f.Text(title).FontSize(metrics.FontSizeS).Color(foreground).Grow(1).Basis(0).MinWidth(0).Ellipsis()
+						tabCloses[index] = f.Slot().Size(18, 18).Shrink(0)
+					})
+				}
+			})
+			newTab = f.Slot().Size(24, 24).Shrink(0)
+			closeButton = f.Slot().Size(24, 24).Shrink(0)
 		})
 		f.Row().Height(32).Shrink(0).PadSides(0, 6, 0, 6).Gap(3).Items(flex.Center).Children(func() {
 			back = f.Slot().Size(24, 24)
@@ -42,20 +67,24 @@ func (state *State) paintHostBrowser(canvas *ui.Canvas, bounds ui.Rect, session 
 			address = f.Slot().Grow(1).MinWidth(80).Height(30)
 			goTo = f.Slot().Size(26, 26)
 		})
-		if browser.err != "" {
-			f.Paragraph(browser.err, 3).FontSize(metrics.FontSizeS).Color(pal.danger).PadSides(0, 8, 0, 8).Shrink(0)
+		if problem := browser.problem(tab); problem != "" {
+			f.Paragraph(problem, 3).FontSize(metrics.FontSizeS).Color(pal.danger).PadSides(0, 8, 0, 8).Shrink(0)
 		}
 		content = f.Slot().Grow(1).Basis(0).Background(pal.surface)
 	})
 	f.End()
 
+	for index, page := range browser.tabs {
+		state.paintIconButton(canvas, hostBrowserTabCloseList.At(page.id), iconClose, tabCloses[index].Rect(), m.CloseTab, false, iconButtonQuiet, pal.workspace)
+	}
+	state.paintIconButton(canvas, hitHostBrowserNewTab, iconPlus, newTab.Rect(), m.NewTab, false, iconButtonQuiet, pal.workspace)
 	state.paintIconButton(canvas, hitHostBrowserClose, iconClose, closeButton.Rect(), m.Close, false, iconButtonQuiet, pal.workspace)
-	state.paintIconButton(canvas, hitHostBrowserBack, iconChevronLeft, back.Rect(), m.Back, browser.view == nil, iconButtonQuiet, pal.workspace)
-	state.paintIconButton(canvas, hitHostBrowserForward, iconChevronRight, forward.Rect(), m.Forward, browser.view == nil, iconButtonQuiet, pal.workspace)
-	state.paintIconButton(canvas, hitHostBrowserReload, iconRefresh, reload.Rect(), m.Reload, browser.view == nil, iconButtonQuiet, pal.workspace)
-	state.paintIconButton(canvas, hitHostBrowserExternal, iconLink, external.Rect(), m.OpenExternal, false, iconButtonQuiet, pal.workspace)
+	state.paintIconButton(canvas, hitHostBrowserBack, iconChevronLeft, back.Rect(), m.Back, tab.view == nil, iconButtonQuiet, pal.workspace)
+	state.paintIconButton(canvas, hitHostBrowserForward, iconChevronRight, forward.Rect(), m.Forward, tab.view == nil, iconButtonQuiet, pal.workspace)
+	state.paintIconButton(canvas, hitHostBrowserReload, iconRefresh, reload.Rect(), m.Reload, tab.view == nil, iconButtonQuiet, pal.workspace)
+	state.paintIconButton(canvas, hitHostBrowserExternal, iconLink, external.Rect(), m.OpenExternal, tab.url == "", iconButtonQuiet, pal.workspace)
 	state.paintIconButton(canvas, hitHostBrowserGo, iconChevronRight, goTo.Rect(), m.Go, false, iconButtonActive, pal.workspace)
-	value := browser.address.String()
+	value := tab.address.String()
 	components.PaintInputGroup(canvas, state.Theme(), address.Rect(), components.InputGroupSnapshot{
 		ID: hitHostBrowserAddress, Label: m.Address, Value: value, Placeholder: m.AddressPlaceholder,
 		NativeEditing: canvas.Focused() == hitHostBrowserAddress && value != "",
@@ -65,21 +94,25 @@ func (state *State) paintHostBrowser(canvas *ui.Canvas, bounds ui.Rect, session 
 		canvas.RequestFocus(hitHostBrowserAddress)
 		browser.focusAddress = false
 	}
-	if browser.view != nil && browser.err == "" && session.phase == sshconn.PhaseConnected {
-		canvas.NativeView(browser.view.ID(), content.Rect())
+	connected := session.phase == sshconn.PhaseConnected
+	if tab.view != nil && tab.err == "" && browser.err == "" && connected {
+		canvas.NativeView(tab.view.ID(), content.Rect())
 		return
 	}
-	status := m.Connecting
-	if session.phase != sshconn.PhaseConnected {
+	status, failed := m.BlankPage, false
+	switch {
+	case !connected:
 		status = m.Disconnected
-	} else if browser.err != "" {
-		status = m.Unavailable
+	case browser.err != "" || (tab.err != "" && tab.url != ""):
+		status, failed = m.Unavailable, true
+	case browser.tunnel == nil || tab.url != "":
+		status = m.Connecting
 	}
 	f = state.hostBrowserStatusLayout.Begin(canvas, state.Theme(), content.Rect())
 	f.Column().Fill().Center().Pad(16).Gap(12).Children(func() {
 		f.Icon(lucideIcons[iconGlobe]).Size(28, 28).Color(pal.muted)
 		f.Text(status).FontSize(metrics.FontSizeS).Color(pal.muted).TextCenter()
-		if browser.err != "" {
+		if failed {
 			f.Button(hitHostBrowserRetry, m.Retry)
 		}
 	})

@@ -77,14 +77,21 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	return bounds
 }
 
-func (state *State) contextPanelExtent(workspace ui.Rect, preferred float32) float32 {
-	maximum := min(layoutcore.MaxContextWidth, workspace.Width*0.45)
+func (state *State) contextPanelExtent(workspace ui.Rect, kind layoutcore.ContextKind, preferred float32) float32 {
+	maximum := contextPanelMaximum(workspace, kind)
 	minimum := min(layoutcore.MinContextWidth, maximum)
 	return min(max(preferred, minimum), maximum)
 }
 
+func contextPanelMaximum(workspace ui.Rect, kind layoutcore.ContextKind) float32 {
+	if kind == layoutcore.ContextBrowser {
+		return min(layoutcore.MaxBrowserContextWidth, workspace.Width*2/3)
+	}
+	return min(layoutcore.MaxContextWidth, workspace.Width*0.45)
+}
+
 func (state *State) contextPanelWidth(workspace ui.Rect, context layoutcore.ContextState) float32 {
-	return state.contextPanelExtent(workspace, context.Width)
+	return state.contextPanelExtent(workspace, context.Kind, context.Width)
 }
 
 func pixelBounds(frame ui.Rect, bounds FractionBounds) ui.Rect {
@@ -558,8 +565,12 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 	if width == context.Width {
 		return ui.EventResult{Handled: true}
 	}
-	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidth)
-	state.sftpPanelWidth = context.Width
+	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidthFor(context.Kind))
+	if context.Kind == layoutcore.ContextBrowser {
+		state.browserPanelWidth = context.Width
+	} else {
+		state.sftpPanelWidth = context.Width
+	}
 	if state.deck.SetContext(workspaceID, context) != nil {
 		return ui.EventResult{Handled: true}
 	}

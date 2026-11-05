@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
 )
 
 type fakeHostBrowserView struct {
@@ -53,6 +54,13 @@ func connectedBrowserSession(state *State, conn Connection) *Session {
 	return &state.sessions[0]
 }
 
+func openTestBrowser(view *fakeHostBrowserView) *hostBrowser {
+	browser := &hostBrowser{open: true}
+	browser.newTab().view = view
+	browser.focusAddress = false
+	return browser
+}
+
 func TestNormalizeHostBrowserURL(t *testing.T) {
 	valid := map[string]string{
 		"localhost:3000":          "http://localhost:3000/",
@@ -85,8 +93,8 @@ func TestHostBrowserToolbarOpensTunnelWithIsolatedProxy(t *testing.T) {
 	if browser == nil || browser.tunnel == nil {
 		t.Fatal("Browser did not start its SSH dynamic forward")
 	}
-	if host.config.URL != "http://127.0.0.1/" || host.config.Proxy != browser.tunnel.Status().ListenAddress {
-		t.Fatalf("page config = %+v", host.config)
+	if len(browser.tabs) != 1 || browser.tabs[0].view != nil || host.config.URL != "" {
+		t.Fatalf("Browser did not open on a blank tab: tabs %d, page config %+v", len(browser.tabs), host.config)
 	}
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	if context.Kind != 5 || !context.Open {
@@ -94,12 +102,96 @@ func TestHostBrowserToolbarOpensTunnelWithIsolatedProxy(t *testing.T) {
 	}
 	state.setHostBrowserAddress(browser, "service.internal:8080/status")
 	state.clickHostBrowser(hitHostBrowserGo)
-	if browser.url != "https://service.internal:8080/status" {
-		t.Fatalf("address = %q", browser.url)
+	tab := browser.current()
+	if tab.url != "https://service.internal:8080/status" || host.config.URL != tab.url {
+		t.Fatalf("address = %q, page config %+v", tab.url, host.config)
+	}
+	if host.config.Proxy != browser.tunnel.Status().ListenAddress {
+		t.Fatalf("page config = %+v", host.config)
 	}
 	state.clickHostBrowser(hitHostBrowserClose)
-	if browser.tunnel != nil || browser.view != nil || browser.open {
+	if browser.tunnel != nil || len(browser.tabs) != 0 || browser.open || host.view.closed != 1 {
 		t.Fatal("closing Browser left its page or tunnel running")
+	}
+}
+
+func TestHostBrowserNewTabsArePagesOfTheirOwn(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	session := connectedBrowserSession(state, &fakeConn{})
+	host := &fakeHostBrowserHost{view: &fakeHostBrowserView{id: 1}}
+	state.browserHost = host
+	state.toggleHostBrowser()
+	browser := session.browser
+	state.setHostBrowserAddress(browser, "127.0.0.1:3065")
+	state.clickHostBrowser(hitHostBrowserGo)
+	first := host.view
+
+	host.view = &fakeHostBrowserView{id: 2}
+	state.Click(contextID(hitHostBrowserNewTab))
+	if len(browser.tabs) != 2 || browser.active != 1 || browser.current().view != nil || browser.current().address.String() != "" {
+		t.Fatalf("new tab is not blank and active: %+v", browser.current())
+	}
+	state.setHostBrowserAddress(browser, "127.0.0.1:9090")
+	state.clickHostBrowser(hitHostBrowserGo)
+	second := host.view
+	if browser.current().view != second || len(first.loaded) != 0 {
+		t.Fatal("second tab reused the first tab's page")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if views := canvas.NativeViews(); len(views) != 1 || views[0].ID != 2 {
+		t.Fatalf("visible pages = %+v", views)
+	}
+	firstTab := hostBrowserTabList.At(browser.tabs[0].id)
+	if _, ok := hitByID(&canvas, contextID(firstTab)); !ok {
+		t.Fatal("tab strip is missing the first tab")
+	}
+	state.Click(contextID(firstTab))
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if views := canvas.NativeViews(); len(views) != 1 || views[0].ID != 1 {
+		t.Fatalf("switching tabs shows %+v", views)
+	}
+	if browser.current().address.String() != "http://127.0.0.1:3065/" {
+		t.Fatalf("address bar = %q", browser.current().address.String())
+	}
+
+	state.Click(contextID(hostBrowserTabCloseList.At(browser.tabs[0].id)))
+	if first.closed != 1 || len(browser.tabs) != 1 || browser.current().view != second || browser.tunnel == nil {
+		t.Fatal("closing a tab did not keep the other page and the route")
+	}
+	state.Click(contextID(hostBrowserTabCloseList.At(browser.tabs[0].id)))
+	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	if second.closed != 1 || browser.open || browser.tunnel != nil || context.Open {
+		t.Fatal("closing the last tab did not close Browser")
+	}
+	canvas.Reset()
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.toggleHostBrowser()
+	if len(browser.tabs) != 1 || browser.current().url != "" {
+		t.Fatalf("reopened Browser has %d tabs, want one blank tab", len(browser.tabs))
+	}
+}
+
+func TestHostBrowserReconnectReopensEveryTab(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	session := connectedBrowserSession(state, &fakeConn{})
+	host := &fakeHostBrowserHost{view: &fakeHostBrowserView{id: 1}}
+	state.browserHost = host
+	state.toggleHostBrowser()
+	browser := session.browser
+	state.setHostBrowserAddress(browser, "127.0.0.1:3065")
+	state.clickHostBrowser(hitHostBrowserGo)
+	state.clickHostBrowser(hitHostBrowserNewTab)
+	state.closeHostBrowserTunnel(session)
+	if browser.tabs[0].view != nil || len(browser.tabs) != 2 {
+		t.Fatal("dropping the route kept a page or lost the tabs")
+	}
+	host.config = app.WebViewConfig{}
+	state.startHostBrowserTunnel(session)
+	if browser.tabs[0].view == nil || host.config.URL != "http://127.0.0.1:3065/" || browser.tabs[1].view != nil {
+		t.Fatalf("reconnect reopened %+v", host.config)
 	}
 }
 
@@ -107,11 +199,17 @@ func TestHostBrowserPanelClicksReachTheMountedControls(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	session := connectedBrowserSession(state, &fakeConn{})
 	view := &fakeHostBrowserView{id: 9}
-	state.browserHost = &fakeHostBrowserHost{view: view}
+	host := &fakeHostBrowserHost{view: view}
+	state.browserHost = host
 	state.toggleHostBrowser()
 	state.setHostBrowserAddress(session.browser, "127.0.0.1:3065")
 	state.Click(contextID(hitHostBrowserGo))
-	if len(view.loaded) != 1 || view.loaded[0] != "http://127.0.0.1:3065/" {
+	if host.config.URL != "http://127.0.0.1:3065/" {
+		t.Fatalf("panel Go opened %q", host.config.URL)
+	}
+	state.setHostBrowserAddress(session.browser, "127.0.0.1:9090")
+	state.Click(contextID(hitHostBrowserGo))
+	if len(view.loaded) != 1 || view.loaded[0] != "http://127.0.0.1:9090/" {
 		t.Fatalf("panel Go loaded %v", view.loaded)
 	}
 	state.Click(contextID(hitHostBrowserReload))
@@ -129,8 +227,10 @@ func TestHostBrowserRejectsUnsupportedProxyInsteadOfDirectLoad(t *testing.T) {
 	session := connectedBrowserSession(state, &fakeConn{})
 	state.browserHost = &fakeHostBrowserHost{err: errors.New("proxy unsupported")}
 	state.toggleHostBrowser()
-	if session.browser.err == "" || session.browser.view != nil {
-		t.Fatalf("unsupported browser = %+v", session.browser)
+	state.setHostBrowserAddress(session.browser, "127.0.0.1:3065")
+	state.clickHostBrowser(hitHostBrowserGo)
+	if tab := session.browser.current(); tab.err == "" || tab.view != nil {
+		t.Fatalf("unsupported browser = %+v", tab)
 	}
 }
 
@@ -197,7 +297,7 @@ func TestHostBrowserSOCKS5UsesRemoteHostnamesAndInternalAddresses(t *testing.T) 
 func TestHostBrowserRightPanelDoesNotOverlapTerminal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	session := connectedBrowserSession(state, &fakeConn{})
-	session.browser = &hostBrowser{open: true, view: &fakeHostBrowserView{id: 7}}
+	session.browser = openTestBrowser(&fakeHostBrowserView{id: 7})
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	context.Kind, context.Open, context.Side, context.Width = 5, true, 1, 420
 	_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
@@ -221,7 +321,7 @@ func TestHostBrowserRightPanelDoesNotOverlapTerminal(t *testing.T) {
 func TestHostBrowserNativeViewOnlyVisibleForConnectedActiveSession(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	session := connectedBrowserSession(state, &fakeConn{})
-	session.browser = &hostBrowser{open: true, view: &fakeHostBrowserView{id: 7}}
+	session.browser = openTestBrowser(&fakeHostBrowserView{id: 7})
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	context.Kind, context.Open = 5, true
 	_ = state.deck.SetContext(state.deck.ActiveWorkspace(), context)
@@ -249,5 +349,68 @@ func TestHostBrowserAndFilesPanelAreExclusive(t *testing.T) {
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	if context.Kind != 1 {
 		t.Fatalf("context kind = %d", context.Kind)
+	}
+}
+
+func dragContextDividerTo(t *testing.T, state *State, size ui.Size, x float32) {
+	t.Helper()
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	divider, ok := hitByID(&canvas, hitContextDivider)
+	if !ok {
+		t.Fatal("context divider is missing")
+	}
+	y := divider.Bounds.Y + divider.Bounds.Height/2
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: x, Y: y, Viewport: size})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: x, Y: y, Viewport: size})
+}
+
+func TestHostBrowserPanelDragsToTwoThirdsOfTheTerminalArea(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	session := connectedBrowserSession(state, &fakeConn{})
+	state.toggleHostBrowser()
+	session.browser.current().view = &fakeHostBrowserView{id: 7}
+	size := ui.Size{Width: 1400, Height: 900}
+	base := state.baseWorkspacePixelBounds(size)
+	limit := base.Width * 2 / 3
+
+	dragContextDividerTo(t, state, size, base.X+1)
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	views := canvas.NativeViews()
+	if len(views) != 1 {
+		t.Fatalf("native views = %+v", views)
+	}
+	page := views[0].Bounds
+	if page.Width < limit-1 || page.X < base.X+base.Width-limit-1 {
+		t.Fatalf("page = %+v, want two thirds (%v) of %+v", page, limit, base)
+	}
+	if pane := state.workspacePixelBounds(size); pane.Width < base.Width-limit-2 {
+		t.Fatalf("terminal area = %+v, want at least a third of %+v", pane, base)
+	}
+
+	restored := newTestState(t, state.options)
+	if restored.browserPanelWidth != state.browserPanelWidth || restored.browserPanelWidth < limit-1 {
+		t.Fatalf("restored browser width = %v, saved %v", restored.browserPanelWidth, state.browserPanelWidth)
+	}
+
+	// The files panel keeps its own, narrower width.
+	state.showFilesPanel(session)
+	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	if width := state.contextPanelWidth(base, context); width > layoutcore.MaxContextWidth {
+		t.Fatalf("files panel inherited the browser width: %v", width)
+	}
+}
+
+func TestLocalProxyAndBrowserToolsHaveDistinctIcons(t *testing.T) {
+	icons := map[ui.ID]uint8{}
+	for _, tool := range toolbarCatalog[toolbarTerminal] {
+		icons[tool.id] = tool.icon
+	}
+	browser, okBrowser := icons[hitHostBrowserOpen]
+	proxy, okProxy := icons[hitLocalProxyOpen]
+	if !okBrowser || !okProxy || browser == proxy {
+		t.Fatalf("browser icon %d (%v), local proxy icon %d (%v)", browser, okBrowser, proxy, okProxy)
 	}
 }
