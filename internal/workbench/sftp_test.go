@@ -925,6 +925,44 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	if !strings.Contains(view.status, "600") {
 		t.Fatalf("chmod completion status = %q", view.status)
 	}
+
+	// The permission grid mirrors the octal field in both directions
+	// (issue #392): nine boxes, a tap flips one bit, and a typed value moves
+	// the boxes.
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("chmod reopen value = %q", view.dialogEditor.String())
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for index := 0; index < 9; index++ {
+		if _, ok := hitByID(&canvas, hitSFTPChmodBits.At(index)); !ok {
+			t.Fatalf("permission checkbox %d is not painted", index)
+		}
+	}
+	// 600: owner rw. Tapping group write (index 4) sets that one bit: 620.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "620" {
+		t.Fatalf("after group-write tap = %q, want 620", view.dialogEditor.String())
+	}
+	// Tapping it again takes the bit back.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after second tap = %q, want 600", view.dialogEditor.String())
+	}
+	// Typing in the field moves the boxes: 700 has owner execute; tapping it
+	// clears the bit back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	state.Click(hitSFTPChmodBits.At(2))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after owner-exec tap on 700 = %q, want 600", view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		index := sftpRowIndexOrNegative(view, "renamed.txt")
+		return !view.busy && index >= 0 && view.rows[index].entry.Mode.Perm() == 0o600
+	})
 }
 
 func TestSFTPDeleteRequiresConfirmationAndDistinguishesDirectories(t *testing.T) {

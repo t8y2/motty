@@ -953,6 +953,12 @@ type Messages struct {
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string
 	SFTPPermissionsSubmit       string
+	SFTPPermissionsOwner        string
+	SFTPPermissionsGroup        string
+	SFTPPermissionsOthers       string
+	SFTPPermissionsRead         string
+	SFTPPermissionsWrite        string
+	SFTPPermissionsExecute      string
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string
