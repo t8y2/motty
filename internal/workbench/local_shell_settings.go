@@ -3,7 +3,6 @@ package workbench
 import (
 	"context"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -37,8 +36,8 @@ type localShellSelect struct {
 const wslListTimeout = 10 * time.Second
 
 // localShellsSupported is whether this computer lists its shells for the user
-// to choose from. Only Windows does: elsewhere the login shell is the one.
-var localShellsSupported = runtime.GOOS == "windows"
+// to choose from. All platforms do: Windows has pwsh/cmd, Unix has zsh/bash/sh.
+var localShellsSupported = true
 
 func localShellSettingVisible() bool { return localShellsSupported }
 
