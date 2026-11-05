@@ -218,16 +218,16 @@ func TestNewTabPickerGroupsHostsAndTheWheelSurvivesTheNextPaint(t *testing.T) {
 	if !ok {
 		t.Fatal("the picker paints no first row")
 	}
-	if result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.top == 0 {
-		t.Fatalf("the wheel did not move the list: %+v, top %d", result, state.commandPalette.top)
+	if result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.scroll == 0 {
+		t.Fatalf("the wheel did not move the list: %+v, scroll %g", result, state.commandPalette.scroll)
 	}
-	top := state.commandPalette.top
+	top := state.commandPalette.scroll
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	if state.commandPalette.top != top {
-		t.Fatalf("the next paint returned the list to row %d, want it to stay at %d", state.commandPalette.top, top)
+	if state.commandPalette.scroll != top {
+		t.Fatalf("the next paint returned the list to offset %g, want it to stay at %g", state.commandPalette.scroll, top)
 	}
-	after, ok := hitByID(&canvas, hitCommandPaletteItems.At(0))
+	after, ok := hitByID(&canvas, hitCommandPaletteItems.At(int(top/commandPaletteRowStep)))
 	if !ok || after.Label == first.Label {
 		t.Fatalf("the wheel did not change the first row: %q -> %q", first.Label, after.Label)
 	}
