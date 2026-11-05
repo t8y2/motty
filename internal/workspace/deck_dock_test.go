@@ -232,3 +232,39 @@ func TestImportRefusesASessionThatIsAlreadyHereAndABrokenTab(t *testing.T) {
 		t.Fatalf("unmapped sessions leave panes empty: %v", err)
 	}
 }
+
+func TestUndockMakesAPaneATabOfItsOwnAndKeepsItsSession(t *testing.T) {
+	deck, ids, _ := deckWith(t, 3, 1)
+	panes := deck.Panes(ids[0], nil)
+	moved := panes[1]
+	id, err := deck.Undock(ids[0], moved.ID, "moved", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := deck.ActiveWorkspace(); got != id {
+		t.Fatalf("active tab = %d, want the new tab %d", got, id)
+	}
+	if got := titles(deck); got != "AmovedB" {
+		t.Fatalf("tab order = %q, want AmovedB", got)
+	}
+	if left := deck.Panes(ids[0], nil); len(left) != 2 {
+		t.Fatalf("source keeps %d panes, want 2", len(left))
+	}
+	if _, _, ok := deck.PaneForSession(moved.SessionID); !ok {
+		t.Fatal("the session lost its pane")
+	}
+	if workspace, _, _ := deck.PaneForSession(moved.SessionID); workspace != id {
+		t.Fatalf("session is in tab %d, want %d", workspace, id)
+	}
+	if err := deck.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUndockRefusesTheOnlyPaneOfATab(t *testing.T) {
+	deck, ids, _ := deckWith(t, 1)
+	pane := deck.Panes(ids[0], nil)[0]
+	if _, err := deck.Undock(ids[0], pane.ID, "x", 0); !errors.Is(err, ErrUndockOnly) {
+		t.Fatalf("err = %v, want ErrUndockOnly", err)
+	}
+}

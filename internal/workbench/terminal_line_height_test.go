@@ -1,7 +1,10 @@
 package workbench
 
 import (
+	"encoding/json"
 	"testing"
+
+	"github.com/vivaui/viva/ui"
 )
 
 // TestTerminalLineHeightDefaultLeavesCellHeightUntouched pins the contract that
@@ -73,4 +76,34 @@ func TestTerminalLineHeightPersistsRoundTrip(t *testing.T) {
 func aboutEqual(a, b float32) bool {
 	const eps = 0.01
 	return a-b < eps && b-a < eps
+}
+
+// TestSyncedLineSpacingRefitsOpenTerminals covers the live-window restore path:
+// a spacing that arrives from another device has to change the open grid right
+// away, not on the next resize.
+func TestSyncedLineSpacingRefitsOpenTerminals(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.fitTerminals()
+	_, before := state.sessions[0].term.screen.Size()
+
+	var saved savedState
+	if err := json.Unmarshal([]byte(`{"terminal_line_height":"roomy"}`), &saved); err != nil {
+		t.Fatal(err)
+	}
+	state.restoreShared(saved)
+	if state.terminalLineHeight != lineHeightRoomy {
+		t.Fatalf("spacing = %v, want roomy", state.terminalLineHeight)
+	}
+	_, after := state.sessions[0].term.screen.Size()
+	if after >= before {
+		t.Fatalf("rows %d then %d: a taller row should fit fewer", before, after)
+	}
+	state.fitTerminals()
+	if _, again := state.sessions[0].term.screen.Size(); again != after {
+		t.Fatalf("rows %d after a second fit, want the same %d", again, after)
+	}
 }

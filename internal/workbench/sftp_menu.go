@@ -20,6 +20,7 @@ var (
 	hitSFTPMenuInsertPath   = tree.ID(sftpMenuHits, "sftp-menu-insert-path")
 	hitSFTPMenuEdit         = tree.ID(sftpMenuHits, "sftp-menu-edit")
 	hitSFTPMenuRename       = tree.ID(sftpMenuHits, "sftp-menu-rename")
+	hitSFTPMenuMove         = tree.ID(sftpMenuHits, "sftp-menu-move")
 	hitSFTPMenuChmod        = tree.ID(sftpMenuHits, "sftp-menu-chmod")
 	hitSFTPMenuExtract      = tree.ID(sftpMenuHits, "sftp-menu-extract")
 	hitSFTPMenuCompress     = tree.ID(sftpMenuHits, "sftp-menu-compress")
@@ -43,6 +44,8 @@ func sftpMenuAction(id ui.ID) (ui.ID, bool) {
 		return hitSFTPEditExternal, true
 	case hitSFTPMenuRename:
 		return hitSFTPRename, true
+	case hitSFTPMenuMove:
+		return hitSFTPMove, true
 	case hitSFTPMenuChmod:
 		return hitSFTPChmod, true
 	case hitSFTPMenuExtract:
@@ -170,6 +173,7 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		}
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuMove, Label: messages.SFTPMove, Icon: icon(iconFolderOpen), Disabled: busy})
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuChmod, Label: messages.SFTPPermissions, Icon: icon(iconLock), Disabled: busy})
 		if _, archive := state.selectedArchive(session, view); archive {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuExtract, Label: messages.Tools.Extract, Icon: icon(iconArchive), Disabled: busy})

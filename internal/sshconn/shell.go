@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
+	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -68,6 +69,8 @@ type Shell struct {
 	x11Err error
 
 	agentForwardErr error
+
+	kind shellkind.Kind
 }
 
 // OpenShell starts the user's login shell on a pty. The connection must be
@@ -83,6 +86,18 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	// connection, so only an implementation the banner names is probed.
 	if command == "" && config.IntegrateShell && standardImplementation(conn.Status().ServerVersion) {
 		command = conn.shellIntegrationCommand(config.IntegrationToken)
+	}
+	// What the shell is decides how a command can be typed into it. The
+	// integration command starts Bash or Zsh; a command of the user's own starts
+	// something nobody can name from here; otherwise the server's default shell
+	// answers a probe, which only an implementation the banner names gets.
+	kind := shellkind.Unknown
+	switch {
+	case config.Command != "":
+	case command != "":
+		kind = shellkind.POSIX
+	case standardImplementation(conn.Status().ServerVersion):
+		kind = conn.defaultShellKind(client)
 	}
 	session, err := client.NewSession()
 	if err != nil {
@@ -105,7 +120,7 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 		session.Close()
 		return nil, fmt.Errorf("request pty: %w", err)
 	}
-	shell := &Shell{session: session, notify: config.Notify, done: make(chan struct{})}
+	shell := &Shell{session: session, notify: config.Notify, done: make(chan struct{}), kind: kind}
 	if config.X11 != nil {
 		shell.x11, shell.x11Err = conn.requestX11(session, *config.X11)
 	}
@@ -175,6 +190,10 @@ func (shell *Shell) wake() {
 		shell.notify()
 	}
 }
+
+// Kind is the family of the shell the session runs, Unknown when it could not be
+// learned.
+func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
 
 // Done is closed once the remote shell has ended and its output is complete in
 // the buffer Drain reads from.

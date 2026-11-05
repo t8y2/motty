@@ -15,6 +15,11 @@ type terminalSelection struct {
 	dragging      bool
 	selected      bool
 	edge          selectionEdge
+	// mark is where the last press was, kept after a click that selected nothing
+	// so that a Shift-click can select from it to another point, however far the
+	// view was scrolled in between.
+	mark   term.Point
+	marked bool
 }
 
 // selectionEdge is the auto-scroll a drag asks for while the pointer is held
@@ -38,12 +43,73 @@ func (selection *terminalSelection) clear() bool {
 	return changed
 }
 
+// dismiss drops a selection that came to nothing, a click, and keeps where the
+// click was.
+func (selection *terminalSelection) dismiss() bool {
+	mark, marked := selection.mark, selection.marked
+	changed := selection.clear()
+	selection.mark, selection.marked = mark, marked
+	return changed
+}
+
 func (selection *terminalSelection) begin(point term.Point) bool {
 	changed := selection.clear()
 	selection.anchor = point
 	selection.focus = point
 	selection.dragging = true
+	selection.mark, selection.marked = point, true
 	return changed
+}
+
+// extendTo is a Shift-click: the selection, or failing one the last press, is
+// stretched to point, as terminals have always done. With a selection the end
+// nearer to point moves and the other stays, so it grows or shrinks from either
+// side; the drag that may follow goes on adjusting the same end. It reports false
+// when there is nothing to extend from.
+func (selection *terminalSelection) extendTo(point term.Point) (changed, ok bool) {
+	var anchor term.Point
+	switch {
+	case selection.selected:
+		start, end := selection.anchor, selection.focus
+		if pointBefore(end, start) {
+			start, end = end, start
+		}
+		switch {
+		case pointBefore(point, start):
+			anchor = end
+		case pointBefore(end, point):
+			anchor = start
+		case closerToStart(point, start, end):
+			anchor = end
+		default:
+			anchor = start
+		}
+	case selection.marked:
+		anchor = selection.mark
+	default:
+		return false, false
+	}
+	previous := *selection
+	selection.anchor, selection.focus = anchor, point
+	selection.dragging = true
+	selection.selected = anchor != point
+	selection.mark, selection.marked = anchor, true
+	selection.edge = selectionEdge{}
+	return previous.anchor != anchor || previous.focus != point || previous.selected != selection.selected, true
+}
+
+func pointBefore(left, right term.Point) bool {
+	return left.Line < right.Line || left.Line == right.Line && left.Column < right.Column
+}
+
+// closerToStart reports whether point, lying inside start..end, is nearer to start
+// than to end: by lines first, then by columns when it is level with both.
+func closerToStart(point, start, end term.Point) bool {
+	fromStart, toEnd := point.Line-start.Line, end.Line-point.Line
+	if fromStart != toEnd {
+		return fromStart < toEnd
+	}
+	return point.Column-start.Column < end.Column-point.Column
 }
 
 func (selection *terminalSelection) extend(point term.Point) bool {
@@ -141,6 +207,13 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			return result
 		}
 		linkChanged := terminal.links.clear()
+		if event.Modifiers&ui.ModifierShift != 0 {
+			// Shift-click stretches the selection to here. It is the terminal's own
+			// selection even when a program has the mouse, which Shift hands back.
+			if changed, ok := selection.extendTo(terminal.screen.PointAt(position)); ok {
+				return ui.EventResult{Handled: true, Repaint: changed || linkChanged}
+			}
+		}
 		if linksEnabled && event.Button == ui.PointerButtonPrimary {
 			linkChanged = terminal.links.press(terminal.screen, linkPosition) || linkChanged
 		}
@@ -178,7 +251,7 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 		open := false
 		target := ""
 		if !selection.selected {
-			changed = selection.clear() || changed
+			changed = selection.dismiss() || changed
 			if event.Kind == ui.PointerUp && linksEnabled && event.Button == ui.PointerButtonPrimary {
 				var linkChanged bool
 				target, open, linkChanged = terminal.links.release(terminal.screen, linkPosition)

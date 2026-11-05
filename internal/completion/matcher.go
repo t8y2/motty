@@ -211,6 +211,7 @@ func lineRune(r rune) bool {
 }
 
 func childByToken(node *Node, token string) *Node {
+	node.load()
 	for _, child := range node.Children {
 		if child.Token == token {
 			return child
@@ -234,6 +235,7 @@ func addRoots(catalog *Catalog, prefix string, result *Result) {
 }
 
 func addChildren(node *Node, prefix string, result *Result) {
+	node.load()
 	for _, child := range node.Children {
 		if child.Hidden {
 			continue

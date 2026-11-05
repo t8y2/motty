@@ -27,11 +27,12 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
 			}, []ui.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
-				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
+				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsCursorThin, hitSettingsCursorThick, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
 			{settingsConnection, []string{
 				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
 			}, []ui.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
-				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect}},
+				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect,
+				hitSettingsStartupHosts}},
 		} {
 			state.selectSettingsCategory(category.category)
 			// Tall enough for the whole category; a short window scrolls instead.

@@ -20,13 +20,13 @@ import (
 	"golang.org/x/text/encoding/unicode/utf32"
 )
 
-const MaxTextBytes = 1 << 20
+const MaxTextBytes = 16 << 20
 
 var (
 	ErrChooseEncoding = errors.New("choose the file's text encoding")
 	ErrBinary         = errors.New("unsupported binary file")
 	ErrEncoding       = errors.New("text cannot round-trip in the selected encoding")
-	ErrTooLarge       = errors.New("text file exceeds 1 MiB")
+	ErrTooLarge       = errors.New("text file exceeds maximum size")
 )
 
 var Encodings = []string{"UTF-8", "UTF-16LE", "UTF-16BE", "UTF-32LE", "UTF-32BE", "GB18030", "GBK", "Big5", "Shift_JIS", "Windows-1252", "ISO-8859-1"}

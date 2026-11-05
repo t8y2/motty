@@ -9,7 +9,7 @@ import (
 )
 
 var appIcon = sync.OnceValue(func() app.WindowIcon {
-	icon, err := iconpng.Decode(assets.Icon)
+	icon, err := iconpng.DecodeFit(assets.Icon, 512)
 	if err != nil {
 		panic("workbench: the embedded icon is unusable: " + err.Error())
 	}

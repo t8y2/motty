@@ -153,6 +153,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsTerminalFontFamily, tools.FontPickerDescription)
 	row(settingsTerminal, tools.FontFallbackRow, tools.FontFallbackEmpty)
 	row(settingsTerminal, tools.PaddingRow, "")
+	row(settingsTerminal, tools.LineHeightRow, "")
 	row(settingsTerminal, tools.GutterRow, tools.GutterDescription)
 	row(settingsTerminal, tools.CursorRow, tools.CursorDescription)
 	row(settingsTerminal, tools.IntenseRow, tools.IntenseDescription)

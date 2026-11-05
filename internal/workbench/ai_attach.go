@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/flex"
@@ -13,6 +15,7 @@ import (
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 )
 
 // Files and pictures dropped on the assistant, or chosen with its paperclip, wait
@@ -31,9 +34,8 @@ const (
 	// aiMaxAttachments is how many files one message takes, which is also how
 	// many remove buttons the panel can hit.
 	aiMaxAttachments = 6
-	// aiMaxAttachedText is all the text of one message, the size of the history
-	// the assistant sends in one request.
-	aiMaxAttachedText = 256 << 10
+	// aiMaxAttachedText includes the serialized headings around attached text.
+	aiMaxAttachedText = store.MaxTextBytes
 	aiChipHeight      = float32(24)
 	aiChipGap         = float32(6)
 	aiChipTextMax     = float32(150)
@@ -124,8 +126,53 @@ func (state *State) aiPasteImage() {
 	state.ai.attaching++
 	go func() {
 		file, err := attach.Decode(name, data)
+		file.Name = name
 		state.aiPost(func(state *State) { state.aiAttached([]aiLoaded{{file: file, err: err}}) })
 	}()
+}
+
+const (
+	// aiLongTextChars is the character count at which pasted text is turned into
+	// a file attachment to keep the composer responsive and within renderer limits.
+	aiLongTextChars = 2000
+	// aiLongTextLines is the line count at which pasted text is turned into
+	// a file attachment.
+	aiLongTextLines = 20
+)
+
+// isLongAIText reports whether text pasted into the assistant is large enough to
+// attach as a file rather than inserting into the message box.
+func isLongAIText(text string) bool {
+	lines := strings.Count(text, "\n") + 1
+	if strings.HasSuffix(text, "\n") {
+		lines--
+	}
+	return utf8.RuneCountInString(text) >= aiLongTextChars || lines >= aiLongTextLines
+}
+
+// aiPasteText attaches text as a file waiting in the message box.
+func (state *State) aiPasteText(text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	m := state.messages.AIPanel
+	if state.aiAttachRoom(1) == 0 {
+		return
+	}
+	state.ai.pastedText++
+	name := fmt.Sprintf("%s-%d.txt", m.PastedTextName, state.ai.pastedText)
+	const suffix = "\n\n... [truncated] ...\n"
+	if len(text) > attach.MaxTextBytes {
+		cut := attach.MaxTextBytes - len(suffix)
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + suffix
+		state.ai.notice = fmt.Sprintf(m.AttachPastedTruncatedFmt, name, formatBytes(attach.MaxTextBytes), formatBytes(attach.MaxTextBytes))
+	}
+	file, err := attach.Decode(name, []byte(text))
+	file.Name = name
+	state.aiAttached([]aiLoaded{{file: file, err: err}})
 }
 
 // aiAttached takes what was read. The files that cannot be attached are named in
@@ -136,7 +183,7 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 	var problems []string
 	text := 0
 	for _, existing := range ai.attachments {
-		text += len(existing.file.Text)
+		text += aiAttachmentContextBytes(existing.file)
 	}
 	for _, item := range loaded {
 		name := filepath.Base(item.path)
@@ -150,10 +197,10 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 			// The same file twice is one attachment.
 		case len(ai.attachments) >= aiMaxAttachments:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTooManyFmt, aiMaxAttachments))
-		case text+len(item.file.Text) > aiMaxAttachedText:
+		case text+aiAttachmentContextBytes(item.file) > aiMaxAttachedText:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTotalTextFmt, name, formatBytes(aiMaxAttachedText)))
 		default:
-			text += len(item.file.Text)
+			text += aiAttachmentContextBytes(item.file)
 			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file})
 		}
 	}
@@ -219,14 +266,16 @@ func (state *State) aiRemoveAttachment(index int) {
 func (state *State) aiClearAttachments() {
 	clear(state.ai.attachments)
 	state.ai.attachments = state.ai.attachments[:0]
+	state.ai.pasted = 0
+	state.ai.pastedText = 0
 }
 
 // aiCanSend reports whether the message box holds a question to send. Files are
-// asked about, not sent alone, and files still being read are waited for: the
+// asked about or sent by themselves, and files still being read are waited for: the
 // question would otherwise go out without them.
 func (state *State) aiCanSend() bool {
 	ai := &state.ai
-	return ai.attaching == 0 && strings.TrimSpace(ai.input.String()) != ""
+	return ai.attaching == 0 && (strings.TrimSpace(ai.input.String()) != "" || len(ai.attachments) > 0)
 }
 
 // aiAttachmentName is a file name safe to put in the bracketed heading that names
@@ -245,6 +294,17 @@ func aiAttachmentName(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// aiAttachmentContextBytes is the exact serialized size the attachment adds to
+// the user message without allocating its potentially large text.
+func aiAttachmentContextBytes(file attach.File) int {
+	name := aiAttachmentName(file.Name)
+	if file.Kind == attach.KindImage {
+		return len(attachedMarker) + len("image ") + len(name) + len("]")
+	}
+	return len(attachedMarker) + len("file ") + len(name) + len(" (") +
+		len(strconv.Itoa(file.Lines)) + len(" lines):]\n") + len(file.Text)
 }
 
 // aiAttachmentContext is what the attachments add to a question: a heading and

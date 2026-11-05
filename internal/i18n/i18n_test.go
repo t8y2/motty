@@ -11,8 +11,55 @@ import (
 // A language that forgot a string would paint blank labels. Reflection is fine
 // here: it runs in tests, never on a paint path.
 func TestEveryLanguageFillsEveryMessage(t *testing.T) {
-	for _, language := range []Language{English, Chinese} {
+	for _, language := range []Language{English, Chinese, TraditionalChinese} {
 		checkFilled(t, reflect.ValueOf(For(language)), language.String())
+	}
+}
+
+func TestTraditionalCatalogIsTranslated(t *testing.T) {
+	compareCatalogs(t, reflect.ValueOf(For(English)), reflect.ValueOf(For(TraditionalChinese)), "")
+}
+
+// traditional.go is generated, so a catalog that was not regenerated or a word
+// the converter missed shows up here. These characters exist only in Simplified.
+func TestTraditionalCatalogHasNoSimplifiedCharacters(t *testing.T) {
+	checkNoSimplified(t, reflect.ValueOf(For(TraditionalChinese)), "")
+}
+
+func checkNoSimplified(t *testing.T, value reflect.Value, path string) {
+	t.Helper()
+	switch value.Kind() {
+	case reflect.String:
+		if strings.ContainsAny(value.String(), "这为发设务网络输连载码关开请") {
+			t.Errorf("%s: %q has Simplified characters", path, value.String())
+		}
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			if field := value.Type().Field(index); field.PkgPath == "" {
+				checkNoSimplified(t, value.Field(index), path+"."+field.Name)
+			}
+		}
+	}
+}
+
+func TestChineseVariantFollowsScriptThenRegion(t *testing.T) {
+	for tag, want := range map[string]Language{
+		"zh":          Chinese,
+		"zh-CN":       Chinese,
+		"zh-Hans-CN":  Chinese,
+		"zh-SG":       Chinese,
+		"zh-Hans-TW":  Chinese,
+		"zh-TW":       TraditionalChinese,
+		"zh-HK":       TraditionalChinese,
+		"zh-MO":       TraditionalChinese,
+		"zh-Hant":     TraditionalChinese,
+		"zh-Hant-CN":  TraditionalChinese,
+		"zh_TW.UTF-8": TraditionalChinese,
+		"zh_CN.UTF-8": Chinese,
+	} {
+		if got := ChineseVariant(tag); got != want {
+			t.Errorf("ChineseVariant(%q) = %v, want %v", tag, got, want)
+		}
 	}
 }
 

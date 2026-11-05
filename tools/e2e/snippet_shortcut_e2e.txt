@@ -25,17 +25,17 @@ key tab
 type echo snippet-$((6*7))
 click "Set shortcut"
 waitfor "Press the keys" 2000
-layout
+expect layout clean
 shot /tmp/snippet-shortcut-recording.png
 key cmd+f
 waitfor "already assigned" 2000
 key cmd+shift+1
 waitfor "Cmd+Shift+1" 2000
-layout
+expect layout clean
 shot /tmp/snippet-shortcut-bound.png
 click "Save"
 waitfor "Cmd+Shift+1" 3000
-layout
+expect layout clean
 shot /tmp/snippet-page.png
 
 # Back in the terminal, the chord sends the command and presses Enter.

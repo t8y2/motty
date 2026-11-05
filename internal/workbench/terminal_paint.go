@@ -216,6 +216,7 @@ func (state *State) clearTerminalRail(session *Session) {
 		return
 	}
 	session.term.railCount = 0
+	session.term.railIDs = [maxBarTools]ui.ID{}
 	session.term.railEnabled = [maxBarTools]bool{}
 	session.term.railViewport = ui.Rect{}
 	session.term.railBounds = ui.Rect{}
@@ -571,9 +572,10 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		case composing:
 			// The input method draws over these cells, which the rows left empty.
 		case cursor.Style == term.CursorUnderline:
-			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - 2, Width: cellWidth, Height: 2}, cursorColor)
+			underline := state.terminalCursorThickness.underline()
+			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - underline, Width: cellWidth, Height: underline}, cursorColor)
 		case cursor.Style == term.CursorBar:
-			canvas.Fill(ui.Rect{X: x, Y: y, Width: 3, Height: cellHeight}, cursorColor)
+			canvas.Fill(ui.Rect{X: x, Y: y, Width: state.terminalCursorThickness.bar(), Height: cellHeight}, cursorColor)
 		case !focused:
 			// A block cursor outlines its cell while the terminal does not have the keyboard.
 			canvas.Fill(ui.Rect{X: x, Y: y, Width: cellWidth, Height: 1}, cursorColor)

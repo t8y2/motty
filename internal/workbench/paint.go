@@ -298,6 +298,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
 	state.paintEditorSelect(canvas)
+	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
@@ -474,9 +475,14 @@ const (
 	barButtonSize = float32(28) // the square hit area of a window-bar button
 	barMargin     = float32(12)
 	barTabHeight  = float32(28)
-	barGap        = float32(4)
-	barTabMin     = float32(96)
-	barTabMax     = float32(170)
+	// barTabReach is how far a horizontal tab's click region extends above and
+	// below its painted body: the rest of the bar's height. The body floats in the
+	// bar, and the strip above it must still switch tabs when the pointer is thrown
+	// against the window's top edge (Fitts's law), as in Chrome and Edge.
+	barTabReach = (TitlebarHeight - barTabHeight) / 2
+	barGap      = float32(4)
+	barTabMin   = float32(96)
+	barTabMax   = float32(170)
 )
 
 // windowBar keeps the places the window bar's own painters need once it is laid
@@ -607,12 +613,14 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 		}
 		tabRoom.Children(func() {
 			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
-			f.Row().Fill().Children(func() {
+			f.Row().Fill().Items(flex.Center).Children(func() {
 				tabs := f.Row()
 				if probe {
 					chrome.probeRow = tabs
 				} else {
-					tabs.Width(geometry.row.Width).Shrink(0).Clip()
+					// As tall as the bar, so the clip that scrolls the tabs sideways does
+					// not cut off the click regions that reach the bar's top edge.
+					tabs.Width(geometry.row.Width).Height(windowBarHeight).Items(flex.Center).Shrink(0).Clip()
 				}
 				tabs.Children(func() {
 					for index := range state.workspaceTabs {
@@ -686,7 +694,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 						}
 						label := state.sftpFileTabTitle(fileTab)
 						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-							PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
+							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, ui.HitOptions{Role: ui.RoleTab, Selected: active}).Children(func() {
 							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
 							f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
@@ -769,7 +777,7 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 	if vertical {
 		row.MarginSides(first, 0, barGap, 0)
 	} else {
-		row.MarginSides(0, barGap, 0, first)
+		row.MarginSides(0, barGap, 0, first).HitOutset(barTabReach, 0, barTabReach, 0)
 	}
 	row.
 		PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).

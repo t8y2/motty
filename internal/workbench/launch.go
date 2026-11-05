@@ -41,6 +41,8 @@ var (
 	hitSettingsLoginToggle       = tree.ID(launchHits, "settings-login")
 	hitSettingsUpdateCheck       = tree.ID(launchHits, "settings-update-check")
 	hitSettingsUpdateDownload    = tree.ID(launchHits, "settings-update-download")
+	hitUpdateNoticeAction        = tree.ID(launchHits, "update-notice-action")
+	hitUpdateToolbar             = tree.ID(launchHits, "update-toolbar")
 	hitSettingsUpdateStartToggle = tree.ID(launchHits, "settings-update-start")
 	hitSettingsDiagnostics       = tree.ID(launchHits, "settings-diagnostics")
 )
@@ -243,6 +245,7 @@ type updateState struct {
 	text       string // the outcome of the last check, in the language it was made in
 	offer      bool   // a dialog about release is waiting for its turn
 	skipped    string // the version the user asked not to be reminded of
+	announced  string // the version a background check already told the user about
 	install    updateInstall
 	notes      updateNotes
 }
@@ -309,18 +312,45 @@ func (state *State) clickLaunchSettings(id ui.ID) bool {
 		state.checkForUpdates(true)
 	case hitSettingsDiagnostics:
 		state.openExportDiagnostics()
+	case hitUpdateNoticeAction, hitUpdateToolbar:
+		// The dialog is the destination in every case: it carries the release
+		// notes and says whether Motty can install this version itself.
+		state.fileNotices.dismissAction(hitUpdateNoticeAction)
+		state.update.offer = true
+		state.showNextPrompt()
 	case hitSettingsUpdateDownload:
-		switch {
-		case state.canInstallUpdate():
-			state.update.offer = true
-			state.showNextPrompt()
-		case state.update.available:
-			state.openExternal(state.update.release.URL)
-		}
+		state.openUpdateOffer()
 	default:
 		return false
 	}
 	return true
+}
+
+// updateIndicatorVisible reports whether the bar shows the update button: a
+// version is available and the user has not asked to skip it.
+func (state *State) updateIndicatorVisible() bool {
+	return state.update.available && state.update.release.Version != state.update.skipped
+}
+
+// announceUpdate tells the user a version is available without a dialog.
+func (state *State) announceUpdate(version string) {
+	m := state.messages.Tools
+	state.fileNotices.showAction(fmt.Sprintf(m.UpdateAvailableFmt, version), m.UpdateNoticeDetail, components.ToastInfo, hitUpdateNoticeAction, m.UpdateNoticeAction)
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
+// openUpdateOffer shows what the update would do, or the release page when this
+// program cannot replace itself.
+func (state *State) openUpdateOffer() {
+	switch {
+	case state.canInstallUpdate():
+		state.update.offer = true
+		state.showNextPrompt()
+	case state.update.available:
+		state.openExternal(state.update.release.URL)
+	}
 }
 
 // checkForUpdates asks the release feed on a goroutine and shows the answer when
@@ -390,9 +420,16 @@ func (state *State) checkForUpdates(asked bool) {
 				state.status = state.update.text
 				// A check the user asked for always answers; one made at startup
 				// leaves alone a version that was skipped.
-				if asked || release.Version != state.update.skipped {
+				switch {
+				case asked:
 					state.update.offer = true
 					state.showNextPrompt()
+				case release.Version != state.update.skipped && release.Version != state.update.announced:
+					// A check nobody asked for must not take the screen: a
+					// dialog would land on whatever the user is typing. Say it
+					// once per version and let them open it.
+					state.update.announced = release.Version
+					state.announceUpdate(release.Version)
 				}
 			default:
 				state.update.available = false
