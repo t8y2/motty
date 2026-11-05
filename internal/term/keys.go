@@ -67,7 +67,7 @@ func EncodeKey(key ui.Key, modifiers ui.Modifiers, text string, appCursorKeys bo
 
 	switch key {
 	case ui.KeyEnter:
-		if parameter > 1 && !alt {
+		if parameter > 1 && (!alt || shift || control) {
 			return []byte("\x1b[13;" + strconv.Itoa(parameter) + "u")
 		}
 		return prefix([]byte{'\r'})
