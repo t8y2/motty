@@ -11,6 +11,30 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
+func TestHeadlessTabNumberShortcutHasASettingsRow(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	showShortcutSettings(state)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	name, chord := state.messages.ShortcutTabNumber, state.shortcuts.labels[shortcutTabNumber]
+	var foundName, foundChord bool
+	for _, text := range session.Snapshot().Texts {
+		foundName = foundName || text.Value == name
+		foundChord = foundChord || text.Value == chord
+	}
+	if !foundName || !foundChord {
+		t.Fatalf("settings page shows name=%v chord=%v, want %q and %q", foundName, foundChord, name, chord)
+	}
+}
+
 func TestHeadlessShortcutCaptureClickAndChord(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	showShortcutSettings(state)
@@ -375,6 +399,42 @@ func TestHeadlessClosedDialogLeavesAndTheWindowGoesIdle(t *testing.T) {
 	}
 	if session.Driver().Transitioning() {
 		t.Fatal("the window is still animating a second after the dialog closed")
+	}
+}
+
+// The digit reaches the tabs through the real key path, not only State.Shortcut.
+func TestHeadlessDigitShortcutSwitchesTabs(t *testing.T) {
+	state, world, _, _ := liveSession(t)
+	state.Click(hitHosts)
+	state.Click(hitHostList.At(2))
+	connect(t, state, world)
+	first, second := state.sessions[0].ID, state.sessions[1].ID
+	session, err := headless.Open(app.Config{
+		Title: "tabs", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+		TextInput: state.TerminalInput,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	modifier := "ctrl"
+	if defaultShortcutModifier()&ui.ModifierMeta != 0 {
+		modifier = "cmd"
+	}
+	if err := session.Keys(modifier + "+1"); err != nil {
+		t.Fatal(err)
+	}
+	if state.activeSessionID != first {
+		t.Fatal("the first digit did not select the first tab through the keyboard")
+	}
+	if err := session.Keys(modifier + "+2"); err != nil {
+		t.Fatal(err)
+	}
+	if state.activeSessionID != second {
+		t.Fatal("the second digit did not select the second tab through the keyboard")
 	}
 }
 

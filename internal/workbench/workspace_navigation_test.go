@@ -51,8 +51,8 @@ func TestWorkspaceNavigationFollowsHostsWithoutTemplateCount(t *testing.T) {
 	state.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: "workspaces"}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	state.refreshCommandPalette()
-	if state.commandPalette.visibleCount != 1 {
-		t.Fatalf("workspace palette matches = %d", state.commandPalette.visibleCount)
+	if len(state.commandPalette.visible) != 1 {
+		t.Fatalf("workspace palette matches = %d", len(state.commandPalette.visible))
 	}
 	state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
 	if state.activeSection != sectionWorkspaces {

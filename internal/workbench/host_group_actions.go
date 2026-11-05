@@ -167,13 +167,17 @@ func (state *State) hostGroupRowEvents(canvas *ui.Canvas, id ui.ID, index int, b
 			break
 		}
 	}
+	state.openHostGroupActionsOn(canvas, id, index)
+	button := ui.Rect{X: bounds.X + bounds.Width - 34, Y: bounds.Y + (bounds.Height-28)/2, Width: 28, Height: 28}
+	state.paintIconButton(canvas, hitHostGroupMore.At(index), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, state.pal.workspace)
+}
+
+func (state *State) openHostGroupActionsOn(canvas *ui.Canvas, id ui.ID, index int) {
 	event, ok := canvas.PointerOn(id)
 	if ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonSecondary && state.modal == modalNone && state.activeSection == sectionHosts {
 		state.openHostGroupActions(state.hostGroups[index].Name, ui.Point{X: event.X, Y: event.Y})
 		canvas.Consume()
 	}
-	button := ui.Rect{X: bounds.X + bounds.Width - 34, Y: bounds.Y + (bounds.Height-28)/2, Width: 28, Height: 28}
-	state.paintIconButton(canvas, hitHostGroupMore.At(index), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, state.pal.workspace)
 }
 
 func (state *State) renameHostGroup(path, name string) bool {

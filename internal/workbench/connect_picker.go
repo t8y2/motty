@@ -25,7 +25,7 @@ func (state *State) openConnectPicker() {
 	if localShellSettingVisible() {
 		state.refreshLocalShells()
 	}
-	state.commandPalette.connect = true
+	state.commandPalette.connect, state.commandPalette.snippets = true, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
@@ -100,8 +100,8 @@ func (state *State) shellsListed() {
 	palette := &state.commandPalette
 	selected, top := palette.selected, palette.top
 	state.rebuildCommandPalette()
-	if palette.visibleCount > 0 {
-		palette.selected = min(selected, palette.visibleCount-1)
+	if len(palette.visible) > 0 {
+		palette.selected = min(selected, len(palette.visible)-1)
 		palette.top = min(top, palette.selected)
 	}
 }

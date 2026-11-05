@@ -125,6 +125,9 @@ type terminalDrop struct {
 	session   uint32
 	bounds    ui.Rect
 	directory string
+	// desktop marks a remote desktop's picture: what is dropped on it is offered
+	// to the remote clipboard, not uploaded.
+	desktop bool
 }
 
 // FileDrop receives files dragged from the system over the window.
@@ -182,6 +185,12 @@ func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
 			return ui.EventResult{Handled: true, Repaint: changed || others || terminal}
 		}
 		repaint := state.clearDropPanels()
+		if session, bounds, ok := state.desktopDropAt(event.X, event.Y); ok {
+			target := terminalDrop{session: session.ID, bounds: bounds, desktop: true}
+			changed := state.terminalDrop != target
+			state.terminalDrop = target
+			return ui.EventResult{Handled: true, Repaint: repaint || changed}
+		}
 		if upload, ok := state.terminalUploadAt(event.X, event.Y); ok {
 			changed := state.terminalDrop != upload
 			state.terminalDrop = upload
@@ -213,6 +222,11 @@ func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
 		_ = session
 		return ui.EventResult{Handled: queued > 0, Repaint: true}
 	}
+	if session, _, ok := state.desktopDropAt(event.X, event.Y); ok {
+		paths := slices.Clone(event.Paths)
+		state.dropDesktopFiles(session.desk, paths)
+		return ui.EventResult{Handled: len(paths) > 0, Repaint: true}
+	}
 	if upload, ok := state.terminalUploadAt(event.X, event.Y); ok {
 		return ui.EventResult{Handled: state.uploadToTerminalFolder(upload, event.Paths), Repaint: true}
 	}
@@ -228,12 +242,16 @@ func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
 // be uploaded from, and where.
 func (state *State) paintTerminalDrop(canvas *ui.Canvas) {
 	if drop := state.terminalDrop; drop.session != 0 {
-		state.paintSFTPDropOverlay(canvas, drop.bounds, fmt.Sprintf(state.messages.Tools.DropTerminalUploadFmt, drop.directory))
+		label := fmt.Sprintf(state.messages.Tools.DropTerminalUploadFmt, drop.directory)
+		if drop.desktop {
+			label = state.messages.Tools.DropDesktopFiles
+		}
+		state.paintSFTPDropOverlay(canvas, drop.bounds, label)
 	}
 }
 
-// terminalPaneAt is the terminal under a window point, with the pane it fills.
-func (state *State) terminalPaneAt(x, y float32) (*Session, ui.Rect, bool) {
+// paneAt is the session under a window point, with the pane it fills.
+func (state *State) paneAt(x, y float32) (*Session, ui.Rect, bool) {
 	if state.activeSection != sectionTerminal || state.modal != modalNone || state.pointInContext(x, y) {
 		return nil, ui.Rect{}, false
 	}
@@ -245,12 +263,21 @@ func (state *State) terminalPaneAt(x, y float32) (*Session, ui.Rect, bool) {
 			continue
 		}
 		session, ok := state.sessionByIDPointer(state.panes[index].SessionID)
-		if !ok || session.term == nil || session.term.shell == nil {
+		if !ok {
 			return nil, ui.Rect{}, false
 		}
 		return session, bounds, true
 	}
 	return nil, ui.Rect{}, false
+}
+
+// terminalPaneAt is the terminal under a window point, with the pane it fills.
+func (state *State) terminalPaneAt(x, y float32) (*Session, ui.Rect, bool) {
+	session, bounds, ok := state.paneAt(x, y)
+	if !ok || session.term == nil || session.term.shell == nil {
+		return nil, ui.Rect{}, false
+	}
+	return session, bounds, true
 }
 
 // terminalUploadAt reports the upload that files dropped at the point would

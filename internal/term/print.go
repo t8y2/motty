@@ -92,8 +92,24 @@ func (t *Terminal) fillRun(runes []rune) int {
 		return 0
 	}
 	n := 0
-	for n < len(runes) && t.cx+width*(n+1) <= t.cols && Width(runes[n]) == width {
-		n++
+	if width == 2 {
+		for n < len(runes) && t.cx+2*(n+1) <= t.cols {
+			r := runes[n]
+			if isWideCJK(r) || Width(r) == 2 {
+				n++
+				continue
+			}
+			break
+		}
+	} else {
+		for n < len(runes) && t.cx+n+1 <= t.cols {
+			r := runes[n]
+			if r < 0x300 || Width(r) == 1 {
+				n++
+				continue
+			}
+			break
+		}
 	}
 	if n == 0 {
 		return 0

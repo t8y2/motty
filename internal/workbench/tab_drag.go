@@ -75,8 +75,12 @@ type tabDrag struct {
 	workspace layoutcore.WorkspaceID
 	// group is every tab of a server group dragged by its header; the first is
 	// workspace. A group only moves among the groups of this window.
-	group     []layoutcore.WorkspaceID
-	title     string
+	group []layoutcore.WorkspaceID
+	title string
+	// host is the connection the dragged tab shows, so its picture can follow
+	// the pointer as it does on the tab; hasHost is false for a tab without one.
+	host      Host
+	hasHost   bool
 	start, at ui.Point
 	drop      tabDrop
 	// panes is how many panes the dragged tab brings.
@@ -96,6 +100,7 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 	drag := &state.tabDrag
 	switch event.Kind {
 	case ui.PointerDown:
+		state.closeTabPreview()
 		*drag = tabDrag{}
 		if state.modal == modalNone && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) &&
 			event.Target.Scope() == hitTabList {
@@ -103,6 +108,9 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 			for _, tab := range state.workspaceTabs {
 				if tab.ID == id {
 					*drag = tabDrag{pressed: true, workspace: id, title: state.tabLabel(tab), panes: tab.PaneCount, start: ui.Point{X: event.X, Y: event.Y}}
+					if session := state.tabSession(tab); session != nil {
+						drag.host, drag.hasHost = session.host, true
+					}
 				}
 			}
 		} else if state.modal == modalNone && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) {
@@ -132,6 +140,7 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 		}
 		finished := *drag
 		*drag = tabDrag{}
+		state.closeTabPreview()
 		state.clearForeign(finished.peer)
 		if !finished.active {
 			return ui.EventResult{}, false
@@ -159,6 +168,7 @@ func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 		state.clearForeign(drag.peer)
 		drag.peer = peer
 	}
+	state.followTabPreview(drag, ui.Point{X: event.ScreenX, Y: event.ScreenY})
 	switch {
 	case peer != nil:
 		drag.drop = tabDrop{}
@@ -167,6 +177,55 @@ func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 		drag.drop = tabDrop{}
 	default:
 		drag.drop = state.tabDropAt(drag.at, drag.workspace, drag.panes, drag.group)
+	}
+}
+
+// tabPreview is the picture that follows a tab dragged out of every window.
+type tabPreview struct {
+	handle DragPreview
+	// width is the width the tab ghost was last painted at, so the picture is
+	// opened as wide as the one the drag has been showing inside the window.
+	width float32
+	// refused says the platform cannot show one, so the drag does not ask again.
+	refused bool
+}
+
+// followTabPreview keeps the picture under the pointer while the drag is out of
+// every window, and takes it away when the drag is back in one, since a window
+// then draws the tab itself.
+func (state *State) followTabPreview(drag *tabDrag, screen ui.Point) {
+	if !drag.outside || drag.peer != nil || len(drag.group) > 0 {
+		state.closeTabPreview()
+		return
+	}
+	preview := &state.tabPreview
+	if state.options.OpenDragPreview == nil || preview.refused {
+		return
+	}
+	width := preview.width
+	if width == 0 {
+		width = barTabMax
+	}
+	origin := ui.Point{X: screen.X - width/2, Y: screen.Y - barTabHeight/2}
+	if preview.handle != nil {
+		preview.handle.MoveTo(origin)
+		return
+	}
+	title, host, hasHost := drag.title, drag.host, drag.hasHost
+	handle, err := state.options.OpenDragPreview(ui.Size{Width: width, Height: barTabHeight}, origin, func(canvas *ui.Canvas, size ui.Size) {
+		state.drawTabGhost(canvas, ui.Rect{Width: size.Width, Height: size.Height}, title, host, hasHost)
+	})
+	if err != nil || handle == nil {
+		preview.refused = true
+		return
+	}
+	preview.handle = handle
+}
+
+func (state *State) closeTabPreview() {
+	if state.tabPreview.handle != nil {
+		state.tabPreview.handle.Close()
+		state.tabPreview.handle = nil
 	}
 }
 
@@ -194,7 +253,7 @@ func (state *State) trackTabDragEnd(drag *tabDrag, event ui.PointerEvent) {
 
 // showForeignDrag marks this window as the one another window's tab is over.
 func (state *State) showForeignDrag(from *tabDrag, screen ui.Point) {
-	state.foreign = tabDrag{active: true, title: from.title, panes: from.panes, outside: true}
+	state.foreign = tabDrag{active: true, title: from.title, host: from.host, hasHost: from.hasHost, panes: from.panes, outside: true}
 	state.foreign.drop = state.foreignDropAt(screen, from.panes)
 	if frame, ok := state.frame(); ok {
 		state.foreign.at = ui.Point{X: screen.X - frame.X, Y: screen.Y - frame.Y}
@@ -414,20 +473,50 @@ func (state *State) moveTabOut(drag tabDrag) {
 		state.attachPayload(payload, tabDrop{kind: dropReorder, boundary: len(state.workspaceTabs)})
 		return
 	}
+	// The new window's top-left puts its tab strip under the pointer.
+	state.tearOffTab(drag.workspace, ui.Point{X: drag.screen.X - 120, Y: drag.screen.Y - windowBarHeight/2})
+}
+
+// tearOffCascade is how far a window opened from the menu sits from the one it
+// came from, so the two do not lie exactly over each other.
+const tearOffCascade = 32
+
+// canTearOffTab says whether a tab can be moved to a window of its own from the
+// menu. A window's only tab stays, since moving it would only swap one window
+// for another.
+func (state *State) canTearOffTab() bool {
+	_, placed := state.windowFrameOnScreen()
+	return state.options.TearOff != nil && state.options.Group != nil && placed && len(state.workspaceTabs) > 1
+}
+
+// windowFrameOnScreen is where this window is, in screen coordinates.
+func (state *State) windowFrameOnScreen() (ui.Rect, bool) {
+	if state.frame == nil {
+		return ui.Rect{}, false
+	}
+	return state.frame()
+}
+
+// tearOffTab moves a tab into a window of its own whose top-left is at origin
+// (screen coordinates). The sessions go on; if the window cannot be opened the
+// tab goes back where it was.
+func (state *State) tearOffTab(workspace layoutcore.WorkspaceID, origin ui.Point) {
 	if state.options.TearOff == nil || state.options.Group == nil {
 		return
 	}
-	payload, ok := state.detachWorkspace(drag.workspace)
+	position, ok := state.workspaceTab(workspace)
 	if !ok {
 		return
 	}
-	// The new window's top-left puts its tab strip under the pointer.
-	origin := ui.Point{X: drag.screen.X - 120, Y: drag.screen.Y - windowBarHeight/2}
+	payload, ok := state.detachWorkspace(workspace)
+	if !ok {
+		return
+	}
 	err := state.options.TearOff(origin, func(window *State) {
 		window.attachPayload(payload, tabDrop{kind: dropReorder})
 	})
 	if err != nil {
-		state.attachPayload(payload, tabDrop{kind: dropReorder, boundary: len(state.workspaceTabs)})
+		state.attachPayload(payload, tabDrop{kind: dropReorder, boundary: position})
 		state.status = err.Error()
 		return
 	}
@@ -470,6 +559,10 @@ func (state *State) dockWorkspace(src layoutcore.WorkspaceID, target layoutcore.
 // under the pointer. It declares no hit, so nothing under it stops reacting.
 func (state *State) paintTabDrag(canvas *ui.Canvas, viewport ui.Rect) {
 	drag := &state.tabDrag
+	if drag.active && drag.outside && drag.peer == nil && len(drag.group) == 0 {
+		state.paintTearOff(canvas, viewport, drag)
+		return
+	}
 	if !drag.active || drag.outside {
 		// A drag that left this window is painted by the window it is over.
 		drag = &state.foreign
@@ -502,11 +595,111 @@ func (state *State) paintTabDrag(canvas *ui.Canvas, viewport ui.Rect) {
 		f.End()
 	}
 	// The tab under the pointer follows it, kept inside the window.
-	width := min(barTabMax, max(canvas.TextWidthWeight(drag.title, metrics.FontSizeS, ui.WeightMedium)+28, barTabMin))
-	ghost := state.popupAt(canvas, viewport, ui.Point{X: drag.at.X - width/2, Y: drag.at.Y - barTabHeight/2}, width, barTabHeight, 0)
-	f := state.chrome.widget.Begin(canvas, state.Theme(), ghost)
-	f.Row().Fill().PadX(8).Items(flex.Center).Justify(flex.Center).Radius(radius.item).Border(1, pal.accent).Background(pal.tabActive.Over(pal.shell)).Children(func() {
-		f.Text(drag.title).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis().TextCenter()
+	state.paintTabGhost(canvas, viewport, drag)
+}
+
+// tabGhostWidth is how wide the dragged tab is drawn: the room a tab spends
+// around its name (the picture, the close button and the padding between them)
+// and the name itself.
+func tabGhostWidth(canvas *ui.Canvas, title string) float32 {
+	return min(barTabMax, max(canvas.TextWidthWeight(title, metrics.FontSizeS, ui.WeightMedium)+62, barTabMin))
+}
+
+// paintTabGhost draws the dragged tab as it is in the bar, centred on the
+// pointer and kept inside the window, and returns where it stands.
+func (state *State) paintTabGhost(canvas *ui.Canvas, viewport ui.Rect, drag *tabDrag) ui.Rect {
+	width := tabGhostWidth(canvas, drag.title)
+	state.tabPreview.width = width
+	bounds := state.popupAt(canvas, viewport, ui.Point{X: drag.at.X - width/2, Y: drag.at.Y - barTabHeight/2}, width, barTabHeight, 0)
+	state.drawTabGhost(canvas, bounds, drag.title, drag.host, drag.hasHost)
+	return bounds
+}
+
+// drawTabGhost draws a tab in bounds as the active tab of the bar looks.
+func (state *State) drawTabGhost(canvas *ui.Canvas, bounds ui.Rect, title string, host Host, hasHost bool) {
+	pal := state.pal
+	fill, edge := pal.tabActive, pal.windowStroke
+	if hasHost {
+		fill = tintHostSurface(fill, host.Color, .18)
+		edge = tintHostSurface(edge, host.Color, .35)
+	}
+	var badge flex.Box
+	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
+	f.Row().Fill().PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).Children(func() {
+		badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+		f.Text(title).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis()
+		f.Spacer()
+		f.Row().Size(20, 20).Shrink(0).Center().Children(func() {
+			f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(pal.text)
+		})
+	})
+	f.End()
+	if hasHost {
+		state.paintHostCatalogIcon(canvas, host, badge.Rect(), fill)
+	} else {
+		canvas.DrawIcon(lucideIcons[iconTerminal], badge.Rect(), pal.muted)
+	}
+}
+
+// paintTearOff tells a drag that has left every window that letting go opens a
+// window of its own. The pointer is out of this window, where nothing can be
+// drawn, so the window shows it at its edge: the border lights up, and the tab
+// and what releasing does wait at the edge nearest the pointer.
+func (state *State) paintTearOff(canvas *ui.Canvas, viewport ui.Rect, drag *tabDrag) {
+	pal := state.pal
+	canvas.PushLayer(tabDragLayer)
+	defer canvas.PopLayer()
+	// The window's corners are round, so the line turns with them; four straight
+	// sides would stop short of every corner.
+	const width, overlap = tearOffEdge, float32(0.5)
+	const r = windowCornerRadius
+	x, y, right, bottom := viewport.X, viewport.Y, viewport.X+viewport.Width, viewport.Y+viewport.Height
+	line := pal.accent
+	canvas.Fill(ui.Rect{X: x + r - overlap, Y: y, Width: max(viewport.Width-2*r+2*overlap, 0), Height: width}, line)
+	canvas.Fill(ui.Rect{X: x + r - overlap, Y: bottom - width, Width: max(viewport.Width-2*r+2*overlap, 0), Height: width}, line)
+	canvas.Fill(ui.Rect{X: x, Y: y + r - overlap, Width: width, Height: max(viewport.Height-2*r+2*overlap, 0)}, line)
+	canvas.Fill(ui.Rect{X: right - width, Y: y + r - overlap, Width: width, Height: max(viewport.Height-2*r+2*overlap, 0)}, line)
+	style := ui.PathStyle{Stroke: line, StrokeWidth: width}
+	canvas.DrawPath(tearOffCorners[0], ui.Rect{X: x, Y: y, Width: r, Height: r}, style)
+	canvas.DrawPath(tearOffCorners[1], ui.Rect{X: right - r, Y: y, Width: r, Height: r}, style)
+	canvas.DrawPath(tearOffCorners[2], ui.Rect{X: x, Y: bottom - r, Width: r, Height: r}, style)
+	canvas.DrawPath(tearOffCorners[3], ui.Rect{X: right - r, Y: bottom - r, Width: r, Height: r}, style)
+
+	if state.tabPreview.handle != nil {
+		return // the picture under the pointer says it
+	}
+	ghost := state.paintTabGhost(canvas, viewport, drag)
+
+	hint := state.messages.TabTearOffHint
+	hintWidth := canvas.TextWidthWeight(hint, metrics.FontSizeS, ui.WeightMedium) + 24
+	below := ui.Point{X: ghost.X + ghost.Width/2 - hintWidth/2, Y: ghost.Y + ghost.Height + 6}
+	if below.Y+barTabHeight > viewport.Y+viewport.Height {
+		below.Y = ghost.Y - barTabHeight - 6
+	}
+	pill := state.popupAt(canvas, viewport, below, hintWidth, barTabHeight, 0)
+	f := state.chrome.widget.Begin(canvas, state.Theme(), pill)
+	f.Row().Fill().PadX(8).Items(flex.Center).Justify(flex.Center).Radius(radius.item).Background(pal.accent).Children(func() {
+		f.Text(hint).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.onAccent).LineHeight(20).Ellipsis().TextCenter()
 	})
 	f.End()
 }
+
+// tearOffEdge is the thickness of the line round a window a tab is dragged out of.
+const tearOffEdge = float32(2)
+
+// tearOffCorners are the arcs that carry that line round the window's four
+// corners (top-left, top-right, bottom-left, bottom-right), as strokes whose
+// centerline runs half the line's width inside the window's edge. Built once:
+// they are painted every frame and must not allocate.
+var tearOffCorners = func() [4]ui.Path {
+	const r, k = windowCornerRadius, 0.5522847
+	const c = r - tearOffEdge/2 // radius of the centerline
+	return [4]ui.Path{
+		// Each box is r x r with the arc's circle centered on the corner of the box
+		// that lies inside the window.
+		ui.NewPath(r, r, ui.MoveTo(r, r-c), ui.CubicTo(r-c*k, r-c, r-c, r-c*k, r-c, r)),
+		ui.NewPath(r, r, ui.MoveTo(c, r), ui.CubicTo(c, r-c*k, c*k, r-c, 0, r-c)),
+		ui.NewPath(r, r, ui.MoveTo(r, c), ui.CubicTo(r-c*k, c, r-c, c*k, r-c, 0)),
+		ui.NewPath(r, r, ui.MoveTo(c, 0), ui.CubicTo(c, c*k, c*k, c, 0, c)),
+	}
+}()

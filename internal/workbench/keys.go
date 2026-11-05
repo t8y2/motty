@@ -3,13 +3,15 @@ package workbench
 import (
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/ui"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/keyidentity"
+	"motty/internal/vault"
 )
 
 type identityRecord struct {
@@ -18,9 +20,15 @@ type identityRecord struct {
 	Name        string
 	Algorithm   string
 	Fingerprint string
-	Encrypted   bool
-	Error       string
-	cells       [4]string
+	// PublicKey is the key as a server's authorized_keys line; empty while the key
+	// is locked and its public half is not readable.
+	PublicKey string
+	Encrypted bool
+	// Stored marks a key kept in the vault (see stored_keys.go): Path is then its
+	// reference, not a file.
+	Stored bool
+	Error  string
+	cells  [4]string
 }
 
 func inspectIdentity(id uint32, path string, messages keyMessages) identityRecord {
@@ -39,6 +47,7 @@ func inspectIdentity(id uint32, path string, messages keyMessages) identityRecor
 	record.Name = info.Name
 	record.Algorithm = info.Algorithm
 	record.Fingerprint = info.Fingerprint
+	record.PublicKey = info.PublicKey
 	record.Encrypted = info.Encrypted
 	record.refreshCells(messages)
 	return record
@@ -85,7 +94,7 @@ func (state *State) restoreIdentities(paths []string) {
 	if len(state.identities) > 0 {
 		state.selectedIdentityID = state.identities[0].ID
 	}
-	state.refreshIdentityCount()
+	state.reloadStoredIdentities()
 }
 
 func (state *State) hasIdentityPath(path string) bool {
@@ -100,14 +109,41 @@ func (state *State) clickKeys(id ui.ID) {
 	if state.activeSection != sectionKeys || state.modal != modalNone {
 		return
 	}
+	if state.keysMenu {
+		// A choice closes the menu and then runs as if it had been clicked
+		// directly; any other press only dismisses it.
+		state.keysMenu = false
+		switch id {
+		case hitKeysImport, hitKeysPaste, hitKeysGenerate:
+		default:
+			return
+		}
+	}
 	switch {
+	case id == hitKeysAdd:
+		state.keysMenu = true
 	case id == hitKeysImport:
 		state.importKeys()
+	case id == hitKeysPaste:
+		state.openPasteKeyForm()
+	case id == hitKeysGenerate:
+		state.openGenerateKeyForm()
+	case id == hitKeysCopyPublic:
+		state.copySelectedPublicKey()
 	case id == hitKeysRemove:
 		state.removeSelectedIdentity()
 	case id == hitKeysPassphrase:
 		state.openKeyPassphraseForm()
 	}
+}
+
+// keysKey closes the Add Key menu on Escape.
+func (state *State) keysKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if state.keysMenu && event.Key == ui.KeyEscape {
+		state.keysMenu = false
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	return ui.EventResult{}, false
 }
 
 // selectIdentity makes a key the selected one. The table calls it from the paint
@@ -227,6 +263,10 @@ func (state *State) removeSelectedIdentity() {
 				return
 			}
 		}
+		if identity.Stored {
+			state.confirmDeleteStoredKey(identity)
+			return
+		}
 		state.identities = slices.Delete(state.identities, index, index+1)
 		state.selectedIdentityID = 0
 		if len(state.identities) > 0 {
@@ -259,7 +299,151 @@ func (state *State) identityByID(id uint32) (identityRecord, bool) {
 	return identityRecord{}, false
 }
 
+// identityLabel names the key a connection asks the passphrase of: the name of a
+// stored key, the file name of a file.
+func (state *State) identityLabel(ref string) string {
+	for _, identity := range state.identities {
+		if identity.Path == ref && identity.Stored {
+			return identity.Name
+		}
+	}
+	return filepath.Base(ref)
+}
+
 func (state *State) identityName(id uint32) string {
 	identity, _ := state.identityByID(id)
 	return identity.Name
+}
+
+// openPasteKeyForm asks for the text of a private key to keep in the vault, so
+// a key never has to be a file first.
+func (state *State) openPasteKeyForm() {
+	m := state.messages
+	state.openForm(formDialog{
+		title: m.KeyPasteTitle, description: m.KeyPasteDescription, submit: m.KeyPasteSubmit,
+		run: func(state *State, form *formDialog) string {
+			message := state.pasteKey(form.value(1), form.value(0))
+			if message == "" {
+				form.set(0, "") // the key does not stay in the form's memory
+			}
+			return message
+		},
+	},
+		formField{label: m.KeyTextLabel, placeholder: m.KeyTextPlaceholder, multiline: true},
+		formField{label: m.KeyNameLabel, placeholder: m.KeyNamePlaceholder},
+	)
+}
+
+// pasteKey keeps pasted key text under name (a default when it is empty). It
+// returns what is wrong with it, "" when it was kept.
+func (state *State) pasteKey(name, text string) string {
+	data, err := keyidentity.Normalize(text)
+	if err != nil {
+		return fmt.Sprintf(state.messages.KeyInvalidTextFmt, err)
+	}
+	return state.addStoredKey(name, data, func(record identityRecord) {
+		state.status = fmt.Sprintf(state.messages.KeyAddedFmt, record.Name)
+		state.save()
+	})
+}
+
+// openGenerateKeyForm asks for the name, and optionally the passphrase, of a new
+// key. The name is also the comment the public key carries, which is what
+// identifies it in a server's authorized_keys.
+func (state *State) openGenerateKeyForm() {
+	m := state.messages
+	state.openForm(formDialog{
+		title: m.KeyGenerateTitle, description: m.KeyGenerateDescription, submit: m.KeyGenerateSubmit,
+		run: func(state *State, form *formDialog) string {
+			return state.generateKey(form.value(0), form.value(1))
+		},
+	},
+		formField{label: m.KeyNameLabel, placeholder: m.KeyGenerateNamePlaceholder},
+		formField{label: m.KeyGeneratePassphraseLabel, secure: true},
+	)
+}
+
+// generateKey makes an Ed25519 key, keeps it in the vault and puts its public
+// key on the clipboard: the next thing anyone does with a new key is to add that
+// line to a server.
+func (state *State) generateKey(name, passphrase string) string {
+	m := state.messages
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return m.KeyNameRequired
+	}
+	secret := []byte(passphrase)
+	generated, err := keyidentity.Generate(name, secret)
+	clear(secret)
+	if err != nil {
+		return fmt.Sprintf(m.KeyInvalidTextFmt, err)
+	}
+	return state.addStoredKey(name, generated.Private, func(record identityRecord) {
+		if err := state.options.SetClipboardText(generated.Public); err != nil {
+			state.status = fmt.Sprintf(m.KeyGeneratedNotCopiedFmt, record.Name)
+			return
+		}
+		state.status = fmt.Sprintf(m.KeyGeneratedFmt, record.Name)
+	})
+}
+
+// copySelectedPublicKey puts the public key of the selected key on the clipboard.
+func (state *State) copySelectedPublicKey() {
+	identity, ok := state.identityByID(state.selectedIdentityID)
+	if !ok || identity.Error != "" {
+		return
+	}
+	if identity.PublicKey == "" {
+		state.showActionInfo(state.messages.KeyTitle, state.messages.KeyPublicUnavailable)
+		return
+	}
+	if err := state.options.SetClipboardText(identity.PublicKey); err != nil {
+		state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
+		return
+	}
+	state.status = fmt.Sprintf(state.messages.KeyPublicCopiedFmt, identity.Name)
+}
+
+// confirmDeleteStoredKey asks before deleting a key that exists nowhere else.
+func (state *State) confirmDeleteStoredKey(identity identityRecord) {
+	m := state.messages
+	state.openForm(formDialog{
+		title: m.KeyDeleteTitle, description: fmt.Sprintf(m.KeyDeleteDescriptionFmt, identity.Name), submit: m.KeyDeleteConfirm, danger: true,
+		run: func(state *State, _ *formDialog) string { return state.deleteStoredKey(identity) },
+	})
+}
+
+// deleteStoredKey removes a stored key and the passphrase saved for it.
+func (state *State) deleteStoredKey(identity identityRecord) string {
+	m := state.messages
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		return m.VaultUnavailable
+	}
+	if vaultFile.NeedsConversion() {
+		state.openVaultUnlock(nil, func() {
+			if message := state.deleteStoredKey(identity); message != "" {
+				state.status = message
+			}
+		})
+		return ""
+	}
+	err := vaultFile.Apply([]vault.Change{
+		{Name: identity.Path, Delete: true},
+		{Name: passphraseSecretName(identity.Path), Delete: true},
+	})
+	if err != nil {
+		return fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err))
+	}
+	index := slices.IndexFunc(state.identities, func(other identityRecord) bool { return other.Path == identity.Path })
+	if index >= 0 {
+		state.identities = slices.Delete(state.identities, index, index+1)
+		state.selectedIdentityID = 0
+		if len(state.identities) > 0 {
+			state.selectedIdentityID = state.identities[min(index, len(state.identities)-1)].ID
+		}
+	}
+	state.refreshIdentityCount()
+	state.status = fmt.Sprintf(m.KeyDeletedFmt, identity.Name)
+	return ""
 }

@@ -5,10 +5,13 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"motty/internal/shellkind"
 )
 
 func TestIntegrationProbeCancellationWhileExecAcknowledgmentIsWithheld(t *testing.T) {
@@ -130,5 +133,80 @@ func TestWSLIntegrationScriptRefusesWhatCouldBeInjected(t *testing.T) {
 	script := WSLIntegrationScript("token-1", "MOTTY_CD")
 	if script == "" || strings.Contains(script, "__MOTTY_SUFFIX__") || !strings.Contains(script, ";motty=token-1") {
 		t.Fatalf("script = %q", script)
+	}
+}
+
+// The shell family decides how the assistant may type a command, so it is
+// learned from the server's own default shell, once per connection, and only
+// from a server that is known to take a command channel beside a shell.
+func TestShellKindComesFromTheServersDefaultShell(t *testing.T) {
+	answers := map[string]struct {
+		output string
+		want   shellkind.Kind
+	}{
+		"posix":      {"motty-shell:\n", shellkind.POSIX},
+		"powershell": {"motty-shell:System.Management.Automation.PSVersionHashtable\r\n", shellkind.PowerShell},
+		"cmd":        {"\"motty-shell:$PSVersionTable$FISH_VERSION\"\r\n", shellkind.Cmd},
+		"garbage":    {"unexpected", shellkind.Unknown},
+	}
+	for name, answer := range answers {
+		t.Run(name, func(t *testing.T) {
+			var probes int
+			var mu sync.Mutex
+			server := startServer(t, func(server *testServer) {
+				server.password, server.shell = "secret", echoShell
+				server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+				server.command = func(command string, channel ssh.Channel) {
+					defer channel.Close()
+					if command == shellkind.Probe {
+						mu.Lock()
+						probes++
+						mu.Unlock()
+						io.WriteString(channel, answer.output)
+					}
+					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+				}
+			})
+			h := connect(t, server)
+			first := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+			second := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+			if first.shell.Kind() != answer.want || second.shell.Kind() != answer.want {
+				t.Fatalf("kinds = %v, %v; want %v", first.shell.Kind(), second.shell.Kind(), answer.want)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if probes != 1 {
+				t.Fatalf("the server was asked %d times, want once per connection", probes)
+			}
+		})
+	}
+}
+
+func TestShellKindIsNotProbedOnAnUnknownImplementationOrForACustomCommand(t *testing.T) {
+	for _, mode := range []string{"gateway", "custom-command"} {
+		t.Run(mode, func(t *testing.T) {
+			server := startServer(t, func(server *testServer) {
+				server.password, server.shell = "secret", echoShell
+				server.version = "SSH-2.0-OpenSSH_9.6"
+				if mode == "gateway" {
+					server.version = "SSH-2.0-SomeGateway"
+				}
+				server.command = func(command string, channel ssh.Channel) {
+					defer channel.Close()
+					if command == shellkind.Probe {
+						t.Errorf("%s: the shell family was probed", mode)
+					}
+					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+				}
+			})
+			h := connect(t, server)
+			config := ShellConfig{Cols: 80, Rows: 24}
+			if mode == "custom-command" {
+				config.Command = "custom shell"
+			}
+			if kind := openShellWith(t, h, config).shell.Kind(); kind != shellkind.Unknown {
+				t.Fatalf("kind = %v, want Unknown", kind)
+			}
+		})
 	}
 }

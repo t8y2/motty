@@ -14,26 +14,28 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyImport, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + gap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
+	copyWidth, copyIcon := toolbarButtonLayout(canvas, messages.KeyCopyPublic, iconCopy, iconCopy, condensed)
 	passphraseWidth, passphraseIcon := toolbarButtonLayout(canvas, messages.KeySavePassphrase, iconLock, iconLock, condensed)
 	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.KeyRemove, 0, iconTrash, condensed)
-	importWidth, importIcon := toolbarButtonLayout(canvas, messages.KeyImport, iconPlus, iconPlus, condensed)
-	titleRoom := max(bounds.Width-36-passphraseWidth-gap-removeWidth-gap-importWidth, 0)
+	addWidth, addIcon := toolbarButtonLayout(canvas, messages.KeyAdd, iconPlus, iconPlus, condensed)
+	titleRoom := max(bounds.Width-36-copyWidth-gap-passphraseWidth-gap-removeWidth-gap-addWidth, 0)
 	statusColor, statusValue := pal.muted, ""
-	if selected, ok := state.identityByID(state.selectedIdentityID); ok {
+	selected, hasSelection := state.identityByID(state.selectedIdentityID)
+	if hasSelection {
 		statusValue = selected.Path
+		if selected.Stored {
+			statusValue = messages.KeyStoredIn
+		}
 		if selected.Error != "" {
 			statusColor, statusValue = pal.danger, selected.Error
 		}
 	}
+	selectedEncrypted := hasSelection && selected.Encrypted
+	canCopy := hasSelection && selected.Error == ""
 
-	selectedEncrypted := false
-	if selected, ok := state.identityByID(state.selectedIdentityID); ok {
-		selectedEncrypted = selected.Encrypted
-	}
-
-	var content, emptyIcon, emptyAdd, importButton, removeButton, passphraseButton flex.Box
+	var content, emptyIcon, emptyAdd, addButton, removeButton, passphraseButton, copyButton flex.Box
 	f := state.keysLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().Children(func() {
@@ -41,12 +43,13 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 				f.Text(messages.KeyTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
 				f.Paragraph(messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
 			})
+			copyButton = f.Slot().Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			passphraseButton = f.Slot().Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			removeButton = f.Slot().Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-			importButton = f.Slot().Size(importWidth, toolbarHeight).Shrink(0)
+			addButton = f.Slot().Size(addWidth, toolbarHeight).Shrink(0)
 		})
 		if len(state.identities) == 0 {
-			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyImport)
+			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(17, 0, 9, 0)
 		}
@@ -60,12 +63,15 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	})
 	f.End()
 
+	state.keysAddButton = addButton.Rect()
+	state.paintToolbarButton(canvas, hitKeysCopyPublic, copyButton.Rect().X, copyButton.Rect().Y, copyWidth, messages.KeyCopyPublic, copyIcon, false, canCopy, condensed)
 	state.paintToolbarButton(canvas, hitKeysPassphrase, passphraseButton.Rect().X, passphraseButton.Rect().Y, passphraseWidth, messages.KeySavePassphrase, passphraseIcon, false, selectedEncrypted, condensed)
-	state.paintToolbarButton(canvas, hitKeysImport, importButton.Rect().X, importButton.Rect().Y, importWidth, messages.KeyImport, importIcon, true, true, condensed)
 	state.paintToolbarButton(canvas, hitKeysRemove, removeButton.Rect().X, removeButton.Rect().Y, removeWidth, messages.KeyRemove, removeIcon, false, state.selectedIdentityID != 0, condensed)
+	state.paintToolbarButton(canvas, hitKeysAdd, addButton.Rect().X, addButton.Rect().Y, addWidth, messages.KeyAdd, addIcon, true, true, condensed)
 
 	if len(state.identities) == 0 {
-		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconKey, hitKeysImport, messages.KeyImport, true)
+		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconKey, hitKeysAdd, messages.KeyAdd, true)
+		state.paintKeysMenu(canvas)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 170}, {Width: 145}, {Width: 0}}
@@ -78,4 +84,21 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 			state.selectIdentity(identity.ID)
 		}
 	}
+	state.paintKeysMenu(canvas)
+}
+
+// paintKeysMenu lists the three ways to add a key under the Add Key button,
+// right-aligned with it.
+func (state *State) paintKeysMenu(canvas *ui.Canvas) {
+	if !state.keysMenu {
+		return
+	}
+	m := state.messages
+	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.keysAddButton, 220, 3*32+8, flex.End),
+		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitKeysMenuDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitKeysMenuDismiss)})
+	state.menuPlaced(menu.Bounds())
+	menu.AddItem(components.DropdownMenuItem{ID: hitKeysImport, Label: m.KeyImport})
+	menu.AddItem(components.DropdownMenuItem{ID: hitKeysPaste, Label: m.KeyPaste})
+	menu.AddItem(components.DropdownMenuItem{ID: hitKeysGenerate, Label: m.KeyGenerate})
+	menu.End()
 }

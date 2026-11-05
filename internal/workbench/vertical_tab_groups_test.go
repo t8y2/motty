@@ -199,6 +199,20 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 	}
 }
 
+func TestDigitShortcutFollowsTheGroupedTabOrder(t *testing.T) {
+	state := restoredGroupedTabs(t, groupingEntries()...)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1200, Height: 760})
+	visual := state.visualWorkspaceTabs()
+	if len(visual) < 3 {
+		t.Fatalf("%d visual tabs", len(visual))
+	}
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "3"})
+	if state.deck.ActiveWorkspace() != visual[2].ID {
+		t.Fatal("the digit shortcut must follow the grouped order")
+	}
+}
+
 func TestVerticalTabGroupingDistinguishesTargetsAndMixedSplits(t *testing.T) {
 	entries := groupingEntries()
 	// A shell path has to be one the restore accepts on this platform: on

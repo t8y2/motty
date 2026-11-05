@@ -69,7 +69,7 @@ func TestPickerSearchMatchesHostNamesAndAddresses(t *testing.T) {
 	state.commandPalette.search.Insert(state.hosts[0].Address)
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	if palette.visibleCount == 0 {
+	if len(palette.visible) == 0 {
 		t.Fatal("searching a host's address finds nothing")
 	}
 	if got := palette.entries[palette.visible[0]].target; got != hitConnectPickList.At(int(state.hosts[0].ID)) {
@@ -77,8 +77,57 @@ func TestPickerSearchMatchesHostNamesAndAddresses(t *testing.T) {
 	}
 	state.commandPalette.search.Insert("zzzz-no-such-host")
 	state.refreshCommandPalette()
-	if palette.visibleCount != 0 {
-		t.Fatalf("%d matches for a nonsense query", palette.visibleCount)
+	if len(palette.visible) != 0 {
+		t.Fatalf("%d matches for a nonsense query", len(palette.visible))
+	}
+}
+
+func TestNewTabPickerMatchesEverySpaceSeparatedKeywordInBothSortModes(t *testing.T) {
+	for _, recent := range []bool{false, true} {
+		name := "default"
+		if recent {
+			name = "recent"
+		}
+		t.Run(name, func(t *testing.T) {
+			options := testOptions(t)
+			if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
+				{ID: "match", Label: "XX Production", Group: "Servers", Address: "oa.internal", Port: 22},
+				{ID: "wrong-address", Label: "XX Staging", Group: "Servers", Address: "db.internal", Port: 22},
+				{ID: "wrong-name", Label: "OA Production", Group: "Servers", Address: "db.internal", Port: 22},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			state := newTestState(t, options)
+			state.Click(hitNewTab)
+			if recent {
+				state.Click(hitConnectSortRecent)
+			}
+			// Reverse the label/address order and vary case and whitespace. Every
+			// term must match the same host, even across its displayed fields.
+			state.commandPalette.search.Insert("  oA   Xx  ")
+			want := []string{"XX Production"}
+			if recent {
+				want = []string{"Servers", "XX Production"}
+			}
+			if got := pickerRowLabels(state); !slices.Equal(got, want) {
+				t.Fatalf("%s picker matches = %v", name, got)
+			}
+			if recent {
+				state.Click(hitConnectSortDefault)
+			} else {
+				state.Click(hitConnectSortRecent)
+			}
+			if state.commandPalette.search.String() != "  oA   Xx  " {
+				t.Fatal("switching sort cleared the search")
+			}
+			want = []string{"XX Production"}
+			if !recent {
+				want = []string{"Servers", "XX Production"}
+			}
+			if got := pickerRowLabels(state); !slices.Equal(got, want) {
+				t.Fatalf("after switching sort, matches = %v", got)
+			}
+		})
 	}
 }
 
@@ -91,7 +140,7 @@ func TestTheCommandPaletteIsStillTheCommandPalette(t *testing.T) {
 		t.Fatal("the palette opened as the picker")
 	}
 	found := false
-	for index := uint8(0); index < state.commandPalette.entryCount; index++ {
+	for index := 0; index < len(state.commandPalette.entries); index++ {
 		found = found || state.commandPalette.entries[index].target == hitSettings
 	}
 	if !found {
@@ -125,7 +174,7 @@ func TestNewTabPickerKeyboardStepsOverGroupHeadings(t *testing.T) {
 	if !result.Handled || result.Focus != hitCommandPaletteItems.At(2) {
 		t.Fatalf("down from the first row focused %v, want the row under the heading", result.Focus)
 	}
-	last := hitCommandPaletteItems.At(int(state.commandPalette.visibleCount) - 1)
+	last := hitCommandPaletteItems.At(len(state.commandPalette.visible) - 1)
 	result = state.Key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyEnd})
 	if !result.Handled || result.Focus != last {
 		t.Fatalf("End focused %v, want the last choice %v", result.Focus, last)

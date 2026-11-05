@@ -539,8 +539,9 @@ func (t *terminal) recordingNow() time.Duration {
 
 // shellResult is the outcome of a shell opened away from the window's thread.
 type shellResult struct {
-	shell Shell
-	err   error
+	shell      Shell
+	err        error
+	cols, rows int // the PTY size requested before opening began
 }
 
 // openShell starts the remote shell once the connection is up. Over SSH that
@@ -576,7 +577,7 @@ func (state *State) openShell(session *Session) {
 	conn, invalidate := session.conn, state.options.Invalidate
 	go func() {
 		shell, err := conn.OpenShell(config)
-		result <- shellResult{shell, err}
+		result <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
 		if invalidate != nil {
 			invalidate()
 		}
@@ -592,6 +593,15 @@ func (state *State) collectShell(session *Session) {
 	select {
 	case result := <-t.opening:
 		t.opening = nil
+		if result.err == nil {
+			// Layout may have changed while OpenShell waited for the server.
+			// fitTerminal already resized the local screen without a shell, so
+			// its size comparison cannot detect the stale PTY after attachment.
+			cols, rows := t.screen.Size()
+			if cols != result.cols || rows != result.rows {
+				result.shell.Resize(cols, rows)
+			}
+		}
 		state.shellOpened(session, result.shell, result.err)
 	default:
 	}
@@ -1051,6 +1061,9 @@ func (state *State) Resize(size ui.Size) {
 	state.viewport = size
 	state.fitTerminals()
 	state.fitSFTP(size)
+	// Both panels stay open when the window docks them, but a window that grew
+	// too narrow for both must not leave the assistant under the monitor.
+	state.reconcileAIPanelWithMonitor(size)
 }
 
 // terminalSession finds the session whose terminal owns a hit.
@@ -1327,6 +1340,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 			return result
 		}
 	}
+	if state.modal == modalLocalProxy {
+		return state.scrollLocalProxy(event)
+	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
@@ -1367,6 +1383,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	if state.modal == modalForm {
+		return state.scrollForm(event)
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)

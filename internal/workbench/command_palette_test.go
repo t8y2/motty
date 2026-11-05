@@ -12,7 +12,7 @@ import (
 func TestCommandPaletteIdentitiesAreItsOwn(t *testing.T) {
 	// The palette's controls and its entries are names in a place of its own, so
 	// nothing else answers to them, and an entry the palette cannot list has none.
-	for _, id := range []ui.ID{hitCommandPalette, hitCommandPaletteDismiss, hitCommandPaletteClose, hitCommandPaletteSearch, hitCommandPaletteItems.At(0), hitCommandPaletteItems.At(maxCommandPaletteEntries - 1)} {
+	for _, id := range []ui.ID{hitCommandPalette, hitCommandPaletteDismiss, hitCommandPaletteClose, hitCommandPaletteSearch, hitCommandPaletteItems.At(0), hitCommandPaletteItems.At(commandPaletteVisibleRows - 1)} {
 		if !tree.Within(id.Scope(), commandPaletteHits) {
 			t.Fatalf("identity %s is outside the palette's place", tree.Text(id))
 		}
@@ -28,8 +28,8 @@ func TestCommandPaletteFiltersAndExecutesCommands(t *testing.T) {
 	app.TextEvent{Kind: app.TextInsert, Text: "settings"}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	if state.commandPalette.visibleCount != 1 {
-		t.Fatalf("visible commands = %d", state.commandPalette.visibleCount)
+	if len(state.commandPalette.visible) != 1 {
+		t.Fatalf("visible commands = %d", len(state.commandPalette.visible))
 	}
 	if hit, ok := hitByID(&canvas, hitCommandPaletteItems.At(0)); !ok || hit.Label != state.messages.NavSettings {
 		t.Fatalf("settings command hit = %+v, ok=%v", hit, ok)
@@ -51,8 +51,8 @@ func TestCommandPaletteKeyboardNavigationAndSessionSwitch(t *testing.T) {
 	state.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: "Beta"}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	state.refreshCommandPalette()
-	if state.commandPalette.visibleCount != 1 {
-		t.Fatalf("visible session commands = %d", state.commandPalette.visibleCount)
+	if len(state.commandPalette.visible) != 1 {
+		t.Fatalf("visible session commands = %d", len(state.commandPalette.visible))
 	}
 	result := state.Key(ui.KeyEvent{Target: hitCommandPaletteItems.At(0), Key: ui.KeyEnter})
 	if !result.Handled || state.activeSessionID != 2 || state.activeSection != sectionTerminal || state.modal != modalNone {
@@ -76,8 +76,8 @@ func TestNewWindowCommandAndShortcutUseTheHostLifecycle(t *testing.T) {
 	state.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: "new window"}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	state.refreshCommandPalette()
-	if state.commandPalette.visibleCount != 1 {
-		t.Fatalf("visible commands = %d", state.commandPalette.visibleCount)
+	if len(state.commandPalette.visible) != 1 {
+		t.Fatalf("visible commands = %d", len(state.commandPalette.visible))
 	}
 	state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
 	if opened != 1 {
@@ -131,7 +131,7 @@ func TestCommandPaletteReachesEntriesBelowTheTenRowsItShows(t *testing.T) {
 	state.Click(hitCommandPalette)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	total := int(state.commandPalette.visibleCount)
+	total := len(state.commandPalette.visible)
 	if total <= commandPaletteVisibleRows {
 		t.Fatalf("only %d entries; the test needs more than the %d rows shown", total, commandPaletteVisibleRows)
 	}
@@ -146,7 +146,7 @@ func TestCommandPaletteReachesEntriesBelowTheTenRowsItShows(t *testing.T) {
 	canvas.Reset()
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, last)
-	if !ok || state.commandPalette.selected != uint8(total-1) {
+	if !ok || state.commandPalette.selected != total-1 {
 		t.Fatalf("after End: last row painted %v, selected %d of %d", ok, state.commandPalette.selected, total)
 	}
 	if want := state.commandPalette.entries[state.commandPalette.visible[total-1]].label; hit.Label != want {
@@ -174,13 +174,13 @@ func TestCommandPalettePointerHoverAndLeaveRetainsSelection(t *testing.T) {
 	// Moving pointer over Settings.
 	settingsHit := hitCommandPaletteItems.At(settingsRow)
 	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: settingsHit})
-	if !result.Handled || !result.Repaint || state.commandPalette.selected != uint8(settingsRow) {
+	if !result.Handled || !result.Repaint || state.commandPalette.selected != settingsRow {
 		t.Fatalf("hover over settings: result=%+v selected=%d row=%d", result, state.commandPalette.selected, settingsRow)
 	}
 
 	// Moving pointer away (e.g. back to search field or outside the list).
 	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitCommandPaletteSearch})
-	if state.commandPalette.selected != uint8(settingsRow) {
+	if state.commandPalette.selected != settingsRow {
 		t.Fatalf("after pointer leaves, selected = %d, want it to stay on %d", state.commandPalette.selected, settingsRow)
 	}
 
@@ -219,7 +219,7 @@ func TestCommandPaletteArrowKeysFromSearchInput(t *testing.T) {
 	for i := 0; i < settingsRow; i++ {
 		state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyDown})
 	}
-	if state.commandPalette.selected != uint8(settingsRow) {
+	if state.commandPalette.selected != settingsRow {
 		t.Fatalf("after %d down arrows: selected=%d, want %d", settingsRow, state.commandPalette.selected, settingsRow)
 	}
 
@@ -318,7 +318,7 @@ func TestCommandPaletteTabFocusAndHoverEnterExecutesHoveredChoice(t *testing.T) 
 
 	// Hover pointer over Settings.
 	hoverRes := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: settingsHit})
-	if !hoverRes.Handled || state.commandPalette.selected != uint8(settingsRow) {
+	if !hoverRes.Handled || state.commandPalette.selected != settingsRow {
 		t.Fatalf("hover over settings: result=%+v selected=%d row=%d", hoverRes, state.commandPalette.selected, settingsRow)
 	}
 
@@ -346,8 +346,8 @@ func TestCommandPaletteMoveWheelRepaintEnterOnLongList(t *testing.T) {
 
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	if int(state.commandPalette.visibleCount) <= commandPaletteVisibleRows {
-		t.Fatalf("entries = %d, want > %d", state.commandPalette.visibleCount, commandPaletteVisibleRows)
+	if len(state.commandPalette.visible) <= commandPaletteVisibleRows {
+		t.Fatalf("entries = %d, want > %d", len(state.commandPalette.visible), commandPaletteVisibleRows)
 	}
 
 	// 1. Move: pointer hovers over slot 2
@@ -362,10 +362,10 @@ func TestCommandPaletteMoveWheelRepaintEnterOnLongList(t *testing.T) {
 	if !scrollRes.Handled || !scrollRes.Repaint {
 		t.Fatalf("scroll: result=%+v", scrollRes)
 	}
-	if state.commandPalette.top != uint8(scrollRows) {
+	if state.commandPalette.top != scrollRows {
 		t.Fatalf("after scroll: top=%d, want %d", state.commandPalette.top, scrollRows)
 	}
-	wantSelected := uint8(settingsRow)
+	wantSelected := settingsRow
 	if state.commandPalette.selected != wantSelected {
 		t.Fatalf("after wheel: selected=%d, want %d", state.commandPalette.selected, wantSelected)
 	}
@@ -383,7 +383,7 @@ func TestCommandPaletteMoveWheelRepaintEnterOnLongList(t *testing.T) {
 
 func commandPaletteRow(t testing.TB, state *State, target ui.ID) int {
 	t.Helper()
-	for row, entry := range state.commandPalette.entries[:state.commandPalette.entryCount] {
+	for row, entry := range state.commandPalette.entries {
 		if entry.target == target {
 			return row
 		}

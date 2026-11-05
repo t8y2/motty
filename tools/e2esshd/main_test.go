@@ -54,6 +54,16 @@ func TestAllowedDirectTargetAcceptsOnlyDeclaredLoopbackEndpoints(t *testing.T) {
 	}
 }
 
+func TestRemoteForwardListenersAreDirectTargets(t *testing.T) {
+	forwards := &remoteForwardSet{listeners: map[string]*remoteListener{
+		"127.0.0.1:45681": {address: "127.0.0.1:45681"},
+	}}
+	targets := forwards.directTargets()
+	if len(targets) != 1 || targets[0].requested != "127.0.0.1:45681" || targets[0].dial != targets[0].requested {
+		t.Fatalf("remote forward direct targets = %+v", targets)
+	}
+}
+
 func TestEchoServerUppercasesBytes(t *testing.T) {
 	listener, err := startEchoServer()
 	if err != nil {

@@ -10,11 +10,6 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// maxCommandPaletteEntries is what the palette can list: its commands and
-// sessions, or, as the new-tab picker, this computer, the host groups and as
-// many saved hosts as fit. Counts are bytes, so it cannot pass 255.
-const maxCommandPaletteEntries = 255
-
 // commandPaletteHits is the place of the controls this file paints.
 var commandPaletteHits = tree.Feature("command-palette")
 
@@ -24,6 +19,7 @@ var (
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
 	hitCommandPaletteSearch  = tree.ID(commandPaletteHits, "command-palette-search")
 	hitCommandPaletteItems   = tree.Sub(commandPaletteHits, tree.Name("command-palette-items"))
+	hitCommandPaletteBar     = tree.ID(commandPaletteHits, "command-palette-scrollbar")
 	// The group headings of the new-tab picker are places too: the pointer over
 	// one shows no choice lit, and a press on one chooses nothing.
 	hitCommandPaletteHeaders = tree.Sub(commandPaletteHits, tree.Name("command-palette-group"))
@@ -42,25 +38,33 @@ type commandPaletteEntry struct {
 }
 
 type commandPalette struct {
-	search       text.Editor
-	rawQuery     string
-	query        string
-	filtered     bool
-	entries      [maxCommandPaletteEntries]commandPaletteEntry
-	visible      [maxCommandPaletteEntries]uint8
-	entryCount   uint8
-	visibleCount uint8
-	selected     uint8
-	// top is the first of the visible entries the list shows; it keeps the
-	// selected one in view and the wheel moves it.
-	top uint8
+	search   text.Editor
+	rawQuery string
+	query    string
+	filtered bool
+	// entries is everything the palette offers and visible the indexes of those
+	// the search keeps. They are kept only while the palette is open: a list as
+	// long as the saved snippets or hosts costs nothing once it is closed.
+	entries []commandPaletteEntry
+	visible []int
+	// selected and top are places in visible: the choice, and the first row the
+	// list shows; top keeps the selection in view and the wheel moves it.
+	selected, top int
+	// bar is the scrollbar as last painted, and barGrab where on its thumb a
+	// drag took hold; dragging is set from the press on the bar to its release.
+	bar      components.ScrollAreaGeometry
+	barGrab  float32
+	dragging bool
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
 	connect bool
+	// snippets makes the list a picker of the saved snippets to send to the
+	// active terminal, opened from the terminal toolbar.
+	snippets bool
 }
 
 func (state *State) openCommandPalette() {
-	state.commandPalette.connect = false
+	state.commandPalette.connect, state.commandPalette.snippets = false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -70,14 +74,15 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.connect = false
+	state.commandPalette.connect, state.commandPalette.snippets = false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
 	state.commandPalette.rawQuery = ""
 	state.commandPalette.filtered = false
-	state.commandPalette.entryCount = 0
-	state.commandPalette.visibleCount = 0
+	state.commandPalette.entries = nil
+	state.commandPalette.visible = nil
+	state.commandPalette.dragging = false
 	state.commandPalette.selected = 0
 	state.commandPalette.top = 0
 }
@@ -85,11 +90,15 @@ func (state *State) closeCommandPalette() {
 func (state *State) rebuildCommandPalette() {
 	state.ensureWorkspaceDeck()
 	palette := &state.commandPalette
-	palette.entryCount = 0
+	palette.entries = palette.entries[:0]
 	palette.selected, palette.top = 0, 0
 	messages := state.messages
 	if palette.connect {
 		state.rebuildConnectPicker()
+		return
+	}
+	if palette.snippets {
+		state.rebuildSnippetPicker()
 		return
 	}
 	palette.add(messages.NavHosts, hitHosts)
@@ -119,6 +128,11 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.PaneSplitVertical, hitPaneSplitVertical)
 		palette.add(messages.PaneClose, hitPaneClose)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
+		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
+				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
+			}
+		}
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil && state.remoteToolsOffered(session) {
 			palette.add(messages.Tools.RemoteMenu, hitRemoteToolsOpen)
 		}
@@ -156,22 +170,14 @@ func (palette *commandPalette) add(label string, target ui.ID) {
 }
 
 func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
-	if palette.entryCount >= uint8(len(palette.entries)) {
-		return
-	}
-	palette.entries[palette.entryCount] = commandPaletteEntry{
+	palette.entries = append(palette.entries, commandPaletteEntry{
 		label: label, detail: detail, search: strings.ToLower(label + " " + detail), target: target,
-	}
-	palette.entryCount++
+	})
 }
 
 // addHeader names a group in the new-tab picker: a row to read, not to choose.
 func (palette *commandPalette) addHeader(label, detail string) {
-	if palette.entryCount >= uint8(len(palette.entries)) {
-		return
-	}
-	palette.entries[palette.entryCount] = commandPaletteEntry{label: label, detail: detail, header: true}
-	palette.entryCount++
+	palette.entries = append(palette.entries, commandPaletteEntry{label: label, detail: detail, header: true})
 }
 
 func (state *State) refreshCommandPalette() {
@@ -185,39 +191,43 @@ func (state *State) refreshCommandPalette() {
 		return
 	}
 	query := strings.ToLower(rawQuery)
+	var keywords []string
+	if palette.connect {
+		keywords = strings.Fields(query)
+	}
 	palette.rawQuery = rawQuery
 	palette.query = query
 	palette.filtered = true
-	palette.visibleCount = 0
-	for index := uint8(0); index < palette.entryCount; index++ {
+	palette.visible = palette.visible[:0]
+	for index := range palette.entries {
 		if palette.entries[index].header {
 			// Group names only head the unfiltered list: a search shows what
 			// matches, not the folders the matches came from.
 			if query == "" {
-				palette.visible[palette.visibleCount] = index
-				palette.visibleCount++
+				palette.visible = append(palette.visible, index)
 			}
 			continue
 		}
-		if query != "" && !strings.Contains(palette.entries[index].search, query) {
-			continue
+		if query != "" {
+			search := palette.entries[index].search
+			if palette.connect {
+				if !matchesSearchWords(search, keywords) {
+					continue
+				}
+			} else if !strings.Contains(search, query) {
+				continue
+			}
 		}
-		palette.visible[palette.visibleCount] = index
-		palette.visibleCount++
+		palette.visible = append(palette.visible, index)
 	}
-	choice := palette.choiceAt(0, 1)
-	if choice >= 0 {
-		palette.selected = uint8(choice)
-	} else {
-		palette.selected = 0
-	}
+	palette.selected = max(palette.choiceAt(0, 1), 0)
 	palette.top = 0
 }
 
 // choiceAt returns the first choice from index and in direction, stepping over
 // headings. It returns -1 when the direction runs out of choices.
 func (palette *commandPalette) choiceAt(index, direction int) int {
-	for index >= 0 && index < int(palette.visibleCount) {
+	for index >= 0 && index < len(palette.visible) {
 		if !palette.entries[palette.visible[index]].header {
 			return index
 		}
@@ -241,20 +251,20 @@ func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
 	beforeTop, beforeSelected := palette.top, palette.selected
-	last := max(int(palette.visibleCount)-commandPaletteVisibleRows, 0)
+	last := max(len(palette.visible)-commandPaletteVisibleRows, 0)
 	// A notch moves one row; a long gesture moves as many rows as it spans.
 	rows := max(int(math.Abs(float64(event.DeltaY))/34), 1)
 	switch {
 	case event.DeltaY > 0:
-		palette.top = uint8(min(int(palette.top)+rows, last))
+		palette.top = min(palette.top+rows, last)
 	case event.DeltaY < 0:
-		palette.top = uint8(max(int(palette.top)-rows, 0))
+		palette.top = max(palette.top-rows, 0)
 	}
 	target := event.Target
 	if visible, ok := target.In(hitCommandPaletteItems); ok {
-		row := int(palette.top) + visible
-		if row < int(palette.visibleCount) && !palette.entries[palette.visible[row]].header {
-			palette.selected = uint8(row)
+		row := palette.top + visible
+		if row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
+			palette.selected = row
 		}
 	}
 	return ui.EventResult{Handled: true, Repaint: palette.top != beforeTop || palette.selected != beforeSelected}
@@ -279,17 +289,17 @@ func (state *State) clickCommandPalette(id ui.ID) {
 			return
 		}
 		state.refreshCommandPalette()
-		visible += int(state.commandPalette.top)
-		if visible >= int(state.commandPalette.visibleCount) {
+		visible += state.commandPalette.top
+		if visible >= len(state.commandPalette.visible) {
 			return
 		}
-		state.executeCommandPalette(uint8(visible))
+		state.executeCommandPalette(visible)
 	}
 }
 
-func (state *State) executeCommandPalette(visible uint8) {
+func (state *State) executeCommandPalette(visible int) {
 	palette := &state.commandPalette
-	if visible >= palette.visibleCount {
+	if visible >= len(palette.visible) {
 		return
 	}
 	target := palette.entries[palette.visible[visible]].target
@@ -302,24 +312,53 @@ func (state *State) executeCommandPalette(visible uint8) {
 	state.click(target, false)
 }
 
+// dragCommandPaletteBar turns the thumb's position into the first row shown.
+func (palette *commandPalette) dragBar(y float32) {
+	offset := palette.bar.VerticalOffsetForThumb(y - palette.barGrab)
+	last := max(len(palette.visible)-commandPaletteVisibleRows, 0)
+	palette.top = min(max(int(offset/commandPaletteRowPitch+0.5), 0), last)
+}
+
 func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	if state.modal != modalCommandPalette {
 		return ui.EventResult{}, false
+	}
+	palette := &state.commandPalette
+	// A press on the scrollbar takes the pointer for the drag: until it is
+	// released the rows under it must not take the hover, or the highlight
+	// stays on whichever row the drag started over.
+	switch {
+	case event.Kind == ui.PointerDown && event.Target == hitCommandPaletteBar && event.Button == ui.PointerButtonPrimary:
+		thumb := palette.bar.VerticalThumb
+		palette.barGrab = thumb.Height / 2
+		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
+			palette.barGrab = event.Y - thumb.Y
+		}
+		palette.dragging = true
+		palette.dragBar(event.Y)
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	case palette.dragging:
+		switch event.Kind {
+		case ui.PointerMove:
+			palette.dragBar(event.Y)
+		case ui.PointerUp, ui.PointerExit:
+			palette.dragging = false
+		}
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
 		return ui.EventResult{}, false
 	}
-	palette := &state.commandPalette
-	row := int(palette.top) + visible
-	if row >= int(palette.visibleCount) {
+	row := palette.top + visible
+	if row >= len(palette.visible) {
 		return ui.EventResult{}, false
 	}
 	if palette.entries[palette.visible[row]].header {
 		return ui.EventResult{}, false
 	}
-	if event.Kind == ui.PointerMove && palette.selected != uint8(row) {
-		palette.selected = uint8(row)
+	if event.Kind == ui.PointerMove && palette.selected != row {
+		palette.selected = row
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	return ui.EventResult{}, false
@@ -364,18 +403,18 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		state.executeCommandPalette(palette.selected)
 		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
-	row := int(palette.selected)
+	row := palette.selected
 	move := func(selected, direction int) (ui.EventResult, bool) {
-		if palette.visibleCount == 0 {
+		if len(palette.visible) == 0 {
 			return ui.EventResult{Handled: true}, true
 		}
-		selected = min(max(selected, 0), int(palette.visibleCount)-1)
+		selected = min(max(selected, 0), len(palette.visible)-1)
 		selected = palette.choiceAt(selected, direction)
 		if selected < 0 {
 			// The move ran past the end of the list: it lands on the last
 			// choice there is, not on nothing.
 			if direction > 0 {
-				selected = palette.choiceAt(int(palette.visibleCount)-1, -1)
+				selected = palette.choiceAt(len(palette.visible)-1, -1)
 			} else {
 				selected = palette.choiceAt(0, 1)
 			}
@@ -383,14 +422,14 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		if selected < 0 {
 			return ui.EventResult{Handled: true}, true
 		}
-		palette.selected = uint8(selected)
+		palette.selected = selected
 		palette.follow()
 		if inSearch {
 			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 		}
 		return ui.EventResult{
 			Handled: true, Repaint: true,
-			Focus: hitCommandPaletteItems.At(int(palette.selected - palette.top)), FocusVisible: true,
+			Focus: hitCommandPaletteItems.At(palette.selected - palette.top), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {
@@ -408,7 +447,7 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		case ui.KeyHome:
 			return move(0, 1)
 		case ui.KeyEnd:
-			return move(int(palette.visibleCount)-1, -1)
+			return move(len(palette.visible)-1, -1)
 		}
 	}
 	return ui.EventResult{}, false

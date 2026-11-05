@@ -70,6 +70,8 @@ type savedState struct {
 	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
 	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
+	AIComposerHeight           float32             `json:"ai_composer_height,omitempty"`
+	MonitorPanelWidth          float32             `json:"monitor_panel_width,omitempty"`
 	WindowX                    int                 `json:"window_x,omitempty"`
 	WindowY                    int                 `json:"window_y,omitempty"`
 	WindowWidth                int                 `json:"window_width,omitempty"`
@@ -89,6 +91,7 @@ type savedState struct {
 	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
 	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
+	SFTPPanelWidth             float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder            string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode               string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns                string              `json:"sftp_columns,omitempty"`
@@ -114,6 +117,7 @@ type savedState struct {
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
 	SessionLogsView         *savedSessionLogsView `json:"session_logs_view,omitempty"`
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
+	LocalProxyPort          int                   `json:"local_proxy_port,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
 	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
 	Workspace               string                `json:"workspace,omitempty"`
@@ -429,6 +433,8 @@ func (state *State) snapshot() savedState {
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
+		AIComposerHeight:           state.ai.composerHeight,
+		MonitorPanelWidth:          state.monitorWidth,
 		TerminalSchemeDark:         state.terminalSchemes[appearanceDark],
 		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
 		TerminalPadding:            state.terminalPad.String(),
@@ -448,6 +454,7 @@ func (state *State) snapshot() savedState {
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
+		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
@@ -469,6 +476,9 @@ func (state *State) snapshot() savedState {
 		Forwards:                   make([]savedForward, 0, len(state.forwards)),
 		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
 		Sessions:                   make([]savedSession, 0, len(state.sessions)),
+	}
+	if state.localProxyPortSet {
+		saved.LocalProxyPort = int(state.localProxyPort)
 	}
 	if frame, ok := state.savedWindowFrame(); ok {
 		saved.WindowX = int(math.Round(float64(frame.X)))
@@ -531,7 +541,9 @@ func (state *State) snapshot() savedState {
 		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 	}
 	for _, identity := range state.identities {
-		saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
+		if !identity.Stored { // those live in the vault
+			saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
+		}
 	}
 	for _, forward := range state.forwards {
 		saved.Forwards = append(saved.Forwards, savedForward{
@@ -735,6 +747,12 @@ func (state *State) restoreLocal(saved savedState) {
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
 	state.restoreSessionLogsView(saved.SessionLogsView)
+	state.localProxyPort = defaultLocalProxyPort
+	state.localProxyPortSet = false
+	if saved.LocalProxyPort >= 1 && saved.LocalProxyPort <= 65535 {
+		state.localProxyPort = uint16(saved.LocalProxyPort)
+		state.localProxyPortSet = true
+	}
 	// The saved editor is read as it is: a value this build does not know stays
 	// unknown rather than becoming another editor.
 	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))
@@ -774,6 +792,15 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
 	state.ai.panelWidth = saved.AIPanelWidth
+	if saved.AIComposerHeight > 0 {
+		state.ai.composerHeight = saved.AIComposerHeight
+	}
+	if saved.MonitorPanelWidth >= layoutcore.MinMonitorWidth && saved.MonitorPanelWidth <= layoutcore.MaxMonitorWidth {
+		state.monitorWidth = saved.MonitorPanelWidth
+	}
+	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
+		state.sftpPanelWidth = saved.SFTPPanelWidth
+	}
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)
 	state.restoreSync(saved.Sync)

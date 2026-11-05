@@ -7,6 +7,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"net"
 	"time"
 )
@@ -180,6 +181,51 @@ type Session interface {
 	// Close ends the connection. It is safe to call more than once.
 	Close() error
 }
+
+// FileClipboard is a Session that can give files from this computer to the
+// remote system's clipboard, so that the remote user pastes them: RDP does, as
+// a clipboard file transfer; VNC has no such transfer and does not implement it.
+type FileClipboard interface {
+	Session
+	// SetClipboardFiles makes the files and folders at paths what the remote
+	// clipboard holds. The list is made before it returns, which walks folders, so
+	// a caller does not call it from a goroutine that paints. What the remote then
+	// pastes is read from this computer when it does. The error is one of the
+	// Err values below or a failure of the connection; the FileOffer comes back
+	// with it so the path that caused it can be named.
+	SetClipboardFiles(paths []string) (FileOffer, error)
+}
+
+// FileOffer says what SetClipboardFiles put on the remote clipboard.
+type FileOffer struct {
+	// Files and Folders count what is offered; Bytes is the total size of the files.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts what could not be offered (links, devices, files the server
+	// cannot take, unreadable entries) and FirstSkipped names the first. With an
+	// error, FirstSkipped names the path that caused it.
+	Skipped      int
+	FirstSkipped string
+}
+
+// Why SetClipboardFiles refuses.
+var (
+	// ErrFilesUnsupported: the server does not take files through the clipboard.
+	ErrFilesUnsupported = errors.New("the remote system does not take files through the clipboard")
+	// ErrClipboardOff: the host shares no clipboard.
+	ErrClipboardOff = errors.New("clipboard sharing is off for this host")
+	// ErrClipboardNotReady: the clipboard channel is still starting.
+	ErrClipboardNotReady = errors.New("the clipboard channel is not ready")
+	// ErrNothingToOffer: none of the paths can be offered.
+	ErrNothingToOffer = errors.New("there is nothing to offer")
+	// ErrTooManyFiles: the selection is larger than one offer holds (MaxOfferFiles).
+	ErrTooManyFiles = errors.New("the selection holds too many files")
+	// ErrPathTooLong: a path inside the selection does not fit what the remote can name.
+	ErrPathTooLong = errors.New("a path in the selection is too long")
+)
+
+// MaxOfferFiles is the most files and folders one offer holds, as RDP counts them.
+const MaxOfferFiles = 20000
 
 // Resizer is a Session whose server changes the desktop's size while the
 // session runs, so that the picture can be kept the size of the pane and shown

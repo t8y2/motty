@@ -120,12 +120,20 @@ func (state *State) cycleWindowTabs(delta int) bool {
 	return state.activateSFTPTabAt(next - len(state.workspaceTabs))
 }
 
+// topTabCount is how many tabs the number shortcuts can reach: the workspace
+// tabs on the tab bar, in the order the bar shows them, then the file tabs.
+func (state *State) topTabCount() int {
+	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
+	return len(state.visualWorkspaceTabs()) + len(state.sftpTabs)
+}
+
 func (state *State) activateTopTab(index int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	if index < len(state.workspaceTabs) {
+	tabs := state.visualWorkspaceTabs()
+	if index < len(tabs) {
 		return state.activateTab(index)
 	}
-	return state.activateSFTPTabAt(index - len(state.workspaceTabs))
+	return state.activateSFTPTabAt(index - len(tabs))
 }
 
 func (state *State) requestCloseSFTPTab(w *sftpWindow) {

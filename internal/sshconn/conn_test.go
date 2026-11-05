@@ -426,6 +426,71 @@ func TestTheBannerGuessIsNotReportedWhileTheHostIsBeingAsked(t *testing.T) {
 	}
 }
 
+// A probe whose command never answers must cost the host its badge, not its
+// connection. The session is left open when the timeout expires: closing a
+// session whose command still runs ends the whole connection on a minimal
+// server such as dropbear, and the shell beside it with it.
+func TestAProbeThatNeverAnswersLeavesTheConnectionAlone(t *testing.T) {
+	hang := make(chan struct{})
+	probed := make(chan ssh.Channel, 1)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// An OpenSSH banner naming Debian is a guess the host is asked about.
+		server.version = "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u7"
+		server.execChannel = func(channel ssh.Channel) { probed <- channel }
+		server.exec = func(string) (string, uint32) {
+			<-hang
+			return "", 0
+		}
+		server.shell = echoShell
+	})
+	t.Cleanup(func() { close(hang) })
+	h := connect(t, server)
+	// The probe gives up at its timeout, and the banner's guess is published as
+	// one: the host was asked and did not answer.
+	status := h.until("the banner's guess", func(status Status) bool {
+		return status.System == SystemDebian
+	})
+	if !status.SystemProvisional {
+		t.Fatal("an unanswered guess was published as confirmed")
+	}
+	// A channel the client closed cannot be written to, so this is what tells a
+	// session left to the connection from one closed while its command ran. The
+	// close is a message in flight, hence the wait.
+	channel := <-probed
+	for deadline := time.Now().Add(500 * time.Millisecond); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if _, err := channel.Write([]byte{0}); err != nil {
+			t.Fatalf("the probe closed a session whose command was still running: %v", err)
+		}
+	}
+	// The connection still carries a shell.
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+}
+
+// recorderCloser records that it was released.
+type recorderCloser struct{ closed bool }
+
+func (closer *recorderCloser) Close() error { closer.closed = true; return nil }
+
+// TestACloserRegisteredAfterTheDrainIsReleasedAtOnce covers the race the probe
+// leaves open: a session handed to the connection just as it closes must still
+// be released, or "released with the connection" is only luck.
+func TestACloserRegisteredAfterTheDrainIsReleasedAtOnce(t *testing.T) {
+	conn := &Conn{}
+	before := &recorderCloser{}
+	conn.addCloser(before)
+	conn.closeAuxiliary()
+	if !before.closed {
+		t.Fatal("a closer registered before the drain was never released")
+	}
+	after := &recorderCloser{}
+	conn.addCloser(after)
+	if !after.closed {
+		t.Fatal("a closer registered after the drain was never released")
+	}
+}
+
 func TestKeyboardInteractiveSingleHiddenQuestionUsesThePasswordPrompt(t *testing.T) {
 	server := startServer(t, func(s *testServer) { s.question = "Verification code: "; s.password = "123456" })
 	h := dial(t, server, nil)
@@ -804,5 +869,56 @@ func TestUnusableIdentityIsReportedWithItsReason(t *testing.T) {
 	status := h.phase(PhasePasswordPrompt)
 	if len(status.Skipped) != 1 || !strings.HasPrefix(status.Skipped[0], path+" (") {
 		t.Fatalf("skipped = %q, want only the unreadable key and its reason", status.Skipped)
+	}
+}
+
+func TestStoredKeyAuthenticatesAndAsksForItsPassphraseUnderItsName(t *testing.T) {
+	_, private := newPrivate(t)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ref = StoredKeyPrefix + "work"
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{signer.PublicKey()}; s.password = "unused" })
+	var asked []string
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.StoredKey = func(name string) ([]byte, error) {
+			asked = append(asked, name)
+			return pemEncode(block), nil
+		}
+	})
+	if status := h.phase(PhaseHostKeyPrompt); len(asked) != 0 || status.IdentityPath != "" {
+		t.Fatalf("a stored key was read before the host was trusted: %v", asked)
+	}
+	h.conn.TrustHostKey(false)
+	if prompt := h.phase(PhaseKeyPassphrasePrompt); prompt.IdentityPath != ref {
+		t.Fatalf("prompt names %q, want the stored key's reference", prompt.IdentityPath)
+	}
+	h.conn.SubmitKeyPassphrase("locked")
+	if connected := h.phase(PhaseConnected); connected.Method != "publickey" {
+		t.Fatalf("method = %q", connected.Method)
+	}
+}
+
+func TestMissingStoredKeyIsReportedNotSilentlySkipped(t *testing.T) {
+	_, otherSigner := writeKey(t, t.TempDir())
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{otherSigner.PublicKey()}; s.password = "pw" })
+	const ref = StoredKeyPrefix + "gone"
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.StoredKey = func(string) ([]byte, error) { return nil, errors.New("not saved") }
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	status := h.phase(PhasePasswordPrompt)
+	if len(status.Skipped) != 1 || !strings.Contains(status.Skipped[0], ref) || !strings.Contains(status.Skipped[0], "not saved") {
+		t.Fatalf("skipped = %v", status.Skipped)
 	}
 }

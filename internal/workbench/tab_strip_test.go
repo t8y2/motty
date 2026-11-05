@@ -98,6 +98,28 @@ func TestWheelOverTheTabsScrollsThemAndOnlyThere(t *testing.T) {
 	}
 }
 
+func TestTabShowsFullTitleAsHoverHintWhenLabelIsElided(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	const longTitle = "production-db-replica-01 · /var/lib/postgresql/16/main/data"
+	id, _, err := state.deck.Create(longTitle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.deck.ActivateWorkspace(id)
+	state.activeSessionID = 0
+	state.activeSection = sectionTerminal
+	state.rebuildTabOptions()
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 600, Height: 900})
+	hit, ok := hitByID(&canvas, hitTabList.At(int(id)))
+	if !ok {
+		t.Fatal("the tab is not painted")
+	}
+	if hit.Hint != longTitle {
+		t.Fatalf("hovering the tab should show its full title, got hint %q want %q", hit.Hint, longTitle)
+	}
+}
+
 func TestActivatingATabScrollsItIntoView(t *testing.T) {
 	state, _ := manyTabs(t, 30)
 	state.Scroll(ui.ScrollEvent{X: state.tabStrip.area.X, Y: 10, DeltaX: -100000})
@@ -110,5 +132,27 @@ func TestActivatingATabScrollsItIntoView(t *testing.T) {
 	hit, ok := hitByID(&canvas, hitTabList.At(int(first)))
 	if !ok || hit.Bounds.X < state.tabStrip.area.X || hit.Bounds.X+hit.Bounds.Width > state.tabStrip.area.X+state.tabStrip.area.Width+0.5 {
 		t.Fatalf("the activated tab is not fully visible: %+v in %+v (%v)", hit.Bounds, state.tabStrip.area, ok)
+	}
+}
+
+func TestTabClickRegionReachesTheWindowTopEdge(t *testing.T) {
+	state, canvas := manyTabs(t, 3)
+	for _, tab := range state.workspaceTabs {
+		hit, ok := hitByID(canvas, hitTabList.At(int(tab.ID)))
+		if !ok {
+			t.Fatalf("tab %d is not painted", tab.ID)
+		}
+		if hit.Bounds.Y > 0 || hit.Bounds.Y+hit.Bounds.Height < windowBarHeight {
+			t.Fatalf("tab %d click region %+v leaves a gap against the top edge or the content below the bar", tab.ID, hit.Bounds)
+		}
+	}
+}
+
+func TestNewTabButtonSitsOnTheTabsCentreLine(t *testing.T) {
+	state, canvas := manyTabs(t, 2)
+	plus, _ := hitByID(canvas, hitNewTab)
+	tab, _ := hitByID(canvas, hitTabList.At(int(state.workspaceTabs[0].ID)))
+	if plus.Bounds.Y+plus.Bounds.Height/2 != tab.Bounds.Y+tab.Bounds.Height/2 {
+		t.Fatalf("new-tab button %+v is off the tabs' centre line %+v", plus.Bounds, tab.Bounds)
 	}
 }

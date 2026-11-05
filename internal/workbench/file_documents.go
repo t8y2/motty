@@ -82,6 +82,7 @@ type fileDocument struct {
 	revision                         sftpclient.Revision
 	format                           filecontent.Format
 	editor                           text.Editor
+	edit                             documentEditing
 	original, pending                string
 	image                            *filecontent.Image
 	ready, busy, closed              bool
@@ -304,6 +305,7 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 		d.format = filecontent.Format{}
 		d.original = ""
 		d.editor = text.Editor{}
+		d.ui.code = components.CodeEditor{}
 		d.status = d.owner.messages.FileWindow.ChooseEncoding
 		return
 	}
@@ -312,9 +314,7 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 		return
 	}
 	d.format, d.original = decoded.Format, decoded.Value
-	d.editor = text.Editor{}
-	d.editor.Insert(decoded.Value)
-	d.ui.code.Layout = components.TextareaLayout{}
+	d.loadEditor(decoded.Value)
 	d.status = d.owner.messages.FileWindow.Ready
 	if d.image != nil {
 		d.status = d.owner.messages.FileWindow.ReadOnly
