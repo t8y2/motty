@@ -464,15 +464,29 @@ func (view *desktopView) remoteHolds(event desktop.KeyEvent, except int) bool {
 	return false
 }
 
-// press sends a key going down once; a key that is already down is the system's
-// repeat, which the remote makes for itself while it holds the key.
+// press sends a key going down. A press that repeats a key already down is sent
+// again with Repeat set: RDP servers do not repeat a key they see held, and a
+// backend whose server does repeat it ignores the flag. A repeat whose first
+// press went to a shortcut of Motty's is not sent, because the remote never had
+// the key down.
 func (view *desktopView) press(local ui.Key, text string, event desktop.KeyEvent) {
-	if view.holding(local, text) >= 0 {
+	index := view.holding(local, text)
+	if index < 0 {
+		if event.Repeat {
+			return
+		}
+		view.held = append(view.held, heldKey{local: local, text: text, remote: event})
+		event.Down = true
+		_ = view.session.SendKey(event)
 		return
 	}
-	view.held = append(view.held, heldKey{local: local, text: text, remote: event})
-	event.Down = true
-	_ = view.session.SendKey(event)
+	if !event.Repeat {
+		return
+	}
+	repeat := view.held[index].remote
+	repeat.Down = true
+	repeat.Repeat = true
+	_ = view.session.SendKey(repeat)
 }
 
 // release sends the end of a key that press sent, and nothing for any other.
@@ -657,7 +671,7 @@ func (state *State) desktopKey(session *Session, event ui.KeyEvent) ui.EventResu
 		if event.Release {
 			view.release(event.Key, event.Text)
 		} else {
-			view.press(event.Key, event.Text, desktop.KeyEvent{Key: modifier})
+			view.press(event.Key, event.Text, desktop.KeyEvent{Key: modifier, Repeat: event.Repeat})
 		}
 		return ui.EventResult{Handled: true}
 	}
@@ -669,6 +683,7 @@ func (state *State) desktopKey(session *Session, event ui.KeyEvent) ui.EventResu
 		if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) != 0 && key.Rune == 'v' {
 			state.syncClipboard(view)
 		}
+		key.Repeat = event.Repeat
 		view.press(event.Key, event.Text, key)
 	}
 	return ui.EventResult{Handled: true}

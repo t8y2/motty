@@ -5172,14 +5172,18 @@ func (c *Client) Done() <-chan struct{} {
 	return done
 }
 
-// SendKeyboard sends a keyboard event
-func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
+// SendKeyboard sends a keyboard event. repeat marks a press of a key the server
+// already has down, the client's auto-repeat: a server does not repeat a held
+// key by itself, so every repeat is sent again with that flag.
+func (c *Client) SendKeyboard(scancode uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	// Motty divergence: a scancode of the form 0xE0xx is the extended key xx
 	// (arrows, Home, the Windows key); upstream dropped the extended flag.
@@ -5196,14 +5200,17 @@ func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
 
 // SendUnicode sends a Unicode keyboard event (TS_UNICODE_KEYBOARD_EVENT,
 // MS-RDPBCGR 2.2.8.1.1.3.1.1.1). Use this for characters that don't map
-// to a physical scancode (e.g. accented characters, CJK, emoji).
-func (c *Client) SendUnicode(codepoint uint16, pressed bool) error {
+// to a physical scancode (e.g. accented characters, CJK, emoji). repeat marks a
+// press of a character the server already has down.
+func (c *Client) SendUnicode(codepoint uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	var buf [pdu.InputPDUHeaderSize + pdu.UnicodeEventSize]byte
 	payload := pdu.AppendInputPDUHeader(buf[:0], 1)

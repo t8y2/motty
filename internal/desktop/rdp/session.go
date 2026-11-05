@@ -540,7 +540,8 @@ func (session *Session) SendWheel(x, y int, wheel desktop.Wheel, _ desktop.Butto
 }
 
 // SendKey sends a key as a scancode. A character that has no key on a US
-// keyboard is sent as a Unicode event instead.
+// keyboard is sent as a Unicode event instead. The server does not repeat a key
+// it sees held, so a repeat of a key that is still down is sent again as such.
 func (session *Session) SendKey(event desktop.KeyEvent) error {
 	if event.Rune == 0 {
 		code := keyCode(event.Key)
@@ -552,7 +553,7 @@ func (session *Session) SendKey(event desktop.KeyEvent) error {
 			session.shift = event.Down
 			session.mu.Unlock()
 		}
-		return session.client.SendKeyboard(code, event.Down)
+		return session.client.SendKeyboard(code, event.Down, event.Repeat)
 	}
 	if code, ok := runeCode(event.Rune); ok {
 		session.mu.Lock()
@@ -562,35 +563,35 @@ func (session *Session) SendKey(event desktop.KeyEvent) error {
 		// way (a layout where it is unshifted) Shift is not, and is added.
 		addShift := code.shift && !shift
 		if addShift && event.Down {
-			if err := session.client.SendKeyboard(0x2A, true); err != nil {
+			if err := session.client.SendKeyboard(0x2A, true, event.Repeat); err != nil {
 				return err
 			}
 		}
-		err := session.client.SendKeyboard(code.code, event.Down)
+		err := session.client.SendKeyboard(code.code, event.Down, event.Repeat)
 		if addShift && !event.Down {
-			if releaseErr := session.client.SendKeyboard(0x2A, false); err == nil {
+			if releaseErr := session.client.SendKeyboard(0x2A, false, false); err == nil {
 				err = releaseErr
 			}
 		}
 		return err
 	}
-	return session.typeRune(event.Rune, event.Down)
+	return session.typeRune(event.Rune, event.Down, event.Repeat)
 }
 
 // typeRune sends one character as Unicode events (a surrogate pair above the
 // Basic Multilingual Plane), a press or a release.
-func (session *Session) typeRune(r rune, down bool) error {
+func (session *Session) typeRune(r rune, down, repeat bool) error {
 	if r < 0x20 || r == 0x7f || r > 0x10ffff {
 		return nil
 	}
 	high, low := utf16.EncodeRune(r)
 	if high == 0xFFFD && low == 0xFFFD { // in the BMP
-		return session.client.SendUnicode(uint16(r), down)
+		return session.client.SendUnicode(uint16(r), down, repeat)
 	}
-	if err := session.client.SendUnicode(uint16(high), down); err != nil {
+	if err := session.client.SendUnicode(uint16(high), down, repeat); err != nil {
 		return err
 	}
-	return session.client.SendUnicode(uint16(low), down)
+	return session.client.SendUnicode(uint16(low), down, repeat)
 }
 
 func (session *Session) SendText(text string) error {
@@ -600,18 +601,18 @@ func (session *Session) SendText(text string) error {
 			return errors.New("rdp: text too long to type")
 		}
 		if r == '\n' {
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), true); err != nil {
+			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), true, false); err != nil {
 				return err
 			}
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), false); err != nil {
+			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), false, false); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := session.typeRune(r, true); err != nil {
+		if err := session.typeRune(r, true, false); err != nil {
 			return err
 		}
-		if err := session.typeRune(r, false); err != nil {
+		if err := session.typeRune(r, false, false); err != nil {
 			return err
 		}
 	}

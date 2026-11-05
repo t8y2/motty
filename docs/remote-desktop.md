@@ -49,8 +49,10 @@ type Session interface {
   page's paint. Nothing polls and an idle desktop schedules no frame.
 * Keys go down and up as the keyboard does it (Viva's `TextInput.KeyReleases`):
   a key is down on the remote while it is down here, modifiers are keys of their
-  own, so Shift-click and a held Ctrl work, and a key's auto-repeat is not sent
-  again (the remote repeats a key it sees held). Whatever is still down when the
+  own, so Shift-click and a held Ctrl work, and a key's auto-repeat reaches the
+  remote: an RDP server does not repeat a held key by itself, so each repeat is
+  sent with the key marked already down (`KBD_FLAGS_DOWN`), while a VNC server
+  repeats the key itself and is sent it once. Whatever is still down when the
   window loses focus, the tab is hidden, the keyboard is released with
   `Ctrl+Alt+G` or the connection ends is released first. A backend maps `Key`/`Rune` to its own vocabulary (VNC: X11
   keysyms, `internal/desktop/vnc/keysym.go`; RDP: scancodes or Unicode events).

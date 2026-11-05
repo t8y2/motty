@@ -501,6 +501,11 @@ func TestThePasteShortcutPastesFilesOnTheRemote(t *testing.T) {
 	if result := state.Shortcut(held); result.Handled || len(remote.keys) != pressed {
 		t.Fatalf("a held paste shortcut pasted again: %+v, %d keys", result, len(remote.keys))
 	}
+	// The repeat that is not the shortcut's falls through to the key path; the
+	// press it repeats was never sent, so it must not reach the remote either.
+	if result := state.Key(held); !result.Handled || len(remote.keys) != pressed {
+		t.Fatalf("a repeat of a paste that never reached the remote was sent: %+v, %d keys", result, len(remote.keys))
+	}
 
 	// With nothing but text on the clipboard it is the text system's paste.
 	paths, clipboardText = nil, "plain"
