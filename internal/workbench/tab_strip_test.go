@@ -134,3 +134,16 @@ func TestActivatingATabScrollsItIntoView(t *testing.T) {
 		t.Fatalf("the activated tab is not fully visible: %+v in %+v (%v)", hit.Bounds, state.tabStrip.area, ok)
 	}
 }
+
+func TestTabClickRegionReachesTheWindowTopEdge(t *testing.T) {
+	state, canvas := manyTabs(t, 3)
+	for _, tab := range state.workspaceTabs {
+		hit, ok := hitByID(canvas, hitTabList.At(int(tab.ID)))
+		if !ok {
+			t.Fatalf("tab %d is not painted", tab.ID)
+		}
+		if hit.Bounds.Y > 0 || hit.Bounds.Y+hit.Bounds.Height < windowBarHeight {
+			t.Fatalf("tab %d click region %+v leaves a gap against the top edge or the content below the bar", tab.ID, hit.Bounds)
+		}
+	}
+}
