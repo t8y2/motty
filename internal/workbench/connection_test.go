@@ -43,6 +43,7 @@ type fakeConn struct {
 	listen            func(string, string) (net.Listener, error)
 	listenCalls       []fakeListenCall
 	runCommand        func(context.Context, string, int) ([]byte, error)
+	exec              func(context.Context, string, int) (sshconn.ExecResult, error)
 	streamCommand     func(context.Context, string, int, func([]byte) bool) error
 	commandCalls      []string
 }
@@ -115,6 +116,20 @@ func (fake *fakeConn) Listen(network, address string) (net.Listener, error) {
 	return listen(network, address)
 }
 
+func (fake *fakeConn) ListenContext(ctx context.Context, network, address string, check func(net.Listener) error) (net.Listener, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	listener, err := fake.Listen(network, address)
+	if err == nil && check != nil {
+		if err = check(listener); err != nil {
+			_ = listener.Close()
+			return nil, err
+		}
+	}
+	return listener, err
+}
+
 func (fake *fakeConn) RunCommand(ctx context.Context, command string, limit int) ([]byte, error) {
 	fake.mu.Lock()
 	fake.commandCalls = append(fake.commandCalls, command)
@@ -124,6 +139,17 @@ func (fake *fakeConn) RunCommand(ctx context.Context, command string, limit int)
 		return nil, errors.New("test command runner is not configured")
 	}
 	return run(ctx, command, limit)
+}
+
+func (fake *fakeConn) Exec(ctx context.Context, command string, limit int) (sshconn.ExecResult, error) {
+	fake.mu.Lock()
+	fake.commandCalls = append(fake.commandCalls, command)
+	exec := fake.exec
+	fake.mu.Unlock()
+	if exec == nil {
+		return sshconn.ExecResult{}, errors.New("test command executor is not configured")
+	}
+	return exec(ctx, command, limit)
 }
 
 func (fake *fakeConn) StreamCommand(ctx context.Context, command string, limit int, line func([]byte) bool) error {

@@ -2,6 +2,7 @@ package sshconn
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
+	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -67,6 +69,8 @@ type Shell struct {
 	x11Err error
 
 	agentForwardErr error
+
+	kind shellkind.Kind
 }
 
 // OpenShell starts the user's login shell on a pty. The connection must be
@@ -83,9 +87,21 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	if command == "" && config.IntegrateShell && standardImplementation(conn.Status().ServerVersion) {
 		command = conn.shellIntegrationCommand(config.IntegrationToken)
 	}
+	// What the shell is decides how a command can be typed into it. The
+	// integration command starts Bash or Zsh; a command of the user's own starts
+	// something nobody can name from here; otherwise the server's default shell
+	// answers a probe, which only an implementation the banner names gets.
+	kind := shellkind.Unknown
+	switch {
+	case config.Command != "":
+	case command != "":
+		kind = shellkind.POSIX
+	case standardImplementation(conn.Status().ServerVersion):
+		kind = conn.defaultShellKind(client)
+	}
 	session, err := client.NewSession()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open session: %w", err)
 	}
 	// A gateway with its own menu may end the connection on an env request it
 	// does not implement, before the shell ever starts, so only a standard
@@ -102,9 +118,9 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
 	if err := session.RequestPty(term, max(config.Rows, 1), max(config.Cols, 1), modes); err != nil {
 		session.Close()
-		return nil, err
+		return nil, fmt.Errorf("request pty: %w", err)
 	}
-	shell := &Shell{session: session, notify: config.Notify, done: make(chan struct{})}
+	shell := &Shell{session: session, notify: config.Notify, done: make(chan struct{}), kind: kind}
 	if config.X11 != nil {
 		shell.x11, shell.x11Err = conn.requestX11(session, *config.X11)
 	}
@@ -125,7 +141,7 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	if err != nil {
 		shell.releaseX11()
 		session.Close()
-		return nil, err
+		return nil, fmt.Errorf("open stdin: %w", err)
 	}
 	var startErr error
 	if command == "" {
@@ -140,7 +156,10 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 			config.IntegrateShell = false
 			return conn.OpenShell(config)
 		}
-		return nil, startErr
+		if command == "" {
+			return nil, fmt.Errorf("start shell: %w", startErr)
+		}
+		return nil, fmt.Errorf("start command: %w", startErr)
 	}
 	go shell.sendLoop(stdin)
 	go func() {
@@ -171,6 +190,10 @@ func (shell *Shell) wake() {
 		shell.notify()
 	}
 }
+
+// Kind is the family of the shell the session runs, Unknown when it could not be
+// learned.
+func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
 
 // Done is closed once the remote shell has ended and its output is complete in
 // the buffer Drain reads from.

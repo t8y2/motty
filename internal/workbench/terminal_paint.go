@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -143,6 +144,16 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		filesHint = state.messages.TipFilesLocal
 	}
 	tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
+	if state.localProxyActionVisible(session) {
+		tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title}
+		if snapshot := state.localProxySnapshot(session); snapshot.Phase != localProxyDisconnected {
+			tool.style = iconButtonActive
+			if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {
+				tool.hint = fmt.Sprintf(state.messages.LocalProxy.ConnectedFmt, snapshot.RemotePort)
+			}
+		}
+		tools = append(tools, tool)
+	}
 	tools = append(tools, barTool{id: hitConnExport, icon: iconFileDown, hint: state.messages.ConnExportLog, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitTerminalRecordingExport, icon: iconFilm, hint: state.messages.RecordingExport, disabled: len(session.term.recording.events) == 0, style: iconButtonQuiet})
 	recordIcon, recordHint, recordStyle := uint8(iconRecord), state.messages.TipRecordStart, iconButtonQuiet
@@ -162,6 +173,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
 	verticalDisabled := managed && !state.canSplitActivePane(layoutcore.Vertical)
 	horizontalDisabled := managed && !state.canSplitActivePane(layoutcore.Horizontal)
+	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconNote, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
 	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
 	if inSplit && !managed {

@@ -171,42 +171,44 @@ var darkPalette = palette{
 	},
 }
 
-// lightPalette is daylight: a cool gray chrome around white content, with the
-// same near-black accent the dark palette inverts. It is meant to sit quietly
-// beside other light windows rather than to carry a tint of its own.
+// lightPalette is daylight, kept off pure white: every ground sits a few steps
+// below 255 so a large light window does not glare, and the content stays one
+// step lighter than the chrome around it. The ink is the same near-black accent
+// the dark palette inverts, a little softened. It is meant to sit quietly beside
+// other light windows rather than to carry a tint of its own.
 var lightPalette = palette{
 	dark: false,
 
-	shell:        ui.RGB(239, 239, 242),
-	workspace:    ui.RGB(246, 246, 248),
-	surface:      ui.RGB(255, 255, 255),
-	surfaceSoft:  ui.RGB(241, 241, 244),
-	surfaceHot:   ui.RGB(227, 227, 231),
-	line:         ui.RGB(232, 232, 236),
-	windowStroke: ui.RGB(214, 214, 219),
-	terminal:     ui.RGB(250, 250, 252),
-	tab:          ui.RGB(245, 245, 247),
-	tabHover:     ui.RGB(249, 249, 251),
-	tabActive:    ui.RGB(255, 255, 255),
-	tabCloseHot:  ui.RGB(236, 236, 240),
+	shell:        ui.RGB(231, 231, 235),
+	workspace:    ui.RGB(240, 240, 243),
+	surface:      ui.RGB(248, 248, 250),
+	surfaceSoft:  ui.RGB(235, 235, 239),
+	surfaceHot:   ui.RGB(221, 221, 226),
+	line:         ui.RGB(220, 220, 225),
+	windowStroke: ui.RGB(204, 204, 210),
+	terminal:     ui.RGB(244, 244, 247),
+	tab:          ui.RGB(238, 238, 241),
+	tabHover:     ui.RGB(243, 243, 246),
+	tabActive:    ui.RGB(248, 248, 250),
+	tabCloseHot:  ui.RGB(228, 228, 233),
 
-	text:  ui.RGB(29, 29, 31),
-	muted: ui.RGB(107, 107, 112),
-	faint: ui.RGB(141, 141, 146),
+	text:  ui.RGB(38, 38, 42),
+	muted: ui.RGB(94, 94, 100),
+	faint: ui.RGB(134, 134, 140),
 
-	accent:     ui.RGB(29, 29, 31),
+	accent:     ui.RGB(38, 38, 42),
 	accentHot:  ui.RGB(0, 0, 0),
-	accentSoft: ui.RGB(233, 233, 237),
-	onAccent:   ui.RGB(255, 255, 255),
+	accentSoft: ui.RGB(226, 226, 231),
+	onAccent:   ui.RGB(248, 248, 250),
 
 	success: ui.RGB(21, 145, 71),
-	warning: ui.RGB(161, 98, 7),
+	warning: ui.RGB(150, 90, 4),
 	danger:  ui.RGB(214, 40, 40),
 
-	cursor: ui.RGB(29, 29, 31),
-	termFG: ui.RGB(29, 29, 31),
+	cursor: ui.RGB(38, 38, 42),
+	termFG: ui.RGB(38, 38, 42),
 	ansi: [16][3]uint8{
-		{30, 30, 32}, {205, 49, 49}, {22, 130, 70}, {152, 104, 0},
+		{38, 38, 42}, {205, 49, 49}, {22, 130, 70}, {152, 104, 0},
 		{36, 98, 198}, {160, 60, 170}, {0, 128, 140}, {110, 110, 112},
 		{130, 130, 133}, {230, 70, 70}, {20, 160, 80}, {190, 130, 0},
 		{66, 128, 232}, {188, 90, 200}, {20, 150, 164}, {90, 90, 92},

@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -156,10 +158,15 @@ var (
 
 // Key management: its page and the rows of its table.
 var (
-	hitKeysImport     = tree.ID(keysHits, "keys-import")
-	hitKeysRemove     = tree.ID(keysHits, "keys-remove")
-	hitKeysPassphrase = tree.ID(keysHits, "keys-passphrase")
-	hitKeyRowList     = tree.Sub(keysHits, tree.Name("key-row"))
+	hitKeysAdd         = tree.ID(keysHits, "keys-add")
+	hitKeysMenuDismiss = tree.ID(keysHits, "keys-menu-dismiss")
+	hitKeysImport      = tree.ID(keysHits, "keys-import")
+	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
+	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
+	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
+	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
+	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
 
 // Local forwarding: its page and dialog.
@@ -301,8 +308,10 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -427,6 +436,8 @@ type State struct {
 	hostCatalog
 	fileWindows       fileWindowManager
 	fileNotices       fileNotices
+	revealResults     chan revealResult
+	revealBusy        bool // only the window thread changes it; a worker returns over revealResults
 	inputConfirmation terminalInputConfirmation
 	// reveal is which password fields show their text rather than bullets.
 	reveal      secretReveal
@@ -512,6 +523,7 @@ type State struct {
 	hostTreeRows       []hostTreeRow
 	hostsScroll        float32
 	tabDrag            tabDrag
+	tabPreview         tabPreview
 	foreign            tabDrag // another window's tab being dragged over this one
 	frame              func() (ui.Rect, bool)
 	windowVisible      func() bool
@@ -522,29 +534,33 @@ type State struct {
 	hostsContent       float32
 	hostGroupMenu      bool
 	importMenu         bool
-	hostsBounds        ui.Rect // the hosts page as last painted; the menus anchor to it
-	terminalMenu       terminalMenu
-	hostGroupEditor    text.Editor
-	groupActions       hostGroupActions
-	tabRename          tabRename
-	tabsClose          tabsClose
-	sessionLink        sessionLink
-	hostDialogMode     hostDialogMode
-	hostDialogID       uint32
-	ruleDelete         ruleDelete
-	hostTest           hostTest
-	hostDialogText     string
-	identityCountText  string
-	forwardCountText   string
-	forwardStarts      chan forwardStartResult
-	proxyCountText     string
-	hostImportResult   hostImportResult
-	sessionImport      sessionImportPreview
-	mobaEncoding       mobaEncodingPrompt
-	knownHosts         knownHostsView
-	knownHostsLayout   flex.View
-	settingsRow        flex.View
-	partLayout         flex.View // a dialog body, a host card or a group header: one at a time
+	// keysMenu is the open menu under the Keychain page's Add Key button, and
+	// keysAddButton where that button was painted.
+	keysMenu          bool
+	keysAddButton     ui.Rect
+	hostsBounds       ui.Rect // the hosts page as last painted; the menus anchor to it
+	terminalMenu      terminalMenu
+	hostGroupEditor   text.Editor
+	groupActions      hostGroupActions
+	tabRename         tabRename
+	tabsClose         tabsClose
+	sessionLink       sessionLink
+	hostDialogMode    hostDialogMode
+	hostDialogID      uint32
+	ruleDelete        ruleDelete
+	hostTest          hostTest
+	hostDialogText    string
+	identityCountText string
+	forwardCountText  string
+	forwardStarts     chan forwardStartResult
+	proxyCountText    string
+	hostImportResult  hostImportResult
+	sessionImport     sessionImportPreview
+	mobaEncoding      mobaEncodingPrompt
+	knownHosts        knownHostsView
+	knownHostsLayout  flex.View
+	settingsRow       flex.View
+	partLayout        flex.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
@@ -607,6 +623,7 @@ type State struct {
 	appearance          appearance
 	appearanceMode      appearanceMode
 	networkProxy        networkProxyMode
+	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	terminalOption      terminalOptionMode
 	recentConnectSort   bool
@@ -662,7 +679,9 @@ type State struct {
 	monitorResizeWorkspace layoutcore.WorkspaceID
 	monitorResizeSession   uint32
 	monitorMenuSession     uint32
+	monitorWidth           float32
 	sftpPanelSide          layoutcore.ContextSide
+	sftpPanelWidth         float32
 	sftpBookmarks          []sftpBookmark
 	sftpLocalBookmarks     []string
 	transferLeftover       []byte
@@ -769,9 +788,10 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout flex.View
 	// area: terminal and workspace panes
-	terminalPageLayout flex.View
-	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   flex.View
+	fontPickerListLayout flex.View
+	fontPickerLayout     flex.View // the font picker's list and sample
+	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
@@ -784,6 +804,7 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            flex.View
 	keysLayout            flex.View
+	paletteListLayout     flex.View
 	paletteLayout         flex.View
 	importLayout          flex.View
 	knownHostsTableLayout flex.View
@@ -838,7 +859,15 @@ type State struct {
 	// does not allocate its nodes.
 	sessionLogsLayout flex.View
 	// ai is the built-in assistant; see ai_state.go.
-	ai aiState
+	ai                 aiState
+	localProxyPort     uint16
+	localProxyPortSet  bool
+	localProxyUI       localProxyUI
+	localProxyOnce     sync.Once
+	localProxyFallback *localProxyManager
+	// callbacksClosed prevents process-owned workers from reading UI-thread
+	// close state when they wake windows after their owner has gone away.
+	callbacksClosed atomic.Bool
 }
 
 // Close releases connections, transfers, monitors, and forwards owned by this
@@ -847,7 +876,9 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.callbacksClosed.Store(true)
 	state.closed = true
+	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
 	state.remote.serial++
@@ -866,6 +897,7 @@ func (state *State) Close() {
 	}
 	state.closeCompletionWorkers()
 	state.stopUpdateCheck()
+	state.closeLocalProxySessions()
 	if state.options.Group != nil {
 		state.options.Group.leave(state)
 	}
@@ -913,6 +945,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
+		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
 		nextIdentityID:        1,
@@ -934,6 +967,8 @@ func New(options Options) *State {
 		terminalIntense:       defaultTerminalIntense,
 		shortcuts:             defaultShortcuts(),
 		terminalSchemes:       [2]string{defaultSchemeID, defaultSchemeID},
+		localProxyPort:        defaultLocalProxyPort,
+		lookupSystemProxy:     systemproxy.Lookup,
 		syncDelay:             syncDelayDefault,
 		syncRetryBase:         syncRetryBaseDefault,
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
@@ -1243,6 +1278,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitWorkspaceSaveName {
 			return &state.workspaceSave.name
 		}
+	case modalLocalProxy:
+		if hit == hitLocalProxyPort && !state.localProxyUIPortLocked() {
+			return &state.localProxyUI.port
+		}
 	}
 	if editor := state.terminalFindEditor(hit); editor != nil {
 		return editor
@@ -1448,12 +1487,24 @@ func (state *State) click(id ui.ID, feedback bool) {
 	case modalWorkspaceTemplateDelete:
 		state.clickWorkspaceTemplateDelete(id)
 		return
+	case modalLocalProxy:
+		state.clickLocalProxy(id)
+		return
 	}
 	if state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
+		return
+	}
+	if id == hitTerminalSnippets {
+		state.openSnippetPicker()
+		return
+	}
+	if id == hitLocalProxyOpen {
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		state.openLocalProxy(session)
 		return
 	}
 	if state.clickVerticalTabGroup(id) {
@@ -1685,6 +1736,7 @@ func (state *State) closeSession(id uint32) {
 	defer state.save()
 	defer memoryTrim.request()
 	session := &state.sessions[index]
+	state.leaveLocalProxy(session)
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)
@@ -1883,29 +1935,18 @@ func (state *State) syncVisible() {
 		return
 	}
 	state.visibleQuery, state.visibleHosts = query, len(state.hosts)
-	needle := strings.ToLower(strings.TrimSpace(query))
+	words := strings.Fields(strings.ToLower(query))
 	state.visible = state.visible[:0]
 	if state.visible == nil {
 		state.visible = make([]int, 0, len(state.hosts))
 	}
 	for index, host := range state.hosts {
-		if needle == "" || matchesHost(host, needle) {
+		if len(words) == 0 || matchesHost(host, words) {
 			state.visible = append(state.visible, index)
 		}
 	}
 	state.refreshHostSelection()
 	state.rebuildHostTreeRows()
-}
-
-// matchesHost reports whether needle (lower case) occurs in any text the host
-// shows.
-func matchesHost(host Host, needle string) bool {
-	for _, value := range [...]string{host.Label, host.Address, host.User, host.Group, host.Tags, host.Icon.String()} {
-		if strings.Contains(strings.ToLower(value), needle) {
-			return true
-		}
-	}
-	return false
 }
 
 // hostIsVisible reports whether the search box currently lets a host through.
@@ -2013,6 +2054,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 			return ui.EventResult{}
 		}
 		return ui.EventResult{Handled: true}
+	}
+	if result, handled := state.localProxyPointer(event); handled {
+		return result
 	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
@@ -2281,6 +2325,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if state.tabDrag.active && event.Key == ui.KeyEscape {
+		state.closeTabPreview()
 		state.tabDrag = tabDrag{}
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
@@ -2408,6 +2453,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.aiKey(event); handled {
 		return result
 	}
+	if result, handled := state.localProxyKey(event); handled {
+		return result
+	}
 	if result, handled := state.commandPaletteKey(event); handled {
 		return result
 	}
@@ -2427,6 +2475,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.hostManagementKey(event); handled {
+		return result
+	}
+	if result, handled := state.keysKey(event); handled {
 		return result
 	}
 	if state.modal == modalNewHost && event.Key == ui.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
@@ -2507,7 +2558,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitOutboundProxy()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil {
+	if state.modal == modalForm {
+		if result, handled := state.formKey(event); handled {
+			return result
+		}
+	}
+	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}

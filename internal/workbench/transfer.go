@@ -185,6 +185,9 @@ func (state *State) afterTransferFeed(session *Session) {
 	if engine.Settled() {
 		state.endTransfer(session)
 	}
+	// The progress above is the newest the engine has, and the desktop's bar
+	// follows this transfer as it follows the file panels'.
+	state.reportTransferProgress()
 }
 
 // takeTransferLeftover is the output that followed the end of the transfer.
@@ -233,6 +236,9 @@ func (state *State) endTransfer(session *Session) {
 		state.closeModal()
 	}
 	*transfer = fileTransfer{}
+	// A transfer can end without another byte arriving (declined, abandoned,
+	// or cancelled), and the desktop's bar has to hear about that too.
+	state.reportTransferProgress()
 }
 
 // pumpTransfer is run on every wake: it asks again when a transfer has gone

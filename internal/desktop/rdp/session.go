@@ -396,6 +396,33 @@ func (session *Session) SetClipboard(text string) error {
 	return session.client.SetClipboard(text)
 }
 
+// SetClipboardFiles offers files of this computer to the server's clipboard, as a
+// clipboard file transfer (see desktop.FileClipboard).
+func (session *Session) SetClipboardFiles(paths []string) (desktop.FileOffer, error) {
+	if !session.opts.Clipboard {
+		return desktop.FileOffer{}, desktop.ErrClipboardOff
+	}
+	offer, err := session.client.SetClipboardFiles(paths)
+	result := desktop.FileOffer{Files: offer.Files, Folders: offer.Folders, Bytes: offer.Bytes, Skipped: offer.Skipped, FirstSkipped: offer.FirstSkipped}
+	switch {
+	case err == nil:
+		return result, nil
+	case errors.Is(err, rdpcore.ErrClipboardFilesUnsupported):
+		return result, desktop.ErrFilesUnsupported
+	case errors.Is(err, rdpcore.ErrClipboardOff):
+		return result, desktop.ErrClipboardOff
+	case errors.Is(err, rdpcore.ErrClipboardNotReady):
+		return result, desktop.ErrClipboardNotReady
+	case errors.Is(err, rdpcore.ErrNothingToOffer):
+		return result, desktop.ErrNothingToOffer
+	case errors.Is(err, rdpcore.ErrTooManyFiles):
+		return result, desktop.ErrTooManyFiles
+	case errors.Is(err, rdpcore.ErrFileNameTooLong):
+		return result, desktop.ErrPathTooLong
+	}
+	return result, err
+}
+
 // onPointer records what the server last said about its pointer. It runs on
 // the connection's read goroutine.
 func (session *Session) onPointer(update *rdpcore.PointerUpdate) {

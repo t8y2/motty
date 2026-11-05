@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/readme-lockup.png" width="340" alt="Motty" />
 
-  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a></p>
 
   <p><strong>Motty: SSH, SFTP, port forwarding, VNC/RDP and an AI assistant in one native window.</strong></p>
 
@@ -129,7 +129,12 @@ failure.
 
 A native editor opens UTF-8 files up to 1 MiB, hashes the remote file before and
 after staging, and preserves permissions. Servers without SFTP can use the
-built-in SCP fallback.
+built-in SCP fallback. It edits code in a fixed-pitch grid with line numbers,
+syntax colors, bracket matching, soft wrap, auto-indent that follows the file's
+own tabs or spaces, paired brackets and quotes, Tab/Shift+Tab block indent,
+line comment toggling (Cmd/Ctrl+/), line move/copy/delete (Alt+Up/Down,
+Shift+Alt+Up/Down, Cmd/Ctrl+Shift+K), find and replace (Cmd/Ctrl+F, Ctrl+H) with
+case, whole-word and regular-expression options, and go to line (Ctrl+G).
 
 The panel's more menu can hand the folder it shows to VS Code or Zed through the
 editor's own URL scheme. Pick the editor under **Settings > Files**, which lists
@@ -165,7 +170,8 @@ Xauthority cookie.
 VNC supports RFB 3.3/3.7/3.8, None and VNC Authentication, Raw/CopyRect/RRE/
 Hextile/ZRLE, desktop resize, pointer, keyboard and text clipboard. RDP uses TLS
 with NLA preferred and pins the server certificate after an explicit trust
-decision. Both can connect through an SSH host when the server only listens on
+decision; it also copies files to the server (paste them in the remote or drop
+them on the picture). Both can connect through an SSH host when the server only listens on
 its own loopback. See [docs/remote-desktop.md](docs/remote-desktop.md) for the
 exact limits.
 

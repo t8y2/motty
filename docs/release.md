@@ -333,8 +333,12 @@ Every release carries the packages below for every platform and architecture:
 
 The macOS `.zip` holds the same signed bundle; it is what the
 in-app updater downloads, so a release without it would leave macOS unable to
-update in place. `viva package` staples the ticket to the `.dmg`, not to a
-bundle it also zips, so the zip's first launch checks the signature online.
+update in place. `viva package` notarizes the bundle and staples its ticket
+before the zip is written, so the app that comes out of the zip is accepted
+without asking Apple, which is what the updater's Gatekeeper check needs on a
+machine that is offline or cannot reach the notarization service; the `.dmg` is
+notarized and stapled separately, because the system judges the image itself
+when it is opened.
 
 The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
 signed program the installer carries: `motty.exe` beside a `motty-data` folder, which

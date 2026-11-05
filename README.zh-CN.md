@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/readme-lockup.png" width="340" alt="Motty" />
 
-  <p><a href="README.md">English</a> | 简体中文</p>
+  <p><a href="README.md">English</a> | 简体中文 | <a href="README.ja.md">日本語</a></p>
 
   <p><strong>Motty：SSH、SFTP、端口转发、VNC/RDP 和 AI 助手，都在一个原生窗口里。</strong></p>
 
@@ -103,7 +103,11 @@ SFTP 支持多选、递归上传/下载、受限传输队列、续传、取消/�
 原子重命名；失败时原文件保持不变。
 
 内置编辑器支持最大 1 MiB 的 UTF-8 文件，保存前后分别读取并哈希远端文件，保留
-权限；冲突时两边内容都不丢。没有 SFTP 子系统的服务器可以退回内置 SCP。
+权限；冲突时两边内容都不丢。没有 SFTP 子系统的服务器可以退回内置 SCP。编辑器按
+等宽网格排版，带行号、语法着色、括号配对和软换行；回车自动缩进并沿用文件自己的
+制表符或空格，括号与引号成对输入，Tab / Shift+Tab 缩进选中的行，Cmd/Ctrl+/
+切换行注释，Alt+↑↓ 移动行、Shift+Alt+↑↓ 复制行、Cmd/Ctrl+Shift+K 删除行，
+Cmd/Ctrl+F、Ctrl+H 查找与替换（区分大小写、全字匹配、正则），Ctrl+G 跳转到行。
 
 文件面板可自动跟随 SSH Bash/Zsh 终端所在目录。**设置 > 文件** 还提供独立的
 “终端跟随文件栏目录”开关，默认关闭；开启后仅在空闲且未输入命令的提示符下
@@ -126,7 +130,7 @@ SOCKS5/HTTP 代理可以承载第一条连接；每台已保存的网络主机�
 
 VNC 支持 RFB 3.3/3.7/3.8、None 和 VNC Authentication、Raw/CopyRect/RRE/
 Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使用 TLS，优先 NLA，
-服务器证书在你确认后固定。两者都可以经 SSH 连接只监听自己 loopback 的服务器。
+服务器证书在你确认后固定；还支持把本机文件复制到服务器（在远程里粘贴，或拖到画面上）。两者都可以经 SSH 连接只监听自己 loopback 的服务器。
 完整边界见 [docs/remote-desktop.md](docs/remote-desktop.md)。
 
 ### 🤖 AI 助手与 MCP

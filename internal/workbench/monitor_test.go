@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/remotestats"
@@ -392,5 +394,163 @@ func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
 	p.noPerCore = true
 	if without := monitorContentHeight(&p); with-without != monitorCoresHeight(&p)+monitorGap {
 		t.Fatalf("content height %v with the section, %v without", with, without)
+	}
+}
+
+func TestMonitorClickClosesAIWhenSpaceInsufficient(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.viewport = size
+	state.setAIPanelOpen(true)
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open")
+	}
+
+	state.Click(hitRemoteStats)
+
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open on hitRemoteStats click")
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("AI panel should close when monitor opens and space is insufficient for both")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+}
+
+func TestAIClickClosesMonitorWhenSpaceInsufficient(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.viewport = size
+	state.showMonitor()
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open")
+	}
+
+	state.toggleAIPanel()
+
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open on toggle")
+	}
+	if state.monitorShown(id) {
+		t.Fatal("monitor should close when AI opens and space is insufficient for both")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+}
+
+func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
+	state, _ := monitorFixture(t)
+	size := ui.Size{Width: 2000, Height: 900}
+	state.viewport = size
+	state.closeMonitor()
+	state.setAIPanelOpen(true)
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel did not open")
+	}
+
+	state.Click(hitRemoteStats)
+
+	id := state.deck.ActiveWorkspace()
+	if !state.monitorShown(id) {
+		t.Fatal("monitor did not open")
+	}
+	if !state.aiPanelVisible() {
+		t.Fatal("AI panel should remain open alongside monitor on wide screens")
+	}
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	term := state.workspacePixelBounds(size)
+	if term.Width < minPaneWidth {
+		t.Fatalf("terminal width too small: %v", term.Width)
+	}
+	if state.aiReserve(id, size) <= 0 {
+		t.Fatal("AI panel should be docked on wide screen")
+	}
+	if state.independentMonitorReserve(id, size) <= 0 {
+		t.Fatal("monitor should be docked on wide screen")
+	}
+}
+
+func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing.T) {
+	state, _ := monitorFixture(t)
+	view, err := headless.Open(app.Config{
+		Title: "Panels", Width: 2000, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	state.Resize(ui.Size{Width: 2000, Height: 900})
+	state.setAIPanelOpen(true)
+	id := state.deck.ActiveWorkspace()
+	if !state.aiPanelVisible() || !state.monitorShown(id) {
+		t.Fatal("both panels should be open on the wide window")
+	}
+	if state.monitorDrawer(state.viewport) || state.aiReserve(id, state.viewport) <= 0 {
+		t.Fatal("both panels should dock on the wide window")
+	}
+
+	if err := view.Resize(760, 700); err != nil {
+		t.Fatal(err)
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("the assistant should close when the narrow window cannot dock both panels")
+	}
+	if !state.monitorShown(id) || !state.monitorDrawer(state.viewport) {
+		t.Fatal("the monitor should be the single drawer left after the resize")
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := view.Snapshot()
+	if _, ok := hitByIDInSnapshot(snapshot, hitAIDrawerDismiss); ok {
+		t.Fatal("the closed assistant still painted its drawer")
+	}
+	if _, ok := hitByIDInSnapshot(snapshot, hitAIClose); ok {
+		t.Fatal("the closed assistant still painted its controls")
+	}
+	if _, ok := hitByIDInSnapshot(snapshot, hitMonitorClose); !ok {
+		t.Fatal("the monitor drawer is missing")
+	}
+}
+
+func TestMonitorRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
+	state, _ := monitorFixture(t)
+	state.Paint(&ui.Canvas{}, state.viewport)
+	state.resizeMonitor(450)
+	state.save()
+
+	if state.monitorWidth != 450 {
+		t.Fatalf("state.monitorWidth = %v, want 450", state.monitorWidth)
+	}
+
+	// Toggling monitor closed and open again in the same workspace remembers the width.
+	state.closeMonitor()
+	state.showMonitor()
+	c, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	if c.MonitorWidth != 450 {
+		t.Fatalf("reopened monitor width = %v, want 450", c.MonitorWidth)
+	}
+
+	// Restoring the app remembers the adjusted width.
+	restored := newTestState(t, state.options)
+	if restored.monitorWidth != 450 {
+		t.Fatalf("restored.monitorWidth = %v, want 450", restored.monitorWidth)
 	}
 }

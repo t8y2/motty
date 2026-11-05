@@ -150,6 +150,11 @@ func TestExplicitHostGroupsRemainUsableWithoutHosts(t *testing.T) {
 	if len(state.hostTreeRows) != 2 {
 		t.Fatal("search omitted the empty group and its ancestor")
 	}
+	state.search = text.Editor{}
+	typeSearch(state, "TEAM  EMPTY")
+	if len(state.hostTreeRows) != 2 {
+		t.Fatal("multi-word search omitted the empty group and its ancestor")
+	}
 }
 
 func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {

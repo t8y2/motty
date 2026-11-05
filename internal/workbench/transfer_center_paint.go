@@ -255,6 +255,22 @@ func (state *State) paintTransferCard(canvas *ui.Canvas, box ui.Rect, entry *tra
 						f.Button(hitTransfersRetry.At(entry.id), m.Retry).Small().Ghost().Height(22)
 					}
 				}
+				if transferCanReveal(snapshot) {
+					id := hitTransfersReveal.At(entry.id)
+					foreground, labelColor := pal.accent, pal.text
+					if state.revealBusy {
+						foreground, labelColor = pal.faint, pal.faint
+					}
+					button := f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).
+						HoverBackground(withAlpha(pal.accent, 0.08)).HitWith(id, m.ShowInFolder, ui.HitOptions{Role: ui.RoleButton, Hint: m.ShowInFolder, Disabled: state.revealBusy})
+					if canvas.FocusVisible() == id {
+						button.Border(1, pal.accent)
+					}
+					button.Children(func() {
+						f.Icon(lucideIcons[iconFolderOpen]).Size(14, 14).Color(foreground)
+						f.Text(m.ShowInFolder).FontSize(metrics.FontSizeS).Color(labelColor)
+					})
+				}
 				id := hitTransfersRemove.At(entry.id)
 				button := f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).
 					HoverBackground(withAlpha(pal.danger, 0.08)).HitWith(id, m.Remove, ui.HitOptions{Role: ui.RoleButton, Hint: m.Remove})

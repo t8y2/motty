@@ -460,7 +460,9 @@ func (state *State) aiApprover(ctx context.Context, request gate.Request) (bool,
 	approval := &aiApproval{request: request, reply: make(chan aiAnswer, 1)}
 	if !state.aiPost(func(s *State) {
 		s.ai.approvals = append(s.ai.approvals, approval)
-		s.ai.open = true
+		// Opening the panel through its own path also reconciles with an open
+		// monitor: a narrow window shows one panel, not two stacked drawers.
+		s.setAIPanelOpen(true)
 		s.markToolWaiting()
 	}) {
 		return false, "", errAIClosed

@@ -535,6 +535,7 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true}
 	}
 	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidth)
+	state.sftpPanelWidth = context.Width
 	if state.deck.SetContext(workspaceID, context) != nil {
 		return ui.EventResult{Handled: true}
 	}

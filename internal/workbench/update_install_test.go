@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -63,9 +64,17 @@ var offeredRelease = update.Release{
 // updateWindow is a window that has been offered offeredRelease.
 func updateWindow(t *testing.T, updater *fakeUpdater, quits *int, opened *[]string) *State {
 	t.Helper()
+	return updateWindowOffering(t, offeredRelease, updater, quits, opened)
+}
+
+// updateWindowOffering is updateWindow with a different release, so a test can
+// drive the dialog from what the update check really returned rather than from
+// state written after the dialog opened.
+func updateWindowOffering(t *testing.T, release update.Release, updater *fakeUpdater, quits *int, opened *[]string) *State {
+	t.Helper()
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) { return offeredRelease, nil }
+	options.CheckUpdate = func() (update.Release, error) { return release, nil }
 	options.Updater = updater
 	options.Quit = func() { *quits++ }
 	options.OpenURL = func(url string) error { *opened = append(*opened, url); return nil }
@@ -93,6 +102,53 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	if updater.launches() != 1 || state.update.install.phase != installRestarting || len(opened) != 0 {
 		t.Fatalf("launched %d, phase %d, opened %q", updater.launches(), state.update.install.phase, opened)
 	}
+}
+
+func TestTheUpdateDialogDoesNotCallAnUncheckedPackageMissing(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	// What a GitHub page fallback answers: the version and the page, but no
+	// package list for the platform that asked.
+	unchecked := offeredRelease
+	unchecked.Asset = update.Asset{}
+	unchecked.PlatformPackageChecked = false
+	state := updateWindowOffering(t, unchecked, updater, &quits, &opened)
+	m := state.messages.Tools
+	_, texts := paintedTexts(state)
+	// The body wraps, so match its first sentence rather than the whole string.
+	shown := strings.Join(texts, " ")
+	if !strings.Contains(shown, firstSentence(m.UpdateWhyPackageUnknown)) || strings.Contains(shown, firstSentence(m.UpdateWhyNoPackage)) {
+		t.Fatalf("an unchecked package was called missing: %q", texts)
+	}
+	if !contains(texts, m.GeneralUpdateDownload) || contains(texts, m.UpdateInstall) {
+		t.Fatalf("an unchecked package offered an in-place install: %q", texts)
+	}
+	state.Click(hitUpdateDownload)
+	if !reflect.DeepEqual(opened, []string{unchecked.URL}) || quits != 0 {
+		t.Fatalf("opened %q, quits %d", opened, quits)
+	}
+
+	// A mirror that answered with its whole list and no package for the
+	// platform is the one case that may say the package is missing.
+	missing := unchecked
+	missing.PlatformPackageChecked = true
+	state = updateWindowOffering(t, missing, updater, &quits, &opened)
+	_, texts = paintedTexts(state)
+	shown = strings.Join(texts, " ")
+	if !strings.Contains(shown, firstSentence(m.UpdateWhyNoPackage)) || strings.Contains(shown, firstSentence(m.UpdateWhyPackageUnknown)) {
+		t.Fatalf("a checked and missing package was not reported as missing: %q", texts)
+	}
+}
+
+// firstSentence is the shortest leading clause of a message: enough to find it
+// in text that the dialog wrapped, without pinning the whole wording.
+func firstSentence(text string) string {
+	end := len(text)
+	for _, stop := range []string{"。", "，", ". ", ", "} {
+		if index := strings.Index(text, stop); index > 0 && index < end {
+			end = index
+		}
+	}
+	return text[:end]
 }
 
 func TestARegisteredCustomWindowsInstallUsesTheInAppUpdater(t *testing.T) {
@@ -176,6 +232,32 @@ func TestAnInstallThatFailsStaysOnTheDialogWithItsReasonAndTheReleasePage(t *tes
 	state.Click(hitUpdateProgressCancel)
 	if state.modal != modalNone {
 		t.Fatal("the failure could not be closed")
+	}
+}
+
+// The system's refusal reads the same whether the download carries no ticket
+// or this Mac cannot reach Apple, so the dialog explains both and leaves the
+// release page at hand instead of quoting the system.
+func TestAUpdateTheSystemRefusesIsExplainedInsteadOfQuoted(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	updater.prepare = func(context.Context, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
+		return selfupdate.Staged{}, fmt.Errorf("%w: Motty.app: rejected", selfupdate.ErrNotAccepted)
+	}
+	state := updateWindow(t, updater, &quits, &opened)
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return state.update.install.phase == installFailed })
+	_, texts := paintedTexts(state)
+	m := state.messages.Tools
+	// The paragraph wraps, so it reads as several painted lines.
+	painted := strings.Join(texts, " ")
+	if !strings.Contains(painted, strings.Fields(m.UpdateBlockedBySystem)[0]) {
+		t.Fatalf("the dialog does not explain the refusal: %q", painted)
+	}
+	if strings.Contains(painted, "rejected") {
+		t.Fatalf("the dialog quotes the system: %q", painted)
+	}
+	if !contains(texts, m.UpdateOpenPage) {
+		t.Fatalf("the release page is gone: %q", texts)
 	}
 }
 
