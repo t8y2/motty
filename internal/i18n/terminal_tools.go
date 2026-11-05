@@ -117,6 +117,10 @@ type ToolsMessages struct {
 	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
+	CursorThicknessRow         string
+	CursorThin                 string
+	CursorNormal               string
+	CursorThick                string
 	CursorShapeRow             string
 	CursorShapeDescription     string
 	CursorShapeBlock           string

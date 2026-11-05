@@ -364,6 +364,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	case cursorUnderline:
 		selectedCursorStyle = hitSettingsCursorUnderline
 	}
+	thickness := state.settingsCursorThicknessOptions()
+	selectedThickness := [...]ui.ID{hitSettingsCursorNormal, hitSettingsCursorThin, hitSettingsCursorThick}[state.terminalCursorThickness]
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
@@ -388,6 +390,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
 			page.row(state.messages.Tools.CursorShapeRow, state.messages.Tools.CursorShapeDescription, state.settingsCursorStyleOptions(), selectedCursorStyle)
+			page.row(state.messages.Tools.CursorThicknessRow, "", thickness[:], selectedThickness)
 			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)

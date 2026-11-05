@@ -240,6 +240,9 @@ var (
 	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
 	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
 	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorThin          = tree.ID(settingsHits, "settings-cursor-thin")
+	hitSettingsCursorNormal        = tree.ID(settingsHits, "settings-cursor-normal")
+	hitSettingsCursorThick         = tree.ID(settingsHits, "settings-cursor-thick")
 	hitSettingsCursorBlock         = tree.ID(settingsHits, "settings-cursor-shape-block")
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
@@ -719,6 +722,8 @@ type State struct {
 	localDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
 	terminalCursorSteady bool
+	// terminalCursorThickness is how thick the bar and underline cursors draw.
+	terminalCursorThickness cursorThickness
 	// terminalCopyOnSelect copies a selection the moment the mouse finishes it,
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.

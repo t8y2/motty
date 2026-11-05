@@ -406,6 +406,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsCursorThin:
+		changed = state.setTerminalCursorThickness(cursorThin)
+	case hitSettingsCursorNormal:
+		changed = state.setTerminalCursorThickness(cursorNormal)
+	case hitSettingsCursorThick:
+		changed = state.setTerminalCursorThickness(cursorThick)
 	case hitSettingsGutterOff:
 		changed = state.setTerminalGutter(gutterOff)
 	case hitSettingsGutterNumbers:
@@ -576,6 +582,15 @@ func (state *State) settingsOptionOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsCursorThicknessOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsCursorThin, Label: m.CursorThin},
+		{ID: hitSettingsCursorNormal, Label: m.CursorNormal},
+		{ID: hitSettingsCursorThick, Label: m.CursorThick},
+	}
+}
+
 func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
 	m := state.messages.Tools
 	return [...]components.SegmentOption{
@@ -713,6 +728,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
 		options := state.settingsPaddingOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
+		options := state.settingsCursorThicknessOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()

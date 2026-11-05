@@ -73,6 +73,7 @@ type savedState struct {
 	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
 	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
+	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
 	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
@@ -442,6 +443,7 @@ func (state *State) snapshot() savedState {
 		StartupNoReuse:             !state.startupReuse,
 		TerminalClipboard:          state.terminalClipboard.String(),
 		TerminalCursorSteady:       state.terminalCursorSteady,
+		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TerminalTabTitle:           state.terminalTabTitle,
@@ -853,6 +855,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalClipboard = terminalClipboardPolicyFromString(saved.TerminalClipboard)
 	state.terminalIntense = terminalIntenseFromString(saved.TerminalIntense)
 	state.terminalCursorSteady = saved.TerminalCursorSteady
+	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
 	state.terminalTabTitle = saved.TerminalTabTitle
