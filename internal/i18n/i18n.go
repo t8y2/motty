@@ -2,9 +2,10 @@
 // plain data: the state carries one Messages value and every paint reads
 // from it, so switching languages is one assignment plus a repaint.
 //
-// The catalogs live one per language (english.go, chinese.go); the message
-// structs stay with the area they describe (terminal_tools.go, ai_panel.go,
-// and so on), so adding a string touches its struct and both catalogs.
+// The catalogs live one per language: english.go, chinese.go, and the
+// generated traditional.go (see tools/zhtw/gen.py). The message structs stay
+// with the area they describe (terminal_tools.go, ai_panel.go, and so on);
+// adding a string touches its struct and every catalog.
 package i18n
 
 import "strings"

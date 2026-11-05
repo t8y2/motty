@@ -182,6 +182,18 @@ AFTER = [
     ("生成", "產生"),
     ("重定向", "重新導向"),
     ("簡體中文", "简体中文"),
+    # Words s2twp converts before TERMS can see them, or keeps from the
+    # mainland wording; spelled out so a regeneration stays stable.
+    ("未透過", "未通過"),
+    ("指令列", "命令列"),
+    ("自動查詢", "自動尋找"),
+    ("符合正則", "符合正規表示式"),
+    ("的正則", "的正規表示式"),
+    ("該正則", "該正規表示式"),
+    ("正則太長", "正規表示式太長"),
+    ("示例", "範例"),
+    ("身份", "身分"),
+    ("渠道", "管道"),
 ]
 
 

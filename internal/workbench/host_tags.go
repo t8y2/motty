@@ -41,7 +41,7 @@ func (state *State) hostTagPicker() *hostTagPicker {
 		p.control.SetValidateCreate(validHostTag)
 		options := []components.MultiSelectOption{{Value: "开发"}, {Value: "测试"}, {Value: "生产"}}
 		if state.language == i18n.TraditionalChinese {
-			options = []components.MultiSelectOption{{Value: "開發"}, {Value: "測試"}, {Value: "正式"}}
+			options = []components.MultiSelectOption{{Value: "開發"}, {Value: "測試"}, {Value: "生產"}}
 		}
 		for _, host := range state.hosts {
 			tags, _ := parseHostTags(host.Tags)
