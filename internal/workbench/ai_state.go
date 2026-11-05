@@ -156,6 +156,7 @@ type aiState struct {
 	attachments []aiAttachment
 	attaching   int
 	pasted      int         // pictures pasted so far, which numbers their names
+	pastedText  int         // text snippets pasted so far, which numbers their names
 	confirm     text.Editor // the word a critical action asks to be typed
 	run         *aiRun
 	approvals   []*aiApproval
@@ -671,7 +672,7 @@ func (state *State) aiSend() {
 		return
 	}
 	question := strings.TrimSpace(ai.input.String())
-	if question == "" || ai.attaching > 0 && !ai.retry {
+	if (question == "" && len(ai.attachments) == 0) || ai.attaching > 0 && !ai.retry {
 		return
 	}
 	provider, model, err := state.aiModel()

@@ -31,8 +31,8 @@ import (
 // Limits. A text file is refused rather than cut: a model told it read a file
 // that was silently truncated gives answers about a file that does not exist.
 const (
-	// MaxTextBytes is the largest text file taken, about 32k tokens.
-	MaxTextBytes = 128 << 10
+	// MaxTextBytes is the largest text file taken, matching a 1M token context window.
+	MaxTextBytes = 4 << 20
 	// MaxImageBytes is the most one picture sends. The Anthropic API refuses a
 	// picture over 5 MiB once it is base64, which adds a third.
 	MaxImageBytes = 3584 << 10
@@ -101,17 +101,17 @@ func Load(path string) (File, error) {
 
 // Decode classifies the bytes of a file called name.
 func Decode(name string, data []byte) (File, error) {
+	file := File{Name: name}
 	if len(data) == 0 {
-		return File{}, ErrEmpty
+		return file, ErrEmpty
 	}
 	if len(data) > maxReadBytes {
-		return File{}, ErrTooLarge
+		return file, ErrTooLarge
 	}
-	file := File{Name: name}
 	picture, isPicture, err := preparePicture(data)
 	if isPicture {
 		if err != nil {
-			return File{}, err
+			return file, err
 		}
 		file.Kind, file.Image = KindImage, picture
 		return file, nil
@@ -121,7 +121,7 @@ func Decode(name string, data []byte) (File, error) {
 		text, err = decodeText(data)
 	}
 	if err != nil {
-		return File{}, err
+		return file, err
 	}
 	file.Text, file.Lines = text, strings.Count(text, "\n")+1
 	if strings.HasSuffix(text, "\n") {

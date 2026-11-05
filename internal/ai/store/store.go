@@ -53,7 +53,7 @@ var (
 
 // Limits.
 const (
-	MaxTextBytes  = 1 << 20 // per message text, reasoning and tool JSON
+	MaxTextBytes  = 16 << 20 // per message text, reasoning and tool JSON
 	MaxTitleBytes = 256
 	// DefaultListLimit applies when Conversations gets limit <= 0.
 	DefaultListLimit = 200
