@@ -149,6 +149,8 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		}
 	case id == hitSettingsProxyConfigure:
 		state.openOutboundProxyDialog()
+	case id == hitSettingsWordSeparators:
+		state.openWordSeparatorsForm()
 	case id == hitSettingsFontPick:
 		state.openFontPicker(false)
 	case id == hitSettingsFallbackAdd:

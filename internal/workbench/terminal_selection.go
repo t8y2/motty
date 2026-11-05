@@ -12,9 +12,11 @@ import (
 // the same text while the view scrolls under a drag.
 type terminalSelection struct {
 	anchor, focus term.Point
-	dragging      bool
-	selected      bool
-	edge          selectionEdge
+	// wordSeparators are the user's own, for a drag that grows by words.
+	wordSeparators string
+	dragging       bool
+	selected       bool
+	edge           selectionEdge
 	// mark is where the last press was, kept after a click that selected nothing
 	// so that a Shift-click can select from it to another point, however far the
 	// view was scrolled in between.
@@ -70,9 +72,10 @@ func (selection *terminalSelection) dismiss() bool {
 
 // beginUnit selects the word or line at point and leaves the drag running, so
 // that holding the button and moving on grows the selection by words or lines.
-func (selection *terminalSelection) beginUnit(screen *term.Terminal, point term.Point, unit selectionUnit) {
+func (selection *terminalSelection) beginUnit(screen *term.Terminal, point term.Point, unit selectionUnit, wordSeparators string) {
 	selection.clear()
 	selection.unit = unit
+	selection.wordSeparators = wordSeparators
 	selection.origin[0], selection.origin[1] = selection.unitRange(screen, point)
 	selection.anchor, selection.focus = selection.origin[0], selection.origin[1]
 	selection.dragging, selection.selected = true, true
@@ -84,7 +87,7 @@ func (selection *terminalSelection) unitRange(screen *term.Terminal, point term.
 	if selection.unit == unitLine {
 		return screen.LineRange(point)
 	}
-	return screen.WordRange(point)
+	return screen.WordRangeSeparatedBy(point, selection.wordSeparators)
 }
 
 // extendUnit moves the drag's focus to point, snapped to whole words or lines.
@@ -264,7 +267,7 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			if event.ClickCount >= 3 {
 				unit = unitLine
 			}
-			selection.beginUnit(terminal.screen, terminal.screen.PointAt(position), unit)
+			selection.beginUnit(terminal.screen, terminal.screen.PointAt(position), unit, state.terminalWordSeparators)
 			result := ui.EventResult{Handled: true, Repaint: true}
 			if state.terminalCopyOnSelect {
 				result.ClipboardText = selection.text(terminal.screen)

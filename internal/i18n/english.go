@@ -1590,6 +1590,14 @@ var englishTools = ToolsMessages{
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "Confirm",
 
+	WordSeparatorsRow:         "Word separators",
+	WordSeparatorsDefault:     "A double click takes letters, numbers and underscores as a word; other punctuation ends it.",
+	WordSeparatorsCustomFmt:   "A double click ends a word only at spaces and at: %s",
+	WordSeparatorsEdit:        "Edit",
+	WordSeparatorsDescription: "A double click ends a word at spaces and at the characters listed here; everything else counts as part of the word. Leave it empty for the default.",
+	WordSeparatorsLabel:       "Characters",
+	WordSeparatorsPlaceholder: "For example ,;:()[]{}",
+
 	FontFallbackRow:         "Fallback fonts",
 	FontFallbackEmpty:       "Characters the font lacks, such as Chinese, are drawn by the system. Add fonts to choose which, in order.",
 	FontFallbackFmt:         "In order: %s. Used for characters the font above lacks.",

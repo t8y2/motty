@@ -83,19 +83,26 @@ func pointLess(left, right Point) bool {
 // numbers, and underscores form words; spaces and punctuation form their own runs.
 func (t *Terminal) WordBounds(position Position) (Position, Position) {
 	position = t.clampPosition(position)
-	start, end := t.wordColumns(t.Row(position.Row), position.Column)
+	start, end := t.wordColumns(t.Row(position.Row), position.Column, "")
 	return Position{Row: position.Row, Column: start}, Position{Row: position.Row, Column: end}
 }
 
 // WordRange is WordBounds for a point of the retained buffer, which may lie
 // outside the view. Points beyond the retained lines clamp to them.
 func (t *Terminal) WordRange(point Point) (Point, Point) {
+	return t.WordRangeSeparatedBy(point, "")
+}
+
+// WordRangeSeparatedBy is WordRange with the user's own word separators. When
+// separators is not empty, a word ends only at a blank cell or at one of those
+// characters, so a path or an address can be taken whole by one double click.
+func (t *Terminal) WordRangeSeparatedBy(point Point, separators string) (Point, Point) {
 	base, count := t.lineBase(), uint64(t.bufferLineCount())
 	if count == 0 {
 		return point, point
 	}
 	point = t.clampPoint(point, base, count)
-	start, end := t.wordColumns(t.rowOf(t.bufferLine(int(point.Line-base))), point.Column)
+	start, end := t.wordColumns(t.rowOf(t.bufferLine(int(point.Line-base))), point.Column, separators)
 	return Point{Line: point.Line, Column: start}, Point{Line: point.Line, Column: end}
 }
 
@@ -114,18 +121,18 @@ func (t *Terminal) LineRange(point Point) (Point, Point) {
 }
 
 // wordColumns is the inclusive column range of the run of like cells around column.
-func (t *Terminal) wordColumns(row Row, column int) (int, int) {
+func (t *Terminal) wordColumns(row Row, column int, separators string) (int, int) {
 	if column < len(row.Cells) && row.Cells[column].Attr&WideTail != 0 && column > 0 {
 		column--
 	}
-	kind := selectedCellKind(row.Cells, column)
+	kind := selectedCellKind(row.Cells, column, separators)
 	start := column
 	for start > 0 {
 		previous := start - 1
 		if previous < len(row.Cells) && row.Cells[previous].Attr&WideTail != 0 && previous > 0 {
 			previous--
 		}
-		if selectedCellKind(row.Cells, previous) != kind {
+		if selectedCellKind(row.Cells, previous, separators) != kind {
 			break
 		}
 		start = previous
@@ -133,7 +140,7 @@ func (t *Terminal) wordColumns(row Row, column int) (int, int) {
 	end := column
 	for {
 		next := end + selectedCellWidth(row.Cells, end)
-		if next >= t.cols || selectedCellKind(row.Cells, next) != kind {
+		if next >= t.cols || selectedCellKind(row.Cells, next, separators) != kind {
 			break
 		}
 		end = next
@@ -227,9 +234,15 @@ const (
 	cellPunctuation
 )
 
-func selectedCellKind(cells []Cell, column int) cellKind {
+func selectedCellKind(cells []Cell, column int, separators string) cellKind {
 	if column < 0 || column >= len(cells) || cells[column].R == 0 || unicode.IsSpace(cells[column].R) {
 		return cellBlank
+	}
+	if separators != "" {
+		if strings.ContainsRune(separators, cells[column].R) {
+			return cellPunctuation
+		}
+		return cellWord
 	}
 	if cells[column].R == '_' || unicode.IsLetter(cells[column].R) || unicode.IsNumber(cells[column].R) {
 		return cellWord

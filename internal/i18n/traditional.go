@@ -1590,6 +1590,14 @@ var traditionalTools = ToolsMessages{
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "確定",
 
+	WordSeparatorsRow:         "選字分隔字元",
+	WordSeparatorsDefault:     "按兩下選字時，字母、數字和底線算一個詞，其他標點會斷開。",
+	WordSeparatorsCustomFmt:   "按兩下選字只在空白和這些字元處斷開：%s",
+	WordSeparatorsEdit:        "修改",
+	WordSeparatorsDescription: "按兩下選字時，只在空白和這裡列出的字元處斷開，其他字元都算詞的一部分。留空則恢復預設。",
+	WordSeparatorsLabel:       "字元",
+	WordSeparatorsPlaceholder: "例如 ,;:()[]{}",
+
 	FontFallbackRow:         "備用字型",
 	FontFallbackEmpty:       "終端機字型缺少的字元（如中文）由系統選擇字型繪製。新增備用字型後，按順序依次嘗試。",
 	FontFallbackFmt:         "按順序：%s。上面的字型缺少某個字元時依次使用。",

@@ -133,6 +133,13 @@ type ToolsMessages struct {
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
+	WordSeparatorsRow          string
+	WordSeparatorsDefault      string
+	WordSeparatorsCustomFmt    string
+	WordSeparatorsEdit         string
+	WordSeparatorsDescription  string
+	WordSeparatorsLabel        string
+	WordSeparatorsPlaceholder  string
 	RightClickPasteRow         string
 	RightClickPasteDescription string
 	LinkPlainClickRow          string

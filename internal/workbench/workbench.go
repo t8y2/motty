@@ -259,6 +259,7 @@ var (
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators      = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
 	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
@@ -749,6 +750,9 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
+	// terminalWordSeparators are the characters that end a word on a double
+	// click; empty keeps the built-in rule.
+	terminalWordSeparators string
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle       bool

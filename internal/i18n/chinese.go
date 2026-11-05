@@ -1590,6 +1590,14 @@ var chineseTools = ToolsMessages{
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "确定",
 
+	WordSeparatorsRow:         "选词分隔符",
+	WordSeparatorsDefault:     "双击选词时,字母、数字和下划线算作一个词,其他标点会断开。",
+	WordSeparatorsCustomFmt:   "双击选词只在空白和这些字符处断开:%s",
+	WordSeparatorsEdit:        "修改",
+	WordSeparatorsDescription: "双击选词时,只在空白和这里列出的字符处断开,其他字符都算作词的一部分。留空则恢复默认。",
+	WordSeparatorsLabel:       "字符",
+	WordSeparatorsPlaceholder: "例如 ,;:()[]{}",
+
 	FontFallbackRow:         "备用字体",
 	FontFallbackEmpty:       "终端字体缺少的字符（如中文）由系统选择字体绘制。添加备用字体后，按顺序依次尝试。",
 	FontFallbackFmt:         "按顺序：%s。上面的字体缺少某个字符时依次使用。",
