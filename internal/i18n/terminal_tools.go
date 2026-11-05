@@ -178,6 +178,8 @@ type ToolsMessages struct {
 	PasteImageTooLarge      string
 	PasswordHintRow         string
 	PasswordHintDescription string
+	CloseConfirmRow         string
+	CloseConfirmDescription string
 	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.

@@ -567,6 +567,9 @@ var EnglishMessages = Messages{
 	CloseTabsTitleFmt:              "Close %d tabs?",
 	CloseTabsDescription:           "Their sessions will be disconnected and their terminals closed.",
 	CloseTabsConfirm:               "Close Tabs",
+	CloseRunningTitle:              "Close running sessions?",
+	CloseRunningDescription:        "One or more sessions are still running. Close the following anyway? Their programs will stop.",
+	CloseRunningAsk:                "Do not ask me again",
 	MenuReconnect:                  "Reconnect",
 	MenuDisconnect:                 "Disconnect",
 	ReconnectTitleFmt:              "Reconnect “%s”?",
@@ -1593,6 +1596,8 @@ var englishTools = ToolsMessages{
 
 	PasswordHintRow:         "Password prompt assist",
 	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password after the prompt. Nothing is sent until you press Enter.",
+	CloseConfirmRow:         "Confirm before closing running sessions",
+	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
 	PasswordHintGhost:       "Press Enter to paste the saved password",
 
 	ProxyRow:                    "Outbound proxy",

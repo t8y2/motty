@@ -215,6 +215,7 @@ var syncedSettings = map[string]bool{
 	"terminal_notifications":       true,
 	"terminal_paste_image":         true,
 	"terminal_password_hint":       true,
+	"terminal_close_confirm":       true,
 	"sftp_parallel":                true,
 	"sftp_keep_times":              true,
 	"sftp_follow":                  true,

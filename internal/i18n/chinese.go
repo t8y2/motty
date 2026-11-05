@@ -567,6 +567,9 @@ var ChineseMessages = Messages{
 	CloseTabsTitleFmt:              "关闭 %d 个标签页？",
 	CloseTabsDescription:           "这些标签页里的会话会断开，终端也会关闭。",
 	CloseTabsConfirm:               "关闭标签页",
+	CloseRunningTitle:              "关闭正在运行的会话？",
+	CloseRunningDescription:        "有会话仍在运行，仍要关闭以下会话吗？其中运行的程序会停止。",
+	CloseRunningAsk:                "不再询问",
 	MenuReconnect:                  "重新连接",
 	MenuDisconnect:                 "断开连接",
 	ReconnectTitleFmt:              "重新连接「%s」？",
@@ -1590,6 +1593,8 @@ var chineseTools = ToolsMessages{
 
 	PasswordHintRow:         "密码提示辅助",
 	PasswordHintDescription: "sudo 要求输入密码时，在提示符后提供该主机已保存的密码。按下 Enter 之前不会发送任何内容。",
+	CloseConfirmRow:         "关闭运行中的会话前确认",
+	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
 	PasswordHintGhost:       "按 Enter 粘贴已保存的密码",
 
 	NotifyRow:         "桌面通知",

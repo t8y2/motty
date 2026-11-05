@@ -789,6 +789,8 @@ type State struct {
 	pasteImageOff bool
 	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
 	passwordHintOff bool
+	// closeConfirmOff skips the question before closing a session that still runs.
+	closeConfirmOff bool
 	fonts           fontsUI
 	uiFont          interfaceFontUI
 	proxyForm       outboundProxyForm
@@ -1842,7 +1844,7 @@ func (state *State) closeActivePane() {
 		return
 	}
 	if pane.SessionID != 0 {
-		state.closeSession(uint32(pane.SessionID))
+		state.requestCloseSession(uint32(pane.SessionID))
 		return
 	}
 	_, _ = state.deck.ClosePane(workspaceID, paneID)
@@ -1883,7 +1885,7 @@ func (state *State) closeWorkspace(id layoutcore.WorkspaceID) {
 		state.askCloseLockedTab(id)
 		return
 	}
-	state.closeWorkspaceNow(id)
+	state.askCloseTabs(0, func(position int) bool { return state.workspaceTabs[position].ID == id })
 }
 
 // closeWorkspaceNow releases a tab after the caller has handled confirmation.

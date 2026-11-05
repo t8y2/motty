@@ -567,6 +567,9 @@ var TraditionalMessages = Messages{
 	CloseTabsTitleFmt:              "關閉 %d 個分頁？",
 	CloseTabsDescription:           "這些分頁裡的工作階段會中斷，終端機也會關閉。",
 	CloseTabsConfirm:               "關閉分頁",
+	CloseRunningTitle:              "關閉執行中的工作階段？",
+	CloseRunningDescription:        "有工作階段仍在執行，仍要關閉以下工作階段嗎？其中執行的程式會停止。",
+	CloseRunningAsk:                "不再詢問",
 	MenuReconnect:                  "重新連線",
 	MenuDisconnect:                 "中斷連線",
 	ReconnectTitleFmt:              "重新連線「%s」？",
@@ -1590,6 +1593,8 @@ var traditionalTools = ToolsMessages{
 
 	PasswordHintRow:         "密碼提示輔助",
 	PasswordHintDescription: "sudo 要求輸入密碼時，在提示符後提供該主機已儲存的密碼。按下 Enter 之前不會傳送任何內容。",
+	CloseConfirmRow:         "關閉執行中的工作階段前確認",
+	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
 	PasswordHintGhost:       "按 Enter 貼上已儲存的密碼",
 
 	NotifyRow:         "桌面通知",

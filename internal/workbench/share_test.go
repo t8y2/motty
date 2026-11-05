@@ -205,6 +205,7 @@ func TestLoneContainerTabRestoresNeitherHostNorEmptyWorkspace(t *testing.T) {
 		t.Fatal("source has no workspace")
 	}
 	first.closeWorkspace(workspace)
+	confirmRunningClose(first)
 	saved := first.snapshot()
 	if len(saved.Sessions) != 0 || saved.Deck == nil || len(saved.Deck.Workspaces) != 0 || saved.Deck.ActiveWorkspace != 0 {
 		t.Fatalf("a command-only workspace persisted: sessions=%+v deck=%+v", saved.Sessions, saved.Deck)
@@ -229,6 +230,7 @@ func TestEndedContainerTabCannotInterceptOpeningItsOriginalHost(t *testing.T) {
 		t.Fatal("source tab lost its workspace")
 	}
 	state.closeWorkspace(workspace)
+	confirmRunningClose(state)
 	if len(state.sessions) != 1 || state.sessions[0].containerCommand == "" {
 		t.Fatalf("command tab did not remain after closing source: %+v", state.sessions)
 	}

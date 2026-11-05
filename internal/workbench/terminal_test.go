@@ -359,6 +359,7 @@ func TestClosingATabReleasesItsConnectionAndPicksANeighbour(t *testing.T) {
 
 	// Closing the first tab, which is not active, keeps the active one.
 	state.Click(hitTabCloseList.At(int(ids[0])))
+	confirmRunningClose(state)
 	if !shell.closed || fake.canceled == 0 {
 		t.Fatal("the closed tab's shell and connection were not released")
 	}

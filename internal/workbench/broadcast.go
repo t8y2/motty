@@ -140,6 +140,9 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		if state.setPasteImage(state.pasteImageOff) {
 			state.save()
 		}
+	case id == hitSettingsCloseConfirmToggle:
+		state.closeConfirmOff = !state.closeConfirmOff
+		state.save()
 	case id == hitSettingsPasswordHintToggle:
 		if state.setPasswordHint(state.passwordHintOff) {
 			state.save()
