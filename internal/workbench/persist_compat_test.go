@@ -196,12 +196,12 @@ func TestCompatibilityEpochMigratesLegacyAndRejectsIncompatibleData(t *testing.T
 
 func TestCompatibleWindowsPatchOnlyTheirChangedFields(t *testing.T) {
 	state := futureConfigState(t, configFormat)
-	store, first, firstBase, _, err := openConfig(state.options.StatePath)
+	store, first, firstBase, _, err := openConfig(state.options.StatePath, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	secondStore, second, secondBase, _, err := openConfig(state.options.StatePath)
+	secondStore, second, secondBase, _, err := openConfig(state.options.StatePath, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

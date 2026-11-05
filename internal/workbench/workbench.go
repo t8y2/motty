@@ -487,8 +487,12 @@ type State struct {
 	// starting is set while the window is being made, before it has read the
 	// assistant's database; pauseSave holds saving off while the window
 	// is bringing in records that are already stored.
-	starting           bool
-	pauseSave          int
+	starting  bool
+	pauseSave int
+	// windowID is which window of this run this is. Its tabs, the deck they fill,
+	// where it sits and what it shows are filed under that number, so no other
+	// window's save can replace them.
+	windowID           int
 	stateNotice        stateNotice
 	developmentImport  developmentImport
 	stateFileOutcome   string // how the saved state was read at start, for diagnostics
@@ -986,6 +990,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
+		windowID:              max(1, options.WindowID),
 		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
@@ -1029,7 +1034,7 @@ func New(options Options) *State {
 
 	state.starting = true
 	state.configDefaults = defaultsOf(state.snapshot())
-	config, saved, configBase, report, err := openConfig(state.options.StatePath)
+	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase
 	if config != nil && state.secrets.vault != nil {
 		// Saved passwords are versioned by the same clock as the records.

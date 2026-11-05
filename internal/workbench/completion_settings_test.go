@@ -158,7 +158,7 @@ func TestCompletionCatalogStaysUnloadedWhileCompletionIsOff(t *testing.T) {
 func TestInlinePreferenceUsesAnIndependentSharedRecord(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.history.inlineOff = true
-	entries, local, err := splitState(state.snapshot(), newConfigBase(), nil)
+	entries, local, _, err := splitState(state.snapshot(), newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

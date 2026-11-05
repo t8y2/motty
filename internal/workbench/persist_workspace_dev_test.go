@@ -249,7 +249,7 @@ func developmentWorkspaceInitialState(t *testing.T, path string) savedState {
 	t.Helper()
 	saveReleaseState(t, path, releaseWorkspaceFixture())
 	saveDevelopmentWorkspace(t, path, `{}`)
-	store, saved, _, report, err := openConfig(path)
+	store, saved, _, report, err := openConfig(path, 1)
 	if err != nil || store == nil || report.outcome != loadOK {
 		t.Fatalf("open development config: store=%v report=%+v err=%v", store, report, err)
 	}
@@ -298,7 +298,7 @@ func TestDevelopmentIncrementalSaveMatchesFullEncoding(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.db")
 		before := developmentWorkspaceInitialState(t, path)
 		after := developmentWorkspaceChangedState(t, before)
-		store, saved, base, _, err := openConfig(path)
+		store, saved, base, _, err := openConfig(path, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -429,7 +429,7 @@ func bytesContain(raw []byte, text string) bool {
 func TestDevelopmentIncrementalNoOpDoesNotWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.db")
 	developmentWorkspaceInitialState(t, path)
-	store, _, base, _, err := openConfig(path)
+	store, _, base, _, err := openConfig(path, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +661,7 @@ func TestDevelopmentIncrementalCommitFailureDoesNotAdvanceBase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.db")
 	before := developmentWorkspaceInitialState(t, path)
 	after := developmentWorkspaceChangedState(t, before)
-	store, saved, base, _, err := openConfig(path)
+	store, saved, base, _, err := openConfig(path, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +765,7 @@ func TestDevelopmentWorkspaceCorruptionIsLocalAndRecoverable(t *testing.T) {
 			saveReleaseState(t, options.StatePath, release)
 			releaseLocal := append([]byte(nil), localConfigValue(t, options.StatePath, localKey)...)
 			saveDevelopmentWorkspace(t, options.StatePath, test.workspace)
-			probe, _, _, probeReport, err := openConfig(options.StatePath)
+			probe, _, _, probeReport, err := openConfig(options.StatePath, 1)
 			if err != nil {
 				t.Fatal(err)
 			}

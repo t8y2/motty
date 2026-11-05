@@ -127,7 +127,7 @@ func TestAnOlderBuildKeepsWorkspaceTemplateRecords(t *testing.T) {
 		base.payloads[configstore.Key{Kind: entry.Kind, ID: entry.ID}] = entry.Payload
 	}
 	saved.Version, saved.HostCatalogVersion, saved.ShortcutVersion = stateFileVersion, hostCatalogSchemaVersion, shortcutSchemaVersion
-	if _, _, err := splitState(saved, base, nil); err == nil {
+	if _, _, _, err := splitState(saved, base, nil); err == nil {
 		base.local = local[localKey]
 		store, err := configstore.Open(path, configFormat)
 		if err != nil {

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/app"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -25,12 +26,21 @@ func newTwoWindows(t *testing.T) *twoWindows {
 	t.Helper()
 	pair := &twoWindows{}
 	group := NewGroup()
+	// One process reads and writes one store, so a save in one window is what
+	// the others have to pick up.
+	dir := t.TempDir()
+	statePath, knownHosts := filepath.Join(dir, "state.json"), filepath.Join(dir, "known_hosts")
+	if err := saveState(statePath, savedState{Hosts: sampleHosts}); err != nil {
+		t.Fatal(err)
+	}
 	make1 := func(wakes *atomic.Int32, x float32) (*State, *world) {
 		world, options := newWorld(t)
+		options.StatePath, options.KnownHostsPath = statePath, knownHosts
 		options.Group = group
 		options.Invalidate = func() { wakes.Add(1) }
 		options.TearOff = func(origin ui.Point, adopt func(*State)) error {
 			_, fresh := newWorld(t)
+			fresh.StatePath, fresh.KnownHostsPath = statePath, knownHosts
 			fresh.Group, fresh.Blank = group, true
 			fresh.Invalidate = func() {}
 			window := newTestState(t, fresh)

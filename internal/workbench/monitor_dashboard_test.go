@@ -87,7 +87,7 @@ func TestDashboardCreateValidatePersistAndRestoreWithoutConnecting(t *testing.T)
 	if len(restored.dashboard.panels) != 1 || restored.dashboard.active != id || len(restored.dashboard.engine.Wanted()) != 0 {
 		t.Fatal("panel definition did not restore stopped")
 	}
-	_, local, err := splitState(saved, &configBase{}, s.configDefaults)
+	_, local, _, err := splitState(saved, &configBase{}, s.configDefaults)
 	if err != nil {
 		t.Fatal(err)
 	}
