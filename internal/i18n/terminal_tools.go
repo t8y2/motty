@@ -504,6 +504,7 @@ type ToolsMessages struct {
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
+	UpdateBlockedBySystem           string
 	UpdateOpenPage                  string
 	UpdateNoReleaseText             string
 	ActionSSHFmt                    string
