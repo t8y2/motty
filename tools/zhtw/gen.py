@@ -20,6 +20,7 @@ OUTPUT = I18N / "traditional.go"
 # Files that hold a `var chineseX = ...` block beside their message struct.
 SIDE_CATALOGS = [
     "action_feedback.go",
+    "code_editor.go",
     "dashboard.go",
     "local_proxy.go",
     "monitor.go",
@@ -171,6 +172,15 @@ PATTERNS = [
 ]
 # Language names are written the way their own readers write them.
 AFTER = [
+    ("覆制", "複製"),
+    ("在檔案中查詢", "在檔案中尋找"),
+    ('"查詢"', '"尋找"'),
+    ("關閉查詢", "關閉尋找"),
+    ("替換", "取代"),
+    ("跳轉到行", "跳至行"),
+    ("製表符", "定位字元"),
+    ("生成", "產生"),
+    ("重定向", "重新導向"),
     ("簡體中文", "简体中文"),
 ]
 
