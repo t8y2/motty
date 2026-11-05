@@ -95,6 +95,7 @@ type savedState struct {
 	TerminalPadding         string              `json:"terminal_padding,omitempty"`
 	TerminalGutter          string              `json:"terminal_gutter,omitempty"`
 	TerminalIntense         string              `json:"terminal_intense,omitempty"`
+	TerminalLineHeight      string              `json:"terminal_line_height,omitempty"`
 	TerminalNotifications   string              `json:"terminal_notifications,omitempty"`
 	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
 	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
@@ -460,6 +461,7 @@ func (state *State) snapshot() savedState {
 		TerminalPadding:            state.terminalPad.String(),
 		TerminalGutter:             state.terminalGutter.String(),
 		TerminalIntense:            state.terminalIntense.String(),
+		TerminalLineHeight:         state.terminalLineHeight.String(),
 		TerminalNotifications:      notifyString(state.notifyOff),
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		CommandHistory:             state.history.on,
@@ -870,6 +872,7 @@ func (state *State) restoreShared(saved savedState) {
 	}
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
+	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
 	state.notifyOff = saved.TerminalNotifications == "off"
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.history.on = saved.CommandHistory
@@ -909,6 +912,13 @@ func (state *State) restoreShared(saved savedState) {
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
 	}
+	// The row height follows the font and the line-spacing choice together, so the
+	// saved spacing is reflected here as it is on every painted frame.
+	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	state.cellHeight *= state.terminalLineHeight.factor()
+	// This also runs when a synced setting arrives on a live window, so open
+	// terminals have to take the new row height now, not on the next resize.
+	state.fitTerminals()
 }
 
 func (state *State) workspaceName() string {

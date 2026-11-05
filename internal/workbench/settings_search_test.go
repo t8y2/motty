@@ -208,3 +208,18 @@ func TestEveryEntryOfTheSearchIndexPointsAtSomethingThePageDraws(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchFindsTheLineSpacingSetting keeps the new terminal row in the search
+// index; it paints even when the setting cannot be found by name.
+func TestSearchFindsTheLineSpacingSetting(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
+		t.Run(language.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.setLanguage(language)
+			searchSettings(t, state, state.messages.Tools.LineHeightRow)
+			if state.settings.count == 0 || state.settings.results[0].label != state.messages.Tools.LineHeightRow {
+				t.Fatalf("searching %q returned %+v", state.messages.Tools.LineHeightRow, state.settings.results[:state.settings.count])
+			}
+		})
+	}
+}

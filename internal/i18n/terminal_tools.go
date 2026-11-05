@@ -103,6 +103,10 @@ type ToolsMessages struct {
 	PaddingCompact             string
 	PaddingNormal              string
 	PaddingRoomy               string
+	LineHeightRow              string
+	LineHeightCompact          string
+	LineHeightNormal           string
+	LineHeightRoomy            string
 	GutterRow                  string
 	GutterDescription          string
 	GutterOff                  string

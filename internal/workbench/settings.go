@@ -132,6 +132,7 @@ func (state *State) setTerminalFontSize(value float32) bool {
 	}
 	state.terminalFontSize = value
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -145,6 +146,7 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 	}
 	state.terminalFontFace = face
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -406,6 +408,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsLineHeightCompact:
+		changed = state.setTerminalLineHeight(lineHeightCompact)
+	case hitSettingsLineHeightNormal:
+		changed = state.setTerminalLineHeight(lineHeightNormal)
+	case hitSettingsLineHeightRoomy:
+		changed = state.setTerminalLineHeight(lineHeightRoomy)
 	case hitSettingsCursorThin:
 		changed = state.setTerminalCursorThickness(cursorThin)
 	case hitSettingsCursorNormal:
@@ -600,6 +608,15 @@ func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsLineHeightOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsLineHeightCompact, Label: m.LineHeightCompact},
+		{ID: hitSettingsLineHeightNormal, Label: m.LineHeightNormal},
+		{ID: hitSettingsLineHeightRoomy, Label: m.LineHeightRoomy},
+	}
+}
+
 func (state *State) settingsGutterOptions() [4]components.SegmentOption {
 	m := state.messages.Tools
 	return [...]components.SegmentOption{
@@ -728,6 +745,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
 		options := state.settingsPaddingOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsLineHeightCompact, hitSettingsLineHeightNormal, hitSettingsLineHeightRoomy:
+		options := state.settingsLineHeightOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
 		options := state.settingsCursorThicknessOptions()

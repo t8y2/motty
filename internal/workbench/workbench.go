@@ -218,6 +218,9 @@ var (
 	hitSettingsPadCompact          = tree.ID(settingsHits, "settings-pad-compact")
 	hitSettingsPadNormal           = tree.ID(settingsHits, "settings-pad-normal")
 	hitSettingsPadRoomy            = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsLineHeightCompact   = tree.ID(settingsHits, "settings-line-height-compact")
+	hitSettingsLineHeightNormal    = tree.ID(settingsHits, "settings-line-height-normal")
+	hitSettingsLineHeightRoomy     = tree.ID(settingsHits, "settings-line-height-roomy")
 	hitSettingsIntenseBoth         = tree.ID(settingsHits, "settings-intense-both")
 	hitSettingsIntenseBright       = tree.ID(settingsHits, "settings-intense-bright")
 	hitSettingsIntenseBold         = tree.ID(settingsHits, "settings-intense-bold")
@@ -640,6 +643,7 @@ type State struct {
 	editorMenu          editorSelect
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
+	terminalLineHeight  lineHeight
 	terminalScrollback  int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
