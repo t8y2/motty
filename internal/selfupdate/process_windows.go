@@ -14,9 +14,13 @@ const (
 	detachedProcess       = 0x00000008
 )
 
-// detach makes cmd outlive the program that starts it.
+// detach makes cmd outlive the program that starts it. It must not set
+// HideWindow: that puts SW_HIDE in the child's STARTUPINFO, and Windows applies
+// it to the first ShowWindow the child makes, so the restarted application would
+// run with its main window hidden. DETACHED_PROCESS already keeps a console from
+// appearing.
 func detach(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: detachedProcess | createNewProcessGroup}
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: detachedProcess | createNewProcessGroup}
 }
 
 // waitExit returns once the process pid is gone.
