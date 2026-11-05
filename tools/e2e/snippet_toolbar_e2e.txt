@@ -37,7 +37,7 @@ click "127.0.0.1:2222"
 settle 300
 click "Send a snippet"
 waitfor "Search snippets" 3000
-layout
+expect layout clean
 shot /tmp/snippet-toolbar-picker.png
 type hello
 waitfor "Say hello" 2000

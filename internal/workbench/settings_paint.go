@@ -38,6 +38,7 @@ const (
 	controlAgentSelect                                 // independent stdio client configuration
 	controlLocalShellSelect                            // detected Windows shells
 	controlEditorSelect                                // installed editors
+	controlStartupHosts                                // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -170,6 +171,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.localShellMenu.bounds = rect
 		case controlEditorSelect:
 			state.editorMenu.bounds = rect
+		case controlStartupHosts:
+			state.startupPicker.bounds = rect
 		case controlSwitch:
 			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
 		case controlButtons:
@@ -354,6 +357,13 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	case terminalClipboardAsk:
 		selectedClipboard = hitSettingsClipboardAsk
 	}
+	selectedCursorStyle := hitSettingsCursorBlock
+	switch state.terminalCursorStyle {
+	case cursorBar:
+		selectedCursorStyle = hitSettingsCursorBar
+	case cursorUnderline:
+		selectedCursorStyle = hitSettingsCursorUnderline
+	}
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
@@ -377,6 +387,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.PaddingRow, "", padding[:], selectedPadding)
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
+			page.row(state.messages.Tools.CursorShapeRow, state.messages.Tools.CursorShapeDescription, state.settingsCursorStyleOptions(), selectedCursorStyle)
 			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
@@ -443,6 +454,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			page.row(messages.SettingsConnectionReconnect, messages.SettingsConnectionReconnectDescription, reconnect[:], selectedReconnect)
 			page.toggleRow(messages.SettingsShare, messages.SettingsShareDescription, state.shareConnections != shareConnectionsOff, hitSettingsShareToggle)
 			page.row(messages.SettingsRestore, messages.SettingsRestoreDescription, restore[:], selectedRestore)
+			state.paintStartupSettings(page)
 			state.paintSSHAgentRow(page)
 			page.row(messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, networkProxy[:], selectedNetworkProxy)
 			state.paintOutboundProxyRow(page)

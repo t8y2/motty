@@ -240,6 +240,9 @@ var (
 	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
 	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
 	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorBlock         = tree.ID(settingsHits, "settings-cursor-shape-block")
+	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
+	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
@@ -309,8 +312,10 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -636,8 +641,27 @@ type State struct {
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
+	terminalCursorStyle terminalCursorStyle
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
+	// What a launch opens once, from the first Wake (see openStartupSessions):
+	// a local terminal, and the saved hosts to connect, by catalog id.
+	// startupLocal opens the machine's default local terminal at a launch;
+	// startupShell opens a specific one of the detected shells instead. At
+	// most one of the two holds.
+	startupLocal bool
+	startupShell string
+	startupHosts []string
+	// startupEnabled is the feature switch of what a launch opens: off, the
+	// launch opens nothing but the choices are kept for when it turns on again.
+	startupEnabled bool
+	// startupReuse says a launch focuses what it was asked to open when that
+	// terminal or host is already open, instead of opening another one.
+	startupReuse  bool
+	startupPicker struct {
+		open   bool
+		bounds ui.Rect // the chooser's place on the settings page
+	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)
 	// dialDesktop opens the remote desktop of a VNC host; tests replace it.
@@ -787,9 +811,10 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout flex.View
 	// area: terminal and workspace panes
-	terminalPageLayout flex.View
-	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   flex.View
+	fontPickerListLayout flex.View
+	fontPickerLayout     flex.View // the font picker's list and sample
+	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
@@ -802,6 +827,7 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            flex.View
 	keysLayout            flex.View
+	paletteListLayout     flex.View
 	paletteLayout         flex.View
 	importLayout          flex.View
 	knownHostsTableLayout flex.View
@@ -878,6 +904,7 @@ func (state *State) Close() {
 	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
@@ -956,6 +983,8 @@ func New(options Options) *State {
 		viewport:              ui.Size{Width: 1400, Height: 900},
 		terminalFontSize:      termFontSize,
 		terminalScrollback:    scrollbackLines,
+		startupReuse:          true,
+		startupEnabled:        true,
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second},
 		sftpParallel:          DefaultSFTPParallel,
 		sftpColumns:           defaultSFTPColumnPreferences(),
@@ -1011,7 +1040,7 @@ func New(options Options) *State {
 	// Dialing waits for the first Wake: the window does not exist yet, so the
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
-	state.restorePending = state.restoreConnect != restoreConnectOff
+	state.restorePending = state.startupWanted()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
@@ -2209,6 +2238,15 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.remoteProcessMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
+		return result
+	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
 	}
@@ -2366,6 +2404,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := state.remoteProcessTableKey(event); handled {

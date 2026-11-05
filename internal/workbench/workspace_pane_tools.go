@@ -21,6 +21,12 @@ type workspacePaneTools struct {
 
 // Keep frequent session actions beside the name. Everything else keeps its
 // configured order and availability in a menu, rather than squeezing the name.
+// workspacePaneToolsCapacity is how many compact actions fit beside a pane
+// title; the rail and the menu both count with it.
+func workspacePaneToolsCapacity(width float32) int {
+	return min(3, max(0, int((width-144)/(barToolSize+barToolGap))-1))
+}
+
 func (state *State) compactWorkspacePaneTools(tools []barTool, session uint32, width float32) []barTool {
 	menu := &state.workspacePaneTools
 	if menu.session != session {
@@ -30,7 +36,7 @@ func (state *State) compactWorkspacePaneTools(tools []barTool, session uint32, w
 		menu.session = session
 	}
 	menu.count = 0
-	capacity := min(3, max(0, int((width-144)/(barToolSize+barToolGap))-1))
+	capacity := workspacePaneToolsCapacity(width)
 	var visible [maxBarTools]barTool
 	count := 0
 	for _, tool := range tools {

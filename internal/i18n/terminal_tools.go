@@ -117,6 +117,11 @@ type ToolsMessages struct {
 	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
+	CursorShapeRow             string
+	CursorShapeDescription     string
+	CursorShapeBlock           string
+	CursorShapeBar             string
+	CursorShapeUnderline       string
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
@@ -504,6 +509,7 @@ type ToolsMessages struct {
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
+	UpdateBlockedBySystem           string
 	UpdateOpenPage                  string
 	UpdateNoReleaseText             string
 	ActionSSHFmt                    string
@@ -678,6 +684,9 @@ type ToolsMessages struct {
 	RemoteProcessVirtualMemory      string
 	RemoteProcessElapsed            string
 	RemoteProcessCommand            string
+	RemoteProcessCommandLoading     string
+	RemoteProcessCommandSummary     string
+	RemoteProcessCommandTooLarge    string
 	RemoteProcessCollectedAt        string
 
 	RemoteProcessEnvironment            string
@@ -685,7 +694,13 @@ type ToolsMessages struct {
 	RemoteProcessEnvironmentValue       string
 	RemoteProcessEnvironmentLoading     string
 	RemoteProcessEnvironmentEmpty       string
+	RemoteProcessEnvironmentTooLarge    string
 	RemoteProcessEnvironmentUnsupported string
+	RemoteProcessEnvironmentUnreadable  string
+	RemoteContainerDetails              string
+	RemoteContainerDetailsTitle         string
+	RemoteContainerOverview             string
+	RemoteContainerEnvironmentEmpty     string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string

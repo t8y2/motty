@@ -12,6 +12,10 @@ import (
 // which docks all of the dragged tab's panes beside that pane and removes the
 // tab. A press that does not travel is the click it always was, and Escape
 // cancels a drag. The drag changes nothing until it is dropped.
+//
+// The bar of a pane in a split tab can be dragged too, and dropped among the
+// tabs: the pane leaves the split and becomes a tab of its own, its session and
+// everything on its screen carried along, the reverse of docking a tab.
 
 const (
 	tabDragThreshold = float32(6)
@@ -73,6 +77,9 @@ type tabDrag struct {
 	pressed   bool
 	active    bool
 	workspace layoutcore.WorkspaceID
+	// pane is the pane of workspace being pulled out of its split; zero when the
+	// drag carries a whole tab.
+	pane layoutcore.PaneID
 	// group is every tab of a server group dragged by its header; the first is
 	// workspace. A group only moves among the groups of this window.
 	group []layoutcore.WorkspaceID
@@ -112,6 +119,11 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 						drag.host, drag.hasHost = session.host, true
 					}
 				}
+			}
+		} else if pane, session, ok := state.paneBarAt(event); ok {
+			*drag = tabDrag{pressed: true, workspace: state.deck.ActiveWorkspace(), pane: pane, title: session.Title, panes: 1, start: ui.Point{X: event.X, Y: event.Y}, host: session.host, hasHost: true}
+			if drag.title == "" {
+				drag.title = session.Address
 			}
 		} else if state.modal == modalNone && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) {
 			if members, title, ok := state.verticalTabGroupMembers(event.Target); ok {
@@ -156,6 +168,13 @@ func (state *State) tabDragPointer(event ui.PointerEvent) (ui.EventResult, bool)
 // this window, or hands the drag to the window it is over, or notes that it has
 // left every window.
 func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
+	if drag.pane != 0 {
+		// A pane only ever lands among this window's tabs.
+		drag.outside, drag.peer = false, nil
+		state.closeTabPreview()
+		drag.drop = state.paneUndockDropAt(drag.at)
+		return
+	}
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
 	if len(drag.group) > 0 {
 		drag.outside = false // a group of connections is never torn off or sent to another window
@@ -232,6 +251,11 @@ func (state *State) closeTabPreview() {
 // trackTabDragEnd settles the drop at the point of the release.
 func (state *State) trackTabDragEnd(drag *tabDrag, event ui.PointerEvent) {
 	drag.at = ui.Point{X: event.X, Y: event.Y}
+	if drag.pane != 0 {
+		drag.outside, drag.peer = false, nil
+		drag.drop = state.paneUndockDropAt(drag.at)
+		return
+	}
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
 	if len(drag.group) > 0 {
 		drag.outside = false
@@ -405,6 +429,12 @@ func dockZoneAt(at ui.Point, bounds ui.Rect) (dockEdge, ui.Rect) {
 
 // dropTab carries out a drop.
 func (state *State) dropTab(drag tabDrag) {
+	if drag.pane != 0 {
+		if drag.drop.kind == dropReorder {
+			state.undockPane(drag.workspace, drag.pane, drag.drop.boundary)
+		}
+		return
+	}
 	if drag.outside {
 		state.moveTabOut(drag)
 		return
@@ -703,3 +733,71 @@ var tearOffCorners = func() [4]ui.Path {
 		ui.NewPath(r, r, ui.MoveTo(c, 0), ui.CubicTo(c, c*k, c*k, c, 0, c)),
 	}
 }()
+
+// paneBarAt finds the bar of a pane in a split tab under a press on the pane's
+// own ground. Only the bar starts a drag; the terminal below it keeps selecting
+// text.
+func (state *State) paneBarAt(event ui.PointerEvent) (layoutcore.PaneID, *Session, bool) {
+	if state.modal != modalNone || state.activeSection != sectionTerminal ||
+		(event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone) ||
+		event.Target.Scope() != hitPaneActivateList {
+		return 0, nil, false
+	}
+	state.refreshWorkspaceViews()
+	index := item(event.Target)
+	if len(state.panes) < 2 || index >= len(state.panes) {
+		return 0, nil, false
+	}
+	pane := state.panes[index]
+	bounds := pixelBounds(state.workspacePixelBounds(state.viewport), pane.Bounds)
+	bounds.Height = min(bounds.Height, infoBarHeight)
+	if !pointInRect(event.X, event.Y, bounds) {
+		return 0, nil, false
+	}
+	session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
+	if !ok {
+		return 0, nil, false
+	}
+	return pane.ID, session, true
+}
+
+// paneUndockDropAt is where a pane dragged to window point at would become a
+// tab: among the tabs, and nowhere else.
+func (state *State) paneUndockDropAt(at ui.Point) tabDrop {
+	if state.tabStrip.pitch <= 0 || !pointInRect(at.X, at.Y, state.tabDropArea()) ||
+		len(state.workspaceTabs) >= layoutcore.MaxWorkspaces {
+		return tabDrop{}
+	}
+	drop := state.tabDropAt(at, 0, 1, nil)
+	if drop.kind != dropReorder {
+		return tabDrop{}
+	}
+	return drop
+}
+
+// undockPane makes a pane of a split tab a tab of its own at index among the
+// tabs. The pane keeps its session, and with it the screen and scrollback.
+func (state *State) undockPane(workspace layoutcore.WorkspaceID, paneID layoutcore.PaneID, index int) bool {
+	pane, ok := state.deck.Pane(workspace, paneID)
+	if !ok {
+		return false
+	}
+	title := ""
+	if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok {
+		title = session.Title
+	}
+	id, err := state.deck.Undock(workspace, paneID, title, index)
+	if err != nil {
+		state.status = err.Error()
+		return false
+	}
+	state.syncActiveSession()
+	state.activeSection = sectionTerminal
+	state.rebuildTabOptions()
+	state.refreshWorkspaceViews()
+	state.fitWorkspaceTerminals(workspace)
+	state.fitWorkspaceTerminals(id)
+	state.fitSFTP(state.viewport)
+	state.save()
+	return true
+}

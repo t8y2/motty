@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -138,6 +139,232 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 				t.Fatal("dock menu reset retained a custom size")
 			}
 		})
+	}
+}
+
+func TestToolbarDockHidesTerminalSideRailWithoutVisibleContent(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.activeSessionID = session.ID
+	state.activeSection = sectionTerminal
+	state.terminalShowLatency = false
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Enabled = false
+	}
+
+	size := ui.Size{Width: 1200, Height: 800}
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		t.Run(position.String(), func(t *testing.T) {
+			state.terminalToolbarPosition = position
+			state.Resize(size)
+			left := position == terminalToolbarLeft
+			if reserve := state.toolbarDockSideReserveFor(left, true); reserve != 0 {
+				t.Fatalf("empty %s rail reserved %.1f pixels", position, reserve)
+			}
+			full := state.fullWorkspacePixelBounds(size)
+			workspace := state.baseWorkspacePixelBounds(size)
+			if workspace != full {
+				t.Fatalf("empty %s rail changed workspace: full=%+v workspace=%+v", position, full, workspace)
+			}
+		})
+	}
+
+	state.terminalShowLatency = true
+	atomic.StoreInt32(&session.rttAvailable, 0)
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		state.terminalToolbarPosition = position
+		state.Resize(size)
+		for _, left := range []bool{false, true} {
+			if reserve := state.toolbarDockSideReserveFor(left, true); reserve != 0 {
+				t.Fatalf("latency enabled without RTT kept %s side left=%t open at %.1f", position, left, reserve)
+			}
+		}
+	}
+	atomic.StoreInt64(&session.rttMs, 42)
+	atomic.StoreInt32(&session.rttAvailable, 1)
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		state.terminalToolbarPosition = position
+		state.Resize(size)
+		if _, _, ok := state.latencyInfo(session); !ok {
+			t.Fatal("latency test requires a connected remote session with RTT")
+		}
+		primaryLeft := position == terminalToolbarLeft
+		for _, left := range []bool{false, true} {
+			want := float32(0)
+			if left == primaryLeft {
+				want = state.terminalToolbarMetrics().railExtent
+			}
+			if reserve := state.toolbarDockSideReserveFor(left, true); reserve != want {
+				t.Fatalf("latency-only %s side left=%t reserve = %.1f, want %.1f", position, left, reserve, want)
+			}
+		}
+	}
+	state.terminalShowLatency = false
+	for index := range entries {
+		if entries[index].Key == "files" {
+			entries[index].Enabled = true
+		}
+	}
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		state.terminalToolbarPosition = position
+		state.Resize(size)
+		left := position == terminalToolbarLeft
+		if reserve := state.toolbarDockSideReserveFor(left, true); reserve != state.terminalToolbarMetrics().railExtent {
+			t.Fatalf("visible %s Files action did not reserve its rail: %.1f", position, reserve)
+		}
+	}
+
+	state.moveToolbarDockTool(hitSFTPOpen, toolbarDockTop, ui.ID{})
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		state.terminalToolbarPosition = position
+		state.Resize(size)
+		for _, left := range []bool{false, true} {
+			if reserve := state.toolbarDockSideReserveFor(left, true); reserve != 0 {
+				t.Fatalf("moved-out %s side left=%t reserve = %.1f", position, left, reserve)
+			}
+		}
+	}
+}
+
+func TestToolbarDockPresenceCheckDoesNotRecalculateManagedSplitBounds(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	workspaceID := state.deck.ActiveWorkspace()
+	state.managedWorkspaceColumns = map[layoutcore.WorkspaceID]uint8{workspaceID: 1}
+	state.activeSection = sectionTerminal
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Enabled = false
+	}
+	state.Resize(ui.Size{Width: 1200, Height: 800})
+	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
+		state.terminalToolbarPosition = position
+		if reserve := state.toolbarDockSideReserveFor(position == terminalToolbarLeft, true); reserve != 0 {
+			t.Fatalf("managed %s rail reserved %.1f pixels", position, reserve)
+		}
+	}
+}
+
+func TestToolbarDockPresenceCheckDoesNotAllocate(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.activeSection = sectionTerminal
+	state.Resize(ui.Size{Width: 1200, Height: 800})
+	for _, latency := range []bool{false, true} {
+		t.Run(fmt.Sprintf("latency=%t", latency), func(t *testing.T) {
+			state.terminalShowLatency = latency
+			atomic.StoreInt64(&session.rttMs, 42)
+			if latency {
+				atomic.StoreInt32(&session.rttAvailable, 1)
+			} else {
+				atomic.StoreInt32(&session.rttAvailable, 0)
+			}
+			allocations := testing.AllocsPerRun(100, func() {
+				state.terminalToolbarShowsOnSide(session, true)
+				state.terminalToolbarShowsOnSide(session, false)
+			})
+			if allocations != 0 {
+				t.Fatalf("toolbar presence check allocated %.1f times", allocations)
+			}
+		})
+	}
+}
+
+func TestToolbarDockManagedCompactionUsesActualVisibleSide(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionTerminal
+	state.terminalToolbarPosition = terminalToolbarLeft
+	workspaceID := state.deck.ActiveWorkspace()
+	state.managedWorkspaceColumns = map[layoutcore.WorkspaceID]uint8{workspaceID: 1}
+	size := ui.Size{Width: 1200, Height: 800}
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Enabled = entries[index].Key == "export-log"
+	}
+	state.moveToolbarDockTool(hitConnExport, toolbarDockSideTop, ui.ID{})
+	state.Resize(size)
+	if reserve := state.toolbarDockSideReserveFor(true, true); reserve != state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("managed menu did not reserve the terminal default side: %.1f", reserve)
+	}
+	if reserve := state.toolbarDockSideReserveFor(false, true); reserve != 0 {
+		t.Fatalf("managed menu reserved its obsolete configured side: %.1f", reserve)
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if hit, ok := hitByID(&canvas, hitWorkspacePaneTools); !ok || hit.Bounds.X+hit.Bounds.Width > size.Width/2 {
+		t.Fatalf("managed menu was not painted on the terminal default side: %+v, %t", hit.Bounds, ok)
+	}
+
+	for index := range entries {
+		entries[index].Enabled = entries[index].Key == "files"
+	}
+	state.moveToolbarDockTool(hitSFTPOpen, toolbarDockSideTop, ui.ID{})
+	state.Resize(size)
+	if reserve := state.toolbarDockSideReserveFor(true, true); reserve != 0 {
+		t.Fatalf("compactable action reserved its old side: %.1f", reserve)
+	}
+	if reserve := state.toolbarDockSideReserveFor(false, true); reserve != state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("compactable action did not reserve its configured side: %.1f", reserve)
+	}
+	canvas = ui.Canvas{}
+	state.Paint(&canvas, size)
+	if hit, ok := hitByID(&canvas, hitSFTPOpen); !ok || hit.Bounds.X < size.Width/2 {
+		t.Fatalf("compactable action was not painted on its configured side: %+v, %t", hit.Bounds, ok)
+	}
+}
+
+func TestToolbarDockClearsRailInputAfterLatencyOnlySideDisappears(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.activeSection = sectionTerminal
+	state.terminalToolbarPosition = terminalToolbarRight
+	state.terminalShowLatency = true
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Enabled = false
+	}
+	atomic.StoreInt64(&session.rttMs, 42)
+	atomic.StoreInt32(&session.rttAvailable, 1)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	rail := session.term.railBounds
+	if rail.Width <= 0 || rail.Height <= 0 {
+		t.Fatalf("latency-only rail did not reserve its painted bounds: %+v", rail)
+	}
+
+	atomic.StoreInt32(&session.rttAvailable, 0)
+	state.Paint(&canvas, size)
+	if reserve := state.toolbarDockSideReserveFor(false, true); reserve != 0 {
+		t.Fatalf("latency-only rail retained %v pixels", reserve)
+	}
+	if session.term.railBounds != (ui.Rect{}) || session.term.railViewport != (ui.Rect{}) ||
+		session.term.railContentExtent != 0 || session.term.railCount != 0 {
+		t.Fatalf("hidden rail retained input state: bounds=%+v viewport=%+v extent=%v count=%d",
+			session.term.railBounds, session.term.railViewport, session.term.railContentExtent, session.term.railCount)
+	}
+	event := ui.ScrollEvent{X: rail.X + rail.Width/2, Y: rail.Y + rail.Height/2}
+	if _, handled := state.scrollTerminalToolbar(session, event); handled {
+		t.Fatal("hidden rail consumed wheel input over the expanded terminal")
+	}
+}
+
+func TestToolbarDockIgnoresUnavailableToolsOnSide(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionTerminal
+	entries := state.toolbars.customize(toolbarTerminal)
+	for index := range entries {
+		entries[index].Enabled = entries[index].Key == "broadcast"
+	}
+	state.moveToolbarDockTool(hitBroadcast, toolbarDockLeftTop, ui.ID{})
+	state.terminalToolbarPosition = terminalToolbarRight
+	state.Resize(ui.Size{Width: 1200, Height: 800})
+
+	for _, left := range []bool{false, true} {
+		if reserve := state.toolbarDockSideReserveFor(left, true); reserve != 0 {
+			t.Fatalf("unavailable broadcast action kept side left=%t open at %.1f", left, reserve)
+		}
 	}
 }
 
@@ -714,5 +941,45 @@ func TestToolbarDockZoneButtonFitsItsLabel(t *testing.T) {
 	need := components.BeginButton(&ui.Canvas{}, state.Theme(), ui.ID{}, ui.Rect{}).SizeToFit(label).BoundsWidth()
 	if hit.Bounds.Width+0.5 < need {
 		t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label overflows its padding", label, need, hit.Bounds.Width)
+	}
+}
+
+func TestToolbarDockPresenceMatchesThePaintedTerminalTools(t *testing.T) {
+	size := ui.Size{Width: 1200, Height: 800}
+	for _, spec := range toolbarCatalog[toolbarTerminal] {
+		t.Run(spec.key, func(t *testing.T) {
+			state, _, _, _ := liveSession(t)
+			state.activeSection = sectionTerminal
+			state.terminalToolbarPosition = terminalToolbarRight
+			entries := state.toolbars.customize(toolbarTerminal)
+			for index := range entries {
+				entries[index].Enabled = entries[index].Key == spec.key
+			}
+			state.Resize(size)
+			var canvas ui.Canvas
+			state.Paint(&canvas, size)
+			// 0 is the left side, 1 the right.
+			var painted [2]bool
+			for _, other := range toolbarCatalog[toolbarTerminal] {
+				hit, ok := hitByID(&canvas, other.id)
+				if !ok {
+					continue
+				}
+				if hit.Bounds.X+hit.Bounds.Width/2 < size.Width/2 {
+					painted[0] = true
+				} else {
+					painted[1] = true
+				}
+			}
+			for _, side := range []struct {
+				left bool
+				at   int
+			}{{true, 0}, {false, 1}} {
+				reserved := state.toolbarDockSideReserveFor(side.left, true) > 0
+				if reserved != painted[side.at] {
+					t.Fatalf("%s: reserve(left=%v)=%v, painted=%v", spec.key, side.left, reserved, painted[side.at])
+				}
+			}
+		})
 	}
 }
