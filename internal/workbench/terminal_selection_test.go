@@ -485,3 +485,52 @@ func TestSlowMouseWheelNotchScrollsOneTerminalRow(t *testing.T) {
 		}
 	}
 }
+
+func TestShiftClickStretchesTheSelectionFromTheLastClick(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("alpha beta\r\ngamma delta\r\n"))
+	hit := hitTerminalList.At(int(session.ID))
+	press := func(row, column int, modifiers ui.Modifiers) {
+		x, y := cellPoint(geometry, row, column, state.cellWidth, state.cellHeight)
+		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
+		state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
+	}
+	copied := func() string {
+		return state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText
+	}
+
+	// With nothing selected, Shift-click goes from the place last clicked.
+	press(0, 2, 0)
+	if session.term.selection.selected {
+		t.Fatal("a plain click selected something")
+	}
+	press(1, 4, ui.ModifierShift)
+	if got := copied(); got != "pha beta\ngamma" {
+		t.Fatalf("from the last click = %q", got)
+	}
+	// With a selection, the end nearer the click moves and the far one stays.
+	press(1, 1, ui.ModifierShift)
+	if got := copied(); got != "pha beta\nga" {
+		t.Fatalf("shrunk at the end = %q", got)
+	}
+	press(0, 7, ui.ModifierShift)
+	if got := copied(); got != "eta\nga" {
+		t.Fatalf("moved the start = %q", got)
+	}
+	press(0, 0, ui.ModifierShift)
+	if got := copied(); got != "alpha beta\nga" {
+		t.Fatalf("grown at the start = %q", got)
+	}
+}
+
+func TestShiftClickWithoutAnythingToExtendDoesNothing(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("alpha beta\r\n"))
+	hit := hitTerminalList.At(int(session.ID))
+	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, Modifiers: ui.ModifierShift, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: ui.ModifierShift, X: x, Y: y, Viewport: state.viewport})
+	if session.term.selection.selected {
+		t.Fatalf("selection = %+v", session.term.selection)
+	}
+}

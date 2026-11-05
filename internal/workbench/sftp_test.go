@@ -890,8 +890,13 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
-	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "/home/test/notes.txt" {
+	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {
 		t.Fatalf("rename dialog = %+v", view)
+	}
+	replaceSFTPDialogText(t, state, "docs/renamed.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogRename || view.dialogError != state.messages.SFTPErrRenameInvalid {
+		t.Fatalf("rename accepted a path: dialog=%d error=%q", view.dialog, view.dialogError)
 	}
 	replaceSFTPDialogText(t, state, "renamed.txt")
 	state.Click(hitSFTPDialogSubmit)
@@ -924,6 +929,124 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	})
 	if !strings.Contains(view.status, "600") {
 		t.Fatalf("chmod completion status = %q", view.status)
+	}
+
+	// The permission grid mirrors the octal field in both directions
+	// (issue #392): nine boxes, a tap flips one bit, and a typed value moves
+	// the boxes.
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("chmod reopen value = %q", view.dialogEditor.String())
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var boxes [9]ui.Rect
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok {
+			t.Fatalf("permission checkbox %d is not painted", index)
+		}
+		// 600 checks owner read and write only: the boxes are drawn from the
+		// field, not from a state of their own.
+		if want := index < 2; hit.Checked != want {
+			t.Fatalf("permission checkbox %d checked = %v, want %v for 600", index, hit.Checked, want)
+		}
+		boxes[index] = hit.Bounds
+	}
+	// Tapping the gap between two boxes must not reach a neighbour.
+	for first := 0; first < 9; first++ {
+		for second := first + 1; second < 9; second++ {
+			a, b := boxes[first], boxes[second]
+			if a.X < b.X+b.Width && b.X < a.X+a.Width && a.Y < b.Y+b.Height && b.Y < a.Y+a.Height {
+				t.Fatalf("permission checkboxes %d and %d overlap: %+v %+v", first, second, a, b)
+			}
+		}
+	}
+	// An empty field is not a mode: every box stands down instead of showing
+	// stale bits.
+	replaceSFTPDialogText(t, state, "")
+	canvas = ui.Canvas{}
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok || !hit.Disabled {
+			t.Fatalf("permission checkbox %d enabled with an empty field: %+v %t", index, hit, ok)
+		}
+	}
+	replaceSFTPDialogText(t, state, "600")
+	// 600: owner rw. Tapping group write (index 4) sets that one bit: 620.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "620" {
+		t.Fatalf("after group-write tap = %q, want 620", view.dialogEditor.String())
+	}
+	// Tapping it again takes the bit back.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after second tap = %q, want 600", view.dialogEditor.String())
+	}
+	// Typing in the field moves the boxes: 700 has owner execute; tapping it
+	// clears the bit back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	state.Click(hitSFTPChmodBits.At(2))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after owner-exec tap on 700 = %q, want 600", view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		index := sftpRowIndexOrNegative(view, "renamed.txt")
+		return !view.busy && index >= 0 && view.rows[index].entry.Mode.Perm() == 0o600
+	})
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPMove)
+	if view.dialog != sftpDialogMove || view.dialogEditor.String() != "/home/test" {
+		t.Fatalf("move dialog = dialog %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveSame {
+		t.Fatalf("move to the current folder was accepted: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "renamed.txt") < 0
+	})
+	remote.mu.Lock()
+	_, moved := remote.files["/home/test/docs/renamed.txt"]
+	_, oldLocation := remote.files["/home/test/renamed.txt"]
+	remote.mu.Unlock()
+	if !moved || oldLocation {
+		t.Fatalf("move state: moved=%v old=%v", moved, oldLocation)
+	}
+}
+
+func TestRemoteRenameAcceptsOnlyBaseNames(t *testing.T) {
+	for _, value := range []string{"renamed.txt", "配置.yaml", ".env", "with space"} {
+		if !validRemoteBaseName(value) {
+			t.Errorf("valid base name %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", ".", "..", "folder/file", `folder\file`, "nul\x00name"} {
+		if validRemoteBaseName(value) {
+			t.Errorf("path-like name %q was accepted", value)
+		}
+	}
+}
+
+func TestRemoteMoveRejectsItsOwnDirectory(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPMove)
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into itself = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "/home/test/docs/deep")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into its descendant = dialog %d, error %q", view.dialog, view.dialogError)
 	}
 }
 

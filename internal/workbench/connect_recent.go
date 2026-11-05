@@ -102,7 +102,7 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 		palette.visible = append(palette.visible, index)
 	}
 	palette.rawQuery, palette.query, palette.filtered = rawQuery, query, true
-	palette.selected, palette.top = max(palette.choiceAt(0, 1), 0), 0
+	palette.selected, palette.scroll = max(palette.choiceAt(0, 1), 0), 0
 }
 
 func (state *State) connectionRecency(at, now time.Time) string {

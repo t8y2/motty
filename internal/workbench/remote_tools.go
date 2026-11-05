@@ -160,6 +160,8 @@ type remoteToolsView struct {
 	processMenu                           remoteProcessMenu
 	processDetails                        remoteProcessDetails
 	processDetailsSerial                  uint64
+	containerDetails                      remoteContainerDetails
+	containerDetailsSerial                uint64
 	sourceTotal                           int
 	processesTruncated, commandsTruncated bool
 	searchSummary                         string
@@ -202,10 +204,14 @@ func (state *State) openRemoteToolsTab(session *Session, tab remoteTab, switchTa
 	// requests from a closed tools surface must never be accepted by a later
 	// surface that happens to use the same session and process.
 	detailsSerial := state.remote.processDetailsSerial
+	containerDetailsSerial := state.remote.containerDetailsSerial
+	state.cancelRemoteProcessCommand()
 	state.cancelRemoteProcessEnvironment()
+	state.cancelRemoteContainerEnvironment()
 	state.remote = remoteToolsView{
 		session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort,
 		serial: state.remote.serial + 1, processDetailsSerial: detailsSerial,
+		containerDetailsSerial: containerDetailsSerial,
 	}
 	state.modal = modalRemoteTools
 	state.refreshRemoteTools()
@@ -231,6 +237,9 @@ func (state *State) clickRemoteTools(id ui.ID) {
 	view := &state.remote
 	m := state.messages.Tools
 	if state.clickRemoteProcessDetails(id) {
+		return
+	}
+	if state.clickRemoteContainerDetails(id) {
 		return
 	}
 	if state.clickRemoteProcessMenu(id) {
@@ -431,6 +440,13 @@ func (state *State) clickRemoteTools(id ui.ID) {
 			return
 		}
 		state.openContainerShell(container)
+	case id == hitRemoteContainerDetails && view.tab == remoteContainers:
+		container, ok := state.selectedContainer()
+		if !ok {
+			view.status, view.failed = m.RemoteNeedSelection, true
+			return
+		}
+		state.openRemoteContainerDetails(container)
 	}
 }
 
@@ -714,6 +730,7 @@ func (state *State) closeRemoteToolsSurface() {
 	state.remote.auto.enabled, state.remote.auto.open = false, false
 	state.remote.processMenu = remoteProcessMenu{}
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeModal()
 }
@@ -728,6 +745,10 @@ func (state *State) remoteErrorText(err error) string {
 		return m.RemoteProcessUnverifiable
 	case errors.Is(err, remotetools.ErrProcessEnvironmentUnsupported):
 		return m.RemoteProcessEnvironmentUnsupported
+	case errors.Is(err, remotetools.ErrProcessEnvironmentUnreadable):
+		return m.RemoteProcessEnvironmentUnreadable
+	case errors.Is(err, remotetools.ErrProcessEnvironmentTooLarge):
+		return m.RemoteProcessEnvironmentTooLarge
 	case errors.Is(err, remotetools.ErrNoCompose):
 		return m.RemoteErrNoCompose
 	case errors.Is(err, remotetools.ErrComposeListUnsupported):
@@ -849,6 +870,7 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 	state.paintRemoteProcessMenu(canvas, viewport)
 	state.paintRemoteProcessDetails(canvas, viewport)
+	state.paintRemoteContainerDetails(canvas, viewport)
 }
 
 func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
@@ -1046,15 +1068,19 @@ func (state *State) remoteToolActions() (actions [8]components.ButtonAction, cou
 		}
 		add(components.ButtonAction{ID: hitRemoteRemove, Label: m.RemoteRemove, Variant: components.ButtonDestructive})
 	} else if view.tab == remoteContainers {
+		container, selected := state.selectedContainer()
+		add(components.ButtonAction{ID: hitRemoteContainerDetails, Label: m.RemoteContainerDetails, Variant: components.ButtonOutline, Disabled: !selected})
 		add(components.ButtonAction{ID: hitRemoteStart, Label: m.RemoteStart, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteStop, Label: m.RemoteStop, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteRestart, Label: m.RemoteRestart, Variant: components.ButtonOutline})
 		add(components.ButtonAction{ID: hitRemoteLogs, Label: m.RemoteLogs, Variant: components.ButtonOutline})
-		container, selected := state.selectedContainer()
 		add(components.ButtonAction{ID: hitRemoteShell, Label: m.RemoteEnterShell, Variant: components.ButtonOutline, Disabled: !selected || !container.Running() || view.loading || !connected || source.host.System == sshconn.SystemWindows})
 		add(components.ButtonAction{ID: hitRemoteRemove, Label: m.RemoteRemove, Variant: components.ButtonDestructive})
 	}
 	for i := 1; i < count; i++ {
+		if actions[i].ID == hitRemoteContainerDetails {
+			continue
+		}
 		actions[i].Disabled = actions[i].Disabled || view.loading || view.stale || view.collectedAt.IsZero() || !connected || view.noDocker && view.tab != remoteProcesses
 		actions[i].Disabled = actions[i].Disabled || processBlocked
 	}

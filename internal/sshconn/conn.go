@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
+	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -293,6 +294,12 @@ type Conn struct {
 	doneOnce      sync.Once
 	// pingPending is set while a keepalive probe sent by Ping is unanswered.
 	pingPending atomic.Bool
+
+	// kind is the family of the server's default shell, learned once per client
+	// by defaultShellKind.
+	kindMu     sync.Mutex
+	kindClient *ssh.Client
+	kind       shellkind.Kind
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and

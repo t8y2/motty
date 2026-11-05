@@ -162,6 +162,25 @@ func clickPickerRow(t *testing.T, state *State, label string) {
 	t.Fatalf("the picker has no row for %q", label)
 }
 
+func TestPickerPencilOpensTheHostForEditing(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	before := len(state.deck.Workspaces(nil))
+	host := state.hosts[0]
+	state.Click(hitNewTab)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitConnectPickEdit.At(int(host.ID))); !ok {
+		t.Fatal("the host's row has no pencil")
+	}
+	state.Click(hitConnectPickEdit.At(int(host.ID)))
+	if state.modal != modalNewHost || state.hostDialogMode != hostDialogEdit || state.hostDialogID != host.ID {
+		t.Fatalf("modal %d mode %d id %d: the pencil must open host %d for editing", state.modal, state.hostDialogMode, state.hostDialogID, host.ID)
+	}
+	if len(state.deck.Workspaces(nil)) != before {
+		t.Fatalf("tabs %d: opening the dialog must create no tab", len(state.deck.Workspaces(nil)))
+	}
+}
+
 func TestNewTabPickerKeyboardStepsOverGroupHeadings(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)
@@ -218,16 +237,16 @@ func TestNewTabPickerGroupsHostsAndTheWheelSurvivesTheNextPaint(t *testing.T) {
 	if !ok {
 		t.Fatal("the picker paints no first row")
 	}
-	if result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.top == 0 {
-		t.Fatalf("the wheel did not move the list: %+v, top %d", result, state.commandPalette.top)
+	if result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.scroll == 0 {
+		t.Fatalf("the wheel did not move the list: %+v, scroll %g", result, state.commandPalette.scroll)
 	}
-	top := state.commandPalette.top
+	top := state.commandPalette.scroll
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	if state.commandPalette.top != top {
-		t.Fatalf("the next paint returned the list to row %d, want it to stay at %d", state.commandPalette.top, top)
+	if state.commandPalette.scroll != top {
+		t.Fatalf("the next paint returned the list to offset %g, want it to stay at %g", state.commandPalette.scroll, top)
 	}
-	after, ok := hitByID(&canvas, hitCommandPaletteItems.At(0))
+	after, ok := hitByID(&canvas, hitCommandPaletteItems.At(int(top/commandPaletteRowStep)))
 	if !ok || after.Label == first.Label {
 		t.Fatalf("the wheel did not change the first row: %q -> %q", first.Label, after.Label)
 	}

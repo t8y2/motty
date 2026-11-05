@@ -74,6 +74,9 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
 		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
 			w.ui.shortcuts = w.owner.shortcuts
+			if result, handled := w.ui.remoteDetailShortcut(event); handled {
+				return result
+			}
 			return w.ui.remoteSearchShortcut(event)
 		},
 		OnMinimize: func(minimized bool) {
@@ -166,7 +169,9 @@ func (w *remoteToolsWindow) dispose() {
 	w.closed, w.ui.closed = true, true
 	w.ui.remote.auto.enabled, w.ui.remote.auto.open = false, false
 	w.ui.remote.serial++
+	w.ui.cancelRemoteProcessCommand()
 	w.ui.cancelRemoteProcessEnvironment()
+	w.ui.cancelRemoteContainerEnvironment()
 	w.cancel()
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
 }
@@ -299,6 +304,9 @@ func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
 		return result
 	}
+	if result, handled := w.ui.remoteContainerDetailsKey(event); handled {
+		return result
+	}
 	if result, handled := w.ui.menuKey(event); handled {
 		return result
 	}
@@ -412,4 +420,5 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	}
 	w.ui.paintRemoteProcessDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	w.ui.paintRemoteContainerDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 }

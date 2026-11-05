@@ -195,67 +195,71 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitSettingsLanguageEnglish  = tree.ID(settingsHits, "settings-language-english")
-	hitSettingsLanguageChinese  = tree.ID(settingsHits, "settings-language-chinese")
-	hitSettingsAppearanceSystem = tree.ID(settingsHits, "settings-appearance-system")
-	hitSettingsAppearanceDark   = tree.ID(settingsHits, "settings-appearance-dark")
-	hitSettingsAppearanceLight  = tree.ID(settingsHits, "settings-appearance-light")
-	hitSettingsTextSmall        = tree.ID(settingsHits, "settings-text-small")
-	hitSettingsTextRegular      = tree.ID(settingsHits, "settings-text-regular")
-	hitSettingsTextLarge        = tree.ID(settingsHits, "settings-text-large")
-	hitSettingsNetworkSystem    = tree.ID(settingsHits, "settings-network-system")
-	hitSettingsNetworkDirect    = tree.ID(settingsHits, "settings-network-direct")
-	hitSettingsToolbarLeft      = tree.ID(settingsHits, "settings-toolbar-left")
-	hitSettingsToolbarRight     = tree.ID(settingsHits, "settings-toolbar-right")
-	hitSettingsCloseTray        = tree.ID(settingsHits, "settings-close-tray")
-	hitSettingsCloseQuit        = tree.ID(settingsHits, "settings-close-quit")
-	hitSettingsOptionText       = tree.ID(settingsHits, "settings-option-text")
-	hitSettingsOptionMeta       = tree.ID(settingsHits, "settings-option-meta")
-	hitSettingsFontSizeDown     = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset    = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp       = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsPadCompact       = tree.ID(settingsHits, "settings-pad-compact")
-	hitSettingsPadNormal        = tree.ID(settingsHits, "settings-pad-normal")
-	hitSettingsPadRoomy         = tree.ID(settingsHits, "settings-pad-roomy")
-	hitSettingsIntenseBoth      = tree.ID(settingsHits, "settings-intense-both")
-	hitSettingsIntenseBright    = tree.ID(settingsHits, "settings-intense-bright")
-	hitSettingsIntenseBold      = tree.ID(settingsHits, "settings-intense-bold")
-	hitSettingsIntensePlain     = tree.ID(settingsHits, "settings-intense-plain")
-	hitSettingsGutterOff        = tree.ID(settingsHits, "settings-gutter-off")
-	hitSettingsGutterNumbers    = tree.ID(settingsHits, "settings-gutter-numbers")
-	hitSettingsGutterTime       = tree.ID(settingsHits, "settings-gutter-time")
-	hitSettingsGutterBoth       = tree.ID(settingsHits, "settings-gutter-both")
-	hitSettingsScrollback1000   = tree.ID(settingsHits, "settings-scrollback1000")
-	hitSettingsScrollback5000   = tree.ID(settingsHits, "settings-scrollback5000")
-	hitSettingsScrollback10000  = tree.ID(settingsHits, "settings-scrollback10000")
-	hitSettingsTimeout5         = tree.ID(settingsHits, "settings-timeout5")
-	hitSettingsTimeout10        = tree.ID(settingsHits, "settings-timeout10")
-	hitSettingsTimeout30        = tree.ID(settingsHits, "settings-timeout30")
-	hitSettingsKeepAliveOff     = tree.ID(settingsHits, "settings-keep-alive-off")
-	hitSettingsKeepAlive30      = tree.ID(settingsHits, "settings-keep-alive30")
-	hitSettingsKeepAlive60      = tree.ID(settingsHits, "settings-keep-alive60")
-	hitSettingsReconnectOff     = tree.ID(settingsHits, "settings-reconnect-off")
-	hitSettingsReconnectThree   = tree.ID(settingsHits, "settings-reconnect-three")
-	hitSettingsReconnectForever = tree.ID(settingsHits, "settings-reconnect-forever")
-	hitSettingsClipboardBlock   = tree.ID(settingsHits, "settings-clipboard-block")
-	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsTabTitle         = tree.ID(settingsHits, "settings-tab-title")
-	hitSettingsLatencyToggle    = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick   = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsClipboardAsk     = tree.ID(settingsHits, "settings-clipboard-ask")
-	hitSettingsClipboardAllow   = tree.ID(settingsHits, "settings-clipboard-allow")
-	hitSettingsRestoreActive    = tree.ID(settingsHits, "settings-restore-active")
-	hitSettingsAgentSystem      = tree.ID(settingsHits, "settings-agent-system")
-	hitSettingsAgentOnePassword = tree.ID(settingsHits, "settings-agent-1password")
-	hitSettingsAgentBitwarden   = tree.ID(settingsHits, "settings-agent-bitwarden")
-	hitSettingsAgentCustom      = tree.ID(settingsHits, "settings-agent-custom")
-	hitSettingsRestoreOff       = tree.ID(settingsHits, "settings-restore-off")
-	hitSettingsRestoreAll       = tree.ID(settingsHits, "settings-restore-all")
-	hitSettingsShareToggle      = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget      = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert     = tree.ID(settingsHits, "settings-vault-convert")
+	hitSettingsLanguageEnglish     = tree.ID(settingsHits, "settings-language-english")
+	hitSettingsLanguageChinese     = tree.ID(settingsHits, "settings-language-chinese")
+	hitSettingsLanguageTraditional = tree.ID(settingsHits, "settings-language-traditional")
+	hitSettingsAppearanceSystem    = tree.ID(settingsHits, "settings-appearance-system")
+	hitSettingsAppearanceDark      = tree.ID(settingsHits, "settings-appearance-dark")
+	hitSettingsAppearanceLight     = tree.ID(settingsHits, "settings-appearance-light")
+	hitSettingsTextSmall           = tree.ID(settingsHits, "settings-text-small")
+	hitSettingsTextRegular         = tree.ID(settingsHits, "settings-text-regular")
+	hitSettingsTextLarge           = tree.ID(settingsHits, "settings-text-large")
+	hitSettingsNetworkSystem       = tree.ID(settingsHits, "settings-network-system")
+	hitSettingsNetworkDirect       = tree.ID(settingsHits, "settings-network-direct")
+	hitSettingsToolbarLeft         = tree.ID(settingsHits, "settings-toolbar-left")
+	hitSettingsToolbarRight        = tree.ID(settingsHits, "settings-toolbar-right")
+	hitSettingsCloseTray           = tree.ID(settingsHits, "settings-close-tray")
+	hitSettingsCloseQuit           = tree.ID(settingsHits, "settings-close-quit")
+	hitSettingsOptionText          = tree.ID(settingsHits, "settings-option-text")
+	hitSettingsOptionMeta          = tree.ID(settingsHits, "settings-option-meta")
+	hitSettingsFontSizeDown        = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset       = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp          = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsPadCompact          = tree.ID(settingsHits, "settings-pad-compact")
+	hitSettingsPadNormal           = tree.ID(settingsHits, "settings-pad-normal")
+	hitSettingsPadRoomy            = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsIntenseBoth         = tree.ID(settingsHits, "settings-intense-both")
+	hitSettingsIntenseBright       = tree.ID(settingsHits, "settings-intense-bright")
+	hitSettingsIntenseBold         = tree.ID(settingsHits, "settings-intense-bold")
+	hitSettingsIntensePlain        = tree.ID(settingsHits, "settings-intense-plain")
+	hitSettingsGutterOff           = tree.ID(settingsHits, "settings-gutter-off")
+	hitSettingsGutterNumbers       = tree.ID(settingsHits, "settings-gutter-numbers")
+	hitSettingsGutterTime          = tree.ID(settingsHits, "settings-gutter-time")
+	hitSettingsGutterBoth          = tree.ID(settingsHits, "settings-gutter-both")
+	hitSettingsScrollback1000      = tree.ID(settingsHits, "settings-scrollback1000")
+	hitSettingsScrollback5000      = tree.ID(settingsHits, "settings-scrollback5000")
+	hitSettingsScrollback10000     = tree.ID(settingsHits, "settings-scrollback10000")
+	hitSettingsTimeout5            = tree.ID(settingsHits, "settings-timeout5")
+	hitSettingsTimeout10           = tree.ID(settingsHits, "settings-timeout10")
+	hitSettingsTimeout30           = tree.ID(settingsHits, "settings-timeout30")
+	hitSettingsKeepAliveOff        = tree.ID(settingsHits, "settings-keep-alive-off")
+	hitSettingsKeepAlive30         = tree.ID(settingsHits, "settings-keep-alive30")
+	hitSettingsKeepAlive60         = tree.ID(settingsHits, "settings-keep-alive60")
+	hitSettingsReconnectOff        = tree.ID(settingsHits, "settings-reconnect-off")
+	hitSettingsReconnectThree      = tree.ID(settingsHits, "settings-reconnect-three")
+	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
+	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
+	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorBlock         = tree.ID(settingsHits, "settings-cursor-shape-block")
+	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
+	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
+	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
+	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsClipboardAsk        = tree.ID(settingsHits, "settings-clipboard-ask")
+	hitSettingsClipboardAllow      = tree.ID(settingsHits, "settings-clipboard-allow")
+	hitSettingsRestoreActive       = tree.ID(settingsHits, "settings-restore-active")
+	hitSettingsAgentSystem         = tree.ID(settingsHits, "settings-agent-system")
+	hitSettingsAgentOnePassword    = tree.ID(settingsHits, "settings-agent-1password")
+	hitSettingsAgentBitwarden      = tree.ID(settingsHits, "settings-agent-bitwarden")
+	hitSettingsAgentCustom         = tree.ID(settingsHits, "settings-agent-custom")
+	hitSettingsRestoreOff          = tree.ID(settingsHits, "settings-restore-off")
+	hitSettingsRestoreAll          = tree.ID(settingsHits, "settings-restore-all")
+	hitSettingsShareToggle         = tree.ID(settingsHits, "settings-share")
+	hitSettingsVaultForget         = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultConvert        = tree.ID(settingsHits, "settings-vault-convert")
 )
 
 // Jump-host routing: its page and dialog.
@@ -308,8 +312,10 @@ var (
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
+	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")
 	hitSFTPDelete          = tree.ID(sftpHits, "sftp-delete")
 	hitSFTPChmod           = tree.ID(sftpHits, "sftp-chmod")
+	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit")) // + the bit index
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
@@ -635,8 +641,27 @@ type State struct {
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
+	terminalCursorStyle terminalCursorStyle
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
+	// What a launch opens once, from the first Wake (see openStartupSessions):
+	// a local terminal, and the saved hosts to connect, by catalog id.
+	// startupLocal opens the machine's default local terminal at a launch;
+	// startupShell opens a specific one of the detected shells instead. At
+	// most one of the two holds.
+	startupLocal bool
+	startupShell string
+	startupHosts []string
+	// startupEnabled is the feature switch of what a launch opens: off, the
+	// launch opens nothing but the choices are kept for when it turns on again.
+	startupEnabled bool
+	// startupReuse says a launch focuses what it was asked to open when that
+	// terminal or host is already open, instead of opening another one.
+	startupReuse  bool
+	startupPicker struct {
+		open   bool
+		bounds ui.Rect // the chooser's place on the settings page
+	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)
 	// dialDesktop opens the remote desktop of a VNC host; tests replace it.
@@ -786,9 +811,10 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout flex.View
 	// area: terminal and workspace panes
-	terminalPageLayout flex.View
-	fontPickerLayout   flex.View // the font picker's list and sample
-	paneChrome         flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   flex.View
+	fontPickerListLayout flex.View
+	fontPickerLayout     flex.View // the font picker's list and sample
+	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   flex.View
@@ -801,6 +827,7 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            flex.View
 	keysLayout            flex.View
+	paletteListLayout     flex.View
 	paletteLayout         flex.View
 	importLayout          flex.View
 	knownHostsTableLayout flex.View
@@ -877,6 +904,7 @@ func (state *State) Close() {
 	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
@@ -955,6 +983,8 @@ func New(options Options) *State {
 		viewport:              ui.Size{Width: 1400, Height: 900},
 		terminalFontSize:      termFontSize,
 		terminalScrollback:    scrollbackLines,
+		startupReuse:          true,
+		startupEnabled:        true,
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second},
 		sftpParallel:          DefaultSFTPParallel,
 		sftpColumns:           defaultSFTPColumnPreferences(),
@@ -1010,7 +1040,7 @@ func New(options Options) *State {
 	// Dialing waits for the first Wake: the window does not exist yet, so the
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
-	state.restorePending = state.restoreConnect != restoreConnectOff
+	state.restorePending = state.startupWanted()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
@@ -2208,6 +2238,15 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.remoteProcessMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
+		return result
+	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
 	}
@@ -2365,6 +2404,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := state.remoteProcessTableKey(event); handled {

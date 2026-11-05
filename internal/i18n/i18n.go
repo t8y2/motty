@@ -2,10 +2,13 @@
 // plain data: the state carries one Messages value and every paint reads
 // from it, so switching languages is one assignment plus a repaint.
 //
-// The catalogs live one per language (english.go, chinese.go); the message
-// structs stay with the area they describe (terminal_tools.go, ai_panel.go,
-// and so on), so adding a string touches its struct and both catalogs.
+// The catalogs live one per language: english.go, chinese.go, and the
+// generated traditional.go (see tools/zhtw/gen.py). The message structs stay
+// with the area they describe (terminal_tools.go, ai_panel.go, and so on);
+// adding a string touches its struct and every catalog.
 package i18n
+
+import "strings"
 
 type HostGroupMessages struct {
 	ExpandAll, CollapseAll                        string
@@ -22,6 +25,7 @@ type Language uint8
 const (
 	English Language = iota
 	Chinese
+	TraditionalChinese
 )
 
 // String returns the BCP-ish tag for persistence or debugging.
@@ -29,9 +33,34 @@ func (language Language) String() string {
 	switch language {
 	case Chinese:
 		return "zh-CN"
+	case TraditionalChinese:
+		return "zh-TW"
 	default:
 		return "en"
 	}
+}
+
+// ChineseVariant picks the catalog a Chinese language tag reads: "zh-TW",
+// "zh-Hant-HK" and a locale like "zh_TW.UTF-8" are Traditional, and a tag that
+// names neither a script nor a Traditional region is Simplified. A script wins
+// over a region, so "zh-Hans-TW" stays Simplified.
+func ChineseVariant(tag string) Language {
+	tag, _, _ = strings.Cut(strings.ToLower(tag), ".")
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "hans":
+			return Chinese
+		case "hant":
+			return TraditionalChinese
+		}
+	}
+	for _, part := range strings.FieldsFunc(tag, func(r rune) bool { return r == '-' || r == '_' }) {
+		switch part {
+		case "tw", "hk", "mo":
+			return TraditionalChinese
+		}
+	}
+	return Chinese
 }
 
 // Messages is the complete set of user-visible workbench strings. Adding a
@@ -226,6 +255,7 @@ type Messages struct {
 	SettingsLanguage                       string
 	SettingsLanguageEnglish                string
 	SettingsLanguageChinese                string
+	SettingsLanguageTraditionalChinese     string
 	SettingsAppearance                     string
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
@@ -323,6 +353,16 @@ type Messages struct {
 	VaultCorruptFmt                        string
 	VaultCleared                           string
 	SettingsRestore                        string
+	SettingsStartupRow                     string
+	SettingsStartupEnable                  string
+	SettingsStartupEnableDescription       string
+	SettingsStartupDisabled                string
+	SettingsStartupDescription             string
+	SettingsStartupReuse                   string
+	SettingsStartupReuseDescription        string
+	SettingsStartupNone                    string
+	SettingsStartupJoiner                  string
+	SettingsStartupHostsCount              string
 	SettingsSSHAgent                       string
 	SettingsSSHAgentDescription            string
 	SettingsSSHAgentUsingFmt               string
@@ -896,6 +936,7 @@ type Messages struct {
 	SFTPNewDirectory            string
 	SFTPOpen                    string
 	SFTPRename                  string
+	SFTPMove                    string
 	SFTPDelete                  string
 	SFTPPermissions             string
 	SFTPCancelTransfer          string
@@ -932,11 +973,22 @@ type Messages struct {
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string
 	SFTPRenameDescription       string
-	SFTPDestinationPath         string
+	SFTPNewName                 string
 	SFTPRenameSubmit            string
-	SFTPErrDestinationRequired  string
+	SFTPErrRenameInvalid        string
+	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
+	SFTPMoveTitle               string
+	SFTPMoveDescription         string
+	SFTPMoveDestination         string
+	SFTPMoveSubmit              string
+	SFTPErrMoveRequired         string
+	SFTPErrMoveInvalid          string
+	SFTPErrMoveSame             string
+	SFTPErrMoveInside           string
+	SFTPMovingFmt               string
+	SFTPMovedFmt                string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteDescriptionFmt    string
@@ -953,6 +1005,12 @@ type Messages struct {
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string
 	SFTPPermissionsSubmit       string
+	SFTPPermissionsOwner        string
+	SFTPPermissionsGroup        string
+	SFTPPermissionsOthers       string
+	SFTPPermissionsRead         string
+	SFTPPermissionsWrite        string
+	SFTPPermissionsExecute      string
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string
@@ -1045,6 +1103,17 @@ func For(language Language) Messages {
 		messages.SSHSync = chineseSSHSync
 		messages.Desktop = chineseDesktop
 		messages.About = chineseAbout
+		return messages
+	case TraditionalChinese:
+		messages := TraditionalMessages
+		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
+		messages.Toolbars = traditionalToolbars
+		messages.Autofill = traditionalAutofill
+		messages.History = traditionalHistory
+		messages.Completion = traditionalCompletion
+		messages.SSHSync = traditionalSSHSync
+		messages.Desktop = traditionalDesktop
+		messages.About = traditionalAbout
 		return messages
 	default:
 		messages := EnglishMessages

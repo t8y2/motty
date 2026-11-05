@@ -33,85 +33,97 @@ type savedState struct {
 	RecentConnectSort bool                 `json:"recent_connect_sort,omitempty"`
 	RecentConnections map[string]time.Time `json:"recent_connections,omitempty"`
 
-	MonitorPanels              []monitoring.Panel  `json:"monitor_panels,omitempty"`
-	MonitorActive              string              `json:"monitor_active,omitempty"`
-	Version                    int                 `json:"version"`
-	Language                   string              `json:"language,omitempty"`
-	Theme                      string              `json:"theme,omitempty"`
-	BackgroundOutputAlerts     bool                `json:"background_output_alerts,omitempty"`
-	TabOrientation             string              `json:"tab_orientation,omitempty"`
-	VerticalTabsAutoHide       bool                `json:"vertical_tabs_auto_hide,omitempty"`
-	VerticalTabsGrouping       bool                `json:"vertical_tabs_grouping,omitempty"`
-	NetworkProxy               string              `json:"network_proxy,omitempty"`
-	TerminalOption             string              `json:"terminalOption,omitempty"`
-	LocalShell                 string              `json:"local_shell,omitempty"`
-	SSHAgent                   string              `json:"ssh_agent,omitempty"`
-	SSHAgentPath               string              `json:"ssh_agent_path,omitempty"`
-	TerminalFontSize           int                 `json:"terminal_font_size,omitempty"`
-	TextScale                  string              `json:"text_scale,omitempty"`
-	InterfaceFont              string              `json:"interface_font,omitempty"`
-	TerminalFontFace           string              `json:"terminal_font_face,omitempty"`
-	TerminalFontFamily         string              `json:"terminal_font_family,omitempty"`
-	TerminalFontFallbacks      []string            `json:"terminal_font_fallbacks,omitempty"`
-	TerminalScrollback         int                 `json:"terminal_scrollback,omitempty"`
-	ConnectionTimeoutSeconds   int                 `json:"connection_timeout_seconds,omitempty"`
-	ConnectionKeepAliveSeconds int                 `json:"connection_keepalive_seconds,omitempty"`
-	ConnectionReconnect        string              `json:"connection_reconnect,omitempty"`
-	RestoreConnect             string              `json:"restore_connect,omitempty"`
-	ShareConnections           string              `json:"share_connections,omitempty"`
-	TerminalClipboard          string              `json:"terminal_clipboard,omitempty"`
-	TerminalCursorSteady       bool                `json:"terminal_cursor_steady,omitempty"`
-	TerminalCopyOnSelect       bool                `json:"terminal_copy_on_select,omitempty"`
-	TerminalRightClickPaste    bool                `json:"terminal_right_click_paste,omitempty"`
-	TerminalTabTitle           bool                `json:"terminal_tab_title,omitempty"`
-	TerminalShowLatency        bool                `json:"terminal_show_latency,omitempty"`
-	TerminalToolbarPosition    string              `json:"terminal_toolbar_position,omitempty"`
-	TerminalToolbarSize        string              `json:"terminal_toolbar_size,omitempty"`
-	TerminalBellOff            bool                `json:"terminal_bell_off,omitempty"`
-	TerminalLinkPlainClick     bool                `json:"terminal_link_plain_click,omitempty"`
-	AIPanelWidth               float32             `json:"ai_panel_width,omitempty"`
-	AIComposerHeight           float32             `json:"ai_composer_height,omitempty"`
-	MonitorPanelWidth          float32             `json:"monitor_panel_width,omitempty"`
-	WindowX                    int                 `json:"window_x,omitempty"`
-	WindowY                    int                 `json:"window_y,omitempty"`
-	WindowWidth                int                 `json:"window_width,omitempty"`
-	WindowHeight               int                 `json:"window_height,omitempty"`
-	TerminalScheme             string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
-	TerminalSchemeDark         string              `json:"terminal_scheme_dark,omitempty"`
-	TerminalSchemeLight        string              `json:"terminal_scheme_light,omitempty"`
-	TerminalPadding            string              `json:"terminal_padding,omitempty"`
-	TerminalGutter             string              `json:"terminal_gutter,omitempty"`
-	TerminalIntense            string              `json:"terminal_intense,omitempty"`
-	TerminalNotifications      string              `json:"terminal_notifications,omitempty"`
-	TerminalPasteImage         string              `json:"terminal_paste_image,omitempty"`
-	SFTPParallel               int                 `json:"sftp_parallel,omitempty"`
-	SFTPKeepTimes              string              `json:"sftp_keep_times,omitempty"`
-	SFTPFollow                 string              `json:"sftp_follow,omitempty"`
-	SFTPTerminalFollow         bool                `json:"sftp_terminal_follow,omitempty"`
-	SFTPPathInput              bool                `json:"sftp_path_input,omitempty"`
-	SFTPPanelAutoOpen          bool                `json:"sftp_panel_auto_open,omitempty"`
-	SFTPPanelSide              string              `json:"sftp_panel_side,omitempty"`
-	SFTPPanelWidth             float32             `json:"sftp_panel_width,omitempty"`
-	SFTPWindowOrder            string              `json:"sftp_window_order,omitempty"`
-	SFTPOpenMode               string              `json:"sftp_open_mode,omitempty"`
-	SFTPColumns                string              `json:"sftp_columns,omitempty"`
-	SFTPDownloadDirectory      string              `json:"sftp_download_directory,omitempty"`
-	DefaultEditor              string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
-	CustomEditorPath           string              `json:"custom_editor_path,omitempty"`
-	Toolbars                   *savedToolbars      `json:"toolbars,omitempty"`
-	UpdateCheck                string              `json:"update_check,omitempty"`
-	CloseAction                string              `json:"close_action,omitempty"`
-	UpdateSkipped              string              `json:"update_skipped,omitempty"`
-	SFTPBookmarks              []savedBookmark     `json:"sftp_bookmarks,omitempty"`
-	SFTPLocalBookmarks         []string            `json:"sftp_local_bookmarks,omitempty"`
-	OutboundProxy              *savedOutboundProxy `json:"outbound_proxy,omitempty"`
-	HighlightBuiltin           string              `json:"highlight_builtin,omitempty"`
-	Highlights                 []savedHighlight    `json:"highlights,omitempty"`
-	Snippets                   []savedSnippet      `json:"snippets,omitempty"`
-	SnippetShortcuts           []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
-	Autofill                   []savedAutofill     `json:"autofill_rules,omitempty"`
-	CommandHistory             bool                `json:"command_history,omitempty"`
-	CommandSuggestOff          bool                `json:"command_suggest_off,omitempty"`
+	MonitorPanels              []monitoring.Panel `json:"monitor_panels,omitempty"`
+	MonitorActive              string             `json:"monitor_active,omitempty"`
+	Version                    int                `json:"version"`
+	Language                   string             `json:"language,omitempty"`
+	Theme                      string             `json:"theme,omitempty"`
+	BackgroundOutputAlerts     bool               `json:"background_output_alerts,omitempty"`
+	TabOrientation             string             `json:"tab_orientation,omitempty"`
+	VerticalTabsAutoHide       bool               `json:"vertical_tabs_auto_hide,omitempty"`
+	VerticalTabsGrouping       bool               `json:"vertical_tabs_grouping,omitempty"`
+	NetworkProxy               string             `json:"network_proxy,omitempty"`
+	TerminalOption             string             `json:"terminalOption,omitempty"`
+	LocalShell                 string             `json:"local_shell,omitempty"`
+	SSHAgent                   string             `json:"ssh_agent,omitempty"`
+	SSHAgentPath               string             `json:"ssh_agent_path,omitempty"`
+	TerminalFontSize           int                `json:"terminal_font_size,omitempty"`
+	TextScale                  string             `json:"text_scale,omitempty"`
+	InterfaceFont              string             `json:"interface_font,omitempty"`
+	TerminalFontFace           string             `json:"terminal_font_face,omitempty"`
+	TerminalFontFamily         string             `json:"terminal_font_family,omitempty"`
+	TerminalFontFallbacks      []string           `json:"terminal_font_fallbacks,omitempty"`
+	TerminalScrollback         int                `json:"terminal_scrollback,omitempty"`
+	TerminalCursor             string             `json:"terminal_cursor,omitempty"`
+	ConnectionTimeoutSeconds   int                `json:"connection_timeout_seconds,omitempty"`
+	ConnectionKeepAliveSeconds int                `json:"connection_keepalive_seconds,omitempty"`
+	ConnectionReconnect        string             `json:"connection_reconnect,omitempty"`
+	RestoreConnect             string             `json:"restore_connect,omitempty"`
+	ShareConnections           string             `json:"share_connections,omitempty"`
+	// StartupLocal and StartupHosts are what a launch opens: a local terminal,
+	// and the saved hosts to connect, by their catalog ids.
+	StartupLocal bool     `json:"startup_local,omitempty"`
+	StartupShell string   `json:"startup_shell,omitempty"`
+	StartupHosts []string `json:"startup_hosts,omitempty"`
+	// StartupDisabled is the feature switch of what a launch opens, stored
+	// negated so that a fresh install without this key has the feature on.
+	StartupDisabled bool `json:"startup_disabled,omitempty"`
+	// StartupNoReuse is the launch's reuse switch, stored negated so that a
+	// fresh install without this key reuses what is already open.
+	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
+	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
+	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
+	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
+	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
+	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
+	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
+	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
+	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
+	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
+	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
+	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
+	MonitorPanelWidth       float32             `json:"monitor_panel_width,omitempty"`
+	WindowX                 int                 `json:"window_x,omitempty"`
+	WindowY                 int                 `json:"window_y,omitempty"`
+	WindowWidth             int                 `json:"window_width,omitempty"`
+	WindowHeight            int                 `json:"window_height,omitempty"`
+	TerminalScheme          string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
+	TerminalSchemeDark      string              `json:"terminal_scheme_dark,omitempty"`
+	TerminalSchemeLight     string              `json:"terminal_scheme_light,omitempty"`
+	TerminalPadding         string              `json:"terminal_padding,omitempty"`
+	TerminalGutter          string              `json:"terminal_gutter,omitempty"`
+	TerminalIntense         string              `json:"terminal_intense,omitempty"`
+	TerminalNotifications   string              `json:"terminal_notifications,omitempty"`
+	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
+	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
+	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
+	SFTPFollow              string              `json:"sftp_follow,omitempty"`
+	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
+	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
+	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
+	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
+	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
+	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
+	SFTPColumns             string              `json:"sftp_columns,omitempty"`
+	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
+	DefaultEditor           string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
+	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
+	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
+	UpdateCheck             string              `json:"update_check,omitempty"`
+	CloseAction             string              `json:"close_action,omitempty"`
+	UpdateSkipped           string              `json:"update_skipped,omitempty"`
+	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
+	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
+	OutboundProxy           *savedOutboundProxy `json:"outbound_proxy,omitempty"`
+	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
+	Highlights              []savedHighlight    `json:"highlights,omitempty"`
+	Snippets                []savedSnippet      `json:"snippets,omitempty"`
+	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
+	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
+	CommandHistory          bool                `json:"command_history,omitempty"`
+	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
@@ -417,11 +429,17 @@ func (state *State) snapshot() savedState {
 		TerminalFontFamily:         state.fonts.family,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
 		TerminalScrollback:         state.terminalScrollback,
+		TerminalCursor:             state.terminalCursorStyle.String(),
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
 		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
 		ConnectionReconnect:        state.connectionReconnect.String(),
 		RestoreConnect:             state.restoreConnect.String(),
 		ShareConnections:           state.shareConnections.String(),
+		StartupLocal:               state.startupLocal,
+		StartupShell:               state.startupShell,
+		StartupHosts:               slices.Clone(state.startupHosts),
+		StartupDisabled:            !state.startupEnabled,
+		StartupNoReuse:             !state.startupReuse,
 		TerminalClipboard:          state.terminalClipboard.String(),
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
@@ -763,6 +781,8 @@ func (state *State) restoreLocal(saved savedState) {
 	switch saved.Language {
 	case i18n.Chinese.String():
 		state.language, state.languageChosen = i18n.Chinese, true
+	case i18n.TraditionalChinese.String():
+		state.language, state.languageChosen = i18n.TraditionalChinese, true
 	case i18n.English.String():
 		state.language, state.languageChosen = i18n.English, true
 	default:
@@ -791,6 +811,11 @@ func (state *State) restoreLocal(saved savedState) {
 	state.applyTerminalFace()
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
+	state.startupLocal = saved.StartupLocal
+	state.startupShell = saved.StartupShell
+	state.startupHosts = cleanStartupHosts(saved.StartupHosts)
+	state.startupEnabled = !saved.StartupDisabled
+	state.startupReuse = !saved.StartupNoReuse
 	state.ai.panelWidth = saved.AIPanelWidth
 	if saved.AIComposerHeight > 0 {
 		state.ai.composerHeight = saved.AIComposerHeight
@@ -822,6 +847,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
 	state.shortcuts = restoreShortcuts(saved.Shortcuts)
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))
+	state.terminalCursorStyle = terminalCursorStyleFromString(saved.TerminalCursor)
 	state.connectionTimeout, state.connectionKeepAlive = connectionTimes(saved)
 	state.connectionReconnect = reconnectPolicyFromString(saved.ConnectionReconnect)
 	state.terminalClipboard = terminalClipboardPolicyFromString(saved.TerminalClipboard)

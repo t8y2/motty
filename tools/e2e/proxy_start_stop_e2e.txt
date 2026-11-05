@@ -30,7 +30,7 @@ waitfor "Running" 2000
 waitfor "Stop" 2000
 waitfor "alpha" 2000
 waitfor "beta" 2000
-layout
+expect layout clean
 
 click "Stop"
 settle 300
@@ -38,10 +38,10 @@ waitfor "Stopped" 2000
 waitfor "Start" 2000
 waitfor "beta → alpha" 2000
 waitfor "10.0.0.2 → 10.0.0.1" 2000
-layout
+expect layout clean
 
 click "Start"
 settle 300
 waitfor "Running" 2000
 waitfor "Stop" 2000
-layout
+expect layout clean

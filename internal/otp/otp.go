@@ -240,6 +240,7 @@ func LooksLikeQuestion(question string) bool {
 	for _, word := range []string{
 		"verification", "one-time", "one time", "otp", "authenticator", "passcode", "token", "2fa", "mfa",
 		"two-factor", "two factor", "code", "验证码", "动态", "动态口令", "一次性口令", "令牌", "校验",
+		"驗證碼", "動態", "一次性密碼", "權杖", "校驗",
 	} {
 		if strings.Contains(lower, word) {
 			return true

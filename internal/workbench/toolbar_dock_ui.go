@@ -156,9 +156,8 @@ func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
 // Reserve each physical side independently. Background terminals keep their
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
-	_, hasTerminal := state.terminalToolbarSession()
-	if includeTerminal && hasTerminal && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
-		// Retain the default rail's latency slot even when all actions are hidden.
+	session, hasTerminal := state.terminalToolbarSession()
+	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
 		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
@@ -168,7 +167,8 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 		if !toolbarDockVertical(entry.Zone) || toolbarDockLeft(entry.Zone) != left {
 			continue
 		}
-		if entry.Group == toolbarTerminal && (!includeTerminal || !hasTerminal) {
+		// Terminal entries were resolved against the active session above.
+		if entry.Group == toolbarTerminal {
 			continue
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
@@ -177,6 +177,99 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 		}
 	}
 	return 0
+}
+
+// terminalToolbarShowsOnSide reports whether this physical side has actual
+// content: a tool the bar paints there, or a latency badge backed by an RTT
+// sample. It runs on the steady-state paint path, so it scans preferences
+// directly; a tool this does not know yet counts as offered rather than
+// vanishing from the rail (see terminalToolbarOffers).
+func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool {
+	if session == nil {
+		return false
+	}
+	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
+	capacity := workspacePaneToolsCapacity(state.viewport.Width)
+	compactCount := 0
+	compactMenu := false
+	entries := state.toolbars.entries(toolbarTerminal)
+	for _, preference := range entries {
+		if !preference.Enabled {
+			continue
+		}
+		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
+		if !ok || !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		if managed {
+			if terminalToolbarCompactVisible(spec.id) && compactCount < capacity {
+				compactCount++
+			} else {
+				compactMenu = true
+				continue
+			}
+		}
+		zone := state.toolbarDockZoneFor(toolbarTerminal, preference.Key)
+		if toolbarDockVertical(zone) && toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	if managed && compactMenu {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	if session.showLog && !session.term.live {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			return true
+		}
+	}
+	// A running proxy keeps its button on the default rail even while the
+	// tool's preference is off: toolbarDockTools adds it after the catalog.
+	if !state.toolbarVisible(toolbarTerminal, hitLocalProxyOpen) {
+		if zone := state.defaultToolbarDockZone(toolbarTerminal); toolbarDockLeft(zone) == left {
+			switch state.localProxySnapshot(session).Phase {
+			case localProxyConnecting, localProxyConnected, localProxyFailed:
+				return true
+			}
+		}
+	}
+	if state.latencyAvailable(session) {
+		return (state.terminalToolbarPosition == terminalToolbarLeft) == left
+	}
+	return false
+}
+
+// terminalToolbarOffers mirrors the context filters in activeTerminalTools.
+// Disabled actions still count because their icon remains visible. A tool the
+// switch does not name is offered: a catalog entry added later must not
+// disappear from the rail just because this list was not updated.
+func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
+	switch id {
+	case hitSFTPDetach:
+		return session.host.isSSH() && !session.isLocal()
+	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
+		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal,
+		hitTerminalSnippets:
+		return true
+	case hitLocalProxyOpen:
+		return state.localProxyActionVisible(session)
+	case hitRemoteStats:
+		_, _, offered := state.remoteStatsToggle(session)
+		return offered
+	case hitPaneClose:
+		return state.paneInSplit(session.ID)
+	case hitBroadcast:
+		return state.paneInSplit(session.ID) && !state.workspaceManaged(state.deck.ActiveWorkspace())
+	default:
+		return true
+	}
+}
+
+// These are the actions compactWorkspacePaneTools keeps beside the pane title
+// when space permits. Everything else is represented by the synthesized menu.
+func terminalToolbarCompactVisible(id ui.ID) bool {
+	return id == hitSFTPOpen || id == hitRemoteStats || id == hitPaneClose
 }
 
 func (state *State) toolbarDockSideBoundsFor(size ui.Size, left bool) ui.Rect {
@@ -310,6 +403,9 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
+			if terminalVisible && primary && session != nil {
+				state.clearTerminalRail(session)
+			}
 			continue
 		}
 		bounds := state.toolbarDockSideBoundsFor(size, left)

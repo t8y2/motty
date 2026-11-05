@@ -133,8 +133,8 @@ func TestFontPickerKeysMoveScrollAndLeaveTheFontAloneOnEscape(t *testing.T) {
 	for range 12 {
 		state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitFontPickerSearch})
 	}
-	if state.fonts.selected != 12 || state.fonts.top != 12-fontPickerVisibleRows+1 {
-		t.Fatalf("selected %d top %d: the window must follow the selection", state.fonts.selected, state.fonts.top)
+	if state.fonts.selected != 12 || state.fonts.scroll != 12*fontPickerRowStep+30-fontPickerListHeight {
+		t.Fatalf("selected %d scroll %g: the window must follow the selection", state.fonts.selected, state.fonts.scroll)
 	}
 	state.Key(ui.KeyEvent{Key: ui.KeyPageUp, Target: hitFontPickerSearch})
 	state.Key(ui.KeyEvent{Key: ui.KeyPageUp, Target: hitFontPickerSearch})
@@ -143,8 +143,8 @@ func TestFontPickerKeysMoveScrollAndLeaveTheFontAloneOnEscape(t *testing.T) {
 		t.Fatalf("selected %d", state.fonts.selected)
 	}
 	state.Scroll(ui.ScrollEvent{DeltaY: 100})
-	if state.fonts.top != 1 {
-		t.Fatalf("wheel moved the list to %d", state.fonts.top)
+	if state.fonts.scroll != 100 {
+		t.Fatalf("wheel moved the list to %g", state.fonts.scroll)
 	}
 	before := state.terminalFontFace
 	state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitFontPickerSearch})
