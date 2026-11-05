@@ -881,6 +881,7 @@ func (state *State) Close() {
 	state.closeTabPreview()
 	state.remote.auto.enabled = false
 	state.closeRemoteProcessDetails()
+	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
 	state.flushLocalDirectories()
@@ -2212,6 +2213,15 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.remoteProcessMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsTextPointer(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
+		return result
+	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
 	}
@@ -2369,6 +2379,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := state.remoteProcessTableKey(event); handled {
