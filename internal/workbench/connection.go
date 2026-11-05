@@ -286,6 +286,10 @@ type Options struct {
 	// ClipboardText reads the system clipboard for an explicit paste shortcut.
 	// Nil uses app.ClipboardText.
 	ClipboardText func() (string, error)
+	// ClipboardFiles reads the paths of the files the system clipboard holds,
+	// which a desktop session offers to the remote system. Nil uses
+	// app.ClipboardFiles.
+	ClipboardFiles func() ([]string, error)
 	// ClipboardImagePNG reads an image from the system clipboard as PNG bytes.
 	// Nil uses app.ClipboardImagePNG.
 	ClipboardImagePNG func() ([]byte, error)
@@ -400,6 +404,9 @@ func (options Options) withDefaults() Options {
 	}
 	if options.ClipboardText == nil {
 		options.ClipboardText = app.ClipboardText
+	}
+	if options.ClipboardFiles == nil {
+		options.ClipboardFiles = app.ClipboardFiles
 	}
 	if options.Notify == nil {
 		options.Notify = app.SendNotification
@@ -1109,7 +1116,7 @@ func (state *State) showNextPrompt() {
 					state.keyPassphraseError = state.messages.PasswordSavedRefused
 				}
 			}
-			state.keyPassphraseDescription = fmt.Sprintf(state.messages.KeyPassphraseDescriptionFmt, filepath.Base(session.identity))
+			state.keyPassphraseDescription = fmt.Sprintf(state.messages.KeyPassphraseDescriptionFmt, state.identityLabel(session.identity))
 		}
 		state.raiseSFTPAuthentication(session)
 		return

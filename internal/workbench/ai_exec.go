@@ -10,6 +10,7 @@ import (
 	"motty/internal/ai/capture"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/tools"
+	"motty/internal/shellkind"
 )
 
 // aiExec is one command the assistant typed into a visible terminal and is
@@ -54,6 +55,18 @@ func (state *State) aiSession(handle string) (*Session, error) {
 	return session, nil
 }
 
+// shellKinder is a Shell that knows which family of shell it runs. Others, such
+// as a test double, are treated as POSIX, which is how every shell was typed to
+// before the family was known.
+type shellKinder interface{ Kind() shellkind.Kind }
+
+func (t *terminal) shellKind() shellkind.Kind {
+	if k, ok := t.shell.(shellKinder); ok {
+		return k.Kind()
+	}
+	return shellkind.Unknown
+}
+
 // beginExec types the command into the session's terminal. Window thread.
 func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	session, err := state.aiSession(args.Session)
@@ -67,11 +80,21 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	if t.exec != nil {
 		return nil, errExecBusy
 	}
+	kind := t.shellKind()
 	nonce := capture.NewNonce()
-	wrapped := capture.Wrap(args.Command, nonce)
+	wrapped, err := capture.WrapFor(kind, args.Command, nonce)
+	if err != nil {
+		return nil, err
+	}
 	tap := capture.NewTap(nonce, maxExecOutput)
 	tap.SetEcho(wrapped)
-	tap.SetDisplay(capture.DisplayCommand(args.Command))
+	// PowerShell's line editor redraws what is typed and asks the terminal where
+	// its cursor is, and it waits for the answer. Holding that output back to swap
+	// the wrapper for the plain command would withhold the question, so the user
+	// sees what the shell echoes.
+	if kind != shellkind.PowerShell {
+		tap.SetDisplay(capture.DisplayCommandFor(kind, args.Command))
+	}
 	t.exec = &aiExec{t: t, tap: tap, done: make(chan gate.ExecResult, 1)}
 	if t.aiRows == nil {
 		t.aiRows = map[uint64]struct{}{}

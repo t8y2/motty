@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"unicode/utf8"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
@@ -26,11 +28,21 @@ var (
 
 const maxFormFields = 5
 
-// formField is one input of a form.
+// formTextareaHeight is the height of a multiline field's slot, its title
+// included: about seven rows of text under the title.
+const formTextareaHeight = 190
+
+// formField is one input of a form. A multiline field is a box of several rows
+// that takes Enter as a new line, for text that is pasted whole, a private key
+// for one.
 type formField struct {
 	label, placeholder string
 	secure             bool
+	multiline          bool
 	editor             text.Editor
+	// layout and rect are the rows and place of a multiline field as last painted.
+	layout components.TextareaLayout
+	rect   ui.Rect
 }
 
 // formDialog is the open form. run is called when the user submits: it returns
@@ -84,6 +96,60 @@ func (form *formDialog) value(index int) string {
 func (form *formDialog) set(index int, value string) {
 	form.fields[index].editor = text.Editor{}
 	form.fields[index].editor.Insert(value)
+}
+
+// slotHeight is the room field index takes in the dialog, its title and the gap
+// below it included.
+func (form *formDialog) slotHeight(index int) float32 {
+	if form.fields[index].multiline {
+		return formTextareaHeight + 4
+	}
+	return 66
+}
+
+// multilineField is the field that has the focus when it is a multiline one.
+func (state *State) multilineField(hit ui.ID) *formField {
+	if state.modal != modalForm || hit.Scope() != hitFormFieldList {
+		return nil
+	}
+	if field := &state.form.fields[uint32(item(hit))]; field.multiline {
+		return field
+	}
+	return nil
+}
+
+// formKey moves the caret of a multiline field by the rows it wrapped to, which
+// the native editor does not know. Enter in such a field is a new line, which the
+// native editor makes; every other form field submits.
+func (state *State) formKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	field := state.multilineField(event.Target)
+	if field == nil {
+		return ui.EventResult{}, false
+	}
+	if _, composing := field.editor.Composition(); composing {
+		return ui.EventResult{}, false
+	}
+	movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
+	if movement == components.TextareaMoveNone {
+		return ui.EventResult{}, false
+	}
+	value := field.editor.String()
+	to := field.layout.Move(value, aiByteOffset(value, field.editor.Caret()), movement)
+	field.editor.MoveTo(utf8.RuneCountInString(value[:to]), extend)
+	return ui.EventResult{Handled: true, Repaint: true}, true
+}
+
+// scrollForm scrolls the multiline field under the pointer. The wheel never
+// reaches what is behind a dialog.
+func (state *State) scrollForm(event ui.ScrollEvent) ui.EventResult {
+	for index := 0; index < state.form.count; index++ {
+		field := &state.form.fields[index]
+		if field.multiline && pointInRect(event.X, event.Y, field.rect) {
+			field.layout.ScrollBy(event.DeltaY)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+	}
+	return ui.EventResult{Handled: true}
 }
 
 func (state *State) formEditor(hit ui.ID) *text.Editor {
@@ -177,7 +243,10 @@ func (state *State) submitForm() {
 // bodyHeight is the dialog body's height: its fields, and the error under them
 // when there is one.
 func (form *formDialog) bodyHeight() float32 {
-	height := float32(form.count) * 66
+	height := float32(0)
+	for index := 0; index < form.count; index++ {
+		height += form.slotHeight(index)
+	}
 	if form.checkLabel != "" {
 		height += 72
 	}
@@ -203,7 +272,7 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(4, 4, 0, 4).Children(func() {
 		for index := 0; index < form.count; index++ {
-			slots[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
+			slots[index] = f.Slot().Height(form.slotHeight(index)-4).MarginSides(0, 0, 4, 0)
 		}
 		if form.checkLabel != "" {
 			f.Column().Height(72).Gap(2).PadSides(8, 0, 4, 0).Children(func() {
@@ -224,9 +293,14 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	for index := 0; index < form.count; index++ {
 		field := &form.fields[index]
 		id := hitFormFieldList.At(index)
-		content := components.BeginField(canvas, theme, slots[index].Rect()).Paint(field.label, "", "")
+		slot := slots[index].Rect()
+		content := components.BeginField(canvas, theme, slot).Paint(field.label, "", "")
 		value := field.editor.String()
 		focused := canvas.Focused() == id
+		if field.multiline {
+			state.paintFormTextarea(canvas, field, ui.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, focused)
+			continue
+		}
 		state.paintSecretInput(canvas, content, components.InputSnapshot{
 			ID: id, Label: field.label, Value: value, Placeholder: field.placeholder, Secure: field.secure,
 			Focused: focused, PlatformEditing: focused && value != "",
@@ -251,4 +325,21 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	actions = append(actions, components.ButtonAction{ID: hitFormSubmit, Label: form.submit, Variant: variant})
 	dialog.Actions(layout, actions...)
 	dialog.End()
+}
+
+func (state *State) paintFormTextarea(canvas *ui.Canvas, field *formField, bounds ui.Rect, id ui.ID, focused bool) {
+	value := field.editor.String()
+	selection := field.editor.Selection()
+	snapshot := components.TextareaSnapshot{
+		ID: id, Label: field.label, Value: value, Placeholder: field.placeholder,
+		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
+		Layout:         &field.layout,
+		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
+		Caret: aiByteOffset(value, field.editor.Caret()),
+	}
+	if marked, composing := field.editor.Composition(); composing {
+		snapshot.CompositionStart, snapshot.CompositionEnd = aiByteOffset(value, marked.Start), aiByteOffset(value, marked.End)
+	}
+	field.rect = bounds
+	components.PaintTextarea(canvas, state.Theme(), bounds, snapshot)
 }

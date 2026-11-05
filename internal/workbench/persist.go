@@ -541,7 +541,9 @@ func (state *State) snapshot() savedState {
 		saved.HostGroups = append(saved.HostGroups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 	}
 	for _, identity := range state.identities {
-		saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
+		if !identity.Stored { // those live in the vault
+			saved.IdentityFiles = append(saved.IdentityFiles, identity.Path)
+		}
 	}
 	for _, forward := range state.forwards {
 		saved.Forwards = append(saved.Forwards, savedForward{

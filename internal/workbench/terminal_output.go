@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/app"
 )
@@ -24,7 +25,7 @@ func (state *State) saveTerminalOutput(session *Session) {
 	data = append(data, '\n')
 	path, err := state.options.SaveFile(app.SaveFileOptions{
 		Title:            m.OutputSaveTitle,
-		SuggestedName:    terminalOutputName(session.Title),
+		SuggestedName:    terminalOutputName(session.Title, time.Now()),
 		DefaultExtension: "txt",
 		Filters:          []app.FileFilter{{Name: "Text", Pattern: "*.txt"}},
 	})
@@ -42,9 +43,8 @@ func (state *State) saveTerminalOutput(session *Session) {
 	state.status = fmt.Sprintf(m.OutputSavedFmt, path)
 }
 
-func terminalOutputName(title string) string {
-	name := connectionLogName(title)
-	return strings.TrimSuffix(name, "-connection-log.txt") + "-output.txt"
+func terminalOutputName(title string, at time.Time) string {
+	return exportFileName(title, "output", "txt", at)
 }
 
 // searchSelection opens a web search for the selected text, as one line.

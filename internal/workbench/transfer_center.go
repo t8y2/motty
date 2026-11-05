@@ -72,6 +72,11 @@ type transferCenter struct {
 	badge         string
 	buttonLabel   string
 	active, ended int
+	// done and total are the bytes the running transfers have moved and the
+	// bytes they announced, summed the way the summary bar draws them. They
+	// are kept beside fraction because a fraction cannot be added up across
+	// windows, and the icon the desktop shows belongs to all of them.
+	done, total   int64
 	fraction      float32
 	view          flex.View
 	row           flex.View
@@ -380,11 +385,15 @@ func (state *State) describeTransferSummary() {
 	if center.active > 0 {
 		center.buttonLabel += " · " + center.summary
 	}
+	center.done, center.total = done, total
 	center.fraction = 0
 	if total > 0 {
 		center.fraction = min(0.99, float32(done)/float32(total))
 	}
 	state.describeTransferScope()
+	// Every change to a transfer ends here, so this is where the desktop hears
+	// about it: the icon it draws stands for the window and for its siblings.
+	state.reportTransferProgress()
 }
 
 func (state *State) removeTransfer(index int) {

@@ -1384,6 +1384,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
 	}
+	if state.modal == modalForm {
+		return state.scrollForm(event)
+	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
 	}

@@ -448,6 +448,17 @@ type ToolsMessages struct {
 	DropTerminalUploadFmt           string
 	DropTerminalDoneFmt             string
 	DropTerminalFailedFmt           string
+	DropDesktopFiles                string
+	DesktopFilesTitle               string
+	DesktopFilesOfferedFmt          string // count, size
+	DesktopFilesSkippedFmt          string // count, first path
+	DesktopFilesUnsupported         string
+	DesktopFilesClipboardOff        string
+	DesktopFilesNotReady            string
+	DesktopFilesNothing             string
+	DesktopFilesTooManyFmt          string // limit
+	DesktopFilesPathTooLongFmt      string // path
+	DesktopFilesFailedFmt           string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
