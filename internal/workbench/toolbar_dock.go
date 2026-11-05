@@ -154,7 +154,7 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	// tool: it comes and goes with state, so it has no catalog entry to hide.
 	if zone == state.defaultToolbarDockZone(toolbarWindow) && state.updateIndicatorVisible() {
 		tools = append(tools, barTool{
-			id: hitUpdateToolbar, icon: iconDownload, style: iconButtonActive,
+			id: hitUpdateToolbar, icon: iconDownload, style: iconButtonUpdate,
 			hint: fmt.Sprintf(state.messages.Tools.UpdateAvailableFmt, state.update.release.Version),
 		})
 	}
