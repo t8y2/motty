@@ -59,3 +59,54 @@ func TestTheAssistantDrawerKeepsItsOwnLayerUnderADialog(t *testing.T) {
 			"its shapes, so the answer would show through the dialog", assistantLayer, dialogLayer)
 	}
 }
+
+func TestAITargetTriggerStaysBelowAutoScopeMenuInDrawerMode(t *testing.T) {
+	state := agentPanel(t)
+	state.Click(hitAIAutoScope)
+	if !state.ai.panel.autoMenu {
+		t.Fatal("click on hitAIAutoScope did not open autoMenu")
+	}
+
+	// 800 is narrower than aiDockAt (1180), so the assistant is the drawer.
+	canvas, _ := paintAt(state, panelNarrow)
+
+	trigger, hasTrigger := hitByID(canvas, hitAITarget)
+	if !hasTrigger {
+		t.Fatal("canvas lacks hitAITarget")
+	}
+
+	triggerLayer, menuLayer := -1, -1
+	for _, text := range canvas.Texts() {
+		switch {
+		case text.Value == trigger.Value || strings.HasPrefix(text.Value, trigger.Value):
+			triggerLayer = int(text.Layer)
+		case strings.Contains(text.Value, state.messages.AIPanel.RiskLow):
+			menuLayer = int(text.Layer)
+		}
+	}
+	t.Logf("triggerLayer=%d, menuLayer=%d, triggerValue=%q", triggerLayer, menuLayer, trigger.Value)
+	if triggerLayer < 0 || menuLayer < 0 {
+		t.Fatalf("frame lacks trigger (%d) or menu (%d)", triggerLayer, menuLayer)
+	}
+	if triggerLayer >= menuLayer {
+		t.Fatalf("trigger text is on layer %d, menu is on layer %d: trigger text will overlap menu surface", triggerLayer, menuLayer)
+	}
+
+	// When the target dropdown itself is opened, its options list must appear on dialogLayer+1.
+	state.ai.panel.autoMenu = false
+	state.Click(hitAITarget)
+	if !state.ai.panel.targetOpen {
+		t.Fatal("click on hitAITarget did not open targetOpen")
+	}
+	canvas, _ = paintAt(state, panelNarrow)
+	dropdownOptionLayer := -1
+	for _, text := range canvas.Texts() {
+		if strings.Contains(text.Value, state.messages.AIPanel.TargetNone) {
+			dropdownOptionLayer = int(text.Layer)
+			break
+		}
+	}
+	if dropdownOptionLayer != int(dialogLayer+1) {
+		t.Fatalf("target dropdown option layer = %d, want %d (dialogLayer+1)", dropdownOptionLayer, dialogLayer+1)
+	}
+}

@@ -486,13 +486,15 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		content.Y = bounds.Y - height - 4
 	}
 	// A narrow panel is a modal drawer. Its trigger must remain in that focus
-	// scope even though the menu is painted outside the body's clip.
+	// scope even though the menu is painted outside the body's clip. The trigger
+	// belongs to the drawer's layer, below dialogs and overlay menus, so an open
+	// menu above it does not have the trigger's text show through.
 	layer := popupLayer
 	if state.aiReserve(state.deck.ActiveWorkspace(), state.viewport) == 0 {
 		layer = dialogLayer + 1
 		canvas.PushFocusScope(dialogScope)
 		defer canvas.PopFocusScope()
-		canvas.PushLayer(dialogLayer)
+		canvas.PushLayer(drawerLayer)
 		defer canvas.PopLayer()
 	}
 	theme := state.Theme()
