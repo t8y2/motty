@@ -234,6 +234,10 @@ type Options struct {
 	OpenDragPreview func(size ui.Size, origin ui.Point, paint func(canvas *ui.Canvas, size ui.Size)) (DragPreview, error)
 	// Blank starts the window empty: no tabs are restored into it.
 	Blank bool
+	// WindowID is which window of this run it is: the first is 1, and each window
+	// keeps its own tabs, its own place and its own record under that number.
+	// Zero is the first window.
+	WindowID int
 	// RememberWindowFrame saves where this window's content area is, and opens
 	// the next first window there. Only the first window of a process sets it;
 	// a torn-off or secondary window belongs to one session.

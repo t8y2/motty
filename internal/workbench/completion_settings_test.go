@@ -147,6 +147,7 @@ func TestNewInstallationCompletionDefaultsOffAcrossWindows(t *testing.T) {
 	if got := first.completionMode(); got != completionOff {
 		t.Fatalf("new installation mode = %v, want Off", got)
 	}
+	options.WindowID = 2
 	second := newTestState(t, options)
 	if got := second.completionMode(); got != completionOff {
 		t.Fatalf("second window mode = %v, want Off", got)
@@ -260,7 +261,7 @@ func TestCompletionCatalogStaysUnloadedWhileCompletionIsOff(t *testing.T) {
 func TestInlinePreferenceUsesAnIndependentSharedRecord(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.history.inlineOff = true
-	entries, local, err := splitState(state.snapshot(), newConfigBase(), nil)
+	entries, local, _, err := splitState(state.snapshot(), newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

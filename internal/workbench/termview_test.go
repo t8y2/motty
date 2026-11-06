@@ -379,3 +379,31 @@ func TestBoldBaseColorsAreDrawnBright(t *testing.T) {
 		t.Errorf("plain: %+v", runs[0])
 	}
 }
+
+// A Nerd Font icon is one cell wide and its ink is wider (t8y2/motty#503). The renderer lets the
+// ink show over the blank cell after it, but only a cell that belongs to no run: a blank folded
+// into the icon's run, or into the run after it, would be that run's cell and the ink would be cut.
+func TestTheBlankAfterAnIconBelongsToNoRun(t *testing.T) {
+	const debian, python = "\uf306", "\ue73c"
+	entry := build(t, debian+" root "+python+" v3", -1)
+	owner := make([]int, 40)
+	for index := range owner {
+		owner[index] = -1
+	}
+	for index, run := range entry.runs {
+		for cell := run.Column; cell < run.Column+run.Cells; cell++ {
+			if owner[cell] >= 0 {
+				t.Fatalf("cell %d belongs to runs %d and %d: %+v", cell, owner[cell], index, entry.runs)
+			}
+			owner[cell] = index
+		}
+	}
+	for _, icon := range []int{0, 7} { // the cells of the two icons
+		if got := entry.runs[owner[icon]]; got.Cells != 1 || got.Bytes != 3 {
+			t.Errorf("the icon in cell %d is run %+v, want one cell and its own run", icon, got)
+		}
+		if owner[icon+1] != -1 {
+			t.Errorf("the cell after the icon in cell %d belongs to run %+v, want no run", icon, entry.runs[owner[icon+1]])
+		}
+	}
+}

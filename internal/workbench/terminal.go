@@ -687,10 +687,14 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
-	// A program negotiates the kitty keyboard protocol for its own shell, but the
-	// screen keeps those flags across a reconnect, so a new shell would inherit
-	// modes it never asked for and start receiving Super chords as escape codes.
-	t.screen.ResetKeyboard()
+	// A connection that drops takes the running program's teardown with it, so
+	// the modes it had armed on this screen (the alternate screen, mouse
+	// reporting, the kitty keyboard flags) are still on when the next shell
+	// arrives. That shell is a process which never asked for any of them, so the
+	// screen is handed over clean. Unlike the prompt marker this needs no shell
+	// integration and no prompt: a session that hands the terminal straight to a
+	// full-screen program is covered too.
+	t.screen.ReclaimApplicationModes()
 	state.submitSessionLogEvent(session, sessionlog.EventShellOpened, 0)
 	session.logStatus = sessionlog.StatusActive
 	forwardNotes := 0

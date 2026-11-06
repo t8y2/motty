@@ -382,6 +382,10 @@ type windowSet struct {
 	mu      sync.Mutex
 	states  []*workbench.State
 	pending [][]string
+	// quitting says the whole program is ending: every window's record stays,
+	// so the next launch reopens the windows that were up. A window the user
+	// closed while the program kept running drops its own instead.
+	quitting bool
 }
 
 var windows windowSet
@@ -397,7 +401,25 @@ func (set *windowSet) quitWithDocuments(allow func()) {
 			return
 		}
 	}
+	set.mu.Lock()
+	set.quitting = true
+	set.mu.Unlock()
 	allow()
+}
+
+// isQuitting reports whether the program is ending rather than one window.
+func (set *windowSet) isQuitting() bool {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return set.quitting
+}
+
+// count is how many windows are open. Zero means the one that just closed was
+// the last, and the program is on its way out.
+func (set *windowSet) count() int {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return len(set.states)
 }
 
 // launch hands a request to the window opened last, or keeps it for the first.

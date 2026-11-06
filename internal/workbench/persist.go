@@ -320,7 +320,7 @@ func formatVersions(state, catalog, shortcuts int) string {
 // under a name that does not replace an earlier one, and reported as
 // loadUnreadable so the user can recover it.
 func loadState(path string) (savedState, loadReport, error) {
-	store, saved, _, report, err := openConfig(path)
+	store, saved, _, report, err := openConfig(path, 1)
 	if store != nil {
 		store.Close()
 	}
@@ -371,7 +371,7 @@ func checkSavedState(state *savedState) error {
 
 // saveState makes the store at path hold exactly state, and closes it again.
 func saveState(path string, state savedState) error {
-	store, _, base, report, err := openConfig(path)
+	store, _, base, report, err := openConfig(path, 1)
 	if err != nil {
 		return err
 	}
@@ -681,7 +681,7 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 		state.configBase.local = local[localKey]
 	}
 	snapshot := state.snapshot()
-	entries, local, err := splitState(snapshot, state.configBase, state.configDefaults)
+	entries, local, window, err := splitState(snapshot, state.configBase, state.configDefaults)
 	if err != nil {
 		return err
 	}
@@ -689,12 +689,17 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 	if err != nil {
 		return err
 	}
+	localValues.windowName, localValues.window = state.configBase.windowName, window
 	// The refreshed base already holds every shared record, so this writes the
 	// local document alone and keeps the base it was built on.
 	if _, err := writeEntries(state.config, state.configBase, entries, localValues); err != nil {
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
 		return err
 	}
+	// This save replaced the store the other windows were built on, so the ones
+	// showing configuration it changed have to read it back, exactly as a save
+	// that did not have to retry does.
+	state.configurationSaved(changedSavedFields(state.lastSaved, snapshot), false, flushSync)
 	state.lastSaved, state.hasSaved = snapshot, true
 	state.status = previous
 	return nil
@@ -715,9 +720,10 @@ func (state *State) persistSnapshot(flushSync bool) error {
 	snapshot := state.snapshot()
 	// Many actions save after changing only run-local UI state. Comparing the
 	// snapshot to the last saved one is tens of microseconds, where encoding and
-	// diffing it costs about a millisecond and 700 KB of garbage.
+	// diffing it costs about a millisecond and 700 KB of garbage. The same
+	// comparison names what the other windows will want to read back.
+	changes := changedSavedFields(state.lastSaved, snapshot)
 	if state.hasSaved {
-		changes := changedSavedFields(state.lastSaved, snapshot)
 		if len(changes) == 0 {
 			return nil
 		}
@@ -728,9 +734,7 @@ func (state *State) persistSnapshot(flushSync bool) error {
 				return err
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
-			if shared && flushSync {
-				state.scheduleSync()
-			}
+			state.configurationSaved(changes, shared, flushSync)
 			return nil
 		}
 	}
@@ -740,10 +744,21 @@ func (state *State) persistSnapshot(flushSync bool) error {
 		return err
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
+	state.configurationSaved(changes, shared, flushSync)
+	return nil
+}
+
+// configurationSaved starts the sync a shared change asks for and, when the save
+// put configuration in the store that the other windows of the process show
+// too, tells them to read it. A save that only moved this window's own tabs
+// leaves them alone, and so does one that found the store already holding it.
+func (state *State) configurationSaved(changes []savedFieldChange, shared, flushSync bool) {
 	if shared && flushSync {
 		state.scheduleSync()
 	}
-	return nil
+	if state.options.Group != nil && state.configBase.stored && changesConfiguration(changes) {
+		state.options.Group.settingsChanged(state)
+	}
 }
 
 // restore applies a loaded state at start: its settings and catalog, then the
@@ -764,6 +779,46 @@ func (state *State) restoreSettings(saved savedState) {
 	state.restoreLocal(saved)
 	state.restoreShared(saved)
 	state.restoreBackground(saved.Background)
+}
+
+// reloadSettings makes this window show the configuration the store now holds,
+// after another window of the process changed it. The windows of one process
+// share one store, so a save is already there; this is the other half, the
+// window that did not save. What belongs to this window alone — the tabs it has
+// open, the deck they fill, the workspace they are in — is left as it is, and
+// nothing is written back.
+func (state *State) reloadSettings() error {
+	entries, local, err := state.config.Load()
+	if err != nil {
+		return err
+	}
+	development := append([]byte(nil), state.configBase.development...)
+	saved, base, err := joinState(entries, local[localKey])
+	if err != nil {
+		return err
+	}
+	base.development = development
+	// What this window has open is its own: reading the settings back must not
+	// lose the record its next save patches.
+	base.windowName, base.window = state.configBase.windowName, state.configBase.window
+	if saved.AIProviders == nil && state.recordedProviders(kindAIProvider) > 0 {
+		saved.AIProviders = &[]savedAIProvider{} // all it had recorded are gone
+	}
+	if saved.AICLIProviders == nil && state.recordedProviders(kindAICLIProvider) > 0 {
+		saved.AICLIProviders = &[]savedAIProvider{}
+	}
+	state.restoreSettings(saved)
+	state.configBase = base
+	// The next save compares against the base just read: the change is already
+	// in the store, and writing it back would only hand it round again.
+	state.hasSaved = false
+	state.hostDataChanged()
+	state.rebuildTabOptions()
+	// A font chosen in the other window is one this window has not asked the
+	// platform about yet.
+	state.validateTerminalFont()
+	state.validateInterfaceFont()
+	return nil
 }
 
 // restoreLocal applies what belongs to this computer: the language and look, the

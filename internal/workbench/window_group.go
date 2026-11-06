@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"slices"
 	"sync"
 
@@ -22,31 +23,12 @@ type Group struct {
 	historyClears    map[string]*historyClearJob
 	shareOnce        sync.Once
 	shares           *localProxyManager
-	// frame is where the process's windows were last seen. It lives here, not
-	// in one window, so any window's save writes the newest place rather than
-	// the one it read at start.
-	frame    ui.Rect
-	hasFrame bool
 	// reportProgress is what the desktop is told about the work the windows are
 	// doing, and progressStep is the hundredth of the whole it was last told,
 	// with -1 for no bar; progressReported says it was told anything at all.
 	reportProgress   func(active int, fraction float32)
 	progressStep     int
 	progressReported bool
-}
-
-// setWindowFrame remembers where the windows are, for the next save.
-func (group *Group) setWindowFrame(frame ui.Rect) {
-	group.mu.Lock()
-	defer group.mu.Unlock()
-	group.frame, group.hasFrame = frame, true
-}
-
-// windowFrame is the newest frame any window reported.
-func (group *Group) windowFrame() (ui.Rect, bool) {
-	group.mu.Lock()
-	defer group.mu.Unlock()
-	return group.frame, group.hasFrame
 }
 
 // NewGroup returns an empty group.
@@ -77,6 +59,30 @@ func (group *Group) LocalProxyChanged() {
 		if !member.callbacksClosed.Load() && member.options.Invalidate != nil {
 			member.options.Invalidate()
 		}
+	}
+}
+
+// settingsChanged tells every other window that origin changed configuration
+// they show too. The windows of one process share one store, so each of them
+// reads the change back rather than keeping what it read when it started; what
+// each window has open of its own is left alone.
+func (group *Group) settingsChanged(origin *State) {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		if member == origin || member.closed || member.config == nil || member.callbacksClosed.Load() {
+			continue
+		}
+		if err := member.reloadSettings(); err != nil {
+			// The window keeps what it has; its own next save reports the store
+			// it cannot read.
+			if member.options.Log != nil {
+				fmt.Fprintf(member.options.Log, "settings reload: %v\n", err)
+			}
+		}
+		member.invalidateWindow()
 	}
 }
 

@@ -108,11 +108,17 @@ const (
 // system cannot say. A backend that names characters (VNC) sends it instead of
 // the Rune; a backend that names keys (RDP) ignores it, the remote applies the
 // modifiers itself.
+//
+// Repeat marks a press that repeats a key the remote already has down: the
+// local system's auto-repeat. A backend whose server repeats a held key by
+// itself ignores it; one whose server waits for the client (RDP) sends the key
+// down again and says that it was already down.
 type KeyEvent struct {
-	Key   Key
-	Rune  rune
-	Typed rune
-	Down  bool
+	Key    Key
+	Rune   rune
+	Typed  rune
+	Down   bool
+	Repeat bool
 }
 
 // Info describes a connection for display.

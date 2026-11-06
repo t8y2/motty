@@ -200,7 +200,13 @@ func (session *Session) SendWheel(x, y int, wheel desktop.Wheel, buttons desktop
 	return notch(wheel.X, rfbWheelLeft, rfbWheelRight)
 }
 
+// SendKey sends a key by keysym. A repeat is not sent: the X server repeats a
+// key it sees held, and an RFB server has no way to say the key was already
+// down, so the repeat would type the character twice.
 func (session *Session) SendKey(event desktop.KeyEvent) error {
+	if event.Repeat {
+		return nil
+	}
 	keysym := keysymFor(event)
 	if keysym == 0 {
 		return nil

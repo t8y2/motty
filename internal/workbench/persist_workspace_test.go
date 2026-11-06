@@ -16,7 +16,7 @@ func saveReleaseState(t testing.TB, path string, saved savedState) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	entries, local, err := splitState(saved, newConfigBase(), nil)
+	entries, local, _, err := splitState(saved, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

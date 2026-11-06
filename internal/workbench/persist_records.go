@@ -235,6 +235,26 @@ var syncedSettings = map[string]bool{
 // stateVersionFields are written back as this build's own on every load.
 var stateVersionFields = map[string]bool{"version": true, "host_catalog_version": true, "shortcut_version": true}
 
+// windowStateFields are the saved fields one window owns: the tabs it has open,
+// the deck they fill, the workspace it is in, and where it sits on screen. They
+// live in that window's own local value rather than in this device's document,
+// so two windows of one process never write each other's tabs.
+var windowStateFields = map[string]bool{
+	"sessions": true, "active_session": true, "deck": true,
+	"workspace": true, "workspace_layouts": true,
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+}
+
+// windowKey names the local value holding one window's own state. A development
+// build keeps its windows apart from the ones an installed copy remembers, the
+// way the rest of its data is kept apart.
+func windowKey(id int, development bool) string {
+	if development {
+		return fmt.Sprintf("dev-window-%d", id)
+	}
+	return fmt.Sprintf("window-%d", id)
+}
+
 const collapsedGroupsKey = "collapsed_groups"
 
 func fieldText(fields map[string]json.RawMessage, name string) string {
@@ -345,6 +365,19 @@ type configBase struct {
 	// builds neither read nor write it.
 	development        []byte
 	developmentDamaged bool
+	// windowName and window are this window's own local value: the tabs it has
+	// open, the deck they fill and where it sits. Read when the window starts and
+	// written by this window only, so no other window's save can replace it. An
+	// empty name is a state built without a window (a test, or a save that writes
+	// one document), which keeps its tabs in the device document as before.
+	windowName string
+	window     []byte
+	// stored says the last write put something in the store: records that
+	// changed, or this device's own values, which the store counts separately.
+	// False says the save found the store already holding what this window has,
+	// so the other windows have nothing new to read. writeEntries sets it, and a
+	// save reads it right after the write returns.
+	stored bool
 }
 
 // hostRecord remembers the state a host was last encoded from, its ordinal, and
@@ -370,7 +403,7 @@ type configDefaults map[configstore.Key]string
 
 // defaultsOf is the defaults a pristine state's records stand for.
 func defaultsOf(pristine savedState) configDefaults {
-	entries, _, err := splitState(pristine, newConfigBase(), nil)
+	entries, _, _, err := splitState(pristine, newConfigBase(), nil)
 	if err != nil {
 		return nil
 	}
@@ -384,10 +417,12 @@ func defaultsOf(pristine savedState) configDefaults {
 	return defaults
 }
 
-// splitState turns a state into records and this device's own values. Items new
-// since the base are numbered after the ones it knows. Records that only hold
-// their defaults, and that the base has never had, are left out.
-func splitState(saved savedState, base *configBase, defaults configDefaults) (entries []configstore.Entry, local []byte, err error) {
+// splitState turns a state into records, this device's own values, and the value
+// of the window that wrote it. Items new since the base are numbered after the
+// ones it knows. Records that only hold their defaults, and that the base has
+// never had, are left out. A base without a window name keeps the window fields
+// in the device document, which is what a save that names no window writes.
+func splitState(saved savedState, base *configBase, defaults configDefaults) (entries []configstore.Entry, local, window []byte, err error) {
 	var collapsed []string
 	groups := make([]savedHostGroup, len(saved.HostGroups))
 	for index, group := range saved.HostGroups {
@@ -401,17 +436,18 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 
 	whole, err := json.Marshal(saved)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(whole, &fields); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	entityKeys := make(map[string]bool, len(entityFields))
 	for _, entity := range entityFields {
 		entityKeys[entity.field] = true
 	}
 	own := map[string]json.RawMessage{}
+	mine := map[string]json.RawMessage{}
 	for name, value := range fields {
 		switch {
 		case entityKeys[name], stateVersionFields[name]:
@@ -422,9 +458,11 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			}
 			payload, err := json.Marshal(recordPayload{Data: value})
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			entries = append(entries, configstore.Entry{Kind: kindSetting, ID: name, Payload: payload})
+		case windowStateFields[name] && base.windowName != "":
+			mine[name] = value
 		default:
 			own[name] = value
 		}
@@ -450,13 +488,13 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 		if entity.single {
 			items = []json.RawMessage{raw}
 		} else if err := json.Unmarshal(raw, &items); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", entity.field, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
 		}
 		used := map[string]bool{}
 		for _, item := range items {
 			var itemFields map[string]json.RawMessage
 			if err := json.Unmarshal(item, &itemFields); err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", entity.field, err)
+				return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
 			}
 			id := boundKey(entity.key(itemFields))
 			if id == "" {
@@ -479,16 +517,23 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			}
 			payload, err := json.Marshal(recordPayload{Ord: ord, Data: item})
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			entries = append(entries, configstore.Entry{Kind: entity.kind, ID: id, Payload: payload})
 		}
 	}
 	local, err = json.Marshal(own)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return entries, local, nil
+	if base.windowName == "" {
+		return entries, local, nil, nil
+	}
+	window, err = json.Marshal(mine)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return entries, local, window, nil
 }
 
 // joinState builds a state from records and this device's own values, and the
@@ -582,6 +627,49 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 	return saved, base, nil
 }
 
+// applyWindowState puts one window's own work back: what its record holds, and,
+// for the first window only, what the device document still holds from before
+// windows had records of their own. Every other window starts empty rather than
+// opening another window's tabs.
+func applyWindowState(saved savedState, window []byte, id int) savedState {
+	held := map[string]json.RawMessage{}
+	if len(window) > 0 {
+		if err := json.Unmarshal(window, &held); err != nil {
+			return saved
+		}
+	}
+	if id != 1 && len(held) == 0 {
+		clearSavedWorkspace(&saved)
+		return saved
+	}
+	whole, err := json.Marshal(saved)
+	if err != nil {
+		return saved
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(whole, &fields); err != nil {
+		return saved
+	}
+	for name := range windowStateFields {
+		if value, ok := held[name]; ok {
+			fields[name] = value
+			continue
+		}
+		if id != 1 {
+			delete(fields, name)
+		}
+	}
+	whole, err = json.Marshal(fields)
+	if err != nil {
+		return saved
+	}
+	var merged savedState
+	if err := json.Unmarshal(whole, &merged); err != nil {
+		return saved
+	}
+	return merged
+}
+
 // diff is what a save must write: the records that are new or changed since the
 // base, and the ones the base held that are gone.
 func (base *configBase) diff(entries []configstore.Entry) (puts []configstore.Entry, deletes []configstore.Key) {
@@ -628,6 +716,9 @@ func (base *configBase) acceptLocal(entries []configstore.Entry, local localWrit
 	}
 	base.payloads, base.ords = payloads, ords
 	base.local = local.state
+	if local.windowName != "" {
+		base.window = local.window
+	}
 	if local.includeDevelopment {
 		base.development = local.development
 	}
@@ -636,7 +727,7 @@ func (base *configBase) acceptLocal(entries []configstore.Entry, local localWrit
 // writeConfig stores a state through a store and updates the base. It says
 // whether a shared record changed, which is what other computers will want.
 func writeConfig(store *configstore.Store, base *configBase, defaults configDefaults, saved savedState) (shared bool, err error) {
-	entries, local, err := splitState(saved, base, defaults)
+	entries, local, window, err := splitState(saved, base, defaults)
 	if err != nil {
 		return false, err
 	}
@@ -644,16 +735,22 @@ func writeConfig(store *configstore.Store, base *configBase, defaults configDefa
 	if err != nil {
 		return false, err
 	}
+	localValues.windowName, localValues.window = base.windowName, window
 	return writeEntries(store, base, entries, localValues)
 }
 
-// localWrite is the two local values a save can replace. A release save does
-// not include the development key at all, so it cannot remove one it did not
-// read.
+// localWrite is the local values a save can replace: this device's document, the
+// development workspace beside it, and the value of the window that is saving. A
+// release save does not include the development key at all, so it cannot remove
+// one it did not read.
 type localWrite struct {
 	state              []byte
 	development        []byte
 	includeDevelopment bool
+	// windowName and window are the saving window's own value. An empty name is a
+	// state with no window of its own, whose tabs stay in the device document.
+	windowName string
+	window     []byte
 }
 
 func isWorkspaceField(name string) bool {
@@ -785,6 +882,7 @@ func mergeRecentConnectionTimes(current, next []byte) ([]byte, error) {
 // base describe them. It is the second half of a save, shared by the full
 // encoder and the hosts-only shortcut.
 func writeEntries(store *configstore.Store, base *configBase, entries []configstore.Entry, local localWrite) (shared bool, err error) {
+	base.stored = false
 	puts, deletes := base.diff(entries)
 	change := configstore.Change{Writer: configWriter(), Delete: deletes, Expected: map[configstore.Key][]byte{}}
 	patchedPayloads := make(map[configstore.Key][]byte, len(puts))
@@ -847,13 +945,26 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 			}
 		}
 	}
+	if local.windowName != "" && !bytes.Equal(local.window, base.window) {
+		if change.LocalPatch == nil {
+			change.LocalPatch = map[string]configstore.JSONChange{}
+		}
+		patch, err := localPatch(base.window, local.window)
+		if err != nil {
+			return false, err
+		}
+		change.LocalPatch[local.windowName] = patch
+	}
 	if len(puts) == 0 && len(deletes) == 0 && change.LocalPatch == nil {
 		return false, nil
 	}
 	for key, patch := range change.LocalPatch {
 		previous := base.local
-		if key == developmentWorkspaceKey {
+		switch key {
+		case developmentWorkspaceKey:
 			previous = base.development
+		case local.windowName:
+			previous = base.window
 		}
 		if len(previous) == 0 {
 			previous = []byte("{}")
@@ -862,15 +973,20 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 		if err != nil {
 			return false, err
 		}
-		if key == developmentWorkspaceKey {
+		switch key {
+		case developmentWorkspaceKey:
 			local.development = value
-		} else {
+		case local.windowName:
+			local.window = value
+		default:
 			local.state = value
 		}
 	}
-	if _, err := store.Commit(change); err != nil {
+	written, err := store.Commit(change)
+	if err != nil {
 		return false, err
 	}
+	base.stored = written > 0 || change.LocalPatch != nil || len(change.Local) > 0
 	for index := range entries {
 		entry := &entries[index]
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
@@ -887,10 +1003,10 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 	return len(puts) > 0 || len(deletes) > 0, nil
 }
 
-// openConfig opens the store at path and reads the state in it. A file that is
-// not a store is set aside and a new one is started; one from a newer build is
-// left alone and reported, with no store.
-func openConfig(path string) (store *configstore.Store, saved savedState, base *configBase, report loadReport, err error) {
+// openConfig opens the store at path and reads the state in it, including the
+// record of window id. A file that is not a store is set aside and a new one is
+// started; one from a newer build is left alone and reported, with no store.
+func openConfig(path string, id int) (store *configstore.Store, saved savedState, base *configBase, report loadReport, err error) {
 	fresh := savedState{Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion}
 	store, err = configstore.OpenShared(path, configFormat)
 	var tooNew *configstore.TooNewError
@@ -915,11 +1031,23 @@ func openConfig(path string) (store *configstore.Store, saved savedState, base *
 		saved, base, err = joinState(entries, local[localKey])
 		if err == nil {
 			base.development = local[developmentWorkspaceKey]
-		}
-		if err == nil && buildinfo.Development {
-			clearSavedWorkspace(&saved)
-			if raw, ok := local[developmentWorkspaceKey]; ok {
-				report.workspaceErr = applySavedWorkspace(&saved, raw)
+			// The window reads its own value and nothing else writes it, so two
+			// windows of this process never share their tabs.
+			base.windowName = windowKey(id, buildinfo.Development)
+			base.window = local[base.windowName]
+			saved = applyWindowState(saved, base.window, id)
+			if buildinfo.Development {
+				// A development build used to keep its workspace in a document of
+				// its own; that document is read once for a window that has no
+				// record yet, and a damaged one is reported the same either way.
+				// The workspace is cleared first, so a record that does not read
+				// leaves the window empty instead of half restored.
+				clearSavedWorkspace(&saved)
+				if len(base.window) > 0 {
+					report.workspaceErr = applySavedWorkspace(&saved, base.window)
+				} else if raw, ok := local[developmentWorkspaceKey]; ok {
+					report.workspaceErr = applySavedWorkspace(&saved, raw)
+				}
 				base.developmentDamaged = report.workspaceErr != nil
 			}
 		}

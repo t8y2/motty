@@ -1,6 +1,6 @@
 # Issue #510 Headless Acceptance
 
-Worktree: isolated Motty `codex/issue-510-command-hints` branch rebased onto upstream/main `be033c6`, with clean Viva sibling `8916e4f`. No production SSH host or native Windows app was used. Issue #510 is OPEN, assigned to `caichangqing1120`, and `/claim` received the bot's success response. [PR #526](https://github.com/t8y2/motty/pull/526) is open against that base; CI was pending when this record was written.
+Worktree: isolated Motty `codex/issue-510-command-hints` branch, originally based on upstream/main `be033c6` and subsequently merged with `41ceea3`, with clean Viva sibling `8916e4f`. No production SSH host or native Windows app was used. Issue #510 was claimed by `caichangqing1120`; [PR #526](https://github.com/t8y2/motty/pull/526) is open against `main`.
 
 ## Coverage Audit
 
@@ -37,3 +37,15 @@ Worktree: isolated Motty `codex/issue-510-command-hints` branch rebased onto ups
 - PR #526 CI run [42045761488](https://github.com/t8y2/motty/actions/runs/42045761488) failed on Linux CJK inline-row spill, three race shards where the real PTY test typed before the prompt had stayed quiet, and three Windows shards whose test canvas did not reach the newly lower local-shell selector. No production host query or migration failure was reported. The CJK description now appears once in the detail panel, the real PTY fixture waits for a stable screen version before typing, and the Windows dropdown fixture paints a tall virtual canvas. Focused `-race -count=3`, headless CJK layout, Windows workbench test cross-compilation and another full `go test ./... -count=1 -timeout=180s` passed locally after these changes; CI must rerun on the new head.
 
 The earlier unrestricted run hung in the test-only fake-window path because it called the native Keychain while the display was asleep. The test harness now uses an in-memory secret driver; no real user credential was read or changed. One intermediate parallel run also hit an unrelated macOS remote-stats response failure, which passed on isolated rerun and in the subsequent full-suite runs. Full-suite success does not establish external SSH/bastion behavior or a native Windows UI run; `tools/realwin/local.sh` is not configured in this worktree.
+
+## Main Sync, 2026-11-06
+
+The newer `main` adds per-window local records and a scrolling Windows shell-settings fixture. The merge retains the window ID when loading configuration, persists the new-install completion Off marker locally, and uses the scrolling fixture. The new-install test now opens the second window with `WindowID=2`. There were no unresolved review threads at the time of this sync.
+
+- `go test ./... -count=1 -timeout=180s`: passed on the merged tree, including workbench and SSH packages.
+- `go test -race -p 1 ./internal/completion ./internal/localshell ./internal/workbench -run 'TestNewInstallationCompletionDefaultsOffAcrossWindows|Test.*Completion(Probe|Preview|Discovery|Path)|Test.*Window.*' -count=1 -timeout=180s`: passed.
+- `go test -tags vivahead ./internal/workbench -run 'TestHeadlessCompletion|TestCompletionDetails' -count=1 -timeout=180s`: passed, including real local shell fixtures and narrow CJK detail layouts.
+- `go vet ./internal/completion ./internal/term ./internal/sshconn ./internal/localshell ./internal/workbench`, `gofmt -l` on resolved files, and `git diff --check`: passed.
+- `go build -tags vivahead,dev -o /dev/null ./cmd/motty`: passed on macOS and with `GOOS=linux` and `GOOS=windows`, `GOARCH=amd64`, `CGO_ENABLED=0`. Windows workbench test cross-compilation with `go test -c -tags vivahead` passed; native Windows runtime remains CI-only.
+
+The prior PR head `1e6c609` had 15 successful checks, but those checks do not cover this merge. The new head and CI must be checked separately before calling the PR merge-ready.

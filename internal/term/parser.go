@@ -512,7 +512,7 @@ func (t *Terminal) endOSC() {
 		value := string(text)
 		if value == "A"+suffix {
 			if own {
-				t.reclaimApplicationModes()
+				t.ReclaimApplicationModes()
 			}
 			if t.promptStartFn != nil {
 				t.promptStartFn()
@@ -528,7 +528,7 @@ func (t *Terminal) endOSC() {
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
 				if own {
-					t.reclaimApplicationModes()
+					t.ReclaimApplicationModes()
 				}
 				if t.commandFinishedFn != nil {
 					t.commandFinishedFn(code)

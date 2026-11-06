@@ -120,14 +120,23 @@ func TestSessionLogsOffPropagatesAndLeavesConnectionsRunning(t *testing.T) {
 			t.Fatalf("window %d: turning the journal off changed the live connection: %+v", index, session)
 		}
 	}
+	// One journal serves the whole process, so the session each window opened
+	// above left one row; turning the journal off stops both. Each window has
+	// its own writer, so both queues are drained before the rows are counted.
 	for _, state := range []*State{pair.first, pair.second} {
-		settleSessionLogs(t, state)
+		settleSessionLogs(t, pair.first)
+		settleSessionLogs(t, pair.second)
 		rows, err := state.sessionLogs.store.List(sessionlog.Query{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(rows.Records) != 1 || rows.Records[0].Status != sessionlog.StatusTrackingStopped || rows.Records[0].Reason != sessionlog.ReasonTrackingOff {
-			t.Fatalf("tracked row after turning the journal off = %+v", rows.Records)
+		if len(rows.Records) != 2 {
+			t.Fatalf("tracked rows after turning the journal off = %d, want 2", len(rows.Records))
+		}
+		for _, row := range rows.Records {
+			if row.Status != sessionlog.StatusTrackingStopped || row.Reason != sessionlog.ReasonTrackingOff {
+				t.Fatalf("tracked row after turning the journal off = %+v", row)
+			}
 		}
 	}
 
@@ -143,10 +152,11 @@ func TestSessionLogsOffPropagatesAndLeavesConnectionsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows.Records) != 2 {
-		t.Fatalf("rows after re-enabling = %d, want 2", len(rows.Records))
+	if len(rows.Records) != 3 {
+		t.Fatalf("rows after re-enabling = %d, want 3", len(rows.Records))
 	}
-	if rows.Records[0].Status != sessionlog.StatusActive || rows.Records[1].Status != sessionlog.StatusTrackingStopped {
+	if rows.Records[0].Status != sessionlog.StatusActive ||
+		rows.Records[1].Status != sessionlog.StatusTrackingStopped || rows.Records[2].Status != sessionlog.StatusTrackingStopped {
 		t.Fatalf("rows after re-enabling = %+v", rows.Records)
 	}
 }
