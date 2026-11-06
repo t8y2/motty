@@ -227,7 +227,7 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 		ShowCaret:      showCaret,
 		Caret:          caret,
 		SelectionStart: d.editor.ByteOffset(selection.Start), SelectionEnd: d.editor.ByteOffset(selection.End),
-		CaretWidth: codeCaretWidth, CaretColor: d.owner.pal.cursor,
+		CaretColor:          d.owner.pal.cursor,
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
 	}

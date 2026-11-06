@@ -47,23 +47,13 @@ func (state *State) paintDebugEditor(canvas *ui.Canvas, theme ui.Theme, bounds u
 	selection := editor.Selection()
 	caret := editor.ByteOffset(editor.Caret())
 	focused := canvas.Focused() == hitDebugEditor
-	// The caret blinks only where it is drawn: a focused editor with nothing
-	// selected. Everywhere else the phase rests, so regaining the keyboard paints
-	// it lit at once.
-	showCaret := false
-	if focused && selection.Start == selection.End {
-		showCaret = state.dev.caret.Lit(canvas, caret)
-	} else {
-		state.dev.caret.Rest()
-	}
 	snapshot := components.CodeEditorSnapshot{
 		ID: hitDebugEditor, Label: state.messages.NavDebug, Value: editor.String(),
 		Focused:        focused,
-		ShowCaret:      showCaret,
+		ShowCaret:      focused && selection.Start == selection.End,
 		SelectionStart: editor.ByteOffset(selection.Start),
 		SelectionEnd:   editor.ByteOffset(selection.End),
 		Caret:          caret,
-		CaretWidth:     codeCaretWidth,
 		CaretColor:     state.pal.cursor,
 		FontSize:       state.terminalFontSize,
 		MonoFace:       state.terminalFontFace,

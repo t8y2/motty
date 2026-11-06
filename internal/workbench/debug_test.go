@@ -142,8 +142,12 @@ func TestDebugCaretBlinksAndThenRests(t *testing.T) {
 // caretPainted reports whether one of this frame's rectangles is the caret: a
 // fill in the theme's cursor color, as thick as the editor draws it.
 func caretPainted(canvas *ui.Canvas, state *State) bool {
+	caret, shown := state.dev.code.CaretBounds()
+	if !shown {
+		return false
+	}
 	for _, rect := range canvas.Rectangles() {
-		if rect.Color == state.pal.cursor && rect.Bounds.Width == codeCaretWidth && rect.Bounds.Height > codeCaretWidth {
+		if rect.Color == state.pal.cursor && rect.Bounds.Width == caret.Width && rect.Bounds.Height > caret.Width {
 			return true
 		}
 	}

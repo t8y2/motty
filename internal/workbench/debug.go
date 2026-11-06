@@ -57,9 +57,6 @@ type devState struct {
 	// highlight is debugHighlight held as a value: a method value made at paint
 	// time would allocate a closure on every frame.
 	highlight func(language, line string, dst []components.CodeEditorRun) []components.CodeEditorRun
-	// caret is the phase of the editor's caret, so it blinks the way the one in
-	// a file window does.
-	caret components.CaretBlink
 }
 
 // devEditor prepares the editor on its first frame. It starts with the caret at
