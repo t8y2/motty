@@ -38,12 +38,15 @@ type agentServer struct {
 	root     string
 	port     uint16
 
-	mu          sync.Mutex
-	connections int // authenticated connections accepted so far
-	active      int // and how many are open now
-	commands    []string
-	conns       []*ssh.ServerConn
-	group       sync.WaitGroup
+	mu             sync.Mutex
+	connections    int // authenticated connections accepted so far
+	active         int // and how many are open now
+	commands       []string
+	conns          []*ssh.ServerConn
+	group          sync.WaitGroup
+	stallSFTP      chan struct{}
+	commandHandler func(ssh.Channel, string, <-chan struct{})
+	refuseSFTP     bool
 }
 
 func startAgentServer(t *testing.T) *agentServer {
@@ -159,7 +162,7 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 			}()
 		case "subsystem":
 			var payload struct{ Name string }
-			if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Name != "sftp" {
+			if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Name != "sftp" || server.refuseSFTP {
 				request.Reply(false, nil)
 				continue
 			}
@@ -167,6 +170,14 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 			running.Add(1)
 			go func() {
 				defer running.Done()
+				if server.stallSFTP != nil {
+					select {
+					case server.stallSFTP <- struct{}{}:
+					default:
+					}
+					<-closed
+					return
+				}
 				files, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(server.root))
 				if err == nil {
 					_ = files.Serve()
@@ -182,6 +193,10 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 }
 
 func (server *agentServer) run(channel ssh.Channel, command string, closed <-chan struct{}) {
+	if server.commandHandler != nil && !strings.HasPrefix(command, "printf 'kernel=") {
+		server.commandHandler(channel, command, closed)
+		return
+	}
 	status := uint32(0)
 	switch command {
 	case "echo hello":

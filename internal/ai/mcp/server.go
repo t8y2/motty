@@ -508,8 +508,9 @@ type textContent struct {
 }
 
 type callResult struct {
-	Content []textContent `json:"content"`
-	IsError bool          `json:"isError"`
+	Content           []textContent   `json:"content"`
+	IsError           bool            `json:"isError"`
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 }
 
 func toolResult(text string, isErr bool) json.RawMessage {
@@ -563,7 +564,11 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (json.Raw
 	}()
 	select {
 	case res := <-done:
-		return toolResult(res.Text, res.IsError), nil
+		encoded, err := json.Marshal(callResult{Content: []textContent{{"text", res.Text}}, IsError: res.IsError, StructuredContent: res.Structured})
+		if err != nil {
+			return toolResult("cannot encode tool result: "+err.Error(), true), nil
+		}
+		return encoded, nil
 	case <-ctx.Done():
 		// The goroutine ends when the backend honours ctx; it never blocks on done.
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

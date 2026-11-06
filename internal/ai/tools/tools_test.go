@@ -242,7 +242,7 @@ func TestEscalationToolIsAskOnlyAndDecodes(t *testing.T) {
 func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 	names := func(commands bool) []string {
 		var names []string
-		for _, spec := range Headless(commands, false) {
+		for _, spec := range Headless(commands, false, false) {
 			names = append(names, spec.Name)
 			if len(spec.Description) == 0 || len(spec.Description) > 400 {
 				t.Errorf("%s: description length %d", spec.Name, len(spec.Description))
@@ -264,10 +264,10 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 		}
 		return names
 	}
-	if got, want := names(false), []string{NameListSessions, NameSFTPList, NameSFTPRead}; !slices.Equal(got, want) {
+	if got, want := names(false), []string{NameListSessions, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("read-only headless tools %v, want %v", got, want)
 	}
-	if got, want := names(true), []string{NameListSessions, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead}; !slices.Equal(got, want) {
+	if got, want := names(true), []string{NameListSessions, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("headless tools with commands %v, want %v", got, want)
 	}
 	if _, ok := Lookup(NameTerminalRead); !ok {
@@ -276,8 +276,8 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 }
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
-	full := Headless(true, true)
-	if len(full) != len(All())-1 {
+	full := Headless(true, true, false)
+	if len(full) != len(All())-1+3 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

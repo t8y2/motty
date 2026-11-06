@@ -64,7 +64,8 @@ server.process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notification
 
 names = {tool["name"] for tool in server.rpc("tools/list")["result"]["tools"]}
 check("tools: commands and reading, no screen, no writing",
-      names == {"list_sessions", "terminal_exec", "terminal_exec_many", "sftp_list", "sftp_read"}, names)
+      names == {"list_sessions", "terminal_exec", "terminal_exec_many", "sftp_list", "sftp_read",
+                "sftp_stat", "sftp_checksum", "transfer_status"}, names)
 
 error, text = server.call("list_sessions", {})
 check("only the host opened to agents is listed", not error and "agent-host" in text and "closed-host" not in text, text)

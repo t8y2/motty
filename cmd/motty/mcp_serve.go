@@ -22,11 +22,16 @@ import (
 func runMCPServe(args []string) int {
 	flags := flag.NewFlagSet("mcp-serve", flag.ContinueOnError)
 	dir := flags.String("data-dir", datadir.Current().Dir, "Motty configuration directory")
+	var transferRoots []string
+	flags.Func("transfer-root", "Allow MCP file transfers within this local directory (repeatable; requires full access)", func(value string) error {
+		transferRoots = append(transferRoots, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintln(os.Stderr, "usage: motty mcp-serve [--data-dir directory]")
+		fmt.Fprintln(os.Stderr, "usage: motty mcp-serve [--data-dir directory] [--transfer-root directory ...]")
 		return 2
 	}
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -43,6 +48,7 @@ func runMCPServe(args []string) int {
 		AIDatabasePath: aiDatabasePath(*dir),
 		Keystore:       keystoreFor(*dir),
 		Log:            os.Stderr,
+		TransferRoots:  transferRoots,
 	})
 	if err != nil && ctx.Err() == nil {
 		fmt.Fprintln(os.Stderr, "motty mcp-serve:", err)
