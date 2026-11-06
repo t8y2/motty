@@ -526,7 +526,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
-	state.stopSessionForwards(session.ID, false)
+	state.redialSessionForwards(session.ID)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.term != nil && session.term.shell != nil {

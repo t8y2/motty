@@ -102,7 +102,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		Scope:          dialogScope,
 		CloseID:        hitForwardDialogClose,
 		InitialFocusID: hitForwardDialogLabel,
-		ContentSize:    ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2, state.forwardDialogError), // four rows of fields
+		ContentSize:    ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2+30, state.forwardDialogError), // four rows of fields, then the checkbox
 	})
 	dialogTitle := messages.ForwardDialogTitle
 	submitLabel := messages.ForwardCreate
@@ -115,7 +115,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	// Four rows of fields; the last holds the port beside the destination,
 	// 24% / 44% / 24% of the row with 4% between.
 	const rowHeight = 58
-	var name, host, mode, port, destination, destinationPort flex.Box
+	var name, host, mode, port, destination, destinationPort, resume, resumeHelp flex.Box
 	hint := messages.ForwardSOCKS5Hint
 	if state.forwardEditor.mode == portforward.ModeHTTPConnect {
 		hint = messages.ForwardHTTPConnectHint
@@ -138,6 +138,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 				})
 			}
 		})
+		resume, resumeHelp = state.declareDialogCheckboxHelp(f, messages.ForwardFieldResume, 4, 6)
 		if state.forwardDialogError != "" {
 			f.Text(state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
@@ -160,6 +161,8 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, destination.Rect())
 		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", destinationPort.Rect())
 	}
+	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, resume)
+	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, resumeHelp.Rect())
 
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitForwardDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},

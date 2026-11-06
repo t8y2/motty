@@ -200,5 +200,7 @@ func (state *State) setReconnectPolicy(policy reconnectPolicy) bool {
 			session.reconnectText = ""
 		}
 	}
+	// Forwards that waited for a retry this change took away stop now.
+	state.releaseWaitingForwards()
 	return true
 }

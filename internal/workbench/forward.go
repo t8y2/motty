@@ -25,6 +25,9 @@ type forwardRecord struct {
 	LocalPort       uint16
 	DestinationHost string
 	DestinationPort uint16
+	// Resume makes the forward wait through an automatic reconnect of its tab
+	// and start again once it is connected, instead of stopping.
+	Resume bool
 
 	runner        *portforward.Forward
 	runnerVersion uint64
@@ -138,6 +141,16 @@ func (forward *forwardRecord) stop() {
 	forward.startID = 0
 }
 
+// hold closes what the forward runs and leaves it waiting for its session to
+// connect again, as it waits for a session that is still connecting.
+func (forward *forwardRecord) hold() {
+	sessionID := forward.sessionID
+	forward.stop()
+	forward.sessionID = sessionID
+	forward.pending = true
+	forward.lastError = ""
+}
+
 type forwardEditor struct {
 	label           text.Editor
 	localPort       text.Editor
@@ -147,6 +160,7 @@ type forwardEditor struct {
 	hostOpen        bool
 	hostOffset      int
 	mode            portforward.Mode
+	resume          bool
 	editing         bool
 	forwardID       uint32
 }
@@ -190,6 +204,7 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 	*editor = forwardEditor{
 		hostID:    hostID,
 		mode:      forward.Mode,
+		resume:    forward.Resume,
 		editing:   true,
 		forwardID: forward.ID,
 	}
@@ -267,7 +282,7 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	forward := forwardRecord{
 		ID: id, Label: editor.value(forwardFieldLabel), Mode: editor.mode,
 		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
-		LocalPort: localPort,
+		LocalPort: localPort, Resume: editor.resume,
 	}
 	if !editor.usesClientDestination() {
 		forward.DestinationHost = editor.value(forwardFieldDestinationHost)
@@ -390,6 +405,8 @@ func (state *State) clickForwardDialog(id ui.ID) {
 	case hitForwardModeHTTPConnect:
 		state.forwardEditor.mode = portforward.ModeHTTPConnect
 		state.forwardDialogError = ""
+	case hitForwardDialogResume:
+		state.forwardEditor.resume = !state.forwardEditor.resume
 	case hitForwardDialogSubmit:
 		state.submitForwardDialog()
 	}
@@ -415,6 +432,7 @@ func (state *State) submitForwardDialog() {
 			f.HostUser = host.User
 			f.HostPort = host.Port
 			f.LocalPort = localPort
+			f.Resume = state.forwardEditor.resume
 			f.lastError = ""
 			if !state.forwardEditor.usesClientDestination() {
 				f.DestinationHost = state.forwardEditor.value(forwardFieldDestinationHost)
@@ -593,22 +611,70 @@ func (state *State) startPendingForwards(session *Session) {
 	}
 }
 
+// stopSessionForwards stops the forwards that run over a session. A connection
+// that was lost (failed) while the automatic reconnect setting will dial the tab
+// again leaves the forwards marked Resume waiting instead: they start again once
+// the tab is connected, and stop if the retry is canceled or gives up.
 func (state *State) stopSessionForwards(sessionID uint32, failed bool) {
+	resume := false
+	if failed {
+		session, ok := state.sessionByIDPointer(sessionID)
+		resume = ok && session.reconnectPending
+	}
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.sessionID != sessionID {
 			continue
 		}
-		forward.stop()
-		if failed {
-			forward.lastError = state.messages.ForwardConnectionClosed
+		if resume && forward.Resume {
+			forward.hold()
+		} else {
+			forward.stop()
+			if failed {
+				forward.lastError = state.messages.ForwardConnectionClosed
+			}
 		}
+		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+	}
+}
+
+// redialSessionForwards readies a session's forwards for a new connection of
+// the same tab. Those waiting for it keep waiting, so pressing Enter during an
+// automatic retry does not lose them; those running over the connection that is
+// being replaced stop.
+func (state *State) redialSessionForwards(sessionID uint32) {
+	for index := range state.forwards {
+		forward := &state.forwards[index]
+		if forward.sessionID != sessionID || forward.pending {
+			continue
+		}
+		forward.stop()
+		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+	}
+}
+
+// releaseWaitingForwards stops the forwards that wait for a session which will
+// not connect again by itself: the tab is gone, or it is closed and no
+// automatic retry is planned any more.
+func (state *State) releaseWaitingForwards() {
+	for index := range state.forwards {
+		forward := &state.forwards[index]
+		if !forward.pending || forward.sessionID == 0 {
+			continue
+		}
+		session, ok := state.sessionByIDPointer(forward.sessionID)
+		if ok && (session.reconnectPending || session.phase != sshconn.PhaseClosed && session.phase != sshconn.PhaseFailed) {
+			continue
+		}
+		forward.stop()
+		forward.lastError = state.messages.ForwardConnectionClosed
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 	}
 }
 
 func (state *State) pumpForwards() {
 	state.pumpForwardStarts()
+	state.releaseWaitingForwards()
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.runner == nil {
@@ -680,7 +746,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 		forward := forwardRecord{
 			ID: numbers[index], Label: entry.Label, Mode: mode,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
-			LocalPort: entry.LocalPort,
+			LocalPort: entry.LocalPort, Resume: entry.Resume,
 		}
 		if mode == portforward.ModeLocal || mode == portforward.ModeRemote {
 			forward.DestinationHost = entry.DestinationHost
@@ -700,7 +766,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 			previous = slices.Delete(previous, match, match+1)
 			if kept.sameAs(forward) {
 				kept.ID = forward.ID
-				kept.Label, kept.HostLabel = forward.Label, forward.HostLabel
+				kept.Label, kept.HostLabel, kept.Resume = forward.Label, forward.HostLabel, forward.Resume
 				forward = kept
 			} else {
 				kept.stop()

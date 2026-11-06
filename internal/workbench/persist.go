@@ -237,6 +237,10 @@ type savedForward struct {
 	LocalPort       uint16 `json:"local_port"`
 	DestinationHost string `json:"destination_host,omitempty"`
 	DestinationPort uint16 `json:"destination_port,omitempty"`
+	// Resume makes the forward wait through an automatic reconnect and start
+	// again. It is off unless chosen, so a forward saved before it existed
+	// stops on a lost connection as it always did.
+	Resume bool `json:"resume,omitempty"`
 }
 
 type savedProxy struct {
@@ -584,6 +588,7 @@ func (state *State) snapshot() savedState {
 			ID: forward.ID, Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
 			HostUser: forward.HostUser, HostPort: forward.HostPort, LocalPort: forward.LocalPort,
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
+			Resume: forward.Resume,
 		})
 	}
 	for _, route := range state.proxies {

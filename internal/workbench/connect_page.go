@@ -809,6 +809,7 @@ func (state *State) clickConnection(id ui.ID) {
 	case hitConnCancelReconnect:
 		if session.reconnectPending {
 			state.cancelReconnect(session)
+			state.releaseWaitingForwards()
 			state.recordConnectionEvent(session, connectionEventReconnectCanceled, "")
 			session.term.say(sgrMuted, state.messages.ConnReconnectCanceled)
 			session.showLog = true

@@ -188,6 +188,8 @@ var (
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
+	hitForwardDialogResume          = tree.ID(forwardsHits, "forward-dialog-resume")
+	hitForwardDialogResumeHelp      = tree.ID(forwardsHits, "forward-dialog-resume-help")
 	hitForwardHostDismiss           = tree.ID(forwardsHits, "forward-host-dismiss")
 	hitForwardHostScrollUp          = tree.ID(forwardsHits, "forward-host-scroll-up")
 	hitForwardHostScrollDown        = tree.ID(forwardsHits, "forward-host-scroll-down")

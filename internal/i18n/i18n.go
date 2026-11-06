@@ -876,6 +876,8 @@ type Messages struct {
 	ForwardFieldRemotePort        string
 	ForwardFieldDestination       string
 	ForwardFieldDestinationPort   string
+	ForwardFieldResume            string
+	ForwardResumeHelp             string
 	ForwardDestinationPlaceholder string
 	ForwardLocalDestinationHint   string
 	ForwardRemoteListenerFmt      string
