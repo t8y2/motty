@@ -453,6 +453,7 @@ var ChineseMessages = Messages{
 	AuthPassword:                "密码",
 	AuthPrivateKey:              "私钥",
 	AuthAgent:                   "SSH Agent",
+	AuthKerberos:                "Kerberos（GSSAPI）",
 	FieldIdentity:               "私钥",
 	AuthAllKeys:                 "默认及已导入密钥",
 	AuthKeyUnavailable:          "所选密钥不可用",

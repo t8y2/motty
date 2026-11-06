@@ -412,7 +412,7 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 func hostPasswordSecretName(host Host) (string, bool) {
 	switch host.Protocol {
 	case protocolSSH:
-		if host.Auth == authPrivateKey || host.Auth == authAgent {
+		if !host.Auth.usesPassword() {
 			return "", false
 		}
 	case protocolVNC, protocolRDP:

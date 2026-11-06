@@ -102,7 +102,7 @@ type savedTransport struct {
 	// the default algorithms; AlgorithmList is the custom list.
 	Algorithms    string `json:"algorithms,omitempty"`
 	AlgorithmList string `json:"algorithm_list,omitempty"`
-	// Authentication is "password", "key" or "agent" when an SSH host does
+	// Authentication is "password", "key", "agent" or "kerberos" when an SSH host does
 	// not use the automatic authentication order. Identity optionally selects
 	// one imported key fingerprint for the key policy.
 	Authentication string `json:"authentication,omitempty"`

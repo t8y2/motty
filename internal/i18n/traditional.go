@@ -453,6 +453,7 @@ var TraditionalMessages = Messages{
 	AuthPassword:                "密碼",
 	AuthPrivateKey:              "私密金鑰",
 	AuthAgent:                   "SSH Agent",
+	AuthKerberos:                "Kerberos（GSSAPI）",
 	FieldIdentity:               "私密金鑰",
 	AuthAllKeys:                 "預設及已匯入金鑰",
 	AuthKeyUnavailable:          "所選金鑰不可用",

@@ -17,12 +17,15 @@ var defaultIdentities = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 // authMethods builds the client's authentication order: keys first, then the
 // account password through keyboard-interactive and password. Prompts for the
 // password block the connection goroutine and show up as Status.
-func (conn *Conn) authMethods(authentication Authentication) []ssh.AuthMethod {
+func (conn *Conn) authMethods(host string, authentication Authentication) []ssh.AuthMethod {
 	methods := authentication.Methods
 	if methods == 0 {
 		methods = AuthAll
 	}
 	auth := make([]ssh.AuthMethod, 0, 3)
+	if methods&AuthKerberos != 0 && KerberosAvailable {
+		auth = append(auth, conn.kerberosAuth(host))
+	}
 	if methods&AuthPublicKey != 0 {
 		auth = append(auth, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 			return conn.publicKeySigners(authentication)
