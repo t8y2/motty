@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="assets/readme-lockup.png" width="340" alt="Motty" />
-
   <p><a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | 日本語</p>
 
-  <p><strong>Motty：SSH、SFTP、ポートフォワーディング、VNC/RDP、そして AI アシスタントを、ひとつのネイティブウィンドウに。</strong></p>
+  <p>
+    <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty —— デスクトップ SSH クライアント：シェル、ファイル、トンネル、画面、アシスタントをひとつのウィンドウに" /></a>
+  </p>
 
   <p>
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
@@ -13,43 +13,86 @@
   </p>
 
   <p>
-    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="820" alt="ファイルパネル、ターミナル、AI アシスタントを表示した Motty" /></a>
+    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty の実際のセッション：SFTP パネル、デプロイログを追うシェル、そして AI アシスタントの回答" /></a>
   </p>
+  <p><sub>実際のセッション：ファイルパネル、デプロイログを追うシェル、同じターミナルを読むアシスタント。</sub></p>
 </div>
 
-> Motty はネイティブのデスクトップ SSH ワークスペースです。Go と
-> [Viva](https://github.com/vivaui/viva) で作られているため、Electron のランタイムも、組み込みの
-> ブラウザも、JavaScript のレイヤーもありません。ひとつのウィンドウに、ターミナル、ファイル、トンネル、
-> リモートデスクトップ、アシスタントが収まっています。
+Motty はデスクトップの SSH クライアントです。ターミナル、SFTP パネル、ポート
+フォワーディング、リモートデスクトップ、AI アシスタントがひとつのウィンドウに
+収まっているので、ファイルのために別のアプリを開く必要も、画面を見るために
+ブラウザのタブを開く必要もありません。
 
 ## なぜ Motty なのか？
+
+まずは下の 4 枚の画像を。詳しい話はこのあとの各節にあります。
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🪶 設計からネイティブ</h3>
-      <p>Viva は Metal、Direct3D、Vulkan と直接やり取りします。Motty は起動が速く、アイドル時に無駄なフレームの再描画を行わず、ブラウザエンジンを同梱せずに配布されます。</p>
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="グループ、タグ、色を付けたホストの一覧" /></a>
+      <p><strong>ホストが散らからない。</strong>グループ、タグ、色、アイコンを付けられ、
+      OpenSSH config、PuTTY、MobaXterm など 7 種類の取り込み元から読み込めます。パスワードは
+      AES-256-GCM の保管庫へ、鍵はシステムのシークレットストアへ。</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🗂 セッションをひとつのウィンドウで</h3>
-      <p>ターミナル、SFTP、フォワーディング、VNC/RDP、アシスタントが、ひとつのワークスペースを共有します。ファイルのために別のアプリを開く必要も、デスクトップのためにブラウザのタブを開く必要もありません。</p>
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
+      <p><strong>セッションが見える。</strong>ペインを分割すれば、CPU を使っている
+      シェルの隣で、そのマシンの CPU、メモリ、ディスク、ネットワークをそのまま読めます。</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⌨️ キーボードのための設計</h3>
-      <p>タブ、分割、SFTP、フォワーディング、アシスタントは、すべてコマンドパレットのコマンドです。マウスは必須ではありません。</p>
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
+      <p><strong>画面も要るときに。</strong>VNC と RDP の両方に接続でき、サーバーが
+      自分のループバックでしか待ち受けていない場合は SSH ホスト経由で届きます。</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🔎 限界について正直に</h3>
-      <p>リポジトリには、実機で検証済みのことと、まだ検証していないことが記載されています。リモートデスクトップのメモでは、プロトコルの未対応部分を隠さずに列挙しています。</p>
+      <p><strong>キーボードが主役。</strong>タブ、分割、SFTP、フォワーディング、
+      アシスタントはすべてコマンドパレットのコマンドです。マウスは必須ではありません。</p>
+      <p><strong>限界も正直に。</strong><a href="docs/remote-desktop.md">docs/remote-desktop.md</a>
+      に VNC と RDP がまだできないことを列挙し、リリースノートには実機で検証した
+      プラットフォームを書いています。</p>
+      <p><strong>外へ何も送らない。</strong>利用状況の収集はありません。更新確認は既定で
+      オフで、有効にしたときだけ GitHub Releases を参照します。</p>
     </td>
   </tr>
 </table>
 
-## ✨ 機能
+## クイックスタート
 
-### 🖥 しっかりついてくるターミナル
+1. **Hosts** を開き、**New host** を選びます。
+2. 名前、アドレス、アカウント名を入力します。
+3. 認証方法を選びます：実行中のエージェント、秘密鍵のファイル、またはパスワード。
+4. 接続し、ホスト鍵のフィンガープリントをサーバーのものと照合します。一度だけ信頼するか、
+   保存します。
+5. タブがログインシェルで開きます。ワンタイムコードを求めるサーバーでは、
+   追加の欄が自動的に表示されます。
+
+コマンドパレットは、macOS では **Command+Shift+P**、それ以外では **Control+Shift+P** です。
+デフォルトのショートカットは、macOS では Command、Windows/Linux では Control を使います。
+すべてのショートカットは変更できます。
+
+Windows では、**Settings → Terminal → Local shell** のドロップダウン（**Inline suggestions** の下）で
+ローカルシェルを選びます。Motty は、PATH と一般的なインストール先のフォルダーから、
+PowerShell、CMD、Git Bash などのインストール済みのシェルを検出し、
+インストール済みの WSL のディストリビューションをそれぞれ個別の項目として一覧表示します。ファイルパネルは、
+ディストリビューションの `\\wsl.localhost` 共有を通じて、WSL のターミナルのフォルダーにも追従します。
+PowerShell に `wsl` と入力するのではなく、ここでディストリビューションを選んでください：
+フォルダーを報告できるのは、Motty 自身が起動したシェルだけです。この選択はこの
+コンピューターに保存され、新しいローカルターミナルや再接続したローカルターミナルに適用されます。
+
+| 操作 | macOS | Windows / Linux |
+| --- | --- | --- |
+| コマンドパレット | Command+Shift+P | Control+Shift+P |
+| ターミナル内を検索 | Command+F | Control+F |
+| コマンド履歴 | Command+Shift+H | Control+Shift+H |
+| ファイルパネル | Command+Shift+S | Control+Shift+S |
+| 新しいウィンドウ | Command+Shift+N | Control+Shift+N |
+
+## 機能
+
+### しっかりついてくるターミナル
 
 本物の PTY セッション、256 色とトゥルーカラーの出力、代替スクリーン、5,000
 行のスクロールバック、全角文字と結合文字、マウスレポート、入力
@@ -91,7 +134,7 @@ Kitty/iTerm2/SIXEL の画像の表示、スニペットの送信、分割タブ�
 明示的なセッションの記録ができます。ターミナルには 11 種類の配色、キーワードの
 ハイライト、オプションのインラインのコマンド候補があります。
 
-### 🔑 ホストと認証
+### ホストと認証
 
 ホスト鍵は、認証情報を送信する前に、Motty 独自の `known_hosts` と照合して検証されます。
 認証には、エージェントの鍵、ID ファイル、OpenSSH のユーザー
@@ -114,11 +157,7 @@ AES-256-GCM の保管庫に、対応するホストの下に保存されます�
 Electerm と Netcatty からのインポートでは、明示的な同意のもとで、読み取り可能な SSH のパスワードを保存できます。
 再インポート時には、不足しているパスワードだけが補われます。
 
-<p align="center">
-  <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="タグとリモートデスクトップのホストを含むホストの一覧" /></a>
-</p>
-
-### 🗂 別のアプリなしでファイルを扱う
+### 別のアプリなしでファイルを扱う
 
 複数選択、再帰的なアップロード/ダウンロード、上限付きの転送
 キュー、再開、キャンセル/リトライ、名前の変更、削除、パーミッション、ブックマークに対応した SFTP のブラウジング。
@@ -142,7 +181,7 @@ VS Code または Zed で開けます。エディターは **Settings > Files** 
 デフォルトでオフの別のスイッチもあります。安全性と起動時の互換性の詳細については、
 [フォルダーの同期](docs/terminal-folder-sync.md)をご覧ください。
 
-### 🔀 フォワーディングと踏み台のチェーン
+### フォワーディングと踏み台のチェーン
 
 ローカル、リモート、SOCKS5、HTTP CONNECT のルールは、ループバックのみで、永続化され、
 明示的に開始します。トンネルは、それを所有する SSH のタブとともに停止します。踏み台のルートでは、
@@ -153,11 +192,7 @@ VS Code または Zed で開けます。エディターは **Settings > Files** 
 フォワーディングでは、セッションごとの偽の Cookie を検証してから、ローカルの
 Xauthority の Cookie に置き換えます。
 
-<p align="center">
-  <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" width="620" alt="新しいポートフォワードのダイアログ" /></a>
-</p>
-
-### 🖥 リモートデスクトップ
+### リモートデスクトップ
 
 VNC は、RFB 3.3/3.7/3.8、None と VNC Authentication、Raw/CopyRect/RRE/
 Hextile/ZRLE、デスクトップのリサイズ、ポインター、キーボード、テキストのクリップボードに対応しています。RDP は、
@@ -165,7 +200,7 @@ NLA を優先した TLS を使い、明示的に信頼すると判断したあ�
 どちらも、サーバーが自身のループバックでしか待ち受けていない場合は、SSH のホストを経由して接続できます。
 正確な制限については、[docs/remote-desktop.md](docs/remote-desktop.md) をご覧ください。
 
-### 🤖 アシスタントと MCP
+### アシスタントと MCP
 
 **Ask** は、表示中のターミナルをコンテキストとして質問に答えます。**Agent** は、
 さらにそのターミナルでコマンドを実行でき、リスクの分類と承認の
@@ -186,7 +221,7 @@ NLA を優先した TLS を使い、明示的に信頼すると判断したあ�
 stdio で起動し、あなたがエージェントに開放したホストで動作します。ポートも
 トークンも必要ありません。
 
-### ☁️ バックアップと同期
+### バックアップと同期
 
 暗号化された `.mottybak` のエクスポートに加えて、WebDAV、
 S3 互換のストレージ、GitHub Gist を通じたレコード単位の同期に対応しています。レコードはハイブリッド論理クロックと
@@ -199,38 +234,7 @@ S3 互換のストレージ、GitHub Gist を通じたレコード単位の同�
 接続は暗号化されず、認証の詳細が傍受される可能性があります。それでも、バックアップファイルはアップロード前に暗号化されます。
 この選択は、このコンピューターに保存されます。
 
-## 🚀 クイックスタート
-
-1. **Hosts** を開き、**New host** を選びます。
-2. 名前、アドレス、アカウント名を入力します。
-3. 認証方法を選びます：実行中のエージェント、秘密鍵のファイル、またはパスワード。
-4. 接続し、ホスト鍵のフィンガープリントをサーバーのものと照合します。一度だけ信頼するか、
-   保存します。
-5. タブがログインシェルで開きます。ワンタイムコードを求めるサーバーでは、
-   追加の欄が自動的に表示されます。
-
-コマンドパレットは、macOS では **Command+Shift+P**、それ以外では **Control+Shift+P** です。
-デフォルトのショートカットは、macOS では Command、Windows/Linux では Control を使います。
-すべてのショートカットは変更できます。
-
-Windows では、**Settings → Terminal → Local shell** のドロップダウン（**Inline suggestions** の下）で
-ローカルシェルを選びます。Motty は、PATH と一般的なインストール先のフォルダーから、
-PowerShell、CMD、Git Bash などのインストール済みのシェルを検出し、
-インストール済みの WSL のディストリビューションをそれぞれ個別の項目として一覧表示します。ファイルパネルは、
-ディストリビューションの `\\wsl.localhost` 共有を通じて、WSL のターミナルのフォルダーにも追従します。
-PowerShell に `wsl` と入力するのではなく、ここでディストリビューションを選んでください：
-フォルダーを報告できるのは、Motty 自身が起動したシェルだけです。この選択はこの
-コンピューターに保存され、新しいローカルターミナルや再接続したローカルターミナルに適用されます。
-
-| 操作 | macOS | Windows / Linux |
-| --- | --- | --- |
-| コマンドパレット | Command+Shift+P | Control+Shift+P |
-| ターミナル内を検索 | Command+F | Control+F |
-| コマンド履歴 | Command+Shift+H | Control+Shift+H |
-| ファイルパネル | Command+Shift+S | Control+Shift+S |
-| 新しいウィンドウ | Command+Shift+N | Control+Shift+N |
-
-## 📦 インストール
+## インストール
 
 お使いのプラットフォーム向けのパッケージを
 [リリースページ](https://github.com/t8y2/motty/releases)からダウンロードしてください：
@@ -281,7 +285,7 @@ Application Error のイベントに、障害の原因となったモジュー�
 `VIVA_ACCESSIBILITY=0`（UI Automation のツリーを使わない）を設定して Motty を起動してください。ダンプは
 プログラムのメモリのコピーです：共有する前に中身を確認してください。
 
-## 🛠 ソースからのビルド
+## ソースからのビルド
 
 必要なもの：
 
@@ -377,7 +381,7 @@ macOS では、標準のエントリーポイントが、`~/Library/Application 
 エポック 23 を読み込めません。この保護を回避するために、データベースの形式の番号を編集しないでください。
 [ストレージの互換性](tools/README.md#storage-compatibility)をご覧ください。
 
-## 🔐 セキュリティ
+## セキュリティ
 
 - ホスト鍵の検証は、認証情報を送信する前に行われます。
 - 保存したパスワードとパスフレーズは AES-256-GCM の保管庫に保存されます。その鍵は
@@ -395,7 +399,12 @@ macOS では、標準のエントリーポイントが、`~/Library/Application 
 脆弱性を報告するには、リポジトリの GitHub のプライベートな脆弱性報告を使ってください。認証情報、ホスト名、
 ターミナルの出力は、公開の Issue に含めないでください。
 
-## 🧱 アーキテクチャ
+## アーキテクチャ
+
+Go で書かれ、描画は [Viva](https://github.com/vivaui/viva) が受け持ちます。
+Metal、Direct3D、Vulkan に直接描くため、Electron のランタイムも、組み込みの
+ブラウザも、JavaScript のレイヤーもありません。操作されていないウィンドウは
+再描画しません。
 
 Motty は、SSH、認証、SFTP、ターミナルのエミュレーション、フォワーディング、
 リモートデスクトップのプロトコル、永続化、製品のワークフローを担います。Viva は、ウィンドウ管理、
@@ -416,7 +425,7 @@ Motty は、SSH、認証、SFTP、ターミナルのエミュレーション、�
 | `assets`, `docs`, `tools` | ブランディング、技術的なメモ、開発用のツール |
 | `website` | motty.page に公開される静的なドキュメントサイト — [docs/website.md](docs/website.md) |
 
-## 💬 コミュニティ
+## コミュニティ
 
 QQ グループ、Tencent Doc にある WeChat グループ、Discord サーバーは、
 いずれも活動中です。
@@ -428,7 +437,7 @@ QQ グループ、Tencent Doc にある WeChat グループ、Discord サーバ�
   [GitHub Issues](https://github.com/t8y2/motty/issues)
 - セキュリティの報告：GitHub のプライベートな脆弱性報告
 
-## 🤝 コントリビュート
+## コントリビュート
 
 Issue とプルリクエストを歓迎します。大きな変更の場合は、コードを書く前にアプローチを議論できるよう、
 まず Issue を作成してください。
@@ -450,20 +459,20 @@ go test -race ./...
 SSH、プロトコル、製品のロジックはこのリポジトリに置いてください。デスクトップのフレームワークに
 属する機能は、代わりに Viva に提案してください。
 
-## 👥 コントリビューター
+## コントリビューター
 
 <a href="https://github.com/t8y2/motty/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=t8y2/motty&max=300&columns=15" alt="Contributors" />
 </a>
 
-## 📄 ライセンス
+## ライセンス
 
 Motty は [Apache License, Version 2.0](LICENSE) のもとで公開されています。著作権と
 サードパーティの表示については [NOTICE](NOTICE) をご覧ください。Motty の名前と
 ロゴは Apache-2.0 のもとでライセンスされていません。サードパーティのアセットとコードには、
 それぞれのライセンスが適用されます。
 
-## 🙏 謝辞
+## 謝辞
 
 Motty は [Viva](https://github.com/vivaui/viva) の上に作られています。RDP のコアは、MIT ライセンスの
 [gopher-rdp](https://github.com/bouncyball-git/gopher-rdp) を改変したコピーです。
