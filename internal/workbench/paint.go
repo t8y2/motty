@@ -1105,6 +1105,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 		danger  bool
 	}{
 		{hitExportHosts, m.ExportHosts, iconFileDown, len(state.hosts) > 0, false},
+		{hitConnectSelectedHosts, state.messages.WorkspaceDraftTemporary, iconPlug, false, false},
 		{hitEditHost, m.EditHost, iconPencil, false, false},
 		{hitCopyHost, m.CopyHost, iconCopy, false, false},
 		{hitMoveHostGroup, m.MoveHostGroup, iconFolderOpen, false, false},
@@ -1120,6 +1121,8 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 		single := enabled && len(state.hostSelections) <= 1
 		for i := range actions {
 			switch actions[i].id {
+			case hitConnectSelectedHosts:
+				actions[i].enabled = state.selectedHostsWorkspaceEligible()
 			case hitEditHost, hitCopyHost:
 				actions[i].enabled = single
 			case hitMoveHostGroup, hitDeleteHost:

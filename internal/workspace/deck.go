@@ -15,7 +15,7 @@ type PaneID uint32
 // Deck limits keep accidental splits and corrupted persistence bounded.
 const (
 	MaxWorkspaces       = 32
-	MaxPanes            = 8
+	MaxPanes            = 12
 	MinPaneRatio        = float32(0.15)
 	MaxPaneRatio        = float32(0.85)
 	DefaultContextWidth = float32(340)

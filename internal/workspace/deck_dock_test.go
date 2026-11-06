@@ -117,10 +117,10 @@ func TestDockAfterAndVerticalPlaceTheTabOnTheOtherSides(t *testing.T) {
 }
 
 func TestDockRefusesWhatDoesNotFitOrMakesNoSense(t *testing.T) {
-	deck, ids, _ := deckWith(t, 5, 4)
+	deck, ids, _ := deckWith(t, 7, 6)
 	target := deck.Panes(ids[0], nil)[0].ID
 	if deck.CanDock(ids[0], ids[1]) {
-		t.Fatal("nine panes fit in a workspace of eight")
+		t.Fatal("thirteen panes fit in a workspace of twelve")
 	}
 	before := deck.DTO()
 	if _, err := deck.Dock(ids[0], ids[1], target, Horizontal, After); !errors.Is(err, ErrPaneLimit) {

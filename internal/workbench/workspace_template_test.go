@@ -77,7 +77,7 @@ func TestNewWorkspaceTemplateRejectsMalformedInput(t *testing.T) {
 		{"long name", strings.Repeat("a", maxWorkspaceTemplateNameRunes+1), []string{"host_a"}, 1, ErrWorkspaceTemplateName},
 		{"control name", "line\nbreak", []string{"host_a"}, 1, ErrWorkspaceTemplateName},
 		{"no hosts", "Name", nil, 1, ErrWorkspaceTemplateHosts},
-		{"too many hosts", "Name", hostIDs(9), 2, ErrWorkspaceTemplateHosts},
+		{"too many hosts", "Name", hostIDs(13), 2, ErrWorkspaceTemplateHosts},
 		{"empty host", "Name", []string{""}, 1, ErrWorkspaceTemplateHostID},
 		{"control host", "Name", []string{"host\n_a"}, 1, ErrWorkspaceTemplateHostID},
 		{"duplicate host", "Name", []string{"host_a", "host_a"}, 2, ErrWorkspaceTemplateDupID},

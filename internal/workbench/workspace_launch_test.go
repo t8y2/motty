@@ -2,11 +2,55 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
+
+func TestLaunchTwelveHostsCreatesOneWorkspaceAndDialsEveryHost(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	hosts := make([]Host, layoutcore.MaxPanes)
+	for index := range hosts {
+		hosts[index] = testWorkspaceHost(fmt.Sprintf("server-%d", index), fmt.Sprintf("server-%d.example.com", index))
+	}
+	workspaceID, sessions, err := state.launchWorkspace(WorkspaceLaunchPlan{Hosts: hosts, Columns: 3}, "Fleet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != layoutcore.MaxPanes || len(state.deck.Panes(workspaceID, nil)) != layoutcore.MaxPanes || len(world.configs) != layoutcore.MaxPanes {
+		t.Fatalf("sessions=%d panes=%d dials=%d", len(sessions), len(state.deck.Panes(workspaceID, nil)), len(world.configs))
+	}
+	if err := state.deck.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := layoutcore.RestoreDeck(state.deck.DTO())
+	if err != nil || len(restored.Panes(workspaceID, nil)) != layoutcore.MaxPanes {
+		t.Fatalf("restored panes=%d err=%v", len(restored.Panes(workspaceID, nil)), err)
+	}
+	size := ui.Size{Width: 1600, Height: 1100}
+	state.Resize(size)
+	canvas, _ := paintAt(state, size)
+	frame := state.workspacePixelBounds(size)
+	for index, pane := range state.Panes(nil) {
+		session, ok := state.sessionByIDPointer(pane.SessionID)
+		if !ok {
+			t.Fatalf("pane %d lost its session", index)
+		}
+		terminalID := tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID)))
+		terminal, ok := hitByID(canvas, terminalID)
+		bounds := pixelBounds(frame, pane.Bounds)
+		if !ok || terminal.Bounds.Width <= 0 || terminal.Bounds.Height <= 0 ||
+			terminal.Bounds.X < bounds.X || terminal.Bounds.Y < bounds.Y ||
+			terminal.Bounds.X+terminal.Bounds.Width > bounds.X+bounds.Width ||
+			terminal.Bounds.Y+terminal.Bounds.Height > bounds.Y+bounds.Height {
+			t.Fatalf("pane %d terminal %+v escapes bounds %+v (found=%v)", index, terminal.Bounds, bounds, ok)
+		}
+	}
+}
 
 func TestLaunchWorkspaceInstallsEveryStructureBeforeDialing(t *testing.T) {
 	world, options := newWorld(t)

@@ -7,7 +7,66 @@ import (
 
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
+
+func TestSelectedHostsOpenPreselectedTemporaryWorkspace(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
+	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || hit.Disabled {
+		t.Fatalf("batch connect control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftTemporary ||
+		!state.workspaceDraft.selected[state.hosts[0].CatalogID] || !state.workspaceDraft.selected[state.hosts[1].CatalogID] || state.workspaceDraft.columns != 2 {
+		t.Fatalf("draft = %+v", state.workspaceDraft)
+	}
+	state.Click(hitWorkspaceDraftSubmit)
+	if len(world.configs) != 2 || len(state.deck.Panes(state.deck.ActiveWorkspace(), nil)) != 2 {
+		t.Fatalf("dials=%d panes=%d", len(world.configs), len(state.deck.Panes(state.deck.ActiveWorkspace(), nil)))
+	}
+}
+
+func TestSelectedHostsBeyondPaneLimitCannotOpenWorkspace(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for index := len(state.hosts); index <= layoutcore.MaxPanes; index++ {
+		host := testWorkspaceHost(fmt.Sprintf("extra-%d", index), fmt.Sprintf("extra-%d.example.com", index))
+		host.ID = uint32(index + 1)
+		state.hosts = append(state.hosts, host)
+	}
+	for _, host := range state.hosts {
+		state.Click(hitHostCheckList.At(int(host.ID)))
+	}
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || !hit.Disabled {
+		t.Fatalf("over-limit control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal == modalWorkspaceDraft {
+		t.Fatal("over-limit selection opened a workspace")
+	}
+}
+
+func TestSelectedHostsDoesNotSilentlyDropNonSSHHosts(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := testWorkspaceHost("desktop", "127.0.0.1")
+	host.ID = uint32(len(state.hosts) + 1)
+	host.Protocol = protocolVNC
+	state.hosts = append(state.hosts, host)
+	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
+	state.Click(hitHostCheckList.At(int(host.ID)))
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || !hit.Disabled {
+		t.Fatalf("mixed selection control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal == modalWorkspaceDraft {
+		t.Fatal("mixed selection opened a partial SSH workspace")
+	}
+}
 
 func fillNewHost(state *State, label, address, user, password string) {
 	state.Click(hitAddHost)

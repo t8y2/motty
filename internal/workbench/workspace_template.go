@@ -20,7 +20,7 @@ const (
 
 var (
 	ErrWorkspaceTemplateName       = errors.New("workbench: workspace template needs a name")
-	ErrWorkspaceTemplateHosts      = errors.New("workbench: workspace template needs 1 to 8 hosts")
+	ErrWorkspaceTemplateHosts      = errors.New("workbench: workspace template needs 1 to 12 hosts")
 	ErrWorkspaceTemplateHostID     = errors.New("workbench: workspace template host id is invalid")
 	ErrWorkspaceTemplateDupID      = errors.New("workbench: workspace template host ids must be unique")
 	ErrWorkspaceTemplateCols       = errors.New("workbench: workspace template columns must be 1 to 3")

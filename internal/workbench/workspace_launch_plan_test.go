@@ -41,7 +41,7 @@ func TestPlanWorkspaceLaunchRejectsInvalidCounts(t *testing.T) {
 		{"empty", nil, 1, ErrWorkspaceLaunchEmpty},
 		{"blank ids only", []string{" ", ""}, 1, ErrWorkspaceLaunchEmpty},
 		{"all missing", []string{"x", "y"}, 1, ErrWorkspaceLaunchEmpty},
-		{"too many unique", hostIDs(9), 2, ErrWorkspaceLaunchFull},
+		{"too many unique", hostIDs(13), 2, ErrWorkspaceLaunchFull},
 		{"zero columns", []string{"a"}, 0, ErrWorkspaceTemplateCols},
 		{"too many columns", []string{"a"}, 4, ErrWorkspaceTemplateCols},
 	}

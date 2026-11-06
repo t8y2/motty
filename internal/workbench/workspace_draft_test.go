@@ -217,11 +217,11 @@ func TestWorkspaceDraftOffersThisComputerAndOnlyEligibleSSHHosts(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
+func TestWorkspaceDraftEnforcesTheTwelveHostLimitAndCatalogOrder(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 	state.hosts = nil
-	for index := 0; index < 9; index++ {
+	for index := 0; index <= maxWorkspaceTemplateHosts; index++ {
 		host := Host{
 			ID: uint32(index + 1), CatalogID: "host_" + string(rune('a'+index)),
 			Label: "Host " + string(rune('A'+index)), Address: "host-" + string(rune('a'+index)) + ".example.com", Port: 22,
@@ -230,17 +230,17 @@ func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
 		state.hosts = append(state.hosts, host)
 	}
 	state.Click(hitWorkspaceNew)
-	for index := 0; index < 8; index++ {
+	for index := 0; index < maxWorkspaceTemplateHosts; index++ {
 		state.Click(workspaceDraftHostID(index))
 	}
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
 	state.workspaceDraftScroll(ui.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
 	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	if !panelHit(t, canvas, workspaceDraftHostID(8)).Disabled {
-		t.Fatal("the ninth unselected host is not disabled")
+	if !panelHit(t, canvas, workspaceDraftHostID(maxWorkspaceTemplateHosts)).Disabled {
+		t.Fatal("the first host past the limit is not disabled")
 	}
-	state.Click(workspaceDraftHostID(8))
-	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:8])) {
+	state.Click(workspaceDraftHostID(maxWorkspaceTemplateHosts))
+	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:maxWorkspaceTemplateHosts])) {
 		t.Fatalf("selection = %v", state.workspaceDraftSelectedCatalogIDs())
 	}
 }
@@ -307,7 +307,7 @@ func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t 
 		{name: "duplicate members", setup: func() { state.workspaceDraft.order = append(state.workspaceDraft.order, state.workspaceDraft.order[0]) }},
 		{name: "too many members", setup: func() {
 			state.workspaceDraft.order = []string{
-				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9",
+				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9", "host_10", "host_11", "host_12", "host_13",
 			}
 		}},
 		{name: "zero columns", setup: func() {}, column: &zero},

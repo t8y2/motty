@@ -12,6 +12,7 @@ import (
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
+	layoutcore "motty/internal/workspace"
 )
 
 type hostDialogMode uint8
@@ -105,6 +106,8 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.setHostGroupsExpanded(false)
 	case hitEditHost:
 		state.openEditHost()
+	case hitConnectSelectedHosts:
+		state.openSelectedHostsWorkspace()
 	case hitCopyHost:
 		state.openCopyHost()
 	case hitDeleteHost:
@@ -121,6 +124,32 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.importHostCatalog()
 	default:
 		return false
+	}
+	return true
+}
+
+func (state *State) openSelectedHostsWorkspace() {
+	if !state.selectedHostsWorkspaceEligible() {
+		return
+	}
+	state.openWorkspaceDraft(workspaceDraftTemporary)
+	for _, id := range state.hostSelections {
+		if host, ok := state.hostByID(id); ok {
+			state.workspaceDraft.selected[host.CatalogID] = true
+		}
+	}
+	state.workspaceDraft.columns = DefaultWorkspaceColumns(state.workspaceDraftSelectionCount())
+}
+
+func (state *State) selectedHostsWorkspaceEligible() bool {
+	if len(state.hostSelections) == 0 || len(state.hostSelections) > layoutcore.MaxPanes {
+		return false
+	}
+	for _, id := range state.hostSelections {
+		host, ok := state.hostByID(id)
+		if !ok || !workspaceHostEligible(host) {
+			return false
+		}
 	}
 	return true
 }

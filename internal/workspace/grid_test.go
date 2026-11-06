@@ -64,6 +64,15 @@ func TestNewGridBuildsRowMajorLayouts(t *testing.T) {
 				{0, 2.0 / 3, 0.5, 1.0 / 3}, {0.5, 2.0 / 3, 0.5, 1.0 / 3},
 			},
 		},
+		{
+			name: "twelve in three columns", sessions: []SessionID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, columns: 3,
+			want: []gridRect{
+				{0, 0, 1.0 / 3, 0.25}, {1.0 / 3, 0, 1.0 / 3, 0.25}, {2.0 / 3, 0, 1.0 / 3, 0.25},
+				{0, 0.25, 1.0 / 3, 0.25}, {1.0 / 3, 0.25, 1.0 / 3, 0.25}, {2.0 / 3, 0.25, 1.0 / 3, 0.25},
+				{0, 0.5, 1.0 / 3, 0.25}, {1.0 / 3, 0.5, 1.0 / 3, 0.25}, {2.0 / 3, 0.5, 1.0 / 3, 0.25},
+				{0, 0.75, 1.0 / 3, 0.25}, {1.0 / 3, 0.75, 1.0 / 3, 0.25}, {2.0 / 3, 0.75, 1.0 / 3, 0.25},
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -110,7 +119,7 @@ func TestNewGridRejectsInvalidInput(t *testing.T) {
 		want     error
 	}{
 		{"empty", nil, 1, ErrInvalidPaneCount},
-		{"too many", []SessionID{1, 2, 3, 4, 5, 6, 7, 8, 9}, 1, ErrInvalidPaneCount},
+		{"too many", []SessionID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, 1, ErrInvalidPaneCount},
 		{"zero columns", []SessionID{1}, 0, ErrInvalidColumns},
 		{"too many columns", []SessionID{1}, MaxGridColumns + 1, ErrInvalidColumns},
 		{"zero session", []SessionID{1, 0}, 2, ErrInvalidSession},

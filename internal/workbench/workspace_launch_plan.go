@@ -10,7 +10,7 @@ import (
 
 var (
 	ErrWorkspaceLaunchEmpty = errors.New("workbench: workspace launch needs at least one host")
-	ErrWorkspaceLaunchFull  = errors.New("workbench: workspace launch supports at most eight hosts")
+	ErrWorkspaceLaunchFull  = errors.New("workbench: workspace launch supports at most twelve hosts")
 )
 
 // WorkspaceLaunchPlan is the resolved, ordered input to one workspace launch.
