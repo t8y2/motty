@@ -616,6 +616,7 @@ var ChineseMessages = Messages{
 	SessionRestoredBody:            "此标签仅在本地恢复,尚未建立任何网络连接。",
 	SessionReconnect:               "连接",
 	SessionReconnectHint:           "按回车重新连接。",
+	SessionNoShellInput:            "此标签没有可用的 Shell,按键未被发送。按回车可重新连接。",
 	ConnClosed:                     "连接已关闭。",
 	ConnCanceled:                   "连接已取消。",
 	ConnRejected:                   "已拒绝主机密钥,未向服务器发送任何内容。",

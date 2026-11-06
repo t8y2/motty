@@ -43,6 +43,7 @@ HTTP MCP 服务器会把 Motty 中已打开的会话提供给 Claude Code 等外
 | `list_sessions` | 列出已打开的会话。 |
 | `terminal_read` | 读取终端内容。 |
 | `terminal_exec`、`terminal_exec_many` | 在终端里执行命令。 |
+| `terminal_start`、`terminal_poll`、`terminal_stop` | 启动不等待的终端长任务、按偏移读取新增输出、停止任务（仅桌面 HTTP MCP）。 |
 | `tool_output_read` | 分页读取桌面 HTTP MCP 中 `terminal_exec` 被截短的结果，不会重跑命令。 |
 | `sftp_list`、`sftp_read` | 列出并读取远程文件。 |
 | `sftp_write`、`sftp_remove` | 修改远程文件。 |
@@ -67,6 +68,29 @@ HTTP MCP 服务器会把 Motty 中已打开的会话提供给 Claude Code 等外
 返回明确的“full output unavailable”提示，而非不可用的读取句柄。
 此分页能力仅适用于桌面 HTTP MCP 的单条 `terminal_exec`，不适用于
 独立 `mcp-serve` 或批量 `terminal_exec_many`。
+
+### 终端长任务
+
+构建、安装、部署这类超过单次工具调用期限的命令，用 `terminal_start` 启动：
+它经过与 `terminal_exec` 相同的风险评估和审批，把命令输入到可见终端后立刻返回
+`job_id`。随后：
+
+- `terminal_poll`：传入 `job_id` 和上次返回的 `next_offset`，取得新增输出。
+  `state` 为 `running`、`completed`（附 `exit_code`）、`cancelled`（被
+  `terminal_stop` 停止）、`interrupted`（用户在终端按了 Ctrl-C 接管）或
+  `disconnected`（命令结束前 shell 已结束）。尚未写完的一行单独放在
+  `pending_line`，写完后才进入 `data`。每个任务只保留最近约 2–4 MiB 输出，
+  未及时读取而被丢弃的部分由 `skipped_bytes` 报告。
+- `terminal_stop`：向终端发送 Ctrl-C，并短暂等待 shell 提示符回来。
+  `interrupt_sent` 表示本次调用是否真的发出了中断（任务已结束则不会发送）。
+  `terminal_ready` 区分终端能否接受下一条命令：`ready`（已看到提示符）、
+  `busy`（命令仍在运行或提示符未返回）、`unconfirmed`（shell 未提供提示符
+  信息，无法确认）、`closed`。
+
+每个终端同一时间只运行一个任务（或一条 `terminal_exec`）。任务归属于创建它的
+MCP 会话（`Mcp-Session-Id`），其他会话读取或停止会得到“job not found”；
+已结束的任务保留 10 分钟。MCP 客户端断开不会终止命令，但新会话无法再取得原
+任务句柄，需要在终端里查看或用 Ctrl-C 结束。Motty 不会自动重放命令。
 
 ## 只支持 stdio 的客户端
 

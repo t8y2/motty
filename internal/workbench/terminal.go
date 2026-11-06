@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"time"
 	"unicode/utf8"
@@ -64,7 +65,10 @@ type terminal struct {
 	// between two reads.
 	zmodemTail []byte
 
-	told                  announcement
+	told announcement
+	// noShellTold records that a keystroke into a tab with no shell has already
+	// been explained, so the status line is not rewritten on every key.
+	noShellTold           bool
 	skippedEndpoint       sshconn.Endpoint
 	skippedRole           sshconn.EndpointRole
 	skipsTold             int
@@ -160,6 +164,9 @@ type terminal struct {
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
+	// promptWait is closed when the shell next shows a prompt, for a stop that
+	// reports whether the terminal came back.
+	promptWait chan struct{}
 	// aiRows holds the screen line IDs whose command was started by the
 	// assistant. The line ID survives scrolling and resizing, so its gutter mark
 	// stays with the command in scrollback.
@@ -331,6 +338,9 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			t.promptReady = t.promptStarted && !t.promptDirty && t.commandReporting && t.submittedLines == 0
 			t.inputGuard.active = t.promptReady
+			if t.promptReady {
+				t.releasePromptWait()
+			}
 			t.inputLine = true
 			t.prediction.newPrompt()
 		}
@@ -446,7 +456,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 		}
 	}
 	if t.exec != nil && userInterrupts(p) {
-		t.finishExec(false, false) // the user took the terminal back; the keys go on to the shell
+		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	t.selection.clear()
 	t.screen.ScrollToBottom()
@@ -686,6 +696,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
+	t.noShellTold = false
 	// A connection that drops takes the running program's teardown with it, so
 	// the modes it had armed on this screen (the alternate screen, mouse
 	// reporting, the kitty keyboard flags) are still on when the next shell
@@ -869,7 +880,8 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
-	t.finishExec(false, false)
+	t.finishExec(endShell)
+	t.releasePromptWait()
 	t.recording.stop()
 	t.ended = true
 	t.prediction.reset()
@@ -1158,6 +1170,12 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		session = state.terminalSession(context.ID)
 	}
 	if session == nil || session.term == nil || state.activeSessionID != 0 && session.ID != state.activeSessionID {
+		// Typing goes nowhere from here, and the page cannot show it: the text
+		// system simply gets no surface. Saying why, once per cause rather than
+		// once per paint, is what turns "the keyboard stopped working" in a bug
+		// report into a diagnosis. The reason is a fixed string, so nothing that
+		// could identify a host or an account reaches the log.
+		state.noteTerminalInputGap(context.ID, session)
 		return nil
 	}
 	if session.desk != nil {
@@ -1196,6 +1214,30 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		}
 	}
 	return &t.input
+}
+
+// noteTerminalInputGap records why a terminal the shell cannot reach got no
+// text surface. It is called from the paint path, so it reports a given reason
+// once: the same gap repainted every frame would flood the log, and the
+// diagnostics report keeps only the last few hundred lines.
+func (state *State) noteTerminalInputGap(hit ui.ID, session *Session) {
+	var note string
+	switch {
+	case session == nil:
+		note = "no session for the focused terminal"
+	case session.term == nil:
+		note = "session has no terminal"
+	case session.ID != state.activeSessionID:
+		note = "session is not the active one"
+	default:
+		return
+	}
+	key := fmt.Sprintf("%s %d", note, hit.Bits())
+	if key == state.inputGapNote {
+		return
+	}
+	state.inputGapNote = key
+	log.Printf("motty: terminal input has no surface: %s", note)
 }
 
 // terminalText applies a text-system event to a session's terminal.
@@ -1291,6 +1333,14 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		// Nothing is listening: Enter starts the session again.
 		if event.Key == ui.KeyEnter && !event.Repeat && state.canReconnect(session) {
 			state.reconnect(session)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		// Every other key is swallowed, which looks exactly like a frozen window.
+		// A shell that ended has already said so on the screen, so the status is
+		// only needed when that message never ran: a tab restored locally, or a
+		// shell that never opened.
+		if t.told < toldEnded && !event.Release {
+			state.status = state.messages.SessionNoShellInput
 			return ui.EventResult{Handled: true, Repaint: true}
 		}
 		return handled

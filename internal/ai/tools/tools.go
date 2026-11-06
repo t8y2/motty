@@ -90,6 +90,11 @@ const (
 	NameTerminalRead   = "terminal_read"
 	NameTerminalExec   = "terminal_exec"
 	NameToolOutputRead = "tool_output_read"
+	// The terminal job tools run a command without waiting for it: start returns
+	// a job id, poll reads what it printed since an offset, stop interrupts it.
+	NameTerminalStart = "terminal_start"
+	NameTerminalPoll  = "terminal_poll"
+	NameTerminalStop  = "terminal_stop"
 	// NameTerminalExecMany runs one command on several sessions at once.
 	NameTerminalExecMany = "terminal_exec_many"
 	NameSFTPList         = "sftp_list"
@@ -114,6 +119,8 @@ const (
 	MaxReadLines          = 500
 	DefaultTimeoutSeconds = 60
 	MaxTimeoutSeconds     = 600
+	MaxJobIDLen           = 128
+	MaxPollBytes          = 65536
 	MaxEscalationReason   = 512
 	MaxEscalationCommand  = 8192
 	ScopeScreen           = "screen"
@@ -145,6 +152,33 @@ var specs = []Spec{
 			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run."},` +
 			`"timeout_seconds":{"type":"integer","minimum":1,"maximum":600,"default":60,"description":"Give up waiting after this many seconds."}` +
 			`},"required":["command"],"additionalProperties":false}`),
+		Kind: Exec,
+	},
+	{
+		Name:        NameTerminalStart,
+		Description: "Start one non-interactive shell command in the user's visible terminal without waiting, and return a job_id at once. For builds, installs and log watching that outlive a tool call. The user may refuse it. Read progress with terminal_poll, interrupt with terminal_stop. One job per terminal; it is never re-run automatically.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"session":{"type":"string","maxLength":256,"description":"Session id from list_sessions. Defaults to the active session."},` +
+			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run."}` +
+			`},"required":["command"],"additionalProperties":false}`),
+		Kind: Exec,
+	},
+	{
+		Name:        NameTerminalPoll,
+		Description: "Read what a terminal_start job printed since offset (pass the previous next_offset) and its state: running, completed (exit_code), cancelled, interrupted or disconnected. pending_line is a line still being written. skipped_bytes counts output dropped unread. terminal_ready: ready, busy, unconfirmed or closed. Finished jobs stay readable for ten minutes.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"job_id":{"type":"string","minLength":1,"maxLength":128},` +
+			`"offset":{"type":"integer","minimum":0,"default":0,"description":"UTF-8 byte offset into the job's output; 0 starts at the beginning."},` +
+			`"max_bytes":{"type":"integer","minimum":4,"maximum":65536,"default":65536}` +
+			`},"required":["job_id"],"additionalProperties":false}`),
+		Kind: Read,
+	},
+	{
+		Name:        NameTerminalStop,
+		Description: "Interrupt a running terminal_start job with Ctrl-C, then wait briefly for the shell prompt. The job becomes cancelled once the interrupt is delivered; terminal_ready says whether the prompt returned (ready) or not (busy, unconfirmed). Sends nothing if the job already finished.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"job_id":{"type":"string","minLength":1,"maxLength":128}` +
+			`},"required":["job_id"],"additionalProperties":false}`),
 		Kind: Exec,
 	},
 	{
@@ -219,7 +253,7 @@ func Targeted() []Spec {
 	const targetHint = "Session id from list_sessions. If omitted, uses this request's locked primary session. Always specify the id when operating on an explicitly @referenced session."
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
-		if spec.Name == NameToolOutputRead {
+		if spec.Name == NameToolOutputRead || isJobTool(spec.Name) {
 			continue
 		}
 		if schema := string(spec.Schema); strings.Contains(schema, activeHint) {
@@ -255,7 +289,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -281,6 +315,13 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 		out = append(out, spec)
 	}
 	return out
+}
+
+// isJobTool reports whether name is one of the terminal job tools, which need
+// an MCP client session to own the job and so are offered to external clients
+// only.
+func isJobTool(name string) bool {
+	return name == NameTerminalStart || name == NameTerminalPoll || name == NameTerminalStop
 }
 
 // Lookup finds a tool by name.
@@ -314,6 +355,76 @@ type TerminalExecArgs struct {
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 	RetainOutput   bool   `json:"-"`
+	// Background types the command and returns without waiting; the output is
+	// kept as a window for paging instead.
+	Background bool `json:"-"`
+}
+
+type TerminalStartArgs struct {
+	Session string `json:"session,omitempty"`
+	Command string `json:"command"`
+}
+
+type TerminalPollArgs struct {
+	JobID    string `json:"job_id"`
+	Offset   int    `json:"offset,omitempty"`
+	MaxBytes int    `json:"max_bytes,omitempty"`
+}
+
+type TerminalStopArgs struct {
+	JobID string `json:"job_id"`
+}
+
+func DecodeTerminalStart(raw []byte) (TerminalStartArgs, error) {
+	var w struct {
+		Session *string `json:"session"`
+		Command *string `json:"command"`
+	}
+	if err := decode(raw, &w); err != nil {
+		return TerminalStartArgs{}, err
+	}
+	var a TerminalStartArgs
+	var err error
+	if a.Session, err = session(w.Session); err != nil {
+		return a, err
+	}
+	a.Command, _, err = commandAndTimeout(w.Command, nil)
+	return a, err
+}
+
+func jobID(id string) error {
+	if id == "" || len(id) > MaxJobIDLen {
+		return fmt.Errorf("job_id is required and at most %d bytes", MaxJobIDLen)
+	}
+	return text("job_id", id, false)
+}
+
+func DecodeTerminalPoll(raw []byte) (TerminalPollArgs, error) {
+	var a TerminalPollArgs
+	if err := decode(raw, &a); err != nil {
+		return a, err
+	}
+	if err := jobID(a.JobID); err != nil {
+		return a, err
+	}
+	if a.Offset < 0 {
+		return a, errors.New("offset must not be negative")
+	}
+	if a.MaxBytes == 0 {
+		a.MaxBytes = MaxPollBytes
+	}
+	if a.MaxBytes < 4 || a.MaxBytes > MaxPollBytes {
+		return a, fmt.Errorf("max_bytes must be between 4 and %d", MaxPollBytes)
+	}
+	return a, nil
+}
+
+func DecodeTerminalStop(raw []byte) (TerminalStopArgs, error) {
+	var a TerminalStopArgs
+	if err := decode(raw, &a); err != nil {
+		return a, err
+	}
+	return a, jobID(a.JobID)
 }
 
 type ToolOutputReadArgs struct {

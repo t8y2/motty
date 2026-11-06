@@ -546,6 +546,9 @@ type State struct {
 	hostTotalDigits    string
 	groupMenu          groupMenuAnchor // where the Move group picker opens
 	hostSelectionText  string
+	// inputGapNote is the last terminal input gap reported to the log, so a
+	// paint that keeps asking for a surface that cannot exist logs it once.
+	inputGapNote       string
 	hostScopeSelection hostScopeSelection
 	hostSelections     []uint32
 	hostActionIDs      []uint32

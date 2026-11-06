@@ -52,6 +52,7 @@ authorized saved hosts.
 | `list_sessions` | List open sessions. |
 | `terminal_read` | Read a terminal's content. |
 | `terminal_exec`, `terminal_exec_many` | Run commands in a terminal. |
+| `terminal_start`, `terminal_poll`, `terminal_stop` | Start a long-running terminal command without waiting, read its new output by offset, and stop it (desktop HTTP MCP only). |
 | `tool_output_read` | Page through retained desktop HTTP `terminal_exec` output without rerunning the command. |
 | `sftp_list`, `sftp_read` | List and read remote files. |
 | `sftp_write`, `sftp_remove` | Change remote files. |
@@ -76,6 +77,36 @@ or reconfigured. If the command output was irrecoverably lost (for example,
 it exceeded the retention limit), the preview reports that explicitly instead
 of offering an unusable ID. This feature applies only to desktop HTTP
 `terminal_exec`, not standalone `mcp-serve` or `terminal_exec_many`.
+
+
+### Long-running terminal jobs
+
+For builds, installs and deployments that outlive one tool call, start the
+command with `terminal_start`. It goes through the same risk assessment and
+approval as `terminal_exec`, types the command into the visible terminal and
+returns a `job_id` immediately. Then:
+
+- `terminal_poll` takes the `job_id` and the previous `next_offset` and returns
+  the new output. `state` is `running`, `completed` (with `exit_code`),
+  `cancelled` (stopped by `terminal_stop`), `interrupted` (the user pressed
+  Ctrl-C and took the terminal back) or `disconnected` (the shell ended before
+  the command did). A line still being written is returned separately as
+  `pending_line` and joins `data` once complete. Each job keeps its newest
+  2–4 MiB of output; output dropped before it was read is reported in
+  `skipped_bytes`.
+- `terminal_stop` sends Ctrl-C and briefly waits for the shell prompt to come
+  back. `interrupt_sent` says whether this call actually sent the interrupt
+  (it sends nothing for a job that already finished). `terminal_ready`
+  separates whether the next command can be typed: `ready` (the prompt was
+  seen), `busy` (the command still runs or the prompt did not return),
+  `unconfirmed` (the shell reports no prompt information) or `closed`.
+
+A terminal runs one job (or one `terminal_exec`) at a time. A job belongs to the
+MCP session that started it (`Mcp-Session-Id`); other sessions get "job not
+found", and finished jobs stay readable for ten minutes. If the client
+disconnects the command keeps running, but a new MCP session cannot recover the
+job id; inspect the terminal or press Ctrl-C there. Motty never replays a
+command.
 
 ## Clients that only speak stdio
 

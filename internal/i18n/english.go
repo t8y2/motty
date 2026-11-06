@@ -616,6 +616,7 @@ var EnglishMessages = Messages{
 	SessionRestoredBody:            "This tab was restored locally. No connection was opened.",
 	SessionReconnect:               "Connect",
 	SessionReconnectHint:           "Press Enter to connect again.",
+	SessionNoShellInput:            "No shell in this tab: keys are not being sent. Press Enter to connect again.",
 	ConnClosed:                     "Connection closed.",
 	ConnCanceled:                   "Connection canceled.",
 	ConnRejected:                   "Host key rejected. Nothing was sent to the server.",

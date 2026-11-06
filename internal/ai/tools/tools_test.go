@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrderAndLookup(t *testing.T) {
-	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
+	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
 	var got []string
 	for _, s := range All() {
 		got = append(got, s.Name)
@@ -53,11 +53,11 @@ func jsonNames(t *testing.T, v any) []string {
 
 func TestSchemasMatchArgs(t *testing.T) {
 	args := map[string]any{
-		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
+		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
 		NameSFTPList: SFTPListArgs{}, NameSFTPRead: SFTPReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
 	}
 	required := map[string][]string{
-		NameTerminalExec: {"command"}, NameToolOutputRead: {"offset", "output_id"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
+		NameTerminalExec: {"command"}, NameTerminalStart: {"command"}, NameTerminalPoll: {"job_id"}, NameTerminalStop: {"job_id"}, NameToolOutputRead: {"offset", "output_id"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
 		NameSFTPWrite: {"content", "path"}, NameSFTPRemove: {"path"},
 	}
 	for _, s := range All() {
@@ -280,7 +280,7 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
 	full := Headless(true, true, false)
-	if len(full) != len(All())-2+3 {
+	if len(full) != len(All())-5+3 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

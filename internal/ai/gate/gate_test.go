@@ -28,6 +28,17 @@ func (b *fakeBackend) Exec(_ context.Context, a tools.TerminalExecArgs) (ExecRes
 	b.lastCommand = a.Command
 	return ExecResult{Output: "out", ExitCode: 3}, nil
 }
+func (b *fakeBackend) JobStart(_ context.Context, a tools.TerminalStartArgs) (JobStatus, error) {
+	b.execs.Add(1)
+	b.lastCommand = a.Command
+	return JobStatus{ID: "w1:job", Session: a.Session, State: JobRunning, Terminal: TerminalBusy}, nil
+}
+func (b *fakeBackend) JobPoll(_ context.Context, a tools.TerminalPollArgs) (JobStatus, error) {
+	return JobStatus{ID: a.JobID, State: JobCompleted, ExitCode: 4, Terminal: TerminalReady, Data: "a\nb", Start: 2, Next: 5, Total: 5}, nil
+}
+func (b *fakeBackend) JobStop(_ context.Context, a tools.TerminalStopArgs) (JobStatus, error) {
+	return JobStatus{ID: a.JobID, State: JobCancelled, Terminal: TerminalUnconfirmed, Interrupted: true}, nil
+}
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]FileEntry, error) {
 	return []FileEntry{{Name: "a", Size: 1}, {Name: "d", Dir: true}}, nil
 }
@@ -313,5 +324,39 @@ func TestOneHostFailingDoesNotHideTheOthersAndACriticalBatchNeedsTheWord(t *test
 	observer := Gate{Backend: backend, Mode: ModeObserve}
 	if res := observer.Run(context.Background(), tools.NameTerminalExecMany, []byte(`{"sessions":["w1:1","w1:2"],"command":"uptime"}`)); !res.Denied {
 		t.Errorf("a read-only connection ran a batch: %+v", res)
+	}
+}
+
+func TestJobToolsNeedAClientSessionAndAskLikeExec(t *testing.T) {
+	backend := &fakeBackend{}
+	asked := 0
+	g := Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Approver: func(context.Context, Request) (bool, string, error) {
+		asked++
+		return false, "", nil
+	}}
+	for _, call := range []struct{ tool, args string }{
+		{tools.NameTerminalStart, `{"command":"ls"}`}, {tools.NameTerminalPoll, `{"job_id":"w1:job"}`}, {tools.NameTerminalStop, `{"job_id":"w1:job"}`},
+	} {
+		if res := g.Run(context.Background(), call.tool, []byte(call.args)); !res.IsError {
+			t.Errorf("%s ran without an MCP client session: %+v", call.tool, res)
+		}
+	}
+	ctx := WithOutputOwner(context.Background(), "client")
+	if res := g.Run(ctx, tools.NameTerminalStart, []byte(`{"command":"rm -rf /srv/app"}`)); !res.Denied || backend.execs.Load() != 0 || asked != 1 {
+		t.Fatalf("a risky background command skipped approval: %+v asked %d", res, asked)
+	}
+	if res := g.Run(ctx, tools.NameTerminalStart, []byte(`{"command":"ls"}`)); res.IsError || !strings.Contains(string(res.Structured), `"state":"running"`) || backend.execs.Load() != 1 {
+		t.Fatalf("a low-risk start: %+v", res)
+	}
+	g.Mode = ModeObserve
+	if res := g.Run(ctx, tools.NameTerminalStart, []byte(`{"command":"ls"}`)); !res.Denied {
+		t.Fatal("observe mode started a job")
+	}
+	if res := g.Run(ctx, tools.NameTerminalStop, []byte(`{"job_id":"w1:job"}`)); !res.Denied {
+		t.Fatal("observe mode stopped a job")
+	}
+	poll := g.Run(ctx, tools.NameTerminalPoll, []byte(`{"job_id":"w1:job","offset":0}`))
+	if poll.IsError || !strings.Contains(poll.Text, "exit status 4") || !strings.Contains(string(poll.Structured), `"skipped_bytes":2`) || !strings.Contains(string(poll.Structured), `"next_offset":5`) {
+		t.Fatalf("poll: %+v", poll)
 	}
 }

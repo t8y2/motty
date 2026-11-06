@@ -22,6 +22,10 @@ func WithOutputOwner(ctx context.Context, owner string) context.Context {
 	return context.WithValue(ctx, ownerKey{}, owner)
 }
 
+// OutputOwner is the MCP client session a call arrived on, or "" for a caller
+// without one. Backends use it to scope what they keep for later calls.
+func OutputOwner(ctx context.Context) string { return outputOwner(ctx) }
+
 func outputOwner(ctx context.Context) string {
 	owner, _ := ctx.Value(ownerKey{}).(string)
 	return owner
