@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -113,5 +114,59 @@ func TestFailedRetirementPreservesEarlierRecoveryCopy(t *testing.T) {
 	data, err := os.ReadFile(previous)
 	if err != nil || string(data) != "recovery" {
 		t.Fatalf("recovery copy lost: %q %v", data, err)
+	}
+}
+
+// A partial file the installer left can be held by whatever is scanning it, so
+// removing it fails. The install path must still get the previous image back
+// rather than being left without a program.
+func TestRestoreSurvivesAFailedRemovalOfThePartialFile(t *testing.T) {
+	dir := t.TempDir()
+	exe, previous := filepath.Join(dir, "motty.exe"), filepath.Join(dir, "previous.exe")
+	for path, body := range map[string]string{exe: "partial", previous: "old"} {
+		if err := os.WriteFile(path, []byte(body), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refused := errors.New("the partial file is held by another process")
+	err := restoreExecutable(exe, previous, dir, func(string) error { return refused })
+	if err != nil {
+		t.Fatalf("restore with an unremovable partial file: %v", err)
+	}
+	data, err := os.ReadFile(exe)
+	if err != nil || string(data) != "old" {
+		t.Fatalf("installed image %q %v, want the previous one", data, err)
+	}
+	if _, err := os.Stat(previous); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the backup was left behind: %v", err)
+	}
+}
+
+// When the restore itself fails the only copy of the program is the backup, so
+// its path has to reach the error the user reads.
+func TestAFailedRestoreReportsWhereTheBackupIs(t *testing.T) {
+	dir := t.TempDir()
+	previous := filepath.Join(dir, "previous.exe")
+	if err := os.WriteFile(previous, []byte("old"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// A directory at the install path makes the rename fail on every platform.
+	exe := filepath.Join(dir, "motty.exe")
+	if err := os.Mkdir(exe, 0700); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("held")
+	err := restoreExecutable(exe, previous, dir, func(string) error { return refused })
+	if err == nil {
+		t.Fatal("an impossible restore succeeded")
+	}
+	if !strings.Contains(err.Error(), previous) {
+		t.Fatalf("the error does not name the backup: %v", err)
+	}
+	if !errors.Is(err, refused) {
+		t.Fatalf("the removal failure was lost: %v", err)
+	}
+	if data, readErr := os.ReadFile(previous); readErr != nil || string(data) != "old" {
+		t.Fatalf("the backup was disturbed: %q %v", data, readErr)
 	}
 }

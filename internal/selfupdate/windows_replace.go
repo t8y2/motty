@@ -38,18 +38,38 @@ func replaceWindowsExecutable(root, name string, install func() error) error {
 	if err != nil {
 		// An interrupted installer can leave a partial file. Never restart it in
 		// preference to the original, and retain the backup if restoring fails.
-		if removeErr := os.Remove(exe); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return errors.Join(err, fmt.Errorf("removing the incomplete executable (previous copy at %s): %w", previous, removeErr))
+		if restoreErr := restoreExecutable(exe, previous, dir, os.Remove); restoreErr != nil {
+			return errors.Join(err, restoreErr)
 		}
-		if restoreErr := os.Rename(previous, exe); restoreErr != nil {
-			return errors.Join(err, fmt.Errorf("restoring the previous executable from %s: %w", previous, restoreErr))
-		}
-		os.Remove(dir)
 		return err
 	}
 	// A running MCP server may still hold this image. Leave it in place until
 	// a later update can remove it; no active process or remote command is killed.
 	cleanRetiredExecutables(root, prefix)
+	return nil
+}
+
+// restoreExecutable puts the retired image back at the install path. A partial
+// file the installer left is removed first, but a removal that fails does not
+// end the attempt: the lock may be gone by the time of the rename, and a rename
+// onto the leftover would fail on its own. Both failures are reported together
+// with the backup path so the only copy of the program is never silently left
+// in the temporary directory.
+func restoreExecutable(exe, previous, dir string, remove func(string) error) error {
+	var removeErr error
+	if err := remove(exe); err != nil && !errors.Is(err, os.ErrNotExist) {
+		removeErr = err
+	}
+	if restoreErr := os.Rename(previous, exe); restoreErr != nil {
+		if removeErr != nil {
+			return fmt.Errorf("removing the incomplete executable and restoring %s: %w", previous, errors.Join(removeErr, restoreErr))
+		}
+		return fmt.Errorf("restoring the previous executable from %s: %w", previous, restoreErr)
+	}
+	// The image is back at the install path, so the directory holding the
+	// retired copy has nothing left to keep. A removal that failed above no
+	// longer matters once the restore succeeded.
+	os.Remove(dir)
 	return nil
 }
 

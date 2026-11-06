@@ -319,9 +319,7 @@ directory on the installation's volume, then runs the installer at the original
 path. Existing MCP connections continue on the retired image; later launches use
 the new version. A failed installation restores the previous executable (not a
 transactional rollback of every installer change). Retired images still held by
-processes are left in place and cleaned on a later successful update. The latest
-helper failure remains in `updates/last-failure.txt` even after the one-time
-`failed.txt` notification has been consumed.
+processes are left in place and cleaned on a later successful update.
 
 On macOS the helper is a copy of the whole bundle,
 not of the executable: a Developer ID signature covers the bundle's `Info.plist`,

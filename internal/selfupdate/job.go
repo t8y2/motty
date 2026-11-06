@@ -21,10 +21,6 @@ const Command = "apply-update"
 // the helper tried; the next start tells the user and removes it.
 const failureFile = "failed.txt"
 
-// lastFailureFile survives consumption of the one-time startup notification
-// and preparation of the next update. Only the most recent failure is retained.
-const lastFailureFile = "last-failure.txt"
-
 // exitTimeout is how long the helper gives the program to quit.
 const exitTimeout = 60 * time.Second
 
@@ -113,11 +109,8 @@ func (job Job) Run() error {
 
 // fail records err and, when restart is set, starts the program that is there.
 func (job Job) fail(err error, restart bool) error {
-	reason := []byte(err.Error())
-	for _, name := range []string{failureFile, lastFailureFile} {
-		if writeErr := os.WriteFile(filepath.Join(job.Dir, name), reason, 0o600); writeErr != nil {
-			err = errors.Join(err, fmt.Errorf("recording update failure in %s: %w", name, writeErr))
-		}
+	if writeErr := os.WriteFile(filepath.Join(job.Dir, failureFile), []byte(err.Error()), 0o600); writeErr != nil {
+		err = errors.Join(err, fmt.Errorf("recording update failure: %w", writeErr))
 	}
 	if restart {
 		if startErr := job.start(); startErr != nil {

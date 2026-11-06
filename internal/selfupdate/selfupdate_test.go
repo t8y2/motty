@@ -390,10 +390,6 @@ func TestAFailedUpdateIsRememberedOnceAndTheOldProgramIsStarted(t *testing.T) {
 		t.Fatalf("the failure came back: %q", reason)
 	}
 	(&Updater{Dir: dir}).clean()
-	data, err := os.ReadFile(filepath.Join(dir, lastFailureFile))
-	if err != nil || string(data) != "disk full" {
-		t.Fatalf("last failure lost after notification and cleanup: %q %v", data, err)
-	}
 }
 
 func TestAHelperThatDiesAtOnceIsReportedAndOneThatIsReadyIsNot(t *testing.T) {
