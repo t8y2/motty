@@ -57,6 +57,9 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
+	// pumpBudget is the window-thread time a Wake may spend parsing this
+	// terminal's output; see pumpBudget.
+	pumpBudget time.Duration
 	// zmodemTail is the last bytes of output, in case a transfer header is cut
 	// between two reads.
 	zmodemTail []byte
@@ -142,7 +145,9 @@ type terminal struct {
 	historyOn func() bool
 	onCommand func(string)
 	// takeOutput brings in what the shell has already echoed, so the screen is
-	// read after the echo of the keys that came before an Enter.
+	// read after the echo of the keys that came before an Enter. It parses one
+	// slice at most: a key is never made to wait for a backlog, whose echo of it
+	// would queue behind the backlog anyway, and a frame takes the rest.
 	takeOutput func()
 	// completionFeed says whether the recorder must follow typing for command
 	// completion even when the history itself is not wanted: the built-in
@@ -194,7 +199,7 @@ func newTerminal(cols, rows int) *terminal {
 }
 
 func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
-	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind()}
+	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind(), pumpBudget: pumpBudget}
 }
 
 // holdSync takes or releases the presentation snapshot at a DECSET 2026
@@ -735,15 +740,30 @@ func (state *State) goLive(session *Session) {
 	}
 }
 
-// pumpBudget bounds how much output one Wake parses. A flood can leave a
-// megabyte waiting, and parsing it in one go costs several milliseconds on the
-// window thread; the rest stays queued and the next frame takes it. The shell
+// A Wake parses output for at most pumpBudget of window-thread time, in slices
+// of pumpSlice bytes, and leaves the rest queued for the next frame. Parsing
+// costs from a few hundred to a few thousand nanoseconds per hundred bytes
+// depending on what the bytes are, so a byte limit is either far under what a
+// frame can afford or far over it; the time a frame can spare is what is
+// bounded. The budget is half a frame at the 120 Hz wake spacing, which leaves
+// the rest to input, painting and everything else on the thread. A slice is
+// always parsed, so a Wake makes progress however slow the thread is. The shell
 // ending, an exec capture and a caller without an Invalidator keep the old
 // "all at once" behavior.
-const pumpBudget = 128 << 10
+const (
+	pumpBudget = time.Second / 240
+	pumpSlice  = 32 << 10
+)
 
 // pump moves the shell's output into the screen and notices the shell's end.
 func (state *State) pump(session *Session) {
+	if t := session.term; t != nil {
+		state.pumpFor(session, t.pumpBudget)
+	}
+}
+
+// pumpFor is pump with the time it may spend parsing; see pumpBudget.
+func (state *State) pumpFor(session *Session, budget time.Duration) {
 	state.collectShell(session)
 	t := session.term
 	if t == nil {
@@ -764,41 +784,32 @@ func (state *State) pump(session *Session) {
 	default:
 	}
 	data := t.rx
-	pending := false
-	if len(data) > pumpBudget && !finished && t.exec == nil && state.options.Invalidate != nil {
-		data, pending = data[:pumpBudget], true
-	}
 	wasExec := t.exec != nil
-	if wasExec && len(data) > 0 {
-		data = append(data[:0], t.feedExec(data)...)
-	}
-	if len(data) > 0 {
-		data = state.scanTransfer(session, data)
-	}
-	if len(data) > 0 {
-		state.receiveBackgroundOutput(session)
-		t.recording.append(state.now(), terminalRecordingOutput, data)
-		t.writeRemote(data, state.now())
-		if wasExec {
-			t.markAIBlock(t.exec == nil)
+	sliced := !finished && !wasExec && state.options.Invalidate != nil
+	started := time.Now()
+	consumed := 0
+	for consumed < len(data) {
+		chunk := data[consumed:]
+		if sliced && len(chunk) > pumpSlice {
+			// The capacity is cut too: the stages below may append to the chunk
+			// and must not write over the output behind it.
+			chunk = chunk[:pumpSlice:pumpSlice]
 		}
-		t.recorder.Output(state.now())
-		if state.autofillRules.armed {
-			t.autofill.Output(state.now())
+		consumed += len(chunk)
+		state.applyOutput(session, chunk, wasExec)
+		if !sliced || time.Since(started) >= budget {
+			break
 		}
-		state.notePasswordPrompt(session)
-		t.login.output(state.now())
-		state.goLive(session)
 	}
 	if state.autofillRules.armed {
 		state.scanAutofill(session)
 	}
 	switch {
-	case pending:
+	case consumed < len(data):
 		// Move the unparsed suffix to the front of the buffer. The next frame
 		// appends new output after it, so order is kept.
-		copy(t.rx, t.rx[pumpBudget:])
-		t.rx = t.rx[:len(t.rx)-pumpBudget]
+		copy(t.rx, t.rx[consumed:])
+		t.rx = t.rx[:len(t.rx)-consumed]
 		state.options.Invalidate()
 	case !finished:
 		t.rx = t.rx[:0]
@@ -817,6 +828,34 @@ func (state *State) pump(session *Session) {
 	if finished {
 		state.shellEnded(session)
 	}
+}
+
+// applyOutput feeds one slice of the shell's output to the transfer scanner,
+// the screen and whatever watches the output.
+func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
+	t := session.term
+	if wasExec && len(data) > 0 {
+		data = append(data[:0], t.feedExec(data)...)
+	}
+	if len(data) > 0 {
+		data = state.scanTransfer(session, data)
+	}
+	if len(data) == 0 {
+		return
+	}
+	state.receiveBackgroundOutput(session)
+	t.recording.append(state.now(), terminalRecordingOutput, data)
+	t.writeRemote(data, state.now())
+	if wasExec {
+		t.markAIBlock(t.exec == nil)
+	}
+	t.recorder.Output(state.now())
+	if state.autofillRules.armed {
+		t.autofill.Output(state.now())
+	}
+	state.notePasswordPrompt(session)
+	t.login.output(state.now())
+	state.goLive(session)
 }
 
 // shellEnded tells the screen the session is over and lets the connection go.

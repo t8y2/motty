@@ -116,7 +116,7 @@ func (state *State) attachHistory(session *Session) {
 	t.onCommand = func(command string) { state.rememberCommand(sessionID, command) }
 	t.takeOutput = func() {
 		if session, ok := state.sessionByIDPointer(sessionID); ok {
-			state.pump(session)
+			state.pumpFor(session, 0)
 		}
 	}
 }

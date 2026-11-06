@@ -550,12 +550,15 @@ func TestALargeFloodIsParsedOverSeveralWakes(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	invalidations := 0
 	state.options.Invalidate = func() { invalidations++ }
-	// The escape sequence starts exactly on the budget boundary, so the parser
+	session := &state.sessions[0]
+	// No time to spare: a Wake parses one slice and no more, whatever the speed
+	// of the machine running the test.
+	session.term.pumpBudget = 0
+	// The escape sequence starts exactly on a slice boundary, so the parser
 	// has to carry its state into the next pump.
-	payload := strings.Repeat("a", pumpBudget-1) + "\x1b[31mred\x1b[0m\r\n"
+	payload := strings.Repeat("a", pumpSlice-1) + "\x1b[31mred\x1b[0m\r\n"
 	shell.say(payload)
 	state.Wake()
-	session := &state.sessions[0]
 	if session.term.rx == nil || len(session.term.rx) == 0 {
 		t.Fatal("the whole flood was parsed in one Wake")
 	}
@@ -576,7 +579,7 @@ func TestALargeFloodIsParsedOverSeveralWakes(t *testing.T) {
 func TestALargeFloodIsParsedInOneWakeWithoutAnInvalidator(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	state.options.Invalidate = nil
-	shell.say(strings.Repeat("x", 2*pumpBudget))
+	shell.say(strings.Repeat("x", 2*pumpSlice))
 	state.Wake()
 	if session := &state.sessions[0]; len(session.term.rx) != 0 {
 		t.Fatalf("%d bytes remained without an Invalidator", len(session.term.rx))

@@ -187,7 +187,8 @@ func TestTerminalInputUnparsedReceivedBacklogCannotAuthorizeActions(t *testing.T
 				state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "\u3000"})
 			}
 			state.options.Invalidate = func() {}
-			shell.say(strings.Repeat("x", 2*pumpBudget+16) + "\x1b]133;C;motty=" + session.term.folderToken + "\x07Password: ")
+			session.term.pumpBudget = 0
+			shell.say(strings.Repeat("x", 2*pumpSlice+16) + "\x1b]133;C;motty=" + session.term.folderToken + "\x07Password: ")
 			want := ""
 			switch action {
 			case "open-glyph":
