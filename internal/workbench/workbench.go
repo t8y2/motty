@@ -155,6 +155,7 @@ var (
 	hitHostGroupRowList   = tree.Sub(shellHits, tree.Name("host-group-row"))
 	hitHostGroupOpenList  = tree.Sub(shellHits, tree.Name("host-group-open"))
 )
+var hitHostCopyAddressList = tree.Sub(shellHits, tree.Name("host-copy-address"))
 
 // Key management: its page and the rows of its table.
 var (
@@ -610,6 +611,11 @@ type State struct {
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
 	iconMotions map[ui.ID]iconMotionRun
+
+	// hostAddressCopied is the host whose address was just copied, and
+	// hostAddressCopiedAt when, so its copy button shows a check for a moment.
+	hostAddressCopied   uint32
+	hostAddressCopiedAt time.Duration
 
 	// area: AI panel
 	aiFlex aiFlexViews // the assistant panel's layouts, see ai_panel_paint.go

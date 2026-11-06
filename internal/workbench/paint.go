@@ -1777,7 +1777,7 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 	if tagsWidth >= 60 {
 		tagCount = state.fitHostTags(canvas, host, tagsWidth, &tagList)
 	}
-	var avatar, light flex.Box
+	var avatar, light, copyButton flex.Box
 	f := state.chrome.hostRow.Begin(canvas, state.Theme(), area)
 	f.Stack().Fill().Children(func() {
 		f.Row().Fill().Items(flex.Center).Children(func() {
@@ -1789,11 +1789,14 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 					f.Text(state.hostSubtitle(host)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Ellipsis()
 				})
 			})
-			f.Row().Width(tagsStart - addressStart).Shrink(0).Children(func() {
+			f.Row().Width(tagsStart - addressStart).Shrink(0).Items(flex.Center).Children(func() {
 				if addressWidth < 60 { // a sliver of an address says less than nothing
 					return
 				}
-				f.Text(host.target).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
+				// The copy button follows the address, not the column's far edge.
+				targetWidth := min(canvas.TextWidthWeight(host.target, metrics.FontSizeS, ui.WeightMedium)+1, addressWidth-hostCopyButtonSize-4)
+				f.Text(host.target).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(22).Width(targetWidth).Shrink(0).Ellipsis()
+				copyButton = f.Slot().Size(hostCopyButtonSize, hostCopyButtonSize).Shrink(0).MarginSides(0, 0, 0, 4)
 			})
 			if tagCount > 0 {
 				f.Row().Width(tagsRoom).Shrink(0).Gap(5).Items(flex.Center).Children(func() {
@@ -1819,6 +1822,28 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 	state.paintHostCatalogIcon(canvas, host, avatar.Rect(), rowBackground)
 	lightRect := light.Rect()
 	paintLight(canvas, lightRect.X+lightRect.Width/2, lightRect.Y+lightRect.Height/2, kind, dot, rowBackground)
+	if icon, shown := state.hostAddressCopyIcon(canvas, host, id); shown && addressWidth >= 60 {
+		state.paintIconButton(canvas, hitHostCopyAddressList.At(int(host.ID)), icon, copyButton.Rect(), state.messages.CopyAddress, false, iconButtonQuiet, rowBackground)
+	}
+}
+
+// hostCopyButtonSize is the side of the button that copies a host's address. It
+// is no taller than a card's tag pills, so showing it does not move the card's
+// lines.
+const hostCopyButtonSize = float32(18)
+
+// hostAddressCopyIcon reports whether the button after a host's address shows,
+// and with which icon. Like the assistant's copy buttons it shows only while the
+// pointer is on the host, and as a check for a moment after a click.
+func (state *State) hostAddressCopyIcon(canvas *ui.Canvas, host Host, row ui.ID) (uint8, bool) {
+	if state.hostAddressCopied == host.ID {
+		if left := aiCopiedFor - (state.now() - state.hostAddressCopiedAt); left > 0 {
+			canvas.RequestFrameIn(left)
+			return iconCheck, true
+		}
+	}
+	hovered := canvas.Hovered()
+	return iconCopy, hovered == row || hovered == hitHostCopyAddressList.At(int(host.ID))
 }
 
 // fitHostTags picks the tags of a host whose pills fit whole in width, in order,

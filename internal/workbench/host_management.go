@@ -74,6 +74,10 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.toggleHostSelection(hostID)
 		return true
 	}
+	if id.Scope() == hitHostCopyAddressList {
+		state.copyHostAddress(uint32(item(id)))
+		return true
+	}
 	if id.Scope() == hitHostGroupRowList {
 		state.toggleHostGroup(item(id))
 		return true
@@ -126,6 +130,20 @@ func (state *State) hostIDForSelectionHit(id ui.ID) (uint32, bool) {
 	hostID := uint32(item(id))
 	_, ok := state.hostByID(hostID)
 	return hostID, ok
+}
+
+// copyHostAddress puts a host's address on the clipboard: the name or IP alone,
+// without the account or the port.
+func (state *State) copyHostAddress(hostID uint32) {
+	host, ok := state.hostByID(hostID)
+	if !ok {
+		return
+	}
+	if err := state.options.SetClipboardText(host.Address); err != nil {
+		state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
+		return
+	}
+	state.hostAddressCopied, state.hostAddressCopiedAt = hostID, state.now()
 }
 
 func (state *State) toggleHostSelection(id uint32) {
