@@ -121,6 +121,43 @@ func TestAnOpenChipMenuKeepsTheWheelOffTheHostsList(t *testing.T) {
 	}
 }
 
+// A pinned chip makes room for its star instead of taking it out of the name:
+// the label keeps its natural width and stays inside the chip. A marker the
+// width forgot would squeeze the text, which is what this guards.
+func TestPinnedHostChipLeavesRoomForItsMarker(t *testing.T) {
+	state := nestedHostGroupState(t)
+	index := state.hostGroupIndex("Team")
+	state.hostGroups[index].Pinned = true
+	canvas, _ := paintedTexts(state)
+	chip, ok := hitByID(canvas, hitHostFilterList.At(index))
+	if !ok {
+		t.Fatal("the pinned group has no chip")
+	}
+	label := state.hostGroupChipLabel(state.hostGroups[index])
+	painted, ok := textByValue(canvas.Texts(), label, chip.Bounds)
+	if !ok {
+		t.Fatalf("the pinned chip painted no %q", label)
+	}
+	natural := canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightSemibold)
+	if painted.Bounds.Width < natural-0.5 {
+		t.Fatalf("the pinned chip squeezed %q to %.1f of its %.1f natural width", label, painted.Bounds.Width, natural)
+	}
+	if painted.Bounds.X < chip.Bounds.X || painted.Bounds.X+painted.Bounds.Width > chip.Bounds.X+chip.Bounds.Width {
+		t.Fatalf("%q at %+v spills out of its chip %+v", label, painted.Bounds, chip.Bounds)
+	}
+}
+
+// textByValue is the painted text with that value on the row the bounds name, so
+// a label shared by several controls is matched to the one asked about.
+func textByValue(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
+	for _, text := range texts {
+		if text.Value == value && text.Bounds.Y >= row.Y && text.Bounds.Y+text.Bounds.Height <= row.Y+row.Height {
+			return text, true
+		}
+	}
+	return ui.Text{}, false
+}
+
 func TestHostGroupChipLabelIsTheLastSegment(t *testing.T) {
 	state := &State{}
 	for name, want := range map[string]string{"School": "School", "School/Gansu": "Gansu", "A / B": "B", "trailing/": "trailing/"} {
