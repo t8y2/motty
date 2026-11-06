@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -1051,6 +1050,9 @@ func (state *State) paintHostMenus(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.hostFilterMenu {
 		state.paintHostFilterMenu(canvas, viewport)
 	}
+	if state.chipMenu.open {
+		state.paintHostChipMenu(canvas, viewport)
+	}
 	if state.importMenu {
 		state.paintImportMenu(canvas, viewport)
 	}
@@ -1175,8 +1177,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 						chrome.chips = chrome.chips[:0]
 						chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterAll, state.hostTotalDigits), rowHeight))
 						for _, index := range state.hostChips[:state.hostFilterHidden] {
-							group := state.hostGroups[index]
-							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits), rowHeight))
+							chrome.chips = append(chrome.chips, f.Slot().Size(state.hostChipWidth(canvas, index), rowHeight))
 						}
 						if state.hostFilterHidden < len(state.hostChips) {
 							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterMore, ""), rowHeight))
@@ -1319,8 +1320,7 @@ func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 	// Do they all fit? If not, room is kept for More.
 	used := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits)
 	for _, index := range state.hostChips {
-		group := state.hostGroups[index]
-		used += gap + state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits)
+		used += gap + state.hostChipWidth(canvas, index)
 	}
 	limit := room
 	if used > room {
@@ -1328,8 +1328,7 @@ func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 	}
 	x := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits) + gap
 	for position, index := range state.hostChips {
-		group := state.hostGroups[index]
-		width := state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits)
+		width := state.hostChipWidth(canvas, index)
 		if x+width > limit {
 			state.hostFilterHidden = position
 			return
@@ -1342,20 +1341,30 @@ func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 // then each group with how many hosts it holds, then More when some did not fit.
 func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 	m := state.messages
-	state.paintFilterChip(canvas, hitHostFilterAll, chips[0].Rect(), m.HostFilterAll, state.hostTotalDigits, !state.hostFilterOn)
+	state.paintFilterChip(canvas, hitHostFilterAll, ui.ID{}, chips[0].Rect(), m.HostFilterAll, state.hostTotalDigits, !state.hostFilterOn)
 	for position, index := range state.hostChips[:state.hostFilterHidden] {
-		group := state.hostGroups[index]
-		state.paintFilterChip(canvas, hitHostFilterList.At(index), chips[1+position].Rect(),
-			state.hostGroupChipLabel(group), group.Digits, state.hostFilterOn && state.hostFilter == group.Name)
+		label, digits, chosen := state.hostChipView(index)
+		var chevron ui.ID
+		if state.hostChipHasMenu(index) {
+			chevron = hitHostFilterChevronList.At(index)
+			if state.chipMenu.open && state.chipMenu.root == state.hostGroups[index].Name {
+				state.chipMenu.anchor = chips[1+position].Rect()
+			}
+		}
+		state.paintFilterChip(canvas, hitHostFilterList.At(index), chevron, chips[1+position].Rect(), label, digits, chosen)
 		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
 	}
 	if state.hostFilterHidden < len(state.hostChips) {
 		hiddenChosen := false
 		if state.hostFilterOn {
-			hiddenChosen = slices.Contains(state.hostChips[state.hostFilterHidden:], state.hostGroupIndex(state.hostFilter))
+			for _, index := range state.hostChips[state.hostFilterHidden:] {
+				if _, _, chosen := state.hostChipView(index); chosen {
+					hiddenChosen = true
+				}
+			}
 		}
 		state.filterMoreButton = chips[1+state.hostFilterHidden].Rect()
-		state.paintFilterChip(canvas, hitHostFilterMore, state.filterMoreButton, m.HostFilterMore, "", hiddenChosen)
+		state.paintFilterChip(canvas, hitHostFilterMore, ui.ID{}, state.filterMoreButton, m.HostFilterMore, "", hiddenChosen)
 	}
 }
 
@@ -1369,8 +1378,23 @@ func (state *State) filterChipWidth(canvas *ui.Canvas, label, digits string) flo
 	return width + 2
 }
 
+// hostChipWidth is the width of the chip of the group at index: its label, its
+// count, and room for the chevron that opens its nested groups.
+func (state *State) hostChipWidth(canvas *ui.Canvas, index int) float32 {
+	label, digits, _ := state.hostChipView(index)
+	width := state.filterChipWidth(canvas, label, digits)
+	if state.hostChipHasMenu(index) {
+		width += chipChevronWidth
+	}
+	return width
+}
+
+// chipChevronWidth is what a chevron adds to a chip: the gap before it and its glyph.
+const chipChevronWidth = 18
+
 // paintFilterChip draws one chip: a pill that is filled while it is the choice.
-func (state *State) paintFilterChip(canvas *ui.Canvas, id ui.ID, bounds ui.Rect, label, digits string, chosen bool) {
+// A chip with a chevron ID has a second target at its end that opens a menu.
+func (state *State) paintFilterChip(canvas *ui.Canvas, id, chevron ui.ID, bounds ui.Rect, label, digits string, chosen bool) {
 	pal := state.pal
 	foreground := pal.muted
 	var fill ui.Color
@@ -1389,8 +1413,18 @@ func (state *State) paintFilterChip(canvas *ui.Canvas, id ui.ID, bounds ui.Rect,
 		if digits != "" {
 			f.Text(digits).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint)
 		}
+		if !chevron.IsZero() {
+			tint := foreground
+			if canvas.Hovered() == chevron || state.chipMenu.open {
+				tint = pal.text
+			}
+			f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(tint).Shrink(0)
+		}
 	})
 	f.End()
+	if !chevron.IsZero() {
+		canvas.HitWithOptions(chevron, ui.Rect{X: bounds.X + bounds.Width - 28, Y: bounds.Y, Width: 28, Height: bounds.Height}, label, ui.HitOptions{Role: ui.RoleButton, Expanded: state.chipMenu.open})
+	}
 	if canvas.FocusVisible() == id {
 		canvas.RoundedBorder(bounds, bounds.Height/2, 1.5, pal.accent, ui.Color{})
 	}

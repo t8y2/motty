@@ -82,6 +82,9 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 		state.toggleHostGroup(item(id))
 		return true
 	}
+	if state.clickHostChipMenu(id) {
+		return true
+	}
 	if id.Scope() == hitHostFilterList {
 		if index := int(item(id)); index < len(state.hostGroups) {
 			state.setHostFilter(true, state.hostGroups[index].Name)
@@ -758,6 +761,9 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	if state.importMenu && event.Key == ui.KeyEscape {
 		state.importMenu = false
 		return handled, true
+	}
+	if result, ok := state.hostChipMenuKey(event); ok {
+		return result, true
 	}
 	if state.hostFilterMenu && event.Key == ui.KeyEscape {
 		state.hostFilterMenu = false

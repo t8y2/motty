@@ -154,6 +154,11 @@ var (
 	hitHostFilterMenuList = tree.Sub(shellHits, tree.Name("host-filter-menu-item"))
 	hitHostGroupRowList   = tree.Sub(shellHits, tree.Name("host-group-row"))
 	hitHostGroupOpenList  = tree.Sub(shellHits, tree.Name("host-group-open"))
+	// A top-level chip's chevron opens the menu of its nested groups.
+	hitHostFilterChevronList = tree.Sub(shellHits, tree.Name("host-filter-chevron"))
+	hitHostChipMenuList      = tree.Sub(shellHits, tree.Name("host-chip-menu-item"))
+	hitHostChipMenuDismiss   = tree.ID(shellHits, "host-chip-menu-dismiss")
+	hitHostChipMenuScroll    = tree.ID(shellHits, "host-chip-menu-scroll")
 )
 
 // Key management: its page and the rows of its table.
@@ -530,6 +535,7 @@ type State struct {
 	hostFilterMenu     bool   // the chips that did not fit, as a menu
 	hostFilterHidden   int    // the first of hostChips whose chip is in that menu
 	hostChips          []int  // the groups that get a chip, as indexes of hostGroups
+	chipMenu           hostChipMenu
 	filterMoreButton   ui.Rect
 	hostTotalDigits    string
 	groupMenu          groupMenuAnchor // where the Move group picker opens
@@ -2276,6 +2282,11 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	}
 	if result, handled := state.remoteProcessScrollPointer(event); handled {
 		return result
+	}
+	if state.chipMenu.open {
+		if result := state.chipMenu.tree.Pointer(event); result.Handled {
+			return result
+		}
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {

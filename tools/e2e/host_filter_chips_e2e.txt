@@ -1,7 +1,6 @@
-# End to end: the host list's group chips follow the nested group in view (issue #542
-# follow-up). Unfiltered they are the top level; choosing School opens it, choosing Gansu
-# adds the path and its groups, and a group with none stays on its siblings. Chips carry
-# only the last segment of a name.
+# End to end: the host list's chips are the top-level groups (issue #542 follow-up). A group
+# with nested groups has a chevron on its chip that opens a menu of them, one level per
+# fly-out; choosing a nested group filters to it and the chip names it ("School › Tianshui").
 #
 #   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
 #   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_filter_chips_e2e.txt
@@ -53,18 +52,16 @@ click "Add Host"
 settle 400
 expect text "School" within 1000
 shot /tmp/host-chips-top.png
-click 400 113
+click 440 113
 settle 300
-shot /tmp/host-chips-school.png
-layout
-click 400 113
+shot /tmp/host-chips-menu.png
+move 395 153
 settle 300
-shot /tmp/host-chips-gansu.png
-click 581 113
+shot /tmp/host-chips-flyout.png
+move 540 185
+settle 200
+click 540 185
 settle 300
-expect text "Lanzhou" within 1000
-shot /tmp/host-chips-leaf.png
-click 322 113
-settle 300
-expect text "Xinjiang" within 1000
+expect text "School › Tianshui" within 1000
+shot /tmp/host-chips-chosen.png
 layout

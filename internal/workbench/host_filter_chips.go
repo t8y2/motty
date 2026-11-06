@@ -1,36 +1,31 @@
 package workbench
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/ui"
+)
+
+// hostChipMenu is the menu of nested groups a top-level group's chip opens.
+// Its rows are the groups below root, named relative to it.
+type hostChipMenu struct {
+	open bool
+	// root is the top-level group the menu lists the groups of.
+	root string
+	tree components.HierarchyMenuState
+	// anchor is the chip the menu hangs under, popup the box around its panels.
+	anchor, popup ui.Rect
+}
 
 // fitChipGroups fills state.hostChips with the groups that get a chip, as
-// indexes into hostGroups, in the order they are drawn. Nested groups are not
-// all strung along one row: the row is the path to the level in view (each
-// ancestor a chip that goes back up to it) followed by that level's groups,
-// with only the last segment of a name on its chip. With nothing chosen, or a
-// top-level group, that level is the top; choosing a group that has groups of
-// its own opens it, and choosing one that has none stays on its siblings.
+// indexes into hostGroups: the top level, so the row keeps its shape whichever
+// group is chosen. Nested groups are reached from the chevron of their top-level
+// group's chip.
 func (state *State) fitChipGroups() {
 	chips := state.hostChips[:0]
-	level := ""
-	if state.hostFilterOn && state.hostGroupIndex(state.hostFilter) >= 0 {
-		level = state.hostFilter
-		if !state.hostGroupHasChildren(level) {
-			level = hostGroupParent(level)
-		}
-	}
-	for at := 0; level != "" && at < len(level); {
-		next := strings.IndexByte(level[at:], '/')
-		if next < 0 {
-			next = len(level) - at
-		}
-		at += next
-		if index := state.hostGroupIndex(level[:at]); index >= 0 {
-			chips = append(chips, index)
-		}
-		at++
-	}
 	for index, group := range state.hostGroups {
-		if state.hostGroupChipParent(group.Name) == level && group.Name != level {
+		if state.hostGroupChipParent(group.Name) == "" {
 			chips = append(chips, index)
 		}
 	}
@@ -59,7 +54,8 @@ func (state *State) hostGroupHasChildren(name string) bool {
 	return false
 }
 
-// hostGroupChipLabel is a chip's text: the last segment of the group's path.
+// hostGroupChipLabel is the text of a group's own chip, or of a row that names
+// it: the last segment of its path.
 func (state *State) hostGroupChipLabel(group hostGroup) string {
 	if group.Name == "" {
 		return state.messages.HostGroupDefault
@@ -70,4 +66,115 @@ func (state *State) hostGroupChipLabel(group hostGroup) string {
 		}
 	}
 	return group.Name
+}
+
+// hostChipView is what the chip of a top-level group shows. When the chosen
+// group is nested under it the chip is chosen and names that group after its
+// own: "School › Tianshui", with that group's count.
+func (state *State) hostChipView(index int) (label, digits string, chosen bool) {
+	group := state.hostGroups[index]
+	label, digits = state.hostGroupChipLabel(group), group.Digits
+	if !state.hostFilterOn {
+		return label, digits, false
+	}
+	if state.hostFilter == group.Name {
+		return label, digits, true
+	}
+	if group.Name == "" || !strings.HasPrefix(state.hostFilter, group.Name+"/") {
+		return label, digits, false
+	}
+	if nested := state.hostGroupIndex(state.hostFilter); nested >= 0 {
+		return label + " › " + state.hostGroupChipLabel(state.hostGroups[nested]), state.hostGroups[nested].Digits, true
+	}
+	return label, digits, true
+}
+
+// hostChipHasMenu is whether the chip of the group at index has nested groups to
+// open.
+func (state *State) hostChipHasMenu(index int) bool {
+	return state.hostGroupHasChildren(state.hostGroups[index].Name)
+}
+
+// openHostChipMenu opens the menu of the groups nested under the group at index.
+func (state *State) openHostChipMenu(index int) {
+	if index < 0 || index >= len(state.hostGroups) {
+		return
+	}
+	m, root := &state.chipMenu, state.hostGroups[index].Name
+	if m.open && m.root == root {
+		m.open = false
+		return
+	}
+	prefix := root + "/"
+	selected := ""
+	if state.hostFilterOn && strings.HasPrefix(state.hostFilter, prefix) {
+		selected = state.hostFilter[len(prefix):]
+	}
+	var nested []string
+	for _, group := range state.hostGroups {
+		if strings.HasPrefix(group.Name, prefix) {
+			nested = append(nested, group.Name[len(prefix):])
+		}
+	}
+	m.tree.Build("/", selected, nil, len(nested), func(i int) components.HierarchyMenuItem {
+		return components.HierarchyMenuItem{Value: nested[i]}
+	})
+	m.open, m.root = m.tree.Usable(), root
+	state.hostFilterMenu = false
+}
+
+// clickHostChipMenu handles a press while the chip menu is open, or on a chip's
+// chevron. It reports whether the press was the menu's.
+func (state *State) clickHostChipMenu(id ui.ID) bool {
+	m := &state.chipMenu
+	if id.Scope() == hitHostFilterChevronList {
+		state.openHostChipMenu(int(item(id)))
+		return true
+	}
+	if !m.open {
+		return false
+	}
+	switch {
+	case id == hitHostChipMenuDismiss:
+		m.open = false
+	case id.Scope() == hitHostChipMenuList:
+		if value, ok := m.tree.Choose(int(item(id))); ok {
+			m.open = false
+			state.setHostFilter(true, m.root+"/"+value)
+		}
+	default:
+		m.open = false
+		return false
+	}
+	return true
+}
+
+// hostChipMenuKey routes keys to the open chip menu.
+func (state *State) hostChipMenuKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	m := &state.chipMenu
+	if !m.open || event.Release {
+		return ui.EventResult{}, false
+	}
+	result := m.tree.Key(event, true)
+	if result.Picked {
+		m.open = false
+		state.setHostFilter(true, m.root+"/"+result.Chosen)
+	}
+	if result.Handled {
+		return result.EventResult, true
+	}
+	if event.Key == ui.KeyEscape {
+		m.open = false
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	return ui.EventResult{}, false
+}
+
+// paintHostChipMenu paints the open chip menu under its chip.
+func (state *State) paintHostChipMenu(canvas *ui.Canvas, viewport ui.Rect) {
+	m := &state.chipMenu
+	m.popup = components.PaintHierarchyMenu(canvas, state.Theme(), m.anchor, &m.tree, components.HierarchyMenuOptions{
+		OptionIDs: hitHostChipMenuList, ScrollID: hitHostChipMenuScroll, Scope: dialogScope, Layer: dialogLayer,
+		Label: m.root, EmptyLabel: state.messages.HostGroupsEmpty, Viewport: viewport, Overlay: true, DismissID: hitHostChipMenuDismiss,
+	})
 }

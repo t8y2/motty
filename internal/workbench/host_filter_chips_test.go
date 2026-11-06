@@ -2,8 +2,19 @@ package workbench
 
 import (
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/vivaui/viva/ui"
 )
+
+func chipTestState() *State {
+	return &State{hostGroups: []hostGroup{
+		{Name: "School", Digits: "3"}, {Name: "School/Gansu", Digits: "2"}, {Name: "School/Gansu/Lanzhou", Digits: "1"},
+		{Name: "School/Gansu/Tianshui", Digits: "1"}, {Name: "School/Xinjiang", Digits: "1"}, {Name: "Office", Digits: "1"},
+		{Name: "orphan/leaf", Digits: "1"},
+	}}
+}
 
 func chipNames(state *State) []string {
 	state.fitChipGroups()
@@ -14,57 +25,76 @@ func chipNames(state *State) []string {
 	return names
 }
 
-// Nested groups do not all string along one row: the row is the path to the
-// level in view followed by that level's groups, and a chosen group with none of
-// its own leaves its siblings in view.
-func TestHostFilterChipsFollowTheChosenLevel(t *testing.T) {
-	state := &State{hostGroups: []hostGroup{
-		{Name: "School"}, {Name: "School/Gansu"}, {Name: "School/Gansu/Lanzhou"},
-		{Name: "School/Gansu/Tianshui"}, {Name: "School/Xinjiang"}, {Name: "Office"},
-	}}
+// The row keeps its shape whichever group is chosen: only top-level groups have
+// a chip, and a group whose parent is missing counts as top level.
+func TestHostFilterChipsAreAlwaysTheTopLevel(t *testing.T) {
+	state := chipTestState()
+	want := []string{"School", "Office", "orphan/leaf"}
+	for _, filter := range []struct {
+		on   bool
+		name string
+	}{{false, ""}, {true, "School"}, {true, "School/Gansu/Tianshui"}, {true, "Office"}} {
+		state.hostFilterOn, state.hostFilter = filter.on, filter.name
+		if got := chipNames(state); !slices.Equal(got, want) {
+			t.Fatalf("with filter %+v chips %q, want %q", filter, got, want)
+		}
+	}
+}
+
+// A chip is chosen by its group or any group below it, and then names the nested
+// group after its own, with that group's count.
+func TestHostChipViewNamesTheChosenNestedGroup(t *testing.T) {
+	state := chipTestState()
+	school, office := state.hostGroupIndex("School"), state.hostGroupIndex("Office")
 	for _, test := range []struct {
-		name   string
-		on     bool
-		filter string
-		want   []string
+		name         string
+		on           bool
+		filter       string
+		label        string
+		digits       string
+		chosen       bool
+		officeChosen bool
 	}{
-		{"nothing chosen shows the top level", false, "", []string{"School", "Office"}},
-		{"a top-level group with groups of its own opens it", true, "School", []string{"School", "School/Gansu", "School/Xinjiang"}},
-		{"a deeper group opens with its path", true, "School/Gansu", []string{"School", "School/Gansu", "School/Gansu/Lanzhou", "School/Gansu/Tianshui"}},
-		{"a group with none stays on its siblings", true, "School/Gansu/Tianshui", []string{"School", "School/Gansu", "School/Gansu/Lanzhou", "School/Gansu/Tianshui"}},
-		{"a top-level group with none stays on the top level", true, "Office", []string{"School", "Office"}},
-		{"a group that is gone shows the top level", true, "Gone", []string{"School", "Office"}},
+		{"nothing chosen", false, "", "School", "3", false, false},
+		{"the group itself", true, "School", "School", "3", true, false},
+		{"a nested group", true, "School/Gansu", "School › Gansu", "2", true, false},
+		{"a deeply nested group", true, "School/Gansu/Tianshui", "School › Tianshui", "1", true, false},
+		{"another top-level group", true, "Office", "School", "3", false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state.hostFilterOn, state.hostFilter = test.on, test.filter
-			if got := chipNames(state); !slices.Equal(got, test.want) {
-				t.Fatalf("chips %q, want %q", got, test.want)
+			label, digits, chosen := state.hostChipView(school)
+			if label != test.label || digits != test.digits || chosen != test.chosen {
+				t.Fatalf("School chip %q %q chosen %v, want %q %q %v", label, digits, chosen, test.label, test.digits, test.chosen)
+			}
+			if _, _, chosen := state.hostChipView(office); chosen != test.officeChosen {
+				t.Fatalf("Office chip chosen %v, want %v", chosen, test.officeChosen)
 			}
 		})
 	}
 }
 
-// Every group stays reachable by clicking chips: from the top level down, each
-// group is a chip once a chip for its parent has been chosen.
-func TestHostFilterChipsReachEveryGroup(t *testing.T) {
-	state := &State{hostGroups: []hostGroup{
-		{Name: "A"}, {Name: "A/B"}, {Name: "A/B/C"}, {Name: "A/D"}, {Name: "E"}, {Name: "E/F"}, {Name: "orphan/leaf"},
-	}}
-	reached := map[string]bool{}
-	var visit func(filter string, on bool)
-	visit = func(filter string, on bool) {
-		state.hostFilterOn, state.hostFilter = on, filter
-		for _, name := range chipNames(state) {
-			if !reached[name] {
-				reached[name] = true
-				visit(name, true)
-			}
-		}
+// Every nested group is reachable from its top-level chip's menu, and choosing it
+// there filters to the full path.
+func TestHostChipMenuReachesEveryNestedGroup(t *testing.T) {
+	state := chipTestState()
+	if state.hostChipHasMenu(state.hostGroupIndex("Office")) {
+		t.Fatal("a group with nothing nested has a menu")
 	}
-	visit("", false)
-	for _, group := range state.hostGroups {
-		if !reached[group.Name] {
-			t.Errorf("group %q has no chip on any path from the top level", group.Name)
+	root := state.hostGroupIndex("School")
+	if !state.hostChipHasMenu(root) {
+		t.Fatal("School has nested groups but no menu")
+	}
+	for _, name := range []string{"School/Gansu", "School/Gansu/Lanzhou", "School/Gansu/Tianshui", "School/Xinjiang"} {
+		state.chipMenu.open = false
+		state.openHostChipMenu(root)
+		if !state.chipMenu.open {
+			t.Fatal("the menu did not open")
+		}
+		state.chipMenu.tree.Seek(strings.TrimPrefix(name, "School/"))
+		state.hostChipMenuKey(ui.KeyEvent{Key: ui.KeyEnter})
+		if state.chipMenu.open || !state.hostFilterOn || state.hostFilter != name {
+			t.Fatalf("choosing %q left the filter at %q (on %v, menu open %v)", name, state.hostFilter, state.hostFilterOn, state.chipMenu.open)
 		}
 	}
 }
