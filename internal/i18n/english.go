@@ -1600,12 +1600,12 @@ var englishTools = ToolsMessages{
 	NotifyRow:         "Desktop notifications",
 	NotifyDescription: "Show a system notification when a program in the terminal asks for one (OSC 9, 777 and 99). At most one a second per terminal.",
 
-	PasteImageRow:         "Paste images to servers",
-	PasteImageDescription: "Pasting in an SSH terminal while the clipboard holds an image and no text uploads it to ~/.cache/motty/paste on the server and types its path, for programs such as Claude Code. Files are kept for a week.",
-	PasteImageUploading:   "Uploading the clipboard image…",
+	PasteImageRow:         "Paste images into terminals",
+	PasteImageDescription: "When the clipboard holds only an image, save it to the local cache or upload it to ~/.cache/motty/paste on the SSH server, then paste its path for programs such as Codex. Files are kept for a week.",
+	PasteImageUploading:   "Saving the clipboard image…",
 	PasteImageDoneFmt:     "Image uploaded to %s.",
-	PasteImageFailedFmt:   "Could not upload the clipboard image: %v",
-	PasteImageTooLarge:    "The clipboard image is too large to upload.",
+	PasteImageFailedFmt:   "Could not save the clipboard image: %v",
+	PasteImageTooLarge:    "The clipboard image is too large to paste.",
 
 	PasswordHintRow:         "Password prompt assist",
 	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password after the prompt. Nothing is sent until you press Enter.",

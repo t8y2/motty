@@ -1232,6 +1232,13 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		}
 		redraw = t.prediction.reset()
 		state.typed(session, term.EncodePaste(event.Text, t.screen.Modes().BracketedPaste))
+	case app.TextPasteNoText:
+		if state.modal != modalTerminalInput && state.pasteClipboardImage(session) {
+			return app.TextState{}
+		}
+		if state.modal != modalTerminalInput && t.screen.Modes().BracketedPaste {
+			state.typed(session, term.EncodePaste("", true))
+		}
 	case app.TextSetMarked:
 		redraw = t.prediction.reset()
 		runes := utf8.RuneCountInString(event.Text)

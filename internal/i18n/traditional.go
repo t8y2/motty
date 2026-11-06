@@ -1597,12 +1597,12 @@ var traditionalTools = ToolsMessages{
 	FontFallbackClear:       "清除",
 	FontFallbackPickerTitle: "備用字型",
 
-	PasteImageRow:         "向伺服器貼上圖片",
-	PasteImageDescription: "在 SSH 終端機貼上時，若剪貼簿裡只有圖片而沒有文字，就把圖片上傳到伺服器的 ~/.cache/motty/paste 並輸入它的路徑，方便 Claude Code 等程式讀取。檔案保留一週。",
-	PasteImageUploading:   "正在上傳剪貼簿裡的圖片…",
+	PasteImageRow:         "在終端機貼上圖片",
+	PasteImageDescription: "剪貼簿裡只有圖片時，將圖片儲存在本機快取或上傳到 SSH 伺服器的 ~/.cache/motty/paste，再貼上路徑供 Codex 等程式讀取。檔案保留一週。",
+	PasteImageUploading:   "正在儲存剪貼簿裡的圖片…",
 	PasteImageDoneFmt:     "圖片已上傳到 %s。",
-	PasteImageFailedFmt:   "無法上傳剪貼簿裡的圖片：%v",
-	PasteImageTooLarge:    "剪貼簿裡的圖片太大，無法上傳。",
+	PasteImageFailedFmt:   "無法儲存剪貼簿裡的圖片：%v",
+	PasteImageTooLarge:    "剪貼簿裡的圖片太大，無法貼上。",
 
 	PasswordHintRow:         "密碼提示輔助",
 	PasswordHintDescription: "sudo 要求輸入密碼時，在提示符後提供該主機已儲存的密碼。按下 Enter 之前不會傳送任何內容。",

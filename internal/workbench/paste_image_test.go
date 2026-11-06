@@ -1,9 +1,13 @@
 package workbench
 
 import (
+	"bytes"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +19,15 @@ import (
 const pastedImageHome = "/home/test"
 
 var pastedPNG = []byte("\x89PNG\r\n\x1a\nnot really a picture")
+
+func actualPastedPNG(t testing.TB) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, image.NewNRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
 
 func pasteImageRemote() *workbenchSFTPRemote {
 	return &workbenchSFTPRemote{
@@ -72,6 +85,85 @@ func TestPastingAnImageUploadsItAndTypesItsPath(t *testing.T) {
 	if session.pastingImage || !strings.Contains(state.status, name) {
 		t.Fatalf("pasting=%v status %q", session.pastingImage, state.status)
 	}
+}
+
+func TestLocalTerminalImagePasteProvidesAReadableImagePath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	state, session := openLocal(t)
+	state.Wake()
+	if session.term == nil || session.term.shell == nil {
+		t.Fatal("local shell did not start")
+	}
+	picture := actualPastedPNG(t)
+	state.options.ClipboardText = func() (string, error) { return "", nil }
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return picture, nil }
+	session.term.send([]byte("test -s "))
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextPasteNoText})
+	deadline := time.Now().Add(5 * time.Second)
+	for session.pastingImage && time.Now().Before(deadline) {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if session.pastingImage {
+		t.Fatal("local image paste timed out")
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(cache, "motty", "paste")
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("saved pictures = %v, err = %v", entries, err)
+	}
+	name := filepath.Join(directory, entries[0].Name())
+	marker := filepath.Join(t.TempDir(), "readable")
+	session.term.send([]byte("&& printf ok > " + shellEscapePath(marker) + "\n"))
+	for time.Now().Before(deadline) {
+		state.Wake()
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("local shell could not read the pasted image %q: %v; screen: %q", name, err, screenText(state, 0))
+	}
+	data, err := os.ReadFile(name)
+	if err != nil || !bytes.Equal(data, picture) {
+		t.Fatalf("image content = %q, err = %v", data, err)
+	}
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		t.Fatalf("the terminal program cannot open the pasted image: %v", err)
+	}
+	requirePrivateFile(t, name)
+}
+
+func TestLocalPastedImagesArePrivateAndOldCopiesAreRemoved(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	now := time.Now()
+	old, err := saveLocalPastedImage(pastedPNG, now.Add(-pasteImageKeep-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(old, now.Add(-pasteImageKeep-time.Hour), now.Add(-pasteImageKeep-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := saveLocalPastedImage(pastedPNG, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("expired image remains: %v", err)
+	}
+	if _, err := os.Stat(recent); err != nil {
+		t.Fatal(err)
+	}
+	requirePrivateFile(t, recent)
 }
 
 func TestPastingTextNeverTouchesTheImage(t *testing.T) {

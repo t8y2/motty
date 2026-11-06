@@ -1597,12 +1597,12 @@ var chineseTools = ToolsMessages{
 	FontFallbackClear:       "清除",
 	FontFallbackPickerTitle: "备用字体",
 
-	PasteImageRow:         "向服务器粘贴图片",
-	PasteImageDescription: "在 SSH 终端粘贴时，若剪贴板里只有图片而没有文本，就把图片上传到服务器的 ~/.cache/motty/paste 并输入它的路径，方便 Claude Code 等程序读取。文件保留一周。",
-	PasteImageUploading:   "正在上传剪贴板里的图片…",
+	PasteImageRow:         "在终端粘贴图片",
+	PasteImageDescription: "剪贴板里只有图片时，将图片保存在本机缓存或上传到 SSH 服务器的 ~/.cache/motty/paste，并粘贴路径供 Codex 等程序读取。文件保留一周。",
+	PasteImageUploading:   "正在保存剪贴板里的图片…",
 	PasteImageDoneFmt:     "图片已上传到 %s。",
-	PasteImageFailedFmt:   "无法上传剪贴板里的图片：%v",
-	PasteImageTooLarge:    "剪贴板里的图片太大，无法上传。",
+	PasteImageFailedFmt:   "无法保存剪贴板里的图片：%v",
+	PasteImageTooLarge:    "剪贴板里的图片太大，无法粘贴。",
 
 	PasswordHintRow:         "密码提示辅助",
 	PasswordHintDescription: "sudo 要求输入密码时，在提示符后提供该主机已保存的密码。按下 Enter 之前不会发送任何内容。",
