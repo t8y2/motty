@@ -297,3 +297,50 @@ func TestNotesFailedTitleSaveSurvivesRefresh(t *testing.T) {
 		t.Fatalf("pending title lost: %+v", b.notes.list)
 	}
 }
+
+// A save that cannot reach the store reports itself, and the notice goes away
+// as soon as a later save succeeds. The path that reports a refusal and the
+// path that clears it share one wording, so a refusal from any of them can be
+// cleared instead of leaving a stale warning over a note that is now stored.
+func TestNotesSaveFailureNoticeClearsAfterRetry(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	s.EditorFor(hitNoteBody).Insert("first")
+	s.save()
+	s.pauseSave = 1
+	s.EditorFor(hitNoteBody).Insert(" second")
+	if s.selectNote("") {
+		t.Fatal("note switch was accepted while the store was unavailable")
+	}
+	if s.notes.error != s.noteSaveFailure() {
+		t.Fatalf("refusal notice: %q", s.notes.error)
+	}
+	s.pauseSave = 0
+	s.save()
+	if s.hasUnsavedNotes() {
+		t.Fatalf("draft was not stored: %+v", s.notes.list)
+	}
+	if s.notes.error != "" {
+		t.Fatalf("stale refusal notice over a stored note: %q", s.notes.error)
+	}
+}
+
+// Text inside an IME composition is deliberately left unflushed, so pending
+// text alone is not a failure. A save made in that state must not claim the
+// notes could not be saved.
+func TestNoteCompositionDoesNotReportSaveFailure(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	s.EditorFor(hitNoteBody).Insert("base")
+	s.save()
+	s.notes.body.SetMarkedText("输入", text.Range{End: 2})
+	if !s.noteComposing() {
+		t.Fatal("setup did not enter a composition")
+	}
+	s.save()
+	if s.notes.error != "" {
+		t.Fatalf("composition reported a save failure: %q", s.notes.error)
+	}
+}

@@ -680,23 +680,28 @@ func (state *State) saveWithResult() error {
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 	defer func() {
-		message := state.noteText("Unable to save notes; changes retained in this window.", "无法保存笔记，更改已保留在此窗口中。")
+		message := state.noteSaveFailure()
 		unsaved := state.hasUnsavedNotes()
+		// Pending note text is not by itself a failure: a draft inside an IME
+		// composition is deliberately left unflushed by flushNoteBuffer, and a
+		// save made through pauseSave never reached the store. Only a write the
+		// store actually refused may claim the notes could not be saved.
+		failed := saveErr != nil && unsaved && state.config != nil && state.pauseSave == 0
 		for id, d := range state.noteDrafts() {
 			if state.noteIndex(id) < 0 {
 				continue
 			}
-			if !unsaved && d.problem == message {
+			if !failed && d.problem == message {
 				d.problem = ""
 			}
-			if saveErr != nil && d.problem == "" && unsaved {
+			if failed && d.problem == "" {
 				d.problem = message
 			}
 		}
-		if !unsaved && state.notes.error == message {
+		if !failed && state.notes.error == message {
 			state.notes.error = ""
 		}
-		if unsaved && state.notes.error == "" && state.config != nil && state.pauseSave == 0 {
+		if failed && state.notes.error == "" {
 			state.notes.error = message
 		}
 	}()

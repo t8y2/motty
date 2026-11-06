@@ -128,6 +128,13 @@ func (s *State) noteText(en, zh string) string {
 	}
 	return en
 }
+
+// noteSaveFailure is the one wording for a note change that did not reach the
+// store. The paths that set the notice and the path that clears it compare
+// against this, so they cannot drift apart and leave a stale warning behind.
+func (s *State) noteSaveFailure() string {
+	return s.noteText("Unable to save notes; changes retained in this window.", "无法保存笔记，更改已保留在此窗口中。")
+}
 func noteID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -284,7 +291,7 @@ func (s *State) selectNote(id string) bool {
 	}
 	s.save()
 	if s.hasUnsavedNotes() {
-		s.notes.error = s.noteText("Unable to save notes; draft retained.", "无法保存笔记，草稿已保留。")
+		s.notes.error = s.noteSaveFailure()
 		return false
 	}
 	if s.notes.selected != id {
