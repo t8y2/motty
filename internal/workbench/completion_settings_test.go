@@ -140,6 +140,109 @@ func TestEarlierCompletionPreferencesKeepTheirMeaning(t *testing.T) {
 	}
 }
 
+func TestNewInstallationCompletionDefaultsOffAcrossWindows(t *testing.T) {
+	_, options := newWorld(t)
+	options.StatePath = filepath.Join(t.TempDir(), "new-config.db")
+	first := newTestState(t, options)
+	if got := first.completionMode(); got != completionOff {
+		t.Fatalf("new installation mode = %v, want Off", got)
+	}
+	options.WindowID = 2
+	second := newTestState(t, options)
+	if got := second.completionMode(); got != completionOff {
+		t.Fatalf("second window mode = %v, want Off", got)
+	}
+	first.Close()
+	second.Close()
+	reopened := newTestState(t, options)
+	if got := reopened.completionMode(); got != completionOff {
+		t.Fatalf("restart mode = %v, want Off", got)
+	}
+}
+
+func TestExistingInstallationCompletionModesStayUnchanged(t *testing.T) {
+	for _, test := range []struct {
+		name, mode string
+		want       completionMode
+	}{
+		{"old default and explicit Both", "both", completionBoth},
+		{"old List", "list", completionList},
+		{"old Off", "off", completionOff},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, options := newWorld(t)
+			legacy := savedState{Hosts: sampleHosts}
+			switch test.mode {
+			case "list":
+				legacy.CommandInlineSuggestOff = true
+			case "off":
+				legacy.CommandSuggestOff = true
+			}
+			if err := saveState(options.StatePath, legacy); err != nil {
+				t.Fatal(err)
+			}
+			state := newTestState(t, options)
+			if got := state.completionMode(); got != test.want {
+				t.Fatalf("legacy mode = %v, want %v", got, test.want)
+			}
+			state.save()
+			state.Close()
+			reopened := newTestState(t, options)
+			if got := reopened.completionMode(); got != test.want {
+				t.Fatalf("legacy mode after save = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCompletionFeatureSwitchesDefaultOffAndPersistIndependently(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
+	switches := []struct {
+		id    ui.ID
+		field string
+	}{
+		{tree.ID(settingsHits, "settings-completion-auto"), "command_auto_popup"},
+		{tree.ID(settingsHits, "settings-completion-probe"), "command_probe"},
+		{tree.ID(settingsHits, "settings-completion-preview"), "command_preview"},
+	}
+	fields := func(s *State) map[string]any {
+		t.Helper()
+		data, err := json.Marshal(s.snapshot())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var values map[string]any
+		if err := json.Unmarshal(data, &values); err != nil {
+			t.Fatal(err)
+		}
+		return values
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1400})
+	for _, control := range switches {
+		if got := fields(state)[control.field]; got != nil {
+			t.Fatalf("%s defaults to %v, want false", control.field, got)
+		}
+		if _, ok := hitByID(&canvas, control.id); !ok {
+			t.Fatalf("%s has no terminal settings toggle", control.field)
+		}
+		state.Click(control.id)
+		if got := fields(state)[control.field]; got != true {
+			t.Fatalf("%s after click = %v, want true", control.field, got)
+		}
+	}
+	state.Close()
+	reopened := newTestState(t, options)
+	for _, control := range switches {
+		if got := fields(reopened)[control.field]; got != true {
+			t.Fatalf("%s after restart = %v, want true", control.field, got)
+		}
+	}
+}
+
 func TestCompletionCatalogStaysUnloadedWhileCompletionIsOff(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.setCompletionMode(completionOff)

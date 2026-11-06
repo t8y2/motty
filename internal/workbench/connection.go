@@ -723,6 +723,7 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.reconcileCompletionPreview(session)
 		state.runLoginCommand(session)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
@@ -739,6 +740,7 @@ func (state *State) Wake() {
 			state.stepSelectionScroll(session.term, findNow)
 		}
 	}
+	state.adoptAutoCompletion()
 	state.refreshOutputAlerts(nil)
 	state.pumpForwards()
 	state.pumpTransfer()

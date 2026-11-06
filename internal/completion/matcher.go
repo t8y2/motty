@@ -22,6 +22,7 @@ const (
 	KindCommand Kind = iota
 	KindOption
 	KindValue
+	KindPath
 )
 
 // Candidate is one possible continuation. Text is the complete token; Insert is
@@ -31,10 +32,11 @@ type Candidate struct {
 	Insert string
 	Desc   string
 	Kind   Kind
-	// FromCatalog marks text built from the command catalog. The workbench
-	// revalidates exactly those insertions before typing them; suggestions
-	// learned from the user's own history are not restricted this way.
+	// FromCatalog includes validated host results that must pass the same
+	// SafeInsert check before typing. History keeps its own input policy.
 	FromCatalog bool
+	FromHost    bool
+	IsDirectory bool
 }
 
 // Result is the answer for one line. Suppressed reports syntax this package
@@ -129,12 +131,11 @@ func Complete(catalog *Catalog, line string) Result {
 				continue
 			}
 			if strings.HasPrefix(token, "-") && len(token) > 1 {
-				if len(token) != 2 {
-					// Short-option clusters and long options spelled with one
-					// dash are not understood.
+				flag, ok := catalog.FindFlag(node, token)
+				if len(token) != 2 && (!ok || len(flag.Short) <= 1) {
+					// Do not interpret short-option clusters as a named option.
 					return Result{Suppressed: true}
 				}
-				flag, ok := catalog.FindFlag(node, token)
 				if !ok {
 					return Result{Suppressed: true}
 				}
@@ -184,7 +185,7 @@ func Complete(catalog *Catalog, line string) Result {
 	}
 	if strings.HasPrefix(word, "-") {
 		if len(word) > 2 {
-			// A short-option cluster is complete syntax of its own; do not guess.
+			addShortFlags(catalog, node, word, used, &result)
 			return result
 		}
 		addShortFlags(catalog, node, word, used, &result)

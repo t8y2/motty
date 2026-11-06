@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"motty/internal/desktop"
 	"os"
@@ -1032,10 +1033,19 @@ func New(options Options) *State {
 	state.initKnownHosts()
 	state.initSecrets()
 
+	state.history.suggestOff = true
 	state.starting = true
 	state.configDefaults = defaultsOf(state.snapshot())
+	_, statErr := os.Stat(state.options.StatePath)
+	freshCompletion := errors.Is(statErr, os.ErrNotExist)
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase
+	if freshCompletion && err == nil && report.outcome == loadOK && config != nil {
+		saved.CommandCompletionDefaultOff = true
+		if _, writeErr := writeConfig(config, configBase, state.configDefaults, saved); writeErr != nil {
+			err = writeErr
+		}
+	}
 	if config != nil && state.secrets.vault != nil {
 		// Saved passwords are versioned by the same clock as the records.
 		state.secrets.vault.SetStamper(func() (string, error) {
@@ -2078,6 +2088,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	defer state.afterEvent(&outcome)
+	if state.completionTrackPointer(event) {
+		defer func() { outcome.Repaint = true }()
+	}
 	if result := state.toolbarDockPointer(event); result.Handled {
 		return result
 	}

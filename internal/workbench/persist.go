@@ -70,64 +70,69 @@ type savedState struct {
 	StartupDisabled bool `json:"startup_disabled,omitempty"`
 	// StartupNoReuse is the launch's reuse switch, stored negated so that a
 	// fresh install without this key reuses what is already open.
-	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
-	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
-	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
-	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
-	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
-	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
-	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
-	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
-	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
-	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
-	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
-	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
-	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
-	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
-	MonitorPanelWidth       float32             `json:"monitor_panel_width,omitempty"`
-	WindowX                 int                 `json:"window_x,omitempty"`
-	WindowY                 int                 `json:"window_y,omitempty"`
-	WindowWidth             int                 `json:"window_width,omitempty"`
-	WindowHeight            int                 `json:"window_height,omitempty"`
-	TerminalScheme          string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
-	TerminalSchemeDark      string              `json:"terminal_scheme_dark,omitempty"`
-	TerminalSchemeLight     string              `json:"terminal_scheme_light,omitempty"`
-	TerminalPadding         string              `json:"terminal_padding,omitempty"`
-	TerminalGutter          string              `json:"terminal_gutter,omitempty"`
-	TerminalIntense         string              `json:"terminal_intense,omitempty"`
-	TerminalLineHeight      string              `json:"terminal_line_height,omitempty"`
-	TerminalNotifications   string              `json:"terminal_notifications,omitempty"`
-	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
-	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
-	TerminalCloseConfirm    string              `json:"terminal_close_confirm,omitempty"`
-	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
-	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
-	SFTPFollow              string              `json:"sftp_follow,omitempty"`
-	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
-	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
-	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
-	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
-	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
-	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
-	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
-	SFTPColumns             string              `json:"sftp_columns,omitempty"`
-	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
-	DefaultEditor           string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
-	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
-	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
-	UpdateCheck             string              `json:"update_check,omitempty"`
-	CloseAction             string              `json:"close_action,omitempty"`
-	UpdateSkipped           string              `json:"update_skipped,omitempty"`
-	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
-	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
-	OutboundProxy           *savedOutboundProxy `json:"outbound_proxy,omitempty"`
-	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
-	Highlights              []savedHighlight    `json:"highlights,omitempty"`
-	Snippets                []savedSnippet      `json:"snippets,omitempty"`
-	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
-	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
-	CommandHistory          bool                `json:"command_history,omitempty"`
-	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	StartupNoReuse              bool                `json:"startup_no_reuse,omitempty"`
+	TerminalClipboard           string              `json:"terminal_clipboard,omitempty"`
+	TerminalCursorSteady        bool                `json:"terminal_cursor_steady,omitempty"`
+	TerminalCursorThickness     string              `json:"terminal_cursor_thickness,omitempty"`
+	TerminalCopyOnSelect        bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalRightClickPaste     bool                `json:"terminal_right_click_paste,omitempty"`
+	TerminalTabTitle            bool                `json:"terminal_tab_title,omitempty"`
+	TerminalShowLatency         bool                `json:"terminal_show_latency,omitempty"`
+	TerminalToolbarPosition     string              `json:"terminal_toolbar_position,omitempty"`
+	TerminalToolbarSize         string              `json:"terminal_toolbar_size,omitempty"`
+	TerminalBellOff             bool                `json:"terminal_bell_off,omitempty"`
+	TerminalLinkPlainClick      bool                `json:"terminal_link_plain_click,omitempty"`
+	AIPanelWidth                float32             `json:"ai_panel_width,omitempty"`
+	AIComposerHeight            float32             `json:"ai_composer_height,omitempty"`
+	MonitorPanelWidth           float32             `json:"monitor_panel_width,omitempty"`
+	WindowX                     int                 `json:"window_x,omitempty"`
+	WindowY                     int                 `json:"window_y,omitempty"`
+	WindowWidth                 int                 `json:"window_width,omitempty"`
+	WindowHeight                int                 `json:"window_height,omitempty"`
+	TerminalScheme              string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
+	TerminalSchemeDark          string              `json:"terminal_scheme_dark,omitempty"`
+	TerminalSchemeLight         string              `json:"terminal_scheme_light,omitempty"`
+	TerminalPadding             string              `json:"terminal_padding,omitempty"`
+	TerminalGutter              string              `json:"terminal_gutter,omitempty"`
+	TerminalIntense             string              `json:"terminal_intense,omitempty"`
+	TerminalLineHeight          string              `json:"terminal_line_height,omitempty"`
+	TerminalNotifications       string              `json:"terminal_notifications,omitempty"`
+	TerminalPasteImage          string              `json:"terminal_paste_image,omitempty"`
+	TerminalPasswordHint        string              `json:"terminal_password_hint,omitempty"`
+	TerminalCloseConfirm        string              `json:"terminal_close_confirm,omitempty"`
+	SFTPParallel                int                 `json:"sftp_parallel,omitempty"`
+	SFTPKeepTimes               string              `json:"sftp_keep_times,omitempty"`
+	SFTPFollow                  string              `json:"sftp_follow,omitempty"`
+	SFTPTerminalFollow          bool                `json:"sftp_terminal_follow,omitempty"`
+	SFTPPathInput               bool                `json:"sftp_path_input,omitempty"`
+	SFTPPanelAutoOpen           bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPPanelSide               string              `json:"sftp_panel_side,omitempty"`
+	SFTPPanelWidth              float32             `json:"sftp_panel_width,omitempty"`
+	SFTPWindowOrder             string              `json:"sftp_window_order,omitempty"`
+	SFTPOpenMode                string              `json:"sftp_open_mode,omitempty"`
+	SFTPColumns                 string              `json:"sftp_columns,omitempty"`
+	SFTPDownloadDirectory       string              `json:"sftp_download_directory,omitempty"`
+	DefaultEditor               string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
+	CustomEditorPath            string              `json:"custom_editor_path,omitempty"`
+	Toolbars                    *savedToolbars      `json:"toolbars,omitempty"`
+	UpdateCheck                 string              `json:"update_check,omitempty"`
+	CloseAction                 string              `json:"close_action,omitempty"`
+	UpdateSkipped               string              `json:"update_skipped,omitempty"`
+	SFTPBookmarks               []savedBookmark     `json:"sftp_bookmarks,omitempty"`
+	SFTPLocalBookmarks          []string            `json:"sftp_local_bookmarks,omitempty"`
+	OutboundProxy               *savedOutboundProxy `json:"outbound_proxy,omitempty"`
+	HighlightBuiltin            string              `json:"highlight_builtin,omitempty"`
+	Highlights                  []savedHighlight    `json:"highlights,omitempty"`
+	Snippets                    []savedSnippet      `json:"snippets,omitempty"`
+	SnippetShortcuts            []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
+	Autofill                    []savedAutofill     `json:"autofill_rules,omitempty"`
+	CommandHistory              bool                `json:"command_history,omitempty"`
+	CommandSuggestOff           bool                `json:"command_suggest_off,omitempty"`
+	CommandCompletion           string              `json:"command_completion,omitempty"`
+	CommandCompletionDefaultOff bool                `json:"command_completion_default_off,omitempty"`
+	CommandAutoPopup            bool                `json:"command_auto_popup,omitempty"`
+	CommandProbe                bool                `json:"command_probe,omitempty"`
+	CommandPreview              bool                `json:"command_preview,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
@@ -410,98 +415,103 @@ func writeFileAtomic(path string, data []byte) error {
 func (state *State) snapshot() savedState {
 	savedAgent, savedAgentPath := state.sshAgent.saved()
 	saved := savedState{
-		MonitorPanels:              state.dashboard.panelDefinitions(),
-		MonitorActive:              state.dashboard.active,
-		Version:                    stateFileVersion,
-		Language:                   state.savedLanguage(),
-		Theme:                      state.appearanceMode.saved(),
-		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
-		TabOrientation:             state.tabOrientation.String(),
-		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
-		VerticalTabsGrouping:       state.verticalTabs.grouping,
-		NetworkProxy:               state.networkProxy.String(),
-		TerminalOption:             state.terminalOption.String(),
-		LocalShell:                 state.localShell,
-		RecentConnectSort:          state.recentConnectSort,
-		RecentConnections:          maps.Clone(state.recentConnections),
-		SSHAgent:                   savedAgent,
-		SSHAgentPath:               savedAgentPath,
-		TerminalFontSize:           int(state.terminalFontSize),
-		TextScale:                  state.textScale.String(),
-		InterfaceFont:              state.uiFont.family,
-		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
-		TerminalFontFamily:         state.fonts.family,
-		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
-		TerminalScrollback:         state.terminalScrollback,
-		TerminalCursor:             state.terminalCursorStyle.String(),
-		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
-		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
-		ConnectionReconnect:        state.connectionReconnect.String(),
-		RestoreConnect:             state.restoreConnect.String(),
-		ShareConnections:           state.shareConnections.String(),
-		StartupLocal:               state.startupLocal,
-		StartupShell:               state.startupShell,
-		StartupHosts:               slices.Clone(state.startupHosts),
-		StartupDisabled:            !state.startupEnabled,
-		StartupNoReuse:             !state.startupReuse,
-		TerminalClipboard:          state.terminalClipboard.String(),
-		TerminalCursorSteady:       state.terminalCursorSteady,
-		TerminalCursorThickness:    state.terminalCursorThickness.String(),
-		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
-		TerminalRightClickPaste:    state.terminalRightClickPaste,
-		TerminalTabTitle:           state.terminalTabTitle,
-		TerminalShowLatency:        state.terminalShowLatency,
-		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
-		TerminalToolbarSize:        state.terminalToolbarSize.String(),
-		TerminalBellOff:            state.terminalBellOff,
-		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
-		AIPanelWidth:               state.ai.panelWidth,
-		AIComposerHeight:           state.ai.composerHeight,
-		MonitorPanelWidth:          state.monitorWidth,
-		TerminalSchemeDark:         state.terminalSchemes[appearanceDark],
-		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
-		TerminalPadding:            state.terminalPad.String(),
-		TerminalGutter:             state.terminalGutter.String(),
-		TerminalIntense:            state.terminalIntense.String(),
-		TerminalLineHeight:         state.terminalLineHeight.String(),
-		TerminalNotifications:      notifyString(state.notifyOff),
-		TerminalPasteImage:         notifyString(state.pasteImageOff),
-		TerminalPasswordHint:       notifyString(state.passwordHintOff),
-		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
-		CommandHistory:             state.history.on,
-		CommandSuggestOff:          state.history.suggestOff,
-		SessionLogsOff:             state.sessionLogsOff,
-		SessionLogsView:            state.snapshotSessionLogsView(),
-		CommandInlineSuggestOff:    state.history.inlineOff,
-		SFTPParallel:               state.sftpParallel,
-		SFTPKeepTimes:              notifyString(state.sftpKeepTimesOff),
-		SFTPFollow:                 notifyString(state.sftpFollowOff),
-		SFTPTerminalFollow:         state.sftpTerminalFollow,
-		SFTPPathInput:              state.sftpPathInput,
-		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
-		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
-		SFTPPanelWidth:             state.sftpPanelWidth,
-		SFTPWindowOrder:            state.sftpWindowOrder.String(),
-		SFTPOpenMode:               state.sftpOpenMode.String(),
-		SFTPColumns:                state.sftpColumns.String(),
-		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
-		DefaultEditor:              string(state.defaultEditor),
-		CustomEditorPath:           state.customEditorPath,
-		Toolbars:                   state.toolbars.snapshot(),
-		UpdateCheck:                updateCheckString(state.updateAtStart),
-		CloseAction:                state.closeAction.String(),
-		UpdateSkipped:              state.update.skipped,
-		ShortcutVersion:            shortcutSchemaVersion,
-		Shortcuts:                  make([]savedShortcut, 0, shortcutActionCount-1),
-		Workspace:                  state.workspaceName(),
-		HostCatalogVersion:         hostCatalogSchemaVersion,
-		Hosts:                      make([]savedHost, 0, len(state.hosts)),
-		HostGroups:                 make([]savedHostGroup, 0, len(state.hostGroups)),
-		WorkspaceTemplates:         slices.Clone(state.templates),
-		IdentityFiles:              make([]string, 0, len(state.identities)),
-		Forwards:                   make([]savedForward, 0, len(state.forwards)),
-		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
-		Sessions:                   make([]savedSession, 0, len(state.sessions)),
+		MonitorPanels:               state.dashboard.panelDefinitions(),
+		MonitorActive:               state.dashboard.active,
+		Version:                     stateFileVersion,
+		Language:                    state.savedLanguage(),
+		Theme:                       state.appearanceMode.saved(),
+		BackgroundOutputAlerts:      state.backgroundOutputAlerts,
+		TabOrientation:              state.tabOrientation.String(),
+		VerticalTabsAutoHide:        state.verticalTabs.autoHide,
+		VerticalTabsGrouping:        state.verticalTabs.grouping,
+		NetworkProxy:                state.networkProxy.String(),
+		TerminalOption:              state.terminalOption.String(),
+		LocalShell:                  state.localShell,
+		RecentConnectSort:           state.recentConnectSort,
+		RecentConnections:           maps.Clone(state.recentConnections),
+		SSHAgent:                    savedAgent,
+		SSHAgentPath:                savedAgentPath,
+		TerminalFontSize:            int(state.terminalFontSize),
+		TextScale:                   state.textScale.String(),
+		InterfaceFont:               state.uiFont.family,
+		TerminalFontFace:            terminalFontFaceString(state.fonts.classic),
+		TerminalFontFamily:          state.fonts.family,
+		TerminalFontFallbacks:       slices.Clone(state.fonts.fallbacks),
+		TerminalScrollback:          state.terminalScrollback,
+		TerminalCursor:              state.terminalCursorStyle.String(),
+		ConnectionTimeoutSeconds:    int(state.connectionTimeout / time.Second),
+		ConnectionKeepAliveSeconds:  int(state.connectionKeepAlive / time.Second),
+		ConnectionReconnect:         state.connectionReconnect.String(),
+		RestoreConnect:              state.restoreConnect.String(),
+		ShareConnections:            state.shareConnections.String(),
+		StartupLocal:                state.startupLocal,
+		StartupShell:                state.startupShell,
+		StartupHosts:                slices.Clone(state.startupHosts),
+		StartupDisabled:             !state.startupEnabled,
+		StartupNoReuse:              !state.startupReuse,
+		TerminalClipboard:           state.terminalClipboard.String(),
+		TerminalCursorSteady:        state.terminalCursorSteady,
+		TerminalCursorThickness:     state.terminalCursorThickness.String(),
+		TerminalCopyOnSelect:        state.terminalCopyOnSelect,
+		TerminalRightClickPaste:     state.terminalRightClickPaste,
+		TerminalTabTitle:            state.terminalTabTitle,
+		TerminalShowLatency:         state.terminalShowLatency,
+		TerminalToolbarPosition:     state.terminalToolbarPosition.String(),
+		TerminalToolbarSize:         state.terminalToolbarSize.String(),
+		TerminalBellOff:             state.terminalBellOff,
+		TerminalLinkPlainClick:      state.terminalLinkPlainClick,
+		AIPanelWidth:                state.ai.panelWidth,
+		AIComposerHeight:            state.ai.composerHeight,
+		MonitorPanelWidth:           state.monitorWidth,
+		TerminalSchemeDark:          state.terminalSchemes[appearanceDark],
+		TerminalSchemeLight:         state.terminalSchemes[appearanceLight],
+		TerminalPadding:             state.terminalPad.String(),
+		TerminalGutter:              state.terminalGutter.String(),
+		TerminalIntense:             state.terminalIntense.String(),
+		TerminalLineHeight:          state.terminalLineHeight.String(),
+		TerminalNotifications:       notifyString(state.notifyOff),
+		TerminalPasteImage:          notifyString(state.pasteImageOff),
+		TerminalPasswordHint:        notifyString(state.passwordHintOff),
+		TerminalCloseConfirm:        notifyString(state.closeConfirmOff),
+		CommandHistory:              state.history.on,
+		CommandSuggestOff:           state.history.suggestOff,
+		CommandCompletion:           state.completion.choice,
+		CommandCompletionDefaultOff: state.completion.defaultOff,
+		CommandAutoPopup:            state.completion.autoPopup,
+		CommandProbe:                state.completion.probeEnabled,
+		CommandPreview:              state.completion.previewEnabled,
+		SessionLogsOff:              state.sessionLogsOff,
+		SessionLogsView:             state.snapshotSessionLogsView(),
+		CommandInlineSuggestOff:     state.history.inlineOff,
+		SFTPParallel:                state.sftpParallel,
+		SFTPKeepTimes:               notifyString(state.sftpKeepTimesOff),
+		SFTPFollow:                  notifyString(state.sftpFollowOff),
+		SFTPTerminalFollow:          state.sftpTerminalFollow,
+		SFTPPathInput:               state.sftpPathInput,
+		SFTPPanelAutoOpen:           state.sftpPanelAutoOpen,
+		SFTPPanelSide:               sftpPanelSideString(state.sftpPanelSide),
+		SFTPPanelWidth:              state.sftpPanelWidth,
+		SFTPWindowOrder:             state.sftpWindowOrder.String(),
+		SFTPOpenMode:                state.sftpOpenMode.String(),
+		SFTPColumns:                 state.sftpColumns.String(),
+		SFTPDownloadDirectory:       savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
+		DefaultEditor:               string(state.defaultEditor),
+		CustomEditorPath:            state.customEditorPath,
+		Toolbars:                    state.toolbars.snapshot(),
+		UpdateCheck:                 updateCheckString(state.updateAtStart),
+		CloseAction:                 state.closeAction.String(),
+		UpdateSkipped:               state.update.skipped,
+		ShortcutVersion:             shortcutSchemaVersion,
+		Shortcuts:                   make([]savedShortcut, 0, shortcutActionCount-1),
+		Workspace:                   state.workspaceName(),
+		HostCatalogVersion:          hostCatalogSchemaVersion,
+		Hosts:                       make([]savedHost, 0, len(state.hosts)),
+		HostGroups:                  make([]savedHostGroup, 0, len(state.hostGroups)),
+		WorkspaceTemplates:          slices.Clone(state.templates),
+		IdentityFiles:               make([]string, 0, len(state.identities)),
+		Forwards:                    make([]savedForward, 0, len(state.forwards)),
+		Proxies:                     make([]savedProxy, 0, len(state.proxies)),
+		Sessions:                    make([]savedSession, 0, len(state.sessions)),
 	}
 	if state.localProxyPortSet {
 		saved.LocalProxyPort = int(state.localProxyPort)
@@ -814,6 +824,7 @@ func (state *State) reloadSettings() error {
 // restoreLocal applies what belongs to this computer: the language and look, the
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
+	state.completion.defaultOff = saved.CommandCompletionDefaultOff
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
@@ -939,6 +950,17 @@ func (state *State) restoreShared(saved savedState) {
 	state.history.on = saved.CommandHistory
 	state.history.suggestOff = saved.CommandSuggestOff
 	state.history.inlineOff = saved.CommandInlineSuggestOff
+	state.completion.choice = ""
+	if mode, ok := completionModeFromRecord(saved.CommandCompletion); ok {
+		state.completion.choice = saved.CommandCompletion
+		state.history.suggestOff = mode == completionOff
+		state.history.inlineOff = mode == completionList
+	} else if state.completion.defaultOff && !saved.CommandSuggestOff && !saved.CommandInlineSuggestOff {
+		state.history.suggestOff = true
+	}
+	state.completion.autoPopup = saved.CommandAutoPopup
+	state.completion.probeEnabled = saved.CommandProbe
+	state.completion.previewEnabled = saved.CommandPreview
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)

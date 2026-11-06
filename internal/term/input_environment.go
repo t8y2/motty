@@ -4,8 +4,9 @@ import "strings"
 
 // InputEnvironment is a current-shell report, never an instruction to change it.
 type InputEnvironment struct {
-	Charset string // utf8, other, unknown
-	Locale  string // an installed, verified UTF-8 candidate, or empty
+	Charset   string // utf8, other, unknown
+	Locale    string // an installed, verified UTF-8 candidate, or empty
+	LineClear bool   // the active shell editor maps Ctrl-U to line clearing
 }
 
 func (t *Terminal) SetInputEnvironment(fn func(InputEnvironment)) { t.inputEnvironmentFn = fn }
@@ -15,7 +16,10 @@ func (t *Terminal) inputEnvironmentReport(text []byte) {
 		return
 	}
 	parts := strings.Split(string(text), ";")
-	if len(parts) != 4 || parts[0] != "motty-input" || parts[1] != t.promptToken {
+	if (len(parts) != 4 && len(parts) != 5) || parts[0] != "motty-input" || parts[1] != t.promptToken {
+		return
+	}
+	if len(parts) == 5 && parts[4] != "ctrl-u" && parts[4] != "unsupported" {
 		return
 	}
 	if parts[2] != "utf8" && parts[2] != "other" && parts[2] != "unknown" {
@@ -29,5 +33,9 @@ func (t *Terminal) inputEnvironmentReport(text []byte) {
 			return
 		}
 	}
-	t.inputEnvironmentFn(InputEnvironment{Charset: parts[2], Locale: parts[3]})
+	environment := InputEnvironment{Charset: parts[2], Locale: parts[3]}
+	if len(parts) == 5 {
+		environment.LineClear = parts[4] == "ctrl-u"
+	}
+	t.inputEnvironmentFn(environment)
 }

@@ -3,6 +3,7 @@
 package sshconn
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
+	"motty/internal/completion"
 	"motty/internal/localshell"
 	"motty/internal/term"
 )
@@ -29,6 +31,16 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 		if err := os.Mkdir(directory, 0700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	safeDirectory := filepath.Join(home, "safe-directory")
+	if err := os.Mkdir(safeDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(safeDirectory, "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(safeDirectory, "log.txt"), []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	server := startServer(t, func(server *testServer) {
 		server.password, server.shell = "secret", echoShell
@@ -52,7 +64,6 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 			inputDone := make(chan struct{})
 			go func() {
 				io.Copy(master, channel)
-				master.Close()
 				close(inputDone)
 			}()
 			io.Copy(channel, master)
@@ -70,6 +81,8 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 	screen := term.New(80, 24, 0)
 	screen.SetPromptToken("pty-test-token")
 	ready, consumed := 0, 0
+	var environment term.InputEnvironment
+	screen.SetInputEnvironment(func(value term.InputEnvironment) { environment = value })
 	screen.SetPromptReady(func() { ready++ })
 	parse := func(output string) {
 		screen.Write([]byte(output[consumed:]))
@@ -78,6 +91,30 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 	w.until("integrated SSH prompt", func(output string) bool { parse(output); return ready > 0 })
 	if cwd, ok := screen.WorkingDirectory(); !ok || cwd.Path != start {
 		t.Fatalf("the first prompt reports %q (ok %v), want the start directory %q", cwd.Path, ok, start)
+	}
+	if !environment.LineClear {
+		t.Fatal("the SSH PTY did not report a safe line-clear binding")
+	}
+	beforeReady := ready
+	w.shell.Write([]byte("printf '__WRONG__'\x15printf '__RIGHT__'\r"))
+	var replacementOutput string
+	w.until("SSH PTY line replacement", func(output string) bool {
+		parse(output)
+		replacementOutput = output
+		return ready > beforeReady && strings.Contains(output, "\x1b]133;C;motty=pty-test-token\a__RIGHT__")
+	})
+	if strings.Contains(replacementOutput, "\x1b]133;C;motty=pty-test-token\a__WRONG__") {
+		t.Fatalf("the original line executed after Ctrl-U: %q", replacementOutput)
+	}
+	query, ok := completion.ParsePathQuery("tail -f "+filepath.ToSlash(filepath.Join(safeDirectory, "lo")), "/")
+	if !ok {
+		t.Fatal("safe remote path was rejected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	paths, err := completion.ListPathCandidates(ctx, h.conn, query)
+	if err != nil || len(paths) != 2 || paths[0].Text != query.Word+"g.txt" || paths[1].Text != query.Word+"gs/" {
+		t.Fatalf("SSH path candidates=%+v err=%v", paths, err)
 	}
 	w.shell.Write([]byte("cd -- '" + target + "'\r"))
 	w.until("SSH cd report", func(output string) bool {

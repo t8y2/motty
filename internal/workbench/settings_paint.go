@@ -381,6 +381,9 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitCompletionUpdate, Label: messages.Completion.Check, Variant: components.ButtonOutline})
 			completionOptions := state.settingsCompletionOptions()
 			page.row(messages.History.SuggestRow, messages.History.SuggestDescription, completionOptions[:], state.selectedCompletionOption())
+			page.toggleRow(messages.Completion.AutoPopupRow, messages.Completion.AutoPopupDescription, state.completion.autoPopup, hitSettingsCompletionAuto)
+			page.toggleRow(messages.Completion.ProbeRow, messages.Completion.ProbeDescription, state.completion.probeEnabled, hitSettingsCompletionProbe)
+			page.toggleRow(messages.Completion.PreviewRow, messages.Completion.PreviewDescription, state.completion.previewEnabled, hitSettingsCompletionPreview)
 			page.toggleRow(messages.History.SettingsRow, messages.History.SettingsDescription, state.history.on, hitSettingsHistoryToggle)
 			page.actionRow(messages.History.ClearRow, messages.History.ClearDescription, false,
 				components.ButtonAction{ID: hitSettingsHistoryClear, Label: messages.History.Clear, Variant: components.ButtonOutline})
