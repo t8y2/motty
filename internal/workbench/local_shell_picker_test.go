@@ -59,7 +59,10 @@ func TestNewTabPageOpensALocalTerminalWithTheChosenShell(t *testing.T) {
 	if !state.localShellPicker.open {
 		t.Fatal("the arrow did not open the shell menu")
 	}
-	state.Wake()
+	waitUntil(t, state, "the WSL shell choices", func() bool {
+		state.adoptWSLDistros()
+		return state.localShellMenu.listing == nil
+	})
 	canvas, _ = paintedTexts(state)
 	items := []string{"Alpha", "Beta", "WSL: Ubuntu"}
 	for index, name := range items {
