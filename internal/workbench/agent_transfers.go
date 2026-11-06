@@ -242,7 +242,10 @@ func (b *agentBackend) runTransfer(ctx context.Context, task *agentTransfer, hos
 			return errors.New("SCP does not support resume; choose fail or replace explicitly")
 		}
 	}
-	if _, err := b.transferPath(args.LocalPath, upload, args.Recursive); err != nil {
+	// Re-check the path once the connection is up: the local tree may have
+	// changed while dialing. The result is what the worker is given, so the
+	// checked path is the transferred one.
+	if args.LocalPath, err = b.transferPath(args.LocalPath, upload, args.Recursive); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
