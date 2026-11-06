@@ -134,11 +134,28 @@ func cutUTF8(text string, limit int) string {
 // answer, GitHub. The package is chosen for goos and goarch; a GitHub answer has
 // none, because it carries no checksums to hold a download to.
 func Check(ctx context.Context, client *http.Client, goos, goarch string) (Release, error) {
-	return checkFeeds(ctx, client, MirrorFeed, Feed, goos, goarch)
+	return CheckPackage(ctx, client, goos, goarch, PackageArchive)
+}
+
+// Package identifies the installation format, not just the host operating system.
+type Package uint8
+
+const (
+	PackageArchive Package = iota
+	PackageDeb
+)
+
+// CheckPackage selects the package matching the installation on this machine.
+func CheckPackage(ctx context.Context, client *http.Client, goos, goarch string, pkg Package) (Release, error) {
+	return checkFeedsPackage(ctx, client, MirrorFeed, Feed, goos, goarch, pkg)
 }
 
 func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string) (Release, error) {
-	release, err := LatestMirror(ctx, client, mirrorFeed, goos, goarch)
+	return checkFeedsPackage(ctx, client, mirrorFeed, githubFeed, goos, goarch, PackageArchive)
+}
+
+func checkFeedsPackage(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string, pkg Package) (Release, error) {
+	release, err := latestMirrorPackage(ctx, client, mirrorFeed, goos, goarch, pkg)
 	if err == nil {
 		return release, nil
 	}
@@ -163,6 +180,17 @@ func StableName(goos, goarch string) string {
 	return ""
 }
 
+// StableNamePackage names a DEB only for the architectures we publish.
+func StableNamePackage(goos, goarch string, pkg Package) string {
+	if pkg == PackageDeb {
+		if goos == "linux" && (goarch == "arm64" || goarch == "amd64") {
+			return "motty_" + goarch + ".deb"
+		}
+		return ""
+	}
+	return StableName(goos, goarch)
+}
+
 const maxAssetBytes = 1 << 29
 
 var (
@@ -174,6 +202,10 @@ var (
 // from the feed's own address and the release tag, never taken from the file,
 // so the answer cannot send a download to another host.
 func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch string) (Release, error) {
+	return latestMirrorPackage(ctx, client, feed, goos, goarch, PackageArchive)
+}
+
+func latestMirrorPackage(ctx context.Context, client *http.Client, feed, goos, goarch string, pkg Package) (Release, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -219,7 +251,7 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 		Version: body.Version, URL: body.Source, Notes: cutUTF8(body.Notes, maxNotesBytes),
 		PlatformPackageChecked: true,
 	}
-	stable := StableName(goos, goarch)
+	stable := StableNamePackage(goos, goarch, pkg)
 	for _, file := range body.Files {
 		if stable == "" || file.Name != stable {
 			continue
@@ -233,6 +265,9 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 			break
 		}
 		name := strings.Replace(stable, "motty-", "motty-"+body.Version+"-", 1)
+		if pkg == PackageDeb {
+			name = "motty_" + body.Version + "_" + goarch + ".deb"
+		}
 		pinned := url.URL{Scheme: "https", Host: base.Host, Path: "/releases/" + body.Tag + "/" + name}
 		release.Asset = Asset{Name: name, URL: pinned.String(), SHA256: file.SHA256, Size: file.Size, Signature: validSignature(file.Signature)}
 		break

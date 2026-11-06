@@ -18,6 +18,7 @@ import (
 type Updater interface {
 	// Support says whether this installation can update itself, and if not why.
 	Support() selfupdate.Reason
+	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
 	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
 	// Launch starts what replaces the program once it has quit.
@@ -84,6 +85,8 @@ func (state *State) whyNoInstall() string {
 		return m.UpdateWhyTranslocated
 	case selfupdate.ReasonSystemInstall:
 		return m.UpdateWhySystemInstall
+	case selfupdate.ReasonAuthorizationUnavailable:
+		return m.UpdateWhyNoPolkit
 	}
 	if !state.update.release.Asset.Has() {
 		if state.update.release.PlatformPackageChecked {

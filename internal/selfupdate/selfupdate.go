@@ -3,9 +3,8 @@
 // and, on the systems that sign their programs, to the signer of the running
 // copy; then a helper that outlives the program swaps the files in place.
 //
-// Only installations the user owns are replaced: an application bundle in a
-// folder the user can write, a registered per-user Windows installation, a Linux
-// prefix made by the archive's install.sh. System-wide installations and portable
+// User-owned installations are replaced directly. A dpkg-registered Linux DEB
+// instead goes through Polkit and dpkg; other system installs and portable
 // programs are left to the caller to send to the download page.
 package selfupdate
 
@@ -15,6 +14,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"motty/internal/update"
 )
 
 // Kind is the way this installation is replaced.
@@ -25,6 +26,7 @@ const (
 	KindMacApp
 	KindWindowsSetup
 	KindLinuxPrefix
+	KindLinuxDeb
 )
 
 func (kind Kind) String() string {
@@ -35,12 +37,14 @@ func (kind Kind) String() string {
 		return "windows-setup"
 	case KindLinuxPrefix:
 		return "linux-prefix"
+	case KindLinuxDeb:
+		return "linux-deb"
 	}
 	return "none"
 }
 
 func parseKind(name string) Kind {
-	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindLinuxPrefix} {
+	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindLinuxPrefix, KindLinuxDeb} {
 		if kind.String() == name {
 			return kind
 		}
@@ -61,10 +65,11 @@ const (
 	// ReasonTranslocated is a macOS app running from the temporary place the
 	// system copies a downloaded, never moved app to.
 	ReasonTranslocated
-	// ReasonSystemInstall is an installation the system owns: a package manager's
-	// package, or a program installed for every user. The package manager or the
-	// installer has to replace it, not the app.
+	// ReasonSystemInstall is a system-owned installation not supported by the
+	// authorized DEB path. Its package manager or installer must replace it.
 	ReasonSystemInstall
+	// ReasonAuthorizationUnavailable is a registered DEB without pkexec.
+	ReasonAuthorizationUnavailable
 )
 
 // Install is where the running program lives and how it is replaced.
@@ -88,6 +93,8 @@ type Env struct {
 	WindowsMachineDir string
 	Writable          func(dir string) bool
 	Exists            func(path string) bool
+	DebInstalled      func(path string) bool
+	PolkitAvailable   func() bool
 }
 
 // SystemEnv describes the machine this runs on.
@@ -102,7 +109,7 @@ func SystemEnv() Env {
 	return Env{
 		GOOS: runtime.GOOS, LocalAppData: os.Getenv("LOCALAPPDATA"), ProgramFiles: programFiles,
 		WindowsUserDir: userDir, WindowsMachineDir: machineDir,
-		Writable: writable, Exists: exists,
+		Writable: writable, Exists: exists, DebInstalled: debInstalled, PolkitAvailable: polkitAvailable,
 	}
 }
 
@@ -178,6 +185,13 @@ func Detect(exe string, env Env) (Install, Reason) {
 		}
 		install.Kind, install.Root = KindWindowsSetup, dir
 	case "linux":
+		if exe == "/usr/bin/motty" && env.DebInstalled != nil && env.DebInstalled(exe) {
+			install.Kind, install.Root = KindLinuxDeb, filepath.Dir(exe)
+			if env.PolkitAvailable == nil || !env.PolkitAvailable() {
+				return install, ReasonAuthorizationUnavailable
+			}
+			return install, ReasonNone
+		}
 		for _, root := range []string{"/usr", "/opt", "/snap", "/var/lib/flatpak"} {
 			if under(exe, root) {
 				return install, ReasonSystemInstall
@@ -198,4 +212,12 @@ func Detect(exe string, env Env) (Install, Reason) {
 		return install, ReasonNotUserInstall
 	}
 	return install, ReasonNone
+}
+
+// Package describes which release asset belongs to this installation.
+func (install Install) Package() update.Package {
+	if install.Kind == KindLinuxDeb {
+		return update.PackageDeb
+	}
+	return update.PackageArchive
 }

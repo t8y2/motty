@@ -19,14 +19,16 @@ import (
 // fakeUpdater stands in for the real one, which would download and replace the
 // test binary.
 type fakeUpdater struct {
-	mu       sync.Mutex
-	reason   selfupdate.Reason
-	prepare  func(ctx context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
-	launched int
-	failure  string
+	mu          sync.Mutex
+	reason      selfupdate.Reason
+	packageType update.Package
+	prepare     func(ctx context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
+	launched    int
+	failure     string
 }
 
 func (updater *fakeUpdater) Support() selfupdate.Reason { return updater.reason }
+func (updater *fakeUpdater) Package() update.Package    { return updater.packageType }
 
 func (updater *fakeUpdater) Prepare(ctx context.Context, _ update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
 	if updater.prepare != nil {
@@ -101,6 +103,20 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	waitUpdate(t, state, func() bool { return quits == 1 })
 	if updater.launches() != 1 || state.update.install.phase != installRestarting || len(opened) != 0 {
 		t.Fatalf("launched %d, phase %d, opened %q", updater.launches(), state.update.install.phase, opened)
+	}
+}
+
+func TestDebUpdateAsksForAdministratorAuthorization(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{packageType: update.PackageDeb}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	_, texts := paintedTexts(state)
+	if !strings.Contains(strings.Join(texts, " "), "dpkg") || !contains(texts, state.messages.Tools.UpdateInstall) {
+		t.Fatalf("DEB installation did not explain system authorization: %q", texts)
+	}
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 || len(opened) != 0 {
+		t.Fatalf("DEB installation was not launched: %d, %q", updater.launches(), opened)
 	}
 }
 

@@ -48,6 +48,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == selfupdate.Command {
 		os.Exit(runApplyUpdate(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == selfupdate.DebCommand {
+		os.Exit(runInstallDeb(os.Args[2:]))
+	}
 	args, background := launchArguments(os.Args[1:])
 	// A second launch hands what it was asked to open to the copy that runs, and
 	// exits. A headless test run is its own world and never meets the real one.

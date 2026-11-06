@@ -48,6 +48,23 @@ func TestStableName(t *testing.T) {
 	}
 }
 
+func TestDebPackageSelection(t *testing.T) {
+	for _, architecture := range []string{"amd64", "arm64"} {
+		if got := StableNamePackage("linux", architecture, PackageDeb); got != "motty_"+architecture+".deb" {
+			t.Fatalf("DEB %s: %s", architecture, got)
+		}
+		server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/t8y2/motty/releases/tag/v1.2.3","files":[{"name":"motty_`+architecture+`.deb","size":100,"sha256":"`+strings.Repeat("a", 64)+`","signature":"c2ln"}]}`)
+		release, err := latestMirrorPackage(context.Background(), server.Client(), server.URL, "linux", architecture, PackageDeb)
+		server.Close()
+		if err != nil || release.Asset.Name != "motty_1.2.3_"+architecture+".deb" || !strings.HasSuffix(release.Asset.URL, "/releases/v1.2.3/"+release.Asset.Name) {
+			t.Fatalf("DEB %s: %+v, %v", architecture, release.Asset, err)
+		}
+	}
+	if StableNamePackage("darwin", "amd64", PackageDeb) != "" || StableNamePackage("linux", "386", PackageDeb) != "" {
+		t.Fatal("off-platform DEB was offered")
+	}
+}
+
 func TestCurrentMatchesTheManifest(t *testing.T) {
 	data, err := os.ReadFile("../../viva.toml")
 	if os.IsNotExist(err) {
