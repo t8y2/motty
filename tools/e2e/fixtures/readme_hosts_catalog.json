@@ -1,0 +1,18 @@
+{
+  "format": "motty-host-catalog",
+  "version": 4,
+  "hosts": [
+    {"id": "web-01", "label": "web-01", "group": "Production", "tags": ["nginx", "web"], "icon": "ubuntu", "address": "10.0.1.11", "user": "deploy", "port": 22, "color": "#3fb950"},
+    {"id": "web-02", "label": "web-02", "group": "Production", "tags": ["nginx", "web"], "icon": "ubuntu", "address": "10.0.1.12", "user": "deploy", "port": 22, "color": "#3fb950"},
+    {"id": "db-primary", "label": "db-primary", "group": "Production", "tags": ["postgres", "database"], "icon": "debian", "address": "10.0.2.21", "user": "postgres", "port": 22, "color": "#d29922"},
+    {"id": "cache-01", "label": "cache-01", "group": "Production", "tags": ["redis", "cache"], "icon": "debian", "address": "10.0.2.31", "user": "redis", "port": 22, "color": "#d29922"},
+    {"id": "build-runner", "label": "build-runner", "group": "CI", "tags": ["ci"], "icon": "arch", "address": "10.0.3.41", "user": "ci", "port": 22, "color": "#a371f7"},
+    {"id": "edge-proxy", "label": "edge-proxy", "group": "Staging", "tags": ["proxy", "nginx"], "icon": "ubuntu", "address": "10.0.0.5", "user": "ops", "port": 22, "color": "#388bfd"},
+    {"id": "staging-web", "label": "staging-web", "group": "Staging", "tags": ["web"], "icon": "ubuntu", "address": "127.0.0.1", "user": "tester", "port": 2222, "color": "#388bfd"}
+  ],
+  "groups": [
+    {"name": "Production", "explicit": true, "order": 0},
+    {"name": "Staging", "explicit": true, "order": 1},
+    {"name": "CI", "explicit": true, "order": 2}
+  ]
+}

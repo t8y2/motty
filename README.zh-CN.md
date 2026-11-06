@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="assets/readme-lockup.png" width="340" alt="Motty" />
-
   <p><a href="README.md">English</a> | 简体中文 | <a href="README.ja.md">日本語</a></p>
 
-  <p><strong>Motty：SSH、SFTP、端口转发、VNC/RDP 和 AI 助手，都在一个原生窗口里。</strong></p>
+  <p>
+    <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty —— 桌面 SSH 客户端：shell、文件、隧道、远程桌面与助手，都在一个窗口里" /></a>
+  </p>
 
   <p>
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
@@ -13,42 +13,80 @@
   </p>
 
   <p>
-    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="820" alt="Motty 的文件面板、终端与 AI 助手" /></a>
+    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty 里的真实会话：SFTP 面板、正在跟随部署日志的 shell，以及 AI 助手的回答" /></a>
   </p>
+  <p><sub>一次真实会话：文件面板、跟随部署日志的 shell，以及读着同一个终端的助手。</sub></p>
 </div>
 
-> Motty 是一个原生桌面 SSH 工作区。它用 Go 编写，构建在
-> [Viva](https://github.com/vivaui/viva) 上：没有 Electron、没有内嵌浏览器、没有
-> JavaScript 层。一个窗口里同时放着终端、文件、隧道、远程桌面和 AI 助手。
+Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远程桌面和 AI 助手
+放在同一个窗口里，一次会话既不用另开文件工具，也不用开浏览器标签页看屏幕。
 
 ## 为什么选择 Motty？
+
+下面四张图是简版，剩下的细节在后面的章节里。
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🪶 原生，不是网页</h3>
-      <p>Viva 直接调用 Metal、Direct3D 和 Vulkan。Motty 启动快，空闲时不空转，也不需要浏览器内核。</p>
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
+      <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
+      config、PuTTY、MobaXterm 等七种来源导入。密码进 AES-256-GCM 保险库，
+      密钥放在系统密钥存储里。</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🗂 一个窗口完成一次会话</h3>
-      <p>终端、SFTP、转发、VNC/RDP 和助手共享同一个工作区，不用再开第二个文件工具或浏览器标签页。</p>
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
+      <p><strong>会话看得见。</strong>分屏之后，在占用 CPU 的那个 shell 旁边直接
+      读这台机器的 CPU、内存、磁盘和网络。</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⌨️ 为键盘设计</h3>
-      <p>标签、分屏、SFTP、转发和助手都是命令面板里的命令。鼠标是可选项。</p>
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
+      <p><strong>需要时也有画面。</strong>VNC 和 RDP 都能连，服务器只监听自己的
+      回环地址时，还可以借一台 SSH 主机穿过去。</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🔎 对边界诚实</h3>
-      <p>文档会写清楚哪些在真实硬件上验证过、哪些没有，以及 VNC/RDP 具体缺什么。</p>
+      <p><strong>键盘优先。</strong>标签、分屏、SFTP、转发和助手都是命令面板里的
+      命令。鼠标是可选项，不是必需品。</p>
+      <p><strong>对边界说实话。</strong><a href="docs/remote-desktop.md">docs/remote-desktop.md</a>
+      列出 VNC 和 RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬件上
+      验证过。</p>
+      <p><strong>不往外发数据。</strong>没有统计上报。更新检查默认关闭，打开后
+      只访问 GitHub Releases。</p>
     </td>
   </tr>
 </table>
 
-## ✨ 功能
+## 快速开始
 
-### 🖥 跟得上的终端
+1. 打开 **Hosts**，选择 **New host**。
+2. 填写名称、地址和账号。
+3. 选择认证方式：运行中的 agent、私钥文件或密码。
+4. 连接，核对服务器的主机密钥指纹；可以只信任本次或保存。
+5. 标签页打开登录 shell。服务器要求一次性验证码时会自动多出一个字段。
+
+命令面板在 macOS 上是 **Command+Shift+P**，其他系统是
+**Control+Shift+P**。默认快捷键 macOS 用 Command，Windows/Linux 用 Control，
+全部可以在设置里修改。
+
+Windows 下可在 **设置 → 终端 → 本地 Shell**（“行内建议”下方）的下拉框中选择
+本地终端使用的 Shell。Motty 会从 PATH 和常见安装目录中自动检测 PowerShell、
+CMD、Git Bash 等已安装的 Shell，并把每个已安装的 WSL 发行版列为单独的选项。
+选择 WSL 发行版后，文件面板同样会跟随终端所在目录（经由发行版的
+`\\wsl.localhost` 共享访问）。请在这里选择发行版，而不是在 PowerShell 里输入
+`wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
+
+| 操作 | macOS | Windows / Linux |
+| --- | --- | --- |
+| 命令面板 | Command+Shift+P | Control+Shift+P |
+| 终端内查找 | Command+F | Control+F |
+| 命令历史 | Command+Shift+H | Control+Shift+H |
+| 文件面板 | Command+Shift+S | Control+Shift+S |
+| 新建窗口 | Command+Shift+N | Control+Shift+N |
+
+## 功能
+
+### 跟得上的终端
 
 真正的 PTY、256 色和真彩色、备用屏、5000 行回滚、宽字符/组合字符、鼠标上报、
 输入法和随 pty 变化的窗口大小。同步更新（DECSET 2026）让全屏重绘一次呈现；
@@ -77,7 +115,7 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 支持保留历史搜索、HTTP/HTTPS 和 OSC 8 链接、Kitty/iTerm2/SIXEL 图片、片段、
 分屏广播输入和显式录制。终端有十一套配色、关键词高亮和可选的行内命令建议。
 
-### 🔑 主机与认证
+### 主机与认证
 
 发送凭据之前先验证服务器的主机密钥，信任记录保存在 Motty 自己的 `known_hosts`。
 认证支持 agent、私钥文件、OpenSSH 用户证书（自动发现密钥文件旁的 `-cert.pub`，
@@ -92,11 +130,7 @@ WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
 
-<p align="center">
-  <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="主机列表，带分组标签和远程桌面标记" /></a>
-</p>
-
-### 🗂 文件不用另开应用
+### 文件不用另开应用
 
 SFTP 支持多选、递归上传/下载、受限传输队列、续传、取消/重试、重命名、删除、
 权限和书签。覆盖文件时先写同目录的 partial 文件，校验续传前缀，完整同步后再
@@ -113,7 +147,7 @@ Cmd/Ctrl+F、Ctrl+H 查找与替换（区分大小写、全字匹配、正则）
 “终端跟随文件栏目录”开关，默认关闭；开启后仅在空闲且未输入命令的提示符下
 同步终端目录。安全限制和启动兼容说明见[目录同步](docs/terminal-folder-sync.md)。
 
-### 🔀 转发与跳板链
+### 转发与跳板链
 
 本地、远程、SOCKS5 和 HTTP CONNECT 规则只监听 loopback，持久保存并显式启动，
 随所属 SSH 标签页一起停止。跳板链的每一跳单独验证主机密钥和认证。全局出站
@@ -122,18 +156,14 @@ SOCKS5/HTTP 代理可以承载第一条连接；每台已保存的网络主机�
 代理命令（OpenSSH 的 `ProxyCommand`）连接。X11 转发先校验每个会话的假 cookie，
 再替换为本机 Xauthority 中的真 cookie。
 
-<p align="center">
-  <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" width="620" alt="新建端口转发" /></a>
-</p>
-
-### 🖥 远程桌面
+### 远程桌面
 
 VNC 支持 RFB 3.3/3.7/3.8、None 和 VNC Authentication、Raw/CopyRect/RRE/
 Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使用 TLS，优先 NLA，
 服务器证书在你确认后固定；还支持把本机文件复制到服务器（在远程里粘贴，或拖到画面上）。两者都可以经 SSH 连接只监听自己 loopback 的服务器。
 完整边界见 [docs/remote-desktop.md](docs/remote-desktop.md)。
 
-### 🤖 AI 助手与 MCP
+### AI 助手与 MCP
 
 **Ask** 用当前终端作为上下文回答；**Agent** 还可以执行命令，经过风险分级和
 审批门。发给模型的终端文本默认脱敏（私钥、赋值、URL 内嵌凭据与常见令牌格式），
@@ -144,7 +174,7 @@ Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使�
 bearer token，支持 observe 和 ask 两种模式。`motty mcp-serve` 是不开窗口的同类做法：
 agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有端口，也没有 token。
 
-### ☁️ 备份与同步
+### 备份与同步
 
 支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储或 GitHub Gist 同步。
 同步按记录合并，使用混合逻辑时钟和 90 天删除墓碑；标签页、窗口布局、快捷键、
@@ -154,34 +184,7 @@ WebDAV 和 S3 默认要求远程地址使用 HTTPS。使用局域网 HTTP 服务
 表单底部勾选“允许不安全的远程 HTTP”。HTTP 连接不加密，认证信息可能被窃听；
 备份文件仍在本机加密后上传。此选择仅保存在本机。
 
-## 🚀 快速开始
-
-1. 打开 **Hosts**，选择 **New host**。
-2. 填写名称、地址和账号。
-3. 选择认证方式：运行中的 agent、私钥文件或密码。
-4. 连接，核对服务器的主机密钥指纹；可以只信任本次或保存。
-5. 标签页打开登录 shell。服务器要求一次性验证码时会自动多出一个字段。
-
-命令面板在 macOS 上是 **Command+Shift+P**，其他系统是
-**Control+Shift+P**。默认快捷键 macOS 用 Command，Windows/Linux 用 Control，
-全部可以在设置里修改。
-
-Windows 下可在 **设置 → 终端 → 本地 Shell**（“行内建议”下方）的下拉框中选择
-本地终端使用的 Shell。Motty 会从 PATH 和常见安装目录中自动检测 PowerShell、
-CMD、Git Bash 等已安装的 Shell，并把每个已安装的 WSL 发行版列为单独的选项。
-选择 WSL 发行版后，文件面板同样会跟随终端所在目录（经由发行版的
-`\\wsl.localhost` 共享访问）。请在这里选择发行版，而不是在 PowerShell 里输入
-`wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
-
-| 操作 | macOS | Windows / Linux |
-| --- | --- | --- |
-| 命令面板 | Command+Shift+P | Control+Shift+P |
-| 终端内查找 | Command+F | Control+F |
-| 命令历史 | Command+Shift+H | Control+Shift+H |
-| 文件面板 | Command+Shift+S | Control+Shift+S |
-| 新建窗口 | Command+Shift+N | Control+Shift+N |
-
-## 📦 安装
+## 安装
 
 从 [Releases](https://github.com/t8y2/motty/releases) 下载对应平台的包：
 
@@ -225,7 +228,7 @@ Windows 在 `%APPDATA%\motty\logs`，macOS 在
 `VIVA_SOFTWARE_RENDERING=1`（不用显卡驱动）或 `VIVA_ACCESSIBILITY=0`（不建立 UI Automation
 树）后启动 Motty。转储是程序内存的副本，分享前请先自行确认。
 
-## 🛠 从源码构建
+## 从源码构建
 
 要求：
 
@@ -306,7 +309,7 @@ macOS 标准入口会在
 包括 19–22 在内的旧格式需要一次升级，已发布的旧程序不能读取 23；不要手动修改
 数据库格式号绕过保护。详见[存储兼容说明](tools/README.md#storage-compatibility)。
 
-## 🔐 安全
+## 安全
 
 - 发凭据之前先验证主机密钥。
 - 保存的密码和口令进 AES-256-GCM 保险库，密钥在系统密钥存储里；系统没有时放在数据目录的密钥文件中，能拷走该目录的人就能读出保险库。
@@ -319,7 +322,11 @@ macOS 标准入口会在
 漏洞请通过 GitHub 的 private vulnerability reporting 报告，不要在公开 issue 里放
 凭据、主机名或终端输出。
 
-## 🧱 架构
+## 架构
+
+Motty 用 Go 编写，绘制交给 [Viva](https://github.com/vivaui/viva)：直接走 Metal、
+Direct3D 和 Vulkan，没有 Electron、没有内嵌浏览器、没有 JavaScript 层；没人
+操作的窗口不会重绘。
 
 Motty 负责 SSH、认证、SFTP、终端模拟、转发、远程桌面协议、持久化和产品流程；
 Viva 负责窗口、输入、文本/输入法、焦点、布局、组件和渲染。可复用的桌面能力应该
@@ -338,7 +345,7 @@ Viva 负责窗口、输入、文本/输入法、焦点、布局、组件和渲�
 | `internal/ai` | 助手、工具、风险门和 MCP 服务器 |
 | `assets`、`docs`、`tools` | 品牌、技术说明和开发工具 |
 
-## 💬 社群
+## 社群
 
 QQ 群、腾讯文档里的微信群和 Discord 服务器都已建好。
 
@@ -348,7 +355,7 @@ QQ 群、腾讯文档里的微信群和 Discord 服务器都已建好。
 - Bug 和功能请求：[GitHub Issues](https://github.com/t8y2/motty/issues)
 - 安全报告：GitHub private vulnerability reporting
 
-## 🤝 贡献
+## 贡献
 
 欢迎 issue 和 pull request。较大的改动请先开 issue 讨论方案。
 
@@ -367,12 +374,18 @@ go test -race ./...
 
 SSH、协议和产品逻辑留在这个仓库；属于桌面框架的能力请在 Viva 里提出。
 
-## 📄 许可证
+## 贡献者
+
+<a href="https://github.com/t8y2/motty/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=t8y2/motty&max=300&columns=15" alt="贡献者" />
+</a>
+
+## 许可证
 
 Motty 使用 [Apache License 2.0](LICENSE)。版权和第三方声明见 [NOTICE](NOTICE)。
 Motty 名称和 logo 不包含在 Apache-2.0 授权里；第三方资源和代码保留各自的许可证。
 
-## 🙏 致谢
+## 致谢
 
 Motty 构建在 [Viva](https://github.com/vivaui/viva) 上。RDP 核心是
 [gopher-rdp](https://github.com/bouncyball-git/gopher-rdp) 的修改副本（MIT），

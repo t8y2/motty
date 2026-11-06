@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="340" viewBox="0 0 1200 340"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Motty — a native desktop SSH client</title>
+  <desc id="desc">The Motty wordmark beside a terminal window with a prompt and a
+  cursor. It stands for one window holding the shell, the file panel, port
+  forwards, remote desktops and an AI assistant, drawn without Electron.</desc>
+
+  <!-- Palette is the application's own dark theme (internal/workbench/theme.go):
+       workspace #11151B, terminal #0B0E13, line #333C4A, text #E2E7EE,
+       muted #9EA8B6, faint #717C8C, success #62CE88. -->
+  <defs>
+    <clipPath id="board">
+      <rect width="1200" height="340" rx="26"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="340" rx="26" fill="#11151B"/>
+  <g clip-path="url(#board)">
+    <rect width="1200" height="340" fill="none" stroke="#333C4A" stroke-width="1.5" rx="26"/>
+  </g>
+
+  <g id="title-block" transform="translate(64 56)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" letter-spacing="2.6" fill="#717C8C">NATIVE · NO ELECTRON</text>
+
+    <text x="-2" y="84" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+          font-size="64" font-weight="700" fill="#E2E7EE">Motty</text>
+
+    <text x="0" y="136" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+          font-size="22" fill="#9EA8B6">Shell, files, tunnels, screens and an</text>
+    <text x="0" y="166" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+          font-size="22" fill="#9EA8B6">assistant in one window.</text>
+
+    <text x="0" y="248" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" fill="#717C8C">macOS · Windows · Linux</text>
+  </g>
+
+  <g id="project-proof" transform="translate(686 56)">
+    <rect x="0" y="0" width="450" height="228" rx="12" fill="#0B0E13" stroke="#333C4A" stroke-width="1.5"/>
+
+    <g id="window-dots">
+      <circle cx="22" cy="22" r="5" fill="#F07878"/>
+      <circle cx="40" cy="22" r="5" fill="#E8C048"/>
+      <circle cx="58" cy="22" r="5" fill="#62CE88"/>
+    </g>
+    <text x="428" y="27" text-anchor="end"
+          font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" fill="#717C8C">staging-web</text>
+
+    <g id="terminal-lines" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">
+      <text x="22" y="66" fill="#9EA8B6">$ ssh staging-web</text>
+      <text x="22" y="94" fill="#62CE88">connected · 22 ms · ed25519</text>
+      <text x="22" y="122" fill="#9EA8B6">$ ls --color=always</text>
+      <text x="22" y="150" fill="#6EA0F0">deploy.sh   scripts/   logs/</text>
+      <text x="22" y="178" fill="#6EA0F0">releases/   config/    Makefile</text>
+    </g>
+
+    <rect x="22" y="196" width="10" height="19" fill="#E2E7EE"/>
+    <text x="40" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="18" fill="#717C8C">4 panes · 1 connection</text>
+  </g>
+</svg>

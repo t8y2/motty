@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="assets/readme-lockup.png" width="340" alt="Motty" />
-
   <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a></p>
 
-  <p><strong>Motty: SSH, SFTP, port forwarding, VNC/RDP and an AI assistant in one native window.</strong></p>
+  <p>
+    <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty — a desktop SSH client: shell, files, tunnels, screens and an assistant in one window" /></a>
+  </p>
 
   <p>
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
@@ -13,43 +13,85 @@
   </p>
 
   <p>
-    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="820" alt="Motty with a file panel, a terminal and the AI assistant" /></a>
+    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty running a real session: the SFTP panel, a shell tailing a log, and the AI assistant's answer" /></a>
   </p>
+  <p><sub>A real session: the file panel, a shell following a deploy log, and the assistant reading the same terminal.</sub></p>
 </div>
 
-> Motty is a native desktop SSH workspace. It is built in Go on
-> [Viva](https://github.com/vivaui/viva), so it has no Electron runtime, no embedded
-> browser and no JavaScript layer. One window holds the terminal, files, tunnels,
-> remote desktops and the assistant.
+Motty is a desktop SSH client. The terminal, the SFTP panel, port forwards,
+remote desktops and an AI assistant share one window, so a session does not
+need a second app for files or a browser tab for a screen.
 
 ## Why Motty?
+
+The four pictures below are the short version. The rest of this file is detail.
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🪶 Native by construction</h3>
-      <p>Viva talks to Metal, Direct3D and Vulkan directly. Motty starts fast, idles without frame churn, and ships without a browser engine.</p>
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
+      <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
+      OpenSSH config, PuTTY, MobaXterm and four more. Passwords go to an
+      AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🗂 One window for the session</h3>
-      <p>Terminal, SFTP, forwarding, VNC/RDP and the assistant share one workspace. No second app for files, no browser tab for a desktop.</p>
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
+      <p><strong>A session you can watch.</strong> Split the pane, then read the host's
+      CPU, memory, disk and network beside the shell that is using them.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⌨️ Built for the keyboard</h3>
-      <p>Tabs, splits, SFTP, forwarding and the assistant are commands in the palette. The mouse is optional.</p>
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
+      <p><strong>Screens too, when you need them.</strong> VNC and RDP connect, and both can
+      ride an SSH host when the server only listens on its own loopback.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🔎 Honest about limits</h3>
-      <p>The repository says what has been verified on real hardware and what has not. The remote-desktop note lists the protocol gaps instead of hiding them.</p>
+      <p><strong>Keyboard first.</strong> Tabs, splits, SFTP, forwarding and the assistant
+      are commands in the palette. The mouse is optional, not required.</p>
+      <p><strong>Honest about limits.</strong> <a href="docs/remote-desktop.md">docs/remote-desktop.md</a>
+      lists what the VNC and RDP implementations do not do, and the release notes
+      say which platforms were tested on real hardware.</p>
+      <p><strong>Nothing phones home.</strong> No analytics. The update check is off by
+      default and asks GitHub Releases when you turn it on.</p>
     </td>
   </tr>
 </table>
 
-## ✨ Features
+## Quick start
 
-### 🖥 A terminal that keeps up
+1. Open **Hosts** and choose **New host**.
+2. Enter a name, address and account name.
+3. Pick authentication: the running agent, a private-key file or the password.
+4. Connect and compare the host-key fingerprint with the server. Trust it once or
+   save it.
+5. The tab opens on the login shell. A server that asks for a one-time code gets
+   the extra field automatically.
+
+The command palette is **Command+Shift+P** on macOS and **Control+Shift+P**
+elsewhere. Default shortcuts use Command on macOS and Control on Windows/Linux;
+all of them are configurable.
+
+| Action | macOS | Windows / Linux |
+| --- | --- | --- |
+| Command palette | Command+Shift+P | Control+Shift+P |
+| Find in terminal | Command+F | Control+F |
+| Command history | Command+Shift+H | Control+Shift+H |
+| File panel | Command+Shift+S | Control+Shift+S |
+| New window | Command+Shift+N | Control+Shift+N |
+
+On Windows, choose the local shell from the dropdown in **Settings → Terminal
+→ Local shell**, below **Inline suggestions**. Motty detects installed shells
+such as PowerShell, CMD and Git Bash from PATH and common installation folders,
+and lists each installed WSL distribution as its own entry. The file panel
+follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
+share. Choose the distribution here, rather than typing `wsl` into PowerShell:
+only a shell Motty starts itself can report its folder. The choice stays on this
+computer and applies to new or reconnected local terminals.
+
+## Features
+
+### The terminal
 
 Real PTY sessions, 256-colour and true-colour output, the alternate screen, 5,000
 lines of scrollback, wide and combining characters, mouse reporting, input
@@ -92,7 +134,7 @@ Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword
 highlighting and optional inline command suggestions.
 
-### 🔑 Hosts and authentication
+### Hosts and authentication
 
 Host keys are verified against Motty's own `known_hosts` before credentials are
 sent. Authentication covers agent keys, identity files, OpenSSH user
@@ -115,11 +157,7 @@ in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
 consent; re-import only fills missing passwords.
 
-<p align="center">
-  <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="Host list with tags and a remote-desktop host" /></a>
-</p>
-
-### 🗂 Files without another app
+### Files
 
 SFTP browsing with multi-select, recursive upload/download, a bounded transfer
 queue, resume, cancel/retry, rename, delete, permissions and bookmarks.
@@ -150,7 +188,7 @@ the terminal to follow file navigation at a ready, empty prompt. See
 [folder synchronization](docs/terminal-folder-sync.md) for safety and startup
 compatibility details.
 
-### 🔀 Forwarding and jump chains
+### Forwarding and jump chains
 
 Local, remote, SOCKS5 and HTTP CONNECT rules are loopback-only, persisted and
 started explicitly. Tunnels stop with the SSH tab that owns them. Jump routes
@@ -161,11 +199,7 @@ proxy command such as `cloudflared access ssh` (OpenSSH's `ProxyCommand`). X11
 forwarding validates a per-session fake cookie before replacing it with the local
 Xauthority cookie.
 
-<p align="center">
-  <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" width="620" alt="New port forward dialog" /></a>
-</p>
-
-### 🖥 Remote desktops
+### Remote desktops
 
 VNC supports RFB 3.3/3.7/3.8, None and VNC Authentication, Raw/CopyRect/RRE/
 Hextile/ZRLE, desktop resize, pointer, keyboard and text clipboard. RDP uses TLS
@@ -175,7 +209,7 @@ them on the picture). Both can connect through an SSH host when the server only 
 its own loopback. See [docs/remote-desktop.md](docs/remote-desktop.md) for the
 exact limits.
 
-### 🤖 Assistant and MCP
+### Assistant and MCP
 
 **Ask** answers questions with the visible terminal as context. **Agent** can
 also run commands in that terminal, with a risk classification and an approval
@@ -197,7 +231,7 @@ modes. `motty mcp-serve` is the same idea without the window: an agent starts it
 over stdio and it works on the hosts you opened to agents, with no port and no
 token.
 
-### ☁️ Backup and sync
+### Backup and sync
 
 Encrypted `.mottybak` export, plus record-level sync through WebDAV,
 S3-compatible storage or a GitHub Gist. Records carry hybrid logical clocks and
@@ -211,38 +245,7 @@ configuration form. The connection is unencrypted and authentication details may
 be intercepted; the backup file is still encrypted before upload. This choice
 stays on this computer.
 
-## 🚀 Quick start
-
-1. Open **Hosts** and choose **New host**.
-2. Enter a name, address and account name.
-3. Pick authentication: the running agent, a private-key file or the password.
-4. Connect and compare the host-key fingerprint with the server. Trust it once or
-   save it.
-5. The tab opens on the login shell. A server that asks for a one-time code gets
-   the extra field automatically.
-
-The command palette is **Command+Shift+P** on macOS and **Control+Shift+P**
-elsewhere. Default shortcuts use Command on macOS and Control on Windows/Linux;
-all of them are configurable.
-
-On Windows, choose the local shell from the dropdown in **Settings → Terminal
-→ Local shell**, below **Inline suggestions**. Motty detects installed shells
-such as PowerShell, CMD and Git Bash from PATH and common installation folders,
-and lists each installed WSL distribution as its own entry. The file panel
-follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
-share. Choose the distribution here, rather than typing `wsl` into PowerShell:
-only a shell Motty starts itself can report its folder. The choice stays on this
-computer and applies to new or reconnected local terminals.
-
-| Action | macOS | Windows / Linux |
-| --- | --- | --- |
-| Command palette | Command+Shift+P | Control+Shift+P |
-| Find in terminal | Command+F | Control+F |
-| Command history | Command+Shift+H | Control+Shift+H |
-| File panel | Command+Shift+S | Control+Shift+S |
-| New window | Command+Shift+N | Control+Shift+N |
-
-## 📦 Install
+## Install
 
 Download the package for your platform from the
 [releases page](https://github.com/t8y2/motty/releases):
@@ -294,7 +297,7 @@ the usual suspects apart, start Motty with `VIVA_SOFTWARE_RENDERING=1` (no
 graphics driver) or `VIVA_ACCESSIBILITY=0` (no UI Automation tree) set. A dump
 is a copy of the program's memory: look before you share it.
 
-## 🛠 Build from source
+## Build from source
 
 Requirements:
 
@@ -391,7 +394,7 @@ Older epochs (including 19–22) upgrade once; already released older binaries
 cannot read epoch 23. Do not edit the database's format number to bypass this
 protection. See [storage compatibility](tools/README.md#storage-compatibility).
 
-## 🔐 Security
+## Security
 
 - Host-key verification happens before any credential is sent.
 - Saved passwords and passphrases are stored in an AES-256-GCM vault; its key is
@@ -410,7 +413,12 @@ To report a vulnerability, use GitHub's private vulnerability reporting on the
 repository. Please keep credentials, host names and terminal output out of public
 issues.
 
-## 🧱 Architecture
+## Architecture
+
+Motty is written in Go on [Viva](https://github.com/vivaui/viva), which draws
+through Metal, Direct3D and Vulkan. There is no Electron runtime, no embedded
+browser and no JavaScript layer, and a window that is not being touched does
+not paint.
 
 Motty owns SSH, authentication, SFTP, terminal emulation, forwarding,
 remote-desktop protocols, persistence and product workflows. Viva owns windowing,
@@ -431,10 +439,9 @@ capabilities go into Viva rather than being duplicated here.
 | `assets`, `docs`, `tools` | branding, technical notes and development tooling |
 | `website` | static documentation site published to motty.page — [docs/website.md](docs/website.md) |
 
-## 💬 Community
+## Community
 
-The QQ group, the WeChat group in its Tencent Doc and the Discord server are all
-live.
+Questions and bug reports are welcome in any of these places.
 
 - QQ 群: [1131573299](https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299)
 - 微信群: [scan the QR code in the Tencent Doc](https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP)
@@ -443,7 +450,7 @@ live.
   [GitHub Issues](https://github.com/t8y2/motty/issues)
 - Security reports: GitHub private vulnerability reporting
 
-## 🤝 Contributing
+## Contributing
 
 Issues and pull requests are welcome. Start with an issue for a large change so
 the approach can be discussed before the code is written.
@@ -465,20 +472,20 @@ go test -race ./...
 Keep SSH, protocol and product logic in this repository. A capability that
 belongs to the desktop framework should be proposed in Viva instead.
 
-## 👥 Contributors
+## Contributors
 
 <a href="https://github.com/t8y2/motty/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=t8y2/motty&max=300&columns=15" alt="Contributors" />
 </a>
 
-## 📄 License
+## License
 
 Motty is released under the [Apache License, Version 2.0](LICENSE). See
 [NOTICE](NOTICE) for the copyright and third-party notice. The Motty name and
 logo are not licensed under Apache-2.0. Third-party assets and code retain their
 own licences.
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 Motty is built on [Viva](https://github.com/vivaui/viva). Its RDP core is a modified
 copy of [gopher-rdp](https://github.com/bouncyball-git/gopher-rdp), MIT licensed;
