@@ -99,3 +99,83 @@ If the audit log cannot be opened, nothing is served.
 The independent service also keeps a full-access warning visible. Restart it
 through the client after changing access: a running child retains the level it
 started with. HTTP changes apply immediately to new calls.
+
+### Independent-service file tools
+
+These additions apply only to `mcp-serve`, not HTTP MCP, `mcp-bridge`, or the
+in-app assistant. Replies retain text `content` and add machine-readable
+`structuredContent`.
+
+| Tool | Independent-service behavior |
+| --- | --- |
+| `terminal_exec` | Separate `stdout`, `stderr`, nullable `exit_code`, `duration_ms`, `truncated`, `timed_out`; optional absolute POSIX `cwd` for this call only. |
+| `sftp_list` | Name-sorted `offset`/`limit` pages (default 500, maximum 1000), with `total`, `next_offset`, `has_more`. |
+| `sftp_read` | Byte `offset` or `tail: true`, up to 256 KiB per call; returns byte counts, next offset, EOF and truncation. Use `encoding: "base64"` for arbitrary bytes. |
+| `sftp_stat` | Size, type, permissions and modification time, without following the final symlink. |
+| `sftp_checksum` | Stream a regular file through `sha256` or `sha512` without returning its content. |
+| `sftp_upload`, `sftp_download` | Binary-safe file/directory transfers returning task IDs; poll for completion. |
+| `transfer_status` | Query `transfer_id`, or omit it to list this process's retained history. |
+| `transfer_cancel` | Request cancellation; poll until the task settles. |
+
+Command output retains the existing combined size bound. Nonzero exit codes are
+results; transport errors, cancellation and timeouts return errors with a null
+exit code when unavailable, never an invented zero. `cwd` requires a POSIX remote
+shell and a failed directory change prevents the command from running.
+`terminal_exec_many` retains its original text contract.
+
+Directory pages are live, not snapshots; restart pagination when the directory
+changes. SCP listings and metadata may be approximate (`approximate`). File reads
+and checksums reject final-component symlinks. UTF-8 reads replace invalid byte
+sequences; base64 preserves bytes, and offsets always count source bytes.
+Do not combine tail with a nonzero offset. Checksumming rejects observed size or
+modification-time changes, but does not promise an atomic snapshot of a live file.
+
+### Authorizing local transfer directories
+
+Remote full access does **not** automatically grant access to this computer's
+files. Confirm **Allow all** for the independent service, then explicitly add
+one or more `--transfer-root` arguments to its MCP client configuration and restart:
+
+```sh
+motty mcp-serve --data-dir /path/to/motty-data --transfer-root /path/to/transfers
+```
+
+Windows argument-array example (keep your client's existing executable and config
+structure):
+
+```json
+["mcp-serve", "--data-dir", "C:\\Users\\your-name\\AppData\\Roaming\\motty", "--transfer-root", "E:\\Transfers"]
+```
+
+Roots must be existing absolute directories. The option is repeatable; without it
+upload/download/cancel tools are absent. `local_path` is the full path on the
+computer running the MCP server, not the remote host or a cloud client's disk.
+Paths outside these roots and local symlink components are refused. Use dedicated
+directories you control: do not let untrusted processes replace their directories
+or links during a transfer. This restriction is not an OS filesystem sandbox.
+
+Example upload arguments:
+
+```json
+{"session":"<host ID from list_sessions>","local_path":"E:\\Transfers\\archive.zip","remote_path":"/tmp/archive.zip","existing":"fail"}
+```
+
+Directories require `recursive: true`; paths name the complete destination, not
+just its parent. `existing` defaults to `fail`; replacement requires `replace`.
+SFTP also supports `resume`. The host's saved protocol choice controls SFTP/SCP;
+automatic mode falls back only when the SFTP subsystem is unavailable. SCP resume
+is explicitly rejected, never silently restarted.
+
+States are `queued`, `connecting`, `running`, `canceling`, `completed`, `failed`,
+and `canceled`. **Only `completed` means success**, not receiving an ID or reaching
+100% byte progress. Each MCP process runs at most four transfers and retains 32
+records; IDs are not reused across processes. Each task owns its connection, so
+canceling it does not interrupt other commands or transfers. Exiting the service
+cancels tasks and discards history. Cancellation never undoes committed files;
+interrupted SCP uploads can leave partial targets and SFTP partials may remain for
+retry. Queueing and completion are audited without file contents; if the initial
+audit cannot be written the transfer is not started.
+
+This implements the file/task and single-command portions of issue #133. Separate
+sudo authorization, host/group edits, snippets and notes management are not yet
+offered; the authorized-host boundary is unchanged.

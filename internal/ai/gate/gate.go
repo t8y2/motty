@@ -8,6 +8,7 @@ package gate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -126,8 +127,9 @@ const ConfirmWord = "CONFIRM"
 
 // Result is the text sent back to the model and whether it is an error.
 type Result struct {
-	Text    string
-	IsError bool
+	Text       string
+	IsError    bool
+	Structured json.RawMessage
 	// Denied is set when the user (or the mode) refused the action.
 	Denied bool
 }
@@ -143,6 +145,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 	}
 	if g.Mode == ModeObserve && spec.Kind != tools.Read {
 		return Result{Text: "this connection is read-only: " + name + " is not allowed", IsError: true, Denied: true}
+	}
+	if result, handled := g.runHostTool(ctx, name, raw); handled {
+		return result
 	}
 	switch name {
 	case tools.NameListSessions:

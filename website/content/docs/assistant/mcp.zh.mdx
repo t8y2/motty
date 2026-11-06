@@ -86,3 +86,69 @@ claude mcp add motty-hosts -- /path/to/motty mcp-serve
 
 独立服务的全部允许也有持续风险提示。修改权限后，请让客户端重启该服务；已经启动的
 子进程继续使用启动时的权限。HTTP 权限则对切换后的新调用立即生效。
+
+### 独立服务：文件传输与结构化结果
+
+以下增强仅用于 `mcp-serve`，不改变 HTTP MCP、`mcp-bridge` 或内置助手的工具参数。
+结果同时保留文本 `content` 和机器可读的 `structuredContent`。
+
+| 工具 | 增强能力 |
+| --- | --- |
+| `terminal_exec` | 分别返回 `stdout`、`stderr`、`exit_code`、`duration_ms`、`truncated`、`timed_out`；可传本次调用的绝对 POSIX `cwd`。 |
+| `sftp_list` | 按名称排序，支持 `offset`、`limit`（默认 500，最多 1000），返回 `total`、`next_offset`、`has_more`。 |
+| `sftp_read` | 按字节 `offset` 或 `tail: true` 读取，单次最多 256 KiB；返回实际字节数、下一偏移、EOF 和截断标记。 |
+| `sftp_stat` | 查询大小、类型、权限及修改时间，不跟随最后一级符号链接。 |
+| `sftp_checksum` | 流式计算普通文件的 `sha256` 或 `sha512`，不把文件内容放进模型上下文。 |
+| `sftp_upload`、`sftp_download` | 二进制安全的文件/目录传输；立即返回任务 ID，通过状态工具确认完成。 |
+| `transfer_status` | 指定 `transfer_id` 查询，省略则列出本进程保留的任务。 |
+| `transfer_cancel` | 请求取消任务；继续查询，直到任务结束。 |
+
+命令输出合计保持现有大小限制。非零退出码是真实结果；断线、取消或超时没有可确认的退出码时
+`exit_code` 为 `null`，并返回错误，而不是伪装成退出码 0。`cwd` 需要远端使用 POSIX shell；
+目录切换失败不会继续执行命令。`terminal_exec_many` 保持原来的文本接口。
+
+目录分页不是快照：目录改变时应重新读取。SCP 的属性和目录信息可能近似，结果标记 `approximate`。
+读取普通文件时拒绝最后一级符号链接；UTF-8 模式会替换无效字节，使用 `encoding: "base64"`
+可保留任意字节。偏移按原始字节计数，不按字符计数。`tail` 不能与非零 `offset` 一起使用。
+校验期间发现大小或修改时间变化会报错；这不等于对持续变化的文件提供原子快照。
+
+### 授权本机传输目录
+
+远程“全部允许”**不会自动授予本机文件访问权限**。先在独立服务设置中确认“全部允许”，
+再手动在 MCP 客户端启动参数中加入一个或多个 `--transfer-root`，重启服务：
+
+```sh
+motty mcp-serve --data-dir /path/to/motty-data --transfer-root /path/to/transfers
+```
+
+Windows 的参数数组示例（保留客户端原有的 `command` 和配置结构）：
+
+```json
+["mcp-serve", "--data-dir", "C:\\Users\\your-name\\AppData\\Roaming\\motty", "--transfer-root", "E:\\Transfers"]
+```
+
+目录必须已存在且是绝对路径；可重复该参数允许多个目录。未配置时不会提供上传、下载和取消工具。
+`local_path` 是**运行 MCP 服务的电脑**上的完整路径，不是远端路径，也不是云端客户端的文件路径。
+只允许根目录内的路径，拒绝路径中的本机符号链接。请使用自己控制的专用目录，不要让不可信进程
+在传输过程中替换目录或链接；该限制不是操作系统文件沙箱。
+
+上传调用示例：
+
+```json
+{"session":"<list_sessions 返回的主机 ID>","local_path":"E:\\Transfers\\archive.zip","remote_path":"/tmp/archive.zip","existing":"fail"}
+```
+
+目录需要 `recursive: true`；`remote_path`/`local_path` 指定完整目标，不是仅指定目标父目录。
+`existing` 默认为 `fail`，显式选择 `replace` 才覆盖；SFTP 可选 `resume`。
+按主机保存的 SFTP/SCP 配置选择协议；自动模式只在 SFTP 子系统不可用时回退。
+SCP 不支持续传，`resume` 会明确失败，绝不静默重新上传。
+
+任务状态包括 `queued`、`connecting`、`running`、`canceling`、`completed`、`failed`、`canceled`。
+**返回任务 ID 或进度到 100% 都不代表成功，只有 `completed` 才表示已完成。**
+每个 MCP 进程最多同时运行 4 个任务，保留最近 32 条记录；任务 ID 不跨进程复用。
+传输有独立连接，取消不会中断其他命令或传输。服务退出会取消任务，记录不跨进程保存；
+已提交的文件不会撤销，SCP 上传中断可能留下部分目标文件，SFTP 部分文件可能保留用于重试。
+开始和最终状态写入原有审计日志，不记录文件内容；开始前无法写审计时不启动传输。
+
+本批增强实现 issue #133 的文件/任务和单命令执行部分。独立 sudo 权限、主机/分组的创建修改、
+快捷命令和笔记管理尚未提供；不通过这些工具绕过原有授权主机范围。

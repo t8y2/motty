@@ -230,8 +230,9 @@ func Targeted() []Spec {
 // an SSH exec channel, with no terminal and no shell state kept between calls,
 // and the user does not watch it run; the command tools are offered only when
 // commands is true. File writes are offered only when writeFiles is true, for
-// the separately confirmed full-access mode. The slice is a copy.
-func Headless(commands, writeFiles bool) []Spec {
+// the separately confirmed full-access mode. Local transfers also require
+// localFiles, granted through explicit transfer roots. The slice is a copy.
+func Headless(commands, writeFiles, localFiles bool) []Spec {
 	const (
 		sessionHint = "Session id from list_sessions. Defaults to the active session."
 		hostHint    = "Host id from list_sessions. May be left out when only one host is available."
@@ -257,6 +258,12 @@ func Headless(commands, writeFiles bool) []Spec {
 		case NameSFTPRemove:
 			spec.Description = "Delete one remote file or empty directory on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Deletion cannot be undone."
 		}
+		out = append(out, hostSchema(spec))
+	}
+	for _, spec := range hostFileSpecs {
+		if spec.Kind == Write && (!writeFiles || !localFiles) {
+			continue
+		}
 		out = append(out, spec)
 	}
 	return out
@@ -267,6 +274,11 @@ func Lookup(name string) (Spec, bool) {
 	for _, s := range specs {
 		if s.Name == name {
 			return s, true
+		}
+	}
+	for _, spec := range hostFileSpecs {
+		if spec.Name == name {
+			return spec, true
 		}
 	}
 	return Spec{}, false
