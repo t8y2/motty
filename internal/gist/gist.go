@@ -54,8 +54,8 @@ type Client struct {
 
 var _ cloudsync.Store = (*Client)(nil)
 
-// New checks the configuration. A nil http client uses one with a 60 second
-// timeout that does not follow redirects to another host.
+// New checks the configuration. A nil http client does not follow redirects to
+// another host. The caller controls the request deadline through its context.
 func New(config Config, client *http.Client) (*Client, error) {
 	if strings.TrimSpace(config.APIBase) == "" {
 		config.APIBase = DefaultAPIBase

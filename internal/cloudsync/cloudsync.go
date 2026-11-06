@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // Store is one remote file.
@@ -64,12 +63,13 @@ func CheckAddress(address *url.URL, allowInsecureHTTP bool) error {
 	return errors.New("not an http or https address")
 }
 
-// HTTPClient returns a copy of client (nil: one with a 60 second timeout) that
-// does not follow a redirect to another host, so a login is not handed to a
-// server the user did not name.
+// HTTPClient returns a copy of client (nil: a default client) that does not
+// follow a redirect to another host, so a login is not handed to a server the
+// user did not name. The caller's context bounds the whole operation, including
+// reading the response body; an HTTP client timeout must not cut it short.
 func HTTPClient(client *http.Client, allowInsecureHTTP bool) *http.Client {
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = &http.Client{}
 	}
 	copied := *client
 	copied.CheckRedirect = func(request *http.Request, via []*http.Request) error {
