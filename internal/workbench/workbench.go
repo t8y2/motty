@@ -512,6 +512,7 @@ type State struct {
 	workspaceTabs      []layoutcore.WorkspaceInfo
 	tabStrip           tabStrip
 	tabOrientation     tabOrientation
+	tabNumbers         bool // each tab shows the number its shortcut key names
 	verticalTabs       verticalTabs
 	tabMenu            tabMenu
 	hostMenu           hostMenu

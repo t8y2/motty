@@ -394,6 +394,7 @@ func TestDigitChordsDriveTheTabs(t *testing.T) {
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
+	state.setTabNumbers(true)
 
 	// A tab is a workspace on the tab bar: selecting one has to move the bar,
 	// not only the session the keyboard goes to.

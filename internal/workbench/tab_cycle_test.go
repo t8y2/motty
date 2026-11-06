@@ -123,6 +123,7 @@ func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 	state, _ := threeTabs(t)
 	state.Click(hitHosts)
+	state.setTabNumbers(true)
 	digit := func(text string, repeat bool) ui.EventResult {
 		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: text, Repeat: repeat})
 	}

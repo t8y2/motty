@@ -258,6 +258,10 @@ type Messages struct {
 	SettingsTabOrientationDescription      string
 	SettingsTabsHorizontal                 string
 	SettingsTabsVertical                   string
+	SettingsTabNumbers                     string
+	SettingsTabNumbersDescription          string
+	SettingsTabNumberKeys                  string
+	SettingsTabNumberKeysDescription       string
 	SettingsTabsAutoHide                   string
 	SettingsTabsAutoHideDescription        string
 	SettingsTabsGrouping                   string

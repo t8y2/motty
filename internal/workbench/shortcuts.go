@@ -481,17 +481,17 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 		// Swallow the release of every press this routing consumed, a snippet
 		// chord included, so a terminal that asked for releases is not sent the
 		// end of a press it never saw.
-		consumed := state.shortcuts.actionFor(chord) != shortcutNone ||
+		consumed := state.shortcutActionFor(chord) != shortcutNone ||
 			state.activeSection == sectionTerminal && state.snippetFor(chord, -1) >= 0
 		return ui.EventResult{Handled: consumed}
 	}
 	if state.modal == modalShortcutCapture {
 		return state.captureShortcut(event, chord)
 	}
-	if chord.Key == '+' && state.shortcuts.actionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
+	if chord.Key == '+' && state.shortcutActionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
 		// Preserve the default zoom-in alias without collapsing a custom + binding.
 		alias := shortcutChord{Modifiers: chord.Modifiers &^ ui.ModifierShift, Key: '='}
-		if state.shortcuts.actionFor(alias) == shortcutZoomIn {
+		if state.shortcutActionFor(alias) == shortcutZoomIn {
 			chord = alias
 		}
 	}
@@ -533,7 +533,7 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 	if result, handled := state.aiPanelShortcut(event); handled {
 		return result
 	}
-	action := state.shortcuts.actionFor(chord)
+	action := state.shortcutActionFor(chord)
 	if action == shortcutNone {
 		if index := state.snippetFor(chord, -1); index >= 0 && state.activeSection == sectionTerminal {
 			if !event.Repeat {
