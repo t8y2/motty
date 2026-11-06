@@ -4,6 +4,7 @@ package workbench
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -36,6 +37,10 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 	if err := session.ClickLabel(fmt.Sprintf(state.messages.LabelTerminalFmt, state.sessions[0].Address)); err != nil {
 		t.Fatal(err)
 	}
+	optionRight, optionLeft := "\x1b[1;3C", "\x1b[1;3D"
+	if runtime.GOOS == "darwin" {
+		optionRight, optionLeft = "\x1bf", "\x1bb"
+	}
 	for _, test := range []struct {
 		name  string
 		flags uint32
@@ -43,6 +48,10 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 		want  string
 	}{
 		{"legacy", 0, "cmd+shift+left", ""},
+		{"legacy option right", 0, "alt+right", optionRight},
+		{"legacy option left", 0, "alt+left", optionLeft},
+		{"kitty option right", 1, "alt+right", "\x1b[1;3C"},
+		{"kitty option left", 1, "alt+left", "\x1b[1;3D"},
 		{"kitty", 1, "cmd+shift+left", "\x1b[1;10D"},
 		{"all keys", 8, "cmd+shift+right", "\x1b[1;10C"},
 		{"printable", 1, "cmd+j", "\x1b[106;9u"},

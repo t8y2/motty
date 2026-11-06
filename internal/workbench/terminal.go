@@ -1313,6 +1313,26 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	var bytes []byte
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
+		event.Modifiers == ui.ModifierAlt && !event.Release {
+		// Match macOS Terminal's word movement when the shell owns the key.
+		// Alternate-screen programs and negotiated keyboard modes keep their keys.
+		//
+		// This stays in the application on purpose: which bytes a Mac viewer
+		// sends for Option+arrow is terminal-emulation behaviour, which belongs
+		// here rather than in the framework's key encoder. Viva keeps encoding
+		// what the protocol defines; this is the platform convention layered on
+		// top of a shell that negotiated nothing.
+		//
+		// Modifiers must be exactly Alt: Shift+Option is macOS's "select a whole
+		// word", a different intent that the default encoding serves, so it is
+		// deliberately left to fall through.
+		switch event.Key {
+		case ui.KeyRight:
+			bytes = []byte("\x1bf")
+		case ui.KeyLeft:
+			bytes = []byte("\x1bb")
+		}
 	}
 	if len(bytes) == 0 {
 		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
