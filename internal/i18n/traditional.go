@@ -817,6 +817,8 @@ var TraditionalMessages = Messages{
 	ForwardFieldRemotePort:        "遠端連接埠",
 	ForwardFieldDestination:       "目標主機",
 	ForwardFieldDestinationPort:   "目標連接埠",
+	ForwardFieldResume:            "斷線後自動恢復",
+	ForwardResumeHelp:             "SSH 連線意外中斷後，等終端機自動重新連線成功，再重新啟動這條轉發。需要先在“設定 → 連線”中開啟自動重新連線。",
 	ForwardDestinationPlaceholder: "SSH 伺服器可存取的主機",
 	ForwardLocalDestinationHint:   "本機可存取的主機",
 	ForwardRemoteListenerFmt:      "遠端 · %s",

@@ -817,6 +817,8 @@ var ChineseMessages = Messages{
 	ForwardFieldRemotePort:        "远程端口",
 	ForwardFieldDestination:       "目标主机",
 	ForwardFieldDestinationPort:   "目标端口",
+	ForwardFieldResume:            "断线后自动恢复",
+	ForwardResumeHelp:             "SSH 连接意外断开后，等终端自动重连成功，再重新启动这条转发。需要先在“设置 → 连接”中打开自动重连。",
 	ForwardDestinationPlaceholder: "SSH 服务器可访问的主机",
 	ForwardLocalDestinationHint:   "本机可访问的主机",
 	ForwardRemoteListenerFmt:      "远程 · %s",

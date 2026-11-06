@@ -817,6 +817,8 @@ var EnglishMessages = Messages{
 	ForwardFieldRemotePort:        "Remote port",
 	ForwardFieldDestination:       "Destination host",
 	ForwardFieldDestinationPort:   "Destination port",
+	ForwardFieldResume:            "Resume after reconnect",
+	ForwardResumeHelp:             "When the SSH connection drops unexpectedly, start this forward again once the tab has reconnected. Turn on Automatic reconnect in Settings → Connection first.",
 	ForwardDestinationPlaceholder: "Reachable from the SSH server",
 	ForwardLocalDestinationHint:   "Reachable from this computer",
 	ForwardRemoteListenerFmt:      "Remote · %s",
