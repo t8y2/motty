@@ -121,9 +121,11 @@ func TestSessionLogsOffPropagatesAndLeavesConnectionsRunning(t *testing.T) {
 		}
 	}
 	// One journal serves the whole process, so the session each window opened
-	// above left one row; turning the journal off stops both.
+	// above left one row; turning the journal off stops both. Each window has
+	// its own writer, so both queues are drained before the rows are counted.
 	for _, state := range []*State{pair.first, pair.second} {
-		settleSessionLogs(t, state)
+		settleSessionLogs(t, pair.first)
+		settleSessionLogs(t, pair.second)
 		rows, err := state.sessionLogs.store.List(sessionlog.Query{})
 		if err != nil {
 			t.Fatal(err)
