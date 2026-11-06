@@ -126,9 +126,31 @@ func hostGridColumns(width float32) int {
 	return max(int((width+hostCardGap)/(hostCardMinWidth+hostCardGap)), 1)
 }
 
+// hostGridWidestRun is the number of hosts between group headers in the run
+// that holds the most of them: the columns a row can actually fill. A grid never
+// needs more columns than that, or widening the window past the point where an
+// empty column would fit would shrink every card although no card was added.
+func (state *State) hostGridWidestRun() int {
+	widest, run := 1, 0
+	for _, entry := range state.hostTreeRows {
+		if entry.Kind == hostTreeGroup {
+			widest, run = max(widest, run), 0
+			continue
+		}
+		run++
+	}
+	return max(widest, run)
+}
+
+// hostGridColumnCount is how many columns the grid shows at width: every column
+// that fits, but never more than the hosts to fill a row.
+func (state *State) hostGridColumnCount(width float32) int {
+	return min(hostGridColumns(width), state.hostGridWidestRun())
+}
+
 // hostGridHeight is the height of the whole card layout at width.
 func (state *State) hostGridHeight(width float32) float32 {
-	columns := hostGridColumns(width)
+	columns := state.hostGridColumnCount(width)
 	var height float32
 	run := 0
 	flush := func() {
@@ -161,7 +183,7 @@ type hostGridItem struct {
 // known height and the layout is shifted up by what is left of the first one.
 func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 	state.beginHostSortPaint(canvas, bounds)
-	columns := hostGridColumns(bounds.Width)
+	columns := state.hostGridColumnCount(bounds.Width)
 	rows := state.hostTreeRows
 	items := state.hostGridItems[:0]
 	y := bounds.Y - state.hostsScroll
