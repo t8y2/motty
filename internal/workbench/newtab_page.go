@@ -131,7 +131,9 @@ func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address
 				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(hitNewTabShells, m.LocalShellChoose, ui.HitOptions{Role: ui.RoleButton, Hint: m.LocalShellChoose}).Children(func() {
 					f.Row().Fill().Radius(radius.control).Background(arrowWash)
 					f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
-						f.Icon(lucideIcons[iconChevronDown]).Size(14, 14).Color(pal.muted).Shrink(0)
+						f.Icon(lucideIcons[iconChevronDown]).Size(14, 14).
+							IconTransform(state.iconHover(f.Canvas(), hitNewTabShells, iconChevronDown, false)).
+							Color(pal.muted).Shrink(0)
 					})
 					state.chrome.newTabShells = f.Slot().Fill()
 				})

@@ -1108,7 +1108,9 @@ func (state *State) paintSessionLogFavoriteFilter(canvas *ui.Canvas, bounds ui.R
 	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
 		HitWith(hitSessionLogsFavoriteFilter, m.FilterFavorite, ui.HitOptions{Role: ui.RoleButton, Hint: m.FilterFavorite, Selected: view.favoriteOnly}).
 		Children(func() {
-			f.Icon(lucideIcons[icon]).Color(foreground)
+			f.Icon(lucideIcons[icon]).
+				IconTransform(state.iconHover(canvas, hitSessionLogsFavoriteFilter, icon, false)).
+				Color(foreground)
 		})
 	f.End()
 	if canvas.FocusVisible() == hitSessionLogsFavoriteFilter {

@@ -16,20 +16,35 @@ func iconStill(transform ui.IconTransform) bool {
 	if transform.Rotate != 0 || transform.Offset != (ui.Point{}) {
 		return false
 	}
+	if transform.Translate != (ui.Point{}) || transform.Clip != nil {
+		return false
+	}
 	if transform.Scale != 0 && transform.Scale != 1 {
+		return false
+	}
+	if transform.ScaleY != 0 && transform.ScaleY != 1 {
 		return false
 	}
 	if transform.Reveal != 0 && transform.Reveal != 1 {
 		return false
 	}
 	for _, part := range transform.Parts {
-		if part.Rotate != 0 || part.Offset != (ui.Point{}) {
+		if part.Rotate != 0 || part.Offset != (ui.Point{}) || part.Translate != (ui.Point{}) {
 			return false
 		}
 		if part.Scale != 0 && part.Scale != 1 {
 			return false
 		}
 		if part.ScaleX != 0 && part.ScaleX != 1 {
+			return false
+		}
+		if part.ScaleY != 0 && part.ScaleY != 1 {
+			return false
+		}
+		if part.Fade != 0 {
+			return false
+		}
+		if part.Trim.Active && (part.Trim.From != 0 || part.Trim.To != 1) {
 			return false
 		}
 	}
@@ -89,7 +104,7 @@ func TestIconMotionPlaysOnceAndLeavesTheCanvasAtRest(t *testing.T) {
 
 	// The motion lasts as long as Otty's and then the row is a plain row again,
 	// so a window left alone goes back to painting nothing.
-	last := iconFrame(&canvas, state, hitSettings, iconSettings, iconMotionTurn.duration)
+	last := iconFrame(&canvas, state, hitSettings, iconSettings, iconMotionTurn.span())
 	if !iconStill(last) {
 		t.Fatalf("the end of the motion paints %+v, want the still gear", last)
 	}
@@ -224,7 +239,7 @@ func TestIconMotionFollowsWhatTheGlyphStandsFor(t *testing.T) {
 		{"turn", []uint8{iconSettings}, iconMotionTurn},
 		{"cursor", []uint8{iconTerminal}, iconMotionCursor},
 		{"exchange", []uint8{iconForward}, iconMotionExchange},
-		{"sink", []uint8{iconFolderOpen}, iconMotionSink},
+		{"hinge", []uint8{iconFolderOpen}, iconMotionFolderOpen},
 		{"unlid", []uint8{iconArchive}, iconMotionUnlid},
 		{"rock", []uint8{iconLink}, iconMotionRock},
 		{"unlock", []uint8{iconLock}, iconMotionUnlock},
@@ -232,11 +247,15 @@ func TestIconMotionFollowsWhatTheGlyphStandsFor(t *testing.T) {
 		{"world", []uint8{iconGlobe}, iconMotionWorld},
 		{"trace", []uint8{iconActivity}, iconMotionTrace},
 		{"fold", []uint8{iconKnown}, iconMotionFold},
+		{"clock", []uint8{iconFileClock}, iconMotionClock},
+		{"peel", []uint8{iconNote}, iconMotionPeel},
 		{"rack", []uint8{iconHosts}, iconMotionRack},
 		{"type", []uint8{iconKeyboard}, iconMotionType},
 		{"blink", []uint8{iconBot}, iconMotionBlink},
 		{"plug", []uint8{iconPlug}, iconMotionPlug},
-		{"squash", []uint8{iconColumns2, iconNote, iconInfo, iconBug}, iconMotionSquash},
+		{"columns", []uint8{iconColumns2}, iconMotionColumns},
+		{"broadcast", []uint8{iconRadio}, iconMotionBroadcast},
+		{"squash", []uint8{iconInfo, iconBug}, iconMotionSquash},
 	} {
 		for _, icon := range c.icons {
 			got, ok := iconMotionFor(icon)
@@ -244,6 +263,165 @@ func TestIconMotionFollowsWhatTheGlyphStandsFor(t *testing.T) {
 				t.Errorf("icon %d plays %v with %d parts (%v), want the %s motion", icon, got.duration, len(got.parts), ok, c.what)
 			}
 		}
+	}
+}
+
+func TestRailGlyphsMoveThePartsThatCarryTheirMeaning(t *testing.T) {
+	columns := iconMotionColumns.at(0.35)
+	if len(columns.Parts) != 1 || columns.Parts[0].Contour != 1 || columns.Parts[0].Translate.X <= 0 {
+		t.Fatalf("the split frame paints %+v, want only its divider moving to the right", columns.Parts)
+	}
+	if columns.Rotate != 0 || columns.Translate != (ui.Point{}) || columns.Scale != 0 {
+		t.Fatalf("the split frame moves its outer frame as well: %+v", columns)
+	}
+
+	hinge := iconMotionFolderOpen.at(0.35)
+	if len(hinge.Parts) != 1 || hinge.Parts[0].Contour != 0 || hinge.Parts[0].Rotate >= 0 {
+		t.Fatalf("the file folder paints %+v, want its lip hinged upward", hinge.Parts)
+	}
+	if hinge.Parts[0].Anchor == nil || *hinge.Parts[0].Anchor != iconFolderHinge {
+		t.Fatalf("the folder lip turns about %v, want its hinge at %v", hinge.Parts[0].Anchor, iconFolderHinge)
+	}
+	if hinge.Translate != (ui.Point{}) || hinge.Scale != 0 {
+		t.Fatalf("the folder moves as one glyph instead of hinging: %+v", hinge)
+	}
+
+	pulse := iconMotionBroadcast.at(0.30)
+	if !pulse.ClipToBox {
+		t.Fatal("the broadcast pulse can paint outside its icon box")
+	}
+	if len(pulse.Parts) != 4 {
+		t.Fatalf("the broadcast pulse moves %d arcs, want the four tower waves", len(pulse.Parts))
+	}
+	for _, part := range pulse.Parts {
+		if part.Anchor == nil || *part.Anchor != iconBroadcastSource {
+			t.Fatalf("a broadcast arc moves about %v, want the emitter at %v", part.Anchor, iconBroadcastSource)
+		}
+		if part.Scale <= 1 || part.Fade <= 0 {
+			t.Fatalf("a broadcast arc paints scale %v fade %v, want it travelling outward and fading", part.Scale, part.Fade)
+		}
+	}
+}
+
+func TestBroadcastPulseLeavesTheTowerAtRest(t *testing.T) {
+	last := iconMotionBroadcast.at(1)
+	if !iconStill(last) {
+		t.Fatalf("the end of the broadcast paints %+v, want the still tower", last)
+	}
+	for _, part := range last.Parts {
+		if part.Scale != 1 || part.Fade != 0 {
+			t.Fatalf("a broadcast arc ends at scale %v fade %v, want it restored", part.Scale, part.Fade)
+		}
+	}
+}
+
+func TestRailGesturesStartAndEndAtRest(t *testing.T) {
+	for name, motion := range map[string]iconMotion{
+		"columns":   iconMotionColumns,
+		"folder":    iconMotionFolderOpen,
+		"broadcast": iconMotionBroadcast,
+	} {
+		if first := motion.at(0); !iconStill(first) {
+			t.Errorf("%s starts at %+v, want the still glyph", name, first)
+		}
+		if last := motion.at(1); !iconStill(last) {
+			t.Errorf("%s ends at %+v, want the still glyph", name, last)
+		}
+	}
+}
+
+func TestProcessAndContainersIconMakesAVisiblePulse(t *testing.T) {
+	icon := lucideIcons[iconProcess]
+	motion, ok := iconMotionFor(iconProcess)
+	if !ok {
+		t.Fatal("the process and containers icon has no motion")
+	}
+	if !iconStill(motion.at(0)) {
+		t.Fatalf("the process and containers icon starts at %+v, want the still glyph", motion.at(0))
+	}
+
+	peak := motion.at(0.35)
+	var left, right *ui.IconPart
+	for index := range peak.Parts {
+		part := &peak.Parts[index]
+		switch part.Contour {
+		case 0:
+			right = part
+		case 1:
+			left = part
+		case 2:
+			if part.Scale < 1.08 {
+				t.Fatalf("the trace is at scale %v, want a visible pulse", part.Scale)
+			}
+		}
+	}
+	if left == nil || right == nil {
+		t.Fatalf("the pulse paints parts %+v, want both brackets", peak.Parts)
+	}
+	const preview = float32(16)
+	if pixels := left.Translate.X * preview / icon.ViewBox; pixels > -0.9 {
+		t.Fatalf("the left bracket moves %.2fpx at 16px, want at least 0.9px", pixels)
+	}
+	if pixels := right.Translate.X * preview / icon.ViewBox; pixels < 0.9 {
+		t.Fatalf("the right bracket moves %.2fpx at 16px, want at least 0.9px", pixels)
+	}
+	if !iconStill(motion.at(1)) {
+		t.Fatalf("the process and containers icon ends at %+v, want the still glyph", motion.at(1))
+	}
+}
+
+func TestFolderOpenHasASeparateLipToHinge(t *testing.T) {
+	contours := lucideIcons[iconFolderOpen].Contours()
+	if len(contours) != 2 {
+		t.Fatalf("the folder draws %d contours, want its lip separate from the body", len(contours))
+	}
+}
+
+func TestSessionLogClockTicksAroundItsFace(t *testing.T) {
+	tick := iconMotionClock.at(0.2)
+	if len(tick.Parts) != 1 || tick.Parts[0].Contour != 3 {
+		t.Fatalf("the session log moves parts %+v, want its clock hands", tick.Parts)
+	}
+	if tick.Parts[0].Anchor == nil || *tick.Parts[0].Anchor != iconClockFace {
+		t.Fatalf("the hands turn about %v, want the clock face at %v", tick.Parts[0].Anchor, iconClockFace)
+	}
+	if tick.Parts[0].Rotate <= 0 {
+		t.Fatalf("the clock hands are at %v after the first tick, want them advanced", tick.Parts[0].Rotate)
+	}
+	if !iconStill(iconMotionClock.at(1)) {
+		t.Fatalf("the clock ends at %+v, want the still glyph", iconMotionClock.at(1))
+	}
+}
+
+func TestKnownHostsTurnsOnlyItsRightPage(t *testing.T) {
+	if contours := lucideIcons[iconKnown].Contours(); len(contours) != 3 {
+		t.Fatalf("the ledger draws %d contours, want its spine and two pages", len(contours))
+	}
+	page := iconMotionFold.at(0.45)
+	if len(page.Parts) != 1 || page.Parts[0].Contour != 2 {
+		t.Fatalf("the ledger moves parts %+v, want only its right page", page.Parts)
+	}
+	if page.Translate != (ui.Point{}) || page.Scale != 0 {
+		t.Fatalf("the ledger moves as one glyph instead of turning a page: %+v", page)
+	}
+	if !iconStill(iconMotionFold.at(1)) {
+		t.Fatalf("the ledger ends at %+v, want the open book", iconMotionFold.at(1))
+	}
+}
+
+func TestStickyNotePeelsItsFoldedCorner(t *testing.T) {
+	peel := iconMotionPeel.at(0.35)
+	if len(peel.Parts) != 1 || peel.Parts[0].Contour != 1 {
+		t.Fatalf("the sticky note moves parts %+v, want its folded corner", peel.Parts)
+	}
+	if peel.Parts[0].Anchor == nil || *peel.Parts[0].Anchor != iconStickyFold {
+		t.Fatalf("the corner turns about %v, want its top edge at %v", peel.Parts[0].Anchor, iconStickyFold)
+	}
+	if peel.Parts[0].Rotate >= 0 {
+		t.Fatalf("the folded corner is at %v, want it lifted", peel.Parts[0].Rotate)
+	}
+	if !iconStill(iconMotionPeel.at(1)) {
+		t.Fatalf("the sticky note ends at %+v, want the still glyph", iconMotionPeel.at(1))
 	}
 }
 
@@ -288,7 +466,7 @@ func TestIconMotionPartsMoveOnlyTheirContour(t *testing.T) {
 	}
 	pressed := false
 	for _, part := range transform.Parts {
-		if part.Offset.Y > 0.05 {
+		if part.Translate.Y > 0.05 {
 			pressed = true
 		}
 	}
@@ -337,7 +515,7 @@ func TestPaintingANavRowAdvancesItsMotion(t *testing.T) {
 	}
 
 	// Every motion of those clicks is over once the longest of them is.
-	at = iconMotionRock.duration + time.Second
+	at = iconMotionRock.span() + time.Second
 	paint()
 	paint()
 	if len(state.iconMotions) != 0 {
@@ -380,19 +558,35 @@ func TestTheNamedGlyphsMoveThePartThatSaysWhatTheyAre(t *testing.T) {
 		t.Fatalf("half way round the meridian is at %v across, want it mirrored", half)
 	}
 
-	// The ledger folds on its spine: the outline shrinks across about the middle of
-	// the glyph, where the spine is drawn, and the spine contour is left alone.
+	// The ledger turns its right page toward the spine. The spine and the left
+	// page stay where they are drawn.
 	fold := iconMotionFold.at(0.45)
-	if len(fold.Parts) != 1 || fold.Parts[0].Contour != 1 {
-		t.Fatalf("the ledger moves parts %+v, want its pages", fold.Parts)
+	if len(fold.Parts) != 1 || fold.Parts[0].Contour != 2 {
+		t.Fatalf("the ledger moves parts %+v, want its right page", fold.Parts)
 	}
 	if fold.Parts[0].Anchor == nil || *fold.Parts[0].Anchor != iconSpine {
-		t.Fatalf("the pages fold about %v, want the spine at %v", fold.Parts[0].Anchor, iconSpine)
+		t.Fatalf("the page turns about %v, want the spine at %v", fold.Parts[0].Anchor, iconSpine)
 	}
-	if fold.Parts[0].ScaleX > 0.55 {
-		t.Fatalf("the ledger is %v across at its half closed point, want it folded to about half", fold.Parts[0].ScaleX)
+	if fold.Parts[0].ScaleX >= 0.8 {
+		t.Fatalf("the right page is %v across at its half open point, want it narrowed", fold.Parts[0].ScaleX)
 	}
 	if !iconStill(iconMotionFold.at(1)) {
 		t.Fatalf("the end of the fold paints %+v, want the open ledger", iconMotionFold.at(1))
+	}
+}
+
+// A confirm gesture ends on the completed check. Retracing it would leave an
+// empty ring and violate the gesture's rest test.
+func TestConfirmEndsWithItsWholeCheck(t *testing.T) {
+	end := iconMotionConfirm.at(1)
+	if len(end.Parts) != 1 || end.Parts[0].Contour != 1 {
+		t.Fatalf("the end paints parts %+v, want the check", end.Parts)
+	}
+	if end.Parts[0].Trim.Active && end.Parts[0].Trim.To < 1 {
+		t.Fatalf("the check ends trimmed to %v, want the whole drawing", end.Parts[0].Trim.To)
+	}
+	drawn := iconMotionConfirm.at(0.1)
+	if !drawn.Parts[0].Trim.Active || drawn.Parts[0].Trim.To <= 0 || drawn.Parts[0].Trim.To >= 1 {
+		t.Fatalf("the check is at %+v a quarter in, want it being drawn", drawn.Parts[0].Trim)
 	}
 }

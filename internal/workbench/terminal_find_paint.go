@@ -26,9 +26,9 @@ func (state *State) declareFindBar(f *flex.Frame, session *Session) (slots findB
 		slots.icon = f.Slot().Size(16, 16).MarginSides(0, 8, 0, 0)
 		slots.field = f.Slot().Grow(1).MinWidth(120).Height(26).MarginSides(0, 10, 0, 0)
 		slots.count = f.Slot().Size(92, 22).Shrink(0).MarginSides(0, 8, 0, 0)
-		state.declareFindButton(f, hitTerminalFindPrevious, icons.ArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
-		state.declareFindButton(f, hitTerminalFindNext, icons.ArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 4, 0, 0)
-		state.declareFindButton(f, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
+		state.declareFindButton(f, hitTerminalFindPrevious, iconArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
+		state.declareFindButton(f, hitTerminalFindNext, iconArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 4, 0, 0)
+		state.declareFindButton(f, hitTerminalFindClose, iconClose, state.messages.TerminalFindClose, false)
 	})
 	return slots
 }
@@ -51,7 +51,7 @@ func (state *State) paintFindBarSlots(canvas *ui.Canvas, session *Session, slots
 
 // declareFindButton declares one of the bar's icon buttons: quiet until the
 // pointer is over it, dimmed when there is nothing to go to.
-func (state *State) declareFindButton(f *flex.Frame, id ui.ID, icon ui.Icon, label string, disabled bool) flex.Box {
+func (state *State) declareFindButton(f *flex.Frame, id ui.ID, icon uint8, label string, disabled bool) flex.Box {
 	foreground := state.pal.muted
 	button := f.Row().Size(terminalFindButtonSize, terminalFindButtonSize).Shrink(0).Center().Radius(radius.item).
 		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Disabled: disabled, SkipFocus: true})
@@ -64,7 +64,9 @@ func (state *State) declareFindButton(f *flex.Frame, id ui.ID, icon ui.Icon, lab
 		}
 	}
 	return button.Children(func() {
-		f.Icon(icon).Size(14, 14).Color(foreground)
+		f.Icon(lucideIcons[icon]).Size(14, 14).
+			IconTransform(state.iconHover(f.Canvas(), id, icon, disabled)).
+			Color(foreground)
 	})
 }
 

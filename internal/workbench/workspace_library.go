@@ -392,6 +392,7 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	button := components.BeginButton(canvas, state.Theme(), hitWorkspaceTemplateOpen.At(index), openBounds).Small().WithIcon(lucideIcons[iconPlay])
 	if compact {
 		button = button.Size(components.ButtonSizeIconSmall)
+		button = button.IconTransform(state.iconHover(canvas, hitWorkspaceTemplateOpen.At(index), iconPlay, false))
 	}
 	button.Default(m.WorkspaceEnter)
 

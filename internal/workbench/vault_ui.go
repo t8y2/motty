@@ -497,8 +497,7 @@ func (state *State) paintSaveBoxAt(canvas *ui.Canvas, bounds ui.Rect, id ui.ID, 
 	})
 	f.End()
 	if hint != "" && help.Rect().Width > 0 && help.Rect().Height > 0 {
-		canvas.HitWithOptions(hintID, help.Rect(), hint, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: hint})
-		paintIcon(canvas, iconHelp, insetRect(help.Rect(), 0.08), state.pal.muted)
+		state.paintHelpIcon(canvas, hintID, hint, help.Rect())
 	}
 }
 

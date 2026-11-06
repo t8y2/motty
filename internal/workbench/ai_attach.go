@@ -437,7 +437,9 @@ func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
 		f.Text(name).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Shrink(1).Grow(1)
 		f.Column().Size(18, 18).Shrink(0).Center().Background(fill).Radius(9).
 			HitWith(remove, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
-			f.Icon(lucideIcons[iconClose]).Size(11, 11).Color(pal.muted)
+			f.Icon(lucideIcons[iconClose]).Size(11, 11).
+				IconTransform(state.iconHover(f.Canvas(), remove, iconClose, false)).
+				Color(pal.muted)
 		})
 	})
 }
@@ -456,7 +458,9 @@ func (state *State) declareAIAttachButton(f *flex.Frame) {
 	}
 	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
 		HitWith(hitAIAttach, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
+		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).
+			IconTransform(state.iconHover(f.Canvas(), hitAIAttach, iconPaperclip, false)).
+			Color(foreground)
 	})
 }
 

@@ -104,10 +104,11 @@ func (state *State) paintSecretInput(canvas *ui.Canvas, bounds ui.Rect, snapshot
 		// one that has it, or its ring is missing until something repaints.
 		snapshot.Focused = true
 	}
-	icon, label := lucideIcons[iconEye], state.messages.ShowSecret
+	iconKind, label := uint8(iconEye), state.messages.ShowSecret
 	if revealed {
-		icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret
+		iconKind, label = iconEyeOff, state.messages.HideSecret
 	}
+	icon := lucideIcons[iconKind]
 	components.PaintInputGroup(canvas, theme, bounds, components.InputGroupSnapshot{
 		ID: snapshot.ID, Label: snapshot.Label, Value: snapshot.Value, DisplayValue: snapshot.DisplayValue,
 		Placeholder: snapshot.Placeholder, Hint: snapshot.Hint,
@@ -119,6 +120,7 @@ func (state *State) paintSecretInput(canvas *ui.Canvas, bounds ui.Rect, snapshot
 		InlineEnd: components.InputGroupSlot{
 			Kind: components.InputGroupSlotButton, ID: button, Icon: icon, Label: label,
 			ButtonSize: components.InputGroupButtonIconXS, Disabled: snapshot.Disabled,
+			IconTransform: state.iconHover(canvas, button, iconKind, snapshot.Disabled),
 		},
 	})
 }

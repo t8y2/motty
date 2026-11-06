@@ -206,7 +206,8 @@ func (state *State) paintSFTPFilterInput(canvas *ui.Canvas, bounds ui.Rect, fold
 		clear = components.InputGroupSlot{
 			Kind: components.InputGroupSlotButton, ID: clearID,
 			Icon: lucideIcons[iconClose], Label: state.messages.Tools.FilesFilterClear,
-			ButtonSize: components.InputGroupButtonIconXS,
+			ButtonSize:    components.InputGroupButtonIconXS,
+			IconTransform: state.iconHover(canvas, clearID, iconClose, false),
 		}
 	}
 	components.PaintInputGroup(canvas, state.Theme(), bounds, components.InputGroupSnapshot{
