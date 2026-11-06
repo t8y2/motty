@@ -24,14 +24,15 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, actionLabel, false) +
-		gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, messages.ProxyEdit, false) +
+		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
 	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.ProxyRemove, 0, iconTrash, condensed)
+	editWidth, editIcon := toolbarButtonLayout(canvas, messages.ProxyEdit, 0, iconPencil, condensed)
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	var content, emptyIcon, emptyAdd, remove, action, add flex.Box
+	var content, emptyIcon, emptyAdd, remove, edit, action, add flex.Box
 	f := state.proxyLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
@@ -40,6 +41,7 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 				f.Paragraph(messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
+			edit = f.Slot().Size(editWidth, toolbarHeight)
 			action = f.Slot().Size(actionWidth, toolbarHeight)
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
@@ -59,6 +61,7 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	f.End()
 
 	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, hasSelection, condensed)
+	state.paintToolbarButton(canvas, hitProxyEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ProxyEdit, editIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitProxyStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitProxyAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ProxyAdd, addIcon, true, canAdd, condensed)
 
@@ -85,7 +88,13 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		Layer: dialogLayer, Scope: dialogScope, CloseID: hitProxyDialogClose,
 		InitialFocusID: hitProxyDialogTarget, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
 	})
-	layout := dialog.Begin(messages.ProxyDialogTitle, "")
+	dialogTitle := messages.ProxyDialogTitle
+	submitLabel := messages.ProxyCreate
+	if state.proxyEditor.editing {
+		dialogTitle = messages.ProxyEditDialogTitle
+		submitLabel = messages.ProxyRouteSave
+	}
+	layout := dialog.Begin(dialogTitle, "")
 	const rowHeight = 64
 	var target, jump, via, viaHelp, relay flex.Box
 	viaShell := state.proxyEditor.viaShell
@@ -118,7 +127,7 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitProxyDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitProxyDialogSubmit, Label: messages.ProxyCreate},
+		components.ButtonAction{ID: hitProxyDialogSubmit, Label: submitLabel},
 	)
 	dialog.End()
 }
@@ -194,7 +203,7 @@ func (state *State) paintProxyHostField(canvas *ui.Canvas, bounds ui.Rect, targe
 	}
 	for _, host := range state.hosts {
 		disabled := !host.isSSH()
-		if target && state.proxyTargetConfigured(host.ID) {
+		if target && state.proxyTargetConfiguredExcluding(host.ID, state.proxyEditor.routeID) {
 			disabled = true
 		}
 		selectControl.AddItem(components.SelectItem{

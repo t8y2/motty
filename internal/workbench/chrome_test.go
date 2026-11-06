@@ -179,8 +179,8 @@ func TestTheSectionToolbarsCondenseIntoIcons(t *testing.T) {
 		ids  []ui.ID
 	}{
 		{"keys", sectionKeys, []ui.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
-		{"proxies", sectionProxies, []ui.ID{hitProxyAdd, hitProxyStartStop, hitProxyRemove}},
-		{"forwards", sectionForwards, []ui.ID{hitForwardAdd, hitForwardStartStop, hitForwardRemove}},
+		{"proxies", sectionProxies, []ui.ID{hitProxyAdd, hitProxyEdit, hitProxyStartStop, hitProxyRemove}},
+		{"forwards", sectionForwards, []ui.ID{hitForwardAdd, hitForwardEdit, hitForwardStartStop, hitForwardRemove}},
 		{"known hosts", sectionKnownHosts, []ui.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
 	}
 	for _, section := range sections {

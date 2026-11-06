@@ -847,6 +847,153 @@ func readForwardTestBytes(t testing.TB, reader io.Reader, want []byte) {
 	}
 }
 
+func TestForwardEditModifiesAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	port1 := freePort(t)
+	port2 := freePort(t)
+	addForwardRule(t, state, "Web", port1, "web.internal", 8080)
+	addForwardRule(t, state, "Database", port2, "db.internal", 5432)
+
+	// Select first forward and edit
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != state.forwards[0].ID {
+		t.Fatalf("edit forward modal=%d editing=%v forwardID=%d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID)
+	}
+	if state.forwardEditor.value(forwardFieldLabel) != "Web" || state.forwardEditor.value(forwardFieldLocalPort) != fmt.Sprint(port1) {
+		t.Fatalf("editor prefill: label=%q port=%q", state.forwardEditor.value(forwardFieldLabel), state.forwardEditor.value(forwardFieldLocalPort))
+	}
+
+	// Keeping own label and port should be valid
+	if err := state.forwardEditor.validate(state); err != "" {
+		t.Fatalf("validating own unchanged forward failed: %q", err)
+	}
+
+	// Renaming to another existing forward's label should fail validation
+	replaceForwardField(state, hitForwardDialogLabel, "Database")
+	if err := state.forwardEditor.validate(state); err != state.messages.ErrForwardNameTaken {
+		t.Fatalf("expected ErrForwardNameTaken, got %q", err)
+	}
+
+	// Modify to unique values
+	newPort := freePort(t)
+	replaceForwardField(state, hitForwardDialogLabel, "Web Service")
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(newPort))
+	replaceForwardField(state, hitForwardDialogDestination, "web2.internal")
+	replaceForwardField(state, hitForwardDialogDestinationPort, "8443")
+
+	state.Click(hitForwardDialogSubmit)
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("submit edit forward: modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+	if len(state.forwards) != 2 {
+		t.Fatalf("forwards count = %d, want 2", len(state.forwards))
+	}
+	edited := state.forwards[0]
+	if edited.Label != "Web Service" || edited.LocalPort != newPort || edited.DestinationHost != "web2.internal" || edited.DestinationPort != 8443 {
+		t.Fatalf("edited forward = %+v", edited)
+	}
+	if !strings.HasPrefix(state.status, state.messages.ForwardUpdated) {
+		t.Fatalf("status = %q, want prefix %q", state.status, state.messages.ForwardUpdated)
+	}
+
+	// Verify persistence
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 2 {
+		t.Fatalf("restored forwards count = %d, want 2: %+v", len(restarted.forwards), restarted.forwards)
+	}
+	var restored forwardRecord
+	for _, f := range restarted.forwards {
+		if f.Label == "Web Service" {
+			restored = f
+			break
+		}
+	}
+	if restored.Label != "Web Service" || restored.LocalPort != newPort || restored.DestinationHost != "web2.internal" || restored.DestinationPort != 8443 {
+		t.Fatalf("restored forward = %+v", restored)
+	}
+}
+
+// A forward keeps the number it was saved with, so a window that reloads the
+// catalog does not re-point a dialog that was opened on it at another forward.
+func TestAForwardKeepsItsSavedNumberAcrossAReload(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	saved := func(id uint32, label string, port uint16) savedForward {
+		return savedForward{
+			ID: id, Label: label, Mode: "local", HostLabel: host.Label, HostAddress: host.Address,
+			HostUser: host.User, HostPort: host.Port, LocalPort: port,
+			DestinationHost: "127.0.0.1", DestinationPort: 80,
+		}
+	}
+	state.restoreForwards([]savedForward{saved(7, "Seven", 9107), saved(3, "Three", 9103)})
+	if got := [2]uint32{state.forwards[0].ID, state.forwards[1].ID}; got != [2]uint32{7, 3} {
+		t.Fatalf("restored numbers = %v, want the saved 7 and 3", got)
+	}
+	if state.nextForwardID != 8 {
+		t.Fatalf("next forward number = %d, want one past the largest saved", state.nextForwardID)
+	}
+
+	// A record older than the number gets the lowest free one, and the numbers
+	// already in use are not handed out again.
+	state.restoreForwards([]savedForward{saved(7, "Seven", 9107), saved(0, "Legacy", 9108)})
+	if got := [2]uint32{state.forwards[0].ID, state.forwards[1].ID}; got != [2]uint32{7, 1} {
+		t.Fatalf("numbers after a legacy record = %v, want 7 and the free 1", got)
+	}
+}
+
+// Saving an edit whose forward is gone reports it instead of quietly adding a
+// second copy under a new number.
+func TestEditingAForwardThatIsGoneReportsItInsteadOfAddingACopy(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	port := freePort(t)
+	addForwardRule(t, state, "Web", port, "web.internal", 8080)
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward || !state.forwardEditor.editing {
+		t.Fatalf("edit dialog = %d editing=%v", state.modal, state.forwardEditor.editing)
+	}
+	// The record goes away under the open dialog, as it does when another window
+	// removes it.
+	state.forwards = nil
+	state.Click(hitForwardDialogSubmit)
+	if state.forwardDialogError != state.messages.ErrForwardEditMissing {
+		t.Fatalf("error = %q, want %q", state.forwardDialogError, state.messages.ErrForwardEditMissing)
+	}
+	if len(state.forwards) != 0 {
+		t.Fatalf("forwards = %+v, want no copy appended", state.forwards)
+	}
+	if state.modal != modalNewForward {
+		t.Fatalf("the dialog closed on a failed save: modal = %d", state.modal)
+	}
+}
+
+// Editing a forward whose SSH host was removed asks for a host rather than
+// moving the tunnel to whichever host happens to be first.
+func TestEditingAForwardWhoseHostIsGoneAsksForAHost(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward {
+		t.Fatalf("edit dialog = %d", state.modal)
+	}
+	// The dialog opens on the host the forward travels through, not on some
+	// other one: another host would move the tunnel as soon as the form is saved.
+	if state.forwardEditor.hostID != state.hosts[0].ID {
+		t.Fatalf("the dialog opened on host %d, want the saved one %d", state.forwardEditor.hostID, state.hosts[0].ID)
+	}
+	// With that host gone, saving reports why instead of picking a replacement.
+	state.hosts = nil
+	state.forwardEditor.hostID = 0
+	if err := state.forwardEditor.validate(state); err != state.messages.ErrForwardHostMissing {
+		t.Fatalf("error = %q, want %q", err, state.messages.ErrForwardHostMissing)
+	}
+}
+
 func readForwardHTTPConnectResponse(t testing.TB, reader *bufio.Reader, wantStatus string) {
 	t.Helper()
 	status, err := reader.ReadString('\n')

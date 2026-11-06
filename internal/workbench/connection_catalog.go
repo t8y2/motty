@@ -181,10 +181,15 @@ func (catalog *hostCatalog) algorithmsFor(target Host, jumps []Host) map[string]
 }
 
 func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
+	return catalog.proxyTargetConfiguredExcluding(hostID, 0)
+}
+
+func (catalog *hostCatalog) proxyTargetConfiguredExcluding(hostID, excludeRouteID uint32) bool {
 	for _, route := range catalog.proxies {
-		if route.TargetID == hostID {
-			return true
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != hostID {
+			continue
 		}
+		return true
 	}
 	return false
 }
@@ -224,8 +229,12 @@ func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, b
 }
 
 func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
+	return catalog.proxyJumpExcluding(targetID, runningOnly, 0)
+}
+
+func (catalog *hostCatalog) proxyJumpExcluding(targetID uint32, runningOnly bool, excludeRouteID uint32) (Host, bool, bool) {
 	for _, route := range catalog.proxies {
-		if route.TargetID != targetID {
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != targetID {
 			continue
 		}
 		if runningOnly && route.Stopped {
@@ -238,12 +247,16 @@ func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, 
 }
 
 func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
+	return catalog.proxyWouldCycleExcluding(targetID, jumpID, 0)
+}
+
+func (catalog *hostCatalog) proxyWouldCycleExcluding(targetID, jumpID, excludeRouteID uint32) bool {
 	current := jumpID
 	for range len(catalog.proxies) + 1 {
 		if current == targetID {
 			return true
 		}
-		jump, routed, valid := catalog.proxyJump(current, false)
+		jump, routed, valid := catalog.proxyJumpExcluding(current, false, excludeRouteID)
 		if !routed {
 			return false
 		}
@@ -436,19 +449,27 @@ func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts
 	return hosts, next
 }
 
-// decodeProxies turns saved jump routes into routes between hosts, numbered
-// from 1. A route whose ends are unknown, that jumps a host through itself, that
-// gives a target a second route, or that would close a loop, is dropped.
+// decodeProxies turns saved jump routes into routes between hosts. A route keeps
+// the number it was saved with, so a window that reloads the catalog does not
+// re-point an open dialog at another route. A record saved before the number was
+// written, and a second record claiming a number already taken, are given the
+// lowest free one. A route whose ends are unknown, that jumps a host through
+// itself, that gives a target a second route, or that would close a loop, is
+// dropped.
 func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	catalog := hostCatalog{hosts: hosts}
+	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
-	for _, entry := range saved {
+	for index, entry := range saved {
 		target, targetOK := catalog.hostByConnection(entry.TargetAddress, entry.TargetUser, entry.TargetPort)
 		jump, jumpOK := catalog.hostByConnection(entry.JumpAddress, entry.JumpUser, entry.JumpPort)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
-		route := proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
+		if ids[index] == 0 {
+			ids[index] = freeRecordNumber(ids, &next)
+		}
+		route := proxyRecord{ID: ids[index], TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
 		if entry.ViaShell {
 			route.ViaShell = true
 			// A saved command that could not have come from the form is no command:
@@ -458,9 +479,47 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 			}
 		}
 		catalog.proxies = append(catalog.proxies, route)
-		next++
 	}
 	return catalog.proxies
+}
+
+// proxyNumbersBySavedID is the number each saved route keeps, by its index.
+func proxyNumbersBySavedID(saved []savedProxy) []uint32 {
+	wanted := make([]uint32, len(saved))
+	for index, entry := range saved {
+		wanted[index] = entry.ID
+	}
+	return recordNumbers(wanted)
+}
+
+// recordNumbers is the number each record keeps, by its index, with zero where
+// the record has none. A number counts as kept only where exactly one record
+// asks for it: two records cannot answer to the same one.
+func recordNumbers(wanted []uint32) []uint32 {
+	numbers := make([]uint32, len(wanted))
+	count := make(map[uint32]int, len(wanted))
+	for _, number := range wanted {
+		if number != 0 {
+			count[number]++
+		}
+	}
+	for index, number := range wanted {
+		if number != 0 && count[number] == 1 {
+			numbers[index] = number
+		}
+	}
+	return numbers
+}
+
+// freeRecordNumber is the lowest number no record keeps or has been given yet.
+func freeRecordNumber(numbers []uint32, next *uint32) uint32 {
+	for {
+		number := *next
+		*next++
+		if !slices.Contains(numbers, number) {
+			return number
+		}
+	}
 }
 
 // decodeOutboundProxy reads the saved outbound proxy. A damaged address means
