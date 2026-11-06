@@ -99,6 +99,28 @@ func TestHostChipMenuReachesEveryNestedGroup(t *testing.T) {
 	}
 }
 
+// An open chip menu is modal: the wheel must not reach the hosts list behind it,
+// wherever the pointer is. The menu itself decides which of its panels scroll.
+func TestAnOpenChipMenuKeepsTheWheelOffTheHostsList(t *testing.T) {
+	state := manyHostsState(t, 40)
+	state.activeSection = sectionHosts
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	if state.hostsContent <= state.chrome.hostList.Height {
+		t.Fatalf("the hosts list does not scroll at all (content %v, view %v)", state.hostsContent, state.chrome.hostList.Height)
+	}
+	state.chipMenu.open = true
+	before := state.hostsScroll
+	result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Precise: true, X: 600, Y: 400, Viewport: size})
+	if !result.Handled {
+		t.Fatal("the open chip menu left the wheel unhandled")
+	}
+	if state.hostsScroll != before {
+		t.Fatalf("the hosts list scrolled behind the open menu: %v -> %v", before, state.hostsScroll)
+	}
+}
+
 func TestHostGroupChipLabelIsTheLastSegment(t *testing.T) {
 	state := &State{}
 	for name, want := range map[string]string{"School": "School", "School/Gansu": "Gansu", "A / B": "B", "trailing/": "trailing/"} {
