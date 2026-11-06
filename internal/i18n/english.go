@@ -1946,6 +1946,7 @@ var englishTools = ToolsMessages{
 	UpdateSkip:                      "Skip this version",
 	UpdateInstall:                   "Install and restart",
 	UpdateInstallDescriptionFmt:     "You are on %s. Motty quits to install the update and opens again when it is done.",
+	UpdateInstallAuthDescriptionFmt: "You are on %s. Motty will quit, ask for administrator authorization to install the update, then open again.",
 	UpdateWhyNotUserInstall:         "This copy was not installed the way Motty's own packages install it, so it cannot update itself.",
 	UpdateWhyNotWritable:            "Motty cannot write to where it is installed.",
 	UpdateWhyTranslocated:           "macOS is running Motty from a temporary place. Move it to Applications first.",

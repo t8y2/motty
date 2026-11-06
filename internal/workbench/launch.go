@@ -389,10 +389,11 @@ func (state *State) checkForUpdates(asked bool) {
 	}
 	check := state.options.CheckUpdate
 	if check == nil {
+		format := updatePackageFormat(state.options.Updater)
 		check = func() (update.Release, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			return update.Check(ctx, nil, runtime.GOOS, updateArch())
+			return update.CheckPackage(ctx, nil, runtime.GOOS, updateArch(), format)
 		}
 	}
 	go func() {

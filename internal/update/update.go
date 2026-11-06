@@ -134,11 +134,21 @@ func cutUTF8(text string, limit int) string {
 // answer, GitHub. The package is chosen for goos and goarch; a GitHub answer has
 // none, because it carries no checksums to hold a download to.
 func Check(ctx context.Context, client *http.Client, goos, goarch string) (Release, error) {
-	return checkFeeds(ctx, client, MirrorFeed, Feed, goos, goarch)
+	return CheckPackage(ctx, client, goos, goarch, "")
+}
+
+// CheckPackage selects a native package format, or the platform default when
+// format is empty. Missing native packages must never fall back to an archive.
+func CheckPackage(ctx context.Context, client *http.Client, goos, goarch, format string) (Release, error) {
+	return checkPackageFeeds(ctx, client, MirrorFeed, Feed, goos, goarch, format)
 }
 
 func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string) (Release, error) {
-	release, err := LatestMirror(ctx, client, mirrorFeed, goos, goarch)
+	return checkPackageFeeds(ctx, client, mirrorFeed, githubFeed, goos, goarch, "")
+}
+
+func checkPackageFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch, format string) (Release, error) {
+	release, err := latestMirrorPackage(ctx, client, mirrorFeed, goos, goarch, format)
 	if err == nil {
 		return release, nil
 	}
@@ -152,6 +162,16 @@ func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed
 // a platform that has none: the three systems the release builds for, on the
 // architectures it builds for.
 func StableName(goos, goarch string) string {
+	return stablePackageName(goos, goarch, "")
+}
+
+func stablePackageName(goos, goarch, format string) string {
+	if format != "" {
+		if format == "deb" && goos == "linux" && (goarch == "amd64" || goarch == "arm64") {
+			return "motty_" + goarch + ".deb"
+		}
+		return ""
+	}
 	switch {
 	case goos == "darwin" && (goarch == "arm64" || goarch == "amd64"):
 		return "motty-darwin-" + goarch + ".zip"
@@ -174,6 +194,10 @@ var (
 // from the feed's own address and the release tag, never taken from the file,
 // so the answer cannot send a download to another host.
 func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch string) (Release, error) {
+	return latestMirrorPackage(ctx, client, feed, goos, goarch, "")
+}
+
+func latestMirrorPackage(ctx context.Context, client *http.Client, feed, goos, goarch, format string) (Release, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -219,7 +243,7 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 		Version: body.Version, URL: body.Source, Notes: cutUTF8(body.Notes, maxNotesBytes),
 		PlatformPackageChecked: true,
 	}
-	stable := StableName(goos, goarch)
+	stable := stablePackageName(goos, goarch, format)
 	for _, file := range body.Files {
 		if stable == "" || file.Name != stable {
 			continue
@@ -233,6 +257,9 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 			break
 		}
 		name := strings.Replace(stable, "motty-", "motty-"+body.Version+"-", 1)
+		if format == "deb" {
+			name = strings.Replace(stable, "motty_", "motty_"+body.Version+"_", 1)
+		}
 		pinned := url.URL{Scheme: "https", Host: base.Host, Path: "/releases/" + body.Tag + "/" + name}
 		release.Asset = Asset{Name: name, URL: pinned.String(), SHA256: file.SHA256, Size: file.Size, Signature: validSignature(file.Signature)}
 		break

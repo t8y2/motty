@@ -3,10 +3,10 @@
 // and, on the systems that sign their programs, to the signer of the running
 // copy; then a helper that outlives the program swaps the files in place.
 //
-// Only installations the user owns are replaced: an application bundle in a
-// folder the user can write, a registered per-user Windows installation, a Linux
-// prefix made by the archive's install.sh. System-wide installations and portable
-// programs are left to the caller to send to the download page.
+// User-owned bundles, per-user Windows installations and Linux archive prefixes
+// are replaced directly. A registered Linux DEB is installed by dpkg through
+// system authorization; the app itself stays unprivileged. Other system-managed
+// installations and portable programs use the download page.
 package selfupdate
 
 import (
@@ -25,6 +25,7 @@ const (
 	KindMacApp
 	KindWindowsSetup
 	KindLinuxPrefix
+	KindLinuxDeb
 )
 
 func (kind Kind) String() string {
@@ -35,12 +36,14 @@ func (kind Kind) String() string {
 		return "windows-setup"
 	case KindLinuxPrefix:
 		return "linux-prefix"
+	case KindLinuxDeb:
+		return "linux-deb"
 	}
 	return "none"
 }
 
 func parseKind(name string) Kind {
-	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindLinuxPrefix} {
+	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindLinuxPrefix, KindLinuxDeb} {
 		if kind.String() == name {
 			return kind
 		}
@@ -61,9 +64,8 @@ const (
 	// ReasonTranslocated is a macOS app running from the temporary place the
 	// system copies a downloaded, never moved app to.
 	ReasonTranslocated
-	// ReasonSystemInstall is an installation the system owns: a package manager's
-	// package, or a program installed for every user. The package manager or the
-	// installer has to replace it, not the app.
+	// ReasonSystemInstall is a system-owned installation without a supported
+	// authorized updater: other package formats or an all-users Windows install.
 	ReasonSystemInstall
 )
 
@@ -88,6 +90,8 @@ type Env struct {
 	WindowsMachineDir string
 	Writable          func(dir string) bool
 	Exists            func(path string) bool
+	// LinuxDeb checks package ownership and the system authorization tools.
+	LinuxDeb func(exe string) bool
 }
 
 // SystemEnv describes the machine this runs on.
@@ -103,6 +107,7 @@ func SystemEnv() Env {
 		GOOS: runtime.GOOS, LocalAppData: os.Getenv("LOCALAPPDATA"), ProgramFiles: programFiles,
 		WindowsUserDir: userDir, WindowsMachineDir: machineDir,
 		Writable: writable, Exists: exists,
+		LinuxDeb: registeredLinuxDeb,
 	}
 }
 
@@ -178,6 +183,10 @@ func Detect(exe string, env Env) (Install, Reason) {
 		}
 		install.Kind, install.Root = KindWindowsSetup, dir
 	case "linux":
+		if exe == "/usr/bin/motty" && env.LinuxDeb != nil && env.LinuxDeb(exe) {
+			install.Kind, install.Root = KindLinuxDeb, "/usr"
+			return install, ReasonNone
+		}
 		for _, root := range []string{"/usr", "/opt", "/snap", "/var/lib/flatpak"} {
 			if under(exe, root) {
 				return install, ReasonSystemInstall

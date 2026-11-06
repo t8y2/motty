@@ -26,6 +26,14 @@ type Updater interface {
 	TakeFailure() string
 }
 
+// Existing embedders and test updaters can keep the platform's default format.
+func updatePackageFormat(updater Updater) string {
+	if native, ok := updater.(interface{ PackageFormat() string }); ok {
+		return native.PackageFormat()
+	}
+	return ""
+}
+
 type installPhase uint8
 
 const (

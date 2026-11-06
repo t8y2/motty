@@ -1946,6 +1946,7 @@ var traditionalTools = ToolsMessages{
 	UpdateSkip:                      "跳過此版本",
 	UpdateInstall:                   "安裝並重啟",
 	UpdateInstallDescriptionFmt:     "目前版本 %s。安裝前會先退出 Motty，完成後自動重新開啟。",
+	UpdateInstallAuthDescriptionFmt: "目前版本 %s。Motty 將退出並請求系統管理員授權以安裝更新，完成後重新開啟。",
 	UpdateWhyNotUserInstall:         "這份 Motty 不是按官方安裝包的方式安裝的，無法自行更新。",
 	UpdateWhyNotWritable:            "沒有權限寫入 Motty 的安裝位置。",
 	UpdateWhyTranslocated:           "macOS 正從臨時位置執行 Motty，請先把它移到「應用程式」資料夾。",

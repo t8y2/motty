@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -68,6 +69,14 @@ func New(dir string) *Updater {
 
 // Support says whether this installation can be updated in place, and if not why.
 func (updater *Updater) Support() Reason { return updater.reason }
+
+// PackageFormat keeps package-managed installations on their native format.
+func (updater *Updater) PackageFormat() string {
+	if updater.install.Kind == KindLinuxDeb {
+		return "deb"
+	}
+	return ""
+}
 
 // TakeFailure is why the last update failed, if it did.
 func (updater *Updater) TakeFailure() string { return TakeFailure(updater.Dir) }
@@ -169,6 +178,11 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 			return Staged{}, fmt.Errorf("selfupdate: the package does not hold %s", filepath.Base(install.Exe))
 		}
 		staged.Path = script
+	case KindLinuxDeb:
+		if err := verifyDebPackage(ctx, archive, release.Version, runtime.GOARCH); err != nil {
+			return Staged{}, err
+		}
+		staged.Path = archive
 	}
 	return staged, nil
 }

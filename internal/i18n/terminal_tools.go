@@ -506,6 +506,7 @@ type ToolsMessages struct {
 	UpdateSkip                      string
 	UpdateInstall                   string
 	UpdateInstallDescriptionFmt     string
+	UpdateInstallAuthDescriptionFmt string
 	UpdateWhyNotUserInstall         string
 	UpdateWhyNotWritable            string
 	UpdateWhyTranslocated           string

@@ -92,6 +92,8 @@ func (job Job) Run() error {
 		err = job.applyWindows()
 	case KindLinuxPrefix:
 		err = job.applyLinux()
+	case KindLinuxDeb:
+		err = runDebInstaller(debInstallCommand(job.Staged))
 	default:
 		err = errors.New("unknown installation kind")
 	}

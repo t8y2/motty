@@ -307,10 +307,19 @@ the per-user Windows installer, a Linux `install.sh` prefix). On Windows, custom
 directories are recognised from the application's per-user uninstall registration
 and still require the uninstaller and write access. The helper passes that exact
 directory to the installer. An installation the
-system owns — a distribution package or an all-users Windows installation — is never
-replaced by the app: the dialog says to update it with the package manager or to run
-the new installer, and a portable copy is sent to the release page. No update path
-asks for administrator rights.
+system owns normally uses the package manager or an installer, and a portable copy
+is sent to the release page. An official Motty DEB registered at `/usr/bin/motty`
+is an exception when the system has `pkexec`, `dpkg`, `dpkg-query` and `dpkg-deb`.
+The update check then selects `motty_<arch>.deb` from the mirror, pins the versioned
+`motty_<version>_<arch>.deb` URL, verifies the checksum and release signature, and
+checks the package name, version and architecture. The dialog explains that the
+system will ask for administrator authorization after Motty quits. The ordinary
+user's helper invokes `/usr/bin/pkexec /usr/bin/dpkg --install <package>` and then
+reopens Motty as the same ordinary user. It does not handle or store passwords.
+Cancellation, unavailable authorization, package-manager locks and other install
+errors use the existing failure notification and restart path. A dpkg failure
+can leave a partially configured package; there is no custom package rollback.
+RPM, Snap, Flatpak and unregistered system copies keep the manual-update path.
 
 The replacement is made by a helper that outlives the app, so it never touches a
 file the running app holds. On macOS the helper is a copy of the whole bundle,

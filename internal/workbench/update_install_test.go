@@ -24,7 +24,10 @@ type fakeUpdater struct {
 	prepare  func(ctx context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
 	launched int
 	failure  string
+	format   string
 }
+
+func (updater *fakeUpdater) PackageFormat() string { return updater.format }
 
 func (updater *fakeUpdater) Support() selfupdate.Reason { return updater.reason }
 
@@ -59,6 +62,24 @@ func (updater *fakeUpdater) launches() int {
 var offeredRelease = update.Release{
 	Version: "99.0.0", URL: "https://example.com/release", Notes: "- better",
 	Asset: update.Asset{Name: "motty-99.0.0-x.zip", URL: "https://example.com/a", SHA256: strings.Repeat("a", 64), Size: 10, Signature: "c2ln"},
+}
+
+func TestDebUpdateExplainsSystemAuthorization(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{format: "deb"}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	if updatePackageFormat(state.options.Updater) != "deb" || updatePackageFormat(nil) != "" {
+		t.Fatal("wrong update package format")
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	want := fmt.Sprintf(state.messages.Tools.UpdateInstallAuthDescriptionFmt, update.Current)
+	var texts []string
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	if !strings.Contains(strings.Join(strings.Fields(strings.Join(texts, " ")), " "), strings.Join(strings.Fields(want), " ")) {
+		t.Fatal("DEB install did not explain system authorization")
+	}
 }
 
 // updateWindow is a window that has been offered offeredRelease.
