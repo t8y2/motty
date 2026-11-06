@@ -26,16 +26,21 @@ func (state *State) preparePassword(session *Session) {
 		questions = []sshconn.Question{{Secret: true}}
 	}
 	state.passwordQuestions = questions
-	if isVNCCredentialsQuestion(session) {
+	vncCredentials := isVNCCredentialsQuestion(session)
+	if vncCredentials {
 		state.passwordQuestions = append([]sshconn.Question(nil), questions...)
 		state.passwordQuestions[0].Text = state.messages.Desktop.VNCSystemUser
 	}
 	state.passwordFields = make([]text.Editor, len(questions))
 	passwordName := state.passwordName(session)
-	if isVNCCredentialsQuestion(session) {
+	var accountError error
+	if vncCredentials {
+		owner := state.secretOwner(session.host, session.endpoint, session.role)
 		username := strings.TrimPrefix(session.endpoint.User, vncAccountPrefix)
 		if username == "" && session.attempt == 1 {
-			if saved, ok := state.singleSavedVNCAccount(session); ok {
+			saved, ok, err := state.singleSavedVNCAccount(owner)
+			accountError = err
+			if ok {
 				username = saved
 			} else {
 				passwordName = "" // no unique account to prefill, including an empty one
@@ -43,7 +48,6 @@ func (state *State) preparePassword(session *Session) {
 		}
 		state.passwordFields[0].Insert(username)
 		if passwordName != "" {
-			owner := state.secretOwner(session.host, session.endpoint, session.role)
 			passwordName = hostSecretName(owner, vncSystemPasswordPart(username))
 		}
 	}
@@ -71,37 +75,35 @@ func (state *State) preparePassword(session *Session) {
 		// server moved on, and the password was not what it refused.
 		state.passwordError = state.messages.PasswordRetryFactor
 	}
+	if accountError != nil {
+		state.passwordError = state.vaultErrorText(accountError)
+	}
 	state.passwordDescription = passwordDialogAddress(state, session)
 	state.prefillPasswordAnswers(session, passwordName)
 }
 
 // singleSavedVNCAccount recovers an account entered only at login. Multiple
 // system accounts remain ambiguous; legacy passwords are never candidates.
-func (state *State) singleSavedVNCAccount(session *Session) (string, bool) {
-	owner := state.secretOwner(session.host, session.endpoint, session.role)
-	return state.singleSavedVNCAccountFor(owner)
-}
-
-func (state *State) singleSavedVNCAccountFor(owner string) (string, bool) {
+func (state *State) singleSavedVNCAccount(owner string) (string, bool, error) {
 	vaultFile := state.secrets.vault
 	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
-		return "", false
+		return "", false, nil
 	}
 	names, err := vaultFile.Names()
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 	prefix := hostSecretName(owner, "vnc-system-password:")
 	username, found := "", false
 	for _, name := range names {
 		if account, ok := strings.CutPrefix(name, prefix); ok {
 			if found {
-				return "", false
+				return "", false, nil
 			}
 			username, found = account, true
 		}
 	}
-	return username, found
+	return username, found, nil
 }
 
 // passwordDialogAddress names the account the dialog is asking about.

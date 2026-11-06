@@ -131,7 +131,7 @@ type eaxConn struct {
 	readExhausted           bool
 	writeExhausted          bool
 	pending                 []byte
-	readErr, writeErr       error
+	readErr                 error
 	failMu                  sync.Mutex
 	failure                 error
 }
@@ -256,9 +256,6 @@ func (conn *eaxConn) Write(src []byte) (int, error) {
 	if err := conn.failed(); err != nil {
 		return 0, err
 	}
-	if conn.writeErr != nil {
-		return 0, conn.writeErr
-	}
 	written := 0
 	for len(src) > 0 {
 		if conn.writeExhausted {
@@ -277,8 +274,7 @@ func (conn *eaxConn) Write(src []byte) (int, error) {
 			conn.writeExhausted = !incrementEAXNonce(&conn.writeNonce)
 		}
 		if err != nil {
-			conn.writeErr = conn.fail(fmt.Errorf("rfb: writing RSA-AES record: %w", err))
-			return written, conn.writeErr
+			return written, conn.fail(fmt.Errorf("rfb: writing RSA-AES record: %w", err))
 		}
 		src = src[len(message):]
 	}

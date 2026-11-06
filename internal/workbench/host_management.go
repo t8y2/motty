@@ -493,7 +493,10 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 		}
 		if state.secrets.vault != nil {
 			value, found, err := state.secrets.vault.Get(previous)
-			if err == nil && found && typed == value {
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			if found && typed == value {
 				return nil, state.messages.Desktop.VNCAccountPasswordChanged
 			}
 		}

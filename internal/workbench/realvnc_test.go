@@ -20,6 +20,7 @@ import (
 	"motty/internal/desktop/rdp"
 	"motty/internal/rfb"
 	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 type encryptedVNC struct{ *pictureOnly }
@@ -550,6 +551,30 @@ func TestVNCCopyKeepsSameAccountSavedPassword(t *testing.T) {
 				t.Fatalf("source password changed: %q found=%t", value, found)
 			}
 		})
+	}
+}
+
+func TestVNCAccountChangeDoesNotPlanWritesWhenSavedPasswordCannotBeRead(t *testing.T) {
+	state, host := realVNCState(t, "alice", nil)
+	if err := state.secrets.vault.Set(hostSecretName(host.CatalogID, vncSystemPasswordPart("alice")), "saved password"); err != nil {
+		t.Fatal(err)
+	}
+	clickHostAction(state, hitEditHost)
+	state.editor.user = *text.NewEditor("bob")
+	state.editor.password = *text.NewEditor("new account password")
+	unreadable, err := vault.Open(filepath.Join(filepath.Dir(state.options.StatePath), "vault.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault = unreadable
+	changes, failure := state.hostDialogPasswordChanges(state.editor.host(host.ID), &host)
+	if len(changes) != 0 || !strings.Contains(failure, state.vaultErrorText(vault.ErrUnavailable)) {
+		t.Fatalf("unreadable previous password planned changes=%v, failure=%q", changes, failure)
+	}
+	state.Click(hitDialogSubmit)
+	saved, ok := state.hostByCatalogID(host.CatalogID)
+	if !ok || saved.User != "alice" || state.modal != modalNewHost || !strings.Contains(state.dialogError, state.vaultErrorText(vault.ErrUnavailable)) {
+		t.Fatalf("account changed despite unreadable saved password: user=%q, modal=%d, error=%q", saved.User, state.modal, state.dialogError)
 	}
 }
 

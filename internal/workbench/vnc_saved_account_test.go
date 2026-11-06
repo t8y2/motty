@@ -2,10 +2,13 @@ package workbench
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/desktop"
 	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 func TestVNCSingleSavedSystemAccountConnectsWithoutCredentialPrompt(t *testing.T) {
@@ -45,6 +48,54 @@ func TestVNCSingleSavedSystemAccountConnectsWithoutCredentialPrompt(t *testing.T
 	}
 	if session.host.User != "" {
 		t.Fatal("recovering the VNC account rewrote the host's configured username")
+	}
+}
+
+func TestVNCSavedAccountReadFailureStillAllowsManualLogin(t *testing.T) {
+	answers := make(chan [2]string, 1)
+	state, host := realVNCState(t, "", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
+		if err := request.VerifyServerKey("pi.example.com:5900", []byte("server identity")); err != nil {
+			return nil, err
+		}
+		username, password, err := request.AskCredentials()
+		if err != nil {
+			return nil, err
+		}
+		answers <- [2]string{username, password}
+		return &encryptedVNC{newPictureOnly()}, nil
+	})
+	if err := state.secrets.vault.Set(hostSecretName(host.CatalogID, vncSystemPasswordPart("pi")), "saved password"); err != nil {
+		t.Fatal(err)
+	}
+	// Reopen without access to the key, rather than using the cached key.
+	path := filepath.Join(filepath.Dir(state.options.StatePath), "vault.json")
+	unreadable, err := vault.Open(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault = unreadable
+	openHost(state)
+	waitUntil(t, state, "server identity confirmation", func() bool { return state.modal == modalHostKey })
+	state.Click(hitHostKeyOnce)
+	waitUntil(t, state, "manual VNC login", func() bool { return state.modal == modalPassword })
+	if state.passwordError != state.vaultErrorText(vault.ErrUnavailable) {
+		t.Fatalf("saved account read failure was hidden: %q", state.passwordError)
+	}
+	if len(state.passwordFields) != 2 || state.passwordFields[0].String() != "" || state.passwordFields[1].String() != "" || state.secrets.canSave {
+		t.Fatal("unreadable saved credentials were prefilled or offered for saving")
+	}
+	select {
+	case <-answers:
+		t.Fatal("credentials were sent before manual confirmation")
+	default:
+	}
+	state.passwordFields[0] = *text.NewEditor("manual-user")
+	state.passwordFields[1] = *text.NewEditor("manual password")
+	state.Click(hitPasswordSubmit)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "desktop after manual login", func() bool { return session.desk != nil })
+	if got := <-answers; got != [2]string{"manual-user", "manual password"} {
+		t.Fatalf("manual credentials = %q", got)
 	}
 }
 

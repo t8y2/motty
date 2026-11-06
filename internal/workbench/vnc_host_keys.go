@@ -16,10 +16,6 @@ type vncHostKey struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-func vncIdentityKind(kind string) bool {
-	return kind == vncServerKeyType
-}
-
 func (host Host) vncFingerprint(address, kind string) string {
 	for _, key := range host.VNCKeys {
 		if key.Address == address && key.Kind == kind {
@@ -32,7 +28,7 @@ func (host Host) vncFingerprint(address, kind string) string {
 // rememberVNCServerKey runs on the UI thread before approving the waiting
 // handshake. A failed save or a concurrent host/key change never grants trust.
 func (state *State) rememberVNCServerKey(session *Session) error {
-	if session.phase != sshconn.PhaseHostKeyPrompt || session.host.Protocol != protocolVNC || !vncIdentityKind(session.hostKey.Type) {
+	if session.phase != sshconn.PhaseHostKeyPrompt || session.host.Protocol != protocolVNC || session.hostKey.Type != vncServerKeyType {
 		return errors.New("VNC identity is not awaiting approval")
 	}
 	if state.config == nil {
@@ -46,11 +42,12 @@ func (state *State) rememberVNCServerKey(session *Session) error {
 		return errors.New("the VNC host is no longer saved")
 	}
 	key := vncHostKey{Address: session.hostKey.Address, Kind: session.hostKey.Type, Fingerprint: session.hostKey.Fingerprint}
-	if previous := host.vncFingerprint(key.Address, key.Kind); previous != "" && previous != key.Fingerprint {
+	fingerprint := host.vncFingerprint(key.Address, key.Kind)
+	if fingerprint != "" && fingerprint != key.Fingerprint {
 		return fmt.Errorf("%w for %s", sshconn.ErrHostKeyChanged, key.Address)
 	}
-	previous := slices.Clone(host.VNCKeys)
-	if host.vncFingerprint(key.Address, key.Kind) == "" {
+	previous := host.VNCKeys
+	if fingerprint == "" {
 		host.VNCKeys = append(slices.Clone(previous), key)
 		state.hosts[state.hostIndex(host.ID)] = host
 	}
