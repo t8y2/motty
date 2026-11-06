@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -466,8 +467,20 @@ func (host *Host) normalizeEndpoint() {
 	}
 }
 
+// sameHost reports whether two hosts are one entry as the user sees it: the same
+// destination under the same name. A host is identified by its catalog ID, not
+// by where it connects, so several hosts may share a destination as long as they
+// are named apart: a bastion host is reached at one address, and each target
+// behind it is its own host. This is only the test for an accidental repeat, such
+// as adding or importing the same entry twice.
+func sameHost(a Host, b Host) bool {
+	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label))
+}
+
 // hostIndexByEndpoint is where the list has a host that is the same destination
-// as host, or -1.
+// as host, or -1. It is what an import from another program is checked against:
+// an entry that is only a name for a server already saved is not worth a second
+// host, and a program's own names say little about it.
 func (state *State) hostIndexByEndpoint(host Host) int {
 	for index, saved := range state.hosts {
 		if sameEndpoint(saved, host) {
@@ -475,6 +488,27 @@ func (state *State) hostIndexByEndpoint(host Host) int {
 		}
 	}
 	return -1
+}
+
+// hostIndexSame is where the list has the same host as host (see sameHost), or -1.
+func (state *State) hostIndexSame(host Host) int {
+	for index, saved := range state.hosts {
+		if sameHost(saved, host) {
+			return index
+		}
+	}
+	return -1
+}
+
+// endpointShared reports whether a host of the list other than those with the
+// given IDs connects to the destination of host.
+func (state *State) endpointShared(host Host, except ...uint32) bool {
+	for _, other := range state.hosts {
+		if !slices.Contains(except, other.ID) && sameEndpoint(other, host) {
+			return true
+		}
+	}
+	return false
 }
 
 // sayStreamOpened writes the one line a Telnet or serial tab starts with: that

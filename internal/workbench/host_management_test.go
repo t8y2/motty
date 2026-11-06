@@ -361,25 +361,36 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	}
 }
 
-func TestCopyHostRequiresAnEditedUniqueDestination(t *testing.T) {
+// A copy keeps the destination and takes a new name: that is how a second
+// target behind one bastion host is added, so it saves as it stands and is its
+// own host. Giving the copy back the original's name is the accidental repeat.
+func TestCopyHostSavesAsADistinctHostAtTheSameDestination(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
+	original := state.hosts[0]
 	clickHostAction(state, hitCopyHost)
 	if state.modal != modalNewHost || state.hostDialogMode != hostDialogCopy || state.editor.value(fieldLabel) != "Production Copy" {
 		t.Fatalf("copy dialog mode=%d label=%q", state.hostDialogMode, state.editor.value(fieldLabel))
 	}
+	state.editor.label = text.Editor{}
+	typeInto(state, hitDialogLabel, original.Label)
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.ErrAddressTaken || len(state.hosts) != 3 {
-		t.Fatalf("unchanged copy silently saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
+		t.Fatalf("a copy with the original's name silently saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 	}
-	state.editor.address = text.Editor{}
-	typeInto(state, hitDialogAddress, "prod-copy.example.com")
+	state.editor.label = text.Editor{}
+	typeInto(state, hitDialogLabel, "Production Copy")
 	state.Click(hitDialogSubmit)
-	if len(state.hosts) != 4 || state.hosts[3].Label != "Production Copy" || state.hosts[3].Address != "prod-copy.example.com" {
-		t.Fatalf("copy = %+v", state.hosts)
+	if state.modal != modalNone || len(state.hosts) != 4 {
+		t.Fatalf("copy not saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 	}
-	if restarted := newTestState(t, options); len(restarted.hosts) != 4 || restarted.hosts[3].Address != "prod-copy.example.com" {
-		t.Fatalf("copy was not persisted: %+v", restarted.hosts)
+	copied := state.hosts[3]
+	if copied.Label != "Production Copy" || !sameEndpoint(copied, original) || copied.CatalogID == original.CatalogID {
+		t.Fatalf("copy = %+v, original = %+v", copied, original)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.hosts) != 4 || restarted.hosts[3].CatalogID != copied.CatalogID || restarted.hosts[0].CatalogID != original.CatalogID {
+		t.Fatalf("hosts at one destination were not persisted apart: %+v", restarted.hosts)
 	}
 }
 

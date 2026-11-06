@@ -423,9 +423,12 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 			session.Address = state.sessionAddress(updated)
 		}
 	}
+	// A forward belongs to a destination, not to one host: while another host
+	// still connects where this one did, the forward stays with it.
+	forwardsFollow := !state.endpointShared(previous, previous.ID)
 	for index := range state.forwards {
 		forward := &state.forwards[index]
-		if !forward.matchesHost(previous) {
+		if !forwardsFollow || !forward.matchesHost(previous) {
 			continue
 		}
 		forward.HostLabel = updated.Label
@@ -554,7 +557,7 @@ func (state *State) hostReferenceError(ids []uint32) string {
 			}
 		}
 		for _, forward := range state.forwards {
-			if forward.matchesHost(host) {
+			if forward.matchesHost(host) && !state.endpointShared(host, ids...) {
 				return fmt.Sprintf(state.messages.HostDeleteBlockedForwardFmt, host.Label)
 			}
 		}

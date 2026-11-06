@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -169,9 +170,7 @@ var entityFields = []entityField{
 		return joinKey(fieldText(fields, "mode"), fieldText(fields, "host_address"), fieldText(fields, "host_user"), fieldText(fields, "host_port"),
 			fieldText(fields, "local_port"), fieldText(fields, "destination_host"), fieldText(fields, "destination_port"))
 	}},
-	{field: "proxies", kind: "proxy", key: func(fields map[string]json.RawMessage) string {
-		return joinKey(fieldText(fields, "target_user"), fieldText(fields, "target_address"), fieldText(fields, "target_port"))
-	}},
+	{field: "proxies", kind: "proxy", key: proxyRecordKey},
 	{field: "snippets", kind: "snippet", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
 	{field: "highlights", kind: "highlight", key: func(fields map[string]json.RawMessage) string {
 		return joinKey(fieldText(fields, "pattern"), fieldText(fields, "regex"), fieldText(fields, "case_sensitive"))
@@ -186,6 +185,22 @@ var entityFields = []entityField{
 	{field: "ai_providers", kind: kindAIProvider, keepWhenAbsent: true, key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "ai_cli_providers", kind: kindAICLIProvider, keepWhenAbsent: true, key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "outbound_proxy", kind: "outbound-proxy", single: true, key: func(map[string]json.RawMessage) string { return "main" }},
+}
+
+// proxyRecordKey names a route by its target: where the target connects, which is
+// what every build has always done. When the target host is not the first at its
+// destination (its catalog ID is not the one that destination gives) the route
+// is named by that ID instead, so two targets behind one bastion do not share a
+// record.
+func proxyRecordKey(fields map[string]json.RawMessage) string {
+	user, address, port := fieldText(fields, "target_user"), fieldText(fields, "target_address"), fieldText(fields, "target_port")
+	if id := fieldText(fields, "target_id"); id != "" {
+		number, _ := strconv.ParseUint(port, 10, 16)
+		if id != catalogIDFor(Host{Protocol: protocolSSH, Address: address, User: user, Port: uint16(number)}) {
+			return joinKey("host", id)
+		}
+	}
+	return joinKey(user, address, port)
 }
 
 // syncedSettings are the scalar settings every device shares.

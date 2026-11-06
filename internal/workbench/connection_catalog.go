@@ -97,6 +97,22 @@ func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) 
 	return Host{}, false
 }
 
+// hostByRouteEnd is the host one end of a saved route names: the host with that
+// catalog ID, or, for a route saved without one, the host at that destination.
+// An ID that no host holds names nothing: another host at the same destination
+// is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
+	if id == "" {
+		return catalog.hostByConnection(address, user, port)
+	}
+	for _, host := range catalog.hosts {
+		if host.CatalogID == id && host.isSSH() {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
 // secretOwner is the catalog ID of the host that the secrets of a connection
 // prompt belong to: the host that was opened, or, for a prompt of a jump host
 // along the way, the saved host that is that jump host. A jump host nobody saved
@@ -461,8 +477,8 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
 	for index, entry := range saved {
-		target, targetOK := catalog.hostByConnection(entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByConnection(entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}

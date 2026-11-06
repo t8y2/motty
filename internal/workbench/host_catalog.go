@@ -162,10 +162,18 @@ func catalogIDFor(host Host) string {
 // uniqueCatalogID chooses a catalog ID no host in used holds, and records it
 // there. used is the set of IDs already taken; a caller adding a batch of hosts
 // builds it once instead of scanning a growing slice for every host.
+//
+// A new host whose destination is already a host's gets an ID made from its
+// name too, so two devices that each add the same named target behind one
+// bastion still end up with one host. Only the first host at a destination keeps
+// the ID that every build has always given it.
 func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) string {
 	base := strings.TrimSpace(preferred)
 	if base == "" {
 		base = catalogIDFor(host)
+		if _, taken := used[base]; taken {
+			base = catalogIDForName(host)
+		}
 	}
 	candidate := base
 	for suffix := 2; ; suffix++ {
@@ -175,6 +183,15 @@ func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) stri
 		}
 		candidate = fmt.Sprintf("%s_%d", base, suffix)
 	}
+}
+
+// catalogIDForName is the ID of a host that shares its destination with another:
+// the destination and the name, so it differs from the ID of the first host there.
+func catalogIDForName(host Host) string {
+	source := strings.ToLower(strings.TrimSpace(host.Address)) + "\x00" + strings.TrimSpace(host.User) + "\x00" + fmt.Sprint(host.Port) +
+		"\x00" + host.transport().Protocol + "\x00" + strings.ToLower(strings.TrimSpace(host.Label))
+	digest := sha256.Sum256([]byte(source))
+	return "host_" + hex.EncodeToString(digest[:12])
 }
 
 type hostGroup struct {

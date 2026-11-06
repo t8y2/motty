@@ -64,8 +64,8 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 		t.Fatalf("empty form submitted: open=%v error=%q", (state.modal == modalNewHost), state.dialogError)
 	}
 
-	// Duplicate address must not submit.
-	typeInto(state, hitDialogLabel, "Edge")
+	// The same destination under the same name must not submit.
+	typeInto(state, hitDialogLabel, "Production")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	typeInto(state, hitDialogUser, "deploy")
 	state.Click(hitDialogSubmit)
@@ -74,6 +74,8 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 	}
 
 	// A valid form appends the host and closes.
+	state.editor.label.SetSelection(text.Range{Start: 0, End: len("Production")})
+	typeInto(state, hitDialogLabel, "Edge")
 	state.editor.address.SetSelection(text.Range{Start: 0, End: len("prod.example.com")})
 	typeInto(state, hitDialogAddress, "edge.example.com")
 	state.editor.user.SetSelection(text.Range{Start: 0, End: len("deploy")})

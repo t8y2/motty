@@ -247,7 +247,12 @@ type savedForward struct {
 type savedProxy struct {
 	// ID is the number this route is known by in a window, written for the same
 	// reason as savedForward.ID. Zero means a record older than this field.
-	ID            uint32 `json:"id,omitempty"`
+	ID uint32 `json:"id,omitempty"`
+	// TargetID and JumpID are the catalog IDs of the two hosts. The addresses
+	// are written too, for a build that predates them and for a route saved
+	// without them; they cannot tell apart hosts that share a destination.
+	TargetID      string `json:"target_id,omitempty"`
+	JumpID        string `json:"jump_id,omitempty"`
 	TargetAddress string `json:"target_address"`
 	TargetUser    string `json:"target_user,omitempty"`
 	TargetPort    uint16 `json:"target_port"`
@@ -266,6 +271,11 @@ type savedSession struct {
 	Port      uint16 `json:"port,omitempty"`
 	System    string `json:"system,omitempty"`
 	SavedHost bool   `json:"saved_host,omitempty"`
+	// CatalogID is the saved host this tab was opened on. It is what finds the
+	// host again, because several hosts may share one address (a bastion host
+	// with a target behind it each); a tab saved before it existed is found by its
+	// destination.
+	CatalogID string `json:"catalog_id,omitempty"`
 	// Local marks a shell on this computer: it has no address to dial.
 	Local          bool   `json:"local,omitempty"`
 	LocalDirectory string `json:"local_directory,omitempty"`
@@ -599,7 +609,7 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		saved.Proxies = append(saved.Proxies, savedProxy{
-			ID: route.ID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			ID: route.ID, TargetID: target.CatalogID, JumpID: jump.CatalogID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
 			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
@@ -619,7 +629,7 @@ func (state *State) snapshot() savedState {
 		saved.Sessions = append(saved.Sessions, savedSession{
 			Label: session.Title, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
-			savedTransport: session.host.transport(),
+			CatalogID: session.savedCatalogID(), savedTransport: session.host.transport(),
 		})
 		if session.ID == state.activeSessionID {
 			saved.ActiveSession = len(saved.Sessions)
@@ -1169,6 +1179,15 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 	return sourceSessions
 }
 
+// savedCatalogID is the catalog ID of the saved host the session was opened on,
+// or empty for a typed target.
+func (session *Session) savedCatalogID() string {
+	if session.HostID == 0 {
+		return ""
+	}
+	return session.host.CatalogID
+}
+
 func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 	if entry.Local {
 		host := localHost(state.messages.LocalTerminalTitle)
@@ -1189,6 +1208,16 @@ func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 	}
 	host.normalizeEndpoint()
 	if entry.SavedHost {
+		if entry.CatalogID != "" {
+			// Another host at the same address is not this one: a tab whose host is
+			// gone is dropped rather than reopened on its neighbour.
+			for _, saved := range state.hosts {
+				if saved.CatalogID == entry.CatalogID {
+					return saved, true
+				}
+			}
+			return Host{}, false
+		}
 		for _, saved := range state.hosts {
 			if sameEndpoint(saved, host) {
 				return saved, true
