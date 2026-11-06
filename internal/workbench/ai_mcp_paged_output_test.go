@@ -3,73 +3,11 @@
 package workbench
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
-
-func pagedRPC(t *testing.T, state *State, address, token, session, method string, params any) (map[string]any, string, int) {
-	t.Helper()
-	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-	if err != nil {
-		t.Fatal(err)
-	}
-	type reply struct {
-		data    []byte
-		session string
-		status  int
-		err     error
-	}
-	done := make(chan reply, 1)
-	go func() {
-		request, err := http.NewRequest(http.MethodPost, address, bytes.NewReader(body))
-		if err != nil {
-			done <- reply{err: err}
-			return
-		}
-		request.Header.Set("Authorization", "Bearer "+token)
-		request.Header.Set("Content-Type", "application/json")
-		if session != "" {
-			request.Header.Set("Mcp-Session-Id", session)
-		}
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			done <- reply{err: err}
-			return
-		}
-		defer response.Body.Close()
-		data, err := io.ReadAll(response.Body)
-		done <- reply{data: data, session: response.Header.Get("Mcp-Session-Id"), status: response.StatusCode, err: err}
-	}()
-	deadline := time.NewTimer(20 * time.Second)
-	defer deadline.Stop()
-	tick := time.NewTicker(time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case result := <-done:
-			if result.err != nil {
-				t.Fatal(result.err)
-			}
-			var parsed map[string]any
-			if result.status == http.StatusOK {
-				if err := json.Unmarshal(result.data, &parsed); err != nil {
-					t.Fatal(err)
-				}
-			}
-			return parsed, result.session, result.status
-		case <-tick.C:
-			state.Wake()
-		case <-deadline.C:
-			t.Fatal("HTTP MCP command or page did not complete")
-		}
-	}
-}
 
 func TestHTTPMCPReadsMiddleOfCommandWithoutRerunningIt(t *testing.T) {
 	state, _, address, token := hubFixture(t, "ask")

@@ -663,6 +663,10 @@ type Messages struct {
 	SessionRestoredBody   string
 	SessionReconnect      string
 	SessionReconnectHint  string
+	// SessionNoShellInput is shown when someone types into a tab whose shell is
+	// gone: the keys go nowhere, so saying so is what keeps the keyboard from
+	// looking broken.
+	SessionNoShellInput   string
 	ConnClosed            string
 	ConnCanceled          string
 	ConnRejected          string

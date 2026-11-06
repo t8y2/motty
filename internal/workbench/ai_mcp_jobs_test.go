@@ -1,26 +1,47 @@
-//go:build !windows
+//go:build windows || darwin || linux
 
 package workbench
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"motty/internal/shellkind"
 )
 
 type writerFunc func([]byte)
 
 func (f writerFunc) Write(p []byte) (int, error) { f(p); return len(p), nil }
 
+// jobCommands use only echo and sleep, which PowerShell aliases to its own
+// cmdlets, so one text runs in either shell and stays low risk to the policy.
+var jobCommands = struct{ progress, waiting string }{
+	progress: "echo JOB_BEGIN; sleep 1; echo JOB_STEP:1; sleep 1; echo JOB_END",
+	waiting:  "echo WAITING; sleep 30; echo NEVER",
+}
+
 // shellThatStreams runs what it is typed in the background, so output arrives
 // while the command runs, and ends the running command on Ctrl-C like a tty.
-func shellThatStreams(shell *fakeShell) {
+func shellThatStreams(t *testing.T, state *State, shell *fakeShell) {
 	var mu sync.Mutex
 	var stop context.CancelFunc
+	powershell := runtime.GOOS == "windows"
+	dir, count := t.TempDir(), 0
+	if powershell {
+		state.sessions[0].term.shell = kindShell{shell, shellkind.PowerShell}
+	}
+	screenText := func(text string) string {
+		text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+		return strings.ReplaceAll(text, "\n", "\r\n")
+	}
 	shell.onWrite = func(p []byte) {
 		if string(p) == "\x03" {
 			mu.Lock()
@@ -34,15 +55,31 @@ func shellThatStreams(shell *fakeShell) {
 		ctx, cancel := context.WithCancel(context.Background())
 		mu.Lock()
 		stop = cancel
+		count++
+		count := count
 		mu.Unlock()
-		shell.say(strings.ReplaceAll(string(p), "\n", "\r\n"))
+		shell.say(screenText(string(p)))
 		go func() {
 			defer cancel()
-			command := exec.CommandContext(ctx, "/bin/sh", "-c", string(p))
+			script := strings.ReplaceAll(string(p), "\r", "\n")
+			command := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+			if powershell {
+				file := filepath.Join(dir, fmt.Sprintf("job%d.ps1", count))
+				if err := os.WriteFile(file, []byte(script), 0o644); err != nil {
+					shell.say("test shell: " + err.Error() + "\r\n")
+					return
+				}
+				command = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file)
+			}
 			command.WaitDelay = 100 * time.Millisecond
-			command.Stdout = writerFunc(func(out []byte) { shell.say(strings.ReplaceAll(string(out), "\n", "\r\n")) })
+			command.Stdout = writerFunc(func(out []byte) {
+				shell.say(screenText(string(out)))
+			})
 			command.Stdin = strings.NewReader("")
-			_ = command.Run()
+			err := command.Run()
+			if err != nil && ctx.Err() == nil {
+				shell.say("test shell: " + err.Error() + "\r\n")
+			}
 		}()
 	}
 }
@@ -76,10 +113,10 @@ func (c *jobClient) call(tool string, arguments map[string]any) (map[string]any,
 }
 
 func TestHTTPMCPJobReportsProgressWhileTheCommandRuns(t *testing.T) {
-	state, _, address, token := hubFixtureWith(t, "ask", shellThatStreams)
+	state, _, address, token := hubFixtureWith(t, "ask", func(state *State, shell *fakeShell) { shellThatStreams(t, state, shell) })
 	client := newJobClient(t, state, address, token)
 
-	started, failed := client.call("terminal_start", map[string]any{"command": "printf 'JOB_BEGIN\\n'; sleep 1; printf 'JOB_STEP:1\\n'; sleep 1; printf 'JOB_END\\n'"})
+	started, failed := client.call("terminal_start", map[string]any{"command": jobCommands.progress})
 	if failed || started["state"] != "running" || started["job_id"] == "" {
 		t.Fatalf("start = %v", started)
 	}
@@ -124,11 +161,11 @@ func TestHTTPMCPJobReportsProgressWhileTheCommandRuns(t *testing.T) {
 }
 
 func TestHTTPMCPJobStopCancelsAndFreesTheTerminalForTheNextCommand(t *testing.T) {
-	state, _, address, token := hubFixtureWith(t, "ask", shellThatStreams)
+	state, _, address, token := hubFixtureWith(t, "ask", func(state *State, shell *fakeShell) { shellThatStreams(t, state, shell) })
 	client := newJobClient(t, state, address, token)
 	other := newJobClient(t, state, address, token)
 
-	started, _ := client.call("terminal_start", map[string]any{"command": "printf 'WAITING\\n'; sleep 30; printf 'NEVER\\n'"})
+	started, _ := client.call("terminal_start", map[string]any{"command": jobCommands.waiting})
 	id := started["job_id"].(string)
 	if _, failed := client.call("terminal_start", map[string]any{"command": "echo second"}); !failed {
 		t.Fatal("a second job started in a busy terminal")

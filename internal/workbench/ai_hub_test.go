@@ -17,38 +17,7 @@ import (
 // hub serving it, configured the way the settings page would.
 func hubFixture(t *testing.T, mode string) (*State, *AIHub, string, string) {
 	t.Helper()
-	return hubFixtureWith(t, mode, nil)
-}
-
-// hubFixtureWith lets a test replace the shell's behaviour before the hub starts.
-func hubFixtureWith(t *testing.T, mode string, configure func(*fakeShell)) (*State, *AIHub, string, string) {
-	t.Helper()
-	state, shell := assistantSession(t, &scriptedModel{turn: nil})
-	if configure != nil {
-		configure(shell)
-	}
-	path := state.options.AIStorePath
-	db, err := state.aiStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, value := range map[string]string{"ai.mcp.enabled": "on", "ai.mcp.mode": mode} {
-		if err := db.SetSetting(key, value); err != nil {
-			t.Fatal(err)
-		}
-	}
-	hub := NewAIHub(path)
-	t.Cleanup(hub.Close)
-	hub.Add(state, nil)
-	if err := hub.Reconfigure(); err != nil {
-		t.Fatal(err)
-	}
-	address := hub.Address()
-	if address == "" {
-		t.Fatal("the hub did not start")
-	}
-	token, _, _ := db.Setting("ai.mcp.token")
-	return state, hub, address, token
+	return hubFixtureWith(t, mode, func(_ *State, shell *fakeShell) { shellThatRuns(shell) })
 }
 
 // rpc posts one JSON-RPC request while the window thread keeps waking, as the
@@ -95,18 +64,6 @@ func rpc(t *testing.T, state *State, address, token, method, params string) map[
 		state.Wake()
 		time.Sleep(2 * time.Millisecond)
 	}
-}
-
-func toolText(t *testing.T, out map[string]any) (string, bool) {
-	t.Helper()
-	result, _ := out["result"].(map[string]any)
-	content, _ := result["content"].([]any)
-	if len(content) == 0 {
-		t.Fatalf("no content in %v", out)
-	}
-	text, _ := content[0].(map[string]any)["text"].(string)
-	isError, _ := result["isError"].(bool)
-	return text, isError
 }
 
 func TestAnExternalAgentSeesTheSessionsAndRunsAReadOnlyCommandWhenAllowedToAsk(t *testing.T) {

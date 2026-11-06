@@ -612,6 +612,7 @@ var TraditionalMessages = Messages{
 	SessionRestoredBody:            "此分頁僅在本機恢復，尚未建立任何網路連線。",
 	SessionReconnect:               "連線",
 	SessionReconnectHint:           "按Enter重新連線。",
+	SessionNoShellInput:            "此分頁沒有可用的 Shell，按鍵未被送出。按 Enter 可重新連線。",
 	ConnClosed:                     "連線已關閉。",
 	ConnCanceled:                   "連線已取消。",
 	ConnRejected:                   "已拒絕主機金鑰，未向伺服器傳送任何內容。",
