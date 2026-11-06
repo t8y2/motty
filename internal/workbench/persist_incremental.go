@@ -314,46 +314,58 @@ func uniqueHostIDs(hosts []savedHost) bool {
 // appendHostEntries appends the host records, reusing the record of every host
 // that did not change since the last save. It applies the same id, ordinal,
 // default and skip rules as the generic appendEntityEntries path.
+//
+// hosts is the catalog order the caller means to keep. A slice whose order does
+// not match the ordinals the base holds is taken as a deliberate move and
+// renumbered; a slice in a different order would otherwise rewrite positions the
+// user never changed.
 func appendHostEntries(entries []configstore.Entry, base *configBase, defaults configDefaults, hosts []savedHost, nextOrd int64) ([]configstore.Entry, int64, error) {
 	if base.hostRecords == nil {
 		base.hostRecords = make(map[string]hostRecord, len(hosts))
 	}
 
-	// Existing host ordinals define the catalog order. Reassign that same set
-	// of ordinals to the hosts in their current slice order so a deliberate
-	// reorder persists without renumbering unrelated records. New hosts still
-	// receive fresh ordinals below.
-	existing := make([]int64, 0, len(hosts))
+	// Existing host ordinals define the catalog order. When the slice still runs
+	// in that order nothing moved, so every ordinal is left as the base holds it
+	// and the cached records are reused as they are. When it does not, the same
+	// set of ordinals is reassigned to the hosts in slice order so the move
+	// persists without renumbering unrelated records. New hosts still receive
+	// fresh ordinals below.
+	// A tie means two records share a position, which is repaired the same way.
+	held := make([]int64, 0, len(hosts))
+	moved := false
 	for _, host := range hosts {
-		key := configstore.Key{Kind: kindHost, ID: host.ID}
-		if ord, known := base.ords[key]; known {
-			existing = append(existing, ord)
+		ord, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]
+		if !known {
+			continue
 		}
-	}
-	sort.Slice(existing, func(left, right int) bool { return existing[left] < existing[right] })
-	for index := 1; index < len(existing); index++ {
-		if existing[index] <= existing[index-1] {
-			existing[index] = existing[index-1] + 1
+		if len(held) > 0 && ord <= held[len(held)-1] {
+			moved = true
 		}
+		held = append(held, ord)
 	}
-	if len(existing) > 0 {
-		nextOrd = max(nextOrd, existing[len(existing)-1])
-	}
-	desired := make(map[string]int64, len(existing))
-	at := 0
-	for _, host := range hosts {
-		key := configstore.Key{Kind: kindHost, ID: host.ID}
-		if _, known := base.ords[key]; known {
-			desired[host.ID] = existing[at]
-			at++
+	desired := map[string]int64{}
+	if moved && len(held) > 0 {
+		sort.Slice(held, func(left, right int) bool { return held[left] < held[right] })
+		for index := 1; index < len(held); index++ {
+			if held[index] <= held[index-1] {
+				held[index] = held[index-1] + 1
+			}
+		}
+		nextOrd = max(nextOrd, held[len(held)-1])
+		at := 0
+		for _, host := range hosts {
+			if _, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]; known {
+				desired[host.ID] = held[at]
+				at++
+			}
 		}
 	}
 
 	for _, host := range hosts {
 		key := configstore.Key{Kind: kindHost, ID: host.ID}
 		ord, known := base.ords[key]
-		if known {
-			ord = desired[host.ID]
+		if want, reassigned := desired[host.ID]; reassigned {
+			ord = want
 		}
 		if record, cached := base.hostRecords[host.ID]; cached && known && record.ord == ord && sameSavedHost(record.host, host) {
 			entries = append(entries, configstore.Entry{Kind: kindHost, ID: host.ID, Payload: record.payload})

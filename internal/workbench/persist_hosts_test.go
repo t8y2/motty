@@ -380,3 +380,77 @@ func TestDuplicateHostIDsStillUseTheGenericEncoder(t *testing.T) {
 		t.Fatalf("duplicate host records = %v", seen)
 	}
 }
+
+// TestAcceptLocalKeepsKnownOrdinalsOfNonHostRecords guards the ordinal this
+// base already knows for a record kind whose payload carries none: decoding
+// would read a zero and lose the position the store had.
+func TestAcceptLocalKeepsKnownOrdinalsOfNonHostRecords(t *testing.T) {
+	key := configstore.Key{Kind: "snippet", ID: "one"}
+	base := newConfigBase()
+	base.ords[key] = 7
+	settings := configstore.Key{Kind: kindSetting, ID: "terminalOption"}
+	base.ords[settings] = 3
+
+	data, err := json.Marshal("snippet value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.acceptLocal([]configstore.Entry{
+		// No Ord: exactly what appendSettingEntry and the generic path write for
+		// kinds that have no position of their own.
+		{Kind: kindSetting, ID: "terminalOption", Payload: recordPayloadJSON(t, 0, data)},
+	}, localWrite{})
+	if got := base.ords[settings]; got != 3 {
+		t.Fatalf("known ordinal of a setting became %d", got)
+	}
+}
+
+// TestAHostOrdinalStillFollowsTheRecord proves the relaxation above stays
+// narrow: a host's position is the one the save just wrote.
+func TestAHostOrdinalStillFollowsTheRecord(t *testing.T) {
+	key := configstore.Key{Kind: kindHost, ID: "a"}
+	base := newConfigBase()
+	base.ords[key] = 2
+	raw, err := json.Marshal(savedHost{ID: "a", Label: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.acceptLocal([]configstore.Entry{{Kind: kindHost, ID: "a", Payload: recordPayloadJSON(t, 9, raw)}}, localWrite{})
+	if got := base.ords[key]; got != 9 {
+		t.Fatalf("host ordinal = %d, want the written position", got)
+	}
+}
+
+// TestAnUnchangedHostOrderKeepsEveryOrdinal proves a save that moves nothing
+// leaves the catalog positions alone, so a caller that hands over a slice in a
+// derived order cannot rewrite the order the user chose.
+func TestAnUnchangedHostOrderKeepsEveryOrdinal(t *testing.T) {
+	saved, base, err := joinState([]configstore.Entry{
+		hostEntryWithOrd(t, "a", "A", 10),
+		hostEntryWithOrd(t, "b", "B", 20),
+		hostEntryWithOrd(t, "c", "C", 30),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A middle host edited: the slice order still matches the ordinals.
+	saved.Hosts[1].Label = "B edited"
+	entries, _, err := appendHostEntries(nil, base, nil, saved.Hosts, base.maxOrd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"a": 10, "b": 20, "c": 30}
+	got := map[string]int64{}
+	for _, entry := range entries {
+		var payload recordPayload
+		if err := json.Unmarshal(entry.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		got[entry.ID] = payload.Ord
+	}
+	for id, ord := range want {
+		if got[id] != ord {
+			t.Fatalf("ordinals = %v, want %v", got, want)
+		}
+	}
+}
