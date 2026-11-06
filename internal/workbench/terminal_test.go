@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -148,7 +149,16 @@ func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 			t.Fatalf("%+v was not taken", event)
 		}
 	}
-	if got, want := shell.typed(), "\r\x1b[A\t\x1b\x7f\x03\x1b[1;3D\x1b[15~\x1b[5~\x1b[3~"; got != want {
+	// Option+Left is the protocol's CSI 1;3D, except on macOS where a shell that
+	// negotiated nothing gets macOS Terminal's word movement instead. The product
+	// decides which (see terminal.go), so the expectation follows the platform
+	// rather than pinning one convention: CI's Linux and Windows shards take the
+	// first form, a Mac the second.
+	optionLeft := "\x1b[1;3D"
+	if runtime.GOOS == "darwin" {
+		optionLeft = "\x1bb"
+	}
+	if got, want := shell.typed(), "\r\x1b[A\t\x1b\x7f\x03"+optionLeft+"\x1b[15~\x1b[5~\x1b[3~"; got != want {
 		t.Fatalf("sent %q, want %q", got, want)
 	}
 
