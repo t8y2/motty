@@ -18,6 +18,9 @@ const (
 	settingsRowHeight = float32(64)
 	settingsGroupGap  = float32(24)
 	settingsDescLines = 2
+	// settingsValueMax caps how wide the value a row names is drawn before it is
+	// cut: a long font family must not push the row's own name out of the card.
+	settingsValueMax = float32(180)
 )
 
 // settingsControlKind is how a recorded control is painted.
@@ -302,7 +305,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
 			if state.interfaceFontRowVisible() {
-				page.actionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), !state.uiFont.supported,
+				page.valueActionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), state.interfaceFontInEffect(), !state.uiFont.supported,
 					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			}
 			if state.options.StartAtLogin != nil {
@@ -610,6 +613,36 @@ func (page *settingsPage) actionRow(label, description string, disabled bool, ac
 		controlWidth = page.controlWidth
 	}
 	page.buttons(page.line(label, description, controlWidth), disabled, actions...)
+}
+
+// valueActionRow is actionRow for a setting whose current value the row names
+// beside the buttons, so the value is read without pressing them: the choice of
+// interface font is the one setting whose buttons say nothing about what is in
+// effect now. The value takes room from the buttons' side of the row, so the
+// setting's own name keeps the same room whatever the value is; a value too long
+// for that room ends in an ellipsis.
+func (page *settingsPage) valueActionRow(label, description, value string, disabled bool, actions ...components.ButtonAction) {
+	theme, canvas := page.state.Theme(), page.f.Canvas()
+	gap := theme.Metrics.GapItem
+	buttonsWidth := gap * float32(len(actions)-1)
+	for _, action := range actions {
+		buttonsWidth += components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+	}
+	// The value is set in the buttons' own size, not a step under it: it stands
+	// beside them on the same line, and a size down read as something else
+	// entirely. Its quieter colour is what makes it secondary.
+	valueWidth := min(canvas.TextWidthWeight(value, metrics.FontSizeM, ui.WeightMedium), settingsValueMax)
+	controlWidth := min(buttonsWidth+gap+valueWidth, page.width*0.6)
+	if page.controlWidth > 0 {
+		controlWidth = page.controlWidth
+	}
+	var buttons flex.Box
+	page.lineWith(label, description, controlWidth, func() {
+		page.f.Text(value).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.muted).
+			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
+		buttons = page.f.Slot().Size(buttonsWidth, 34).Shrink(0)
+	})
+	page.buttons(buttons, disabled, actions...)
 }
 
 // labels records that the words in the box are the label of the control, when

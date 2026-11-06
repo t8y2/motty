@@ -133,7 +133,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
 	}
 	if state.interfaceFontRowVisible() {
-		row(settingsGeneral, m.SettingsInterfaceFont, m.SettingsInterfaceFontDescription)
+		row(settingsGeneral, m.SettingsInterfaceFont, "")
 	}
 
 	if state.options.StartAtLogin != nil {

@@ -266,9 +266,7 @@ type Messages struct {
 	SettingsTextSizeRegular                string
 	SettingsTextSizeLarge                  string
 	SettingsInterfaceFont                  string
-	SettingsInterfaceFontDescription       string
 	SettingsInterfaceFontDefault           string
-	SettingsInterfaceFontCurrentFmt        string
 	SettingsInterfaceFontUnsupportedFmt    string
 	SettingsOutputAlerts                   string
 	SettingsOutputAlertsDescription        string

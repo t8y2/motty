@@ -48,9 +48,11 @@ type interfaceFontUI struct {
 	// at all; supported is its answer.
 	known, supported bool
 
-	// text is the description the settings row shows; the rest is what it was made
-	// for.
+	// text is the explanation the settings row shows, empty when the choice is in
+	// effect; textMade says it has been made, since empty is a real answer; the
+	// rest is what it was made for.
 	text       string
+	textMade   bool
 	textFamily string
 	textState  uint8
 	textLang   i18n.Language
@@ -63,17 +65,21 @@ func (state *State) interfaceFontRowVisible() bool {
 	return state.uiFont.supported || state.uiFont.family != ""
 }
 
-// interfaceFontName is the name of the font chosen, in the current language.
-func (state *State) interfaceFontName() string {
-	if state.uiFont.family != "" {
-		return state.uiFont.family
+// interfaceFontInEffect is the name the row shows for the font the window's text
+// is actually drawn in: the family the engine was told, which is the platform's
+// own where the choice cannot be followed. Showing the saved choice instead would
+// name a font that is not in use, beside a description saying it is not.
+func (state *State) interfaceFontInEffect() string {
+	if state.uiFont.applied != "" {
+		return state.uiFont.applied
 	}
 	return state.messages.SettingsInterfaceFontDefault
 }
 
-// interfaceFontDescription is the settings row's explanation: what the font is
-// now, or why the choice is not in effect. It is made again only when that, or
-// the language, changes.
+// interfaceFontDescription is the row's explanation when the choice is not in
+// effect — the platform cannot follow a family, or the system no longer has it —
+// and "" when it is: the row names the font itself, so there is nothing else to
+// explain. It is made again only when that, or the language, changes.
 func (state *State) interfaceFontDescription() string {
 	fonts := &state.uiFont
 	var kind uint8
@@ -83,7 +89,8 @@ func (state *State) interfaceFontDescription() string {
 	case fonts.missing:
 		kind = 2
 	}
-	if fonts.text == "" || fonts.textFamily != fonts.family || fonts.textState != kind || fonts.textLang != state.language {
+	if !fonts.textMade || fonts.textFamily != fonts.family || fonts.textState != kind || fonts.textLang != state.language {
+		fonts.textMade = true
 		fonts.textFamily, fonts.textState, fonts.textLang = fonts.family, kind, state.language
 		switch kind {
 		case 1:
@@ -91,7 +98,7 @@ func (state *State) interfaceFontDescription() string {
 		case 2:
 			fonts.text = fmt.Sprintf(state.messages.Tools.FontMissingFmt, fonts.family)
 		default:
-			fonts.text = fmt.Sprintf(state.messages.SettingsInterfaceFontCurrentFmt, state.interfaceFontName())
+			fonts.text = ""
 		}
 	}
 	return fonts.text

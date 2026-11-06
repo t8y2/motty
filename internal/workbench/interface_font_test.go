@@ -80,8 +80,10 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 	if state.modal != modalNone || state.uiFont.family != "Microsoft YaHei UI" || lastTold(told) != "Microsoft YaHei UI" {
 		t.Fatalf("modal %d, family %q, told %v", state.modal, state.uiFont.family, *told)
 	}
-	if !strings.Contains(state.interfaceFontDescription(), "Microsoft YaHei UI") {
-		t.Fatalf("description %q", state.interfaceFontDescription())
+	// The row names the family in effect beside the button, so it is read there
+	// rather than in an explanation.
+	if _, texts := paintedTexts(state); !contains(texts, "Microsoft YaHei UI") {
+		t.Fatalf("the row does not name the font in use: %v", texts)
 	}
 
 	// The choice is the state file's, and a new window opens with it in effect.
@@ -102,8 +104,11 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 	openInterfaceFontPickerFor(t, reloaded)
 	reloaded.Click(hitFontPickerItemList.At(0))
 	reloaded.Click(hitFontPickerConfirm)
-	if reloaded.uiFont.family != "" || lastTold(secondTold) != "" || !strings.Contains(reloaded.interfaceFontDescription(), reloaded.messages.SettingsInterfaceFontDefault) {
+	if reloaded.uiFont.family != "" || lastTold(secondTold) != "" {
 		t.Fatalf("the Default row left the family %q (told %v)", reloaded.uiFont.family, *secondTold)
+	}
+	if _, texts := paintedTexts(reloaded); !contains(texts, reloaded.messages.SettingsInterfaceFontDefault) {
+		t.Fatalf("the row does not name the default font: %v", texts)
 	}
 }
 
@@ -169,13 +174,17 @@ func TestAnInterfaceFontThatIsNotInstalledIsKeptButNotUsed(t *testing.T) {
 	}
 	second.Close()
 
-	// Back where the family is installed, it is in use again.
+	// Back where the family is installed, it is in use again: the row names it.
 	options, told = interfaceFontOptions(t, testInterfaceFonts)
 	options.StatePath = first.options.StatePath
 	third := newTestState(t, options)
 	waitFor(t, third, func() bool { return third.uiFont.installed != nil })
-	if third.uiFont.missing || lastTold(told) != "Sarasa Gothic" || !strings.Contains(third.interfaceFontDescription(), "Now: Sarasa Gothic") {
-		t.Fatalf("missing %v, told %v, description %q", third.uiFont.missing, *told, third.interfaceFontDescription())
+	if third.uiFont.missing || lastTold(told) != "Sarasa Gothic" {
+		t.Fatalf("missing %v, told %v", third.uiFont.missing, *told)
+	}
+	third.Click(hitSettings)
+	if _, texts := paintedTexts(third); !contains(texts, "Sarasa Gothic") {
+		t.Fatalf("the row does not name the font in use: %v", texts)
 	}
 }
 
@@ -247,10 +256,46 @@ func TestTheInterfaceFontRowIsSearchableAndFollowsTheLanguage(t *testing.T) {
 		t.Fatalf("results = %+v", state.settings.results[:state.settings.count])
 	}
 
-	// The description is made again when the language changes, not only the font.
-	english := state.interfaceFontDescription()
+	// The value the row names is translated: with no family chosen it is the
+	// default's own name, and that follows the language like the rest of the row.
+	state.setInterfaceFont("")
+	english := state.interfaceFontInEffect()
 	state.setLanguage(i18n.Chinese)
-	if chinese := state.interfaceFontDescription(); chinese == english || !strings.Contains(chinese, "Segoe UI") {
-		t.Fatalf("English %q, Chinese %q", english, chinese)
+	if chinese := state.interfaceFontInEffect(); chinese == english {
+		t.Fatalf("the default's name is not translated: English %q, Chinese %q", english, chinese)
+	}
+}
+
+// The font in effect is read off the row itself, so it has to be visible without
+// pressing anything: beside the button, on the same line, and never over it.
+func TestTheInterfaceFontRowNamesTheFontBesideTheButton(t *testing.T) {
+	options, _ := interfaceFontOptions(t, testInterfaceFonts)
+	state := newTestState(t, options)
+	state.setInterfaceFont("Segoe UI")
+	state.Click(hitSettings)
+	canvas, _ := paintedTexts(state)
+
+	button, ok := hitByID(canvas, hitInterfaceFontChoose)
+	if !ok {
+		t.Fatal("the row offers no button to choose a font with")
+	}
+	var value ui.Rect
+	found := false
+	for _, text := range canvas.Texts() {
+		if text.Value == "Segoe UI" {
+			value, found = text.Bounds, true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("the row does not name the font in use")
+	}
+	if value.X+value.Width > button.Bounds.X {
+		t.Fatalf("the name %v runs into the button %v", value, button.Bounds)
+	}
+	// Same row: the name's middle lies within the button's height, whatever the
+	// leading of either is.
+	if middle := value.Y + value.Height/2; middle < button.Bounds.Y || middle > button.Bounds.Y+button.Bounds.Height {
+		t.Fatalf("the name %v is not on the button's line %v", value, button.Bounds)
 	}
 }
