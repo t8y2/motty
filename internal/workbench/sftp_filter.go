@@ -121,10 +121,99 @@ func (state *State) clickSFTPFilter(view *sftpView, id ui.ID) bool {
 	return false
 }
 
-func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anchor ui.Rect, folder *sftpFolder, view *sftpView) {
+// sftpHeaderMenuRequest is the More menu a file panel asked for, waiting for the
+// page to paint it. The menu dims the whole window, so it cannot be painted in
+// the panel's own canvas: Embed intersects every hit it copies with its parent's
+// clip, which would leave the dismiss backdrop covering the panel alone. A press
+// on the window bar would then reach the window as a move region instead of the
+// menu's backdrop, so the menu would neither take the choice nor close.
+type sftpHeaderMenuRequest struct {
+	queued bool
+	// window is the file tab whose menu it is; nil is the docked panel's menu.
+	window *sftpWindow
+	side   int
+	// anchor is the More button, in the canvas that painted the panel.
+	anchor ui.Rect
+	folder *sftpFolder
+	view   *sftpView
+	// owner is the dismiss identity of the menu as painted, mounted where the
+	// page shows the panel, and mount is where its identities sit. Keeping them
+	// here is what lets the keyboard and Escape find the menu again.
+	owner ui.ID
+	mount ui.Scope
+}
+
+// sftpHeaderMenuMine reports whether id is the identity the file panel's More
+// menu took, in whichever place the page mounted the panel it belongs to.
+func (state *State) sftpHeaderMenuMine(id ui.ID) bool {
+	return !id.IsZero() && id == state.sftpHeaderMenu.owner
+}
+
+// sftpHeaderMenuOwns reports whether the popup owner is the page-painted More
+// menu of a file panel that can still take a choice.
+func (state *State) sftpHeaderMenuOwns(id ui.ID) bool {
+	if !state.sftpHeaderMenuMine(id) {
+		return false
+	}
+	if w := state.activeSFTPWindow(); w != nil {
+		return state.modal == modalNone && !state.transfers.open && w.view != nil &&
+			w.view.dialog == sftpDialogNone && w.view.editPath == ""
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	return ok && state.sftpHeaderMenuAvailable(session.files)
+}
+
+// requestSFTPHeaderMenu records the docked panel's More menu for the page.
+func (state *State) requestSFTPHeaderMenu(anchor ui.Rect, folder *sftpFolder, view *sftpView) {
+	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, anchor: anchor, folder: folder, view: view}
+}
+
+// requestSFTPWindowHeaderMenu records a file tab's More menu for the page.
+func (state *State) requestSFTPWindowHeaderMenu(window *sftpWindow, side int, anchor ui.Rect) {
+	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, window: window, side: side, anchor: anchor}
+}
+
+// paintQueuedSFTPHeaderMenu paints the menu an embedded file panel asked for,
+// over the page, where its backdrop covers the whole window.
+func (state *State) paintQueuedSFTPHeaderMenu(canvas *ui.Canvas) {
+	request := state.sftpHeaderMenu
+	state.sftpHeaderMenu = sftpHeaderMenuRequest{}
+	if !request.queued {
+		return
+	}
+	if request.window == nil {
+		if request.anchor.Width == 0 || state.contextRect.Width == 0 {
+			return
+		}
+		// The panel is embedded at the context mount, with its own origin.
+		origin := ui.Point{X: state.contextRect.X, Y: state.contextRect.Y - windowBarHeight}
+		state.sftpHeaderMenu.owner = tree.MountID(contextMount, hitSFTPHeaderMenuDismiss)
+		state.sftpHeaderMenu.mount = contextMount
+		state.paintSFTPHeaderMenu(canvas, origin, contextMount, state.windowRect(), request.anchor, request.folder, request.view)
+		return
+	}
+	if request.window.closed || request.window.window != nil {
+		return
+	}
+	mount := sftpWindowMount(request.window)
+	origin := ui.Point{X: state.fileManagerRect.X, Y: state.fileManagerRect.Y}
+	state.sftpHeaderMenu.owner = tree.MountID(mount, hitSFTPWindowHeaderDismiss)
+	state.sftpHeaderMenu.mount = mount
+	request.window.paintHeaderMenu(canvas, request.side, origin, mount, state.windowRect(), &request.window.ui.headerScroll)
+}
+
+// paintSFTPHeaderMenu paints the docked panel's More menu over the page. origin
+// and mount place it: the identities stay the panel's own, mounted where the page
+// shows it, so a press on a row reaches the panel's handler exactly as it did
+// when the menu was painted inside the panel.
+func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, origin ui.Point, mount ui.Scope, viewport ui.Rect, anchor ui.Rect, folder *sftpFolder, view *sftpView) {
 	if anchor.Width == 0 || anchor.Height == 0 {
 		return
 	}
+	id := func(local ui.ID) ui.ID { return tree.MountID(mount, local) }
+	route := func(local ui.Scope) ui.Scope { return tree.Mount(mount, local) }
+	anchor.X, anchor.Y = anchor.X+origin.X, anchor.Y+origin.Y
+	dismiss := id(hitSFTPHeaderMenuDismiss)
 	const menuWidth = float32(280)
 	rows := 8 + len(folder.history.recent)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
@@ -133,13 +222,13 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anc
 	menuHeight := float32(rows*32 + 26)
 	bounds := state.popupBelow(canvas, anchor, menuWidth, menuHeight, flex.End)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPHeaderMenuDismiss,
-		Viewport: ui.Rect{Width: viewport.Width, Height: viewport.Height}, Scroll: state.menuScrollFor(hitSFTPHeaderMenuDismiss),
+		Layer: dialogLayer, Scope: dialogScope, DismissID: dismiss,
+		Viewport: viewport, Scroll: state.menuScrollFor(dismiss),
 	})
 	state.menuPlaced(menu.Bounds())
-	state.paintSFTPHistoryMenu(&menu, view, view.local, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits)
+	state.paintSFTPHistoryMenu(&menu, view, view.local, id(hitSFTPHistoryBack), id(hitSFTPHistoryForward), route(sftpRecentHits))
 	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPHeaderFilter, Label: state.messages.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch],
+		ID: id(hitSFTPHeaderFilter), Label: state.messages.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch],
 		Selected: folder.filterOpen || folder.filterInputEditor().String() != "",
 	})
 	hiddenIcon, hiddenLabel := iconEyeOff, state.messages.Tools.FilesShowHidden
@@ -147,11 +236,11 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anc
 		hiddenIcon, hiddenLabel = iconEye, state.messages.Tools.FilesHideHidden
 	}
 	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPHeaderHidden, Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
+		ID: id(hitSFTPHeaderHidden), Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
 		Selected: folder.showHidden,
 	})
 	if label, disabled := state.sftpEditorItem(view, folder); label != "" {
-		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
+		menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPHeaderEditor), Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	menu.AddSeparator()
 	for _, entry := range state.sftpColumns.entries {
@@ -169,7 +258,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, viewport ui.Size, anc
 		if folder.sortOrder.descending {
 			icon = iconChevronDown
 		}
-		item := components.DropdownMenuItem{ID: sftpHeaderSortHits.At(column), Label: label, Selected: folder.sortOrder.column == column}
+		item := components.DropdownMenuItem{ID: id(sftpHeaderSortHits.At(column)), Label: label, Selected: folder.sortOrder.column == column}
 		if item.Selected {
 			item.Icon = lucideIcons[icon]
 		}

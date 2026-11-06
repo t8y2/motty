@@ -164,7 +164,15 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		w.paintMenu(canvas)
 	}
 	if side, ok := w.headerMenu(); ok {
-		w.paintHeaderMenu(canvas, side)
+		if w.window == nil {
+			// Hosted by a main-window tab: the page paints the menu, so its
+			// backdrop covers the window bar instead of only the tab.
+			w.owner.requestSFTPWindowHeaderMenu(w, side, w.ui.headerAnchor[side])
+		} else {
+			// A standalone window is its own canvas, so its own viewport is the
+			// whole window.
+			w.paintHeaderMenu(canvas, side, ui.Point{}, 0, ui.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
+		}
 	}
 	if w.bookmark.open {
 		w.paintBookmarkDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})

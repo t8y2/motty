@@ -517,6 +517,7 @@ type State struct {
 	localShellPicker   localShellPicker
 	snippetMenu        snippetMenu
 	sftpMenu           sftpMenu
+	sftpHeaderMenu     sftpHeaderMenuRequest
 	fileProperties     sftpFileProperties
 	popups             popupMenus
 	selectedHostID     uint32
@@ -2433,10 +2434,11 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 		state.ActivatePane(session.ID)
 		mount, _ = tree.MountOf(event.Target.Scope())
 		event.Target = local
-	} else if event.Target.IsZero() && state.popups.owner == hitSFTPHeaderMenuDismiss {
+	} else if event.Target.IsZero() && state.sftpHeaderMenuOwns(state.popups.owner) {
 		// Opening an embedded menu can temporarily leave its focus trap empty.
-		// Its first keyboard-selected row still belongs to the file panel.
-		mount = contextMount
+		// Its first keyboard-selected row still belongs to the file panel, and the
+		// row identities are already mounted where the menu was painted.
+		mount = 0
 	}
 	result := state.key(event)
 	result.Focus = tree.MountID(mount, result.Focus)

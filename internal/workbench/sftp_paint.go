@@ -271,7 +271,7 @@ func (state *State) paintSFTPPage(canvas *ui.Canvas, size ui.Size, session *Sess
 	}
 	state.paintSFTPIconButtons(canvas, buttons[:buttonCount])
 	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
-		state.paintSFTPHeaderMenu(canvas, ui.Size{Width: size.Width, Height: size.Height}, moreButton.Rect(), folder, view)
+		state.requestSFTPHeaderMenu(moreButton.Rect(), folder, view)
 	}
 	if folder.filterOpen {
 		state.paintSFTPFilter(canvas, filterSlot.Rect(), folder)

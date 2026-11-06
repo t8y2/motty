@@ -28,7 +28,12 @@ type popupMenus struct {
 }
 
 // beginMenus starts the painting of the popup menus of one frame.
-func (state *State) beginMenus() { state.popups.painted = false }
+func (state *State) beginMenus() {
+	state.popups.painted = false
+	// A file panel asks for its More menu while it is painted. Asking again each
+	// frame is what keeps the request honest: one that nobody renewed is stale.
+	state.sftpHeaderMenu = sftpHeaderMenuRequest{}
+}
 
 // endMenus ends it: a position no menu claimed is forgotten, so the next menu to
 // open starts at its top.
@@ -103,10 +108,16 @@ func (state *State) menuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
 // menuKey moves the keyboard through the open menu with the arrow, Home, End and
 // Page keys, scrolling the item it reaches into view.
 func (state *State) menuKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.popups.owner == hitSFTPHeaderMenuDismiss {
-		session, ok := state.sessionByIDPointer(state.activeSessionID)
-		if !ok || !state.sftpHeaderMenuAvailable(session.files) {
-			return ui.EventResult{}, false
+	if state.sftpHeaderMenuOwns(state.popups.owner) {
+		if w := state.activeSFTPWindow(); w != nil {
+			if w.view == nil || w.view.dialog != sftpDialogNone || w.view.editPath != "" {
+				return ui.EventResult{}, false
+			}
+		} else {
+			session, ok := state.sessionByIDPointer(state.activeSessionID)
+			if !ok || !state.sftpHeaderMenuAvailable(session.files) {
+				return ui.EventResult{}, false
+			}
 		}
 	}
 	scroll := state.openMenuScroll()

@@ -422,6 +422,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
 	state.paintSFTPMenu(canvas, viewport)
+	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
 	state.requestReconnectFrames(canvas)
