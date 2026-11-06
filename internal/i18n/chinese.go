@@ -398,7 +398,7 @@ var ChineseMessages = Messages{
 	},
 	ExportHosts:                 "导出",
 	ImportCatalog:               "导入目录",
-	ImportMenu:                  "导入",
+	ImportMenu:                  "导入/导出",
 	Connect:                     "连接",
 	ColumnName:                  "名称",
 	HostsEmpty:                  "添加你的主机",
