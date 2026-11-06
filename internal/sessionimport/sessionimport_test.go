@@ -128,6 +128,55 @@ func TestXshellSessionFilesAndArchives(t *testing.T) {
 	}
 }
 
+func TestXshellArchiveReadsLegacyChineseMemberNames(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "sessions.xts")
+	file, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	for _, entry := range []struct {
+		name   string
+		legacy bool
+	}{
+		{"Xshell/NAS存储/管理主机.xsh", true},
+		{"Xshell/云服务器/生产.xsh", false},
+	} {
+		name := entry.name
+		if entry.legacy {
+			encoded, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			name = string(encoded)
+		}
+		member, err := writer.CreateHeader(&zip.FileHeader{Name: name, NonUTF8: entry.legacy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := member.Write(utf16le(xshellSession)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ParseXshell(archive)
+	if err != nil || len(result.Entries) != 2 {
+		t.Fatalf("entries = %+v, err = %v", result.Entries, err)
+	}
+	groups := map[string]string{}
+	for _, entry := range result.Entries {
+		groups[entry.Name] = entry.Group
+	}
+	if groups["管理主机"] != "Xshell/NAS存储" || groups["生产"] != "Xshell/云服务器" {
+		t.Fatalf("imported names and folders = %q", groups)
+	}
+}
+
 func TestMobaXtermSessionsKeepFoldersAndSkipOtherProtocols(t *testing.T) {
 	text := "[Bookmarks]\r\nSubRep=\r\nImgNum=42\r\nLocal box=#109#0%127.0.0.1%22%me%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%%1080%%0%0%1%%0%%%%%0%_Std_Colors_0_%80%24%0%1%-1%<None>%%0%0%-1%-1#0# #-1\r\n" +
 		"[Bookmarks_1]\r\nSubRep=Clients\\Acme\r\nImgNum=41\r\nWeb=#109#0%web.acme.test%2222%root%%-1%-1%%\r\nWindows=#91#4%10.1.1.1%3389%Administrator%\r\nFiles=#98#7%ftp.acme.test%21%u%\r\n"

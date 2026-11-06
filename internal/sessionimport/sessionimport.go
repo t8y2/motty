@@ -670,6 +670,15 @@ func parseXshellArchive(path string) (Result, error) {
 		if member.FileInfo().IsDir() || !strings.EqualFold(filepath.Ext(member.Name), ".xsh") {
 			continue
 		}
+		name := member.Name
+		if !utf8.ValidString(name) {
+			decoded, ok := decodeGB18030Verified([]byte(name))
+			if !ok {
+				result.warn("%s: unsupported member name encoding", filepath.Base(path))
+				continue
+			}
+			name = decoded
+		}
 		total += member.UncompressedSize64
 		if member.UncompressedSize64 > MaxFileSize || total > maxArchiveSize {
 			result.warn("%s: too large; the rest of the archive was not read", filepath.Base(path))
@@ -686,13 +695,13 @@ func parseXshellArchive(path string) (Result, error) {
 			result.warn("%s: unreadable", member.Name)
 			continue
 		}
-		slashed := strings.ReplaceAll(member.Name, `\`, "/")
+		slashed := strings.ReplaceAll(name, `\`, "/")
 		group, base := "", slashed
 		if at := strings.LastIndexByte(slashed, '/'); at >= 0 {
 			group, base = strings.Trim(slashed[:at], "/"), slashed[at+1:]
 		}
-		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, member.Name); err != nil {
-			result.warn("%s: %v", member.Name, err)
+		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, name); err != nil {
+			result.warn("%s: %v", name, err)
 		}
 	}
 	return result, nil
