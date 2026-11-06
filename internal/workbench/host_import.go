@@ -49,6 +49,7 @@ type hostImportBuilder struct {
 	sources     map[string]sshconfig.Host
 	aliasIDs    map[string]uint32
 	connections map[hostConnection]Host
+	usedIDs     map[string]struct{}
 	identitySet map[string]struct{}
 	routes      map[uint32]uint32
 }
@@ -78,6 +79,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		sources:     make(map[string]sshconfig.Host, len(parsed.Hosts)),
 		aliasIDs:    make(map[string]uint32, len(parsed.Hosts)),
 		connections: make(map[hostConnection]Host, len(state.hosts)+len(parsed.Hosts)),
+		usedIDs:     make(map[string]struct{}, len(state.hosts)+len(parsed.Hosts)),
 		identitySet: make(map[string]struct{}, len(state.identities)+len(parsed.Hosts)),
 		routes:      make(map[uint32]uint32, len(state.proxies)+len(parsed.Hosts)),
 	}
@@ -85,6 +87,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 	builder.plan.nextIdentityID = state.nextIdentityID
 	builder.plan.nextProxyID = state.nextProxyID
 	for _, host := range state.hosts {
+		builder.usedIDs[host.CatalogID] = struct{}{}
 		if host.isSSH() {
 			builder.connections[connectionKey(host.Address, host.User, host.Port)] = host
 		}
@@ -265,7 +268,7 @@ func (builder *hostImportBuilder) ensureHost(label, address, user string, port u
 	if host, exists := builder.connections[key]; exists {
 		return host, false
 	}
-	host := Host{ID: builder.plan.nextHostID, Label: label, Address: address, User: user, Port: port}
+	host := Host{ID: builder.plan.nextHostID, Label: label, Address: address, User: user, Port: port, CatalogID: freshCatalogID(builder.usedIDs)}
 	host.finish()
 	builder.plan.nextHostID++
 	builder.plan.hosts = append(builder.plan.hosts, host)

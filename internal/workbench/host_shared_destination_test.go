@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -106,22 +107,119 @@ func TestRouteRecordKeysOnlyChangeForLaterHostsAtADestination(t *testing.T) {
 	}
 }
 
-func TestCatalogIDsOfHostsAtOneDestination(t *testing.T) {
-	a := Host{Label: "Target A", Address: "bastion.example.com", User: "ops", Port: 22}
-	b := Host{Label: "target b", Address: "bastion.example.com", User: "ops", Port: 22}
+func TestNewHostsGetIDsThatSayNothingAboutThem(t *testing.T) {
 	used := map[string]struct{}{}
-	first := uniqueCatalogID("", a, used)
-	second := uniqueCatalogID("", b, used)
-	if first != catalogIDFor(a) {
-		t.Fatalf("the first host at a destination lost its historical ID: %q", first)
+	seen := map[string]bool{}
+	for range 200 {
+		id := freshCatalogID(used)
+		if seen[id] || !validCatalogID(id) {
+			t.Fatalf("catalog ID %q repeated or not accepted", id)
+		}
+		seen[id] = true
 	}
-	if second == first {
-		t.Fatal("two hosts share a catalog ID")
+	// A file from before IDs existed still gets the ID its host always had.
+	legacy := Host{Address: "bastion.example.com", User: "ops", Port: 22}
+	if got := uniqueCatalogID("", legacy, map[string]struct{}{}); got != catalogIDFor(legacy) {
+		t.Fatalf("an ID-less host was given %q, want the one derived from its address", got)
 	}
-	// A second device that adds the same named host behind the bastion, with the
-	// first one already known, must arrive at the same ID.
-	if again := uniqueCatalogID("", Host{Label: "Target B", Address: b.Address, User: b.User, Port: b.Port}, map[string]struct{}{first: {}}); again != second {
-		t.Fatalf("the ID of a later host depends on more than its destination and name: %q vs %q", again, second)
+}
+
+func TestMergeSameHostsKeepsTheSmallestIDWhateverTheOrder(t *testing.T) {
+	host := func(id, label, address string) Host {
+		return Host{ID: uint32(len(id)), CatalogID: id, Label: label, Address: address, User: "ops", Port: 22}
+	}
+	hosts := []Host{
+		host("host_c", "Target A", "bastion.example.com"),
+		host("host_x", "Other", "bastion.example.com"), // another name: its own host
+		host("host_a", "target a", "bastion.example.com"),
+		host("host_b", "Target A", "bastion.example.com"),
+		host("host_c", "Target A", "bastion.example.com"), // the same record twice is not two hosts
+	}
+	for _, order := range [][]int{{0, 1, 2, 3}, {3, 2, 1, 0}, {2, 0, 3, 1}} {
+		var input []Host
+		for _, index := range order {
+			input = append(input, hosts[index])
+		}
+		kept, merges := mergeSameHosts(input)
+		var ids []string
+		for _, host := range kept {
+			ids = append(ids, host.CatalogID)
+		}
+		slices.Sort(ids)
+		if !slices.Equal(ids, []string{"host_a", "host_x"}) {
+			t.Fatalf("order %v kept %v", order, ids)
+		}
+		aliases := mergeAliases(merges)
+		if aliases["host_b"] != "host_a" || aliases["host_c"] != "host_a" || len(aliases) != 2 {
+			t.Fatalf("order %v aliases = %v (a host folded twice must end on the one that stays)", order, aliases)
+		}
+	}
+	// A serial host is its device: the account and port that mean nothing to it
+	// do not keep two of them apart.
+	serial := Host{CatalogID: "host_s1", Label: "Console", Address: "COM7", Protocol: protocolSerial}
+	other := serial
+	other.CatalogID, other.User, other.Port = "host_s2", "x", 9
+	if kept, _ := mergeSameHosts([]Host{serial, other}); len(kept) != 1 {
+		t.Fatalf("serial hosts not merged: %+v", kept)
+	}
+	// Hosts that differ in what they connect to are never folded.
+	same, other2 := hosts[0], hosts[0]
+	other2.CatalogID, other2.Port = "host_other", 2222
+	if kept, merges := mergeSameHosts([]Host{same, other2}); len(kept) != 2 || len(merges) != 0 {
+		t.Fatalf("different ports merged: %+v", kept)
+	}
+}
+
+// Two devices that each add the same host have two IDs for it once their records
+// meet. Reading them folds the two into one, with the references of the other
+// moved over, and records that so the store holds one host.
+func TestTheSameHostAddedOnTwoDevicesBecomesOneAndKeepsWhatReferredToIt(t *testing.T) {
+	options := testOptions(t)
+	// The password was typed for the host as the other device knew it.
+	if err := newTestState(t, options).secrets.vault.Set(hostSecretName("host_b", hostPasswordPart), "typed on the other device"); err != nil {
+		t.Fatal(err)
+	}
+	hosts := []savedHost{
+		{ID: "host_b", Label: "Target A", Address: "bastion.example.com", User: "ops", Port: 22},
+		{ID: "host_a", Label: "Target A", Address: "bastion.example.com", User: "ops", Port: 22},
+		{ID: "host_jump", Label: "Jump", Address: "jump.example.com", User: "ops", Port: 22},
+	}
+	err := saveState(options.StatePath, savedState{
+		Hosts:         hosts,
+		AgentHosts:    []string{"host_b"},
+		Sessions:      []savedSession{{Label: "Target A", Address: "bastion.example.com", User: "ops", Port: 22, SavedHost: true, CatalogID: "host_b"}},
+		ActiveSession: 1,
+		Proxies: []savedProxy{{
+			TargetID: "host_b", JumpID: "host_jump", TargetAddress: "bastion.example.com", TargetUser: "ops", TargetPort: 22,
+			JumpAddress: "jump.example.com", JumpUser: "ops", JumpPort: 22,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	var labels []string
+	for _, host := range state.hosts {
+		labels = append(labels, host.CatalogID)
+	}
+	if !slices.Equal(labels, []string{"host_a", "host_jump"}) {
+		t.Fatalf("hosts after the fold = %v", labels)
+	}
+	if len(state.sessions) != 1 || state.sessions[0].host.CatalogID != "host_a" {
+		t.Fatalf("the open tab was not moved to the host that stayed: %+v", state.sessions)
+	}
+	if !state.agentHosts["host_a"] || state.agentHosts["host_b"] {
+		t.Fatalf("agent access did not follow the host: %v", state.agentHosts)
+	}
+	if len(state.proxies) != 1 || state.hosts[0].ID != state.proxies[0].TargetID {
+		t.Fatalf("the jump route did not follow the host: %+v", state.proxies)
+	}
+	if value, found := vaultValue(t, state, hostSecretName("host_a", hostPasswordPart)); !found || value != "typed on the other device" {
+		t.Fatalf("the saved password did not follow the host: %q %v", value, found)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.hosts) != 2 || len(restarted.sessions) != 1 || restarted.sessions[0].host.CatalogID != "host_a" {
+		t.Fatalf("the fold was not recorded: hosts=%d sessions=%d", len(restarted.hosts), len(restarted.sessions))
 	}
 }
 
@@ -210,6 +308,11 @@ func TestSecondHostAtADestinationIsAddedOpenedAndRestored(t *testing.T) {
 	for _, host := range state.hosts {
 		if host.Label == "Target B" {
 			second = host
+		}
+		if host.Label == "Target A" || host.Label == "Target B" {
+			if host.CatalogID == catalogIDFor(host) {
+				t.Fatalf("%s was given the ID its address would give", host.Label)
+			}
 		}
 	}
 	session := state.openHostSession(second)

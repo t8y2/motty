@@ -805,7 +805,7 @@ func (r *sshReconciler) newCatalogID(host Host) string {
 			}
 		}
 	}
-	return uniqueCatalogID("", host, r.usedIDs)
+	return freshCatalogID(r.usedIDs)
 }
 
 func (r *sshReconciler) addHost(host Host) Host {

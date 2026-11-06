@@ -671,7 +671,7 @@ func TestCopyingAHostCarriesItsDedicatedProxyPassword(t *testing.T) {
 	}
 }
 
-func TestDeletingAHostRetiresItsProxyPasswordBeforeItsCatalogIDCanBeReused(t *testing.T) {
+func TestDeletingAHostRetiresItsProxyPasswordAndItsIDIsNotReused(t *testing.T) {
 	_, options := proxyWorld(t)
 	state := newTestState(t, options)
 	deleted := state.hosts[0]
@@ -697,8 +697,8 @@ func TestDeletingAHostRetiresItsProxyPasswordBeforeItsCatalogIDCanBeReused(t *te
 	state.Click(hitOutboundProxySubmit)
 	state.Click(hitDialogSubmit)
 	replacement := state.hosts[len(state.hosts)-1]
-	if replacement.CatalogID != deleted.CatalogID {
-		t.Fatalf("replacement catalog id = %q, want reused %q", replacement.CatalogID, deleted.CatalogID)
+	if replacement.CatalogID == deleted.CatalogID {
+		t.Fatalf("a host added at the address of a deleted one took its catalog id %q", deleted.CatalogID)
 	}
 	if proxy := state.proxyForHost(replacement); proxy == nil || proxy.Password != "" {
 		t.Fatalf("replacement inherited deleted password: %+v", proxy)

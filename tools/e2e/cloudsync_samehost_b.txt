@@ -1,0 +1,39 @@
+# Computer B of cloudsync_samehost_a.txt: adds the same host before the first sync, then sets
+# the service up. A's record and its own are two IDs for one host; B must show one.
+# lang: en
+click "New Host"
+settle 500
+type Target X
+click textfield:Address
+type bastion.example.com
+click textfield:User
+type ops
+click "Add Host"
+settle 400
+click "Settings"
+click "Backup & sync"
+settle 300
+click "S3"
+settle 300
+type http://127.0.0.1:19001
+key tab
+key tab
+type e2e
+click "Save"
+settle 300
+click "textfield:Access key ID"
+type AKIAE2E
+click "textfield:Secret access key"
+type e2e-secret-key
+click "textfield:Backup password"
+type correct horse battery
+click "Save"
+settle 1500
+click "Settings"
+click "Backup & sync"
+settle 300
+click "Sync now"
+settle 2500
+click "Hosts"
+settle 400
+expect count "Target X" 2

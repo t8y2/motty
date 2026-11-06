@@ -786,6 +786,11 @@ func (state *State) restore(saved savedState) {
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
+	if state.mergedHosts {
+		// What was folded into another host is still in the store: record the
+		// fold so the next start, and every other device, need not do it again.
+		state.save()
+	}
 }
 
 // restoreSettings applies the settings and the catalogs of a saved state, and
@@ -984,6 +989,12 @@ func (state *State) restoreShared(saved savedState) {
 	clear(state.hosts)
 	clear(state.hostGroups)
 	state.hosts, state.nextHostID = decodeHosts(saved.Hosts, known, state.nextHostID)
+	var merges []hostMerge
+	state.hosts, merges = mergeSameHosts(state.hosts)
+	state.merged, state.mergedHosts = nil, false
+	if len(merges) > 0 {
+		saved = state.foldMergedHosts(saved, merges)
+	}
 	state.templates = state.templates[:0]
 	for _, template := range saved.WorkspaceTemplates {
 		if normalized, err := normalizeWorkspaceTemplate(template); err == nil {
@@ -1209,6 +1220,7 @@ func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 	host.normalizeEndpoint()
 	if entry.SavedHost {
 		if entry.CatalogID != "" {
+			entry.CatalogID = state.resolveMerged(entry.CatalogID)
 			// Another host at the same address is not this one: a tab whose host is
 			// gone is dropped rather than reopened on its neighbour.
 			for _, saved := range state.hosts {

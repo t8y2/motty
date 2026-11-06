@@ -33,6 +33,12 @@ type hostCatalog struct {
 	// agentHosts holds the catalog ids of the hosts an agent may use without a
 	// window (see savedState.AgentHosts).
 	agentHosts map[string]bool
+	// merged maps the catalog ID of each host that was folded into another when
+	// the hosts were last read (see mergeSameHosts) to the ID that stayed, for
+	// what still refers to the old one. mergedHosts says the read changed the
+	// catalog, so the store still holds what was folded away.
+	merged      map[string]string
+	mergedHosts bool
 }
 
 // connectEnv is what resolving a connection needs beyond the catalog.

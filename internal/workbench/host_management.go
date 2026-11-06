@@ -321,7 +321,9 @@ func (state *State) submitHostDialog() {
 				used[host.CatalogID] = struct{}{}
 			}
 		}
-		candidate.CatalogID = uniqueCatalogID(candidate.CatalogID, candidate, used)
+		// The form fills in the ID that the address would give; a host that is
+		// being created takes one of its own instead.
+		candidate.CatalogID = freshCatalogID(used)
 	}
 	passwordChanges, failure := state.hostDialogPasswordChanges(candidate, source)
 	if failure != "" {

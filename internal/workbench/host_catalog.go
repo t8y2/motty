@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -160,20 +161,13 @@ func catalogIDFor(host Host) string {
 }
 
 // uniqueCatalogID chooses a catalog ID no host in used holds, and records it
-// there. used is the set of IDs already taken; a caller adding a batch of hosts
-// builds it once instead of scanning a growing slice for every host.
-//
-// A new host whose destination is already a host's gets an ID made from its
-// name too, so two devices that each add the same named target behind one
-// bastion still end up with one host. Only the first host at a destination keeps
-// the ID that every build has always given it.
+// there. It is for a host that has none yet, as when a file written before IDs
+// existed is read: the ID is then made from where the host connects, so the same
+// file gives the same ID every time. A host created now takes freshCatalogID.
 func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) string {
 	base := strings.TrimSpace(preferred)
 	if base == "" {
 		base = catalogIDFor(host)
-		if _, taken := used[base]; taken {
-			base = catalogIDForName(host)
-		}
 	}
 	candidate := base
 	for suffix := 2; ; suffix++ {
@@ -185,13 +179,88 @@ func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) stri
 	}
 }
 
-// catalogIDForName is the ID of a host that shares its destination with another:
-// the destination and the name, so it differs from the ID of the first host there.
-func catalogIDForName(host Host) string {
-	source := strings.ToLower(strings.TrimSpace(host.Address)) + "\x00" + strings.TrimSpace(host.User) + "\x00" + fmt.Sprint(host.Port) +
-		"\x00" + host.transport().Protocol + "\x00" + strings.ToLower(strings.TrimSpace(host.Label))
-	digest := sha256.Sum256([]byte(source))
-	return "host_" + hex.EncodeToString(digest[:12])
+// freshCatalogID is the ID of a host that is being created: random, and recorded
+// in used. It says nothing about the host, so it cannot collide with the ID that
+// another device gives a different host with the same address, and it stays the
+// host's own however the host is edited. Two devices that each add the same host
+// end up with two IDs; mergeSameHosts brings them back to one.
+func freshCatalogID(used map[string]struct{}) string {
+	for {
+		var random [12]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			panic("workbench: no randomness for a catalog id: " + err.Error())
+		}
+		id := "host_" + hex.EncodeToString(random[:])
+		if _, taken := used[id]; !taken {
+			used[id] = struct{}{}
+			return id
+		}
+	}
+}
+
+// hostMerge says that the host dropped was the same host as kept.
+type hostMerge struct {
+	dropped, kept Host
+}
+
+// mergeKey is what makes two hosts one host for mergeSameHosts: the destination
+// and the name, as in sameHost.
+type mergeKey struct {
+	protocol uint8
+	address  string
+	user     string
+	port     uint16
+	viaSSH   bool
+	label    string
+}
+
+func mergeKeyOf(host Host) mergeKey {
+	key := mergeKey{protocol: uint8(host.Protocol), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
+	if host.Protocol != protocolSerial {
+		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
+	}
+	return key
+}
+
+// mergeSameHosts folds hosts that are the same host (see sameHost) but have
+// different IDs into one, and returns what it did. A host has no ID that two
+// devices agree on before they have synced, so a host added on both appears
+// twice when their records meet. The host with the smallest ID stays, which every
+// device chooses alike, so each ends with the same one without talking to the
+// other. The kept host is not changed; what referred to a dropped host is the
+// caller's to point at the one that stays.
+func mergeSameHosts(hosts []Host) ([]Host, []hostMerge) {
+	first := make(map[mergeKey]int, len(hosts))
+	var merges []hostMerge
+	drop := make([]bool, len(hosts))
+	for index, host := range hosts {
+		key := mergeKeyOf(host)
+		other, seen := first[key]
+		if !seen {
+			first[key] = index
+			continue
+		}
+		if hosts[other].CatalogID == host.CatalogID {
+			continue // one record twice is not two hosts to fold
+		}
+		if host.CatalogID < hosts[other].CatalogID {
+			merges = append(merges, hostMerge{dropped: hosts[other], kept: host})
+			drop[other], first[key] = true, index
+		} else {
+			merges = append(merges, hostMerge{dropped: host, kept: hosts[other]})
+			drop[index] = true
+		}
+	}
+	if len(merges) == 0 {
+		return hosts, nil
+	}
+	kept := hosts[:0:0]
+	for index, host := range hosts {
+		if !drop[index] {
+			kept = append(kept, host)
+		}
+	}
+	return kept, merges
 }
 
 type hostGroup struct {
