@@ -354,6 +354,64 @@ func TestWorkbenchShowsTheFirstCharacterAtAProvenPromptOnly(t *testing.T) {
 	}
 }
 
+// A block cursor is an inverted cell of the grid, not a shape drawn over it, so
+// while a guess is on screen the caret must sit after the typed text rather than
+// the whole cursor disappearing until the server catches up.
+func TestWorkbenchKeepsTheBlockCursorPastTheTypedTextAheadOfTheEcho(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	advance := slowLink(state)
+	for _, input := range []string{"a", "b", "c"} {
+		state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: input})
+		advance(80 * time.Millisecond)
+		shell.say(input)
+		state.Wake()
+	}
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "deploy"})
+	guess, _, cells, predicting := session.term.prediction.overlay(state.now())
+	if !predicting {
+		t.Fatalf("the guess is not on screen: %q", guess)
+	}
+	cursor := session.term.presentedCursor()
+	caretX := cursor.X + cells
+
+	var canvas ui.Canvas
+	hit := terminalHit(state, 0)
+	canvas.SetInteraction(hit, ui.ID{}, hit, true)
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	geometry := state.layout()
+
+	// The cell under a point, as the terminal's own column arithmetic finds it.
+	cellAt := func(x, y float32) (int, int) {
+		return int((x - geometry.left) / state.cellWidth), int((y - geometry.top) / state.cellHeight)
+	}
+	// The cursor cell is the one filled with the cursor color: a block cursor has
+	// no rectangle of its own, its cell is inverted instead.
+	cursorCell := func(column, row int) bool {
+		centerX := geometry.left + (float32(column)+0.5)*state.cellWidth
+		centerY := geometry.top + (float32(row)+0.5)*state.cellHeight
+		for _, rectangle := range canvas.Rectangles() {
+			bounds := rectangle.Bounds
+			if rectangle.Color != state.termPal.cursor || bounds.Height < state.cellHeight {
+				continue
+			}
+			if centerX >= bounds.X && centerX < bounds.X+bounds.Width &&
+				centerY >= bounds.Y && centerY < bounds.Y+bounds.Height {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !cursorCell(caretX, cursor.Y) {
+		column, row := cellAt(geometry.left+(float32(caretX)+0.5)*state.cellWidth, geometry.top+(float32(cursor.Y)+0.5)*state.cellHeight)
+		t.Fatalf("the block cursor is not at the caret (%d,%d), the cell after %q, in %d cells", column, row, guess, cells)
+	}
+	if cursorCell(cursor.X, cursor.Y) {
+		t.Fatalf("the cursor stayed on the emulator's column %d under the typed text", cursor.X)
+	}
+}
+
 func containsExact(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
