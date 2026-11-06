@@ -486,13 +486,20 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		content.Y = bounds.Y - height - 4
 	}
 	// A narrow panel is a modal drawer. Its trigger must remain in that focus
-	// scope even though the menu is painted outside the body's clip.
+	// scope even though the menu is painted outside the body's clip. The trigger
+	// belongs to the drawer's layer, below dialogs and overlay menus, so an open
+	// menu above it does not have the trigger's text show through.
+	//
+	// Its own list still has to cover the drawer, which paints before the modal
+	// pass: the list stays on dialogLayer+1, between the drawer's text and a
+	// dialog. Lowering it to drawerLayer to fix the bleed would move the problem
+	// to the list instead of solving it.
 	layer := popupLayer
 	if state.aiReserve(state.deck.ActiveWorkspace(), state.viewport) == 0 {
 		layer = dialogLayer + 1
 		canvas.PushFocusScope(dialogScope)
 		defer canvas.PopFocusScope()
-		canvas.PushLayer(dialogLayer)
+		canvas.PushLayer(drawerLayer)
 		defer canvas.PopLayer()
 	}
 	theme := state.Theme()
