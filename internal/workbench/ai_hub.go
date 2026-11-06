@@ -29,7 +29,8 @@ import (
 // requests arrive on other goroutines and reach a window only by posting to its
 // inbox.
 type AIHub struct {
-	path string // the AI database
+	path    string // the AI database
+	outputs gate.OutputStore
 
 	mu      sync.Mutex
 	windows []*hubWindow
@@ -189,12 +190,14 @@ func (hub *AIHub) stop() {
 	hub.server, hub.done, hub.addr, hub.token = nil, nil, "", ""
 	hub.mu.Unlock()
 	if server == nil {
+		hub.outputs.Clear()
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = server.Shutdown(ctx)
 	<-done
+	hub.outputs.Clear()
 }
 
 // Close stops the server.
@@ -221,6 +224,7 @@ func (hub *AIHub) gate() gate.Gate {
 	hub.mu.Unlock()
 	return gate.Gate{
 		Backend:  hubBackend{hub},
+		Outputs:  &hub.outputs,
 		Policy:   risk.Policy{Enabled: true, AutoUpTo: risk.Low},
 		Mode:     mode,
 		Approver: hub.approve,

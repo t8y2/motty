@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrderAndLookup(t *testing.T) {
-	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
+	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
 	var got []string
 	for _, s := range All() {
 		got = append(got, s.Name)
@@ -39,6 +39,9 @@ func jsonNames(t *testing.T, v any) []string {
 	var names []string
 	for i := 0; i < rt.NumField(); i++ {
 		name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
+		if name == "-" {
+			continue
+		}
 		if name == "" {
 			t.Fatalf("%s.%s has no json tag", rt.Name(), rt.Field(i).Name)
 		}
@@ -50,11 +53,11 @@ func jsonNames(t *testing.T, v any) []string {
 
 func TestSchemasMatchArgs(t *testing.T) {
 	args := map[string]any{
-		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
+		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
 		NameSFTPList: SFTPListArgs{}, NameSFTPRead: SFTPReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
 	}
 	required := map[string][]string{
-		NameTerminalExec: {"command"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
+		NameTerminalExec: {"command"}, NameToolOutputRead: {"offset", "output_id"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
 		NameSFTPWrite: {"content", "path"}, NameSFTPRemove: {"path"},
 	}
 	for _, s := range All() {
@@ -131,7 +134,7 @@ func TestDecoders(t *testing.T) {
 		{"tr malformed", `{"lines":`, tr, nil, true},
 
 		{"te ok", `{"command":"ls -l"}`, te, TerminalExecArgs{Command: "ls -l", TimeoutSeconds: 60}, false},
-		{"te multi", `{"command":"a\nb","timeout_seconds":600,"session":"x"}`, te, TerminalExecArgs{"x", "a\nb", 600}, false},
+		{"te multi", `{"command":"a\nb","timeout_seconds":600,"session":"x"}`, te, TerminalExecArgs{Session: "x", Command: "a\nb", TimeoutSeconds: 600}, false},
 		{"te missing", `{}`, te, nil, true},
 		{"te empty", `{"command":""}`, te, nil, true},
 		{"te blank", `{"command":"  \n"}`, te, nil, true},
@@ -277,7 +280,7 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
 	full := Headless(true, true, false)
-	if len(full) != len(All())-1+3 {
+	if len(full) != len(All())-2+3 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

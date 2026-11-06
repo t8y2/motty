@@ -86,9 +86,10 @@ func DecodeRequestAgentMode(raw []byte) (RequestAgentModeArgs, error) {
 
 // Tool names.
 const (
-	NameListSessions = "list_sessions"
-	NameTerminalRead = "terminal_read"
-	NameTerminalExec = "terminal_exec"
+	NameListSessions   = "list_sessions"
+	NameTerminalRead   = "terminal_read"
+	NameTerminalExec   = "terminal_exec"
+	NameToolOutputRead = "tool_output_read"
 	// NameTerminalExecMany runs one command on several sessions at once.
 	NameTerminalExecMany = "terminal_exec_many"
 	NameSFTPList         = "sftp_list"
@@ -145,6 +146,16 @@ var specs = []Spec{
 			`"timeout_seconds":{"type":"integer","minimum":1,"maximum":600,"default":60,"description":"Give up waiting after this many seconds."}` +
 			`},"required":["command"],"additionalProperties":false}`),
 		Kind: Exec,
+	},
+	{
+		Name:        NameToolOutputRead,
+		Description: "Read a byte range of a retained terminal_exec result without running the command again. Offsets are UTF-8 byte positions; the result expires after ten minutes.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"output_id":{"type":"string","minLength":1,"maxLength":128},` +
+			`"offset":{"type":"integer","minimum":0},` +
+			`"max_bytes":{"type":"integer","minimum":4,"maximum":65536}` +
+			`},"required":["output_id","offset"],"additionalProperties":false}`),
+		Kind: Read,
 	},
 	{
 		Name:        NameTerminalExecMany,
@@ -206,8 +217,11 @@ func All() []Spec { return append([]Spec(nil), specs...) }
 func Targeted() []Spec {
 	const activeHint = "Session id from list_sessions. Defaults to the active session."
 	const targetHint = "Session id from list_sessions. If omitted, uses this request's locked primary session. Always specify the id when operating on an explicitly @referenced session."
-	out := make([]Spec, len(specs))
-	for index, spec := range specs {
+	out := make([]Spec, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Name == NameToolOutputRead {
+			continue
+		}
 		if schema := string(spec.Schema); strings.Contains(schema, activeHint) {
 			spec.Schema = json.RawMessage(strings.ReplaceAll(schema, activeHint, targetHint))
 		}
@@ -217,7 +231,7 @@ func Targeted() []Spec {
 		case NameTerminalExec:
 			spec.Description = "Run one non-interactive shell command in the addressed terminal session and return its output and exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
 		}
-		out[index] = spec
+		out = append(out, spec)
 	}
 	return out
 }
@@ -241,7 +255,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -299,6 +313,30 @@ type TerminalExecArgs struct {
 	Session        string `json:"session,omitempty"`
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	RetainOutput   bool   `json:"-"`
+}
+
+type ToolOutputReadArgs struct {
+	OutputID string `json:"output_id"`
+	Offset   int    `json:"offset"`
+	MaxBytes int    `json:"max_bytes,omitempty"`
+}
+
+func DecodeToolOutputRead(raw []byte) (ToolOutputReadArgs, error) {
+	var args ToolOutputReadArgs
+	if err := decode(raw, &args); err != nil {
+		return args, err
+	}
+	if len(args.OutputID) == 0 || len(args.OutputID) > 128 || args.Offset < 0 || args.MaxBytes < 0 || args.MaxBytes > 65536 {
+		return args, errors.New("invalid output_id, offset or max_bytes")
+	}
+	if args.MaxBytes == 0 {
+		args.MaxBytes = 65536
+	}
+	if args.MaxBytes < 4 {
+		return args, errors.New("max_bytes must be at least 4")
+	}
+	return args, nil
 }
 
 type TerminalExecManyArgs struct {

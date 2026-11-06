@@ -10,8 +10,10 @@ type Result struct {
 	// Output is the ANSI-stripped plain text the command printed, bounded to the
 	// tap's maxOutput (head and tail kept, the middle replaced by an
 	// "[... N bytes omitted ...]" marker).
-	Output    string
-	Truncated bool
+	Output     string
+	Truncated  bool
+	Retained   string
+	RetainLost bool
 	// ExitCode is the command's status, or -1 until Done.
 	ExitCode int
 	Done     bool
@@ -53,6 +55,13 @@ func NewTap(nonce string, maxOutput int) *Tap {
 		rec:   newRecorder(maxOutput),
 		code:  -1,
 	}
+}
+
+// Retain keeps up to maxBytes of normalized output for later paging. The
+// existing bounded head/tail preview is unchanged. A single overlong line
+// cannot be reconstructed by the recorder and is reported as lost.
+func (t *Tap) Retain(maxBytes int) {
+	t.rec.retainCap = maxBytes
 }
 
 // SetEcho tells the tap the exact bytes that were typed (the result of Wrap),
@@ -273,11 +282,19 @@ func (t *Tap) Abort() (display []byte) {
 	display = append(t.flushDisplay(), held...)
 	t.hold = t.hold[:0]
 	t.rec.write(held) // hidden bytes were recorded when emitted
+	t.rec.finish()
 	return display
 }
 
 // Result reports the output captured so far and, once done, the exit status.
 func (t *Tap) Result() Result {
 	out, trunc := t.rec.snapshot(t.done)
-	return Result{Output: out, Truncated: trunc, ExitCode: t.code, Done: t.done}
+	result := Result{Output: out, Truncated: trunc, ExitCode: t.code, Done: t.done}
+	if t.rec.retainCap > 0 {
+		result.RetainLost = t.rec.retainLost || t.rec.truncated || !t.done
+		if !result.RetainLost {
+			result.Retained = string(bytes.TrimSuffix(t.rec.retained, []byte{'\n'}))
+		}
+	}
+	return result
 }

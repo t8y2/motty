@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"motty/internal/ai/risk"
 	"motty/internal/ai/tools"
@@ -29,10 +30,12 @@ type SessionInfo struct {
 
 // ExecResult is what a command printed and how it ended.
 type ExecResult struct {
-	Output    string
-	ExitCode  int
-	Truncated bool
-	TimedOut  bool
+	Output     string
+	ExitCode   int
+	Truncated  bool
+	TimedOut   bool
+	Retained   string
+	RetainLost bool
 }
 
 // FileEntry is one SFTP directory entry.
@@ -94,6 +97,7 @@ type Gate struct {
 	Policy   risk.Policy
 	Mode     Mode
 	Approver Approver // nil means nothing that needs approval can run
+	Outputs  *OutputStore
 	// Target is an in-app request's immutable default. References contains only
 	// sessions explicitly mentioned in this question. Nil Target retains the
 	// external MCP contract; references never change the default.
@@ -182,6 +186,39 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			return failure(err)
 		}
 		return Result{Text: text}
+	case tools.NameToolOutputRead:
+		args, err := tools.DecodeToolOutputRead(raw)
+		if err != nil {
+			return failure(err)
+		}
+		if g.Outputs == nil {
+			return Result{Text: "output paging is unavailable", IsError: true}
+		}
+		item, data, next, err := g.Outputs.read(outputOwner(ctx), args)
+		if err != nil {
+			return failure(err)
+		}
+		sessions, err := g.Backend.Sessions(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		allowed := false
+		for _, session := range sessions {
+			if session.ID == item.session && session.Ready {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return Result{Text: "the original session is no longer available", IsError: true}
+		}
+		page := struct {
+			Data       string `json:"data"`
+			NextOffset int    `json:"next_offset"`
+			EOF        bool   `json:"eof"`
+		}{data, next, next == len(item.data)}
+		structured, _ := json.Marshal(page)
+		return Result{Text: string(structured), Structured: structured}
 	case tools.NameSFTPList:
 		args, err := tools.DecodeSFTPList(raw)
 		if err != nil {
@@ -222,6 +259,21 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		owner := outputOwner(ctx)
+		if g.Outputs != nil && owner != "" && args.Session == "" {
+			sessions, err := g.Backend.Sessions(ctx)
+			if err != nil {
+				return failure(err)
+			}
+			for _, session := range sessions {
+				if session.Ready && (args.Session == "" || session.Active) {
+					args.Session = session.ID
+					if session.Active {
+						break
+					}
+				}
+			}
+		}
 		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
@@ -229,11 +281,50 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if denied := g.ask(ctx, name, tools.Exec, args.Session, args.Command, assessment); denied != nil {
 			return *denied
 		}
+		args.RetainOutput = g.Outputs != nil && owner != ""
 		result, err := g.Backend.Exec(ctx, args)
 		if err != nil {
 			return failure(err)
 		}
-		return Result{Text: formatExec(result), IsError: result.TimedOut}
+		text := formatExec(result)
+		var outputID string
+		if args.RetainOutput && result.Truncated && ctx.Err() == nil {
+			if result.RetainLost {
+				text += "\n[full output unavailable: capture incomplete or retention limit exceeded]"
+			} else {
+				if !utf8.ValidString(result.Retained) {
+					result.Retained = strings.ToValidUTF8(result.Retained, "�")
+				}
+				id, err := g.Outputs.save(owner, args.Session, result.Retained)
+				if err == nil {
+					outputID = id
+					text += "\n[full output available via tool_output_read; output_id: " + id + "; total_bytes: " + fmt.Sprint(len(result.Retained)) + "]"
+				} else {
+					text += "\n[full output unavailable: retention failed]"
+				}
+			}
+		}
+		response := Result{Text: text, IsError: result.TimedOut}
+		if args.RetainOutput {
+			fields := struct {
+				Preview          string `json:"preview"`
+				OutputID         string `json:"output_id,omitempty"`
+				ExitCode         int    `json:"exit_code"`
+				Truncated        bool   `json:"truncated"`
+				TimedOut         bool   `json:"timed_out"`
+				SourceOutputLost bool   `json:"source_output_lost"`
+				TotalBytes       *int   `json:"total_bytes,omitempty"`
+			}{Preview: result.Output, OutputID: outputID, ExitCode: result.ExitCode, Truncated: result.Truncated, TimedOut: result.TimedOut, SourceOutputLost: result.Truncated && outputID == ""}
+			if !result.Truncated {
+				total := len(result.Output)
+				fields.TotalBytes = &total
+			} else if outputID != "" {
+				total := len(result.Retained)
+				fields.TotalBytes = &total
+			}
+			response.Structured, _ = json.Marshal(fields)
+		}
+		return response
 	case tools.NameTerminalExecMany:
 		args, err := tools.DecodeTerminalExecMany(raw)
 		if err != nil {

@@ -32,9 +32,10 @@ func Bridge(ctx context.Context, in io.Reader, out io.Writer, endpoint, token st
 		client = http.DefaultClient
 	}
 	var (
-		mu  sync.Mutex
-		wg  sync.WaitGroup
-		sem = make(chan struct{}, maxBridgeInFlight)
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		sem     = make(chan struct{}, maxBridgeInFlight)
+		session bridgeSession
 	)
 	write := func(b []byte) {
 		mu.Lock()
@@ -83,7 +84,7 @@ loop:
 			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
-				if resp := forward(ctx, client, endpoint, token, line); resp != nil {
+				if resp := forward(ctx, client, endpoint, token, line, &session); resp != nil {
 					write(resp)
 				}
 			}()
@@ -128,8 +129,13 @@ func readLine(br *bufio.Reader) (line []byte, tooLong bool, err error) {
 	}
 }
 
+type bridgeSession struct {
+	mu sync.Mutex
+	id string
+}
+
 // forward posts one line and returns the line to print, or nil.
-func forward(ctx context.Context, client *http.Client, endpoint, token string, line []byte) []byte {
+func forward(ctx context.Context, client *http.Client, endpoint, token string, line []byte, session *bridgeSession) []byte {
 	id := lineID(line)
 	fail := func(msg string) []byte {
 		if id == nil {
@@ -144,6 +150,11 @@ func forward(ctx context.Context, client *http.Client, endpoint, token string, l
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	session.mu.Lock()
+	if session.id != "" {
+		req.Header.Set("Mcp-Session-Id", session.id)
+	}
+	session.mu.Unlock()
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -152,6 +163,11 @@ func forward(ctx context.Context, client *http.Client, endpoint, token string, l
 		return fail("cannot reach Motty: " + errText(err))
 	}
 	defer resp.Body.Close()
+	if id := resp.Header.Get("Mcp-Session-Id"); id != "" {
+		session.mu.Lock()
+		session.id = id
+		session.mu.Unlock()
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBridgeReply+1))
 	if err != nil {
 		return fail("reading the reply failed")

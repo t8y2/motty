@@ -52,10 +52,30 @@ authorized saved hosts.
 | `list_sessions` | List open sessions. |
 | `terminal_read` | Read a terminal's content. |
 | `terminal_exec`, `terminal_exec_many` | Run commands in a terminal. |
+| `tool_output_read` | Page through retained desktop HTTP `terminal_exec` output without rerunning the command. |
 | `sftp_list`, `sftp_read` | List and read remote files. |
 | `sftp_write`, `sftp_remove` | Change remote files. |
 
 In Observe mode only the read tools are available.
+
+Desktop HTTP `terminal_exec` still returns a bounded head-and-tail preview (about
+64 KiB). When a complete result was retained, its response includes an
+`output_id`. Call `tool_output_read` with that ID, a UTF-8 byte `offset` starting
+at 0, and optional `max_bytes` (4–65536). The `structuredContent` of the
+execution result also contains `preview`, `output_id`, `exit_code`, `truncated`,
+`total_bytes`, and `source_output_lost`. Read `data` and pass `next_offset` into
+the next call until `eof` is true. Offsets inside a UTF-8 character or past the
+end are rejected. This is normalized terminal text, not raw PTY bytes.
+
+HTTP clients must send the `Mcp-Session-Id` returned by `initialize` with later
+requests; another MCP session cannot read their results even with the same
+HTTP token. The built-in `mcp-bridge` carries this header automatically.
+Each result is limited to 4 MiB and ten minutes. The service caches at most
+16 MiB, evicts old results when full, and clears them when HTTP MCP is stopped
+or reconfigured. If the command output was irrecoverably lost (for example,
+it exceeded the retention limit), the preview reports that explicitly instead
+of offering an unusable ID. This feature applies only to desktop HTTP
+`terminal_exec`, not standalone `mcp-serve` or `terminal_exec_many`.
 
 ## Clients that only speak stdio
 

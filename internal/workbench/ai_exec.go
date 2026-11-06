@@ -87,6 +87,9 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 		return nil, err
 	}
 	tap := capture.NewTap(nonce, maxExecOutput)
+	if args.RetainOutput {
+		tap.Retain(gate.MaxRetainedOutput)
+	}
 	tap.SetEcho(wrapped)
 	// PowerShell's line editor redraws what is typed and asks the terminal where
 	// its cursor is, and it waits for the answer. Holding that output back to swap
@@ -168,7 +171,7 @@ func (t *terminal) finishExec(timedOut, interrupt bool) {
 	if interrupt && t.shell != nil {
 		t.sendProtocol([]byte{3})
 	}
-	exec.done <- gate.ExecResult{Output: result.Output, ExitCode: result.ExitCode, Truncated: result.Truncated, TimedOut: timedOut}
+	exec.done <- gate.ExecResult{Output: result.Output, ExitCode: result.ExitCode, Truncated: result.Truncated, TimedOut: timedOut, Retained: result.Retained, RetainLost: result.RetainLost}
 }
 
 // userInterrupts reports whether keyboard input contains Ctrl-C, which ends the

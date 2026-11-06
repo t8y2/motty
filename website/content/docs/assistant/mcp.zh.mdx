@@ -43,10 +43,30 @@ HTTP MCP 服务器会把 Motty 中已打开的会话提供给 Claude Code 等外
 | `list_sessions` | 列出已打开的会话。 |
 | `terminal_read` | 读取终端内容。 |
 | `terminal_exec`、`terminal_exec_many` | 在终端里执行命令。 |
+| `tool_output_read` | 分页读取桌面 HTTP MCP 中 `terminal_exec` 被截短的结果，不会重跑命令。 |
 | `sftp_list`、`sftp_read` | 列出并读取远程文件。 |
 | `sftp_write`、`sftp_remove` | 修改远程文件。 |
 
 观察模式下只有读取类工具可用。
+
+桌面 HTTP MCP 的 `terminal_exec` 仍返回约 64 KiB 的首尾预览。输出超出预览时，
+若采集到完整结果，返回文本中会给出 `output_id`；
+也可以从响应的 `structuredContent` 读取 `preview`、`output_id`、`exit_code`、
+`truncated`、`total_bytes` 和 `source_output_lost`。调用
+`tool_output_read`，传入 `output_id`、从 0 开始的 UTF-8 字节偏移 `offset`，
+以及可选的 `max_bytes`（4–65536），可取得 `data`、`next_offset` 和 `eof`。
+下次请求使用返回的 `next_offset`，直到 `eof`。读取边界不会拆开 UTF-8 字符；
+传入字符中间或超出末尾的偏移会报错。内容是终端采集器处理过的纯文本，
+不是原始 PTY 字节。
+
+客户端需要保留 `initialize` 响应的 `Mcp-Session-Id`，并在后续请求中发送；
+同一个 HTTP 令牌下的不同 MCP 会话也不能互相读取输出。内置 `mcp-bridge`
+会自动转发该会话标识。结果最多保留 4 MiB、10 分钟；整个服务最多缓存
+16 MiB，超额时先淘汰旧结果，关闭或重配 HTTP 服务时清空。
+单条过长、命令未完成或超过容量等导致原始采集内容已丢失时，
+返回明确的“full output unavailable”提示，而非不可用的读取句柄。
+此分页能力仅适用于桌面 HTTP MCP 的单条 `terminal_exec`，不适用于
+独立 `mcp-serve` 或批量 `terminal_exec_many`。
 
 ## 只支持 stdio 的客户端
 
