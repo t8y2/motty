@@ -9,7 +9,7 @@
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
     <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
     <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
-    <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
+    <a href="https://linux.do/t/topic/3086528/1"><img src="assets/badge-linuxdo.svg" alt="LINUX DO Community" /></a>
   </p>
 
   <p>
@@ -22,33 +22,79 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
 放在同一个窗口里，一次会话既不用另开文件工具，也不用开浏览器标签页看屏幕。
 
 完整文档在 <https://motty.page/zh/docs>；本文件讲项目本身、安装包和怎么构建。
+<<<<<<< Updated upstream
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="同一份主机列表的浅色外观" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="同一连接上并排的 SFTP 文件面板与终端" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="从回环端口转发到 SSH 主机背后服务的本地端口转发" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
+    </td>
+  </tr>
+</table>
 
 ## 为什么选择 Motty？
-
-下面四张图是简版，剩下的细节在后面的章节里。
+=======
+>>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
+<<<<<<< Updated upstream
+=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="从回环端口转发到 SSH 主机背后服务的本地端口转发" /></a>
+    </td>
+  </tr>
+</table>
+
+## 为什么选择 Motty？
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+>>>>>>> Stashed changes
       <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
       config、PuTTY、MobaXterm 等七种来源导入。密码进 AES-256-GCM 保险库，
       密钥放在系统密钥存储里。</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
       <p><strong>会话看得见。</strong>分屏之后，在占用 CPU 的那个 shell 旁边直接
       读这台机器的 CPU、内存、磁盘和网络。</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
       <p><strong>需要时也有画面。</strong>VNC 和 RDP 都能连，服务器只监听自己的
       回环地址时，还可以借一台 SSH 主机穿过去。</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="从回环端口转发到 SSH 主机背后服务的本地端口转发" /></a>
       <p><strong>隧道看得见。</strong>本地、远程、SOCKS5 和 HTTP CONNECT 规则只绑定
       回环地址，显式保存、显式启动；隧道随拥有它的 SSH 标签页一起停止。</p>
     </td>
@@ -59,6 +105,35 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
 **对边界说实话：**[docs/remote-desktop.md](docs/remote-desktop.md) 列出 VNC 和
 RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬件上验证过。
 **不往外发数据：**没有统计上报，更新检查默认关闭，打开后只访问 GitHub Releases。
+
+## 安装
+
+从 [Releases](https://github.com/t8y2/motty/releases) 下载对应平台的包：
+
+| 平台 | 包 |
+| --- | --- |
+| macOS（arm64、amd64） | `.dmg`、`.zip` |
+| Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
+| Linux（amd64、arm64） | `.deb`、`.tar.gz` |
+
+macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
+AUR 和 `.AppImage` 暂不提供。
+
+也可以用包管理器安装：
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
+的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
 
 ## 快速开始
 
@@ -187,45 +262,6 @@ WebDAV 和 S3 默认要求远程地址使用 HTTPS。使用局域网 HTTP 服务
 表单底部勾选“允许不安全的远程 HTTP”。HTTP 连接不加密，认证信息可能被窃听；
 备份文件仍在本机加密后上传。此选择仅保存在本机。
 
-## 安装
-
-从 [Releases](https://github.com/t8y2/motty/releases) 下载对应平台的包：
-
-| 平台 | 包 |
-| --- | --- |
-| macOS（arm64、amd64） | `.dmg`、`.zip` |
-| Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
-| Linux（amd64、arm64） | `.deb`、`.tar.gz` |
-
-macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
-AUR 和 `.AppImage` 暂不提供。
-
-也可以用包管理器安装：
-
-```sh
-brew install --cask t8y2/tap/motty
-```
-
-如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
-
-```powershell
-scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
-scoop install t8y2/motty
-```
-
-cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
-的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
-
-### Motty 意外退出时
-
-Motty 会在数据目录的 `logs` 文件夹里保存 `motty.log`，异常退出后还会保存
-`crash-*.log`：Windows 在 `%APPDATA%\motty\logs`，macOS 在
-`~/Library/Application Support/motty/logs`，Linux 在 `~/.config/motty/logs`。
-反馈问题时请附上这两个文件。如果程序消失而 `crash.log` 仍是空的，说明进程在 Go
-来得及写任何东西之前就被终止了——Windows 错误报告转储以及用
-`VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` 排查的方法见
-[docs/troubleshooting.md](docs/troubleshooting.md)。
-
 ## 从源码构建
 
 要求：
@@ -305,6 +341,16 @@ Viva 负责窗口、输入、文本/输入法、焦点、布局、组件和渲�
 | `internal/workbench` | 应用状态、界面、绘制和输入 |
 | `internal/ai` | 助手、工具、风险门和 MCP 服务器 |
 | `assets`、`docs`、`tools` | 品牌、技术说明和开发工具 |
+
+## 故障排查
+
+Motty 会在数据目录的 `logs` 文件夹里保存 `motty.log`，异常退出后还会保存
+`crash-*.log`：Windows 在 `%APPDATA%\motty\logs`，macOS 在
+`~/Library/Application Support/motty/logs`，Linux 在 `~/.config/motty/logs`。
+反馈问题时请附上这两个文件。如果程序消失而 `crash.log` 仍是空的，说明进程在 Go
+来得及写任何东西之前就被终止了——Windows 错误报告转储以及用
+`VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` 排查的方法见
+[docs/troubleshooting.md](docs/troubleshooting.md)。
 
 ## 社群
 

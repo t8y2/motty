@@ -9,7 +9,7 @@
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
     <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
     <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
-    <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
+    <a href="https://linux.do/t/topic/3086528/1"><img src="assets/badge-linuxdo.svg" alt="LINUX DO Community" /></a>
   </p>
 
   <p>
@@ -25,33 +25,79 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 
 ドキュメントは <https://motty.page/en/docs> にあります（サイトは英語と中国語のみ）。
 このファイルではプロジェクトそのもの、パッケージ、ビルド方法を扱います。
+<<<<<<< Updated upstream
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="グループ、タグ、色を付けたホストの一覧" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="同じホスト一覧をライトの外観で表示したところ" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="同じ接続で並べた SFTP ファイルパネルとターミナル" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
+    </td>
+  </tr>
+</table>
 
 ## なぜ Motty なのか？
-
-まずは下の 4 枚の画像を。詳しい話はこのあとの各節にあります。
+=======
+>>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
+<<<<<<< Updated upstream
+=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="グループ、タグ、色を付けたホストの一覧" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
+    </td>
+  </tr>
+</table>
+
+## なぜ Motty なのか？
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+>>>>>>> Stashed changes
       <p><strong>ホストが散らからない。</strong>グループ、タグ、色、アイコンを付けられ、
       OpenSSH config、PuTTY、MobaXterm など 7 種類の取り込み元から読み込めます。パスワードは
       AES-256-GCM の保管庫へ、鍵はシステムのシークレットストアへ。</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
       <p><strong>セッションが見える。</strong>ペインを分割すれば、CPU を使っている
       シェルの隣で、そのマシンの CPU、メモリ、ディスク、ネットワークをそのまま読めます。</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
       <p><strong>画面も要るときに。</strong>VNC と RDP の両方に接続でき、サーバーが
       自分のループバックでしか待ち受けていない場合は SSH ホスト経由で届きます。</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
       <p><strong>トンネルが見える。</strong>ローカル、リモート、SOCKS5、HTTP CONNECT の
       ルールはループバックにだけバインドし、保存して明示的に開始します。トンネルは
       所有する SSH タブと一緒に止まります。</p>
@@ -65,6 +111,39 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 列挙し、リリースノートには実機で検証したプラットフォームを書いています。
 **外へ何も送らない：**利用状況の収集はなく、更新確認は既定でオフで、有効にした
 ときだけ GitHub Releases を参照します。
+
+## インストール
+
+お使いのプラットフォーム向けのパッケージを
+[リリースページ](https://github.com/t8y2/motty/releases)からダウンロードしてください：
+
+| プラットフォーム | パッケージ |
+| --- | --- |
+| macOS (arm64, amd64) | `.dmg`、`.zip` |
+| Windows (amd64, arm64) | `.exe` インストーラー、ポータブル版 `.zip`（データは `motty.exe` の隣の `motty-data` に保存） |
+| Linux (amd64, arm64) | `.deb`、`.tar.gz` |
+
+macOS のビルドは、リリースに認証情報がある場合に署名と公証が行われます。
+Windows のビルドは、証明書が設定されている場合に署名されます。Linux のパッケージは
+署名されていません。AUR と `.AppImage` はまだ提供していません。
+
+パッケージマネージャーを使う場合：
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+Homebrew から先に tap を信頼するよう求められた場合は、一度だけ `brew trust t8y2/tap` を実行してください。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask は公証済みのディスクイメージをインストールし、自己更新するものとしてマークされているため、
+インストールしたコピーは自動的に更新されます。Scoop はポータブル版をインストールします：その
+`motty-data` フォルダーはバージョンをまたいで保持され、更新には `scoop update motty` を
+使います。
 
 ## クイックスタート
 
@@ -241,49 +320,6 @@ S3 互換のストレージ、GitHub Gist を通じたレコード単位の同�
 接続は暗号化されず、認証の詳細が傍受される可能性があります。それでも、バックアップファイルはアップロード前に暗号化されます。
 この選択は、このコンピューターに保存されます。
 
-## インストール
-
-お使いのプラットフォーム向けのパッケージを
-[リリースページ](https://github.com/t8y2/motty/releases)からダウンロードしてください：
-
-| プラットフォーム | パッケージ |
-| --- | --- |
-| macOS (arm64, amd64) | `.dmg`、`.zip` |
-| Windows (amd64, arm64) | `.exe` インストーラー、ポータブル版 `.zip`（データは `motty.exe` の隣の `motty-data` に保存） |
-| Linux (amd64, arm64) | `.deb`、`.tar.gz` |
-
-macOS のビルドは、リリースに認証情報がある場合に署名と公証が行われます。
-Windows のビルドは、証明書が設定されている場合に署名されます。Linux のパッケージは
-署名されていません。AUR と `.AppImage` はまだ提供していません。
-
-パッケージマネージャーを使う場合：
-
-```sh
-brew install --cask t8y2/tap/motty
-```
-
-Homebrew から先に tap を信頼するよう求められた場合は、一度だけ `brew trust t8y2/tap` を実行してください。
-
-```powershell
-scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
-scoop install t8y2/motty
-```
-
-cask は公証済みのディスクイメージをインストールし、自己更新するものとしてマークされているため、
-インストールしたコピーは自動的に更新されます。Scoop はポータブル版をインストールします：その
-`motty-data` フォルダーはバージョンをまたいで保持され、更新には `scoop update motty` を
-使います。
-
-### Motty が予期せず終了する場合
-
-Motty は、データディレクトリの `logs` フォルダーに `motty.log` を保存し、異常終了
-したあとは `crash-*.log` も保存します（Windows は `%APPDATA%\motty\logs`、macOS は
-`~/Library/Application Support/motty/logs`、Linux は `~/.config/motty/logs`）。
-バグの報告には両方を添付してください。プログラムが消えて `crash.log` が空のままの
-場合は、Go が何かを書き込む前にプロセスが終了しています。Windows Error Reporting の
-ダンプと `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` による切り分けは
-[docs/troubleshooting.md](docs/troubleshooting.md) にあります。
-
 ## ソースからのビルド
 
 必要なもの：
@@ -376,6 +412,16 @@ Motty は、SSH、認証、SFTP、ターミナルのエミュレーション、�
 | `internal/ai` | アシスタント、ツール、リスクのゲート、MCP サーバー |
 | `assets`, `docs`, `tools` | ブランディング、技術的なメモ、開発用のツール |
 | `website` | motty.page に公開される静的なドキュメントサイト — [docs/website.md](docs/website.md) |
+
+## トラブルシューティング
+
+Motty は、データディレクトリの `logs` フォルダーに `motty.log` を保存し、異常終了
+したあとは `crash-*.log` も保存します（Windows は `%APPDATA%\motty\logs`、macOS は
+`~/Library/Application Support/motty/logs`、Linux は `~/.config/motty/logs`）。
+バグの報告には両方を添付してください。プログラムが消えて `crash.log` が空のままの
+場合は、Go が何かを書き込む前にプロセスが終了しています。Windows Error Reporting の
+ダンプと `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` による切り分けは
+[docs/troubleshooting.md](docs/troubleshooting.md) にあります。
 
 ## コミュニティ
 

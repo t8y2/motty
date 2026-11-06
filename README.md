@@ -9,7 +9,7 @@
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
     <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
     <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
-    <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
+    <a href="https://linux.do/t/topic/3086528/1"><img src="assets/badge-linuxdo.svg" alt="LINUX DO Community" /></a>
   </p>
 
   <p>
@@ -24,33 +24,79 @@ need a second app for files or a browser tab for a screen.
 
 The full documentation lives at <https://motty.page/en/docs>; this file covers
 the project, the packages and how to build it.
+<<<<<<< Updated upstream
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="The same host list in the light appearance" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="The SFTP file panel beside the shell on one connection" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="Local port forwards from loopback ports to services behind an SSH host" /></a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
+    </td>
+  </tr>
+</table>
 
 ## Why Motty?
-
-The four pictures below are the short version. The rest of this file is detail.
+=======
+>>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
+<<<<<<< Updated upstream
+=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="A local port forward from a loopback port to a service behind an SSH host" /></a>
+    </td>
+  </tr>
+</table>
+
+## Why Motty?
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+>>>>>>> Stashed changes
       <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
       OpenSSH config, PuTTY, MobaXterm and four more. Passwords go to an
       AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
       <p><strong>A session you can watch.</strong> Split the pane, then read the host's
       CPU, memory, disk and network beside the shell that is using them.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
       <p><strong>Screens too, when you need them.</strong> VNC and RDP connect, and both can
       ride an SSH host when the server only listens on its own loopback.</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="A local port forward from a loopback port to a service behind an SSH host" /></a>
       <p><strong>Tunnels you can see.</strong> Local, remote, SOCKS5 and HTTP CONNECT
       rules bind to loopback only, are saved, and start when you say so. A tunnel
       stops with the SSH tab that owns it.</p>
@@ -64,6 +110,39 @@ commands in the palette; the mouse is optional. **Honest about limits:**
 implementations do not do, and the release notes say which platforms were
 tested on real hardware. **Nothing phones home:** no analytics, and the update
 check is off by default and asks GitHub Releases when you turn it on.
+
+## Install
+
+Download the package for your platform from the
+[releases page](https://github.com/t8y2/motty/releases):
+
+| Platform | Packages |
+| --- | --- |
+| macOS (arm64, amd64) | `.dmg`, `.zip` |
+| Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
+| Linux (amd64, arm64) | `.deb`, `.tar.gz` |
+
+macOS builds are signed and notarized when the release has the credentials.
+Windows builds are signed when a certificate is configured. Linux packages are
+not signed. AUR and `.AppImage` are not available yet.
+
+Through a package manager:
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+The cask installs the notarized disk image and is marked as self-updating, so an
+installed copy updates itself. Scoop installs the portable copy: its
+`motty-data` folder is persisted across versions and `scoop update motty` is how
+it updates.
 
 ## Quick start
 
@@ -254,49 +333,6 @@ configuration form. The connection is unencrypted and authentication details may
 be intercepted; the backup file is still encrypted before upload. This choice
 stays on this computer.
 
-## Install
-
-Download the package for your platform from the
-[releases page](https://github.com/t8y2/motty/releases):
-
-| Platform | Packages |
-| --- | --- |
-| macOS (arm64, amd64) | `.dmg`, `.zip` |
-| Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
-| Linux (amd64, arm64) | `.deb`, `.tar.gz` |
-
-macOS builds are signed and notarized when the release has the credentials.
-Windows builds are signed when a certificate is configured. Linux packages are
-not signed. AUR and `.AppImage` are not available yet.
-
-Through a package manager:
-
-```sh
-brew install --cask t8y2/tap/motty
-```
-
-If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
-
-```powershell
-scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
-scoop install t8y2/motty
-```
-
-The cask installs the notarized disk image and is marked as self-updating, so an
-installed copy updates itself. Scoop installs the portable copy: its
-`motty-data` folder is persisted across versions and `scoop update motty` is how
-it updates.
-
-### If Motty closes unexpectedly
-
-Motty keeps `motty.log` and, after an abnormal exit, a `crash-*.log` in the
-`logs` folder of its data directory (`%APPDATA%\motty\logs` on Windows,
-`~/Library/Application Support/motty/logs` on macOS, `~/.config/motty/logs` on
-Linux). Attach both to a bug report. When a crash leaves `crash.log` empty, the
-process died before Go could write anything — see
-[docs/troubleshooting.md](docs/troubleshooting.md) for Windows Error Reporting
-dumps and the `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` bisection.
-
 ## Build from source
 
 Requirements:
@@ -390,6 +426,16 @@ capabilities go into Viva rather than being duplicated here.
 | `internal/ai` | assistant, tools, risk gate and MCP server |
 | `assets`, `docs`, `tools` | branding, technical notes and development tooling |
 | `website` | static documentation site published to motty.page — [docs/website.md](docs/website.md) |
+
+## Troubleshooting
+
+Motty keeps `motty.log` and, after an abnormal exit, a `crash-*.log` in the
+`logs` folder of its data directory (`%APPDATA%\motty\logs` on Windows,
+`~/Library/Application Support/motty/logs` on macOS, `~/.config/motty/logs` on
+Linux). Attach both to a bug report. When a crash leaves `crash.log` empty, the
+process died before Go could write anything — see
+[docs/troubleshooting.md](docs/troubleshooting.md) for Windows Error Reporting
+dumps and the `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` bisection.
 
 ## Community
 
