@@ -37,6 +37,9 @@ func (state *State) hostGroupPicker() *hostGroupPicker {
 		// A group has one name: typing "servers" over "Servers" must select the
 		// existing group rather than create a case-different twin.
 		p.control.MatchCaseInsensitive = true
+		// Groups nest by "/": browse one level at a time, with typing as the
+		// flat search over full paths.
+		p.control.Separator = "/"
 		p.control.SetValidateCreate(validHostGroup)
 		options := make([]components.SingleSelectOption, 0, len(state.hostGroups))
 		for _, group := range state.hostGroups {

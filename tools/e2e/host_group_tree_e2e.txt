@@ -1,0 +1,81 @@
+# End to end: the New Host dialog's Group field browses nested groups one level at a
+# time (issue #542). Hovering "School" opens its fly-out, hovering "Gansu" opens the
+# next, and clicking "Tianshui" selects the full path School/Gansu/Tianshui.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_group_tree_e2e.txt
+#
+# The move/click coordinates are the headless window's logical pixels for the
+# default 1400x900 size; t2/t3 show the first and second fly-out.
+# lang: en
+click "New Host"
+settle 400
+type h1
+click textfield:Address
+type 10.0.0.1
+click combobox:Group
+type School/Gansu/Lanzhou
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h2
+click textfield:Address
+type 10.0.0.2
+click combobox:Group
+type School/Gansu/Tianshui
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h3
+click textfield:Address
+type 10.0.0.3
+click combobox:Group
+type School/Xinjiang/Kashgar-A
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h4
+click textfield:Address
+type 10.0.0.4
+click combobox:Group
+type Office
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+click combobox:Group
+settle 300
+shot /tmp/host-group-tree-1.png
+move 420 553
+settle 400
+shot /tmp/host-group-tree-2.png
+layout
+move 725 553
+settle 400
+shot /tmp/host-group-tree-3.png
+move 870 585
+settle 200
+click 870 585
+settle 300
+shot /tmp/host-group-tree-4.png
+expect text "School/Gansu/Tianshui" within 1000
+click textfield:Label
+type h5
+click textfield:Address
+type 10.0.0.9
+click "Add Host"
+settle 400
+expect text "Tianshui" within 2000
+shot /tmp/host-group-tree-5.png
+texts
