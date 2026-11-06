@@ -398,7 +398,7 @@ var EnglishMessages = Messages{
 	},
 	ExportHosts:                 "Export",
 	ImportCatalog:               "Import Catalog",
-	ImportMenu:                  "Import",
+	ImportMenu:                  "Import/Export",
 	Connect:                     "Connect",
 	ColumnName:                  "NAME",
 	HostsEmpty:                  "Set up your hosts",

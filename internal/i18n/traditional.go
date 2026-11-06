@@ -398,7 +398,7 @@ var TraditionalMessages = Messages{
 	},
 	ExportHosts:                 "匯出",
 	ImportCatalog:               "匯入目錄",
-	ImportMenu:                  "匯入",
+	ImportMenu:                  "匯入/匯出",
 	Connect:                     "連線",
 	ColumnName:                  "名稱",
 	HostsEmpty:                  "新增你的主機",
