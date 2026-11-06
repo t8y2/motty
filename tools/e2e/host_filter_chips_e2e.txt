@@ -1,0 +1,70 @@
+# End to end: the host list's group chips follow the nested group in view (issue #542
+# follow-up). Unfiltered they are the top level; choosing School opens it, choosing Gansu
+# adds the path and its groups, and a group with none stays on its siblings. Chips carry
+# only the last segment of a name.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_filter_chips_e2e.txt
+# lang: en
+# The click coordinates are the headless window's logical pixels at its default size.
+click "New Host"
+settle 400
+type h1
+click textfield:Address
+type 10.0.0.1
+click combobox:Group
+type School/Gansu/Lanzhou
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h2
+click textfield:Address
+type 10.0.0.2
+click combobox:Group
+type School/Gansu/Tianshui
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h3
+click textfield:Address
+type 10.0.0.3
+click combobox:Group
+type School/Xinjiang/Kashgar
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h4
+click textfield:Address
+type 10.0.0.4
+click combobox:Group
+type Office
+key enter
+settle 300
+click "Add Host"
+settle 400
+expect text "School" within 1000
+shot /tmp/host-chips-top.png
+click 400 113
+settle 300
+shot /tmp/host-chips-school.png
+layout
+click 400 113
+settle 300
+shot /tmp/host-chips-gansu.png
+click 581 113
+settle 300
+expect text "Lanzhou" within 1000
+shot /tmp/host-chips-leaf.png
+click 322 113
+settle 300
+expect text "Xinjiang" within 1000
+layout
