@@ -157,6 +157,9 @@ func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
 	session, hasTerminal := state.terminalToolbarSession()
+	if !hasTerminal && state.noteSidebarVisible() && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
+		return state.terminalToolbarMetrics().railExtent
+	}
 	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
 		return state.terminalToolbarMetrics().railExtent
 	}

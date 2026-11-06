@@ -128,6 +128,9 @@ type savedState struct {
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	NoteView                savedNoteView       `json:"notes_view,omitempty"`
+	Notes                   []savedNote         `json:"notes,omitempty"`
+	NoteFolders             []savedNoteFolder   `json:"note_folders,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
@@ -431,6 +434,7 @@ func writeFileAtomic(path string, data []byte) error {
 
 // snapshot is the state as it should be saved right now.
 func (state *State) snapshot() savedState {
+	state.flushNoteDraft()
 	savedAgent, savedAgentPath := state.sshAgent.saved()
 	saved := savedState{
 		MonitorPanels:              state.dashboard.panelDefinitions(),
@@ -544,6 +548,9 @@ func (state *State) snapshot() savedState {
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
+	saved.NoteView = state.savedNotesView()
+	saved.Notes = append([]savedNote(nil), state.notes.list...)
+	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for _, entry := range state.snippets.list {
 		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run})
 		if entry.Shortcut.valid() {
@@ -672,6 +679,32 @@ func (state *State) saveWithResult() error {
 // file stays as it is and the notice comes back on each change. flushSync is
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	defer func() {
+		message := state.noteSaveFailure()
+		unsaved := state.hasUnsavedNotes()
+		// Pending note text is not by itself a failure: a draft inside an IME
+		// composition is deliberately left unflushed by flushNoteBuffer, and a
+		// save made through pauseSave never reached the store. Only a write the
+		// store actually refused may claim the notes could not be saved.
+		failed := saveErr != nil && unsaved && state.config != nil && state.pauseSave == 0
+		for id, d := range state.noteDrafts() {
+			if state.noteIndex(id) < 0 {
+				continue
+			}
+			if !failed && d.problem == message {
+				d.problem = ""
+			}
+			if failed && d.problem == "" {
+				d.problem = message
+			}
+		}
+		if !failed && state.notes.error == message {
+			state.notes.error = ""
+		}
+		if failed && state.notes.error == "" {
+			state.notes.error = message
+		}
+	}()
 	defer func() {
 		if flushSync && saveErr == nil {
 			state.sshSyncFlush()
@@ -844,6 +877,10 @@ func (state *State) reloadSettings() error {
 // restoreLocal applies what belongs to this computer: the language and look, the
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
+	state.notes.panel = saved.NoteView.Panel
+	state.restoreNotesView(saved.NoteView)
+	state.notes.selected = saved.NoteView.Selected
+	state.notes.folder = saved.NoteView.Folder
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
@@ -942,6 +979,7 @@ func (state *State) restoreShared(saved savedState) {
 		state.hostSort.enabled = false
 		state.hostSort.grid.Cancel()
 	}
+	state.restoreNotes(saved.Notes, saved.NoteFolders)
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
 	state.shortcuts = restoreShortcuts(saved.Shortcuts)
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))
@@ -1042,6 +1080,8 @@ func (state *State) workspaceName() string {
 		return "forwards"
 	case sectionProxies:
 		return "proxies"
+	case sectionNotes:
+		return "notes"
 	case sectionSnippets:
 		return "snippets"
 	case sectionSettings:
@@ -1114,6 +1154,8 @@ func (state *State) restoreWorkspace(workspace string) {
 		state.activeSection = sectionForwards
 	case "proxies":
 		state.activeSection = sectionProxies
+	case "notes":
+		state.activeSection = sectionNotes
 	case "snippets":
 		state.activeSection = sectionSnippets
 	case "settings":

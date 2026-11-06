@@ -568,7 +568,7 @@ func playsIconMotion(id ui.ID) bool {
 	}
 	switch id {
 	case hitHosts, hitWorkspaces, hitDashboard, hitSessionLogs, hitKeychain, hitProxies, hitPortForwarding,
-		hitKnownHosts, hitSnippets, hitLocalTerminal, hitSettings:
+		hitKnownHosts, hitSnippets, hitNotes, hitLocalTerminal, hitSettings:
 		return true
 	}
 	return false

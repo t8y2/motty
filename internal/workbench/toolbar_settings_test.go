@@ -193,7 +193,7 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 		}
 	}
 	want := []string{
-		"close-pane", "broadcast", "snippets",
+		"notes", "close-pane", "broadcast", "snippets",
 		"split-horizontal", "split-vertical",
 		"record", "export-recording", "save-output", "export-log",
 		"resources", "files", "local-proxy", "file-transfer", "remote-tools",

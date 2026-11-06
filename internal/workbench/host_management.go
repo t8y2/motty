@@ -583,6 +583,9 @@ func (state *State) clickDeleteHostDialog(id ui.ID) {
 }
 
 func (state *State) confirmDeleteHosts() {
+	if !state.flushNoteDraft() {
+		return
+	}
 	if message := state.hostReferenceError(state.hostActionIDs); message != "" {
 		state.dialogError = message
 		return
@@ -612,6 +615,11 @@ func (state *State) confirmDeleteHosts() {
 		if err := vaultFile.Apply(changes); err != nil {
 			state.dialogError = state.hostPasswordSaveError(err)
 			return
+		}
+	}
+	for _, host := range state.hosts {
+		if containsHostID(state.hostActionIDs, host.ID) {
+			state.unlinkNoteHost(host.CatalogID)
 		}
 	}
 	count := len(state.hostActionIDs)

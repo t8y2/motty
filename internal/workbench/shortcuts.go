@@ -457,6 +457,9 @@ func shortcutActionFromString(value string) shortcutAction {
 // to app.Config.OnShortcut so ordinary pages can own shortcuts without moving
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
+	if state.noteExit != nil {
+		return ui.EventResult{Handled: true}
+	}
 	defer state.afterEvent(&outcome)
 	if result, handled := state.desktopFullscreenKey(event); handled {
 		return result
@@ -477,6 +480,13 @@ func (state *State) Shortcut(event ui.KeyEvent) (outcome ui.EventResult) {
 
 // shortcut shares contextual routing between printable and named bindings.
 func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventResult {
+	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
+		action := state.shortcuts.actionFor(chord)
+		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
+			return ui.EventResult{}
+		}
+		return ui.EventResult{Handled: true}
+	}
 	if event.Release {
 		// Swallow the release of every press this routing consumed, a snippet
 		// chord included, so a terminal that asked for releases is not sent the
@@ -529,6 +539,15 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 	}
 	if result, handled := state.sftpTabShortcut(event); handled {
 		return result
+	}
+	if result := state.noteEditingKey(event); result.Handled {
+		return result
+	}
+	if result := state.notePreviewShortcut(event); result.Handled {
+		return result
+	}
+	if state.noteSidebarVisible() && tree.Within(event.Target.Scope(), notesHits) && event.Target != hitNoteSearch && (state.shortcuts.actionFor(chord) == shortcutPaste || state.shortcuts.actionFor(chord) == shortcutCopy) {
+		return ui.EventResult{Handled: true}
 	}
 	if result, handled := state.aiPanelShortcut(event); handled {
 		return result

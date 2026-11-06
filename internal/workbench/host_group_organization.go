@@ -71,6 +71,7 @@ func (state *State) deleteHostGroup(path string, ungroup bool) bool {
 	if state.hostFilterOn && hostGroupWithin(state.hostFilter, path) {
 		state.hostFilterOn = false
 	}
+	state.queueNoteGroupChange(path, "", true)
 	state.hostDataChanged()
 	state.save()
 	return true

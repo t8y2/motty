@@ -426,6 +426,7 @@ const (
 	sectionSettings
 	sectionKnownHosts
 	sectionSnippets
+	sectionNotes
 	// sectionDebug is the development-only component gallery: its page is built
 	// only with the dev tag (see debug.go), but the section keeps its place so
 	// the other sections do not renumber between builds.
@@ -836,6 +837,9 @@ type State struct {
 	fontSizeShown float32
 	highlights    *highlight.Set
 	highlighting  highlightUI
+	notes         notesUI
+	noteExit      *noteExitRequest
+	noteTarget    *notesUI
 	snippets      snippetsUI
 	history       historyUI
 	historyLayout flex.View
@@ -943,6 +947,12 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.flushNoteDraft()
+	state.save()
+	state.cancelNoteImages()
+	if state.notes.sidebar != nil && state.notes.sidebar.content.imageCancel != nil {
+		state.notes.sidebar.content.imageCancel()
+	}
 	state.callbacksClosed.Store(true)
 	state.closed = true
 	state.closeTabPreview()
@@ -1012,6 +1022,7 @@ func (state *State) Close() {
 func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
+		notes:                 notesUI{noteDraft: &noteDraft{}},
 		options:               options.withDefaults(),
 		windowID:              max(1, options.WindowID),
 		revealResults:         make(chan revealResult, 1),
@@ -1208,6 +1219,12 @@ func (state *State) Messages() i18n.Messages {
 // not an open dialog's field. The runtime reports which hit holds keyboard
 // focus; this maps it to the text it edits.
 func (state *State) EditorFor(hit ui.ID) *text.Editor {
+	if state.noteExit != nil {
+		return nil
+	}
+	if editor := state.noteEditor(hit); editor != nil {
+		return editor
+	}
 	if editor := state.dashboardEditorFor(hit); editor != nil {
 		return editor
 	}
@@ -1386,7 +1403,11 @@ func (state *State) WindowControlsStyle() app.WindowControlsStyle {
 }
 
 // Click applies one stable hit action and plays the motion of the row's icon.
-func (state *State) Click(id ui.ID) { state.click(id, true) }
+func (state *State) Click(id ui.ID) {
+	if !state.clickNoteExit(id) {
+		state.click(id, true)
+	}
+}
 
 // click applies one stable hit action. feedback is false for a hit the user did
 // not make on the control itself, such as a command palette entry standing for a
@@ -1672,6 +1693,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clearBroadcast()
 		state.activeSection = sectionForwards
 		state.save()
+	case state.clickNotes(id):
 	case id == hitSnippets:
 		state.clearBroadcast()
 		state.activeSection = sectionSnippets
@@ -2114,7 +2136,13 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 // Pointer handles the pointer events the runtime does not turn into clicks. A
 // double click on a host row connects to it.
 func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
+	if state.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
 	defer state.afterEvent(&outcome)
+	if result := state.notesPointer(event); result.Handled {
+		return result
+	}
 	if result := state.toolbarDockPointer(event); result.Handled {
 		return result
 	}
@@ -2421,6 +2449,9 @@ func fieldForDialogHit(id ui.ID) hostField {
 
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
+	if state.noteExit != nil {
+		return state.noteExitKey(event)
+	}
 	defer state.afterEvent(&outcome)
 	if result := state.toolbarDockKey(event); result.Handled {
 		return result
@@ -2461,6 +2492,9 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 }
 
 func (state *State) key(event ui.KeyEvent) ui.EventResult {
+	if result := state.notesKey(event); result.Handled {
+		return result
+	}
 	if result, handled := state.workspaceCardsKey(event); handled {
 		return result
 	}

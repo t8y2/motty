@@ -26,7 +26,7 @@ func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 	// "Session Logs" is a real page now, so its sidebar row is expected; a
 	// substring check for "Logs" would fail on it, which is why it is gone from
 	// this list of controls nothing answers to.
-	for _, gone := range []string{"Notes", "Vaults", "SFTP", "Scripts"} {
+	for _, gone := range []string{"Vaults", "SFTP", "Scripts"} {
 		if contains(texts, gone) {
 			t.Errorf("%q is still painted", gone)
 		}
@@ -35,7 +35,7 @@ func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 	// for a feature.
 	wanted := map[ui.ID]bool{
 		hitHosts: true, hitWorkspaces: true, hitKeychain: true, hitProxies: true, hitPortForwarding: true,
-		hitKnownHosts: true, hitSnippets: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
+		hitKnownHosts: true, hitSnippets: true, hitNotes: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
 		hitAddHost: true, hitHostFilterAll: true, hitImportMenu: true, hitTheme: true, hitHome: true, hitNewTab: true,
 		hitGitHub: true,
 	}

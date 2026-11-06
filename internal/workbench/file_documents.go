@@ -77,6 +77,7 @@ const (
 
 type fileDocument struct {
 	owner                            *State
+	note                             *noteWindow
 	cacheKey, location, name, source string
 	local                            bool
 	worker                           *sftpclient.Worker
@@ -340,11 +341,11 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 }
 
 func (d *fileDocument) dirty() bool {
-	return d.image == nil && d.ready && d.editor.String() != d.original
+	return d.note == nil && d.image == nil && d.ready && d.editor.String() != d.original
 }
 
 func (d *fileDocument) requestSave(closeAfter bool) {
-	if d.busy || !d.ready || d.image != nil {
+	if d.note != nil || d.busy || !d.ready || d.image != nil {
 		return
 	}
 	d.encodingOpen = false
@@ -547,6 +548,9 @@ func (d *fileDocument) chooseEncoding(name string) {
 }
 
 func (d *fileDocument) requestClose(allow func()) {
+	if d.note != nil {
+		d.owner.save()
+	}
 	d.encodingOpen = false
 	if d.busy {
 		d.allowClose = allow
@@ -580,6 +584,21 @@ func (d *fileDocument) dispose() {
 		return
 	}
 	d.closed = true
+	if d.note != nil {
+		n := &d.note.content
+		n.captureNoteSelection()
+		if n.owner == n {
+			n.body.Unmark()
+			n.title.Unmark()
+			n.tags.Unmark()
+			n.owner = nil
+		}
+		d.note.content.imageToken++
+		if cancel := d.note.content.imageCancel; cancel != nil {
+			cancel()
+		}
+	}
+
 	d.closeCanceled = nil
 	d.stopComparison()
 	if d.worker != nil {
@@ -983,6 +1002,13 @@ func (state *State) closeFileWindows() {
 // ConfirmDocumentClose serializes dirty-document confirmation before closing a
 // source window or quitting. Cancel leaves the application and edits alive.
 func (state *State) ConfirmDocumentClose(allow func()) bool {
+	if state.confirmNoteClose(func() {
+		if !state.ConfirmDocumentClose(allow) {
+			allow()
+		}
+	}) {
+		return true
+	}
 	m := &state.fileWindows
 	for _, key := range m.order {
 		d := m.documents[key]

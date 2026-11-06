@@ -70,6 +70,9 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	}
 	bounds.Width = max(0, bounds.Width-monitor)
 	bounds.Width = max(0, bounds.Width-state.aiReserve(workspaceID, size))
+	if state.notes.panel && workspaceID == state.deck.ActiveWorkspace() {
+		bounds.Width = max(0, bounds.Width-state.notesPanelWidth(size))
+	}
 	if state.workspaceManaged(workspaceID) {
 		bounds.Y += workspaceHeaderHeight
 		bounds.Height = max(0, bounds.Height-workspaceHeaderHeight)

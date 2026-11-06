@@ -74,6 +74,12 @@ type fileDocumentUI struct {
 }
 
 func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
+	defer d.owner.paintNoteExit(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	if d.note != nil {
+		d.paintNoteWindow(canvas, size)
+		return
+	}
+
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { d.click(id) })
@@ -385,7 +391,14 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 	dialog.End()
 }
 func (d *fileDocument) click(id ui.ID) {
+	if d.owner.clickNoteExit(id) {
+		return
+	}
 	if d.owner.fileWindows.clickTab(id) {
+		return
+	}
+	if d.note != nil {
+		d.clickNoteWindow(id)
 		return
 	}
 	if d.notices.click(id) {
@@ -553,6 +566,13 @@ func (view *fileDocumentUI) pixelScale() float32 {
 }
 
 func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
+	if d.owner.noteExit != nil {
+		return nil
+	}
+	if d.note != nil {
+		return d.noteWindowTextInput(context)
+	}
+
 	if input := d.barTextInput(context.ID); input != nil {
 		return input
 	}
@@ -601,6 +621,13 @@ func (d *fileDocument) comparisonTextInput(context app.TextInputContext) *app.Te
 }
 
 func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return d.owner.noteExitKey(event)
+	}
+	if d.note != nil {
+		return d.noteWindowKey(event)
+	}
+
 	if event.Release {
 		return ui.EventResult{}
 	}
@@ -691,6 +718,13 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 }
 
 func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowShortcut(event)
+	}
+
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release {
 		return ui.EventResult{}
 	}
@@ -735,6 +769,13 @@ func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
 }
 
 func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowScroll(event)
+	}
+
 	if d.confirm != "" {
 		return ui.EventResult{Handled: true}
 	}
@@ -765,6 +806,13 @@ func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
 }
 
 func (d *fileDocument) pointer(event ui.PointerEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowPointer(event)
+	}
+
 	if d.confirm != "" {
 		return ui.EventResult{}
 	}
@@ -790,7 +838,11 @@ func (d *fileDocument) comparisonPointer(event ui.PointerEvent) ui.EventResult {
 }
 
 func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]ui.Color {
-	pal := d.owner.pal
+	return d.owner.codeColors()
+}
+
+func (s *State) codeColors() [components.MarkdownCodeClasses]ui.Color {
+	pal := s.pal
 	ansi := func(index int) ui.Color { return ui.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
 	return [components.MarkdownCodeClasses]ui.Color{components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3), components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6), components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1)}
 }
