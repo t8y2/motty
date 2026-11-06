@@ -52,6 +52,64 @@ func TestPickingAHostCreatesANewTabForIt(t *testing.T) {
 	}
 }
 
+func TestNewTabWorkspaceTabLaunchesTemplatesAndCreatesWorkspaces(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	template := mustWorkspaceTemplate(t, "Operations", workspaceCatalogIDs(state, 0, 1), 2)
+	state.templates = []WorkspaceTemplate{template}
+	before := len(state.deck.Workspaces(nil))
+	state.Click(hitNewTab)
+	state.Click(hitConnectSortWorkspaces)
+	if !state.commandPalette.workspaces || len(state.deck.Workspaces(nil)) != before {
+		t.Fatal("switching to workspaces opened a tab")
+	}
+	clickPickerRow(t, state, template.Name)
+	if state.modal != modalNone || len(state.deck.Workspaces(nil)) != before+1 || len(world.configs) != 2 {
+		t.Fatalf("modal=%d tabs=%d dials=%d", state.modal, len(state.deck.Workspaces(nil)), len(world.configs))
+	}
+	state.Click(hitNewTab)
+	state.Click(hitConnectSortWorkspaces)
+	clickPickerRow(t, state, state.messages.WorkspaceNew)
+	if state.modal != modalWorkspaceDraft || len(state.deck.Workspaces(nil)) != before+1 {
+		t.Fatalf("new workspace modal=%d tabs=%d", state.modal, len(state.deck.Workspaces(nil)))
+	}
+}
+
+func TestNewTabWorkspaceTabFiltersTemplatesAndKeepsHostSort(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.templates = []WorkspaceTemplate{mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 0), 1)}
+	state.Click(hitNewTab)
+	state.Click(hitConnectSortRecent)
+	state.Click(hitConnectSortWorkspaces)
+	state.commandPalette.search.Insert("production")
+	state.refreshCommandPalette()
+	if got := state.commandPalette.visible; len(got) != 1 || state.commandPalette.entries[got[0]].target != hitConnectPickWorkspaces.At(0) {
+		t.Fatalf("workspace matches = %v", got)
+	}
+	state.Click(hitConnectSortDefault)
+	if state.recentConnectSort || state.commandPalette.workspaces {
+		t.Fatal("default hosts mode was not restored")
+	}
+	state.Click(hitConnectSortWorkspaces)
+	state.Click(hitConnectSortRecent)
+	if !state.recentConnectSort || state.commandPalette.workspaces {
+		t.Fatal("recent hosts mode was not restored")
+	}
+}
+
+func TestNewTabWorkspaceTabOffersCreationWithoutTemplates(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitNewTab)
+	state.Click(hitConnectSortWorkspaces)
+	if len(state.commandPalette.visible) != 1 || state.commandPalette.entries[state.commandPalette.visible[0]].target != hitConnectPickWorkspaceNew {
+		t.Fatalf("empty workspaces offer = %+v", state.commandPalette.entries)
+	}
+	result := state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	if !result.Handled || state.modal != modalWorkspaceDraft || len(state.deck.Workspaces(nil)) != 0 {
+		t.Fatalf("keyboard new workspace: result=%+v modal=%d tabs=%d", result, state.modal, len(state.deck.Workspaces(nil)))
+	}
+}
+
 func TestPickingThisComputerOpensALocalShellInANewTab(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	before := len(state.deck.Workspaces(nil))

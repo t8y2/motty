@@ -575,6 +575,7 @@ var ChineseMessages = Messages{
 	NewTabPickerPlaceholder:        "搜索主机…",
 	NewTabPickerEmpty:              "没有匹配的主机",
 	NewTabSortDefault:              "默认",
+	NewTabWorkspacePlaceholder:     "搜索工作区…",
 	NewTabSortRecent:               "最近登录",
 	NewTabNeverConnected:           "从未登录",
 	NewTabJustNow:                  "刚刚",

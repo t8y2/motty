@@ -30,11 +30,15 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 		t.Fatal("the picker did not open")
 	}
 	result := state.Key(ui.KeyEvent{Target: hitConnectSortDefault, Key: ui.KeyRight})
-	if !result.Handled || !state.recentConnectSort {
-		t.Fatalf("right on the switch = %+v, recent=%t", result, state.recentConnectSort)
+	if !result.Handled || !state.commandPalette.workspaces {
+		t.Fatalf("right on the switch = %+v, workspaces=%t", result, state.commandPalette.workspaces)
 	}
 	if result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("the keyboard stayed on the switch: %+v", result)
+	}
+	result = state.Key(ui.KeyEvent{Target: hitConnectSortWorkspaces, Key: ui.KeyRight})
+	if !result.Handled || !state.recentConnectSort || state.commandPalette.workspaces {
+		t.Fatalf("right from workspaces = %+v, recent=%t workspaces=%t", result, state.recentConnectSort, state.commandPalette.workspaces)
 	}
 	result = state.Key(ui.KeyEvent{Target: hitConnectSortRecent, Key: ui.KeyEnter})
 	if !result.Handled || result.Focus != hitCommandPaletteSearch {

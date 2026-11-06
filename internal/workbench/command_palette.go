@@ -57,14 +57,15 @@ type commandPalette struct {
 	dragging bool
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
-	connect bool
+	connect    bool
+	workspaces bool
 	// snippets makes the list a picker of the saved snippets to send to the
 	// active terminal, opened from the terminal toolbar.
 	snippets bool
 }
 
 func (state *State) openCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets = false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces = false, false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -74,7 +75,7 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets = false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces = false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -187,7 +188,7 @@ func (state *State) refreshCommandPalette() {
 	if palette.filtered && rawQuery == palette.rawQuery {
 		return
 	}
-	if palette.connect && state.recentConnectSort {
+	if palette.connect && !palette.workspaces && state.recentConnectSort {
 		state.rebuildRecentConnectPicker(rawQuery)
 		return
 	}
@@ -275,13 +276,16 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
-	case hitConnectSortDefault, hitConnectSortRecent:
+	case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
 		if !state.commandPalette.connect {
 			return
 		}
-		state.recentConnectSort = id == hitConnectSortRecent
+		state.commandPalette.workspaces = id == hitConnectSortWorkspaces
+		if !state.commandPalette.workspaces {
+			state.recentConnectSort = id == hitConnectSortRecent
+			state.save()
+		}
 		state.rebuildCommandPalette()
-		state.save()
 	case hitCommandPaletteSearch:
 		return
 	default:
@@ -381,9 +385,9 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	}
 	if palette.connect {
 		switch event.Target {
-		case hitConnectSortDefault, hitConnectSortRecent:
+		case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
 			// The switch is a radio group of its own: the arrows move between its
-			// two options, and choosing one puts the keyboard back in the search
+			// options, and choosing one puts the keyboard back in the search
 			// field so typing filters the list at once.
 			options := state.connectSortOptions()
 			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {

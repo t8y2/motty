@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	hitConnectSortDefault = tree.ID(commandPaletteHits, "connect-sort-default")
-	hitConnectSortRecent  = tree.ID(commandPaletteHits, "connect-sort-recent")
+	hitConnectSortDefault    = tree.ID(commandPaletteHits, "connect-sort-default")
+	hitConnectSortWorkspaces = tree.ID(commandPaletteHits, "connect-sort-workspaces")
+	hitConnectSortRecent     = tree.ID(commandPaletteHits, "connect-sort-recent")
 )
 
 // rememberRecentConnection consumes the user dial once, never a status refresh
@@ -38,9 +39,10 @@ func (state *State) rememberRecentConnection(session *Session) {
 
 // connectSortOptions is the default/recent switch of the new-tab picker. It is
 // one list for painting and for the keyboard, so the two cannot drift.
-func (state *State) connectSortOptions() [2]components.SegmentOption {
-	return [2]components.SegmentOption{
+func (state *State) connectSortOptions() [3]components.SegmentOption {
+	return [3]components.SegmentOption{
 		{ID: hitConnectSortDefault, Label: state.messages.NewTabSortDefault},
+		{ID: hitConnectSortWorkspaces, Label: state.messages.WorkspaceLibraryTitle},
 		{ID: hitConnectSortRecent, Label: state.messages.NewTabSortRecent},
 	}
 }
@@ -48,10 +50,12 @@ func (state *State) connectSortOptions() [2]components.SegmentOption {
 func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
 	options := state.connectSortOptions()
 	selected := hitConnectSortDefault
-	if state.recentConnectSort {
+	if state.commandPalette.workspaces {
+		selected = hitConnectSortWorkspaces
+	} else if state.recentConnectSort {
 		selected = hitConnectSortRecent
 	}
-	width := float32(184)
+	width := float32(270)
 	rect := ui.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
 	components.BeginSegmentedControl(canvas, state.Theme(), rect, options[:], selected).Paint()
 }

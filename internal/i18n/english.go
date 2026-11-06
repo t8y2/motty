@@ -575,6 +575,7 @@ var EnglishMessages = Messages{
 	NewTabPickerPlaceholder:        "Search hosts…",
 	NewTabPickerEmpty:              "No matching hosts",
 	NewTabSortDefault:              "Default",
+	NewTabWorkspacePlaceholder:     "Search workspaces…",
 	NewTabSortRecent:               "Recent login",
 	NewTabNeverConnected:           "Never logged in",
 	NewTabJustNow:                  "Just now",

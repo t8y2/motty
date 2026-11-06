@@ -32,6 +32,9 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	switch {
 	case state.commandPalette.connect:
 		title, placeholder, empty = state.messages.LabelNewTab, state.messages.NewTabPickerPlaceholder, state.messages.NewTabPickerEmpty
+		if state.commandPalette.workspaces {
+			placeholder, empty = state.messages.NewTabWorkspacePlaceholder, state.messages.WorkspaceLibraryEmpty
+		}
 	case state.commandPalette.snippets:
 		title, placeholder, empty = state.messages.Tools.SnippetsTitle, state.messages.Tools.SnippetPickerPlaceholder, state.messages.Tools.SnippetPickerEmpty
 	}

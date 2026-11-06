@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/vivaui/viva/text"
@@ -21,7 +22,9 @@ var (
 	hitConnectPickShells = tree.Sub(connectPickerHits, tree.Name("connect-pick-shell"))
 	// hitConnectPickEdit is the pencil of a host row, by the host's ID too: it
 	// opens the host's edit dialog instead of connecting.
-	hitConnectPickEdit = tree.Sub(connectPickerHits, tree.Name("connect-pick-edit"))
+	hitConnectPickEdit         = tree.Sub(connectPickerHits, tree.Name("connect-pick-edit"))
+	hitConnectPickWorkspaceNew = tree.ID(connectPickerHits, "workspace-new")
+	hitConnectPickWorkspaces   = tree.Sub(connectPickerHits, tree.Name("workspace-template"))
 )
 
 func (state *State) openConnectPicker() {
@@ -29,6 +32,7 @@ func (state *State) openConnectPicker() {
 		state.refreshLocalShells()
 	}
 	state.commandPalette.connect, state.commandPalette.snippets = true, false
+	state.commandPalette.workspaces = false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
@@ -37,6 +41,15 @@ func (state *State) openConnectPicker() {
 
 func (state *State) rebuildConnectPicker() {
 	palette := &state.commandPalette
+	if palette.workspaces {
+		palette.add(state.messages.WorkspaceNew, hitConnectPickWorkspaceNew)
+		for index, template := range state.templates {
+			palette.addDetailed(template.Name, fmt.Sprintf(state.messages.WorkspaceTemplateHostCountFmt, len(template.HostIDs)), hitConnectPickWorkspaces.At(index))
+		}
+		palette.rawQuery, palette.query, palette.filtered = "", "", false
+		state.refreshCommandPalette()
+		return
+	}
 	if state.recentConnectSort {
 		palette.filtered = false
 		state.refreshCommandPalette()
@@ -121,6 +134,15 @@ func connectPickEdit(target ui.ID) ui.ID {
 // clickConnectPick connects the picker's choice in a tab of its own.
 func (state *State) clickConnectPick(id ui.ID) bool {
 	switch {
+	case id == hitConnectPickWorkspaceNew:
+		state.openWorkspaceDraft(workspaceDraftTemporary)
+	case id.Scope() == hitConnectPickWorkspaces:
+		index, ok := id.In(hitConnectPickWorkspaces)
+		if !ok || index >= len(state.templates) {
+			return true
+		}
+		state.selectedWorkspaceTemplateID = state.templates[index].ID
+		state.applySelectedWorkspaceTemplate()
 	case id == hitConnectPickLocal:
 		state.pendingWorkspace, state.pendingPane = 0, 0
 		state.openLocalTerminal()

@@ -575,6 +575,7 @@ var TraditionalMessages = Messages{
 	NewTabPickerPlaceholder:        "搜尋主機…",
 	NewTabPickerEmpty:              "沒有符合的主機",
 	NewTabSortDefault:              "預設",
+	NewTabWorkspacePlaceholder:     "搜尋工作區…",
 	NewTabSortRecent:               "最近登入",
 	NewTabNeverConnected:           "從未登入",
 	NewTabJustNow:                  "剛剛",

@@ -618,17 +618,18 @@ type Messages struct {
 	NewTabPickerPlaceholder       string
 	NewTabPickerEmpty             string
 
-	NewTabSortDefault    string
-	NewTabSortRecent     string
-	NewTabNeverConnected string
-	NewTabJustNow        string
-	NewTabSecondsAgo     string
-	NewTabMinutesAgo     string
-	NewTabHoursAgo       string
-	NewTabDaysAgo        string
-	NewTabWeeksAgo       string
-	NewTabMonthsAgo      string
-	NewTabYearsAgo       string
+	NewTabSortDefault          string
+	NewTabWorkspacePlaceholder string
+	NewTabSortRecent           string
+	NewTabNeverConnected       string
+	NewTabJustNow              string
+	NewTabSecondsAgo           string
+	NewTabMinutesAgo           string
+	NewTabHoursAgo             string
+	NewTabDaysAgo              string
+	NewTabWeeksAgo             string
+	NewTabMonthsAgo            string
+	NewTabYearsAgo             string
 
 	LabelCloseTab    string
 	LabelTerminalFmt string
