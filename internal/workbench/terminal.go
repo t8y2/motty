@@ -1446,10 +1446,10 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		return state.scrollFontPicker(event)
 	}
 	if state.modal == modalCommandPalette {
-	if state.chipMenu.open {
-		// The menu is modal: only its own panels scroll.
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
-	}
+		if state.chipMenu.open {
+			// The menu is modal: only its own panels scroll.
+			return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
+		}
 		return state.scrollCommandPalette(event)
 	}
 	if state.modal == modalForm {
