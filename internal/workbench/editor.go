@@ -430,7 +430,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	// Only a host that signs in with a password has one to take from a saved one.
 	if editor.protocol == protocolVNC || editor.protocol == protocolRDP ||
-		editor.protocol == protocolSSH && editor.auth != authPrivateKey && editor.auth != authAgent {
+		editor.protocol == protocolSSH && editor.auth.usesPassword() {
 		host.Credential = editor.credential
 	}
 	host.normalizeEndpoint()
