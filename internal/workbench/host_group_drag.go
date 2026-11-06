@@ -22,7 +22,7 @@ func (state *State) hostGroupDragPointer(event ui.PointerEvent) (ui.EventResult,
 	switch event.Kind {
 	case ui.PointerDown:
 		*drag = hostGroupDrag{}
-		if state.activeSection != sectionHosts || state.modal != modalNone || a.open || event.Button != ui.PointerButtonPrimary {
+		if state.activeSection != sectionHosts || state.modal != modalNone || state.hostSort.enabled || a.open || event.Button != ui.PointerButtonPrimary {
 			return ui.EventResult{}, false
 		}
 		if event.Target.Scope() != hitHostGroupRowList && event.Target.Scope() != hitHostGroupOpenList {

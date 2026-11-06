@@ -718,6 +718,21 @@ func (state *State) pruneHostSelections() {
 
 func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	if state.hostSort.enabled {
+		move, result := state.hostSort.grid.Key(event)
+		if result.Handled {
+			if move.Valid() && state.applyHostSortMove(move) {
+				state.hostRevealID = uint32(item(move.ID))
+				state.save()
+			}
+			return result, true
+		}
+		if event.Key == ui.KeyEscape {
+			state.hostSort.grid.Cancel()
+			state.hostSort.enabled = false
+			return handled, true
+		}
+	}
 	if state.groupActions.drag.pressed && event.Key == ui.KeyEscape {
 		state.groupActions.drag = hostGroupDrag{}
 		return handled, true

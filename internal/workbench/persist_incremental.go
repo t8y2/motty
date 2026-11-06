@@ -318,9 +318,35 @@ func appendHostEntries(entries []configstore.Entry, base *configBase, defaults c
 	if base.hostRecords == nil {
 		base.hostRecords = make(map[string]hostRecord, len(hosts))
 	}
+
+	// Existing host ordinals define the catalog order. Reassign that same set
+	// of ordinals to the hosts in their current slice order so a deliberate
+	// reorder persists without renumbering unrelated records. New hosts still
+	// receive fresh ordinals below.
+	existing := make([]int64, 0, len(hosts))
+	for _, host := range hosts {
+		key := configstore.Key{Kind: kindHost, ID: host.ID}
+		if ord, known := base.ords[key]; known {
+			existing = append(existing, ord)
+		}
+	}
+	sort.Slice(existing, func(left, right int) bool { return existing[left] < existing[right] })
+	desired := make(map[string]int64, len(existing))
+	at := 0
+	for _, host := range hosts {
+		key := configstore.Key{Kind: kindHost, ID: host.ID}
+		if _, known := base.ords[key]; known {
+			desired[host.ID] = existing[at]
+			at++
+		}
+	}
+
 	for _, host := range hosts {
 		key := configstore.Key{Kind: kindHost, ID: host.ID}
 		ord, known := base.ords[key]
+		if known {
+			ord = desired[host.ID]
+		}
 		if record, cached := base.hostRecords[host.ID]; cached && known && record.ord == ord && sameSavedHost(record.host, host) {
 			entries = append(entries, configstore.Entry{Kind: kindHost, ID: host.ID, Payload: record.payload})
 			continue

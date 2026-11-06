@@ -698,16 +698,16 @@ func (base *configBase) acceptLocal(entries []configstore.Entry, local localWrit
 	for _, entry := range entries {
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
 		payloads[key] = entry.Payload
-		// A record that was already known keeps the ordinal the base gave it:
-		// entries either reuse an old payload or encode the Ord the base holds,
-		// so only a record new to this base has to be decoded.
-		if ord, known := base.ords[key]; known {
-			ords[key] = ord
-			continue
-		}
+		// Decode the ordinal from the entry even for an existing record: host
+		// reordering intentionally changes it while ordinary edits keep it the
+		// same. Unknown/unreadable payloads fall back to the previous ordinal.
 		var payload recordPayload
 		if json.Unmarshal(entry.Payload, &payload) == nil {
 			ords[key] = payload.Ord
+			continue
+		}
+		if ord, known := base.ords[key]; known {
+			ords[key] = ord
 		}
 	}
 	base.payloads, base.ords = payloads, ords

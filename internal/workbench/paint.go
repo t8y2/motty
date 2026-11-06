@@ -1142,12 +1142,13 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 	// Which chips fit decides what is declared; where they sit is the row's.
 	showChips := state.hasHostFilter()
 	showGroupControls := showChips && !state.hostFilterOn
+	viewControlsWidth := toggleWidth + 6 + 26
 	headerHeight := float32(hostListTop)
 	if anySelected {
 		headerHeight += rowHeight + rowGap
 	}
 	if showChips {
-		room := bounds.Width - 2*rowPad - toggleWidth - rowGap
+		room := bounds.Width - 2*rowPad - viewControlsWidth - rowGap
 		if showGroupControls {
 			room -= groupControlsWidth + rowGap
 		}
@@ -1189,7 +1190,7 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 						}
 					})
 				}
-				toggle = f.Slot().Size(toggleWidth-2, rowHeight).MarginSides(0, 0, 0, 2)
+				toggle = f.Slot().Size(viewControlsWidth, rowHeight).MarginSides(0, 0, 0, 2)
 			})
 			if anySelected {
 				f.Row().Height(rowHeight).MarginSides(rowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(rowGap).Items(flex.Center).Children(func() {
@@ -1217,7 +1218,8 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 	value := state.search.String()
 	components.PaintInputGroup(canvas, state.Theme(), search.Rect(), components.InputGroupSnapshot{
 		ID: hitSearch, Label: m.NavSearch, Value: value, Placeholder: m.SearchPlaceholder,
-		NativeEditing: canvas.Focused() == hitSearch && value != "",
+		Disabled:      state.hostSort.enabled,
+		NativeEditing: !state.hostSort.enabled && canvas.Focused() == hitSearch && value != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 	// Connect needs something to connect to.
@@ -1606,12 +1608,21 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	if state.hostRevealID != 0 {
 		// The revealed row is found at the width the list really has, bar included.
 		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, geometry.Viewport.Width)
-		canvas.RequestFocus(hitHostList.At(int(state.hostRevealID)))
+		focus := hitHostList.At(int(state.hostRevealID))
+		if state.hostSort.enabled {
+			focus = hitHostSortHandles.At(int(state.hostRevealID))
+		}
+		canvas.RequestFocus(focus)
 		state.hostRevealID = 0
 		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
 	}
 	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
 	viewport := geometry.Viewport
+	if state.hostSortAutoScrollFrame(canvas, viewport, content) {
+		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+		state.hostsScroll = geometry.OffsetY
+		viewport = geometry.Viewport
+	}
 	canvas.Clip(viewport)
 	if state.hostView == hostViewGrid {
 		state.paintHostGrid(canvas, viewport)
@@ -1623,6 +1634,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 	tree := components.BeginTree(canvas, state.Theme(), ui.Rect{
 		X: viewport.X, Y: viewport.Y - state.hostsScroll, Width: viewport.Width, Height: viewport.Height + state.hostsScroll,
 	}).Indent(22)
+	state.beginHostSortPaint(canvas, viewport)
 	filtering := strings.TrimSpace(state.visibleQuery) != ""
 	for _, entry := range state.hostTreeRows {
 		switch entry.Kind {
@@ -1634,6 +1646,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
 			})
 			if row.Bounds.Y >= viewport.Y+viewport.Height {
+				state.endHostSortPaint()
 				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				area.EndContent()
@@ -1659,8 +1672,13 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			host := state.hosts[entry.HostIndex]
 			id := hitHostList.At(int(host.ID))
 			tree = tree.RowHeight(hostRowHeight)
-			row := tree.Item(components.TreeItem{ID: id, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
+			rowID := id
+			if state.hostSort.enabled {
+				rowID = ui.ID{}
+			}
+			row := tree.Item(components.TreeItem{ID: rowID, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
 			if row.Bounds.Y >= viewport.Y+viewport.Height {
+				state.endHostSortPaint()
 				state.paintHostGroupDrop(canvas)
 				canvas.Unclip()
 				area.EndContent()
@@ -1670,6 +1688,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			state.hostRowEvents(canvas, id, host)
 		}
 	}
+	state.endHostSortPaint()
 	state.paintHostGroupDrop(canvas)
 	canvas.Unclip()
 	area.EndContent()
@@ -1729,14 +1748,31 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 	// still reads as selected, not as merely hovered.
 	rowBackground := pal.workspace
 	switch {
+	case state.hostSortDragging(host.ID):
+		rowBackground = pal.accentSoft
+	case state.hostSortTarget(host.ID):
+		rowBackground = pal.surfaceSoft
 	case host.ID == state.selectedHostID:
 		rowBackground = pal.surfaceHot
+	case state.hostSortHovered(canvas, host.ID):
+		rowBackground = pal.accentSoft
 	case canvas.Hovered() == id:
 		rowBackground = pal.surfaceSoft
 	}
-	if hostAccent(host.Color).Alpha > 0 {
+	hasColor := hostAccent(host.Color).Alpha > 0
+	if hasColor {
 		rowBackground = tintHostSurface(rowBackground, host.Color, .10)
+	}
+	if state.hostSortDragging(host.ID) {
+		canvas.Elevate(row, radius.control, ui.ShadowMD)
+	}
+	switch {
+	case state.hostSortTarget(host.ID):
+		canvas.RoundedBorder(row, radius.control, 2, pal.accent, rowBackground)
+	case rowBackground != pal.workspace || hasColor:
 		canvas.Rounded(row, radius.control, rowBackground)
+	}
+	if hasColor {
 		paintHostColorMark(canvas, row, host.Color)
 	}
 	// The columns follow the row's width: the name, then the address and the tags
@@ -1746,9 +1782,9 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 	const (
 		statusLeast = float32(124) // the status in words, with the light before it
 		lightWidth  = float32(7)   // the size of the connection light
-		leadWidth   = float32(92)  // the check box, the system and the gaps before the name
 		nameLeast   = float32(170)
 	)
+	leadWidth := float32(92) // the leading control, the system and the gaps before the name
 	indent := content.X - row.X
 	// A row too narrow to hold the name beside the status in words shows the
 	// light alone: the name is what the row is for.
@@ -1777,12 +1813,20 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 	if tagsWidth >= 60 {
 		tagCount = state.fitHostTags(canvas, host, tagsWidth, &tagList)
 	}
-	var avatar, light flex.Box
+	var grip, avatar, light flex.Box
 	f := state.chrome.hostRow.Begin(canvas, state.Theme(), area)
 	f.Stack().Fill().Children(func() {
 		f.Row().Fill().Items(flex.Center).Children(func() {
 			f.Row().Width(addressStart).Shrink(0).Items(flex.Center).Children(func() {
-				f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label).MarginSides(0, checkMargin, 0, 10)
+				if state.hostSort.enabled {
+					// Flex measures a checkbox by its full desktop interaction
+					// region, not by the 16px square it paints. Reserve that exact
+					// box for the grip so every following column stays pixel-stable.
+					checkWidth, checkHeight := components.CheckboxHitExtent(state.Theme())
+					grip = f.Slot().Size(checkWidth, checkHeight).MarginSides(0, checkMargin, 0, 10)
+				} else {
+					f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label).MarginSides(0, checkMargin, 0, 10)
+				}
 				avatar = f.Slot().Size(36, 36).MarginSides(0, 10, 0, 0)
 				f.Column().Width(nameWidth).Shrink(0).Gap(2).Children(func() {
 					f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
@@ -1816,6 +1860,9 @@ func (state *State) paintHostTreeRow(canvas *ui.Canvas, row, content ui.Rect, ho
 		})
 	})
 	f.End()
+	if state.hostSort.enabled {
+		state.declareHostSortItem(host, row, grip.Rect())
+	}
 	state.paintHostCatalogIcon(canvas, host, avatar.Rect(), rowBackground)
 	lightRect := light.Rect()
 	paintLight(canvas, lightRect.X+lightRect.Width/2, lightRect.Y+lightRect.Height/2, kind, dot, rowBackground)

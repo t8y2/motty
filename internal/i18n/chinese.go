@@ -2248,6 +2248,8 @@ var chineseTools = ToolsMessages{
 	ExtEditReplace:                  "替换",
 	HostViewList:                    "列表视图",
 	HostViewGrid:                    "卡片视图",
+	HostSort:                        "排序",
+	HostSortDone:                    "完成",
 	BgGroup:                         "终端背景",
 	BgRow:                           "终端背景图片",
 	BgRowNone:                       "把一张图片放在终端文字后面，只有终端区域变为半透明。",

@@ -808,6 +808,8 @@ type ToolsMessages struct {
 	ExtEditReplace                  string
 	HostViewList                    string
 	HostViewGrid                    string
+	HostSort                        string
+	HostSortDone                    string
 	BgGroup                         string
 	BgRow                           string
 	BgRowNone                       string

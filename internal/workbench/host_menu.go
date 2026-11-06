@@ -82,6 +82,9 @@ func (state *State) openHostMenuOn(canvas *ui.Canvas, id ui.ID, host Host) {
 
 // hostRowEvents is what a host row does with the pointer events aimed at it.
 func (state *State) hostRowEvents(canvas *ui.Canvas, id ui.ID, host Host) {
+	if state.hostSort.enabled {
+		return
+	}
 	state.openHostMenuOn(canvas, id, host)
 	state.openHostOn(canvas, id, host)
 }

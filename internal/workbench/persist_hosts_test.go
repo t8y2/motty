@@ -271,6 +271,25 @@ func TestAFailedHostSaveIsWrittenByTheRetry(t *testing.T) {
 
 // TestDuplicateHostIDsStillUseTheGenericEncoder checks the fallback that keeps
 // the record keys of a damaged catalog working.
+func TestReorderingHostsPersistsBySwappingTheirOrdinals(t *testing.T) {
+	state := stateWithHosts(t, 4)
+	state.hosts[0], state.hosts[2] = state.hosts[2], state.hosts[0]
+	state.save()
+
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"host 02", "host 01", "host 00", "host 03"}
+	got := make([]string, len(saved.Hosts))
+	for index := range saved.Hosts {
+		got[index] = saved.Hosts[index].Label
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("reopened order = %v, want %v", got, want)
+	}
+}
+
 func TestDuplicateHostIDsStillUseTheGenericEncoder(t *testing.T) {
 	options := freshOptions(t)
 	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")

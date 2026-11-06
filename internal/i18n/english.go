@@ -2248,6 +2248,8 @@ var englishTools = ToolsMessages{
 	ExtEditReplace:                  "Replace",
 	HostViewList:                    "List view",
 	HostViewGrid:                    "Card view",
+	HostSort:                        "Sort",
+	HostSortDone:                    "Done",
 	BgGroup:                         "Terminal background",
 	BgRow:                           "Terminal background image",
 	BgRowNone:                       "A picture behind the terminal text. Only the terminals turn translucent.",
