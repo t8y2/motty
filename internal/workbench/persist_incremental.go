@@ -331,6 +331,14 @@ func appendHostEntries(entries []configstore.Entry, base *configBase, defaults c
 		}
 	}
 	sort.Slice(existing, func(left, right int) bool { return existing[left] < existing[right] })
+	for index := 1; index < len(existing); index++ {
+		if existing[index] <= existing[index-1] {
+			existing[index] = existing[index-1] + 1
+		}
+	}
+	if len(existing) > 0 {
+		nextOrd = max(nextOrd, existing[len(existing)-1])
+	}
 	desired := make(map[string]int64, len(existing))
 	at := 0
 	for _, host := range hosts {

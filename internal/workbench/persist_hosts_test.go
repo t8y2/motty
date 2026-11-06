@@ -33,6 +33,15 @@ func stateWithHosts(t testing.TB, count int) *State {
 	return state
 }
 
+func hostEntryWithOrd(t testing.TB, id, label string, ord int64) configstore.Entry {
+	t.Helper()
+	raw, err := json.Marshal(savedHost{ID: id, Label: label})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return configstore.Entry{Kind: kindHost, ID: id, Payload: recordPayloadJSON(t, ord, raw)}
+}
+
 // cloneSavedHost copies the parts savedHost shares with its source, so a test
 // can change one leaf without touching the original.
 func cloneSavedHost(host savedHost) savedHost {
@@ -115,6 +124,55 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 	withoutProxy.Proxy = nil
 	if sameSavedHost(base, withoutProxy) {
 		t.Fatal("a dropped proxy compared as unchanged")
+	}
+}
+
+func TestReorderingHostsRepairsDuplicateOrdinals(t *testing.T) {
+	saved, base, err := joinState([]configstore.Entry{
+		hostEntryWithOrd(t, "a", "A", 10),
+		hostEntryWithOrd(t, "b", "B", 10),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Hosts[0], saved.Hosts[1] = saved.Hosts[1], saved.Hosts[0]
+
+	entries, nextOrd, err := appendHostEntries(nil, base, nil, saved.Hosts, base.maxOrd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextOrd <= 10 {
+		t.Fatalf("next ordinal = %d, want repaired range above duplicate 10", nextOrd)
+	}
+	reloaded, _, err := joinState(entries, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{reloaded.Hosts[0].ID, reloaded.Hosts[1].ID}; !slices.Equal(got, []string{"b", "a"}) {
+		t.Fatalf("reloaded order = %v", got)
+	}
+}
+
+func TestFullSavePersistsReorderedHosts(t *testing.T) {
+	saved, base, err := joinState([]configstore.Entry{
+		hostEntryWithOrd(t, "a", "A", 10),
+		hostEntryWithOrd(t, "b", "B", 20),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Hosts[0], saved.Hosts[1] = saved.Hosts[1], saved.Hosts[0]
+
+	entries, _, _, err := splitState(saved, base, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded, _, err := joinState(entries, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{reloaded.Hosts[0].ID, reloaded.Hosts[1].ID}; !slices.Equal(got, []string{"b", "a"}) {
+		t.Fatalf("reloaded order = %v", got)
 	}
 }
 

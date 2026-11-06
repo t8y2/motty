@@ -331,6 +331,58 @@ func TestHostSortDoesNotMoveAcrossGroups(t *testing.T) {
 	}
 }
 
+func TestHostSortEscapeDoesNotInterceptOutsideHosts(t *testing.T) {
+	state := manyHostsState(t, 3)
+	state.Click(hitHostSort)
+	state.activeSection = sectionTerminal
+
+	result, handled := state.hostManagementKey(ui.KeyEvent{Key: ui.KeyEscape})
+	if handled || result.Handled {
+		t.Fatal("sort mode intercepted Escape outside Hosts")
+	}
+	if !state.hostSort.enabled {
+		t.Fatal("leaving Hosts unexpectedly disabled sort mode")
+	}
+}
+
+func TestHostSortEscapeReleaseAndRepeatDoNotExitAfterCancel(t *testing.T) {
+	state := manyHostsState(t, 3)
+	state.Click(hitHostSort)
+	size := ui.Size{Width: 1400, Height: 900}
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+
+	handleID := hitHostSortHandles.At(int(state.hosts[0].ID))
+	handle, ok := hitByID(&canvas, handleID)
+	if !ok {
+		t.Fatal("sort handle is not painted")
+	}
+	state.hostSort.grid.Pointer(ui.PointerEvent{
+		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: handleID,
+		X: handle.Bounds.X + handle.Bounds.Width/2, Y: handle.Bounds.Y + handle.Bounds.Height/2,
+	})
+	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape}); !handled {
+		t.Fatal("Escape did not cancel held drag")
+	}
+	if !state.hostSort.enabled {
+		t.Fatal("canceling a held drag also exited sort mode")
+	}
+
+	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape, Release: true}); handled {
+		t.Fatal("Escape release was handled as a second sort-mode action")
+	}
+	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape, Repeat: true}); handled {
+		t.Fatal("Escape repeat was handled as a second sort-mode action")
+	}
+	if !state.hostSort.enabled {
+		t.Fatal("Escape release/repeat exited sort mode")
+	}
+
+	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape}); !handled || state.hostSort.enabled {
+		t.Fatal("a fresh Escape press did not leave sort mode")
+	}
+}
+
 func TestHostSortIsUnavailableWhileSearching(t *testing.T) {
 	state := manyHostsState(t, 4)
 	state.search.Insert("Host 0")

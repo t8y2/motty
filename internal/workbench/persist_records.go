@@ -468,6 +468,13 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 	}
 
 	for _, entity := range entityFields {
+		if entity.kind == kindHost && uniqueHostIDs(saved.Hosts) {
+			entries, base.maxOrd, err = appendHostEntries(entries, base, defaults, saved.Hosts, base.maxOrd)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			continue
+		}
 		raw, present := fields[entity.field]
 		if !present && entity.keepWhenAbsent {
 			for key, payload := range base.payloads {
