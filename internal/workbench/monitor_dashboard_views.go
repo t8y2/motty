@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
+	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 )
 
@@ -34,6 +35,8 @@ func dashboardHeadingHeight(w float32) float32 {
 
 func (s *State) paintDashboardHeading(c *ui.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b ui.Rect) float32 {
 	pal := s.pal
+	source := s.dashboard.sources[h.CatalogID]
+	canSudo := source != nil && source.session.phase == sshconn.PhaseConnected && source.session.host.System != sshconn.SystemWindows
 	header := dashboardHeadingHeight(b.Width)
 	y := b.Y
 	s.paintHostCatalogIcon(c, h, ui.Rect{X: b.X + 4, Y: y + 7, Width: 28, Height: 28}, pal.workspace)
@@ -47,7 +50,11 @@ func (s *State) paintDashboardHeading(c *ui.Canvas, p *monitoring.Panel, h Host,
 	addrX := b.X + 42 + nameW + 12
 	addrW := min(float32(220), c.TextWidthWeight(address, 12, ui.WeightRegular)+4)
 	if b.Width < 600 {
-		addrW = min(addrW, max(90, b.Width-nameW-114))
+		reserve := float32(114)
+		if canSudo {
+			reserve += 36
+		}
+		addrW = min(addrW, max(90, b.Width-nameW-reserve))
 	}
 	monitorLabel(c, address, ui.Rect{X: addrX, Y: y, Width: addrW, Height: 42}, 12, pal.muted, ui.WeightRegular)
 	tabsX, tabsY := addrX+addrW+16, y+5
@@ -67,19 +74,37 @@ func (s *State) paintDashboardHeading(c *ui.Canvas, p *monitoring.Panel, h Host,
 	if b.Width < 900 {
 		statusX = addrX + addrW + 12
 	}
-	statusW := min(float32(125), max(0, b.X+b.Width-44-statusX))
+	statusEnd := b.X + b.Width - 44
+	if canSudo {
+		statusEnd -= 36
+	}
+	statusW := min(float32(125), max(0, statusEnd-statusX))
 	s.paintDashboardState(c, p, h, r, ui.Rect{X: statusX, Y: y + 7, Width: statusW, Height: 28})
 	if b.Width > 1120 {
 		left := max(b.X+b.Width-302, statusX+statusW+12)
 		width := b.X + b.Width - 50 - left
+		if canSudo {
+			width -= 36
+		}
 		if width >= 170 {
 			monitorRight(c, s.messages.Dashboard.Updated+" "+r.updated, ui.Rect{X: left, Y: y + 7, Width: width, Height: 28}, 11, pal.muted, ui.WeightRegular)
 		}
 	}
 	if h.ID != 0 {
 		components.BeginButton(c, s.Theme(), hitDashboardTerminalList.At(int(h.ID)), ui.Rect{X: b.X + b.Width - 38, Y: y + 5, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().Ghost(s.messages.Dashboard.Terminal)
+		if canSudo {
+			s.paintDashboardSudo(c, h.ID, source, ui.Rect{X: b.X + b.Width - 74, Y: y + 5, Width: 32})
+		}
 	}
 	return header
+}
+
+func (s *State) paintDashboardSudo(c *ui.Canvas, hostID uint32, source *dashboardSource, bounds ui.Rect) {
+	label := s.messages.DashboardSudoEnable
+	if source.session.sudoCommands {
+		label = s.messages.DashboardSudoDisable
+	}
+	components.BeginButton(c, s.Theme(), hitDashboardSudoList.At(int(hostID)), bounds).WithIcon(lucideIcons[iconLock]).Icon().Ghost(label)
 }
 func dashboardSimpleHeight(r *dashboardRow) float32 {
 	n := 0

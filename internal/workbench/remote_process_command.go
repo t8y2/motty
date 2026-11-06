@@ -45,7 +45,7 @@ func (state *State) loadRemoteProcessCommand() {
 	request := details.commandRequest
 	details.commandLoading, details.commandFailed = true, false
 	details.commandStatus = state.messages.Tools.RemoteProcessCommandLoading
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 	details.commandCancel = cancel
 	go func() {

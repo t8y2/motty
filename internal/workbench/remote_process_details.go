@@ -532,6 +532,9 @@ func (w *remoteToolsWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	if w.closed {
 		return ui.EventResult{Handled: true}
 	}
+	if w.ui.modal == modalSudoSFTP {
+		return ui.EventResult{}
+	}
 	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
 		return result
 	}

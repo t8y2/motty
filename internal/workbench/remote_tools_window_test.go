@@ -82,6 +82,63 @@ func withRemoteWindowApplication(t *testing.T, run func(*app.Application, *remot
 	}
 }
 
+func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{failures: map[string]error{}}
+		fake.runCommand = server.run
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		connection := &sudoRunnerTestConn{fakeConn: fake, run: server.run}
+		session.conn = connection
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		if len(state.remoteWindows) != 1 {
+			t.Fatal("native tools window did not open")
+		}
+		window := state.remoteWindows[0]
+		host.until(t, func() bool { return !window.ui.remote.loading })
+		window.click(hitRemoteSudo)
+		if window.ui.modal != modalSudoSFTP || state.modal != modalNone || session.sudoCommands {
+			t.Fatal("native window did not request its own authorization")
+		}
+		var canvas ui.Canvas
+		window.paint(&canvas, ui.Size{Width: 1100, Height: 780})
+		if _, ok := hitByID(&canvas, hitSudoSFTPPassword); !ok {
+			t.Fatal("native window did not paint the sudo password field")
+		}
+		if input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitSudoSFTPPassword}); input == nil || input.Editor != &window.ui.sudoSFTP.password {
+			t.Fatal("native password field cannot receive text input")
+		}
+		window.click(hitSudoSFTPCancel)
+		if window.ui.modal != modalRemoteTools || session.sudoCommands {
+			t.Fatal("canceling native authorization changed the source")
+		}
+		window.click(hitRemoteSudo)
+		window.ui.sudoSFTP.password.Insert("native-secret")
+		window.click(hitSudoSFTPEnable)
+		host.until(t, func() bool { return !window.ui.remote.loading })
+		if !session.sudoCommands || session.sudoPassword != "native-secret" || !window.session.sudoCommands {
+			t.Fatal("native authorization did not synchronize with captured source")
+		}
+		connection.mu.Lock()
+		password, calls := connection.password, len(connection.commands)
+		connection.mu.Unlock()
+		if password != "native-secret" || calls == 0 {
+			t.Fatalf("native sudo runner: password=%q calls=%d", password, calls)
+		}
+		window.click(hitRemoteSudo)
+		if session.sudoCommands || session.sudoPassword != "" || window.session.sudoCommands || window.session.sudoPassword != "" {
+			t.Fatal("native window did not discard sudo authorization")
+		}
+		window.click(hitRemoteSudo)
+		window.ui.sudoSFTP.password.Insert("pending-secret")
+		window.close()
+		if window.ui.sudoSFTP.password.String() != "" || session.sudoPassword != "" {
+			t.Fatal("closing native tools retained the pending sudo password")
+		}
+	})
+}
+
 func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, world, fake, shell := liveSession(t)

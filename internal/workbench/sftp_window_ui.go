@@ -24,6 +24,7 @@ var (
 	sftpWindowHidden             = [2]ui.ID{tree.ID(sftpWindowLocal, "hidden"), tree.ID(sftpWindowRemote, "hidden")}
 	sftpWindowMore               = [2]ui.ID{tree.ID(sftpWindowLocal, "more"), tree.ID(sftpWindowRemote, "more")}
 	sftpWindowFilterToggle       = [2]ui.ID{tree.ID(sftpWindowLocal, "filter-toggle"), tree.ID(sftpWindowRemote, "filter-toggle")}
+	hitSFTPWindowSudoMode        = tree.ID(sftpWindowRemote, "sudo-mode")
 	hitSFTPWindowHeaderDismiss   = tree.ID(sftpWindowHits, "header-dismiss")
 	sftpWindowPath               = [2]ui.ID{tree.ID(sftpWindowLocal, "path"), tree.ID(sftpWindowRemote, "path")}
 	sftpWindowList               = [2]ui.ID{tree.ID(sftpWindowLocal, "list"), tree.ID(sftpWindowRemote, "list")}
@@ -187,6 +188,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
 	var address, list, filter flex.Box
+	var sudoMode flex.Box
 	compact := bounds.Height < 230
 	var buttons [18]sftpIconButton
 	buttonCount := 0
@@ -202,12 +204,17 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 				title = m.SFTPWindow.Local
 			}
 			f.Text(title).Bold().Color(theme.Foreground).Ellipsis().Grow(1)
+			if !local && sudoSFTPAvailable(&w.session, w.view) {
+				sudoMode = f.Slot().Width(64).Height(28).Shrink(0)
+			}
 			if !local && bounds.Width >= 420 {
 				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
 				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
 			}
-			icon(sftpWindowUp[side], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
-			icon(sftpWindowRefresh[side], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+			if local || bounds.Width >= 340 {
+				icon(sftpWindowUp[side], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
+				icon(sftpWindowRefresh[side], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+			}
 			if folder.showHidden {
 				icon(sftpWindowHidden[side], iconEye, m.Tools.FilesHideHidden, false)
 				buttons[buttonCount-1].style = iconButtonActive
@@ -318,6 +325,9 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 		}
 	})
 	f.End()
+	if !local && sudoSFTPAvailable(&w.session, w.view) {
+		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
+	}
 	w.owner.paintSFTPIconButtons(canvas, buttons[:buttonCount])
 	for _, button := range buttons[:buttonCount] {
 		if button.id == sftpWindowMore[side] {

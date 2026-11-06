@@ -90,7 +90,7 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 	if !exists || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
 	}
-	err = worker.replaceDocumentAtomically(client, advanced, remotePath, content, revision, info.Mode().Perm(), generation)
+	err = worker.replaceDocumentAtomically(client, advanced, remotePath, content, revision, info, generation)
 	if !errors.Is(err, os.ErrPermission) {
 		return err
 	}
@@ -116,7 +116,7 @@ func (worker *Worker) checkDocumentRevision(client Remote, remotePath string, re
 	return nil
 }
 
-func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, mode os.FileMode, generation uint64) (err error) {
+func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, original os.FileInfo, generation uint64) (err error) {
 	temporary, target, err := openEditTemporary(advanced, remotePath)
 	if err != nil {
 		return err
@@ -147,7 +147,14 @@ func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transfer
 		return err
 	}
 	closed = true
-	if err = advanced.Chmod(target, mode); err != nil {
+	if privileged, ok := client.(interface {
+		preserveEditOwner(string, os.FileInfo) error
+	}); ok {
+		if err = privileged.preserveEditOwner(target, original); err != nil {
+			return err
+		}
+	}
+	if err = advanced.Chmod(target, original.Mode().Perm()); err != nil {
 		return err
 	}
 	if err = worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {

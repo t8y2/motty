@@ -344,6 +344,10 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	if w.ui.menuOpen {
 		w.ui.menuOpen = false
+		if id == hitSFTPMenuSudo {
+			w.owner.toggleSudoSFTP(&w.session, w.view)
+			return
+		}
 		if index, ok := id.In(sftpWindowMenuActions); ok && index < len(sftpWindowActionIDs) {
 			w.fileAction(w.activeLocal, sftpWindowActionIDs[index])
 			return
@@ -357,6 +361,10 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	if w.view.bookmarksOpen {
 		w.clickDirectoryPlace(id)
+		return
+	}
+	if id == hitSFTPWindowSudoMode {
+		w.owner.toggleSudoSFTP(&w.session, w.view)
 		return
 	}
 	for side := range 2 {

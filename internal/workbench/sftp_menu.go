@@ -25,6 +25,7 @@ var (
 	hitSFTPMenuExtract      = tree.ID(sftpMenuHits, "sftp-menu-extract")
 	hitSFTPMenuCompress     = tree.ID(sftpMenuHits, "sftp-menu-compress")
 	hitSFTPMenuDelete       = tree.ID(sftpMenuHits, "sftp-menu-delete")
+	hitSFTPMenuSudo         = tree.ID(sftpMenuHits, "sftp-menu-sudo")
 )
 
 // sftpMenuAction is the button of the bar that a menu row stands for.
@@ -54,6 +55,8 @@ func sftpMenuAction(id ui.ID) (ui.ID, bool) {
 		return hitSFTPCompress, true
 	case hitSFTPMenuDelete:
 		return hitSFTPDelete, true
+	case hitSFTPMenuSudo:
+		return hitSFTPMenuSudo, true
 	case hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
 		hitSFTPCopyPath, hitSFTPProperties:
 		return id, true
@@ -196,6 +199,14 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	}
 	if one {
 		rows.add(components.ContextMenuItem{ID: hitSFTPProperties, Label: messages.SFTPWindow.PropertiesTitle, Icon: icon(iconInfo)})
+	}
+	if sudoSFTPAvailable(session, view) {
+		label := messages.SFTPSudoEnable
+		if view.sudo {
+			label = messages.SFTPSudoDisable
+		}
+		rows.separate()
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSudo, Label: label, Icon: icon(iconLock)})
 	}
 
 	return rows

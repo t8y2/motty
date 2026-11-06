@@ -260,6 +260,19 @@ line comment toggling (Cmd/Ctrl+/), line move/copy/delete (Alt+Up/Down,
 Shift+Alt+Up/Down, Cmd/Ctrl+Shift+K), find and replace (Cmd/Ctrl+F, Ctrl+H) with
 case, whole-word and regular-expression options, and go to line (Ctrl+G).
 
+For files that the SSH account can read but cannot change (such as root-owned
+configuration), switch on the **sudo** toggle beside the remote pane title (or
+choose **Use sudo for remote files** in the file context menu) and confirm the
+password. The same toggle stays selected while sudo is active; click it again
+to return to normal mode. This switches the current file browser, its
+transfers and open documents to a privileged SFTP server. Remote tools and the
+terminal's resource monitor have a separate sudo control, while each dashboard
+host requires its own confirmation. Sudo is off by default, never elevates the
+terminal, and passwords are held only for the connection, not saved. The remote
+host needs `sudo` and an OpenSSH
+`sftp-server` executable; Windows servers and SCP-only servers cannot use
+privileged SFTP. Server sudo policies may deny the required shell command.
+
 The panel's more menu can hand the folder it shows to VS Code or Zed through the
 editor's own URL scheme. Pick the editor under **Settings > Files**, which lists
 the editors installed on this computer; until one is picked the menu item stays

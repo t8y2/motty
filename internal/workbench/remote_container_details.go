@@ -106,7 +106,7 @@ func (state *State) loadRemoteContainerEnvironment() {
 	details.environmentRequest++
 	request := details.environmentRequest
 	details.loading, details.failed, details.status = true, false, ""
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 	details.environmentCancel = cancel
 	go func() {

@@ -24,6 +24,7 @@ var (
 	hitMonitorEvery1        = tree.ID(monitorHits, "every-1")
 	hitMonitorEvery2        = tree.ID(monitorHits, "every-2")
 	hitMonitorEvery5        = tree.ID(monitorHits, "every-5")
+	hitMonitorSudo          = tree.ID(monitorHits, "sudo")
 	hitMonitorDisks         = tree.ID(monitorHits, "more-disks")
 	hitMonitorHardware      = tree.ID(monitorHits, "hardware")
 	hitMonitorOverview      = tree.ID(monitorHits, "overview")
@@ -273,6 +274,9 @@ func (state *State) clickMonitor(id ui.ID) bool {
 	}
 	v := s.stats
 	switch id {
+	case hitMonitorSudo:
+		state.monitorMenu = false
+		state.toggleSudoCommands(s, false)
 	case hitMonitorPause:
 		v.panel.refreshReset = true
 		v.panel.paused = !v.panel.paused

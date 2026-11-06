@@ -897,6 +897,7 @@ type State struct {
 	// Prompt state, filled when a connection asks a question.
 	hostKeyDescription       string
 	passwordFields           []text.Editor
+	sudoSFTP                 sudoSFTPDialog
 	passwordRects            []ui.Rect
 	passwordBoxes            []flex.Box
 	passwordQuestions        []sshconn.Question
@@ -1273,6 +1274,10 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if index, ok := hit.In(hitPasswordFields); ok && index >= 1 && index-1 < len(state.passwordFields) {
 			return &state.passwordFields[index-1]
 		}
+	case modalSudoSFTP:
+		if hit == hitSudoSFTPPassword {
+			return &state.sudoSFTP.password
+		}
 	case modalKeyPassphrase:
 		if hit == hitKeyPassphraseField {
 			return &state.keyPassphrase
@@ -1499,6 +1504,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalSFTPColumns:
 		state.clickSFTPColumnSettings(id)
+		return
+	case modalSudoSFTP:
+		state.clickSudoSFTP(id)
 		return
 	case modalVaultForget:
 		state.clickVaultForget(id)
@@ -2633,6 +2641,10 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if state.modal == modalPassword && event.Key == ui.KeyEnter && !event.Repeat && event.Target.Scope() == hitPasswordFields {
 		state.submitPassword()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSudoSFTP && event.Key == ui.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
+		state.submitSudoSFTP()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalVaultUnlock && event.Key == ui.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {

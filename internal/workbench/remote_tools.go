@@ -46,6 +46,7 @@ var (
 	hitRemotePull          = tree.ID(remoteToolsHits, "remote-pull")
 	hitRemoteCreate        = tree.ID(remoteToolsHits, "remote-create")
 	hitRemoteRefresh       = tree.ID(remoteToolsHits, "remote-refresh")
+	hitRemoteSudo          = tree.ID(remoteToolsHits, "remote-sudo")
 	hitRemoteAutoRefresh   = tree.ID(remoteToolsHits, "remote-auto-refresh")
 	hitRemoteAutoToggle    = tree.ID(remoteToolsHits, "remote-auto-toggle")
 	hitRemoteAutoDismiss   = tree.ID(remoteToolsHits, "remote-auto-dismiss")
@@ -236,6 +237,12 @@ func (state *State) remoteSession() (*Session, bool) {
 func (state *State) clickRemoteTools(id ui.ID) {
 	view := &state.remote
 	m := state.messages.Tools
+	if id == hitRemoteSudo {
+		if session, ok := state.remoteSession(); ok {
+			state.toggleSudoCommands(session, true)
+		}
+		return
+	}
 	if state.clickRemoteProcessDetails(id) {
 		return
 	}
@@ -616,7 +623,7 @@ func (state *State) refreshRemoteTools() {
 	view.serial++
 	serial, tab, key, sourceID := view.serial, view.tab, view.sort, session.ID
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	go func() {
 		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
@@ -701,7 +708,7 @@ func (state *State) runRemoteAction(done string, action func(context.Context, re
 	view.serial++
 	serial, tab, sourceID := view.serial, view.tab, session.ID
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	go func() {
 		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
@@ -774,7 +781,7 @@ func (state *State) openContainerShell(container remotetools.Container) {
 	view.serial++
 	serial, sourceID := view.serial, session.ID
 	view.loading, view.failed, view.status = true, false, state.messages.Tools.RemoteLoading
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	go func() {
 		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
@@ -901,7 +908,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	if view.failed {
 		color = pal.danger
 	}
-	var tabsSlot, refreshSlot, tableSlot, pagesSlot, searchSlot, statusSlot, snapshotSlot flex.Box
+	var tabsSlot, refreshSlot, sudoSlot, tableSlot, pagesSlot, searchSlot, statusSlot, snapshotSlot flex.Box
 	f := state.partLayout.Begin(canvas, theme, bounds)
 	stacked := bounds.Width < 800
 	f.Column().Fill().Children(func() {
@@ -911,12 +918,14 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 			f.Spacer()
 			if !stacked {
 				refreshSlot = f.Slot().Width(174).Shrink(0)
+				sudoSlot = f.Slot().Width(28).Shrink(0)
 			}
 		})
 		if stacked {
 			f.Row().Height(remoteToolbarHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
 				f.Spacer()
 				refreshSlot = f.Slot().Width(174).Height(remoteToolbarHeight)
+				sudoSlot = f.Slot().Width(28).Height(remoteToolbarHeight)
 			})
 		}
 		searchSlot = f.Slot().Height(remoteSearchHeight).Shrink(0).MarginSides(8, 0, 0, 0)
@@ -949,6 +958,13 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 	components.BeginSegmentedControl(canvas, theme, tabsSlot.Rect(), tabs[:], selectedTab).Paint()
 	state.paintRemoteRefresh(canvas, refreshSlot.Rect())
+	if session, ok := state.remoteSession(); ok && session.host.System != sshconn.SystemWindows {
+		label := state.messages.SudoCommandsEnable
+		if session.sudoCommands {
+			label = state.messages.SudoCommandsDisable
+		}
+		state.paintIconButton(canvas, hitRemoteSudo, iconLock, sudoSlot.Rect(), label, false, iconButtonQuiet, pal.surface)
+	}
 	state.paintRemoteSearch(canvas, searchSlot.Rect())
 	if missingDocker {
 		state.paintRemoteDockerEmpty(canvas, tableSlot.Rect())

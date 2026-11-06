@@ -114,6 +114,8 @@ type Session struct {
 	endpoint     sshconn.Endpoint
 	role         sshconn.EndpointRole
 	conn         Connection
+	sudoCommands bool
+	sudoPassword string
 	recordRecent bool // this user dial may update its recent success once
 	shared       bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.

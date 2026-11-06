@@ -115,6 +115,7 @@ func (state *State) abandonRestoredConnect(session *Session) {
 		state.closeModal()
 	}
 	session.conn = nil
+	session.sudoCommands, session.sudoPassword = false, ""
 	session.term = nil
 	session.restored = true
 	session.autoRestore = false

@@ -111,7 +111,8 @@ func (w *sftpWindow) startBrowser() {
 	}
 	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
-	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, w.invalidate)
+	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
+	w.view.worker = sftpclient.NewWorker(w.view.openFiles, w.invalidate)
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
@@ -154,6 +155,15 @@ func (w *sftpWindow) pump() {
 	}
 	w.owner.pumpSFTP(&w.session)
 	if !w.connected() {
+		if w.view.sudo {
+			w.owner.forgetSFTPDocumentAccess(w.view)
+			w.view.worker.Close()
+			w.owner.refreshSFTPTransfers(w.view)
+			w.owner.archiveTransfers(w.view)
+			w.view.worker = nil
+			w.view.openFiles = nil
+			w.view.sudo = false
+		}
 		w.browse.enabled, w.browse.pending = false, nil
 		if w.view.dialog == sftpDialogBrowseCreateDirectory {
 			w.owner.closeSFTPDialog(w.view)
@@ -251,6 +261,9 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
+	if w.owner.modal == modalSudoSFTP && w.owner.sudoSFTP.window == w {
+		w.owner.closeModal()
+	}
 	w.browse.pending, w.browse.enabled = nil, false
 	if w.ownsConnection && w.owner.modalSession == w.session.ID {
 		w.owner.closeModal()
@@ -263,11 +276,16 @@ func (w *sftpWindow) onClosed() {
 	}
 	w.view.extracting = false
 	w.owner.dropWindowExternalEdits(w)
+	if w.view.sudo {
+		w.owner.forgetSFTPDocumentAccess(w.view)
+	}
 	if w.view.worker != nil {
 		w.view.worker.Close()
 		w.owner.refreshSFTPTransfers(w.view)
 		w.owner.archiveTransfers(w.view)
 	}
+	w.view.openFiles = nil
+	w.view.sudo = false
 	w.owner.options.Invalidate()
 	w.view.rows = nil
 	w.view.lfolder.rows = nil

@@ -166,30 +166,44 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		}()
 		return
 	}
-	conn, mode := session.conn, session.host.Transfer
-	if conn == nil {
+	if session.conn == nil || view.openFiles == nil {
 		delete(state.fileWindows.documents, key)
 		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
 		return
 	}
-	d.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(conn, mode) }, func() {})
-	go func() {
-		for result := range d.worker.Results() {
-			if result.Operation == sftpclient.OperationOpenDocument {
-				state.postFileEvent(decodeFileEvent(d, result.Data, result.Err))
-			}
-			if result.Operation == sftpclient.OperationSaveDocument {
-				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, saved: true})
-			}
-			if result.Operation == sftpclient.OperationReadDocument {
-				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, compared: true})
-			}
-		}
-	}()
+	d.openRemoteWorker(view.openFiles)
 	if !d.worker.OpenDocument(location) {
 		delete(state.fileWindows.documents, key)
 		d.worker.Close()
 		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
+	}
+}
+
+func (d *fileDocument) openRemoteWorker(open func() (sftpclient.Remote, error)) {
+	worker := sftpclient.NewWorker(open, func() {})
+	d.worker = worker
+	go func() {
+		for result := range worker.Results() {
+			if result.Operation == sftpclient.OperationOpenDocument {
+				d.owner.postFileEvent(decodeFileEvent(d, result.Data, result.Err))
+			}
+			if result.Operation == sftpclient.OperationSaveDocument {
+				d.owner.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, saved: true})
+			}
+			if result.Operation == sftpclient.OperationReadDocument {
+				d.owner.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, compared: true})
+			}
+		}
+	}()
+}
+
+func (state *State) forgetSFTPDocumentAccess(view *sftpView) {
+	for _, document := range state.fileWindows.documents {
+		if document.view == view && !document.local && !document.closed && document.worker != nil {
+			document.worker.Close()
+			message := state.messages.SFTPUnavailable
+			document.openRemoteWorker(func() (sftpclient.Remote, error) { return nil, errors.New(message) })
+		}
 	}
 }
 

@@ -65,6 +65,10 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 				}
 
 				mount := sftpWindowMount(w)
+				modeHit, ok := hitByIDFromSnapshot(snapshot, tree.MountID(mount, hitSFTPWindowSudoMode))
+				if !ok || modeHit.Width <= 0 || modeHit.Y+modeHit.Height > w.ui.list[1].Y || modeHit.X < 0 || modeHit.X+modeHit.Width > float32(snapshot.Width) {
+					t.Fatalf("remote mode control escaped compact header: %+v, hit=%t", modeHit, ok)
+				}
 				pathID := tree.MountID(mount, sftpWindowPath[0])
 				pathHit, ok := hitByIDFromSnapshot(snapshot, pathID)
 				if !ok {

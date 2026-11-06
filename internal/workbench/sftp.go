@@ -104,6 +104,7 @@ type sftpView struct {
 	detached                        *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
 	worker                          *sftpclient.Worker
 	openFiles                       func() (sftpclient.Remote, error) // the server's files again, outside the worker's queue; nil when unavailable
+	sudo                            bool
 	transferScan                    uint64
 	transferHost                    *transferHost
 	transferServer, transferAddress string
@@ -264,6 +265,11 @@ func (state *State) closeSFTP(session *Session) {
 		state.refreshSFTPTransfers(session.files)
 		state.archiveTransfers(session.files)
 	}
+	if session.files.sudo {
+		state.forgetSFTPDocumentAccess(session.files)
+	}
+	session.files.openFiles = nil
+	session.files.sudo = false
 	state.forgetTerminalUploads(session.files)
 	session.files = nil
 }
@@ -330,6 +336,10 @@ func (state *State) clickSFTP(id ui.ID) {
 	}
 	view := session.files
 	if view == nil {
+		return
+	}
+	if id == hitSFTPMenuSudo {
+		state.toggleSudoSFTP(session, view)
 		return
 	}
 	if view.dialog != sftpDialogNone {

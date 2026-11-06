@@ -50,7 +50,7 @@ func (state *State) loadRemoteProcessEnvironment() {
 	details.loading = true
 	details.failed = false
 	details.status = ""
-	runner := remotetools.ForSystem(session.conn, session.host.System.String())
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
 	parent := state.remoteToolsContext()
 	ctx, cancel := context.WithTimeout(parent, remoteTimeout)
 	details.environmentCancel = cancel

@@ -950,6 +950,18 @@ type Messages struct {
 	SFTPUpload                  string
 	SFTPUploadDirectory         string
 	SFTPNewDirectory            string
+	SFTPSudoEnable              string
+	SFTPSudoDisable             string
+	SFTPModeToggle              string
+	SFTPSudoHint                string
+	SFTPSudoPassword            string
+	SFTPSudoBusy                string
+	SudoCommandsEnable          string
+	SudoCommandsDisable         string
+	SudoCommandsHint            string
+	DashboardSudoEnable         string
+	DashboardSudoDisable        string
+	DashboardSudoHint           string
 	SFTPOpen                    string
 	SFTPRename                  string
 	SFTPMove                    string

@@ -104,6 +104,12 @@ func (conn realConn) OpenSFTP() (sftpclient.Remote, error) {
 	return sftpclient.Open(conn.Conn.Client())
 }
 
+func (conn realConn) OpenSudoSFTP(password string) (sftpclient.Remote, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	return sftpclient.OpenSudo(ctx, conn.Conn.Client(), password)
+}
+
 // OpenSCP is the file backend for a server that has no SFTP subsystem.
 func (conn realConn) OpenSCP() (sftpclient.Remote, error) {
 	return sftpclient.OpenSCP(conn.Conn.Client())
@@ -484,6 +490,7 @@ const (
 	modalDashboardAdd
 	modalToolbarSettings
 	modalSFTPColumns
+	modalSudoSFTP
 	modalTerminalInput
 	modalDeleteRule
 	modalWorkspaceDraft
@@ -529,6 +536,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	state.redialSessionForwards(session.ID)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
+	session.sudoCommands, session.sudoPassword = false, ""
 	if session.term != nil && session.term.shell != nil {
 		releaseShell(session.term.shell)
 	}
@@ -855,6 +863,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.ensureContextSFTP()
 		}
 	case sshconn.PhaseClosed:
+		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
@@ -868,6 +877,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		state.tell(session, toldEnded, status)
 	case sshconn.PhaseFailed:
+		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
@@ -1155,6 +1165,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalSFTPColumns {
 		state.sftpColumnEditor.list.Cancel()
+	}
+	if state.modal == modalSudoSFTP {
+		state.sudoSFTP = sudoSFTPDialog{}
 	}
 	if state.modal == modalRemoteClipboard {
 		state.clipboardRequest = remoteClipboardRequest{}
