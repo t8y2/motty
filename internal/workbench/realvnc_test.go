@@ -220,17 +220,10 @@ func TestVNCUnknownSystemUserAsksBothFieldsAndSavesForTheAnsweredAccount(t *test
 	}
 	session.desk.session.Close()
 	state.reconnect(session)
-	waitUntil(t, state, "saved account prompt", func() bool { return state.modal == modalPassword })
-	if len(state.passwordFields) != 2 || state.passwordFields[0].String() != "bob" || state.passwordFields[1].String() != "bob password" {
-		t.Fatal("the saved VNC account and password were not prefilled on reconnect")
+	waitUntil(t, state, "saved account reconnect", func() bool { return session.desk != nil })
+	if state.modal == modalPassword {
+		t.Fatal("the unique saved account required another credential confirmation")
 	}
-	select {
-	case <-answers:
-		t.Fatal("the saved account was sent without confirmation")
-	default:
-	}
-	state.Click(hitPasswordSubmit)
-	waitUntil(t, state, "confirmed saved account", func() bool { return session.desk != nil })
 	if got := <-answers; got != [2]string{"bob", "bob password"} {
 		t.Fatalf("reconnected credentials = %q", got)
 	}

@@ -16,21 +16,22 @@ func TestVNCSavedAccountPrefillIsUnambiguous(t *testing.T) {
 		name                   string
 		accounts               []string
 		wantUser, wantPassword string
+		automatic              bool
 	}{
-		{"one account", []string{"bob"}, "bob", "password/bob"},
-		{"empty account", []string{""}, "", "password/"},
-		{"two accounts", []string{"alice", "bob"}, "", ""},
-		{"empty and named accounts", []string{"", "bob"}, "", ""},
-		{"only legacy and another host", nil, "", ""},
+		{"one account", []string{"bob"}, "bob", "password/bob", true},
+		{"empty account", []string{""}, "", "password/", false},
+		{"two accounts", []string{"alice", "bob"}, "", "", false},
+		{"empty and named accounts", []string{"", "bob"}, "", "", false},
+		{"only legacy and another host", nil, "", "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			sent := make(chan struct{}, 1)
+			sent := make(chan [2]string, 1)
 			state, host := realVNCState(t, "", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
-				_, _, err := request.AskCredentials()
+				username, password, err := request.AskCredentials()
 				if err != nil {
 					return nil, err
 				}
-				sent <- struct{}{}
+				sent <- [2]string{username, password}
 				return &encryptedVNC{newPictureOnly()}, nil
 			})
 			for _, account := range test.accounts {
@@ -47,6 +48,17 @@ func TestVNCSavedAccountPrefillIsUnambiguous(t *testing.T) {
 				}
 			}
 			openHost(state)
+			if test.automatic {
+				session, _ := state.sessionByIDPointer(state.activeSessionID)
+				waitUntil(t, state, "saved VNC account login", func() bool { return session.desk != nil })
+				if state.modal == modalPassword {
+					t.Fatal("a unique saved system account required a credential prompt")
+				}
+				if got := <-sent; got != [2]string{test.wantUser, test.wantPassword} {
+					t.Fatal("VNC login selected an unrelated saved account")
+				}
+				return
+			}
 			waitUntil(t, state, "saved VNC account", func() bool { return state.modal == modalPassword })
 			if len(state.passwordFields) != 2 || state.passwordFields[0].String() != test.wantUser || state.passwordFields[1].String() != test.wantPassword {
 				t.Fatal("VNC account prefill selected an unrelated or ambiguous secret")
@@ -112,14 +124,10 @@ func TestVNCPasswordSaveCheckboxSurvivesApplicationRestart(t *testing.T) {
 			restored.Click(hitHosts)
 			openHost(restored)
 			reconnected, _ := restored.sessionByIDPointer(restored.activeSessionID)
-			if username == "" {
-				waitUntil(t, restored, "restored account prompt", func() bool { return restored.modal == modalPassword })
-				if len(restored.passwordFields) != 2 || restored.passwordFields[0].String() != "alice" || restored.passwordFields[1].String() != "saved account password" {
-					t.Fatal("saved account and password were lost after restart")
-				}
-				restored.Click(hitPasswordSubmit)
-			}
 			waitUntil(t, restored, "restored desktop", func() bool { return reconnected.phase == sshconn.PhaseConnected && reconnected.desk != nil })
+			if restored.modal == modalPassword {
+				t.Fatal("the saved system account required credential confirmation after restart")
+			}
 			if got := <-answers; got != [2]string{"alice", "saved account password"} {
 				t.Fatalf("restored credentials=%q", got)
 			}

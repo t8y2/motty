@@ -75,9 +75,14 @@ func (state *State) preparePassword(session *Session) {
 	state.prefillPasswordAnswers(session, passwordName)
 }
 
-// singleSavedVNCAccount recovers an account entered only at login. Keep the
-// two-field confirmation and never guess between accounts or legacy passwords.
+// singleSavedVNCAccount recovers an account entered only at login. Multiple
+// system accounts remain ambiguous; legacy passwords are never candidates.
 func (state *State) singleSavedVNCAccount(session *Session) (string, bool) {
+	owner := state.secretOwner(session.host, session.endpoint, session.role)
+	return state.singleSavedVNCAccountFor(owner)
+}
+
+func (state *State) singleSavedVNCAccountFor(owner string) (string, bool) {
 	vaultFile := state.secrets.vault
 	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() {
 		return "", false
@@ -86,7 +91,6 @@ func (state *State) singleSavedVNCAccount(session *Session) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	owner := state.secretOwner(session.host, session.endpoint, session.role)
 	prefix := hostSecretName(owner, "vnc-system-password:")
 	username, found := "", false
 	for _, name := range names {

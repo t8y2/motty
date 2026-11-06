@@ -22,9 +22,10 @@ during connection. A host reached through SSH keeps its SSH username separate
 from the VNC system account. Saved system-account passwords belong to the host
 and account and are separate from traditional VNC passwords.
 
-When no account was configured and exactly one account password is saved for
-the host, the credential prompt prefills that account and password for user
-confirmation. Multiple saved accounts are left for the user to choose.
+When no system account was configured and exactly one nonempty system username
+is saved for the host, Motty reuses that account and password after verifying
+the server's identity. This also keeps an SSH tunnel's account separate from
+the VNC system account. Multiple saved accounts are left for the user to choose.
 
 The server's RSA key is verified before credentials are sent. The identity
 dialog offers rejection, trust for this connection, and trust with saving. A
@@ -81,9 +82,16 @@ negotiation, the server's RSA-AES proof and the UserPass subtype. A Windows
 client was then used with a real Raspberry Pi system account to complete RA2
 login, display the encrypted desktop and share text through the clipboard.
 
-The latest password and identity persistence changes still need a real-server
-retest. Other server versions, reconnects and long sessions also need manual
-interoperability testing; scripted peers do not establish those results.
+On 2026-11-06, the user tested `motty-vnc-ra2-autologin.exe` against a real
+Raspberry Pi. System-account login and desktop display succeeded, and the saved
+account/password were reused automatically without a credential dialog.
+The user also reported progressive, scan-like desktop updates during window
+movement and scrolling. This observation has not been independently reproduced;
+no rendering change is included in this authentication work.
+
+This report does not establish saved server-key persistence on RealVNC, a native
+application restart, clipboard behavior in this build, other server versions,
+or long sessions; those still need manual interoperability testing.
 
 Protocol references: [TigerVNC RSA-AES](https://github.com/TigerVNC/tigervnc/blob/009df04af8fe3843176636da5ea297cf6b7c7a98/common/rfb/CSecurityRSAAES.cxx)
 and the [EAX specification](https://web.cs.ucdavis.edu/~rogaway/papers/eax.pdf).

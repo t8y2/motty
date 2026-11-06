@@ -657,6 +657,15 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 	conn := newDesktopConn(host, notify, open, state.connectionTimeout, state.proxyForHost(host), certs)
 	if host.Protocol == protocolVNC {
 		conn.identityFile = state.options.StatePath
+		if conn.credentialUser == "" {
+			owner := state.secretOwner(host, sshconn.Endpoint{}, sshconn.EndpointTarget)
+			if account, ok := state.singleSavedVNCAccountFor(owner); ok && account != "" {
+				// Only the VNC system account is recovered. Host.User may belong to
+				// an SSH tunnel, and password-only VNC still uses its legacy secret.
+				// The password is requested after server identity verification.
+				conn.credentialUser = account
+			}
+		}
 	}
 	target := state.desktopTargetFor(session)
 	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
