@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 const (
@@ -74,6 +75,11 @@ func (m *fileWindowManager) activate(key string) {
 	}
 	// A tab the user picked now outranks a document that is still loading.
 	m.pending = ""
+	if previous := m.activeDocument(); previous != nil && previous != d && previous.note != nil {
+		previous.note.content.view.previewSelecting = false
+		previous.note.content.view.previewDragging = false
+		previous.note.content.view.pointerValid = false
+	}
 	m.active = key
 	if d.window != nil {
 		d.window.Show()
@@ -492,6 +498,10 @@ func (m *fileWindowManager) paintDocumentTabRows(f *flex.Frame, activeDocument *
 			edge = tintHostSurface(edge, color, .35)
 		}
 		label := m.tabLabel(d)
+		hint, icon := d.source+" · "+d.location, lucideIcons[iconFile]
+		if d.note != nil {
+			hint, icon = d.name, icons.Notebook
+		}
 		first := float32(0)
 		if index == 0 {
 			first = -scroll
@@ -500,10 +510,10 @@ func (m *fileWindowManager) paintDocumentTabRows(f *flex.Frame, activeDocument *
 		f.Row().Size(width, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 			PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
 			HitWith(id, label, ui.HitOptions{
-				Role: ui.RoleTab, Selected: active, Hint: d.source + " · " + d.location,
+				Role: ui.RoleTab, Selected: active, Hint: hint,
 			}).Children(func() {
 			f.Row().Size(20, 20).Shrink(0).Center().MarginSides(0, 7, 0, 0).Children(func() {
-				f.Icon(lucideIcons[iconFile]).Size(14, 14).Color(foreground)
+				f.Icon(icon).Size(14, 14).Color(foreground)
 			})
 			f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 			f.Spacer()

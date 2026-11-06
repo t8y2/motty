@@ -176,11 +176,15 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	}
 
 	holdable, _ := holdableRecords(remote.Records)
+	notesChanged, err := state.preserveNoteConflicts(holdable)
+	if err != nil {
+		return nil, err
+	}
 	result, err := state.config.Merge(holdable)
 	if err != nil {
 		return nil, err
 	}
-	if len(result.Applied) > 0 {
+	if len(result.Applied) > 0 || notesChanged {
 		if err := state.reloadShared(); err != nil {
 			return nil, err
 		}

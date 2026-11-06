@@ -138,6 +138,9 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	var terminalTools []barTool
 	if session, ok := state.terminalSideRailSession(); ok {
 		terminalTools = state.activeTerminalTools(session, &terminal)
+	} else if state.noteSidebarVisible() {
+		// Restored/disconnected sessions still need the action that closes the browser.
+		terminalTools = append(terminal[:0], barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: iconButtonActive})
 	}
 	tools := dst[:0]
 	// Connection progress is a transient navigation action, not a customizable

@@ -132,6 +132,11 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		return nil
 	}
 	tools := toolList[:0]
+	notesStyle := iconButtonQuiet
+	if state.notes.panel {
+		notesStyle = iconButtonActive
+	}
+	tools = append(tools, barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: notesStyle})
 	if session.host.isSSH() && !session.isLocal() {
 		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 	}

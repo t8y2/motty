@@ -33,6 +33,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
 	},
 	toolbarTerminal: {
+		{"notes", hitNotesPanel, iconNotebook},
 		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
 		{"snippets", hitTerminalSnippets, iconNote},
 		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
@@ -188,6 +189,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.Tools.RemoteMenu
 	case hitProcessToolsOpen:
 		return m.Tools.RemoteTabProcesses
+	case hitNotesPanel:
+		return state.noteText("Notes", "笔记")
 	case hitTerminalRecord:
 		return m.TipRecordStart
 	case hitTerminalSaveOutput:

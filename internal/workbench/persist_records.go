@@ -158,6 +158,8 @@ type entityField struct {
 }
 
 var entityFields = []entityField{
+	{field: "notes", kind: "note", key: func(f map[string]json.RawMessage) string { return fieldText(f, "id") }},
+	{field: "note_folders", kind: "note-folder", key: func(f map[string]json.RawMessage) string { return fieldText(f, "id") }},
 	{field: "hosts", kind: "host", key: func(fields map[string]json.RawMessage) string {
 		if id := fieldText(fields, "id"); id != "" {
 			return id

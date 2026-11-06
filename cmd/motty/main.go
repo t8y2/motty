@@ -394,6 +394,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.AIPanelInput(context); input != nil {
 			return input
 		}
+		if input := state.NotesInput(context); input != nil {
+			return input
+		}
 		editor := state.EditorFor(context.ID)
 		if editor == nil {
 			return nil

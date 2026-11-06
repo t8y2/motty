@@ -93,6 +93,7 @@ const (
 	iconGitHub
 	iconChevronLeft
 	iconNote
+	iconNotebook
 	iconSFTPTransfer
 	iconSFTPBrowseSync
 	iconSFTPProfiles
@@ -116,7 +117,10 @@ func (state *State) terminalPage() bool {
 
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
+	defer state.paintNoteExit(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	canvas.SetTree(&tree)
+	state.autosaveNotes(canvas)
+	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
 	state.pixelScale = canvas.PixelScale()
 	// Motty keeps one central click handler. The event pass of a click names its
@@ -232,7 +236,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		if !fullPage {
 			f.Row().Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
 				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
-				state.declareNavigation(f)
+				state.declareNavigation(f, size.Height)
 				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
 					Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
 			})
@@ -249,6 +253,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.beginMenus()
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
+		state.paintNotesPanel(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
 		state.paintWorkspaceSideRail(canvas, size)
 		state.paintWorkspacePaneTools(canvas)
@@ -277,6 +282,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 				state.paintSettingsWorkspace(canvas, workspace)
 			case sectionKnownHosts:
 				state.paintKnownHostsWorkspace(canvas, workspace)
+			case sectionNotes:
+				state.paintNotesWorkspace(canvas, workspace)
 			case sectionSnippets:
 				state.paintSnippetsWorkspace(canvas, workspace)
 			case sectionSessionLogs:
@@ -426,7 +433,9 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.requestLoginCommandFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
 	// Last, so a tooltip is never covered by what it describes.
-	state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {
+		state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	}
 	state.fileNotices.paint(canvas, state.Theme(), ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
 	if !state.workspaceTemplateFocusPending.IsZero() {
 		if state.activeSection == sectionWorkspaces && state.modal == modalNone {
@@ -439,6 +448,9 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 // windowRect is the whole window as last painted: the viewport a popup gives
 // its Viva component so a press anywhere outside it dismisses it.
 func (state *State) windowRect() ui.Rect {
+	if state.noteTarget != nil && state.noteTarget.windowView {
+		return state.noteTarget.viewport
+	}
 	return ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
 }
 
@@ -960,8 +972,12 @@ type chromeLayout struct {
 
 // declareNavigation declares the sidebar: the name of the application over the
 // pages, and the way to a shell on this computer and to the settings at the bottom.
-func (state *State) declareNavigation(f *flex.Frame) {
+func (state *State) declareNavigation(f *flex.Frame, height float32) {
 	m := state.messages
+	logoGap := float32(20)
+	if height < 640 {
+		logoGap = 0
+	}
 
 	items := [...]struct {
 		id     ui.ID
@@ -978,10 +994,11 @@ func (state *State) declareNavigation(f *flex.Frame) {
 		{hitPortForwarding, iconForward, m.NavPortForwarding, state.activeSection == sectionForwards},
 		{hitKnownHosts, iconKnown, m.NavKnownHosts, state.activeSection == sectionKnownHosts},
 		{hitSnippets, iconNote, m.NavSnippets, state.activeSection == sectionSnippets},
+		{hitNotes, iconNotebook, state.noteText("Notes", "笔记"), state.activeSection == sectionNotes},
 	}
 	f.Column().Width(navigationWidth).Shrink(0).Children(func() {
 		// The logo with the name beside it, painted into this slot after layout.
-		state.chrome.lockup = f.Slot().Size(lockupWidth, lockupHeight).MarginSides(15, 0, 20, 0).Self(flex.Center)
+		state.chrome.lockup = f.Slot().Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(flex.Center)
 		for _, item := range items {
 			state.navigationItem(f, item.id, item.icon, item.label, item.active, 4)
 		}
@@ -2123,6 +2140,7 @@ var lucideIcons = [...]ui.Icon{
 	iconDiscord:        icons.Discord,
 	iconGitHub:         icons.Github,
 	iconNote:           icons.StickyNote,
+	iconNotebook:       icons.Notebook,
 	iconSFTPTransfer:   icons.SftpTransfer,
 	iconSFTPBrowseSync: icons.SftpSync,
 	iconSFTPProfiles:   icons.SftpProfiles,

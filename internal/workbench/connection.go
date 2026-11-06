@@ -764,6 +764,7 @@ func (state *State) Wake() {
 	state.pumpSessionLogs()
 	state.showNextPrompt()
 	state.drainAI()
+	state.syncNoteWindows()
 	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()

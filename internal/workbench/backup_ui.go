@@ -178,6 +178,13 @@ func excludedFromBackup(name string) bool {
 // as tombstones, the trusted keys and the saved passwords. A locked vault is
 // reported as vault.ErrNeedsConversion, since the passwords cannot be read.
 func (state *State) backupDocument() (backup.Document, error) {
+	if !state.flushNoteDraft() {
+		return backup.Document{}, errors.New(state.noteText("Finish composing or resolve the note save error before backing up.", "请完成输入法输入或处理笔记保存错误后再备份。"))
+	}
+	state.save()
+	if state.hasUnsavedNotes() {
+		return backup.Document{}, errors.New(state.notes.error)
+	}
 	if state.config == nil {
 		return backup.Document{}, errors.New(state.messages.Tools.SyncErrNoStore)
 	}
