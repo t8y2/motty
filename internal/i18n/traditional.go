@@ -410,6 +410,10 @@ var TraditionalMessages = Messages{
 		Pin: "置頂群組", Unpin: "取消置頂", MoveUp: "上移", MoveDown: "下移",
 		KeepParentFmt: "將全部主機移至 %s", KeepUngrouped: "將全部主機移出群組",
 	},
+	HostCatalog: HostCatalogMessages{
+		SelectAll: "全選目前範圍內的主機", SelectGroupFmt: "選取 %s 內的主機",
+		Order: "主機顯示排序", Manual: "手動排序", Name: "依名稱排序", IP: "依 IP 位址排序",
+	},
 	ExportHosts:                 "匯出",
 	ImportCatalog:               "匯入目錄",
 	ImportMenu:                  "匯入",

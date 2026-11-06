@@ -69,6 +69,9 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 	if state.activeSection != sectionHosts || state.modal != modalNone {
 		return false
 	}
+	if state.clickHostScopeSelection(id) {
+		return true
+	}
 	if hostID, ok := state.hostIDForSelectionHit(id); ok {
 		state.selectedHostID = hostID
 		state.toggleHostSelection(hostID)
@@ -156,6 +159,7 @@ func (state *State) hostSelected(id uint32) bool {
 
 func (state *State) refreshHostSelection() {
 	state.hostSelectionText = fmt.Sprintf(state.messages.HostSelectionFmt, len(state.hostSelections))
+	state.refreshHostScopeSelection()
 }
 
 func (state *State) captureHostActionIDs() {
@@ -721,6 +725,10 @@ func (state *State) pruneHostSelections() {
 
 func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	handled := ui.EventResult{Handled: true, Repaint: true}
+	if state.hostOrderMenu && event.Key == ui.KeyEscape {
+		state.hostOrderMenu = false
+		return handled, true
+	}
 	if state.hostSort.enabled && state.activeSection == sectionHosts && state.modal == modalNone {
 		move, result := state.hostSort.grid.Key(event)
 		if result.Handled {
@@ -790,6 +798,9 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
 		return ui.EventResult{}, false
+	}
+	if event.Key == ui.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {
+		return handled, true
 	}
 	hostID, checkbox := state.hostIDForSelectionHit(event.Target)
 	if !checkbox {

@@ -156,6 +156,7 @@ type savedState struct {
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
 	Sync             *savedSync             `json:"sync,omitempty"`
 	HostView         string                 `json:"host_view,omitempty"`
+	HostOrder        string                 `json:"host_order,omitempty"`
 	Background       *savedBackground       `json:"background,omitempty"`
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
@@ -628,6 +629,7 @@ func (state *State) snapshot() savedState {
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
 	saved.HostView = state.hostView.saved()
+	saved.HostOrder = state.hostOrder.saved()
 	saved.Background = state.savedBackgroundValue()
 	if len(state.workspaceTabs) > 0 {
 		deck := state.savedWorkspaceDeck()
@@ -920,6 +922,11 @@ func (state *State) restoreLocal(saved savedState) {
 // its place for the sessions that use it, and a forward that is still wanted
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
+	state.hostOrder = hostOrderFromString(saved.HostOrder)
+	if state.hostOrder != hostOrderManual {
+		state.hostSort.enabled = false
+		state.hostSort.grid.Cancel()
+	}
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
 	state.shortcuts = restoreShortcuts(saved.Shortcuts)
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))

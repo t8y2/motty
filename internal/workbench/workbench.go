@@ -544,6 +544,7 @@ type State struct {
 	hostTotalDigits    string
 	groupMenu          groupMenuAnchor // where the Move group picker opens
 	hostSelectionText  string
+	hostScopeSelection hostScopeSelection
 	hostSelections     []uint32
 	hostActionIDs      []uint32
 	hostGroups         []hostGroup
@@ -557,6 +558,9 @@ type State struct {
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
+	hostOrder          hostOrderMode
+	hostOrderMenu      bool
+	hostOrderButton    ui.Rect
 	hostSort           hostSortState
 	bg                 backgroundState
 	hostsContent       float32
@@ -1561,7 +1565,7 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.clickLocalProxy(id)
 		return
 	}
-	if state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
+	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
@@ -2020,6 +2024,7 @@ func (state *State) syncVisible() {
 			state.visible = append(state.visible, index)
 		}
 	}
+	state.sortVisibleHosts()
 	state.refreshHostSelection()
 	state.rebuildHostTreeRows()
 }

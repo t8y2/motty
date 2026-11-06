@@ -244,6 +244,9 @@ func (state *State) refreshHostGroups() {
 		byName[group.Name] = group
 	}
 	sort.Slice(state.hostGroups, func(left, right int) bool {
+		if state.hostOrder != hostOrderManual {
+			return hostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name)
+		}
 		return orderedHostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name, byName)
 	})
 	for index := range state.hostGroups {
@@ -264,6 +267,7 @@ func (state *State) refreshHostGroups() {
 		state.hostFilterOn = false
 	}
 	state.rebuildHostTreeRows()
+	state.refreshHostSelection()
 }
 
 func hostGroupLeaf(path string) string {
