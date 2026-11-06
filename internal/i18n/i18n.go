@@ -486,6 +486,7 @@ type Messages struct {
 	AuthPassword                string
 	AuthPrivateKey              string
 	AuthAgent                   string
+	AuthKerberos                string
 	FieldIdentity               string
 	AuthAllKeys                 string
 	AuthKeyUnavailable          string

@@ -81,12 +81,10 @@ type Endpoint struct {
 	User string
 }
 
-// Authentication describes which credentials one endpoint may use. A zero
-// Methods value enables every supported SSH method; identity files and agent
-// use remain explicit fields.
+// Authentication describes which credentials one endpoint may use.
 type Authentication struct {
-	// Methods limits the SSH authentication methods offered. Zero enables every
-	// supported method for compatibility with callers that do not set a policy.
+	// Methods limits the SSH authentication methods offered. Zero uses the
+	// default methods. Kerberos is opt-in.
 	Methods AuthMethods
 	// IdentityFiles lists private keys to try. Nil means the default OpenSSH
 	// identities; an empty slice disables identity files.
@@ -114,6 +112,7 @@ const (
 	AuthPublicKey AuthMethods = 1 << iota
 	AuthKeyboardInteractive
 	AuthPassword
+	AuthKerberos
 	AuthAll = AuthPublicKey | AuthKeyboardInteractive | AuthPassword
 )
 
@@ -681,10 +680,14 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
+	if authentication.Methods&AuthKerberos != 0 && !KerberosAvailable {
+		socket.Close()
+		return nil, "", errors.New("Kerberos authentication requires a macOS build with cgo enabled")
+	}
 	clientConfig := &ssh.ClientConfig{
 		Config: ssh.Config{KeyExchanges: wanted.KeyExchanges, Ciphers: wanted.Ciphers, MACs: wanted.MACs},
 		User:   endpoint.User,
-		Auth:   conn.authMethods(authentication),
+		Auth:   conn.authMethods(endpoint.Host, authentication),
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return conn.verifyHostKey(known, hostname, remote, key)
 		},

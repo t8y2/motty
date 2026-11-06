@@ -21,6 +21,13 @@ Motty supports:
 A round that asks several questions, for example a password and a one-time code
 from the same PAM stack, is shown as one dialog with one field per question.
 
+### Kerberos on macOS
+
+Select **Kerberos (GSSAPI)** in the host's **Authentication** field to sign in
+to a server that offers `gssapi-with-mic`. Motty uses your existing macOS
+Kerberos credentials. If your ticket has expired, renew it through your usual
+Kerberos sign-in flow. Credential delegation is disabled.
+
 ### Private keys
 
 **Keychain > Add Key** offers three ways to bring a key in: **Import from File**

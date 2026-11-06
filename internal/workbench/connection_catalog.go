@@ -157,6 +157,8 @@ func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication 
 			IdentityFiles: []string{},
 			Agent:         true,
 		}
+	case authKerberos:
+		return sshconn.Authentication{Methods: sshconn.AuthKerberos}
 	default:
 		return sshconn.Authentication{
 			Methods:                 sshconn.AuthAll,

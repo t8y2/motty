@@ -66,6 +66,20 @@ func TestHostAuthenticationSurvivesCatalogRoundTrip(t *testing.T) {
 	}
 }
 
+func TestKerberosHostAuthentication(t *testing.T) {
+	var host Host
+	if !host.applyTransport(savedTransport{Authentication: "kerberos"}) || host.transport().Authentication != "kerberos" {
+		t.Fatal("Kerberos authentication did not survive the catalog round trip")
+	}
+	var catalog hostCatalog
+	if auth := catalog.authenticationFor(host); auth.Methods != sshconn.AuthKerberos || auth.Agent {
+		t.Fatalf("authentication = %+v", auth)
+	}
+	if _, ok := hostPasswordSecretName(host); ok {
+		t.Fatal("Kerberos host has a password vault entry")
+	}
+}
+
 func TestSSHConfigKeepsTargetAndJumpAuthenticationSeparate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	identityPath := writeWorkbenchIdentity(t, "id_target", "")

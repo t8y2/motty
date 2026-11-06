@@ -114,7 +114,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 				authentication = f.Slot().Grow(1)
 				if editor.auth == authPrivateKey {
 					identity = f.Slot().Grow(1)
-				} else if editor.auth != authAgent {
+				} else if editor.auth.usesPassword() {
 					password = f.Slot().Grow(1)
 				}
 			})
@@ -170,7 +170,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 			if state.hostAsksKeyPassphrase() {
 				state.paintSecureDialogField(canvas, hitDialogPassphrase, fieldPassphrase, m.KeyPassphraseLabel, state.hostPassphraseHint(), passphrase.Rect())
 			}
-		} else if editor.auth != authAgent {
+		} else if editor.auth.usesPassword() {
 			state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
 		}
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())

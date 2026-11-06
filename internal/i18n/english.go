@@ -453,6 +453,7 @@ var EnglishMessages = Messages{
 	AuthPassword:                "Password",
 	AuthPrivateKey:              "Private key",
 	AuthAgent:                   "SSH Agent",
+	AuthKerberos:                "Kerberos (GSSAPI)",
 	FieldIdentity:               "Private key",
 	AuthAllKeys:                 "Default and imported keys",
 	AuthKeyUnavailable:          "Selected key unavailable",
