@@ -1175,7 +1175,7 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		// once per paint, is what turns "the keyboard stopped working" in a bug
 		// report into a diagnosis. The reason is a fixed string, so nothing that
 		// could identify a host or an account reaches the log.
-		state.noteTerminalInputGap(context.ID, session)
+		state.noteTerminalInputGap(session)
 		return nil
 	}
 	if session.desk != nil {
@@ -1217,22 +1217,25 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 }
 
 // noteTerminalInputGap records why a terminal the shell cannot reach got no
-// text surface. It is called from the paint path, so it reports a given reason
+// text surface. It is called from the paint path, so it reports a given cause
 // once: the same gap repainted every frame would flood the log, and the
-// diagnostics report keeps only the last few hundred lines.
-func (state *State) noteTerminalInputGap(hit ui.ID, session *Session) {
+// diagnostics report keeps only the last few hundred lines. The key is the
+// reason and the session it concerns, both stable across frames; the hit that
+// asked is not, because the pane it names is re-derived on every paint.
+func (state *State) noteTerminalInputGap(session *Session) {
 	var note string
+	var id uint32
 	switch {
 	case session == nil:
 		note = "no session for the focused terminal"
 	case session.term == nil:
-		note = "session has no terminal"
+		note, id = "session has no terminal", session.ID
 	case session.ID != state.activeSessionID:
-		note = "session is not the active one"
+		note, id = "session is not the active one", session.ID
 	default:
 		return
 	}
-	key := fmt.Sprintf("%s %d", note, hit.Bits())
+	key := fmt.Sprintf("%s %d", note, id)
 	if key == state.inputGapNote {
 		return
 	}
