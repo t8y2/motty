@@ -24,43 +24,19 @@ need a second app for files or a browser tab for a screen.
 
 The full documentation lives at <https://motty.page/en/docs>; this file covers
 the project, the packages and how to build it.
-<<<<<<< Updated upstream
-
-<table>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="The same host list in the light appearance" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="The SFTP file panel beside the shell on one connection" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="Local port forwards from loopback ports to services behind an SSH host" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
-    </td>
-  </tr>
-</table>
-
-## Why Motty?
-=======
->>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
-<<<<<<< Updated upstream
-=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-sftp-light.png"><img src="assets/readme-sftp-light.png" alt="The SFTP file panel beside the shell, in the light appearance" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward-light.png"><img src="assets/readme-forward-light.png" alt="Port forwards as a table of rules, in the light appearance" /></a>
     </td>
     <td width="50%" valign="top">
       <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
@@ -71,7 +47,7 @@ the project, the packages and how to build it.
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="A local port forward from a loopback port to a service behind an SSH host" /></a>
+      <a href="assets/readme-settings-colors.png"><img src="assets/readme-settings-colors.png" alt="Terminal color schemes in Settings, in the light appearance" /></a>
     </td>
   </tr>
 </table>
@@ -81,7 +57,6 @@ the project, the packages and how to build it.
 <table>
   <tr>
     <td width="50%" valign="top">
->>>>>>> Stashed changes
       <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
       OpenSSH config, PuTTY, MobaXterm and four more. Passwords go to an
       AES-256-GCM vault; the key lives in the system secret store.</p>

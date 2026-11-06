@@ -25,43 +25,19 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 
 ドキュメントは <https://motty.page/en/docs> にあります（サイトは英語と中国語のみ）。
 このファイルではプロジェクトそのもの、パッケージ、ビルド方法を扱います。
-<<<<<<< Updated upstream
-
-<table>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="グループ、タグ、色を付けたホストの一覧" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="同じホスト一覧をライトの外観で表示したところ" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="同じ接続で並べた SFTP ファイルパネルとターミナル" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
-    </td>
-  </tr>
-</table>
-
-## なぜ Motty なのか？
-=======
->>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
-<<<<<<< Updated upstream
-=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="グループ、タグ、色を付けたホストの一覧" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-sftp-light.png"><img src="assets/readme-sftp-light.png" alt="ライトの外観で並べた SFTP ファイルパネルとターミナル" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward-light.png"><img src="assets/readme-forward-light.png" alt="ライトの外観で表示したポート転送のルール一覧" /></a>
     </td>
     <td width="50%" valign="top">
       <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分割したターミナルの隣に表示したリソースモニター" /></a>
@@ -72,7 +48,7 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
+      <a href="assets/readme-settings-colors.png"><img src="assets/readme-settings-colors.png" alt="ライトの外観で表示した設定のターミナル配色" /></a>
     </td>
   </tr>
 </table>
@@ -82,7 +58,6 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 <table>
   <tr>
     <td width="50%" valign="top">
->>>>>>> Stashed changes
       <p><strong>ホストが散らからない。</strong>グループ、タグ、色、アイコンを付けられ、
       OpenSSH config、PuTTY、MobaXterm など 7 種類の取り込み元から読み込めます。パスワードは
       AES-256-GCM の保管庫へ、鍵はシステムのシークレットストアへ。</p>

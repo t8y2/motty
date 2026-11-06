@@ -22,43 +22,19 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
 放在同一个窗口里，一次会话既不用另开文件工具，也不用开浏览器标签页看屏幕。
 
 完整文档在 <https://motty.page/zh/docs>；本文件讲项目本身、安装包和怎么构建。
-<<<<<<< Updated upstream
-
-<table>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-hosts-light.png"><img src="assets/readme-hosts-light.png" alt="同一份主机列表的浅色外观" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
-    </td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top">
-      <a href="assets/readme-sftp.png"><img src="assets/readme-sftp.png" alt="同一连接上并排的 SFTP 文件面板与终端" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="从回环端口转发到 SSH 主机背后服务的本地端口转发" /></a>
-    </td>
-    <td width="33%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
-    </td>
-  </tr>
-</table>
-
-## 为什么选择 Motty？
-=======
->>>>>>> Stashed changes
 
 <table>
   <tr>
     <td width="50%" valign="top">
-<<<<<<< Updated upstream
-=======
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-sftp-light.png"><img src="assets/readme-sftp-light.png" alt="浅色外观下并排的 SFTP 文件面板与终端" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward-light.png"><img src="assets/readme-forward-light.png" alt="浅色外观下的转发规则列表" /></a>
     </td>
     <td width="50%" valign="top">
       <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
@@ -69,7 +45,7 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="从回环端口转发到 SSH 主机背后服务的本地端口转发" /></a>
+      <a href="assets/readme-settings-colors.png"><img src="assets/readme-settings-colors.png" alt="浅色外观下设置页里的终端配色方案" /></a>
     </td>
   </tr>
 </table>
@@ -79,7 +55,6 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
 <table>
   <tr>
     <td width="50%" valign="top">
->>>>>>> Stashed changes
       <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
       config、PuTTY、MobaXterm 等七种来源导入。密码进 AES-256-GCM 保险库，
       密钥放在系统密钥存储里。</p>
