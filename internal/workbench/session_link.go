@@ -37,6 +37,16 @@ func (state *State) canReconnectLive(session *Session) bool {
 	return state.canDisconnect(session) && session.containerCommand == ""
 }
 
+// reconnectToolbarSession targets only the visible workspace's focused pane.
+// Navigation pages must not restart a session running behind them.
+func (state *State) reconnectToolbarSession() (*Session, bool) {
+	if state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	return session, ok && (state.canReconnect(session) || state.canReconnectLive(session))
+}
+
 // askSessionLink confirms ending or restarting a live session: both stop
 // whatever runs in it, which a close button's neighbour must not do unasked.
 func (state *State) askSessionLink(session *Session, disconnect bool) {

@@ -499,7 +499,7 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 		t.Fatalf("the terminal %+v does not fill the window below the bars", hit.Bounds)
 	}
 	// Window-bar buttons leave the keyboard where it is.
-	for _, id := range []ui.ID{hitHome, hitNewTab, hitGitHub, hitTheme, hitWindowSettings, hitTabCloseList.At(int(state.sessions[0].ID))} {
+	for _, id := range []ui.ID{hitHome, hitNewTab, hitWindowReconnect, hitGitHub, hitTheme, hitWindowSettings, hitTabCloseList.At(int(state.sessions[0].ID))} {
 		bar, ok := hitByID(canvas, id)
 		if !ok || bar.Focusable {
 			t.Errorf("hit %d = %+v, %v; want a mouse-only button", id, bar, ok)
