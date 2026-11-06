@@ -92,7 +92,11 @@ func TestAITargetTriggerStaysBelowAutoScopeMenuInDrawerMode(t *testing.T) {
 		t.Fatalf("trigger text is on layer %d, menu is on layer %d: trigger text will overlap menu surface", triggerLayer, menuLayer)
 	}
 
-	// When the target dropdown itself is opened, its options list must appear on dialogLayer+1.
+	// When the target dropdown itself is opened, its options list must still cover
+	// the drawer's text. It sits above dialogLayer, which is safe only because
+	// paintAITargetSelect returns early while a dialog is open: no frame paints
+	// this list and a dialog together. Asserting the relation rather than the
+	// number keeps the intent when the layer constants move.
 	state.ai.panel.autoMenu = false
 	state.Click(hitAITarget)
 	if !state.ai.panel.targetOpen {
@@ -106,7 +110,11 @@ func TestAITargetTriggerStaysBelowAutoScopeMenuInDrawerMode(t *testing.T) {
 			break
 		}
 	}
-	if dropdownOptionLayer != int(dialogLayer+1) {
-		t.Fatalf("target dropdown option layer = %d, want %d (dialogLayer+1)", dropdownOptionLayer, dialogLayer+1)
+	if dropdownOptionLayer < 0 {
+		t.Fatal("frame lacks the target dropdown's options")
+	}
+	if dropdownOptionLayer <= triggerLayer {
+		t.Fatalf("target dropdown option layer = %d, trigger = %d: the list would hide behind the drawer's text",
+			dropdownOptionLayer, triggerLayer)
 	}
 }
