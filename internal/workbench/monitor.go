@@ -133,7 +133,7 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 	}
 	files := float32(0)
 	if c.Open {
-		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
+		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Kind, c.Width) + 1
 	}
 	return min(max(width, layoutcore.MinMonitorWidth), min(layoutcore.MaxMonitorWidth, max(layoutcore.MinMonitorWidth, state.baseWorkspacePixelBounds(size).Width-files-minPaneWidth-1)))
 }
@@ -157,7 +157,7 @@ func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, siz
 	base := state.baseWorkspacePixelBounds(size)
 	files := float32(0)
 	if c, ok := state.deck.Context(workspace); ok && c.Open && size.Width >= contextDrawerAt {
-		files = state.contextPanelExtent(base, c.Width) + 1
+		files = state.contextPanelExtent(base, c.Kind, c.Width) + 1
 	}
 	monitorWidth := state.monitorPanelWidth(workspace, size) + 1
 	aiWidth := state.aiPreferredWidth(size) + 1
@@ -172,7 +172,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 	c, _ := state.deck.Context(workspace)
 	files := float32(0)
 	if c.Open {
-		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Width) + 1
+		files = state.contextPanelExtent(state.baseWorkspacePixelBounds(size), c.Kind, c.Width) + 1
 	}
 	width := state.monitorPanelWidth(workspace, size)
 	aiWidth := float32(0)
