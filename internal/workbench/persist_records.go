@@ -468,6 +468,13 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 	}
 
 	for _, entity := range entityFields {
+		if entity.kind == kindHost && uniqueHostIDs(saved.Hosts) {
+			entries, base.maxOrd, err = appendHostEntries(entries, base, defaults, saved.Hosts, base.maxOrd)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			continue
+		}
 		raw, present := fields[entity.field]
 		if !present && entity.keepWhenAbsent {
 			for key, payload := range base.payloads {
@@ -698,15 +705,18 @@ func (base *configBase) acceptLocal(entries []configstore.Entry, local localWrit
 	for _, entry := range entries {
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
 		payloads[key] = entry.Payload
-		// A record that was already known keeps the ordinal the base gave it:
-		// entries either reuse an old payload or encode the Ord the base holds,
-		// so only a record new to this base has to be decoded.
-		if ord, known := base.ords[key]; known {
+		// A host's ordinal is the catalog position the user can change, so it has
+		// to be read back from the record that was just written. Every other kind
+		// keeps the ordinal this base already knows: their payloads do not carry a
+		// meaningful one (recordPayload.Ord is omitted when it is zero, and synced
+		// settings never set it), so decoding would replace a known ordinal with 0.
+		var payload recordPayload
+		decoded := json.Unmarshal(entry.Payload, &payload) == nil
+		if ord, known := base.ords[key]; known && !(decoded && entry.Kind == kindHost) {
 			ords[key] = ord
 			continue
 		}
-		var payload recordPayload
-		if json.Unmarshal(entry.Payload, &payload) == nil {
+		if decoded {
 			ords[key] = payload.Ord
 		}
 	}

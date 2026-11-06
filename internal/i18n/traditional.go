@@ -2252,6 +2252,8 @@ var traditionalTools = ToolsMessages{
 	ExtEditReplace:                  "取代",
 	HostViewList:                    "清單檢視",
 	HostViewGrid:                    "卡片檢視",
+	HostSort:                        "排序",
+	HostSortDone:                    "完成",
 	BgGroup:                         "終端機背景",
 	BgRow:                           "終端機背景圖片",
 	BgRowNone:                       "把一張圖片放在終端機文字後面，只有終端機區域變為半透明。",

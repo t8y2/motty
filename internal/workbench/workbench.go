@@ -149,6 +149,7 @@ var (
 var hitCommandSessionList = tree.Sub(shellHits, tree.Name("command-session"))
 var (
 	hitHostCheckList      = tree.Sub(shellHits, tree.Name("host-check"))
+	hitHostSortHandles    = tree.Sub(shellHits, tree.Name("host-sort-handle"))
 	hitHostGroupItemList  = tree.Sub(shellHits, tree.Name("host-group-item"))
 	hitHostFilterList     = tree.Sub(shellHits, tree.Name("host-filter"))
 	hitHostFilterMenuList = tree.Sub(shellHits, tree.Name("host-filter-menu-item"))
@@ -555,6 +556,7 @@ type State struct {
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
+	hostSort           hostSortState
 	bg                 backgroundState
 	hostsContent       float32
 	hostGroupMenu      bool
@@ -1210,7 +1212,7 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
 		}
-		if hit == hitSearch && state.activeSection == sectionHosts {
+		if hit == hitSearch && state.activeSection == sectionHosts && !state.hostSort.enabled {
 			return &state.search
 		}
 		if hit == hitSettingsSearch && state.activeSection == sectionSettings {
@@ -1725,6 +1727,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 			state.save()
 		}
 	case id.Scope() == hitHostList:
+		if state.hostSort.enabled {
+			break
+		}
 		hostID := uint32(item(id))
 		if _, ok := state.hostByID(hostID); ok {
 			state.selectedHostID = hostID
@@ -2156,6 +2161,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if result, handled := state.hostMenuPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
 	if result, handled := state.hostGroupDragPointer(event); handled {
