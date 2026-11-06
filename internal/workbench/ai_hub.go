@@ -349,6 +349,61 @@ func (b hubBackend) Exec(ctx context.Context, args tools.TerminalExecArgs) (gate
 	return backend.Exec(ctx, args)
 }
 
+func (b hubBackend) JobStart(ctx context.Context, args tools.TerminalStartArgs) (gate.JobStatus, error) {
+	window, local, err := b.hub.resolve(ctx, args.Session)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.Session = local
+	status, err := window.state.ai.backend.JobStart(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
+}
+
+// hubJob names a job and its session across windows, like hubHandle.
+func hubJob(window int, status gate.JobStatus) gate.JobStatus {
+	status.ID = hubHandle(window, status.ID)
+	status.Session = hubHandle(window, status.Session)
+	return status
+}
+
+// jobWindow finds the window a hub job id ("w2:<id>") belongs to.
+func (b hubBackend) jobWindow(ctx context.Context, id string) (*hubWindow, string, error) {
+	window, local, err := b.hub.resolve(ctx, id)
+	if err != nil || local == "" {
+		return nil, "", gate.ErrNoJob
+	}
+	return window, local, nil
+}
+
+func (b hubBackend) JobPoll(ctx context.Context, args tools.TerminalPollArgs) (gate.JobStatus, error) {
+	window, local, err := b.jobWindow(ctx, args.JobID)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.JobID = local
+	status, err := window.state.ai.backend.JobPoll(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
+}
+
+func (b hubBackend) JobStop(ctx context.Context, args tools.TerminalStopArgs) (gate.JobStatus, error) {
+	window, local, err := b.jobWindow(ctx, args.JobID)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.JobID = local
+	status, err := window.state.ai.backend.JobStop(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
+}
+
 func (b hubBackend) ListDir(ctx context.Context, args tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	backend, local, err := b.target(ctx, args.Session)
 	if err != nil {

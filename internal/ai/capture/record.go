@@ -42,6 +42,11 @@ type recorder struct {
 	retained   []byte
 	retainCap  int
 	retainLost bool
+	// retainWindow keeps the newest output instead of giving up when the cap is
+	// exceeded. retained then holds the bytes from retainBase on, and the
+	// offsets reported to a reader stay absolute.
+	retainWindow bool
+	retainBase   int
 }
 
 func newRecorder(maxOutput int) *recorder {
@@ -232,7 +237,15 @@ func matchEcho(line, exp []byte) bool {
 // put appends committed text to the bounded head/tail store.
 func (r *recorder) put(b []byte) {
 	r.total += len(b)
-	if r.retainCap > 0 && !r.retainLost {
+	if r.retainWindow {
+		r.retained = append(r.retained, b...)
+		if len(r.retained) > 2*r.retainCap {
+			drop := len(r.retained) - r.retainCap
+			n := copy(r.retained, r.retained[drop:])
+			r.retained = r.retained[:n]
+			r.retainBase += drop
+		}
+	} else if r.retainCap > 0 && !r.retainLost {
 		if len(b) > r.retainCap-len(r.retained) {
 			r.retained = nil
 			r.retainLost = true

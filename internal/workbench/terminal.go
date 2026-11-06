@@ -160,6 +160,9 @@ type terminal struct {
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
+	// promptWait is closed when the shell next shows a prompt, for a stop that
+	// reports whether the terminal came back.
+	promptWait chan struct{}
 	// aiRows holds the screen line IDs whose command was started by the
 	// assistant. The line ID survives scrolling and resizing, so its gutter mark
 	// stays with the command in scrollback.
@@ -331,6 +334,9 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			t.promptReady = t.promptStarted && !t.promptDirty && t.commandReporting && t.submittedLines == 0
 			t.inputGuard.active = t.promptReady
+			if t.promptReady {
+				t.releasePromptWait()
+			}
 			t.inputLine = true
 			t.prediction.newPrompt()
 		}
@@ -446,7 +452,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 		}
 	}
 	if t.exec != nil && userInterrupts(p) {
-		t.finishExec(false, false) // the user took the terminal back; the keys go on to the shell
+		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	t.selection.clear()
 	t.screen.ScrollToBottom()
@@ -869,7 +875,8 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
-	t.finishExec(false, false)
+	t.finishExec(endShell)
+	t.releasePromptWait()
 	t.recording.stop()
 	t.ended = true
 	t.prediction.reset()

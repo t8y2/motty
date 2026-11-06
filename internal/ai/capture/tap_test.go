@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"motty/internal/shellkind"
 )
@@ -534,5 +535,48 @@ func TestPowerShellEchoIsLeftOutOfTheOutput(t *testing.T) {
 	}
 	if strings.Contains(string(shown), "GOPAI_n1") {
 		t.Fatalf("the marker was shown: %q", shown)
+	}
+}
+
+func TestTapPageReadsWhileRunningAndReportsDroppedOutput(t *testing.T) {
+	tap := NewTap("n", 1<<16)
+	tap.RetainWindow(64)
+	tap.SetEcho(Wrap("x", "n"))
+	feed := func(s string) { tap.Feed([]byte(s)) }
+	feed(strings.ReplaceAll(string(Wrap("x", "n")), "\n", "\r\n"))
+	feed("one\r\ntwo\r\npart")
+
+	page := tap.Page(0, 1024)
+	if page.Data != "one\ntwo\n" || page.Next != len(page.Data) || page.Total != page.Next || page.Pending != "part" {
+		t.Fatalf("running page %+v", page)
+	}
+	if again := tap.Page(page.Next, 1024); again.Data != "" || again.Next != page.Next {
+		t.Fatalf("a page at the end must be empty and not move: %+v", again)
+	}
+	// Reading in small steps never splits a character and never loops.
+	feed("\r\n界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\r\n")
+	var got strings.Builder
+	for offset, steps := 0, 0; ; steps++ {
+		p := tap.Page(offset, 4)
+		got.WriteString(p.Data)
+		if p.Next == offset || steps > 1000 {
+			break
+		}
+		if !utf8.ValidString(p.Data) {
+			t.Fatalf("page split a character: %q", p.Data)
+		}
+		offset = p.Next
+	}
+	// Pushing the window past twice its size drops the oldest bytes, and the
+	// absolute offsets say so.
+	for range 10 {
+		feed("0123456789012345678901234567890123456789\r\n")
+	}
+	late := tap.Page(0, 1024)
+	if late.Start == 0 || late.Total < 200 || late.Total-late.Start > 128 {
+		t.Fatalf("expected dropped output to be reported through Start: %+v", late)
+	}
+	if got.Len() == 0 {
+		t.Fatal("small pages returned nothing")
 	}
 }

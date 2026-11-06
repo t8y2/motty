@@ -128,6 +128,7 @@ type aiState struct {
 	inbox     *aiInbox
 	drained   []func(*State)
 	backend   *aiBackend
+	jobs      map[string]*aiJob // background terminal commands, by id
 
 	open bool
 	mode agent.Mode

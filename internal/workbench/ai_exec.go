@@ -19,7 +19,19 @@ type aiExec struct {
 	t    *terminal
 	tap  *capture.Tap
 	done chan gate.ExecResult // buffered; receives exactly once
+	job  *aiJob               // set for a background command nobody is waiting on
 }
+
+// execEnd is why a command stopped being the one the assistant waits on.
+type execEnd uint8
+
+const (
+	endMarker  execEnd = iota // the command finished and printed its marker
+	endUser                   // the user pressed Ctrl-C and took the terminal back
+	endShell                  // the shell ended
+	endTimeout                // the wait ran out or was canceled
+	endStop                   // the assistant asked for the command to be stopped
+)
 
 // maxExecOutput bounds the output kept for the model, whatever the terminal shows.
 const maxExecOutput = 64 << 10
@@ -87,7 +99,10 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 		return nil, err
 	}
 	tap := capture.NewTap(nonce, maxExecOutput)
-	if args.RetainOutput {
+	switch {
+	case args.Background:
+		tap.RetainWindow(jobRetainWindow)
+	case args.RetainOutput:
 		tap.Retain(gate.MaxRetainedOutput)
 	}
 	tap.SetEcho(wrapped)
@@ -150,7 +165,7 @@ func (t *terminal) markAIBlock(final bool) {
 func (t *terminal) feedExec(output []byte) []byte {
 	display, done := t.exec.tap.Feed(output)
 	if done {
-		t.finishExec(false, false)
+		t.finishExec(endMarker)
 	}
 	return display
 }
@@ -158,7 +173,8 @@ func (t *terminal) feedExec(output []byte) []byte {
 // finishExec ends the running command: normally when its marker arrived, or
 // because the wait timed out, was canceled, or the user pressed Ctrl-C. The
 // command may still be running on the remote side then, so an interrupt is sent.
-func (t *terminal) finishExec(timedOut, interrupt bool) {
+func (t *terminal) finishExec(end execEnd) {
+	timedOut, interrupt := end == endTimeout, end == endTimeout || end == endStop
 	exec := t.exec
 	if exec == nil {
 		return
@@ -170,6 +186,9 @@ func (t *terminal) finishExec(timedOut, interrupt bool) {
 	result := exec.tap.Result()
 	if interrupt && t.shell != nil {
 		t.sendProtocol([]byte{3})
+	}
+	if exec.job != nil {
+		exec.job.finish(end, result.ExitCode)
 	}
 	exec.done <- gate.ExecResult{Output: result.Output, ExitCode: result.ExitCode, Truncated: result.Truncated, TimedOut: timedOut, Retained: result.Retained, RetainLost: result.RetainLost}
 }
@@ -187,7 +206,7 @@ func (state *State) aiExecWait(exec *aiExec, timeout time.Duration, cancel <-cha
 		finished := make(chan gate.ExecResult, 1)
 		if !state.aiPost(func(*State) {
 			if exec.t.exec == exec {
-				exec.t.finishExec(true, true)
+				exec.t.finishExec(endTimeout)
 			}
 			select {
 			case r := <-exec.done:

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -51,6 +52,15 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 		}
 	}
 	return gate.ExecResult{Output: "out", ExitCode: 3}, nil
+}
+func (b *fakeBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
 }
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	return []gate.FileEntry{{Name: "a", Size: 1}}, nil

@@ -17,8 +17,16 @@ import (
 // hub serving it, configured the way the settings page would.
 func hubFixture(t *testing.T, mode string) (*State, *AIHub, string, string) {
 	t.Helper()
+	return hubFixtureWith(t, mode, nil)
+}
+
+// hubFixtureWith lets a test replace the shell's behaviour before the hub starts.
+func hubFixtureWith(t *testing.T, mode string, configure func(*fakeShell)) (*State, *AIHub, string, string) {
+	t.Helper()
 	state, shell := assistantSession(t, &scriptedModel{turn: nil})
-	_ = shell
+	if configure != nil {
+		configure(shell)
+	}
 	path := state.options.AIStorePath
 	db, err := state.aiStore()
 	if err != nil {

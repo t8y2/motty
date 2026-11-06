@@ -418,6 +418,18 @@ func (b *agentBackend) Exec(ctx context.Context, args tools.TerminalExecArgs) (g
 	return gate.ExecResult{}, err
 }
 
+func (b *agentBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errAgentNoTerminal
+}
+
+func (b *agentBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errAgentNoTerminal
+}
+
+func (b *agentBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errAgentNoTerminal
+}
+
 func (b *agentBackend) ListDir(ctx context.Context, args tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	entry, err := b.acquire(ctx, args.Session)
 	if err != nil {

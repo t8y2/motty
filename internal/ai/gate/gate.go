@@ -51,6 +51,11 @@ type Backend interface {
 	Sessions(ctx context.Context) ([]SessionInfo, error)
 	ReadTerminal(ctx context.Context, args tools.TerminalReadArgs) (string, error)
 	Exec(ctx context.Context, args tools.TerminalExecArgs) (ExecResult, error)
+	// JobStart types a command into the session's terminal and returns at once.
+	// The job belongs to OutputOwner(ctx); JobPoll and JobStop refuse any other.
+	JobStart(ctx context.Context, args tools.TerminalStartArgs) (JobStatus, error)
+	JobPoll(ctx context.Context, args tools.TerminalPollArgs) (JobStatus, error)
+	JobStop(ctx context.Context, args tools.TerminalStopArgs) (JobStatus, error)
 	ListDir(ctx context.Context, args tools.SFTPListArgs) ([]FileEntry, error)
 	ReadFile(ctx context.Context, args tools.SFTPReadArgs) (data string, truncated bool, err error)
 	WriteFile(ctx context.Context, args tools.SFTPWriteArgs) error
@@ -261,17 +266,8 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		}
 		owner := outputOwner(ctx)
 		if g.Outputs != nil && owner != "" && args.Session == "" {
-			sessions, err := g.Backend.Sessions(ctx)
-			if err != nil {
+			if args.Session, err = g.readySession(ctx); err != nil {
 				return failure(err)
-			}
-			for _, session := range sessions {
-				if session.Ready && (args.Session == "" || session.Active) {
-					args.Session = session.ID
-					if session.Active {
-						break
-					}
-				}
 			}
 		}
 		if args.Session, err = g.targetSession(args.Session); err != nil {
@@ -325,6 +321,8 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			response.Structured, _ = json.Marshal(fields)
 		}
 		return response
+	case tools.NameTerminalStart, tools.NameTerminalPoll, tools.NameTerminalStop:
+		return g.runJob(ctx, name, raw)
 	case tools.NameTerminalExecMany:
 		args, err := tools.DecodeTerminalExecMany(raw)
 		if err != nil {
@@ -381,6 +379,25 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		return Result{Text: "removed " + args.Path}
 	}
 	return Result{Text: "tool not implemented: " + name, IsError: true}
+}
+
+// readySession picks the session an exec without an explicit one runs in: the
+// active session if it is ready, else the first ready one.
+func (g Gate) readySession(ctx context.Context) (string, error) {
+	sessions, err := g.Backend.Sessions(ctx)
+	if err != nil {
+		return "", err
+	}
+	var chosen string
+	for _, session := range sessions {
+		if session.Ready && (chosen == "" || session.Active) {
+			chosen = session.ID
+			if session.Active {
+				break
+			}
+		}
+	}
+	return chosen, nil
 }
 
 // execMany runs one command on several sessions. The user is asked once, with

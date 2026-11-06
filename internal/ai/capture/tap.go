@@ -3,6 +3,8 @@ package capture
 import (
 	"bytes"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 // Result is what a Tap learned about the command so far.
@@ -62,6 +64,60 @@ func NewTap(nonce string, maxOutput int) *Tap {
 // cannot be reconstructed by the recorder and is reported as lost.
 func (t *Tap) Retain(maxBytes int) {
 	t.rec.retainCap = maxBytes
+}
+
+// RetainWindow keeps the newest output of a long-running command for paging by
+// absolute offset. Between maxBytes and twice that much is held; older bytes are
+// dropped and Page reports where the held output begins. Unlike Retain it never
+// gives up, and it does not feed Result.Retained.
+func (t *Tap) RetainWindow(maxBytes int) {
+	t.rec.retainCap = maxBytes
+	t.rec.retainWindow = true
+}
+
+// Page is one slice of the output kept by RetainWindow. Offsets count bytes of
+// the normalized text since the command started.
+type Page struct {
+	Data string
+	// Start is where Data begins. It is later than the requested offset when
+	// older output was dropped or the offset fell inside a UTF-8 character.
+	Start int
+	// Next is the offset to ask for next.
+	Next int
+	// Total is the end of everything committed so far. A line still being
+	// written is not part of it until its newline arrives or the command ends.
+	Total int
+	// Pending is that unfinished line. It is not counted in Next or Total and
+	// will be in Data once complete. The tap also holds back the last newline of
+	// each chunk, since it may be the one before the completion marker, so a line
+	// the command just finished shows up here first.
+	Pending string
+}
+
+const maxPending = 4 << 10
+
+// Page returns up to maxBytes of retained output from offset, ending on a
+// UTF-8 character boundary. An offset past Total yields an empty page at Total.
+func (t *Tap) Page(offset, maxBytes int) Page {
+	r := t.rec
+	base, held := r.retainBase, r.retained
+	total := base + len(held)
+	var pending string
+	if r.echoIdx >= len(r.echo) && len(r.cur) > 0 && !t.done && !t.aborted {
+		pending = strings.ToValidUTF8(string(r.cur[:min(len(r.cur), maxPending)]), "�")
+	}
+	start := max(offset, base)
+	if start >= total {
+		return Page{Start: total, Next: total, Total: total, Pending: pending}
+	}
+	for start < total && !utf8.RuneStart(held[start-base]) {
+		start++
+	}
+	end := min(total, start+maxBytes)
+	for end < total && end > start && !utf8.RuneStart(held[end-base]) {
+		end--
+	}
+	return Page{Data: strings.ToValidUTF8(string(held[start-base:end-base]), "�"), Start: start, Next: end, Total: total, Pending: pending}
 }
 
 // SetEcho tells the tap the exact bytes that were typed (the result of Wrap),
