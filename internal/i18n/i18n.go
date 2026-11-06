@@ -891,6 +891,8 @@ type Messages struct {
 	ErrForwardNameTaken           string
 	ErrForwardLocalTaken          string
 	ErrForwardRemoteTaken         string
+	ErrForwardEditMissing         string
+	ErrForwardHostMissing         string
 
 	// SSH jump-host routing.
 	ProxyTitle                 string
@@ -927,6 +929,7 @@ type Messages struct {
 	ErrProxySameHost           string
 	ErrProxyCycle              string
 	ErrProxyTargetTaken        string
+	ErrProxyEditMissing        string
 	ProxyFieldViaShell         string
 	ProxyViaShellHelp          string
 	ProxyFieldRelay            string

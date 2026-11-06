@@ -223,6 +223,11 @@ type savedHostGroup struct {
 }
 
 type savedForward struct {
+	// ID is the number this forward is known by in a window. It is written so a
+	// reload keeps it: a dialog open on a forward must not be re-pointed at
+	// another one because the list around it changed. Zero means a record older
+	// than this field, whose number is assigned when it is restored.
+	ID              uint32 `json:"id,omitempty"`
 	Label           string `json:"label"`
 	Mode            string `json:"mode,omitempty"`
 	HostLabel       string `json:"host_label"`
@@ -235,6 +240,9 @@ type savedForward struct {
 }
 
 type savedProxy struct {
+	// ID is the number this route is known by in a window, written for the same
+	// reason as savedForward.ID. Zero means a record older than this field.
+	ID            uint32 `json:"id,omitempty"`
 	TargetAddress string `json:"target_address"`
 	TargetUser    string `json:"target_user,omitempty"`
 	TargetPort    uint16 `json:"target_port"`
@@ -573,7 +581,7 @@ func (state *State) snapshot() savedState {
 	}
 	for _, forward := range state.forwards {
 		saved.Forwards = append(saved.Forwards, savedForward{
-			Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
+			ID: forward.ID, Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
 			HostUser: forward.HostUser, HostPort: forward.HostPort, LocalPort: forward.LocalPort,
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
 		})
@@ -585,7 +593,7 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		saved.Proxies = append(saved.Proxies, savedProxy{
-			TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			ID: route.ID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
 			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
@@ -1033,12 +1041,25 @@ func (state *State) restoreWorkspace(workspace string) {
 func (state *State) restoreProxies(saved []savedProxy) {
 	clear(state.proxies)
 	state.proxies = append(state.proxies[:0], decodeProxies(saved, state.hosts)...)
-	state.selectedProxyID = 0
-	state.nextProxyID = uint32(len(state.proxies)) + 1
-	if len(state.proxies) > 0 {
-		state.selectedProxyID = state.proxies[0].ID
+	// The next route takes a number no restored route uses: numbering from the
+	// count would hand an existing route's number to a new one.
+	state.nextProxyID = max(state.nextProxyID, highestProxyNumber(state.proxies))
+	if _, ok := state.proxyByID(state.selectedProxyID); !ok {
+		state.selectedProxyID = 0
+		if len(state.proxies) > 0 {
+			state.selectedProxyID = state.proxies[0].ID
+		}
 	}
 	state.refreshProxies()
+}
+
+// highestProxyNumber is one past the largest number these routes use.
+func highestProxyNumber(routes []proxyRecord) uint32 {
+	var highest uint32
+	for _, route := range routes {
+		highest = max(highest, route.ID)
+	}
+	return highest + 1
 }
 
 func (state *State) restoreSessions(entries []savedSession, active int) []uint32 {

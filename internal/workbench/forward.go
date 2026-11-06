@@ -224,6 +224,9 @@ func (editor *forwardEditor) validate(state *State) string {
 	}
 	host, ok := state.hostByID(editor.hostID)
 	if !ok {
+		if editor.editing {
+			return state.messages.ErrForwardHostMissing
+		}
 		return state.messages.ErrForwardHostRequired
 	}
 	localPort, localOK := editor.port(forwardFieldLocalPort)
@@ -310,17 +313,12 @@ func (state *State) openEditForwardID(id uint32) {
 		return
 	}
 	state.selectedForwardID = id
+	// The host the forward travels through is chosen explicitly: falling back to
+	// the first SSH host would move the tunnel to another machine as soon as the
+	// original one was removed, while the user only meant to change a port.
 	hostID := uint32(0)
 	if host, ok := state.forwardHost(forward); ok {
 		hostID = host.ID
-	}
-	if hostID == 0 {
-		for _, host := range state.hosts {
-			if host.isSSH() {
-				hostID = host.ID
-				break
-			}
-		}
 	}
 	state.forwardEditor.load(forward, hostID)
 	state.forwardDialogError = ""
@@ -425,12 +423,16 @@ func (state *State) submitForwardDialog() {
 				f.DestinationHost = ""
 				f.DestinationPort = 0
 			}
-			f.refresh(state.messages, true)
+			f.refresh(state.messages, state.forwardHostAvailable(*f))
 			state.status = state.messages.ForwardUpdated + f.Label
 			state.closeForwardDialog()
 			state.save()
 			return
 		}
+		// The forward this dialog was opened on is gone: saving must not quietly
+		// become a second copy of it under a new number.
+		state.forwardDialogError = state.messages.ErrForwardEditMissing
+		return
 	}
 	forward := state.forwardEditor.record(state.nextForwardID, host)
 	forward.refresh(state.messages, true)
@@ -650,14 +652,21 @@ func (state *State) pumpForwardStarts() {
 }
 
 // restoreForwards replaces the list of forwards with a saved one. A forward that
-// is in both keeps its number and whatever it is running, so a list that changes
-// under a forward that is still wanted does not stop it; one that is gone is
-// stopped.
+// is in both keeps the number it was saved with and whatever it is running, so a
+// list that changes under a forward that is still wanted does not stop it; one
+// that is gone is stopped. A forward whose saved configuration differs from the
+// one that was running under the same number is stopped and restored fresh: its
+// tunnel listens on the old settings.
 func (state *State) restoreForwards(saved []savedForward) {
 	previous := state.forwards
 	state.forwards = nil
-	next := max(state.nextForwardID, 1)
-	for _, entry := range saved {
+	wanted := make([]uint32, len(saved))
+	for index, entry := range saved {
+		wanted[index] = entry.ID
+	}
+	numbers := recordNumbers(wanted)
+	next := uint32(1)
+	for index, entry := range saved {
 		mode, modeOK := restoreForwardMode(entry.Mode)
 		if !modeOK || entry.Label == "" || entry.HostAddress == "" || entry.HostPort == 0 || entry.LocalPort == 0 {
 			continue
@@ -665,8 +674,11 @@ func (state *State) restoreForwards(saved []savedForward) {
 		if (mode == portforward.ModeLocal || mode == portforward.ModeRemote) && (entry.DestinationHost == "" || entry.DestinationPort == 0) {
 			continue
 		}
+		if numbers[index] == 0 {
+			numbers[index] = freeRecordNumber(numbers, &next)
+		}
 		forward := forwardRecord{
-			ID: next, Label: entry.Label, Mode: mode,
+			ID: numbers[index], Label: entry.Label, Mode: mode,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
 			LocalPort: entry.LocalPort,
 		}
@@ -674,18 +686,30 @@ func (state *State) restoreForwards(saved []savedForward) {
 			forward.DestinationHost = entry.DestinationHost
 			forward.DestinationPort = entry.DestinationPort
 		}
-		if index := slices.IndexFunc(previous, forward.sameAs); index >= 0 {
-			kept := previous[index]
-			previous = slices.Delete(previous, index, index+1)
-			kept.Label, kept.HostLabel = forward.Label, forward.HostLabel
-			forward = kept
-		} else {
-			next++
+		// A number tells which record this is; an older save without one falls
+		// back to recognising the forward by what it listens on and where it goes.
+		match := -1
+		if entry.ID != 0 {
+			match = slices.IndexFunc(previous, func(kept forwardRecord) bool { return kept.ID == forward.ID })
+		}
+		if match < 0 {
+			match = slices.IndexFunc(previous, forward.sameAs)
+		}
+		if match >= 0 {
+			kept := previous[match]
+			previous = slices.Delete(previous, match, match+1)
+			if kept.sameAs(forward) {
+				kept.ID = forward.ID
+				kept.Label, kept.HostLabel = forward.Label, forward.HostLabel
+				forward = kept
+			} else {
+				kept.stop()
+			}
 		}
 		forward.refresh(state.messages, state.forwardHostAvailable(forward))
 		state.forwards = append(state.forwards, forward)
 	}
-	state.nextForwardID = max(next, state.nextForwardID)
+	state.nextForwardID = max(state.nextForwardID, highestRecordNumber(state.forwards))
 	for index := range previous {
 		previous[index].stop()
 	}
@@ -696,6 +720,16 @@ func (state *State) restoreForwards(saved []savedForward) {
 		}
 	}
 	state.refreshForwardCount()
+}
+
+// highestRecordNumber is one past the largest number these forwards use: the
+// number the next one takes.
+func highestRecordNumber(forwards []forwardRecord) uint32 {
+	var highest uint32
+	for _, forward := range forwards {
+		highest = max(highest, forward.ID)
+	}
+	return highest + 1
 }
 
 // sameAs says whether two records are the same forward: what is listened on and

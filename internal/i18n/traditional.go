@@ -832,6 +832,8 @@ var TraditionalMessages = Messages{
 	ErrForwardNameTaken:           "已有轉發使用該名稱",
 	ErrForwardLocalTaken:          "已有轉發使用該本機連接埠",
 	ErrForwardRemoteTaken:         "該 SSH 主機已使用此遠端連接埠",
+	ErrForwardEditMissing:         "要編輯的轉發已不存在，請取消後重試。",
+	ErrForwardHostMissing:         "這條轉發所用的 SSH 主機已不存在，請重新選擇一台主機來承載它。",
 
 	ProxyTitle:                 "跳板主機",
 	ProxyDescription:           "串聯已儲存的 SSH 主機；每一跳都會獨立驗證主機金鑰並認證。",
@@ -867,6 +869,7 @@ var TraditionalMessages = Messages{
 	ErrProxySameHost:           "目標主機和跳板主機必須不同",
 	ErrProxyCycle:              "該跳板路由會形成環路",
 	ErrProxyTargetTaken:        "該主機已有跳板路由，請先移除原有路由。",
+	ErrProxyEditMissing:        "要編輯的跳板路由已不存在，請取消後重試。",
 	ProxyFieldViaShell:         "透過跳板主機的終端機中轉",
 	ProxyViaShellHelp:          "適用於只提供 shell 的跳板主機，例如要先切換帳號的堡壘機。Motty 會在跳板主機上開啟一個終端機，先輸入它的登入後指令，再在那裡執行中繼指令，讓這台主機的連線經由它。檔案、監控和連接埠轉發照常可用。需要跳板主機上有中繼程式，且切換帳號不能要求輸入密碼。",
 	ProxyFieldRelay:            "中繼指令（%h 主機，%p 連接埠，%r 使用者）",

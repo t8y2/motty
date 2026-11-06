@@ -308,6 +308,63 @@ func TestProxyEditModifiesAndPersists(t *testing.T) {
 	}
 }
 
+// A route keeps the number it was saved with, so a window that reloads the
+// catalog does not re-point a dialog that was opened on it at another route.
+func TestAJumpRouteKeepsItsSavedNumberAcrossAReload(t *testing.T) {
+	hosts := decodeHostsForTest(t)
+	target, jump := hosts[0], hosts[1]
+	saved := func(id uint32, target Host, jump Host) savedProxy {
+		return savedProxy{
+			ID: id, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port,
+		}
+	}
+	routes := decodeProxies([]savedProxy{saved(4, target, jump), saved(2, hosts[2], hosts[1])}, hosts)
+	if len(routes) != 2 {
+		t.Fatalf("routes = %+v", routes)
+	}
+	if got := [2]uint32{routes[0].ID, routes[1].ID}; got != [2]uint32{4, 2} {
+		t.Fatalf("restored numbers = %v, want the saved 4 and 2", got)
+	}
+
+	// A record older than the number, and a second record claiming one already
+	// taken, both take the lowest free number instead of colliding.
+	routes = decodeProxies([]savedProxy{saved(4, target, jump), saved(0, hosts[2], hosts[1])}, hosts)
+	if got := [2]uint32{routes[0].ID, routes[1].ID}; got != [2]uint32{4, 1} {
+		t.Fatalf("numbers after a legacy record = %v, want 4 and the free 1", got)
+	}
+	routes = decodeProxies([]savedProxy{saved(4, target, jump), saved(4, hosts[2], hosts[1])}, hosts)
+	if routes[0].ID == routes[1].ID {
+		t.Fatalf("two routes answer to the same number: %+v", routes)
+	}
+}
+
+// Saving an edit whose route is gone reports it instead of quietly adding a
+// second copy under a new number.
+func TestEditingAJumpRouteThatIsGoneReportsItInsteadOfAddingACopy(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
+
+	state.selectedProxyID = state.proxies[0].ID
+	state.Click(hitProxyEdit)
+	if state.modal != modalNewProxy || !state.proxyEditor.editing {
+		t.Fatalf("edit dialog = %d editing=%v", state.modal, state.proxyEditor.editing)
+	}
+	// The route goes away under the open dialog, as it does when another window
+	// removes it.
+	state.proxies = nil
+	state.Click(hitProxyDialogSubmit)
+	if state.proxyDialogError != state.messages.ErrProxyEditMissing {
+		t.Fatalf("error = %q, want %q", state.proxyDialogError, state.messages.ErrProxyEditMissing)
+	}
+	if len(state.proxies) != 0 {
+		t.Fatalf("routes = %+v, want no copy appended", state.proxies)
+	}
+	if state.modal != modalNewProxy {
+		t.Fatalf("the dialog closed on a failed save: modal = %d", state.modal)
+	}
+}
+
 func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitProxies)

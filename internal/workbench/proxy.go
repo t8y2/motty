@@ -236,6 +236,10 @@ func (state *State) submitProxyDialog() {
 			state.save()
 			return
 		}
+		// The route this dialog was opened on is gone: saving must not quietly
+		// become a second copy of it under a new number.
+		state.proxyDialogError = state.messages.ErrProxyEditMissing
+		return
 	}
 	route := proxyRecord{ID: state.nextProxyID, TargetID: state.proxyEditor.targetID, JumpID: state.proxyEditor.jumpID}
 	if state.proxyEditor.viaShell {

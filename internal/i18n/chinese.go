@@ -832,6 +832,8 @@ var ChineseMessages = Messages{
 	ErrForwardNameTaken:           "已有转发使用该名称",
 	ErrForwardLocalTaken:          "已有转发使用该本地端口",
 	ErrForwardRemoteTaken:         "该 SSH 主机已使用此远程端口",
+	ErrForwardEditMissing:         "要编辑的转发已不存在，请取消后重试。",
+	ErrForwardHostMissing:         "这条转发所用的 SSH 主机已不存在，请重新选择一台主机来承载它。",
 
 	ProxyTitle:                 "跳板主机",
 	ProxyDescription:           "串联已保存的 SSH 主机；每一跳都会独立校验主机密钥并认证。",
@@ -867,6 +869,7 @@ var ChineseMessages = Messages{
 	ErrProxySameHost:           "目标主机和跳板主机必须不同",
 	ErrProxyCycle:              "该跳板路由会形成环路",
 	ErrProxyTargetTaken:        "该主机已有跳板路由，请先移除原有路由。",
+	ErrProxyEditMissing:        "要编辑的跳板路由已不存在，请取消后重试。",
 	ProxyFieldViaShell:         "通过跳板主机的终端中转",
 	ProxyViaShellHelp:          "适用于只提供 shell 的跳板主机，例如要先切换账号的堡垒机。Motty 会在跳板主机上打开一个终端，先输入它的登录后命令，再在那里运行中继命令，让这台主机的连接经由它。文件、监控和端口转发照常可用。需要跳板主机上有中继程序，且切换账号不能要求输入密码。",
 	ProxyFieldRelay:            "中继命令（%h 主机，%p 端口，%r 用户）",
