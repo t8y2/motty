@@ -270,6 +270,24 @@ func hostGroupLeaf(path string) string {
 	return path[strings.LastIndex(path, "/")+1:]
 }
 
+// normalizeHostGroupPath is the one form a group path is kept in: its folder
+// names, in order, joined with "/". A path written with spaces around the
+// separators names the same folders, so it reads as one group rather than as a
+// second group beside it — which is what an import that spelled the separator
+// " / " left behind.
+func normalizeHostGroupPath(path string) string {
+	if !strings.Contains(path, "/") {
+		return strings.TrimSpace(path)
+	}
+	segments := make([]string, 0, 4)
+	for _, segment := range strings.Split(path, "/") {
+		if segment = strings.TrimSpace(segment); segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
 func hostGroupWithin(path, parent string) bool {
 	return path == parent || parent != "" && strings.HasPrefix(path, parent+"/")
 }

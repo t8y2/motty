@@ -404,7 +404,7 @@ func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
 		t.Fatalf("hosts %+v duplicates %d", plan.hosts, plan.duplicateHosts)
 	}
 	telnetHost, console := plan.hosts[0], plan.hosts[1]
-	if telnetHost.Protocol != protocolTelnet || telnetHost.Port != 23 || telnetHost.Group != "Lab / Net" {
+	if telnetHost.Protocol != protocolTelnet || telnetHost.Port != 23 || telnetHost.Group != "Lab/Net" {
 		t.Fatalf("Telnet host = %+v", telnetHost)
 	}
 	want := serial.Settings{Baud: 115200, DataBits: 7, StopBits: 2, Parity: serial.ParityEven, Flow: serial.FlowHardware}

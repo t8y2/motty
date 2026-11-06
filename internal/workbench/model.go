@@ -81,6 +81,7 @@ const defaultPort = 22
 
 // finish fills the derived fields.
 func (host *Host) finish() {
+	host.Group = normalizeHostGroupPath(host.Group)
 	if host.CatalogID == "" {
 		host.CatalogID = catalogIDFor(*host)
 	}

@@ -970,7 +970,7 @@ func (state *State) restoreShared(saved savedState) {
 	}
 	state.hostGroups = state.hostGroups[:0]
 	for _, entry := range saved.HostGroups {
-		name := strings.TrimSpace(entry.Name)
+		name := normalizeHostGroupPath(entry.Name)
 		if state.hostGroupIndex(name) >= 0 {
 			continue
 		}

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -441,7 +440,7 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 			continue
 		}
 		host := Host{
-			ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+			ID: builder.plan.nextHostID, Label: entry.Name, Group: entry.Group,
 			Address: entry.Host, User: entry.User, Port: port,
 		}
 		host.finish()
@@ -502,7 +501,7 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 // saved hosts or an earlier session already have that destination.
 func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.Entry) {
 	host := Host{
-		ID: plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,
 		Address: entry.Host, Port: uint16(entry.Port),
 	}
 	if entry.Protocol == sessionimport.Serial {
