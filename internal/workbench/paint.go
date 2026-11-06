@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -1173,10 +1174,11 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 					f.Row().Gap(6).Children(func() {
 						chrome.chips = chrome.chips[:0]
 						chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterAll, state.hostTotalDigits), rowHeight))
-						for _, group := range state.hostGroups[:state.hostFilterHidden] {
-							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, state.hostGroupLabel(group), group.Digits), rowHeight))
+						for _, index := range state.hostChips[:state.hostFilterHidden] {
+							group := state.hostGroups[index]
+							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits), rowHeight))
 						}
-						if state.hostFilterHidden < len(state.hostGroups) {
+						if state.hostFilterHidden < len(state.hostChips) {
 							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterMore, ""), rowHeight))
 						}
 					})
@@ -1307,26 +1309,29 @@ func (state *State) popupAt(canvas *ui.Canvas, viewport ui.Rect, at ui.Point, wi
 }
 
 // fitHostChips decides how many group chips fit in room, leaving the rest to the
-// More menu: hostFilterHidden is the index of the first group left out.
+// More menu: hostFilterHidden is the position in hostChips of the first one left out.
 func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 	const gap = float32(6)
+	state.fitChipGroups()
 	moreWidth := state.filterChipWidth(canvas, state.messages.HostFilterMore, "")
-	state.hostFilterHidden = len(state.hostGroups)
+	state.hostFilterHidden = len(state.hostChips)
 
 	// Do they all fit? If not, room is kept for More.
 	used := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits)
-	for _, group := range state.hostGroups {
-		used += gap + state.filterChipWidth(canvas, state.hostGroupLabel(group), group.Digits)
+	for _, index := range state.hostChips {
+		group := state.hostGroups[index]
+		used += gap + state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits)
 	}
 	limit := room
 	if used > room {
 		limit = room - moreWidth - gap
 	}
 	x := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits) + gap
-	for index, group := range state.hostGroups {
-		width := state.filterChipWidth(canvas, state.hostGroupLabel(group), group.Digits)
+	for position, index := range state.hostChips {
+		group := state.hostGroups[index]
+		width := state.filterChipWidth(canvas, state.hostGroupChipLabel(group), group.Digits)
 		if x+width > limit {
-			state.hostFilterHidden = index
+			state.hostFilterHidden = position
 			return
 		}
 		x += width + gap
@@ -1338,15 +1343,16 @@ func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 	m := state.messages
 	state.paintFilterChip(canvas, hitHostFilterAll, chips[0].Rect(), m.HostFilterAll, state.hostTotalDigits, !state.hostFilterOn)
-	for index, group := range state.hostGroups[:state.hostFilterHidden] {
-		state.paintFilterChip(canvas, hitHostFilterList.At(index), chips[1+index].Rect(),
-			state.hostGroupLabel(group), group.Digits, state.hostFilterOn && state.hostFilter == group.Name)
+	for position, index := range state.hostChips[:state.hostFilterHidden] {
+		group := state.hostGroups[index]
+		state.paintFilterChip(canvas, hitHostFilterList.At(index), chips[1+position].Rect(),
+			state.hostGroupChipLabel(group), group.Digits, state.hostFilterOn && state.hostFilter == group.Name)
 		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
 	}
-	if state.hostFilterHidden < len(state.hostGroups) {
+	if state.hostFilterHidden < len(state.hostChips) {
 		hiddenChosen := false
 		if state.hostFilterOn {
-			hiddenChosen = state.hostGroupIndex(state.hostFilter) >= state.hostFilterHidden
+			hiddenChosen = slices.Contains(state.hostChips[state.hostFilterHidden:], state.hostGroupIndex(state.hostFilter))
 		}
 		state.filterMoreButton = chips[1+state.hostFilterHidden].Rect()
 		state.paintFilterChip(canvas, hitHostFilterMore, state.filterMoreButton, m.HostFilterMore, "", hiddenChosen)
@@ -1392,14 +1398,14 @@ func (state *State) paintFilterChip(canvas *ui.Canvas, id ui.ID, bounds ui.Rect,
 
 // paintHostFilterMenu lists the groups whose chips did not fit.
 func (state *State) paintHostFilterMenu(canvas *ui.Canvas, viewport ui.Rect) {
-	hidden := len(state.hostGroups) - state.hostFilterHidden
+	hidden := len(state.hostChips) - state.hostFilterHidden
 	if hidden <= 0 {
 		return
 	}
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.filterMoreButton, 202, float32(32*hidden+8), flex.Start),
 		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitHostFilterMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitHostFilterMenuDismiss)})
 	state.menuPlaced(menu.Bounds())
-	for index := state.hostFilterHidden; index < len(state.hostGroups); index++ {
+	for _, index := range state.hostChips[state.hostFilterHidden:] {
 		menu.AddItem(components.DropdownMenuItem{ID: hitHostFilterMenuList.At(index), Label: state.hostGroupLabel(state.hostGroups[index])})
 		state.openHostGroupActionsOn(canvas, hitHostFilterMenuList.At(index), index)
 	}

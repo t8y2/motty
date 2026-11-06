@@ -528,7 +528,8 @@ type State struct {
 	hostFilterOn       bool   // only the group named hostFilter is listed
 	hostFilter         string // a group name; empty is the unnamed bucket
 	hostFilterMenu     bool   // the chips that did not fit, as a menu
-	hostFilterHidden   int    // the first group whose chip is in that menu
+	hostFilterHidden   int    // the first of hostChips whose chip is in that menu
+	hostChips          []int  // the groups that get a chip, as indexes of hostGroups
 	filterMoreButton   ui.Rect
 	hostTotalDigits    string
 	groupMenu          groupMenuAnchor // where the Move group picker opens
