@@ -24,6 +24,12 @@ import (
 // a window that also saves over SFTP.
 
 var (
+	// codeCaretWidth is the caret's thickness in logical pixels in a code
+	// editor. One pixel reads as a hairline on a high-density display, and
+	// editors draw two; the terminal's bar cursor is thicker still because it
+	// sits among glyphs rather than between them.
+	codeCaretWidth = float32(2)
+
 	hitDocumentFind          = tree.ID(documentHits, "find")
 	hitDocumentReplace       = tree.ID(documentHits, "replace")
 	hitDocumentFindPrevious  = tree.ID(documentHits, "find-previous")
@@ -197,10 +203,19 @@ func (d *fileDocument) paintCodeEditor(canvas *ui.Canvas, theme ui.Theme, bounds
 	selection := d.editor.Selection()
 	start, end, caret := d.editor.ByteOffset(selection.Start), d.editor.ByteOffset(selection.End), d.editor.ByteOffset(d.editor.Caret())
 	focused := canvas.Focused() == hitDocumentInput
+	// The caret blinks where it is drawn; the phase rests everywhere else, so the
+	// caret is lit again the moment the keyboard comes back.
+	showCaret := false
+	if focused && selection.Start == selection.End {
+		showCaret = d.ui.caret.Lit(canvas, caret)
+	} else {
+		d.ui.caret.Rest()
+	}
 	snapshot := components.CodeEditorSnapshot{
 		ID: hitDocumentInput, Label: m.Title, Value: value, Placeholder: m.ChooseEncoding,
-		ReadOnly: d.busy || !d.ready, Focused: focused, ShowCaret: selection.Start == selection.End,
+		ReadOnly: d.busy || !d.ready, Focused: focused, ShowCaret: showCaret,
 		SelectionStart: start, SelectionEnd: end, Caret: caret,
+		CaretWidth: codeCaretWidth, CaretColor: d.owner.pal.cursor,
 		FontSize: d.owner.terminalFontSize, MonoFace: d.owner.terminalFontFace, TabWidth: d.edit.options.TabWidth,
 		Wrap: !d.edit.noWrap, LineNumbers: true, CurrentLine: true, MatchBrackets: true,
 		Language: documentLanguage(d.name), Highlight: d.ui.highlighter,

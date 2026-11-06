@@ -1357,6 +1357,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 	if editor := state.terminalFindEditor(hit); editor != nil {
 		return editor
 	}
+	if editor := state.devEditorFor(hit); editor != nil {
+		return editor
+	}
 	return nil
 }
 
@@ -2162,6 +2165,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	// The menu opens where the pointer is in the window, which the pane
 	// translation below would otherwise hide.
 	state.terminalMenu.pointer = ui.Point{X: event.X, Y: event.Y}
+	if result, handled := state.devEditorPointer(event); handled {
+		return result
+	}
 	if result, handled := state.menuPointer(event); handled {
 		return result
 	}
@@ -2538,7 +2544,7 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.menuKey(event); handled {
 		return result
 	}
-	if result, handled := state.devSwatchKey(event); handled {
+	if result, handled := state.devEditorKey(event); handled {
 		return result
 	}
 	if result, handled := state.selectTypeaheadKey(event); handled {

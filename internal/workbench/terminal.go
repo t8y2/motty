@@ -1443,6 +1443,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	if result := state.scrollWorkspaceLibrary(event); result.Handled {
 		return result
 	}
+	if result, handled := state.devEditorScroll(event); handled {
+		return result
+	}
 	if state.chipMenu.open {
 		// The menu is modal: only its own panels scroll.
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}

@@ -47,9 +47,6 @@ func (state *State) selectTypeaheadKey(event ui.KeyEvent) (ui.EventResult, bool)
 // that commits one. It reports false when the target is not a select trigger
 // currently showing its value rather than its list.
 func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
-	if items, commit, ok := state.devSelectTypeahead(target); ok {
-		return items, commit, ok
-	}
 	switch {
 	case localShellSettingVisible() && state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && target == hitSettingsLocalShell && !state.localShellMenu.open:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.localShellMenu.choices))

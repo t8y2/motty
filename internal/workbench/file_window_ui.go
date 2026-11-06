@@ -68,6 +68,9 @@ type fileDocumentUI struct {
 	pan                                       ui.Point
 	imageGeometry                             components.ImageViewGeometry
 	tooltip                                   components.HoverTooltip
+	// caret is the phase of the caret both views draw: the one in the editor and
+	// the one in the comparison, which never shows together.
+	caret components.CaretBlink
 }
 
 func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
@@ -201,16 +204,24 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 	uiState.editorBounds = content.Rect()
 	value := d.editor.String()
 	selection := d.editor.Selection()
+	caret := d.editor.ByteOffset(d.editor.Caret())
 	focused := canvas.Focused() == hitDocumentInput
+	showCaret := false
+	if focused && selection.Start == selection.End {
+		showCaret = uiState.caret.Lit(canvas, caret)
+	} else {
+		uiState.caret.Rest()
+	}
 	snapshot := components.CodeDiffSnapshot{
 		Result: d.comparison.result, ID: hitDocumentInput, Label: m.DiffLabel,
 		Value: value, Language: documentLanguage(d.name), Highlight: uiState.highlighter,
 		AddedColor: theme.Success, RemovedColor: theme.Danger,
 		FontSize: d.owner.terminalFontSize, MonoFace: d.owner.terminalFontFace, TabWidth: d.edit.options.TabWidth,
 		Disabled: d.busy || d.comparison.loading || d.comparison.confirm, Focused: focused,
-		ShowCaret:      selection.Start == selection.End,
-		Caret:          d.editor.ByteOffset(d.editor.Caret()),
+		ShowCaret:      showCaret,
+		Caret:          caret,
 		SelectionStart: d.editor.ByteOffset(selection.Start), SelectionEnd: d.editor.ByteOffset(selection.End),
+		CaretWidth: codeCaretWidth, CaretColor: d.owner.pal.cursor,
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
 	}

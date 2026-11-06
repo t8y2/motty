@@ -303,10 +303,6 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
 	state.paintTransferCenter(canvas)
-	// The gallery's select is painted here, outside the workspace's clip and
-	// inside the frame's menu pass, so its popup can leave the page and keeps the
-	// menu state its keyboard handling needs.
-	state.devPaintOverlay(canvas)
 	switch state.modal {
 	case modalTerminalInput:
 		state.paintTerminalInputConfirm(canvas, viewport)

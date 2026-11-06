@@ -199,25 +199,9 @@ type Messages struct {
 	WorkspaceHeaderEmptyFmt               string
 	WorkspaceHeaderLayout                 string
 
-	// Debug workspace: a preview surface for the framework's components.
-	DebugTitle                  string
-	DebugDescription            string
-	DebugComponents             string
-	DebugButtonGroupTitle       string
-	DebugButtonGroupDescription string
-	DebugButtonGroupChoice      string
-	DebugAlignLeft              string
-	DebugAlignCenter            string
-	DebugAlignRight             string
-	DebugSelectTitle            string
-	DebugSelectDescription      string
-	DebugSelectChoice           string
-	DebugEnvironmentDevelopment string
-	DebugEnvironmentStaging     string
-	DebugEnvironmentProduction  string
-	DebugColorSwatchTitle       string
-	DebugColorSwatchDescription string
-	DebugColorSwatchChoice      string
+	// Debug workspace: an editor surface for trying the framework's code editor.
+	DebugTitle       string
+	DebugDescription string
 
 	// What the user is told when the saved state could not be loaded as it was.
 	// The Fmt strings take the file names or versions named in persist.go.
