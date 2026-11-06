@@ -406,6 +406,7 @@ func TestAFailedUpdateIsRememberedOnceAndTheOldProgramIsStarted(t *testing.T) {
 	if reason := TakeFailure(dir); reason != "" {
 		t.Fatalf("the failure came back: %q", reason)
 	}
+	(&Updater{Dir: dir}).clean()
 }
 
 func TestFailedDebInstallationKeepsTheDownloadAndRestartsAsTheUser(t *testing.T) {

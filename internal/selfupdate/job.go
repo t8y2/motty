@@ -126,7 +126,9 @@ func (job Job) Run() error {
 
 // fail records err and, when restart is set, starts the program that is there.
 func (job Job) fail(err error, restart bool) error {
-	os.WriteFile(filepath.Join(job.Dir, failureFile), []byte(err.Error()), 0o600)
+	if writeErr := os.WriteFile(filepath.Join(job.Dir, failureFile), []byte(err.Error()), 0o600); writeErr != nil {
+		err = errors.Join(err, fmt.Errorf("recording update failure: %w", writeErr))
+	}
 	if restart {
 		if startErr := job.start(); startErr != nil {
 			return errors.Join(err, startErr)

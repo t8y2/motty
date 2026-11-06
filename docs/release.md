@@ -319,8 +319,16 @@ transactional: a failure during package unpacking or maintainer scripts may requ
 repair with the system package manager. Missing Polkit, unregistered system installs,
 Snap, Flatpak, and all-users Windows installations use the manual update path.
 
-The replacement is made by a helper that outlives the app, so it never touches a
-file the running app holds. On macOS the helper is a copy of the whole bundle,
+The replacement is made by a helper that outlives the app and waits for the
+desktop process to exit. On Windows, stdio MCP servers may still be using the
+installed executable. The helper first renames that image into a private backup
+directory on the installation's volume, then runs the installer at the original
+path. Existing MCP connections continue on the retired image; later launches use
+the new version. A failed installation restores the previous executable (not a
+transactional rollback of every installer change). Retired images still held by
+processes are left in place and cleaned on a later successful update.
+
+On macOS the helper is a copy of the whole bundle,
 not of the executable: a Developer ID signature covers the bundle's `Info.plist`,
 and the executable on its own no longer verifies, so the system kills it as it
 starts (exit 137, `amfid` logs `Code=-420`) and nothing is replaced. The app
