@@ -14,9 +14,14 @@ const (
 	maxTerminalPredictionChunks = 64
 	terminalPredictionConfirm   = 3
 	terminalPredictionTrust     = 2 * time.Second
-	// terminalPredictionMinEcho is the echo delay below which a guess wins
-	// nothing: the server's answer is on screen before the next frame.
-	terminalPredictionMinEcho = 25 * time.Millisecond
+	// The link decides whether a guess is shown, with the thresholds and the
+	// hysteresis of mosh's prediction engine so that a delay hovering at an edge
+	// does not flicker. A guess is drawn once echoes take longer than ShowAbove,
+	// and withdrawn at or under HideAt: on a link faster than that the server's
+	// answer is on screen before the guess would be noticed. The text keeps its
+	// own color and carries no mark, so the echo that replaces it changes nothing.
+	terminalPredictionShowAbove = 30 * time.Millisecond
+	terminalPredictionHideAt    = 20 * time.Millisecond
 	// A guess nobody confirmed is taken back after four echo delays, clamped to
 	// this range, or after terminalPredictionUnknownStale before any echo was
 	// timed. A server that never echoes (a vi-mode prompt in command mode) must
@@ -72,8 +77,10 @@ type terminalPrediction struct {
 	confirmed    int
 	trustedUntil time.Duration
 	// echo is the smoothed delay between a key and its echo, zero until one was
-	// timed. It describes the link, so it outlives a reset.
-	echo time.Duration
+	// timed. It describes the link, so it outlives a reset, and so does shown,
+	// the display decision drawn from it (see terminalPredictionShowAbove).
+	echo  time.Duration
+	shown bool
 
 	text     string
 	runs     [maxTerminalPredictionBytes]ui.TextRun
@@ -126,12 +133,13 @@ func (prediction *terminalPrediction) stale(now time.Duration) bool {
 
 // visibleAt is whether the guess is on screen at now: pending in an active
 // phase, not so old that the server evidently is not echoing it, and worth
-// drawing at all on a link whose echoes come back before the next frame.
+// drawing at all on a link whose echoes do not come back at once. Until one echo
+// was timed the link is unknown and the guess is drawn.
 func (prediction *terminalPrediction) visibleAt(now time.Duration) bool {
 	if !prediction.visible() || prediction.stale(now) {
 		return false
 	}
-	return prediction.echo == 0 || prediction.echo >= terminalPredictionMinEcho
+	return prediction.echo == 0 || prediction.shown
 }
 
 // expiry is how long a shown guess may still go unconfirmed, so that the owner
@@ -272,6 +280,19 @@ func (prediction *terminalPrediction) consume(size int, now time.Duration) {
 		offset += width
 	}
 	prediction.cells = cells
+	prediction.judgeLink()
+}
+
+// judgeLink moves the display decision with the smoothed echo delay. A shown
+// guess is not withdrawn while text is pending, so it never vanishes under the
+// typist's fingers; the next consume after the last echo takes it back.
+func (prediction *terminalPrediction) judgeLink() {
+	switch {
+	case prediction.echo > terminalPredictionShowAbove:
+		prediction.shown = true
+	case prediction.echo <= terminalPredictionHideAt && prediction.length == 0:
+		prediction.shown = false
+	}
 }
 
 func (prediction *terminalPrediction) rebuild() {

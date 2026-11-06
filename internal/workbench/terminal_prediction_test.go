@@ -236,6 +236,27 @@ func TestTerminalPredictionStaysHiddenOnLinksFasterThanAFrame(t *testing.T) {
 	}
 }
 
+// A link whose echo delay hovers at an edge must not make the guess flicker.
+func TestTerminalPredictionShowsByTheLinkWithHysteresis(t *testing.T) {
+	var prediction terminalPrediction
+	for _, testCase := range []struct {
+		echo  time.Duration
+		shown bool
+	}{
+		{10 * time.Millisecond, false},
+		{25 * time.Millisecond, false}, // between the edges: no change yet
+		{40 * time.Millisecond, true},
+		{25 * time.Millisecond, true}, // between the edges: stays shown
+		{15 * time.Millisecond, false},
+	} {
+		prediction.echo = testCase.echo
+		prediction.judgeLink()
+		if prediction.shown != testCase.shown {
+			t.Fatalf("echo %v: shown=%v, want %v", testCase.echo, prediction.shown, testCase.shown)
+		}
+	}
+}
+
 // Output that arrives when nothing was typed, such as the next prompt, ends
 // the trust the echoes earned.
 func TestTerminalPredictionDropsTrustOnUnsolicitedOutput(t *testing.T) {
@@ -284,10 +305,13 @@ func TestWorkbenchPaintsOnlyVerifiedPredictionsAndDropsThemAtSensitiveContext(t 
 			continue
 		}
 		runs := canvas.TextRuns(text)
-		foundPrediction = len(runs) > 0 && !runs[0].Underline && runs[0].Color == state.pal.muted
+		// The guess keeps the terminal's own color and carries no mark, so the
+		// echo that replaces it changes nothing a reader could see crawl across
+		// the line.
+		foundPrediction = len(runs) > 0 && !runs[0].Underline && runs[0].Color == state.termPal.termFG
 	}
 	if !foundPrediction {
-		t.Fatal("prediction is not visually distinguished as remote-unconfirmed")
+		t.Fatal("prediction is not drawn in the terminal's own color, unmarked")
 	}
 
 	advance(80 * time.Millisecond)
