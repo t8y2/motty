@@ -1267,6 +1267,16 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	var bytes []byte
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
+		event.Modifiers == ui.ModifierAlt && !event.Release {
+		// Match macOS Terminal's word movement when the shell owns the key.
+		// Alternate-screen programs and negotiated keyboard modes keep their keys.
+		switch event.Key {
+		case ui.KeyRight:
+			bytes = []byte("\x1bf")
+		case ui.KeyLeft:
+			bytes = []byte("\x1bb")
+		}
 	}
 	if len(bytes) == 0 {
 		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
