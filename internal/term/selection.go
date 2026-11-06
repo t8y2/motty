@@ -83,8 +83,38 @@ func pointLess(left, right Point) bool {
 // numbers, and underscores form words; spaces and punctuation form their own runs.
 func (t *Terminal) WordBounds(position Position) (Position, Position) {
 	position = t.clampPosition(position)
-	row := t.Row(position.Row)
-	column := position.Column
+	start, end := t.wordColumns(t.Row(position.Row), position.Column)
+	return Position{Row: position.Row, Column: start}, Position{Row: position.Row, Column: end}
+}
+
+// WordRange is WordBounds for a point of the retained buffer, which may lie
+// outside the view. Points beyond the retained lines clamp to them.
+func (t *Terminal) WordRange(point Point) (Point, Point) {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return point, point
+	}
+	point = t.clampPoint(point, base, count)
+	start, end := t.wordColumns(t.rowOf(t.bufferLine(int(point.Line-base))), point.Column)
+	return Point{Line: point.Line, Column: start}, Point{Line: point.Line, Column: end}
+}
+
+// LineRange is the whole logical line holding point: every row the terminal
+// soft-wrapped it into, from the first cell of the first to the last cell of the
+// last. Points beyond the retained lines clamp to them.
+func (t *Terminal) LineRange(point Point) (Point, Point) {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return point, point
+	}
+	point = t.clampPoint(point, base, count)
+	index := int(point.Line - base)
+	first, last := t.linkGroupStart(index), t.linkGroupEnd(index)-1
+	return Point{Line: base + uint64(first)}, Point{Line: base + uint64(last), Column: t.cols - 1}
+}
+
+// wordColumns is the inclusive column range of the run of like cells around column.
+func (t *Terminal) wordColumns(row Row, column int) (int, int) {
 	if column < len(row.Cells) && row.Cells[column].Attr&WideTail != 0 && column > 0 {
 		column--
 	}
@@ -109,7 +139,7 @@ func (t *Terminal) WordBounds(position Position) (Position, Position) {
 		end = next
 	}
 	end += selectedCellWidth(row.Cells, end) - 1
-	return Position{Row: position.Row, Column: start}, Position{Row: position.Row, Column: min(end, t.cols-1)}
+	return start, min(end, t.cols-1)
 }
 
 func (t *Terminal) clampPosition(position Position) Position {

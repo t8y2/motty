@@ -7,8 +7,9 @@ import (
 )
 
 // The window as the desktop sees it: where it is and whether the window manager
-// minimized it. Only the first window of a process remembers its frame, so
-// tearing a tab off does not overwrite where the main window was.
+// minimized it. Each window keeps its own place in its own record, so two
+// windows of one process remember two places and a torn-off tab does not
+// overwrite the window it came from.
 
 const (
 	// windowFrameSaveDelay is how long a window drag waits for more movement
@@ -33,16 +34,13 @@ func (state *State) RestoredWindowFrame() (ui.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 
-// restoreWindowFrame takes the frame a saved state carries and shares it, so
-// another window's later save writes the same place instead of erasing it.
+// restoreWindowFrame takes the frame a saved state carries. It is this window's
+// own, read from the record it saved, so it is kept here and not shared.
 func (state *State) restoreWindowFrame(frame ui.Rect) {
 	if frame.Width < 1 || frame.Height < 1 {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
-	if group := state.options.Group; group != nil {
-		group.setWindowFrame(frame)
-	}
 }
 
 // NoteWindowFrame records where the window is, as Viva reports every move and
@@ -56,9 +54,6 @@ func (state *State) NoteWindowFrame(frame ui.Rect) {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
-	if group := state.options.Group; group != nil {
-		group.setWindowFrame(frame)
-	}
 	state.scheduleWindowFrameSave()
 }
 
@@ -89,14 +84,9 @@ func (state *State) closeWindowChrome() {
 	state.save()
 }
 
-// savedWindowFrame is the frame to write: the newest one any window of the
-// process reported, so a secondary window's save does not roll it back.
+// savedWindowFrame is the frame to write: this window's own, which is what its
+// record holds. Two windows of one process save two places.
 func (state *State) savedWindowFrame() (ui.Rect, bool) {
-	if group := state.options.Group; group != nil {
-		if frame, ok := group.windowFrame(); ok {
-			return frame, true
-		}
-	}
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 

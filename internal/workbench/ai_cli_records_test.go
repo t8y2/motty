@@ -31,7 +31,7 @@ func TestCLIRecordsHaveLegacySafeIndependentOwnership(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
 	addCLIRecordFixture(t, s)
-	entries, _, err := splitState(s.snapshot(), newConfigBase(), nil)
+	entries, _, _, err := splitState(s.snapshot(), newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestUnknownFutureProviderSubtypeIsOpaqueAndCannotBeDeleted(t *testing.T) {
 			if _, owned := base.payloads[configstore.Key{Kind: kind, ID: "future"}]; owned {
 				t.Fatal("unsupported provider became deletion-owned")
 			}
-			entries, _, err := splitState(savedState{}, base, nil)
+			entries, _, _, err := splitState(savedState{}, base, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

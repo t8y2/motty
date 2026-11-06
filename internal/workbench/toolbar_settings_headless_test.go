@@ -74,14 +74,14 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Move(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Driver().Leave(); err != nil {
+				if err := view.Driver().Cancel(); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
 				if state.toolbarEditor.list.Dragging() || state.toolbars.entries(group)[0].Key != original {
-					t.Fatal("losing pointer capture retained or committed an interrupted drag")
+					t.Fatal("a cancelled press retained or committed an interrupted drag")
 				}
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)

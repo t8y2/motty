@@ -38,6 +38,31 @@ func changedSavedFields(previous, current savedState) []savedFieldChange {
 	return changes
 }
 
+// windowOwnFields are the saved fields a window writes about its own work and
+// place rather than about configuration: where it sits on screen, and when it
+// last dialed a host. The store merges the dials of every window rather than
+// replacing them, so another window has nothing to read back from one.
+var windowOwnFields = map[string]bool{
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"recent_connections": true,
+}
+
+// changesConfiguration reports whether a save changed configuration that every
+// window of the process shows, rather than only this window's own work: the tabs
+// it has open, the deck they fill, and the records of its own place and dials.
+// The other windows read the first kind back from the store, so only it is worth
+// telling them about; opening, closing or moving a tab happens too often to wake
+// them.
+func changesConfiguration(changes []savedFieldChange) bool {
+	for _, change := range changes {
+		if isWorkspaceField(change.name) || windowOwnFields[change.name] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // writeChangedFields stores several changed top-level fields in one commit.
 // Every record and device value that did not change is reused from base; only
 // the changed lists, settings and device keys are encoded. The host group list
@@ -61,7 +86,13 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			return false, true, err
 		}
 	}
-	releaseChanged, developmentChanged := false, false
+	windowLocal := map[string]json.RawMessage{}
+	if base.windowName != "" && len(base.window) > 0 {
+		if err := json.Unmarshal(base.window, &windowLocal); err != nil {
+			return false, true, err
+		}
+	}
+	releaseChanged, developmentChanged, windowChanged := false, false, false
 	nextOrd := base.maxOrd
 	for _, change := range changes {
 		if change.name == "host_groups" {
@@ -112,6 +143,12 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			}
 		case stateVersionFields[change.name]:
 			return false, false, nil
+		case windowStateFields[change.name] && base.windowName != "":
+			changed, err := setLocalField(windowLocal, change.name, change.value)
+			if err != nil {
+				return false, true, err
+			}
+			windowChanged = windowChanged || changed
 		default:
 			target := releaseLocal
 			developmentField := buildinfo.Development && isWorkspaceField(change.name)
@@ -129,9 +166,15 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			}
 		}
 	}
-	local := localWrite{state: base.local}
+	local := localWrite{state: base.local, windowName: base.windowName, window: base.window}
 	if releaseChanged {
 		local.state, err = json.Marshal(releaseLocal)
+		if err != nil {
+			return false, true, err
+		}
+	}
+	if windowChanged {
+		local.window, err = json.Marshal(windowLocal)
 		if err != nil {
 			return false, true, err
 		}

@@ -84,16 +84,24 @@ func main() {
 		windowGroup.SetTransferProgress(func(_ int, fraction float32) {
 			application.SetProgress(fraction)
 		})
-		var openWindow func() error
 		firstWindow := true
-		openWindow = func() error {
-			// Only the first window starts out of sight, and only it remembers
-			// where the last first window was.
+		// openWindowAt opens the window filed under id. A new window takes the
+		// next number, which is what the New Window command and a torn-off tab
+		// do; a window restored at start keeps the number its record is under.
+		var openWindowAt func(int) error
+		openWindowAt = func(id int) error {
+			// A window restored at start is numbered by its record; the counter
+			// follows it, so the next new window takes a number no record has.
+			windowIDs = max(windowIDs, id)
+			// Only the first window starts out of sight and carries the crash
+			// report. Every window opened at start keeps its own place.
 			hidden := background
 			background = false
-			remember := firstWindow
+			first := firstWindow
 			firstWindow = false
-			return openWorkbenchWindow(application, status, hub, openWindow, hidden, placement{rememberFrame: remember})
+			return openWorkbenchWindow(application, status, hub, func() error {
+				return openWindowAt(nextWindowID())
+			}, hidden, placement{windowID: id, rememberFrame: first})
 		}
 		if err := hub.Reconfigure(); err != nil {
 			log.Printf("motty: external agent access: %v", err)
@@ -105,10 +113,28 @@ func main() {
 			// go up first and closing it still leaves the application running.
 			status.show(application)
 		}
-		err := openWindow()
+		// Every window the last run left open comes back with its own tabs and
+		// its own place. A launch that was asked to open something, and one at
+		// login, open a single window: autostart must not put a screenful of
+		// hidden windows up.
+		restored := 1
+		if !background && len(args) == 0 {
+			count, err := workbench.RestoreWindowCount(stateDatabasePath())
+			if err != nil {
+				log.Printf("motty: windows of the last run: %v", err)
+			} else {
+				restored = count
+			}
+		}
+		err := openWindowAt(1)
 		reportStarted(err)
 		if err != nil {
 			return err
+		}
+		for id := 2; id <= restored; id++ {
+			if openErr := openWindowAt(id); openErr != nil {
+				log.Printf("motty: restore window %d: %v", id, openErr)
+			}
 		}
 		// A development copy is told apart on its Dock icon, where every window
 		// shows it, rather than by renaming the product in the interface.
@@ -202,6 +228,17 @@ func knownHostsPath(dir string) string {
 	return filepath.Join(dir, "known_hosts")
 }
 
+// stateDatabasePath is the configuration store, which sits beside known_hosts in
+// the data directory. It is opened by the windows and, at start, read once by
+// the launcher to see how many windows the last run left.
+func stateDatabasePath() string {
+	dir := datadir.Current().Dir
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "config.db")
+}
+
 // aiDatabasePath is the assistant's database for a data directory; empty means
 // the platform's usual place (next to the known-hosts file).
 func aiDatabasePath(dir string) string {
@@ -231,9 +268,25 @@ type placement struct {
 	origin *ui.Point
 	adopt  func(*workbench.State)
 	blank  bool
-	// rememberFrame makes this window the one whose place and size are saved
-	// and restored. The first window of a process is that window.
+	// windowID is which window of this run it is. Zero takes the next number,
+	// which is what a torn-off window and the New Window command want; a window
+	// restored at start is given the number its record is filed under.
+	windowID int
+	// rememberFrame makes this window keep its own place and size. Every window
+	// opened at start does; a torn-off one belongs to one session and does not.
 	rememberFrame bool
+}
+
+// windowIDs numbers the windows of this run. The first is 1, and each window
+// keeps its tabs and its place under that number, so two windows never write
+// each other's. Windows are made on the event-loop thread, so a plain counter
+// is enough.
+var windowIDs int
+
+// nextWindowID is the number for a window that was not given one.
+func nextWindowID() int {
+	windowIDs++
+	return windowIDs
 }
 
 func openWorkbenchWindow(application *app.Application, status *tray, hub *workbench.AIHub, newWindow func() error, background bool, place placement) error {
@@ -271,6 +324,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
+		WindowID:            place.windowID,
 		RememberWindowFrame: place.rememberFrame,
 		TearOff: func(origin ui.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
@@ -386,7 +440,16 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			log.Print("motty: window closed")
 			windows.remove(state)
 			hub.Remove(state)
+			quitting := windows.isQuitting()
+			remaining := windows.count()
 			state.Close()
+			// A window the user closed while other windows are still up is one
+			// they are done with, so its record goes and the next launch does not
+			// reopen it. A quit, and the last window, keep every record: that is
+			// what the next launch reopens.
+			if !quitting && remaining > 0 {
+				state.DropWindowRecord()
+			}
 			if status != nil {
 				status.list.Remove(state)
 				status.refresh()

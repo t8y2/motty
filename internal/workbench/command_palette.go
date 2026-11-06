@@ -127,6 +127,7 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.PaneSplitHorizontal, hitPaneSplitHorizontal)
 		palette.add(messages.PaneSplitVertical, hitPaneSplitVertical)
 		palette.add(messages.PaneClose, hitPaneClose)
+		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
 			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {

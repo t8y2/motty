@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
@@ -15,6 +16,60 @@ type tabsClose struct {
 	count  int
 	locked int
 	title  string
+	// session is the one pane to close when a pane, not a tab, was asked for.
+	session uint32
+	// running names the sessions that are still connected; quiet is the "do not ask
+	// again" box.
+	running []string
+	quiet   bool
+}
+
+// sessionRunning reports whether closing the session would end something live: a
+// shell that has not ended.
+func sessionRunning(session *Session) bool {
+	return session != nil && session.term != nil && session.term.shell != nil && !session.term.ended
+}
+
+func (state *State) runningLabel(session *Session) string {
+	if session.Address == "" || session.Address == session.Title {
+		return session.Title
+	}
+	return session.Title + ": " + session.Address
+}
+
+// runningSessions names the live sessions in the given tabs.
+func (state *State) runningSessions(ids []layoutcore.WorkspaceID) []string {
+	if state.closeConfirmOff {
+		return nil
+	}
+	var names []string
+	var panes []layoutcore.Pane
+	for _, id := range ids {
+		panes = state.deck.Panes(id, panes[:0])
+		for _, pane := range panes {
+			if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && sessionRunning(session) {
+				names = append(names, state.runningLabel(session))
+			}
+		}
+	}
+	return names
+}
+
+// requestCloseSession closes one pane's session on the user's word, asking first
+// when it is still running. A locked tab's only pane keeps the lock's question.
+func (state *State) requestCloseSession(id uint32) {
+	session, ok := state.sessionByIDPointer(id)
+	if !ok {
+		return
+	}
+	workspace, _, found := state.deck.PaneForSession(layoutcore.SessionID(id))
+	if state.closeConfirmOff || !found || !sessionRunning(session) ||
+		state.deck.Locked(workspace) && len(state.deck.Panes(workspace, nil)) == 1 {
+		state.closeSession(id)
+		return
+	}
+	state.tabsClose = tabsClose{session: id, count: 1, running: []string{state.runningLabel(session)}}
+	state.modal = modalCloseTabs
 }
 
 // askCloseTabs confirms a batch or a protected tab; one unlocked tab closes
@@ -31,7 +86,8 @@ func (state *State) askCloseTabs(keep layoutcore.WorkspaceID, pick func(position
 			}
 		}
 	}
-	if pending.count < 2 && pending.locked == 0 {
+	pending.running = state.runningSessions(pending.ids)
+	if pending.count < 2 && pending.locked == 0 && len(pending.running) == 0 {
 		state.closeTabs(pending)
 		return
 	}
@@ -53,10 +109,20 @@ func (state *State) clickCloseTabsDialog(id ui.ID) {
 	case hitTabsCloseDismiss, hitTabsCloseClose, hitTabsCloseCancel:
 		state.modal = modalNone
 		state.tabsClose = tabsClose{}
+	case hitTabsCloseQuiet:
+		state.tabsClose.quiet = !state.tabsClose.quiet
 	case hitTabsCloseConfirm:
 		pending := state.tabsClose
 		state.modal = modalNone
 		state.tabsClose = tabsClose{}
+		if pending.quiet && pending.locked == 0 {
+			state.closeConfirmOff = true
+			state.save()
+		}
+		if pending.session != 0 {
+			state.closeSession(pending.session)
+			return
+		}
 		state.closeTabs(pending)
 	}
 }
@@ -72,11 +138,18 @@ func (state *State) closeTabsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 
 func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	messages := state.messages
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
+	// A tab that asks because of its lock keeps that question; the running one
+	// lists what would stop and offers to stop asking.
+	asking := state.tabsClose.locked == 0 && len(state.tabsClose.running) > 0
+	options := components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitTabsCloseDismiss, CloseID: hitTabsCloseClose, InitialFocusID: hitTabsCloseCancel,
 		ContentSize: ui.Size{Width: 520}, FitBody: true,
-	})
+	}
+	if asking {
+		options.BodyHeight = float32(20*min(len(state.tabsClose.running), 6)) + 44
+	}
+	dialog := components.BeginDialog(canvas, state.Theme(), viewport, options)
 	title := fmt.Sprintf(messages.CloseTabsTitleFmt, state.tabsClose.count)
 	description := messages.CloseTabsDescription
 	if state.tabsClose.locked > 0 {
@@ -86,7 +159,27 @@ func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			description = fmt.Sprintf(messages.CloseLockedTabDescriptionFmt, state.tabsClose.title)
 		}
 	}
+	if asking {
+		title, description = messages.CloseRunningTitle, messages.CloseRunningDescription
+	}
 	layout := dialog.Begin(title, description)
+	if asking {
+		var quiet flex.Box
+		f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
+		f.Column().Fill().Children(func() {
+			for index, name := range state.tabsClose.running {
+				if index == 6 {
+					f.Text(fmt.Sprintf("+%d", len(state.tabsClose.running)-index)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(20)
+					break
+				}
+				f.Text(name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
+			}
+			f.Spacer().Grow(1)
+			quiet = state.declareDialogCheckbox(f, messages.CloseRunningAsk, 0, 0)
+		})
+		f.End()
+		state.paintDialogCheckbox(canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, quiet)
+	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitTabsCloseCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitTabsCloseConfirm, Label: messages.CloseTabsConfirm, Variant: components.ButtonDestructive},

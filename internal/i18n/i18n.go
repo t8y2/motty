@@ -613,6 +613,9 @@ type Messages struct {
 	CloseTabsTitleFmt             string
 	CloseTabsDescription          string
 	CloseTabsConfirm              string
+	CloseRunningTitle             string
+	CloseRunningDescription       string
+	CloseRunningAsk               string // the "don't ask again" box
 	MenuReconnect                 string
 	MenuDisconnect                string
 	ReconnectTitleFmt             string

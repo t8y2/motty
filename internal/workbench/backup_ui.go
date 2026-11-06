@@ -102,7 +102,20 @@ type syncState struct {
 	textLanguage     i18n.Language
 }
 
+// restoreSync replaces the account this window syncs with. What the engine has
+// in hand belongs to the window running it rather than to the account: a start
+// waiting on its timer, a request on its way, the retries and what the progress
+// row says carry on, which is what lets the settings be loaded again when
+// another window changes the account.
 func (state *State) restoreSync(saved *savedSync) {
+	work := state.sync
+	defer func() {
+		state.sync.working, state.sync.again, state.sync.err = work.working, work.again, work.err
+		state.sync.retries, state.sync.waitingForVault, state.sync.holdBack = work.retries, work.waitingForVault, work.holdBack
+		state.sync.timer = work.timer
+		state.sync.rowText, state.sync.runText, state.sync.runFor = work.rowText, work.runText, work.runFor
+		state.sync.textLanguage = work.textLanguage
+	}()
 	state.sync = syncState{}
 	if saved == nil {
 		return

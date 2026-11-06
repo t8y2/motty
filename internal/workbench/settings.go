@@ -132,6 +132,7 @@ func (state *State) setTerminalFontSize(value float32) bool {
 	}
 	state.terminalFontSize = value
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -145,6 +146,7 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 	}
 	state.terminalFontFace = face
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
+	state.cellHeight *= state.terminalLineHeight.factor()
 	state.fitTerminals()
 	return true
 }
@@ -406,6 +408,18 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsLineHeightCompact:
+		changed = state.setTerminalLineHeight(lineHeightCompact)
+	case hitSettingsLineHeightNormal:
+		changed = state.setTerminalLineHeight(lineHeightNormal)
+	case hitSettingsLineHeightRoomy:
+		changed = state.setTerminalLineHeight(lineHeightRoomy)
+	case hitSettingsCursorThin:
+		changed = state.setTerminalCursorThickness(cursorThin)
+	case hitSettingsCursorNormal:
+		changed = state.setTerminalCursorThickness(cursorNormal)
+	case hitSettingsCursorThick:
+		changed = state.setTerminalCursorThickness(cursorThick)
 	case hitSettingsGutterOff:
 		changed = state.setTerminalGutter(gutterOff)
 	case hitSettingsGutterNumbers:
@@ -576,12 +590,30 @@ func (state *State) settingsOptionOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsCursorThicknessOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsCursorThin, Label: m.CursorThin},
+		{ID: hitSettingsCursorNormal, Label: m.CursorNormal},
+		{ID: hitSettingsCursorThick, Label: m.CursorThick},
+	}
+}
+
 func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
 	m := state.messages.Tools
 	return [...]components.SegmentOption{
 		{ID: hitSettingsPadCompact, Label: m.PaddingCompact},
 		{ID: hitSettingsPadNormal, Label: m.PaddingNormal},
 		{ID: hitSettingsPadRoomy, Label: m.PaddingRoomy},
+	}
+}
+
+func (state *State) settingsLineHeightOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsLineHeightCompact, Label: m.LineHeightCompact},
+		{ID: hitSettingsLineHeightNormal, Label: m.LineHeightNormal},
+		{ID: hitSettingsLineHeightRoomy, Label: m.LineHeightRoomy},
 	}
 }
 
@@ -713,6 +745,12 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
 		options := state.settingsPaddingOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsLineHeightCompact, hitSettingsLineHeightNormal, hitSettingsLineHeightRoomy:
+		options := state.settingsLineHeightOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
+		options := state.settingsCursorThicknessOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()

@@ -965,6 +965,44 @@ func (l *line) text(cols int) string {
 // RowText is the text of view row i with trailing spaces removed.
 func (t *Terminal) RowText(i int) string { return t.lineAt(i).text(t.cols) }
 
+// AppendCellText appends the text of cells [from, to) of view row y to dst, the
+// way RowText writes a row but over an exact range and without trimming: an
+// empty cell reads as a space, the tail of a wide character adds nothing and
+// combining marks follow the cell they belong to. ok is false when the range
+// lies outside the row or starts or ends inside a wide character.
+func (t *Terminal) AppendCellText(dst []byte, y, from, to int) ([]byte, bool) {
+	if y < 0 || y >= t.rows || from < 0 || from > to || to > t.cols {
+		return dst, false
+	}
+	l := t.lineAt(y)
+	cell := func(x int) Cell {
+		if x < len(l.cells) {
+			return l.cells[x]
+		}
+		return Cell{}
+	}
+	if from < to && cell(from).Attr&WideTail != 0 || to < t.cols && from < to && cell(to).Attr&WideTail != 0 {
+		return dst, false
+	}
+	for x := from; x < to; x++ {
+		c := cell(x)
+		if c.Attr&WideTail != 0 {
+			continue
+		}
+		r := c.R
+		if r == 0 {
+			r = ' '
+		}
+		dst = utf8.AppendRune(dst, r)
+		for _, mark := range l.marks {
+			if int(mark.Col) == x {
+				dst = utf8.AppendRune(dst, mark.R)
+			}
+		}
+	}
+	return dst, true
+}
+
 // Text is the whole view as lines of text, trailing empty lines removed.
 func (t *Terminal) Text() string {
 	rows := make([]string, t.rows)

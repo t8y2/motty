@@ -155,6 +155,31 @@ func TestPlainAnswer(t *testing.T) {
 	}
 }
 
+func TestToolEventsCarryReportedUsageBeforeTheNextModelTurn(t *testing.T) {
+	provider := &fakeProvider{turns: []turn{
+		{events: []llm.Event{call("tool", tools.NameTerminalExec, lsArgs), done(40, 6)}},
+		{events: []llm.Event{text("finished"), done(20, 4)}},
+	}}
+	events, emit := collect()
+	_, err := Run(context.Background(), newCfg(provider, &fakeBackend{}, true), nil, "inspect", emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range *events {
+		if event.Kind != EventToolStart && event.Kind != EventToolDone {
+			continue
+		}
+		count++
+		if event.Usage != (llm.Usage{InputTokens: 40, OutputTokens: 6}) {
+			t.Fatalf("tool event %v lost reported usage: %+v", event.Kind, event.Usage)
+		}
+	}
+	if count != 2 {
+		t.Fatalf("tool events = %d, want 2", count)
+	}
+}
+
 func TestToolThenAnswerShape(t *testing.T) {
 	p := &fakeProvider{turns: []turn{
 		{events: []llm.Event{{Kind: llm.EventReasoning, Text: "think"}, text("checking"), call("c1", tools.NameTerminalExec, lsArgs), done(10, 1)}},

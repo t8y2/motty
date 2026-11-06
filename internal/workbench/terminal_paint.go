@@ -432,8 +432,13 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	cursor := t.presentedCursor()
 	composing := t.preedit.Composing
-	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay()
+	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay(state.now())
 	predicting = predicting && !composing && cursor.Visible && t.sync == nil
+	if remaining, ok := t.prediction.expiry(state.now()); ok && predicting {
+		// A guess the server never echoes is taken back at its deadline, not at
+		// the next key.
+		canvas.RequestFrameIn(max(remaining, time.Millisecond))
+	}
 	if t.sync != nil && t.clock != nil {
 		canvas.RequestFrameIn(t.syncRemaining())
 	}
@@ -572,9 +577,10 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		case composing:
 			// The input method draws over these cells, which the rows left empty.
 		case cursor.Style == term.CursorUnderline:
-			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - 2, Width: cellWidth, Height: 2}, cursorColor)
+			underline := state.terminalCursorThickness.underline()
+			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - underline, Width: cellWidth, Height: underline}, cursorColor)
 		case cursor.Style == term.CursorBar:
-			canvas.Fill(ui.Rect{X: x, Y: y, Width: 3, Height: cellHeight}, cursorColor)
+			canvas.Fill(ui.Rect{X: x, Y: y, Width: state.terminalCursorThickness.bar(), Height: cellHeight}, cursorColor)
 		case !focused:
 			// A block cursor outlines its cell while the terminal does not have the keyboard.
 			canvas.Fill(ui.Rect{X: x, Y: y, Width: cellWidth, Height: 1}, cursorColor)
@@ -589,7 +595,9 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		canvas.Fill(ui.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
 	if !sensitive && focused && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.passwordHintGhost(session); ok {
+			state.paintGhost(canvas, t, geometry, cursor, rest, block)
+		} else if rest, ok := state.commandGhost(session); ok {
 			state.paintGhost(canvas, t, geometry, cursor, rest, block)
 		}
 	}

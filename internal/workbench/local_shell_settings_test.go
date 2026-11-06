@@ -17,6 +17,13 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		state.selectSettingsCategory(settingsTerminal)
 		var canvas ui.Canvas
 		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
+			// The terminal page has grown past this canvas, so reach the row
+			// the way a user does; both rows sit together at the page's end.
+			state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+			canvas.Reset()
+			state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		}
 		hit, visible := hitByID(&canvas, hitSettingsLocalShell)
 		if !visible {
 			t.Fatal("the local shell setting is not visible")

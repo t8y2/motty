@@ -565,7 +565,7 @@ func saveAgentState(t *testing.T, world *agentWorld, open bool) {
 	if open {
 		saved.AgentHosts = []string{"host_web"}
 	}
-	entries, local, err := splitState(saved, newConfigBase(), nil)
+	entries, local, _, err := splitState(saved, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

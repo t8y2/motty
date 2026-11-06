@@ -10,12 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
+	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
 )
 
@@ -142,7 +145,7 @@ func TestFilesThatCannotBeAttachedAreNamedWithTheirReason(t *testing.T) {
 	folder := t.TempDir()
 	binary := writeTestFile(t, "tool.bin", append([]byte("\x7fELF"), make([]byte, 64)...))
 	empty := writeTestFile(t, "empty.txt", nil)
-	long := writeTestFile(t, "long.log", bytes.Repeat([]byte("line\n"), 40000))
+	long := writeTestFile(t, "long.log", bytes.Repeat([]byte("line\n"), 900000))
 	drop(state, x, y, folder, binary, empty, long)
 	pumpUntil(t, state, "the files to be read", func() bool { return state.ai.attaching == 0 })
 	if len(state.ai.attachments) != 0 {
@@ -352,5 +355,232 @@ func TestAPictureTooLargeToPasteIsNamedInTheNotice(t *testing.T) {
 	pasteNoText(t, state)
 	if !strings.Contains(state.ai.notice, state.messages.AIPanel.PastedImageName) {
 		t.Fatalf("notice = %q", state.ai.notice)
+	}
+}
+
+func pasteText(t *testing.T, state *State, text string) app.TextState {
+	t.Helper()
+	input := state.AIPanelInput(app.TextInputContext{ID: hitAIInput})
+	if input == nil {
+		t.Fatal("the message box has no native editor")
+	}
+	result, err := input.OnEvent(app.TextEvent{Kind: app.TextPaste, Text: text})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestPastingLongTextAttachesItAndLeavesTheTextAlone(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	state.ai.input.Insert("what is this? ")
+
+	// 1. Long by character count (>= 2000 chars)
+	longChars := strings.Repeat("a", 2500)
+	result := pasteText(t, state, longChars)
+	if !result.Redraw || result.Value != "what is this? " {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(state.ai.attachments) != 1 {
+		t.Fatalf("attachments count = %d, want 1", len(state.ai.attachments))
+	}
+	first := state.ai.attachments[0].file
+	if first.Kind != attach.KindText || first.Name != "pasted-text-1.txt" || first.Text != longChars {
+		t.Fatalf("first attachment = %+v", first)
+	}
+	if state.ai.input.String() != "what is this? " {
+		t.Fatalf("input = %q, want 'what is this? '", state.ai.input.String())
+	}
+
+	// 2. Long by line count (>= 20 lines)
+	longLines := strings.Repeat("line\n", 25)
+	result2 := pasteText(t, state, longLines)
+	if !result2.Redraw || result2.Value != "what is this? " {
+		t.Fatalf("result2 = %+v", result2)
+	}
+	if len(state.ai.attachments) != 2 {
+		t.Fatalf("attachments count = %d, want 2", len(state.ai.attachments))
+	}
+	second := state.ai.attachments[1].file
+	if second.Kind != attach.KindText || second.Name != "pasted-text-2.txt" || second.Lines != 25 {
+		t.Fatalf("second attachment = %+v", second)
+	}
+}
+
+func TestLongPastedTextCountsCharactersAndLines(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"1999 CJK characters", strings.Repeat("界", aiLongTextChars-1), false},
+		{"2000 CJK characters", strings.Repeat("界", aiLongTextChars), true},
+		{"19 lines without a trailing newline", strings.Repeat("line\n", aiLongTextLines-2) + "line", false},
+		{"20 lines without a trailing newline", strings.Repeat("line\n", aiLongTextLines-1) + "line", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isLongAIText(test.text); got != test.want {
+				t.Fatalf("isLongAIText() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func maximumTextAttachments(t *testing.T) []aiAttachment {
+	t.Helper()
+	const count = 4
+	attachments := make([]aiAttachment, count)
+	overhead := 0
+	for index := range attachments {
+		attachments[index].file = attach.File{
+			Name:  "part-" + string(rune('a'+index)) + ".txt",
+			Kind:  attach.KindText,
+			Lines: 1,
+		}
+		overhead += aiAttachmentContextBytes(attachments[index].file)
+	}
+	body := aiMaxAttachedText - overhead
+	for index := range attachments {
+		size := body / (count - index)
+		if size > attach.MaxTextBytes {
+			t.Fatalf("part %d needs %d bytes, file limit is %d", index, size, attach.MaxTextBytes)
+		}
+		attachments[index].file.Text = strings.Repeat("x", size)
+		body -= size
+	}
+	context, _, _ := aiAttachmentContext(attachments, false)
+	if len(context) != aiMaxAttachedText {
+		t.Fatalf("serialized attachment context = %d bytes, want %d", len(context), aiMaxAttachedText)
+	}
+	return attachments
+}
+
+func TestMaximumAttachmentContextIsSavedAndReopened(t *testing.T) {
+	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("ok") }}
+	state := openedPanel(t, model)
+	state.ai.attachments = maximumTextAttachments(t)
+	ask(state, "", agent.ModeAgent)
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	if state.ai.notice != "" {
+		t.Fatalf("maximum attachment context was not saved: %q", state.ai.notice)
+	}
+	id := state.ai.conv
+	state.aiNewConversation()
+	state.aiOpenConversation(id)
+	user := firstQuestion(t, state)
+	if user.text != "" || len(user.attachments) != 4 {
+		t.Fatalf("reopened question = %q, attachments = %+v", user.text, user.attachments)
+	}
+}
+
+func TestOversizedMessageKeepsTheQuestionAndAttachments(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("unused") }})
+	state.ai.attachments = maximumTextAttachments(t)
+	state.ai.input.Insert("x")
+	state.ai.mode = agent.ModeAgent
+	state.aiSend()
+	if state.ai.run != nil || state.ai.input.String() != "x" || len(state.ai.attachments) != 4 {
+		t.Fatalf("run=%v input=%q attachments=%d", state.ai.run, state.ai.input.String(), len(state.ai.attachments))
+	}
+	if !strings.Contains(state.ai.notice, formatBytes(store.MaxTextBytes)) {
+		t.Fatalf("notice = %q", state.ai.notice)
+	}
+}
+
+func TestAHistoryWriteFailureDoesNotAppendLaterMessages(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("unused") }})
+	conversation, err := state.ai.store.CreateConversation("failure", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.ai.conv = conversation.ID
+	state.aiPersist([]llm.Message{
+		{Role: llm.RoleUser, Text: strings.Repeat("x", store.MaxTextBytes+1)},
+		{Role: llm.RoleAssistant, Text: "must not be stored"},
+	}, gate.SessionInfo{}, nil, "", nil)
+	if !strings.Contains(state.ai.notice, strings.TrimSuffix(state.messages.AIPanel.HistorySaveFailedFmt, "%s")) {
+		t.Fatalf("notice = %q", state.ai.notice)
+	}
+	messages, err := state.ai.store.Messages(conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("stored messages = %+v", messages)
+	}
+}
+
+func TestPastingShortTextEntersTheBox(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	shortText := "echo hello\nls -la\n"
+	pasteText(t, state, shortText)
+	if len(state.ai.attachments) != 0 {
+		t.Fatalf("short text was attached: %+v", state.ai.attachments)
+	}
+	if state.ai.input.String() != shortText {
+		t.Fatalf("input = %q, want %q", state.ai.input.String(), shortText)
+	}
+}
+
+func TestPastingTextTooLargeIsNamedInTheNotice(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	hugeText := strings.Repeat("x", attach.MaxTextBytes+1000)
+	pasteText(t, state, hugeText)
+	if len(state.ai.attachments) != 1 {
+		t.Fatalf("huge text was not attached: %+v", state.ai.attachments)
+	}
+	if !strings.Contains(state.ai.notice, state.messages.AIPanel.PastedTextName) {
+		t.Fatalf("notice = %q, want it to name %s", state.ai.notice, state.messages.AIPanel.PastedTextName)
+	}
+	if state.ai.input.String() != "" {
+		t.Fatalf("huge text entered editor: len=%d", len(state.ai.input.String()))
+	}
+}
+
+func TestPastingHugeUTF8TruncatesAtRuneBoundary(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	// Construct a huge string filled with 3-byte Chinese characters and 4-byte emoji.
+	const unit = "测试文字🔥"
+	repeats := (attach.MaxTextBytes / len(unit)) + 50
+	hugeUTF8 := strings.Repeat(unit, repeats)
+	pasteText(t, state, hugeUTF8)
+	if len(state.ai.attachments) != 1 {
+		t.Fatalf("attachments count = %d, want 1", len(state.ai.attachments))
+	}
+	content := state.ai.attachments[0].file.Text
+	if !utf8.ValidString(content) {
+		t.Fatal("truncated content contains invalid UTF-8 sequences")
+	}
+	if len(content) > attach.MaxTextBytes {
+		t.Fatalf("content len %d exceeds MaxTextBytes %d", len(content), attach.MaxTextBytes)
+	}
+	if !strings.HasSuffix(content, "\n\n... [truncated] ...\n") {
+		t.Fatal("content missing truncation suffix")
+	}
+}
+
+func TestSendingQuestionWithOnlyAttachedText(t *testing.T) {
+	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("Answer to attachment") }}
+	state := openedPanel(t, model)
+
+	pasteText(t, state, strings.Repeat("content\n", 30))
+	if len(state.ai.attachments) != 1 {
+		t.Fatalf("attachments = %d", len(state.ai.attachments))
+	}
+	if state.ai.input.String() != "" {
+		t.Fatalf("input is not empty: %q", state.ai.input.String())
+	}
+	if !state.aiCanSend() {
+		t.Fatal("aiCanSend should be true when attachments exist even without input text")
+	}
+
+	state.aiPanelSend()
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	if len(model.requests) != 1 {
+		t.Fatalf("requests = %d", len(model.requests))
+	}
+	req := model.requests[0]
+	if !strings.Contains(req.Messages[0].Text, "pasted-text-1.txt") {
+		t.Fatalf("sent text = %q", req.Messages[0].Text)
 	}
 }

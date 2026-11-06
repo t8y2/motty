@@ -305,6 +305,9 @@ func (state *State) refreshShared() error {
 		return err
 	}
 	base.development = development
+	// This window's own value is nobody else's to rewrite: it is carried over so
+	// the next save patches its own record rather than emptying it.
+	base.windowName, base.window = state.configBase.windowName, state.configBase.window
 	if saved.AIProviders == nil && state.recordedProviders(kindAIProvider) > 0 {
 		saved.AIProviders = &[]savedAIProvider{} // all it had recorded are gone
 	}

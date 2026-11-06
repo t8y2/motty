@@ -87,6 +87,7 @@ func TestTheTerminalMenuClosesThePaneItWasOpenedOn(t *testing.T) {
 		t.Fatal("a split tab's menu does not offer closing the pane")
 	}
 	state.Click(hitTerminalMenuClosePane)
+	confirmRunningClose(state)
 	if _, ok := state.sessionByIDPointer(firstID); ok {
 		t.Fatal("the pane the menu was opened on is still open")
 	}

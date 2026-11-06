@@ -120,7 +120,7 @@ func TestFormatNineUpgradePreservesHostsAndMonitoringAndBlocksOlderWriters(t *te
 				want.MonitorPanels = []monitoring.Panel{{ID: "panel", Name: "Production", Hosts: []string{"host_a"}, Interval: 5, Retention: 60}}
 				want.MonitorActive = "panel"
 			}
-			entries, local, err := splitState(want, newConfigBase(), nil)
+			entries, local, _, err := splitState(want, newConfigBase(), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,7 +153,7 @@ func TestFormatTenUpgradeKeepsTheLocalSessionLogSwitchAndBlocksOlderWriters(t *t
 	path := filepath.Join(t.TempDir(), "config.db")
 	want := richState()
 	want.SessionLogsOff = true
-	entries, local, err := splitState(want, newConfigBase(), nil)
+	entries, local, _, err := splitState(want, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestFormatSixteenKeepsTheInterfaceFontAndBlocksOlderWriters(t *testing.T) {
 	// A store a format-15 build wrote has no font: it opens with the default.
 	older := filepath.Join(t.TempDir(), "config.db")
 	state := richState()
-	entries, local, err := splitState(state, newConfigBase(), nil)
+	entries, local, _, err := splitState(state, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestFormatSeventeenKeepsInterfaceFontAndToolbarPositionAndBlocksOlderWriter
 	older := filepath.Join(t.TempDir(), "config.db")
 	state := richState()
 	state.InterfaceFont = "Noto Sans"
-	entries, local, err := splitState(state, newConfigBase(), nil)
+	entries, local, _, err := splitState(state, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestSessionLogCaptureDefaultsOnForAStateThatPredatesIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.db")
 	// A format-10 state never wrote the switch: absent must mean capture on.
 	want := richState()
-	entries, local, err := splitState(want, newConfigBase(), nil)
+	entries, local, _, err := splitState(want, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

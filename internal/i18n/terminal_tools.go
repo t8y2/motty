@@ -103,6 +103,10 @@ type ToolsMessages struct {
 	PaddingCompact             string
 	PaddingNormal              string
 	PaddingRoomy               string
+	LineHeightRow              string
+	LineHeightCompact          string
+	LineHeightNormal           string
+	LineHeightRoomy            string
 	GutterRow                  string
 	GutterDescription          string
 	GutterOff                  string
@@ -117,6 +121,10 @@ type ToolsMessages struct {
 	IntensePlain               string
 	CursorRow                  string
 	CursorDescription          string
+	CursorThicknessRow         string
+	CursorThin                 string
+	CursorNormal               string
+	CursorThick                string
 	CursorShapeRow             string
 	CursorShapeDescription     string
 	CursorShapeBlock           string
@@ -162,12 +170,17 @@ type ToolsMessages struct {
 	NotifyDescription string
 
 	// Pasting an image into a terminal on a server.
-	PasteImageRow         string
-	PasteImageDescription string
-	PasteImageUploading   string
-	PasteImageDoneFmt     string // the path on the server
-	PasteImageFailedFmt   string // the reason
-	PasteImageTooLarge    string
+	PasteImageRow           string
+	PasteImageDescription   string
+	PasteImageUploading     string
+	PasteImageDoneFmt       string // the path on the server
+	PasteImageFailedFmt     string // the reason
+	PasteImageTooLarge      string
+	PasswordHintRow         string
+	PasswordHintDescription string
+	CloseConfirmRow         string
+	CloseConfirmDescription string
+	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.
 	ProxyRow                    string
@@ -501,6 +514,8 @@ type ToolsMessages struct {
 	UpdateWhyPackageUnknown         string
 	UpdateWhyUnsigned               string
 	GeneralUpdateInstall            string
+	UpdateNoticeDetail              string
+	UpdateNoticeAction              string
 	UpdateConfirmTitle              string
 	UpdateConfirmDescriptionFmt     string
 	UpdateConfirmSubmit             string

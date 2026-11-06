@@ -27,7 +27,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
 			}, []ui.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
-				hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
+				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsCursorThin, hitSettingsCursorThick, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
 			{settingsConnection, []string{
 				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
 			}, []ui.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,

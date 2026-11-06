@@ -49,6 +49,7 @@ var (
 	hitAIAutoScopeDismiss = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
 	hitAIModelList        = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
 	hitAIModelBar         = tree.ID(aiPanelHits, "ai-model-scroll-bar")
+	hitAIRunStatus        = tree.ID(aiPanelHits, "ai-run-status")
 )
 
 const (
@@ -238,7 +239,9 @@ type aiPanel struct {
 	linkBase  int
 
 	// Scratch space reused by every layout so a paint allocates nothing.
-	wrapped []string
+	wrapped     []string
+	statusLines []string
+	usageLines  []string
 
 	// inputLayout is the message box's rows and scroll, and composer where the box
 	// was painted, for the wheel.
@@ -1244,6 +1247,14 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 		state.aiPasteImage()
 		result := app.TextStateOf(&ai.input)
 		result.Redraw = true // the chips changed, not the editor
+		return result
+	}
+	if (event.Kind == app.TextPaste || event.Kind == app.TextInsert) && isLongAIText(event.Text) {
+		// Long text is attached as a file rather than dumped into the message box,
+		// keeping the composer responsive and preventing renderer overflow.
+		state.aiPasteText(event.Text)
+		result := app.TextStateOf(&ai.input)
+		result.Redraw = true
 		return result
 	}
 	_, composing := ai.input.Composition()

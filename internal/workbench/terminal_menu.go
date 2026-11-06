@@ -329,7 +329,7 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 	case hitTerminalMenuClosePane:
 		// The session the menu was opened on, not whichever pane has the
 		// keyboard: a right click does not move focus.
-		state.closeSession(session.ID)
+		state.requestCloseSession(session.ID)
 	case hitTerminalMenuFiles:
 		state.Click(hitSFTPOpen)
 	case hitTerminalMenuAsk:

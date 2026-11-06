@@ -38,9 +38,23 @@ type AIPanelMessages struct {
 	RenameSubmit      string
 	RenameRequired    string
 
-	UsageFmt       string
-	UsageTotalFmt  string
-	UsageCachedFmt string
+	UsageFmt                string
+	UsageTotalFmt           string
+	UsageCachedFmt          string
+	RunWaiting              string
+	RunWaitingLong          string
+	RunAnswering            string
+	RunToolFmt              string
+	RunApproval             string
+	RunStopping             string
+	RunCompleted            string
+	RunStopped              string
+	RunElapsedFmt           string
+	RunTotalTimeFmt         string
+	RunUsageFmt             string
+	RunUsageUnknown         string
+	RunUsageIncomplete      string
+	RunUsageConversationFmt string
 
 	ModeAsk   string
 	ModeAgent string
@@ -63,20 +77,24 @@ type AIPanelMessages struct {
 
 	// Files and pictures attached to a message. The Fmt strings take the file's
 	// name first.
-	Attach               string // the paperclip: its name and tooltip
-	AttachPickerTitle    string
-	AttachDropHint       string // over the panel while files are dragged in
-	AttachRemoveFmt      string
-	AttachedLabel        string // the name of the row of attachments under a sent message
-	AttachTooManyFmt     string // takes the most that can be attached
-	AttachFolderFmt      string
-	AttachEmptyFmt       string
-	AttachTextTooBigFmt  string // takes the name and the size limit
-	AttachTooLargeFmt    string
-	AttachUnsupportedFmt string
-	AttachTotalTextFmt   string // takes the name and the size limit of all text
-	AttachFailedFmt      string // takes the name and the system's reason
-	PastedImageName      string // the name a picture pasted from the clipboard goes by
+	Attach                   string // the paperclip: its name and tooltip
+	AttachPickerTitle        string
+	AttachDropHint           string // over the panel while files are dragged in
+	AttachRemoveFmt          string
+	AttachedLabel            string // the name of the row of attachments under a sent message
+	AttachTooManyFmt         string // takes the most that can be attached
+	AttachFolderFmt          string
+	AttachEmptyFmt           string
+	AttachTextTooBigFmt      string // takes the name and the size limit
+	AttachTooLargeFmt        string
+	AttachUnsupportedFmt     string
+	AttachTotalTextFmt       string // takes the name and the size limit of all text
+	AttachFailedFmt          string // takes the name and the system's reason
+	PastedImageName          string // the name a picture pasted from the clipboard goes by
+	PastedTextName           string // the name a long text pasted from the clipboard goes by
+	AttachPastedTruncatedFmt string // takes the name, limit and truncated size when huge pasted text is capped
+	MessageTooLargeFmt       string // takes the saved-message size limit
+	HistorySaveFailedFmt     string // takes the system's reason
 
 	EmptyTitle     string
 	EmptyHint      string

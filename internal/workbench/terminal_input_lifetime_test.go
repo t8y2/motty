@@ -26,6 +26,11 @@ func TestTerminalTypingSurvivesClosingAnEarlierTab(t *testing.T) {
 	if err := driver.Click(closeHit.Bounds.X+closeHit.Bounds.Width/2, closeHit.Bounds.Y+closeHit.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
+	// The tab is still connected, so closing it asks first.
+	confirmHit := hitOf(t, driver, hitTabsCloseConfirm)
+	if err := driver.Click(confirmHit.Bounds.X+confirmHit.Bounds.Width/2, confirmHit.Bounds.Y+confirmHit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
 	if len(state.sessions) != 2 || state.activeSessionID != lastID {
 		t.Fatalf("closing the earlier tab left %d sessions, active=%d, want %d", len(state.sessions), state.activeSessionID, lastID)
 	}

@@ -99,7 +99,7 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 	if t.suggestionPending != nil || t.preedit.Composing || !t.screen.Cursor().Visible {
 		return "", false, false
 	}
-	if _, _, _, predicting := t.prediction.overlay(); predicting {
+	if _, _, _, predicting := t.prediction.overlay(state.now()); predicting {
 		return "", false, false
 	}
 	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})

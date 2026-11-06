@@ -218,6 +218,9 @@ var (
 	hitSettingsPadCompact          = tree.ID(settingsHits, "settings-pad-compact")
 	hitSettingsPadNormal           = tree.ID(settingsHits, "settings-pad-normal")
 	hitSettingsPadRoomy            = tree.ID(settingsHits, "settings-pad-roomy")
+	hitSettingsLineHeightCompact   = tree.ID(settingsHits, "settings-line-height-compact")
+	hitSettingsLineHeightNormal    = tree.ID(settingsHits, "settings-line-height-normal")
+	hitSettingsLineHeightRoomy     = tree.ID(settingsHits, "settings-line-height-roomy")
 	hitSettingsIntenseBoth         = tree.ID(settingsHits, "settings-intense-both")
 	hitSettingsIntenseBright       = tree.ID(settingsHits, "settings-intense-bright")
 	hitSettingsIntenseBold         = tree.ID(settingsHits, "settings-intense-bold")
@@ -240,6 +243,9 @@ var (
 	hitSettingsReconnectForever    = tree.ID(settingsHits, "settings-reconnect-forever")
 	hitSettingsClipboardBlock      = tree.ID(settingsHits, "settings-clipboard-block")
 	hitSettingsCursorToggle        = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorThin          = tree.ID(settingsHits, "settings-cursor-thin")
+	hitSettingsCursorNormal        = tree.ID(settingsHits, "settings-cursor-normal")
+	hitSettingsCursorThick         = tree.ID(settingsHits, "settings-cursor-thick")
 	hitSettingsCursorBlock         = tree.ID(settingsHits, "settings-cursor-shape-block")
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
@@ -481,8 +487,12 @@ type State struct {
 	// starting is set while the window is being made, before it has read the
 	// assistant's database; pauseSave holds saving off while the window
 	// is bringing in records that are already stored.
-	starting           bool
-	pauseSave          int
+	starting  bool
+	pauseSave int
+	// windowID is which window of this run this is. Its tabs, the deck they fill,
+	// where it sits and what it shows are filed under that number, so no other
+	// window's save can replace them.
+	windowID           int
 	stateNotice        stateNotice
 	developmentImport  developmentImport
 	stateFileOutcome   string // how the saved state was read at start, for diagnostics
@@ -637,6 +647,7 @@ type State struct {
 	editorMenu          editorSelect
 	terminalFontSize    float32
 	terminalFontFace    ui.MonoFace
+	terminalLineHeight  lineHeight
 	terminalScrollback  int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
@@ -719,6 +730,8 @@ type State struct {
 	localDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
 	terminalCursorSteady bool
+	// terminalCursorThickness is how thick the bar and underline cursors draw.
+	terminalCursorThickness cursorThickness
 	// terminalCopyOnSelect copies a selection the moment the mouse finishes it,
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
@@ -778,12 +791,16 @@ type State struct {
 	notifyOff      bool
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
-	fonts         fontsUI
-	uiFont        interfaceFontUI
-	proxyForm     outboundProxyForm
-	agentSetting  agentDescriptionCache
-	form          formDialog
-	formSerial    uint32
+	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
+	passwordHintOff bool
+	// closeConfirmOff skips the question before closing a session that still runs.
+	closeConfirmOff bool
+	fonts           fontsUI
+	uiFont          interfaceFontUI
+	proxyForm       outboundProxyForm
+	agentSetting    agentDescriptionCache
+	form            formDialog
+	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
 	syncEpoch  uint32
@@ -859,6 +876,10 @@ type State struct {
 	workspaceStatusPanes  [layoutcore.MaxPanes]layoutcore.Pane
 	pendingWorkspace      layoutcore.WorkspaceID
 	pendingPane           layoutcore.PaneID
+	// pendingDirectory is where the shell of the next session starts: set by a
+	// split from the directory of the pane it came from, taken by the session
+	// that opens in the new pane.
+	pendingDirectory string
 
 	// Prompt state, filled when a connection asks a question.
 	hostKeyDescription       string
@@ -969,6 +990,7 @@ func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
 		options:               options.withDefaults(),
+		windowID:              max(1, options.WindowID),
 		revealResults:         make(chan revealResult, 1),
 		nextSessionID:         1,
 		nextHostID:            1,
@@ -1012,7 +1034,7 @@ func New(options Options) *State {
 
 	state.starting = true
 	state.configDefaults = defaultsOf(state.snapshot())
-	config, saved, configBase, report, err := openConfig(state.options.StatePath)
+	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase
 	if config != nil && state.secrets.vault != nil {
 		// Saved passwords are versioned by the same clock as the records.
@@ -1674,6 +1696,8 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.splitWithCurrentHost(layoutcore.Vertical)
 	case id == hitPaneClose:
 		state.closeActivePane()
+	case id == hitPaneRename:
+		state.renameActiveTerminal()
 	case state.clickNewTabPage(id), state.clickConnectPick(id):
 	case id == hitPaneChooseHost:
 		state.pendingWorkspace = state.deck.ActiveWorkspace()
@@ -1825,7 +1849,7 @@ func (state *State) closeActivePane() {
 		return
 	}
 	if pane.SessionID != 0 {
-		state.closeSession(uint32(pane.SessionID))
+		state.requestCloseSession(uint32(pane.SessionID))
 		return
 	}
 	_, _ = state.deck.ClosePane(workspaceID, paneID)
@@ -1866,7 +1890,7 @@ func (state *State) closeWorkspace(id layoutcore.WorkspaceID) {
 		state.askCloseLockedTab(id)
 		return
 	}
-	state.closeWorkspaceNow(id)
+	state.askCloseTabs(0, func(position int) bool { return state.workspaceTabs[position].ID == id })
 }
 
 // closeWorkspaceNow releases a tab after the caller has handled confirmation.
@@ -2694,6 +2718,8 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
+	directory := state.pendingDirectory
+	state.pendingDirectory = ""
 	if pane, ok := state.deck.Pane(workspaceID, paneID); !ok || pane.SessionID != 0 {
 		var err error
 		workspaceID, paneID, err = state.deck.Create(title)
@@ -2705,6 +2731,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	if session == nil {
 		return nil
 	}
+	session.setStartDirectory(directory)
 	state.activeSessionID = session.ID
 	state.activeSection = sectionTerminal
 	state.status = state.messages.StatusOpened + session.Title

@@ -65,7 +65,14 @@ func (worker *Worker) saveText(client Remote, remotePath, value string, revision
 	return decodeTextDocument(content)
 }
 
-func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, content []byte, revision Revision, generation uint64) (err error) {
+// replaceDocumentBytes saves content over a remote file the user opened at
+// revision. It replaces the file atomically through a sibling temporary file,
+// which needs write access to the directory. Where the directory refuses
+// that but the file itself is writable (a root-owned /etc/app with a
+// group-writable config), it writes the file in place instead, as vim does
+// under backupcopy=auto. In-place writing also keeps owner, ACLs and hard
+// links, at the cost of atomicity.
+func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, content []byte, revision Revision, generation uint64) error {
 	advanced, ok := client.(transferRemote)
 	if !ok {
 		if IsSCP(client) {
@@ -73,6 +80,29 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 		}
 		return fmt.Errorf("sftp: atomic remote file replacement is not supported")
 	}
+	if err := worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+		return err
+	}
+	info, exists, err := remoteLstat(advanced, remotePath)
+	if err != nil {
+		return err
+	}
+	if !exists || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+	}
+	err = worker.replaceDocumentAtomically(client, advanced, remotePath, content, revision, info.Mode().Perm(), generation)
+	if !errors.Is(err, os.ErrPermission) {
+		return err
+	}
+	// Nothing was changed: the temporary file could not be created, or could not
+	// be moved over the original, and a leftover is removed. Try the file itself;
+	// if that is refused too the permission error is the real answer.
+	return worker.replaceDocumentInPlace(client, advanced, remotePath, content, revision, generation)
+}
+
+// checkDocumentRevision reports ErrRemoteChanged unless the remote file still
+// has the content the editor opened.
+func (worker *Worker) checkDocumentRevision(client Remote, remotePath string, revision Revision, generation uint64) error {
 	current, err := worker.readFileBytes(client, remotePath, generation, MaxPreviewFileBytes)
 	if err != nil {
 		if editReadMeansConflict(err) {
@@ -83,14 +113,10 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 	if Revision(sha256.Sum256(current)) != revision {
 		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
 	}
-	info, exists, err := remoteLstat(advanced, remotePath)
-	if err != nil {
-		return err
-	}
-	if !exists || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
-	}
+	return nil
+}
 
+func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, mode os.FileMode, generation uint64) (err error) {
 	temporary, target, err := openEditTemporary(advanced, remotePath)
 	if err != nil {
 		return err
@@ -121,16 +147,11 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 		return err
 	}
 	closed = true
-	if err = advanced.Chmod(target, info.Mode().Perm()); err != nil {
+	if err = advanced.Chmod(target, mode); err != nil {
 		return err
 	}
-
-	current, err = worker.readFileBytes(client, remotePath, generation, MaxPreviewFileBytes)
-	if err != nil || Revision(sha256.Sum256(current)) != revision {
-		if err != nil && !editReadMeansConflict(err) {
-			return err
-		}
-		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
+	if err = worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+		return err
 	}
 	if worker.canceled(generation) {
 		return ErrCanceled
@@ -139,6 +160,30 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 		return err
 	}
 	committed = true
+	return nil
+}
+
+// replaceDocumentInPlace truncates and rewrites the file itself. The revision is
+// checked once more right before the truncation, the last point at which a
+// concurrent change can still be told apart from our own write.
+func (worker *Worker) replaceDocumentInPlace(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, generation uint64) (err error) {
+	if err = worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+		return err
+	}
+	if worker.canceled(generation) {
+		return ErrCanceled
+	}
+	file, err := advanced.OpenTransferFile(remotePath, os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	if _, err = worker.copy(file, bytes.NewReader(content), generation, 0, 0, 0, 0); err != nil {
+		return err
+	}
+	if err = file.Sync(); err != nil && !isUnsupportedSFTP(err) {
+		return err
+	}
 	return nil
 }
 
