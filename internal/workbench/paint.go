@@ -1367,7 +1367,7 @@ func (state *State) fitHostChips(canvas *ui.Canvas, room float32) {
 // then each group with how many hosts it holds, then More when some did not fit.
 func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 	m := state.messages
-	state.paintFilterChip(canvas, hitHostFilterAll, ui.ID{}, chips[0].Rect(), m.HostFilterAll, state.hostTotalDigits, !state.hostFilterOn)
+	state.paintFilterChip(canvas, hitHostFilterAll, ui.ID{}, chips[0].Rect(), m.HostFilterAll, state.hostTotalDigits, false, !state.hostFilterOn)
 	for position, index := range state.hostChips[:state.hostFilterHidden] {
 		label, digits, chosen := state.hostChipView(index)
 		var chevron ui.ID
@@ -1377,7 +1377,7 @@ func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 				state.chipMenu.anchor = chips[1+position].Rect()
 			}
 		}
-		state.paintFilterChip(canvas, hitHostFilterList.At(index), chevron, chips[1+position].Rect(), label, digits, chosen)
+		state.paintFilterChip(canvas, hitHostFilterList.At(index), chevron, chips[1+position].Rect(), label, digits, state.hostGroups[index].Pinned, chosen)
 		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
 	}
 	if state.hostFilterHidden < len(state.hostChips) {
@@ -1390,7 +1390,7 @@ func (state *State) paintHostFilterChips(canvas *ui.Canvas, chips []flex.Box) {
 			}
 		}
 		state.filterMoreButton = chips[1+state.hostFilterHidden].Rect()
-		state.paintFilterChip(canvas, hitHostFilterMore, ui.ID{}, state.filterMoreButton, m.HostFilterMore, "", hiddenChosen)
+		state.paintFilterChip(canvas, hitHostFilterMore, ui.ID{}, state.filterMoreButton, m.HostFilterMore, "", false, hiddenChosen)
 	}
 }
 
@@ -1409,18 +1409,25 @@ func (state *State) filterChipWidth(canvas *ui.Canvas, label, digits string) flo
 func (state *State) hostChipWidth(canvas *ui.Canvas, index int) float32 {
 	label, digits, _ := state.hostChipView(index)
 	width := state.filterChipWidth(canvas, label, digits)
+	if state.hostGroups[index].Pinned {
+		width += chipPinWidth
+	}
 	if state.hostChipHasMenu(index) {
 		width += chipChevronWidth
 	}
 	return width
 }
 
+// chipPinWidth is what the pin marker adds to a chip: the gap before it and its glyph.
+const chipPinWidth float32 = 18
+
 // chipChevronWidth is what a chevron adds to a chip: the gap before it and its glyph.
 const chipChevronWidth = 18
 
 // paintFilterChip draws one chip: a pill that is filled while it is the choice.
-// A chip with a chevron ID has a second target at its end that opens a menu.
-func (state *State) paintFilterChip(canvas *ui.Canvas, id, chevron ui.ID, bounds ui.Rect, label, digits string, chosen bool) {
+// A pinned chip carries an accent star before its name. A chip with a chevron ID
+// has a second target at its end that opens a menu.
+func (state *State) paintFilterChip(canvas *ui.Canvas, id, chevron ui.ID, bounds ui.Rect, label, digits string, pinned, chosen bool) {
 	pal := state.pal
 	foreground := pal.muted
 	var fill ui.Color
@@ -1435,6 +1442,9 @@ func (state *State) paintFilterChip(canvas *ui.Canvas, id, chevron ui.ID, bounds
 	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().PadSides(0, 14, 0, 12).Gap(6).Items(flex.Center).Radius(bounds.Height/2).Background(fill).
 		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Selected: chosen}).Children(func() {
+		if pinned {
+			f.Icon(lucideIcons[iconStar]).Size(12, 12).Color(pal.accent).Shrink(0)
+		}
 		f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(foreground)
 		if digits != "" {
 			f.Text(digits).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint)

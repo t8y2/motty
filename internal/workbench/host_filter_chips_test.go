@@ -121,6 +121,18 @@ func TestAnOpenChipMenuKeepsTheWheelOffTheHostsList(t *testing.T) {
 	}
 }
 
+func TestPinnedHostChipLeavesRoomForItsMarker(t *testing.T) {
+	state := nestedHostGroupState(t)
+	canvas, _ := paintedTexts(state)
+	index := state.hostGroupIndex("Team")
+	unpinned := state.hostChipWidth(canvas, index)
+	state.hostGroups[index].Pinned = true
+	pinned := state.hostChipWidth(canvas, index)
+	if grew := pinned - unpinned; grew != chipPinWidth {
+		t.Fatalf("a pinned chip grew by %.1f, want %.1f for its star", grew, chipPinWidth)
+	}
+}
+
 func TestHostGroupChipLabelIsTheLastSegment(t *testing.T) {
 	state := &State{}
 	for name, want := range map[string]string{"School": "School", "School/Gansu": "Gansu", "A / B": "B", "trailing/": "trailing/"} {
