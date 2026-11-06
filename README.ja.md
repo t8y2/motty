@@ -6,9 +6,9 @@
   </p>
 
   <p>
-    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
-    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="https://img.shields.io/badge/微信群-扫码加入-07C160?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iIzA3YzE2MCIgZD0iTTguNjkxIDIuMTg4QzMuODkxIDIuMTg4IDAgNS40NzYgMCA5LjUzYzAgMi4yMTIgMS4xNyA0LjIwMyAzLjAwMiA1LjU1YS41OS41OSAwIDAgMSAuMjEzLjY2NWwtLjM5IDEuNDhjLS4wMTkuMDctLjA0OC4xNDEtLjA0OC4yMTNjMCAuMTYzLjEzLjI5NS4yOS4yOTVhLjMzLjMzIDAgMCAwIC4xNjctLjA1NGwxLjkwMy0xLjExNGEuODYuODYgMCAwIDEgLjcxNy0uMDk4YTEwLjIgMTAuMiAwIDAgMCAyLjgzNy40MDNjLjI3NiAwIC41NDMtLjAyNy44MTEtLjA1Yy0uODU3LTIuNTc4LjE1Ny00Ljk3MiAxLjkzMi02LjQ0NmMxLjcwMy0xLjQxNSAzLjg4Mi0xLjk4IDUuODUzLTEuODM4Yy0uNTc2LTMuNTgzLTQuMTk2LTYuMzQ4LTguNTk2LTYuMzQ4TTUuNzg1IDUuOTkxYy42NDIgMCAxLjE2Mi41MjkgMS4xNjIgMS4xOGExLjE3IDEuMTcgMCAwIDEtMS4xNjIgMS4xNzhBMS4xNyAxLjE3IDAgMCAxIDQuNjIzIDcuMTdjMC0uNjUxLjUyLTEuMTggMS4xNjItMS4xOHptNS44MTMgMGMuNjQyIDAgMS4xNjIuNTI5IDEuMTYyIDEuMThhMS4xNyAxLjE3IDAgMCAxLTEuMTYyIDEuMTc4YTEuMTcgMS4xNyAwIDAgMS0xLjE2Mi0xLjE3OGMwLS42NTEuNTItMS4xOCAxLjE2Mi0xLjE4bTUuMzQgMi44NjdjLTEuNzk3LS4wNTItMy43NDYuNTEyLTUuMjggMS43ODZjLTEuNzIgMS40MjgtMi42ODcgMy43Mi0xLjc4IDYuMjJjLjk0MiAyLjQ1MyAzLjY2NiA0LjIyOSA2Ljg4NCA0LjIyOWMuODI2IDAgMS42MjItLjEyIDIuMzYxLS4zMzZhLjcyLjcyIDAgMCAxIC41OTguMDgybDEuNTg0LjkyNmEuMy4zIDAgMCAwIC4xNC4wNDdjLjEzNCAwIC4yNC0uMTExLjI0LS4yNDdjMC0uMDYtLjAyMy0uMTItLjAzOC0uMTc3bC0uMzI3LTEuMjMzYS42LjYgMCAwIDEtLjAyMy0uMTU2YS40OS40OSAwIDAgMSAuMjAxLS4zOThDMjMuMDI0IDE4LjQ4IDI0IDE2LjgyIDI0IDE0Ljk4YzAtMy4yMS0yLjkzMS01LjgzNy02LjY1Ni02LjA4OFY4Ljg5Yy0uMTM1LS4wMS0uMjctLjAyNy0uNDA3LS4wM3ptLTIuNTMgMy4yNzRjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk3LS45ODJ6bTQuODQ0IDBjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk2OS0uOTgyIi8%2BPC9zdmc%2B" alt="微信群" /></a>
-    <a href="https://discord.gg/6s5tn9H4p2"><img src="https://img.shields.io/badge/Motty-JOIN-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
+    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
+    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
+    <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
     <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
   </p>
 
@@ -22,6 +22,9 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 フォワーディング、リモートデスクトップ、AI アシスタントがひとつのウィンドウに
 収まっているので、ファイルのために別のアプリを開く必要も、画面を見るために
 ブラウザのタブを開く必要もありません。
+
+ドキュメントは <https://motty.page/en/docs> にあります（サイトは英語と中国語のみ）。
+このファイルではプロジェクトそのもの、パッケージ、ビルド方法を扱います。
 
 ## なぜ Motty なのか？
 
@@ -48,16 +51,20 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
       自分のループバックでしか待ち受けていない場合は SSH ホスト経由で届きます。</p>
     </td>
     <td width="50%" valign="top">
-      <p><strong>キーボードが主役。</strong>タブ、分割、SFTP、フォワーディング、
-      アシスタントはすべてコマンドパレットのコマンドです。マウスは必須ではありません。</p>
-      <p><strong>限界も正直に。</strong><a href="docs/remote-desktop.md">docs/remote-desktop.md</a>
-      に VNC と RDP がまだできないことを列挙し、リリースノートには実機で検証した
-      プラットフォームを書いています。</p>
-      <p><strong>外へ何も送らない。</strong>利用状況の収集はありません。更新確認は既定で
-      オフで、有効にしたときだけ GitHub Releases を参照します。</p>
+      <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" alt="ループバックのポートから SSH ホストの先のサービスへ転送するローカルポート転送" /></a>
+      <p><strong>トンネルが見える。</strong>ローカル、リモート、SOCKS5、HTTP CONNECT の
+      ルールはループバックにだけバインドし、保存して明示的に開始します。トンネルは
+      所有する SSH タブと一緒に止まります。</p>
     </td>
   </tr>
 </table>
+
+**キーボードが主役。**タブ、分割、SFTP、フォワーディング、アシスタントはすべて
+コマンドパレットのコマンドで、マウスは必須ではありません。**限界も正直に：**
+[docs/remote-desktop.md](docs/remote-desktop.md) に VNC と RDP がまだできないことを
+列挙し、リリースノートには実機で検証したプラットフォームを書いています。
+**外へ何も送らない：**利用状況の収集はなく、更新確認は既定でオフで、有効にした
+ときだけ GitHub Releases を参照します。
 
 ## クイックスタート
 
@@ -269,21 +276,13 @@ cask は公証済みのディスクイメージをインストールし、自己
 
 ### Motty が予期せず終了する場合
 
-Motty は、データディレクトリの `logs` フォルダーにログを保存し、異常終了したあとはクラッシュレポートも保存します：
-Windows では `%APPDATA%\motty\logs`、macOS では
-`~/Library/Application Support/motty/logs`、Linux では `~/.config/motty/logs`
-（ポータブル版ではプログラムの隣の `motty-data\logs`）です。バグの報告には、
-`motty.log` と最新の `crash-*.log` を添付してください。プログラムがまったく
-起動できない場合は、その理由をメッセージボックスで表示し、ログに書き込みます。
-
-プログラムが消えて `crash.log` が空のままの場合は、Go が何かを書き込む前に、
-ネイティブの障害（たとえばグラフィックドライバー）によってプロセスが終了しています。
-Windows 11 22H2 以降では、Motty はその場合に Windows Error Reporting に
-`%LOCALAPPDATA%\Motty\CrashDumps` へのダンプを依頼します。イベントビューアー（Windows ログ → Application）の
-Application Error のイベントに、障害の原因となったモジュールが記録されます。よくある原因を
-切り分けるには、`VIVA_SOFTWARE_RENDERING=1`（グラフィックドライバーを使わない）または
-`VIVA_ACCESSIBILITY=0`（UI Automation のツリーを使わない）を設定して Motty を起動してください。ダンプは
-プログラムのメモリのコピーです：共有する前に中身を確認してください。
+Motty は、データディレクトリの `logs` フォルダーに `motty.log` を保存し、異常終了
+したあとは `crash-*.log` も保存します（Windows は `%APPDATA%\motty\logs`、macOS は
+`~/Library/Application Support/motty/logs`、Linux は `~/.config/motty/logs`）。
+バグの報告には両方を添付してください。プログラムが消えて `crash.log` が空のままの
+場合は、Go が何かを書き込む前にプロセスが終了しています。Windows Error Reporting の
+ダンプと `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` による切り分けは
+[docs/troubleshooting.md](docs/troubleshooting.md) にあります。
 
 ## ソースからのビルド
 
@@ -325,61 +324,14 @@ go run ./cmd/viva package -C ../motty --target linux --arch amd64 --format tar.g
 
 ### 開発ビルド
 
-開発用のバイナリをビルドして起動するには：
-
-```sh
-make run
-```
-
-バイナリは `-tags dev` でビルドされるため、ウィンドウとトレイには `Motty Dev` と表示され、
-Dock のアイコンには赤い `DEV` のバッジが付きます。ウィンドウ内のロゴとワードマークは
-リリース版と同じなので、インターフェース自体は出荷されるものと同じ見た目のまま、
-実行中のコピーをひと目で見分けられます。このリポジトリまたは `../viva` の Go ファイルが変更されたときに
-再ビルドして再起動するには `make dev` を使ってください。ウォッチモードには
-`fswatch` が必要です。ワンショットモードには不要です。`tools/dev.sh --once` は、`make run` と同じ
-エントリーポイントです。
-
-開発ビルドは、プラットフォームの設定ディレクトリの下にある `motty-dev` を使い、
-リリースビルドの変更されない `motty` ディレクトリとは分かれています。保管庫の鍵も
-別のシステムシークレットの名前空間を使います。デフォルトのコピーは、互いのデータベースを
-アップグレードし合うことなく並べて実行できます。未使用のデフォルトの開発用
-プロフィールがリリースのデータを見つけると、初回起動時のダイアログで **Import copy** または
-**Start empty** を選べます。インポートでは、リリースのプロフィールを変更せずに読み込み、
-ホスト、共有の設定、信頼済みの鍵をコピーし、必要に応じて保存済みの
-パスワードを開発用の鍵で再暗号化します。開いているセッションやクラウドの
-ログインはコピーしません。ダイアログを閉じると選択は先送りされます。失敗は表示されたまま残り、
-未完了のインポートは、現在のホストやパスワードを置き換えることなく再開できます。
-既存のプロフィールと、明示的に `MOTTY_DATA_DIR` で指定したプロフィールは自動ではインポートされませんが、
-Backup & sync から暗号化されたバックアップを復元することはできます。
-
-macOS では、標準のエントリーポイントが、`~/Library/Application Support/motty/development-signing` の下に
-非公開のローカルな開発用の署名 ID を作成するか、既存のものを再利用します。
-初回のアクセスでは、システムのキーチェーンの認可が 1 回必要になる場合があります。それ以降は、
-同じ ID とロック解除されたキーチェーンが利用可能である限り、内容の異なる再ビルドでもその認可を再利用します。
-これは、ロックされたキーチェーン、変更された ACL、明示的な ID の変更を回避するものではありません。
-署名や検証に失敗した場合は、署名されていないビルドを黙って実行するのではなく、起動を停止します。
-
-デフォルトの ID を作成せずに明示的な証明書を使うには、
-`MOTTY_DEV_SIGN_IDENTITY='Developer ID Application: …' make run` を使ってください。
-`MOTTY_DEV_SIGN_IDENTITY=none make run` は、意図的に署名なしで実行する場合にのみ使ってください。
-その場合、キーチェーンの認可が繰り返し求められる可能性があると警告が表示されます。`go run ./cmd/motty`
-はリリースと同じ動作で、`go run -tags dev ./cmd/motty` は署名の
-ヘルパーを迂回するもので、診断のためだけに使うことを想定しています。
-
-`MOTTY_DATA_DIR` は引き続きディレクトリを上書きします。破壊的なテストには、使い捨てのデータとテスト用の
-認証情報を使ってください：同じビルドの種類のプロフィールは、システムシークレットの名前空間を
-共有したままです。その共有アクセスが意図したものでない限り、開発ビルドで本番の
-データを参照したり、本番のクラウド同期を設定したりしないでください。
-ポータブル版の開発ビルドは、`motty-data` ではなく `motty-dev-data` を使います。
-
-設定のエポック 23 では、ロスのないフィールドの更新が導入されました。JSON オブジェクトへの
-互換性のある追加では、形式の番号を上げる必要がなくなりました。未知のフィールドやレコードは、
-保存、同期、バックアップの復元を経ても残ります。競合する編集は、未読のデータを上書きするのではなく
-失敗します。配列は引き続きアトミックなので、互換性のない要素の変更には
-依然として新しいエポックが必要です。アプリケーションの書き込み側のバージョンは診断のためだけのものです。
-古いエポック（19〜22 を含む）は一度だけアップグレードされます。すでにリリースされた古いバイナリは
-エポック 23 を読み込めません。この保護を回避するために、データベースの形式の番号を編集しないでください。
-[ストレージの互換性](tools/README.md#storage-compatibility)をご覧ください。
+`make run` で開発用のバイナリをビルドして起動します。ウィンドウとトレイには
+`Motty Dev` と表示され、Dock のアイコンには赤い `DEV` のバッジが付きますが、
+インターフェース自体は出荷されるものと同じ見た目です。`make dev` はファイルの
+変更時に再ビルドして再起動し、`fswatch` が必要です。開発用データは `motty-dev` に
+置かれ、システムシークレットの名前空間も別なので、開発ビルドとリリースビルドは
+互いに影響せず並べて実行できます。macOS の開発用署名 ID、`MOTTY_DATA_DIR`、
+プロフィールのインポート、ストレージのエポック 23 の規則は
+[docs/development.md](docs/development.md) にあります。
 
 ## セキュリティ
 
