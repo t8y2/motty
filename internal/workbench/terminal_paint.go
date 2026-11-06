@@ -442,18 +442,27 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	if t.sync != nil && t.clock != nil {
 		canvas.RequestFrameIn(t.syncRemaining())
 	}
+	// caretX is where the next character goes: past the text typed ahead of the
+	// echo, so every cursor shape keeps showing an insertion point while the
+	// server catches up. It is the emulator's own column once nothing is pending.
+	caretX := cursor.X
+	if predicting {
+		caretX += predictionCells
+	}
 	// The cursor blinks while the terminal has the keyboard and something is
 	// happening; it is solid from the moment it moves or the pane is entered.
 	blinkOn := true
 	if cursor.Visible && focused && !composing && !state.terminalCursorSteady && !cursor.Steady {
-		blinkOn = t.blink.on(canvas, cursor.X, cursor.Y)
+		blinkOn = t.blink.on(canvas, caretX, cursor.Y)
 	} else {
-		t.blink.rest(cursor.X, cursor.Y)
+		t.blink.rest(caretX, cursor.Y)
 	}
 	if t.sync != nil {
 		blinkOn = true
 	}
-	block := cursor.Visible && cursor.Style == term.CursorBlock && focused && !composing && !predicting && blinkOn
+	// A block cursor is an inverted cell prepared by the row cache, so it follows
+	// the caret rather than being dropped while a guess is on screen.
+	block := cursor.Visible && cursor.Style == term.CursorBlock && focused && !composing && blinkOn
 	// The input method draws its composition over the cells from the cursor on,
 	// where it replaces whatever the program put there. A program that draws its
 	// own cursor (a prompt with placeholder text) hides the real one, so the
@@ -490,7 +499,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
-			column = cursor.X
+			column = caretX
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
@@ -516,7 +525,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
-			column = cursor.X
+			column = caretX
 		}
 		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
 		y := geometry.top + float32(row)*cellHeight
@@ -561,7 +570,6 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 			predictionRuns[index].Color = pal.muted
 		}
 		canvas.LabelRuns(predictionText, ui.Rect{X: x, Y: y, Width: width, Height: cellHeight}, style, cellWidth, predictionRuns)
-		cursor.X += predictionCells
 	}
 
 	if cursor.Visible && cursor.Y < rows {
@@ -569,7 +577,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		if inactive {
 			cursorColor.Alpha *= 0.45
 		}
-		x := geometry.left + float32(cursor.X)*cellWidth
+		x := geometry.left + float32(caretX)*cellWidth
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		switch {
 		case !blinkOn:
