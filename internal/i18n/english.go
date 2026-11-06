@@ -410,6 +410,10 @@ var EnglishMessages = Messages{
 		Pin: "Pin group", Unpin: "Unpin group", MoveUp: "Move up", MoveDown: "Move down",
 		KeepParentFmt: "Move all hosts to %s", KeepUngrouped: "Move all hosts out of groups",
 	},
+	HostCatalog: HostCatalogMessages{
+		SelectAll: "Select all matching hosts", SelectGroupFmt: "Select hosts in %s",
+		Order: "Host display order", Manual: "Manual order", Name: "By name", IP: "By IP address",
+	},
 	ExportHosts:                 "Export",
 	ImportCatalog:               "Import Catalog",
 	ImportMenu:                  "Import",

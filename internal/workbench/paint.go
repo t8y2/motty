@@ -1056,6 +1056,7 @@ func (state *State) paintHostMenus(canvas *ui.Canvas, viewport ui.Rect) {
 	if state.importMenu {
 		state.paintImportMenu(canvas, viewport)
 	}
+	state.paintHostOrder(canvas, viewport)
 }
 
 // paintHostsHeader is the toolbar, persistent group filters and, while hosts
@@ -1145,20 +1146,29 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 	// Which chips fit decides what is declared; where they sit is the row's.
 	showChips := state.hasHostFilter()
 	showGroupControls := showChips && !state.hostFilterOn
+	compactHostControls := bounds.Width < 450
 	viewControlsWidth := toggleWidth + 6 + 26
+	selectionControlsWidth := float32(0)
+	if !compactHostControls {
+		viewControlsWidth += 32
+		selectionControlsWidth = 52
+	}
 	headerHeight := float32(hostListTop)
+	if compactHostControls {
+		headerHeight += rowHeight + rowGap
+	}
 	if anySelected {
 		headerHeight += rowHeight + rowGap
 	}
 	if showChips {
-		room := bounds.Width - 2*rowPad - viewControlsWidth - rowGap
+		room := bounds.Width - 2*rowPad - viewControlsWidth - rowGap - selectionControlsWidth
 		if showGroupControls {
 			room -= groupControlsWidth + rowGap
 		}
 		state.fitHostChips(canvas, room)
 	}
 
-	var search, connect, importButton, newHost, toggle, list flex.Box
+	var search, connect, importButton, newHost, toggle, list, selectAll, orderButton flex.Box
 	var buttons [len(actions)]flex.Box
 	var groupControls [2]flex.Box
 	f := chrome.header.Begin(canvas, state.Theme(), bounds)
@@ -1173,6 +1183,9 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 			})
 			// Filters and view controls stay in place when the selection changes.
 			f.Row().Height(rowHeight).MarginSides(12, 0, 0, 0).PadSides(0, 18, 0, 18).Gap(12).Items(flex.Center).Children(func() {
+				if !compactHostControls {
+					selectAll = f.Slot().Size(40, rowHeight).Shrink(0)
+				}
 				if showChips {
 					f.Row().Gap(6).Children(func() {
 						chrome.chips = chrome.chips[:0]
@@ -1195,6 +1208,14 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 				}
 				toggle = f.Slot().Size(viewControlsWidth, rowHeight).MarginSides(0, 0, 0, 2)
 			})
+			if compactHostControls {
+				f.Row().Height(rowHeight).MarginSides(rowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(flex.Center).Children(func() {
+					selectAll = f.Slot().Size(40, rowHeight).Shrink(0)
+					f.Spacer()
+					f.Text(m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
+					orderButton = f.Slot().Size(26, 26).Shrink(0)
+				})
+			}
 			if anySelected {
 				f.Row().Height(rowHeight).MarginSides(rowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(rowGap).Items(flex.Center).Children(func() {
 					actionsLeft := -quietPadding
@@ -1231,7 +1252,11 @@ func (state *State) paintHostsHeader(canvas *ui.Canvas, bounds ui.Rect) ui.Rect 
 	chrome.importButton = importButton.Rect()
 	state.paintToolbarButtonIn(canvas, hitImportMenu, chrome.importButton, m.ImportMenu, importIcon, false, true, condensed)
 
-	state.paintHostViewToggle(canvas, toggle.Rect().X, toggle.Rect().Y+toggle.Rect().Height/2)
+	state.paintHostViewToggle(canvas, toggle.Rect().X, toggle.Rect().Y+toggle.Rect().Height/2, !compactHostControls)
+	if compactHostControls {
+		state.paintHostOrderButton(canvas, orderButton.Rect())
+	}
+	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, selectAll.Rect(), state.hostScopeSelection.all)
 	if showGroupControls {
 		expand, collapse := state.hostGroupsExpansionActions()
 		state.paintIconButton(canvas, hitHostGroupsExpandAll, iconChevronDown, groupControls[0].Rect(), m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet, pal.workspace)
@@ -1694,8 +1719,10 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			}
 			content := row.Content
 			content.Width = max(0, content.Width-38)
+			var groupCheck flex.Box
 			f := state.chrome.hostRow.Begin(canvas, state.Theme(), content)
 			f.Row().Fill().PadSides(0, 0, 0, 2).Gap(6).Items(flex.Center).Children(func() {
+				groupCheck = f.Slot().Size(40, 28).Shrink(0)
 				if group.Pinned {
 					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
 				}
@@ -1708,6 +1735,7 @@ func (state *State) paintHostTable(canvas *ui.Canvas, treeBounds ui.Rect) {
 			})
 			f.End()
 			state.hostGroupRowEvents(canvas, hitHostGroupRowList.At(entry.GroupIndex), entry.GroupIndex, row.Bounds)
+			state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(entry.GroupIndex), groupCheck.Rect(), state.hostScopeSelection.groups[entry.GroupIndex])
 		case hostTreeHost:
 			host := state.hosts[entry.HostIndex]
 			id := hitHostList.At(int(host.ID))

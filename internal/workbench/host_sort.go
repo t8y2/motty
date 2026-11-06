@@ -20,7 +20,7 @@ func (state *State) toggleHostSort() {
 		sort.grid.Cancel()
 		return
 	}
-	if state.activeSection != sectionHosts || state.modal != modalNone || len(state.hosts) < 2 || state.typedQuery() != "" {
+	if state.activeSection != sectionHosts || state.modal != modalNone || state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "" {
 		return
 	}
 	sort.enabled = true
@@ -139,7 +139,7 @@ func (state *State) hostSortAutoScrollFrame(canvas *ui.Canvas, viewport ui.Rect,
 }
 
 func (state *State) applyHostSortMove(move components.ReorderGridMove) bool {
-	if !move.Valid() || move.ID.Scope() != hitHostSortHandles || move.Target.Scope() != hitHostSortHandles {
+	if state.hostOrder != hostOrderManual || !move.Valid() || move.ID.Scope() != hitHostSortHandles || move.Target.Scope() != hitHostSortHandles {
 		return false
 	}
 	sourceID := uint32(item(move.ID))

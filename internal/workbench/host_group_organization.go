@@ -85,6 +85,9 @@ func (state *State) pinHostGroup(path string) {
 }
 
 func (state *State) hostGroupOrderNeighbor(path string, step int) int {
+	if state.hostOrder != hostOrderManual {
+		return -1
+	}
 	index := state.hostGroupIndex(path)
 	if index < 0 || path == "" {
 		return -1

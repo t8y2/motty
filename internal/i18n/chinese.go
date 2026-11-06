@@ -410,6 +410,10 @@ var ChineseMessages = Messages{
 		Pin: "置顶分组", Unpin: "取消置顶", MoveUp: "上移", MoveDown: "下移",
 		KeepParentFmt: "将全部主机移至 %s", KeepUngrouped: "将全部主机移出分组",
 	},
+	HostCatalog: HostCatalogMessages{
+		SelectAll: "全选当前范围内的主机", SelectGroupFmt: "选择 %s 内的主机",
+		Order: "主机显示排序", Manual: "手动排序", Name: "按名称排序", IP: "按 IP 地址排序",
+	},
 	ExportHosts:                 "导出",
 	ImportCatalog:               "导入目录",
 	ImportMenu:                  "导入",

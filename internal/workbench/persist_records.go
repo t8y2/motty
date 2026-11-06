@@ -190,6 +190,7 @@ var entityFields = []entityField{
 
 // syncedSettings are the scalar settings every device shares.
 var syncedSettings = map[string]bool{
+	"host_order":                   true,
 	"highlight_builtin":            true,
 	"terminalOption":               true,
 	"terminal_scrollback":          true,

@@ -438,6 +438,7 @@ type Messages struct {
 	DeleteHost       string
 	MoveHostGroup    string
 	HostGroupActions HostGroupMessages
+	HostCatalog      HostCatalogMessages
 	ExportHosts      string
 	ImportCatalog    string
 	ImportMenu       string
