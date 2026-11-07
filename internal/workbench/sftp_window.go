@@ -46,6 +46,7 @@ type sftpWindow struct {
 	browse                      sftpBrowseSync
 	bookmark                    sftpBookmarkEditor
 	fileProperties              sftpFileProperties
+	directoryTree               [2]sftpDirectoryTree
 }
 
 func (state *State) openSFTPWindow(source *Session) {
@@ -66,6 +67,8 @@ func (state *State) openSFTPWindow(source *Session) {
 
 func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
+	w.directoryTree[0].enabled = state.sftpDirectoryTree
+	w.directoryTree[1].enabled = state.sftpDirectoryTree
 	w.view = &sftpView{detached: w, busy: true, operation: sftpclient.OperationList}
 	w.view.startListingStatus(state.messages.SFTPLoading)
 	// A server lists its dotfiles by default, as the docked panel does (openSFTP).
@@ -116,6 +119,12 @@ func (w *sftpWindow) startBrowser() {
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
+	if w.directoryTree[0].enabled {
+		w.enableDirectoryTree(0, w.initialLocal)
+	}
+	if w.directoryTree[1].enabled {
+		w.enableDirectoryTree(1, w.initialRemote)
+	}
 	w.invalidate()
 }
 
@@ -271,6 +280,7 @@ func (w *sftpWindow) onClosed() {
 	w.deferredListings = [2]func(){}
 	w.view.localSeq++
 	w.view.remoteSeq++
+	w.clearDirectoryTreeRequests()
 	if w.view.cancelExtract != nil {
 		w.view.cancelExtract()
 	}

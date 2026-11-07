@@ -723,6 +723,7 @@ type State struct {
 	sftpTerminalFollow     bool
 	sftpPathInput          bool
 	sftpPanelAutoOpen      bool
+	sftpDirectoryTree      bool
 	sftpWindowOrder        sftpWindowOrder
 	sftpOpenMode           sftpOpenMode
 	sftpColumns            sftpColumnPreferences

@@ -19,6 +19,9 @@ func (w *sftpWindow) closeHeaderMenu() {
 }
 
 func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
+	if _, ok := id.In(hitSFTPProfileHoverItems); ok {
+		return true, true
+	}
 	for side := range 2 {
 		if _, ok := id.In(sftpWindowRecentHits[side]); ok {
 			return side == 0, true
@@ -28,7 +31,7 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		}
 	}
 	switch id {
-	case hitSFTPLocationProfiles, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
+	case hitSFTPLocationProfiles, hitSFTPProfileQuick, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
 		return true, true
 	case hitSFTPBookmarkList, hitSFTPBookmarkToggle, hitSFTPNewLink, hitSFTPWindowUpload, hitSFTPWindowDownload:
 		return false, true
@@ -37,13 +40,22 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		return local, true
 	}
 	for side := range 2 {
+		if id == sftpWindowTreeToggle[side] {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeRows[side]); ok {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeDisclosures[side]); ok {
+			return side == 0, true
+		}
 		if _, ok := id.In(sftpWindowSortHits[side]); ok {
 			return side == 0, true
 		}
 		if _, ok := id.In(sftpWindowActions[side]); ok {
 			return side == 0, true
 		}
-		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar} {
+		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar, sftpWindowTreeBar} {
 			if id == ids[side] {
 				return side == 0, true
 			}
