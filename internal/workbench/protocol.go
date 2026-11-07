@@ -108,6 +108,9 @@ type savedTransport struct {
 	// one imported key fingerprint for the key policy.
 	Authentication string `json:"authentication,omitempty"`
 	Identity       string `json:"identity,omitempty"`
+	// Credential is the id of the saved password an SSH, VNC or RDP host takes
+	// its password from (see credentials.go).
+	Credential string `json:"credential,omitempty"`
 	// ForwardX11 is set for an SSH host that forwards X11.
 	ForwardX11 bool `json:"forward_x11,omitempty"`
 	// AgentForward is set for an SSH host whose shells may use the local
@@ -134,7 +137,7 @@ type savedTransport struct {
 }
 
 func (host Host) transport() savedTransport {
-	transport := savedTransport{Proxy: savedHostProxy(host.Proxy)}
+	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
 	switch host.Protocol {
 	case protocolTelnet:
 		transport.Protocol = "telnet"
@@ -169,6 +172,7 @@ func (host Host) transport() savedTransport {
 // opened with a guess.
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
+	host.Credential = strings.TrimSpace(transport.Credential)
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
@@ -186,14 +190,14 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":
-		host.Protocol = protocolTelnet
+		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 	case "serial":
-		host.Proxy = nil
+		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
 		switch transport.Flow {
 		case "rtscts":

@@ -467,6 +467,11 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 	name, hasPassword := hostPasswordSecretName(host)
 	typed := state.editor.password.String()
 	editing := state.hostDialogMode == hostDialogEdit && source != nil
+	if state.hostTakesCredential() {
+		// The password is the saved one's. What the host kept of its own is left
+		// as it is, for the day the host goes back to it.
+		return nil, ""
+	}
 	switch {
 	case hasPassword && typed != "":
 		if state.secrets.vault == nil {

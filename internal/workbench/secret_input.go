@@ -86,6 +86,12 @@ func (state *State) clickSecretReveal(id ui.ID) bool {
 // that swaps the bullets for the text, as a password field of a web form does;
 // any other field is painted as it is.
 func (state *State) paintSecretInput(canvas *ui.Canvas, bounds ui.Rect, snapshot components.InputSnapshot) {
+	state.paintSecretInputStart(canvas, bounds, snapshot, components.InputGroupSlot{})
+}
+
+// paintSecretInputStart is paintSecretInput with an addon at the start of a
+// secret field, such as the button that chooses a shared password.
+func (state *State) paintSecretInputStart(canvas *ui.Canvas, bounds ui.Rect, snapshot components.InputSnapshot, start components.InputGroupSlot) {
 	theme := state.Theme()
 	if !snapshot.Secure || snapshot.ID.IsZero() {
 		components.PaintInput(canvas, theme, bounds, snapshot)
@@ -116,6 +122,7 @@ func (state *State) paintSecretInput(canvas *ui.Canvas, bounds ui.Rect, snapshot
 		NavigationKeys: snapshot.NavigationKeys, ShowCaret: snapshot.ShowCaret, Caret: snapshot.Caret,
 		SelectionStart: snapshot.SelectionStart, SelectionEnd: snapshot.SelectionEnd,
 		CompositionStart: snapshot.CompositionStart, CompositionEnd: snapshot.CompositionEnd,
+		InlineStart: start,
 		InlineEnd: components.InputGroupSlot{
 			Kind: components.InputGroupSlotButton, ID: button, Icon: icon, Label: label,
 			ButtonSize: components.InputGroupButtonIconXS, Disabled: snapshot.Disabled,

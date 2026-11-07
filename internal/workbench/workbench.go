@@ -928,6 +928,7 @@ type State struct {
 	keyPassphraseDescription string
 	clipboardRequest         remoteClipboardRequest
 	autofillRules            autofillUI
+	credentialForm           credentialUI
 	commandPalette           commandPalette
 	// sessionLogs is this window's local connection journal; it is off only
 	// when the user disabled metadata capture in the settings.
@@ -1336,6 +1337,13 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 	case modalForm:
 		return state.formEditor(hit)
+	case modalCredential:
+		switch hit {
+		case hitCredentialName:
+			return &state.credentialForm.name
+		case hitCredentialPassword:
+			return &state.credentialForm.password
+		}
 	case modalAutofillRule:
 		switch hit {
 		case hitAutofillName:
@@ -1516,6 +1524,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalAutofillRule:
 		state.clickAutofillDialog(id)
+		return
+	case modalCredential:
+		state.clickCredentialDialog(id)
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
@@ -2742,6 +2753,11 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if state.modal == modalAutofillRule && event.Key == ui.KeyEnter && !event.Repeat &&
 		(event.Target == hitAutofillName || event.Target == hitAutofillPattern || event.Target == hitAutofillFixed || event.Target == hitAutofillScope) {
 		state.submitAutofillRule()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalCredential && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitCredentialName || event.Target == hitCredentialPassword) {
+		state.submitCredential()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalHighlightRule && event.Key == ui.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {

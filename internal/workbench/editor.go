@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
@@ -56,8 +57,15 @@ type hostEditor struct {
 	identity     string
 	authOpen     bool
 	identityOpen bool
-	transfer     transferMode
-	algorithms   text.Editor
+	// credential is the saved password the host takes its password from, and
+	// credentialOpen its list being open.
+	credential     string
+	credentialOpen bool
+	// credentialAnchor is where the password field was painted, which the list
+	// of shared passwords opens under.
+	credentialAnchor ui.Rect
+	transfer         transferMode
+	algorithms       text.Editor
 	// loginCommand is the line typed into the host's shells after login.
 	loginCommand text.Editor
 	// forwardX11 is the host's "Forward X11" switch.
@@ -243,8 +251,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.loginCommand.Insert(host.LoginCommand)
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
-	editor.auth, editor.identity = host.Auth, host.Identity
-	editor.authOpen, editor.identityOpen = false, false
+	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
 	editor.noHistory = host.NoHistory
@@ -316,6 +324,11 @@ func (editor *hostEditor) host(id uint32) Host {
 	if editor.protocol != protocolSerial {
 		host.Proxy = cloneOutboundProxy(editor.proxy)
 	}
+	// Only a host that signs in with a password has one to take from a saved one.
+	if editor.protocol == protocolVNC || editor.protocol == protocolRDP ||
+		editor.protocol == protocolSSH && editor.auth != authPrivateKey && editor.auth != authAgent {
+		host.Credential = editor.credential
+	}
 	host.normalizeEndpoint()
 	setHostTags(&host, tags)
 	host.finish()
@@ -340,8 +353,8 @@ func (editor *hostEditor) reset() {
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
-	editor.algoMode, editor.auth, editor.identity = algoDefault, authAutomatic, ""
-	editor.authOpen, editor.identityOpen = false, false
+	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false
 	editor.proxy, editor.proxyPassword = nil, ""
@@ -384,7 +397,7 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 		}
 	}
 	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
-	editor.authOpen, editor.identityOpen = false, false
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	if protocol == protocolSerial {
 		editor.ports = serial.Ports()
 		if editor.value(fieldAddress) == "" && len(editor.ports) > 0 {

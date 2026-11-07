@@ -180,6 +180,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
 	}
+	state.paintHostCredentialMenu(canvas)
 }
 
 func (state *State) hostPasswordHint() string {
@@ -274,6 +275,7 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 	case id == hitDialogAgentAccess:
 		editor.agentAccess = !editor.agentAccess
 	case state.clickHostAuthentication(id):
+	case state.clickHostCredential(id):
 	case state.clickTransferChoice(id):
 	case state.clickHostColor(id):
 	case id == hitDialogOTPRemove:

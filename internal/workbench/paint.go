@@ -356,6 +356,8 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 		state.paintHighlightDialog(canvas, viewport)
 	case modalAutofillRule:
 		state.paintAutofillDialog(canvas, viewport)
+	case modalCredential:
+		state.paintCredentialDialog(canvas, viewport)
 	case modalAutofillConfirm:
 		state.paintAutofillConfirm(canvas, viewport)
 	case modalDeleteRule:
@@ -2544,6 +2546,10 @@ func (state *State) paintDialogFieldWithSecurity(canvas *ui.Canvas, id ui.ID, fi
 	theme := state.Theme()
 	content := components.BeginField(canvas, theme, bounds).For(id).Paint(title, "", "")
 	state.revealHostField(canvas, id, content)
+	if id == hitDialogPassword && state.hostOffersCredential() {
+		state.paintHostPasswordWithCredential(canvas, content, title, placeholder)
+		return
+	}
 	value := state.editor.field(field).String()
 	focused := canvas.Focused() == id
 	state.paintSecretInput(canvas, content, components.InputSnapshot{

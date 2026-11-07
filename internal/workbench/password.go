@@ -32,9 +32,10 @@ func (state *State) preparePassword(session *Session) {
 	state.passwordError = ""
 	state.offerToSave()
 	passwordIndex := passwordQuestionIndex(questions)
-	if passwordIndex < 0 {
+	if passwordIndex < 0 || state.passwordShared(session) {
 		// Nothing here is the account password, so there is nothing worth
-		// saving under the password's name.
+		// saving under the password's name; and a saved password is changed in
+		// Settings, not by whatever one host was last answered with.
 		state.secrets.canSave = false
 	}
 	switch {

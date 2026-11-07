@@ -83,7 +83,9 @@ import (
 // are array records, so an older writer would otherwise drop the new field.
 // Version 25 preserves an AI provider's models URL, on the same terms: providers
 // are array records too.
-const configFormat = 25
+// Version 26 adds the saved passwords and the hosts' reference to one: an older
+// writer would drop the records it does not know.
+const configFormat = 26
 
 const (
 	kindSetting             = "setting"
@@ -182,6 +184,7 @@ var entityFields = []entityField{
 		return joinKey(fieldText(fields, "pattern"), fieldText(fields, "regex"), fieldText(fields, "case_sensitive"))
 	}},
 	{field: "autofill_rules", kind: "autofill", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
+	{field: "credentials", kind: "credential", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "sftp_bookmarks", kind: "bookmark", key: func(fields map[string]json.RawMessage) string {
 		if name := fieldText(fields, "name"); name != "" {
 			return joinKey("profile", fieldText(fields, "host"), fieldText(fields, "shared"), name)
