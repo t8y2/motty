@@ -441,7 +441,7 @@ func (state *State) paintAdvancedSection(canvas *ui.Canvas, bounds ui.Rect) {
 	state.rememberHostControl(hitDialogAdvanced, header)
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(flex.Center).
-		Radius(radius.control).HoverBackground(pal.surfaceSoft).
+		Radius(radius.control).Hover(flex.Look{}.Background(pal.surfaceSoft)).
 		HitWith(hitDialogAdvanced, label, ui.HitOptions{Role: ui.RoleButton, Expanded: open}).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)

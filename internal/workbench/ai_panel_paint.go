@@ -1048,7 +1048,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				f.Text(view.title).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18)
 			})
 			if index < aiMaxRowHits {
-				header.HoverBackground(pal.surfaceSoft).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{Role: ui.RoleButton, Expanded: view.expanded})
+				header.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{Role: ui.RoleButton, Expanded: view.expanded})
 			}
 			if view.expanded {
 				// The thread down the left side, and the thought beside it.
@@ -1127,7 +1127,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				}
 			})
 			if index < aiMaxRowHits {
-				strip.HoverBackground(pal.surfaceSoft).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{
+				strip.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{
 					Role: ui.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
 				})
 			}

@@ -58,13 +58,13 @@ func (state *State) declareFindButton(f *flex.Frame, id ui.ID, icon ui.Icon, lab
 	if disabled {
 		foreground.Alpha *= 0.45
 	} else {
-		button.HoverBackground(state.pal.surfaceHot)
-		if f.Canvas().Hovered() == id {
-			foreground = state.pal.text
-		}
+		button.Hover(flex.Look{}.Background(state.pal.surfaceHot))
 	}
 	return button.Children(func() {
-		f.Icon(icon).Size(14, 14).Color(foreground)
+		icon := f.Icon(icon).Size(14, 14).Color(foreground)
+		if !disabled {
+			icon.StateFrom(button).Hover(flex.Look{}.Color(state.pal.text))
+		}
 	})
 }
 

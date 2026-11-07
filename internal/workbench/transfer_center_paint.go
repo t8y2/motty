@@ -261,23 +261,17 @@ func (state *State) paintTransferCard(canvas *ui.Canvas, box ui.Rect, entry *tra
 					if state.revealBusy {
 						foreground, labelColor = pal.faint, pal.faint
 					}
-					button := f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).
-						HoverBackground(withAlpha(pal.accent, 0.08)).HitWith(id, m.ShowInFolder, ui.HitOptions{Role: ui.RoleButton, Hint: m.ShowInFolder, Disabled: state.revealBusy})
-					if canvas.FocusVisible() == id {
-						button.Border(1, pal.accent)
-					}
-					button.Children(func() {
+					f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).Border(1, ui.Color{}).
+						Hover(flex.Look{}.Background(withAlpha(pal.accent, 0.08))).Focus(flex.Look{}.Border(pal.accent)).
+						HitWith(id, m.ShowInFolder, ui.HitOptions{Role: ui.RoleButton, Hint: m.ShowInFolder, Disabled: state.revealBusy}).Children(func() {
 						f.Icon(lucideIcons[iconFolderOpen]).Size(14, 14).Color(foreground)
 						f.Text(m.ShowInFolder).FontSize(metrics.FontSizeS).Color(labelColor)
 					})
 				}
 				id := hitTransfersRemove.At(entry.id)
-				button := f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).
-					HoverBackground(withAlpha(pal.danger, 0.08)).HitWith(id, m.Remove, ui.HitOptions{Role: ui.RoleButton, Hint: m.Remove})
-				if canvas.FocusVisible() == id {
-					button.Border(1, pal.accent)
-				}
-				button.Children(func() {
+				f.Row().Height(22).Shrink(0).PadX(6).Gap(4).Items(flex.Center).Radius(radius.control).Border(1, ui.Color{}).
+					Hover(flex.Look{}.Background(withAlpha(pal.danger, 0.08))).Focus(flex.Look{}.Border(pal.accent)).
+					HitWith(id, m.Remove, ui.HitOptions{Role: ui.RoleButton, Hint: m.Remove}).Children(func() {
 					f.Icon(lucideIcons[iconTrash]).Size(14, 14).Color(pal.danger)
 					f.Text(m.Remove).FontSize(metrics.FontSizeS).Color(pal.danger)
 				})
