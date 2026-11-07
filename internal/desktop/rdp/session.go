@@ -57,11 +57,13 @@ type Session struct {
 
 	done chan struct{}
 
-	mu      sync.Mutex
-	err     error
-	closed  bool
-	remote  string
-	hasText bool
+	mu          sync.Mutex
+	err         error
+	closed      bool
+	remote      string
+	hasText     bool
+	remoteFiles desktop.ReceivedFiles
+	hasFiles    bool
 	// pointerKind is what the server last said about its pointer,
 	// pointerShape its pixels when the kind is PointerBitmap, and
 	// pointerVersion how many statements it has made. Guarded by mu.
@@ -78,6 +80,7 @@ type Session struct {
 }
 
 var _ desktop.Session = (*Session)(nil)
+var _ desktop.FileReceiver = (*Session)(nil)
 
 func (session *Session) NetworkRTT() (time.Duration, time.Time) {
 	return session.client.NetworkRTT()
@@ -191,14 +194,26 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	client.OnNetworkRTTChanged(session.wake)
 	client.OnDisconnect(func(err error) { session.finish(err) })
 	if opts.Clipboard {
-		client.OnClipboardUpdate(func(hasText, _ bool) {
-			if hasText {
+		client.OnClipboardUpdate(func(hasText, _, hasFiles bool) {
+			if hasFiles {
+				_ = client.RequestClipboardFiles()
+			} else if hasText {
 				_ = client.RequestClipboard()
 			}
 		})
 		client.OnClipboardText(func(text string) {
 			session.mu.Lock()
 			session.remote, session.hasText = text, true
+			session.mu.Unlock()
+			session.wake()
+		})
+		client.OnClipboardFiles(func(files rdpcore.ClipboardFiles, err error) {
+			session.mu.Lock()
+			session.remoteFiles = desktop.ReceivedFiles{
+				Paths: files.Paths, Files: files.Files, Folders: files.Folders,
+				Bytes: files.Bytes, Skipped: files.Skipped, Err: err,
+			}
+			session.hasFiles = true
 			session.mu.Unlock()
 			session.wake()
 		})
@@ -384,6 +399,16 @@ func (session *Session) RemoteClipboard() (string, bool) {
 	text, ok := session.remote, session.hasText
 	session.remote, session.hasText = "", false
 	return text, ok
+}
+
+// RemoteFiles returns the files the server's clipboard delivered since the
+// previous call (see desktop.FileReceiver).
+func (session *Session) RemoteFiles() (desktop.ReceivedFiles, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	files, ok := session.remoteFiles, session.hasFiles
+	session.remoteFiles, session.hasFiles = desktop.ReceivedFiles{}, false
+	return files, ok
 }
 
 // Bells: RDP has no bell the client hears.

@@ -490,6 +490,9 @@ type ToolsMessages struct {
 	DesktopFilesTooManyFmt          string // limit
 	DesktopFilesPathTooLongFmt      string // path
 	DesktopFilesFailedFmt           string // error
+	DesktopFilesReceivedFmt         string // count, size
+	DesktopFilesReceivedSkippedFmt  string // count
+	DesktopFilesReceiveFailedFmt    string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string

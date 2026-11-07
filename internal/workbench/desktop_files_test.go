@@ -23,16 +23,17 @@ import (
 // release, as the walk of a large folder would.
 type fileDesktop struct {
 	*followingDesktop
-	mu      sync.Mutex
-	texts   []string
-	typed   []string
-	keys    []desktop.KeyEvent
-	offers  [][]string
-	offer   desktop.FileOffer
-	err     error
-	hold    bool
-	release chan struct{}
-	started chan struct{}
+	mu       sync.Mutex
+	texts    []string
+	typed    []string
+	keys     []desktop.KeyEvent
+	offers   [][]string
+	offer    desktop.FileOffer
+	received []desktop.ReceivedFiles
+	err      error
+	hold     bool
+	release  chan struct{}
+	started  chan struct{}
 }
 
 func newFileDesktop() *fileDesktop {
@@ -57,6 +58,17 @@ func (s *fileDesktop) SetClipboard(text string) error {
 	s.texts = append(s.texts, text)
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *fileDesktop) RemoteFiles() (desktop.ReceivedFiles, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.received) == 0 {
+		return desktop.ReceivedFiles{}, false
+	}
+	files := s.received[0]
+	s.received = s.received[1:]
+	return files, true
 }
 
 func (s *fileDesktop) SendText(text string) error {
@@ -111,6 +123,9 @@ func fileDesktopState(t *testing.T, remote desktop.Session, clipboard bool, opti
 	}
 	if options.ClipboardText != nil {
 		state.options.ClipboardText = options.ClipboardText
+	}
+	if options.SetClipboardFiles != nil {
+		state.options.SetClipboardFiles = options.SetClipboardFiles
 	}
 	state.connectionReconnect = reconnectOff
 	state.dialDesktop = func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
@@ -513,5 +528,46 @@ func TestThePasteShortcutPastesFilesOnTheRemote(t *testing.T) {
 	session.desk.files.sentKey = ""
 	if result := state.Shortcut(paste); result.Handled || len(remote.keys) != pressed {
 		t.Fatalf("a paste of text was taken: %+v", result)
+	}
+}
+
+func TestFilesCopiedOnTheRemoteArePutOnTheLocalClipboard(t *testing.T) {
+	remote := newFileDesktop()
+	root := t.TempDir()
+	paths := []string{filepath.Join(root, "report.pdf"), filepath.Join(root, "folder")}
+	var put [][]string
+	remote.received = append(remote.received, desktop.ReceivedFiles{
+		Paths: paths, Files: 1, Folders: 1, Bytes: 2048,
+	})
+	state, session := fileDesktopState(t, remote, true, Options{
+		SetClipboardFiles: func(got []string) error {
+			put = append(put, append([]string(nil), got...))
+			return nil
+		},
+		ClipboardFiles: func() ([]string, error) { return paths, nil },
+		ClipboardText:  func() (string, error) { return "report.pdf\nfolder", nil },
+	})
+	state.pumpDesktop(session)
+	if len(put) != 1 || !slices.Equal(put[0], paths) {
+		t.Fatalf("put %q, want %q", put, paths)
+	}
+	if !strings.Contains(state.status, "Received 2 items") {
+		t.Fatalf("status = %q", state.status)
+	}
+	// The files stand for the local clipboard now; the next sync must not offer
+	// them back to the remote as a new copy.
+	state.syncClipboard(session.desk)
+	if offers := remote.offered(); len(offers) != 0 {
+		t.Fatalf("the received files were offered back: %q", offers)
+	}
+}
+
+func TestAFailedRemoteFileCopyIsShown(t *testing.T) {
+	remote := newFileDesktop()
+	remote.received = append(remote.received, desktop.ReceivedFiles{Err: errors.New("read failed")})
+	state, session := fileDesktopState(t, remote, true, Options{})
+	state.pumpDesktop(session)
+	if !strings.Contains(state.status, "read failed") {
+		t.Fatalf("status = %q", state.status)
 	}
 }

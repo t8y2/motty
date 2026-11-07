@@ -363,7 +363,14 @@ func (state *State) pumpDesktop(session *Session) {
 	}
 	view.session.Bells() // a bell has no sound to make here
 	state.finishFileOffers(view)
-	if text, ok := view.session.RemoteClipboard(); ok && view.clipboard {
+	receivedFiles := false
+	if receiver, ok := view.session.(desktop.FileReceiver); ok {
+		if files, ok := receiver.RemoteFiles(); ok {
+			state.receiveDesktopFiles(view, files)
+			receivedFiles = len(files.Paths) > 0
+		}
+	}
+	if text, ok := view.session.RemoteClipboard(); ok && view.clipboard && !receivedFiles {
 		view.sentClip = text // what the remote has: not to be sent back
 		if err := state.options.SetClipboardText(text); err != nil {
 			state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)

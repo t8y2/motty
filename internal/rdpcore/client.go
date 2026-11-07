@@ -271,9 +271,10 @@ type Client struct {
 	onDisconnect      func(error)
 	onReconnecting    func()
 	onReconnected     func()
-	onClipboardUpdate func(hasText, hasImage bool)
+	onClipboardUpdate func(hasText, hasImage, hasFiles bool)
 	onClipboardText   func(text string)
 	onClipboardImage  func(pngData []byte)
+	onClipboardFiles  func(files cliprdr.RemoteFiles, err error)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
@@ -1141,9 +1142,9 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler = cliprdr.NewHandler(func(data []byte) error {
 			return c.sendChannelData("cliprdr", data)
 		}, c.log.With("component", "CLIPRDR"))
-		c.clipHandler.OnRemoteCopy(func(hasText, hasImage bool) {
+		c.clipHandler.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 			if fn := c.loadOnClipboardUpdate(); fn != nil {
-				fn(hasText, hasImage)
+				fn(hasText, hasImage, hasFiles)
 			}
 		})
 		c.clipHandler.OnTextData(func(text string) {
@@ -1154,6 +1155,11 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler.OnImageData(func(pngData []byte) {
 			if fn := c.loadOnClipboardImage(); fn != nil {
 				fn(pngData)
+			}
+		})
+		c.clipHandler.OnRemoteFiles(func(files cliprdr.RemoteFiles, err error) {
+			if fn := c.loadOnClipboardFiles(); fn != nil {
+				fn(files, err)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -4920,9 +4926,16 @@ func (c *Client) loadOnReconnected() func() {
 	return fn
 }
 
-func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage bool) {
+func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage, hasFiles bool) {
 	c.cbMu.RLock()
 	fn := c.onClipboardUpdate
+	c.cbMu.RUnlock()
+	return fn
+}
+
+func (c *Client) loadOnClipboardFiles() func(cliprdr.RemoteFiles, error) {
+	c.cbMu.RLock()
+	fn := c.onClipboardFiles
 	c.cbMu.RUnlock()
 	return fn
 }
@@ -5060,9 +5073,10 @@ func (c *Client) GetOnReconnected() func() { return c.loadOnReconnected() }
 
 // OnClipboardUpdate sets the callback invoked when the remote clipboard changes.
 // hasText is true if the server advertises CF_UNICODETEXT; hasImage is true if
-// the server advertises CF_DIB. Call RequestClipboard / RequestClipboardImage
-// to fetch the data.
-func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage bool)) {
+// the server advertises CF_DIB; hasFiles is true if it advertises file transfer.
+// Call RequestClipboard, RequestClipboardImage or RequestClipboardFiles to
+// fetch the data.
+func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage, hasFiles bool)) {
 	c.cbMu.Lock()
 	c.onClipboardUpdate = fn
 	c.cbMu.Unlock()
@@ -5081,6 +5095,15 @@ func (c *Client) OnClipboardText(fn func(text string)) {
 func (c *Client) OnClipboardImage(fn func(pngData []byte)) {
 	c.cbMu.Lock()
 	c.onClipboardImage = fn
+	c.cbMu.Unlock()
+}
+
+// OnClipboardFiles sets the callback invoked when the files the server put on
+// its clipboard have arrived, or could not be read. The paths are in files.Dir;
+// the callback runs on a goroutine of its own.
+func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error)) {
+	c.cbMu.Lock()
+	c.onClipboardFiles = fn
 	c.cbMu.Unlock()
 }
 
@@ -5115,6 +5138,10 @@ func (c *Client) SetClipboardImage(pngData []byte) error {
 
 // ClipboardFileOffer says what SetClipboardFiles put on the clipboard.
 type ClipboardFileOffer = cliprdr.Offer
+
+// ClipboardFiles are files the server put on its clipboard, saved on this
+// computer (see OnClipboardFiles).
+type ClipboardFiles = cliprdr.RemoteFiles
 
 // Why SetClipboardFiles may refuse; a caller tells the user which.
 var (
@@ -5161,6 +5188,15 @@ func (c *Client) RequestClipboardImage() error {
 		return ErrNotConnected
 	}
 	return c.clipHandler.RequestRemoteImage()
+}
+
+// RequestClipboardFiles asks the server for its clipboard's file list, then
+// reads the files. OnClipboardFiles receives the result.
+func (c *Client) RequestClipboardFiles() error {
+	if c.clipHandler == nil {
+		return ErrNotConnected
+	}
+	return c.clipHandler.RequestRemoteFiles()
 }
 
 // Done returns a channel that is closed when the connection ends,

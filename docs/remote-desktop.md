@@ -57,6 +57,10 @@ type Session interface {
   `Ctrl+Alt+G` or the connection ends is released first. A backend maps `Key`/`Rune` to its own vocabulary (VNC: X11
   keysyms, `internal/desktop/vnc/keysym.go`; RDP: scancodes or Unicode events).
   `SendText` types characters that are not keys.
+* A backend that can receive files through the clipboard implements
+  `desktop.FileReceiver`. The workbench puts the received paths on the system
+  clipboard and remembers them as what the clipboard holds, so the next sync
+  does not offer the remote's own files back to it.
 * Passwords are asked through `Options.AskPassword` during the handshake, on the
   same connection. The workbench answers it with the ordinary password dialog,
   the vault autofill (name `password:vnc@host:port`), and "save password" which
@@ -222,9 +226,9 @@ remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
 pastes as Unicode events (UTF-16 pairs; a server application that ignores Unicode
 events, such as a terminal in xrdp, shows only some of them), pointer with three
-buttons and horizontal/vertical wheel. Clipboard text and images, and files from this
-computer to the server (CLIPRDR, see "Copying files to the server"), per host, off by
-default. Suppress Output while the tab is hidden. The initial desktop matches
+buttons and horizontal/vertical wheel. Clipboard text and images, and files in
+both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
+by default. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
@@ -301,17 +305,39 @@ counted in the notice. Characters Windows forbids in a name (`\ : * ? " < > |` a
 control characters) become `_`. The list is made on a goroutine of its own, since
 it walks folders; a second copy made meanwhile replaces a waiting one.
 
-The other direction, from the server to this computer, is not implemented: it
-needs files that only exist when pasted on the local clipboard (a virtual file
-list, which each platform does differently).
+### Copying files from the server
+
+Files copied on the server come back through the same protocol: the server
+announces `FileGroupDescriptorW` and `FileContents`, and Motty reads the list and
+each file's bytes into a private directory under the system temporary
+directory. The top-level entries are then put on this computer's clipboard as a
+file list (`CF_HDROP` on Windows, file URLs on macOS, `text/uri-list` and
+`x-special/gnome-copied-files` on Linux), so they paste in Finder, Explorer, a
+Linux file manager or any application that takes files.
+
+The server's clipboard data is locked (`CB_LOCK_CLIPDATA`) while it is read, as
+`mstsc` does, and unlocked when the read ends; a copy made on the server
+meanwhile therefore cannot change the list under the read. A new remote
+clipboard cancels an older read and releases its lock, so an old selection never
+replaces a newer one. The lock is taken before the list request; the size and
+64 KiB byte-range requests carry its id, which is what makes Windows serve the
+contents after the lock.
+
+The clipboard holds paths, not copies: the staging directory has to stay while
+a paste may still read it, and the system's temporary-directory cleanup or the
+user removes it afterwards. Names that could leave the staging directory
+(`..`, absolute paths, empty components) are refused and counted; Windows'
+forbidden characters and device names (`CON`, `COM1`, …) are made safe the same
+way as in the other direction; paths are limited to 32 levels and the list to
+20000 entries. An entry that cannot be written is counted in the notice rather
+than leaving a paste that looks complete.
 
 ### Limits
 
 No audio, drive/printer/smartcard/USB redirection, multiple monitors, dynamic
 resolution change from the client, RD Gateway, Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
-H.264, clipboard formats other than text, images and files (and files from the
-server to this computer). A fresh Windows logon
+H.264, clipboard formats other than text, images and files. A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
@@ -333,7 +359,14 @@ opened by the Windows key, the taskbar hover, a wrong password (one attempt,
 files copied to the server: four files and two folders (one file of 3 MiB, so many
 requests, one folder two levels deep, a name outside ASCII) copied by the test and pasted
 by the remote Explorer, every file compared by SHA-256
-(`TestLiveFilesCopiedHereArePastedInExplorer`, `MOTTY_RDP_PASTE_DIR`). On
+(`TestLiveFilesCopiedHereArePastedInExplorer`, `MOTTY_RDP_PASTE_DIR`); files
+copied on the server (a `CF_HDROP` list, the same form Explorer's Copy leaves)
+locked, read back into the client and compared by SHA-256
+(`TestLiveFilesCopiedOnTheServerArriveHere`); text copied on the server arriving
+on this computer (`TestLiveTextCopiedOnTheServerArrivesHere`); and the Windows
+file-list writer's result read back by PowerShell's
+`Get-Clipboard -Format FileDropList` as the same paths
+(`TestSetClipboardFilesRoundTrip` in `../viva`). On
 **xrdp** in Docker (amd64 under Rosetta): TLS without NLA, pixels via the RDPGFX
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,
@@ -342,7 +375,8 @@ certificate dialog, password dialog, the picture, click and typing, status line
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the
-window, resizing, text and image clipboard against a real server, reconnect after a
+window, resizing, the image clipboard against a real server, a real Windows or
+Linux desktop pasting the file list the other way, reconnect after a
 network loss.
 The console session switch was not exercised either: it needs a Windows host with
 a console session, and xrdp ignores the field.
