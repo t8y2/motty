@@ -1569,6 +1569,8 @@ var chineseTools = ToolsMessages{
 	CopyOnSelectDescription:    "用鼠标选中文字后立即复制到剪贴板，不必再按复制快捷键。",
 	RightClickPasteRow:         "右键粘贴",
 	RightClickPasteDescription: "在终端中点右键直接粘贴剪贴板内容；按住 Shift 点右键仍然打开菜单。",
+	InputClickRow:              "单击移动输入光标",
+	InputClickDescription:      "在终端的命令行上单击，光标会移到点击处。需要 Motty 的 Shell 集成；全屏程序和命令运行期间不生效。拖动仍然是选择。",
 	LinkPlainClickRow:          "单击直接打开链接",
 	LinkPlainClickDescription:  "关闭时，需按住 Cmd（Windows 和 Linux 为 Ctrl）再点击才会打开链接，单击只用来选择和复制。",
 	BellRow:                    "终端响铃",

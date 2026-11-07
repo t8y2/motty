@@ -1569,6 +1569,8 @@ var traditionalTools = ToolsMessages{
 	CopyOnSelectDescription:    "用滑鼠選取文字後立即複製到剪貼簿，不必再按複製快速鍵。",
 	RightClickPasteRow:         "右鍵貼上",
 	RightClickPasteDescription: "在終端機中點右鍵直接貼上剪貼簿內容；按住 Shift 點右鍵仍然開啟選單。",
+	InputClickRow:              "單擊移動輸入游標",
+	InputClickDescription:      "在終端機的命令列上單擊，游標會移到點擊處。需要 Motty 的 Shell 整合；全螢幕程式和命令執行期間不生效。拖曳仍然是選取。",
 	LinkPlainClickRow:          "單擊直接開啟連結",
 	LinkPlainClickDescription:  "關閉時，需按住 Cmd（Windows 和 Linux 為 Ctrl）再點選才會開啟連結，單擊只用來選擇和複製。",
 	BellRow:                    "終端機響鈴",

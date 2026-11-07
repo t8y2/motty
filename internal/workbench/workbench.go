@@ -261,6 +261,7 @@ var (
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsInputClick          = tree.ID(settingsHits, "settings-input-click")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
 	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
 	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
@@ -775,6 +776,9 @@ type State struct {
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
+	// terminalInputClickOff stops a click on the line being typed from moving
+	// the shell's cursor (see moveInputCursor).
+	terminalInputClickOff bool
 
 	// settingsScroll is how far the settings page is scrolled, in pixels, and
 	// settingsContent how tall it was when last painted.

@@ -1569,6 +1569,8 @@ var englishTools = ToolsMessages{
 	CopyOnSelectDescription:    "Copies text to the clipboard as soon as you select it with the mouse.",
 	RightClickPasteRow:         "Right-click to paste",
 	RightClickPasteDescription: "A right click in the terminal pastes the clipboard. Hold Shift to open the menu instead.",
+	InputClickRow:              "Click to move the input cursor",
+	InputClickDescription:      "A click on the command line in the terminal moves the cursor there. Needs Motty's shell integration; does nothing in full-screen programs or while a command runs. Dragging still selects.",
 	LinkPlainClickRow:          "Open links with a plain click",
 	LinkPlainClickDescription:  "When off, hold Cmd (Ctrl on Windows and Linux) while clicking a link to open it; a plain click only selects and copies.",
 	BellRow:                    "Terminal bell",

@@ -417,6 +417,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 		return
 	}
 	t.onAlt, t.scr, t.modes.AltScreen = true, &t.alt, true
+	t.inputStartSet = false
 	t.view = 0
 	if clearScreen {
 		if t.images != nil {

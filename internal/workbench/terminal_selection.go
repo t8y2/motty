@@ -322,6 +322,10 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 				target, open, linkChanged = terminal.links.release(terminal.screen, linkPosition)
 				changed = changed || linkChanged
 			}
+			// A link the click opens is not also a cursor move.
+			if !open && !state.terminalInputClickOff && terminalInputClick(event) && state.moveInputCursor(session, position) {
+				return ui.EventResult{Handled: true, Repaint: changed}
+			}
 		} else {
 			changed = terminal.links.clear() || changed
 		}

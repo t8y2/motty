@@ -81,6 +81,7 @@ type savedState struct {
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
+	TerminalInputClickOff   bool                `json:"terminal_input_click_off,omitempty"`
 	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
 	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
@@ -481,6 +482,7 @@ func (state *State) snapshot() savedState {
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
+		TerminalInputClickOff:      state.terminalInputClickOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
 		AIComposerHeight:           state.ai.composerHeight,
@@ -995,6 +997,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.terminalBellOff = saved.TerminalBellOff
+	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {
 		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = migrateTerminalScheme(saved.TerminalScheme)

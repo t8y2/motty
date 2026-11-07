@@ -198,6 +198,8 @@ type Terminal struct {
 	promptReadyFn      func()
 	promptStartFn      func()
 	promptToken        string
+	inputStart         Point // where the shell's editable line begins; see InputMove
+	inputStartSet      bool
 	inputEnvironmentFn func(InputEnvironment)
 	commandStartFn     func()
 	commandFinishedFn  func(int)
@@ -511,6 +513,7 @@ func (t *Terminal) Reset() {
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
+	t.inputStartSet = false
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false
 	t.top, t.bot = 0, t.rows-1
@@ -766,6 +769,9 @@ func (t *Terminal) Resize(cols, rows int) {
 	}
 	oldCols := t.cols
 	t.cols = cols
+	if cols != oldCols {
+		t.inputStartSet = false // reflow moves the line the shell is editing
+	}
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
 	if cols != oldCols {
 		t.reflowMain()
