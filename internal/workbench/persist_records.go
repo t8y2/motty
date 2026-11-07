@@ -223,6 +223,7 @@ var syncedSettings = map[string]bool{
 	"terminal_show_latency":        true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
+	"terminal_input_click_off":     true,
 	"terminal_scheme":              true,
 	"terminal_scheme_dark":         true,
 	"terminal_scheme_light":        true,
