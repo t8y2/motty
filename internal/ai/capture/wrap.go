@@ -10,6 +10,10 @@
 // have neither "{ ...; }" groups with "$?" nor PowerShell's syntax (fish,
 // nushell, cmd.exe) would never print the marker, so [WrapFor] refuses them
 // instead of letting the caller wait for a timeout.
+//
+// A device console (see [shellkind.Console]) has no shell syntax at all. It gets
+// the command line exactly as the user would type it; [Tap.FinishConsole] ends
+// the capture when the device's prompt returns.
 package capture
 
 import (
@@ -116,6 +120,8 @@ func WrapFor(kind shellkind.Kind, command, nonce string) ([]byte, error) {
 		return wrapPOSIX(sanitizeCommand(command, shellkind.POSIX), nonce), nil
 	case shellkind.PowerShell:
 		return wrapPowerShell(sanitizeCommand(command, shellkind.PowerShell), nonce), nil
+	case shellkind.Console:
+		return wrapConsole(sanitizeCommand(command, shellkind.Console)), nil
 	}
 	return nil, ErrUnsupportedShell{kind}
 }
@@ -144,6 +150,17 @@ func wrapPOSIX(cmd, nonce string) []byte {
 	sb.WriteString(cleanNonce(nonce))
 	sb.WriteString(" $?\n")
 	return []byte(sb.String())
+}
+
+// wrapConsole returns the command exactly as it should be typed into a device
+// console: no shell wrapper, and CR line endings, which is what Enter sends on a
+// network device or serial line. The nonce is not used; a console has no way to
+// print a completion marker.
+func wrapConsole(cmd string) []byte {
+	if cmd == "" {
+		return []byte{'\r'}
+	}
+	return []byte(strings.ReplaceAll(cmd, "\n", "\r") + "\r")
 }
 
 // DisplayCommand returns the command text Wrap puts inside its group. The
@@ -177,6 +194,12 @@ func sanitizeCommand(command string, kind shellkind.Kind) string {
 		}
 	}
 	s := strings.TrimRight(string(b), "\n \t")
+	if kind == shellkind.Console {
+		if s == "" {
+			return ""
+		}
+		return s
+	}
 	// Drop one pending line continuation (odd number of trailing escapes).
 	escape := byte('\\')
 	if kind == shellkind.PowerShell {

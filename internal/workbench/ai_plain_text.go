@@ -213,6 +213,17 @@ func aiPlainTextRange(text string, selection components.MarkdownSelection) (star
 	return start, end
 }
 
+// textBounds is where the last paint that reached the row put a block's text.
+func (v *aiRowView) textBounds(part aiTextPart) (ui.Rect, bool) {
+	if v.kind == aiAssistant {
+		return v.textRect, part == aiTextPrimary
+	}
+	if part < aiTextPartCount && v.textSlotSet[part] {
+		return v.plain[part].rect, true
+	}
+	return ui.Rect{}, false
+}
+
 // textLayout returns the selectable block identified by part, or nil when the
 // row has no such block. Empty tool blocks remain available so rebuilds clamp
 // and clear selections whose text was collapsed or removed.

@@ -317,8 +317,8 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 	paintDesk(state)
 	hit := hitTerminalList.At(int(session.ID))
 	// Motty's own new-tab chord, whichever it is on this platform.
-	chord := state.shortcuts.chords[shortcutNewTab]
-	newTab := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Key)), Target: hit}
+	chord := state.shortcuts.chords.Chord(shortcutNewTab)
+	newTab := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char)), Target: hit}
 
 	if result := state.Shortcut(newTab); result.Handled || state.modal != modalNone || state.activeSection != sectionTerminal {
 		t.Fatalf("Motty took Cmd+T while the remote desktop had the keyboard: %+v, modal %v", result, state.modal)
@@ -341,7 +341,7 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 		}
 	}
 	state.Key(newTab)
-	want = append(want, fmt.Sprintf("down %x", unicode.ToLower(rune(chord.Key))))
+	want = append(want, fmt.Sprintf("down %x", unicode.ToLower(rune(chord.Char))))
 	waitUntil(t, state, "the remote to get the chord", func() bool { return len(keySyms(fixture.got())) >= len(want) })
 	if got := keySyms(fixture.got()); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("remote keys = %v, want %v", got, want)

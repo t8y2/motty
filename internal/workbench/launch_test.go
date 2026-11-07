@@ -482,6 +482,74 @@ func TestAStartAtLoginDoesNotBringTheWindowForward(t *testing.T) {
 	}
 }
 
+func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
+	options := freshOptions(t)
+	options.Invalidate = func() {}
+	opened, raised := 0, 0
+	options.NewWindow = func() error { opened++; return nil }
+	options.Raise = func() { raised++ }
+	first := newTestState(t, options)
+	openGeneralSettings(first)
+	_, texts := paintedTexts(first)
+	if !contains(texts, first.messages.Tools.GeneralRelaunch) {
+		t.Fatal("the relaunch choice is missing from General settings")
+	}
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 0 {
+		t.Fatalf("default relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Click(hitSettingsRelaunchNewWindow)
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("configured relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"--background"})
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("background launch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"-unknown"})
+	first.Wake()
+	if opened != 1 {
+		t.Fatal("a launch with arguments opened a new window")
+	}
+	first.Launch([]string{"ssh://bob@link.example.com/"})
+	first.Wake()
+	if first.modal != modalOpenLink || raised != 3 || opened != 1 {
+		t.Fatalf("link launch: modal %v, raised %d, opened %d", first.modal, raised, opened)
+	}
+	first.Close()
+
+	second := newTestState(t, options)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 {
+		t.Fatal("the new-window choice did not survive a restart")
+	}
+	openGeneralSettings(second)
+	second.Click(hitSettingsRelaunchRaise)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 || raised != 4 {
+		t.Fatalf("restored default: raised %d, opened %d", raised, opened)
+	}
+}
+
+func TestRelaunchUsesChoiceChangedInAnotherWindow(t *testing.T) {
+	pair := newTwoWindows(t)
+	opened := 0
+	pair.second.options.NewWindow = func() error { opened++; return nil }
+	openGeneralSettings(pair.first)
+	pair.first.Click(hitSettingsRelaunchNewWindow)
+	pair.second.Launch(nil)
+	pair.second.Wake()
+	if opened != 1 {
+		t.Fatal("the last window did not pick up the relaunch choice from the other window")
+	}
+}
+
 func TestThePreviousRunsCrashIsToldOnceAtStart(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}

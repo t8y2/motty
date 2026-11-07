@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
@@ -40,6 +42,7 @@ type savedState struct {
 	Theme                      string             `json:"theme,omitempty"`
 	BackgroundOutputAlerts     bool               `json:"background_output_alerts,omitempty"`
 	TabOrientation             string             `json:"tab_orientation,omitempty"`
+	TabNumbers                 bool               `json:"tab_numbers,omitempty"`
 	VerticalTabsAutoHide       bool               `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool               `json:"vertical_tabs_grouping,omitempty"`
 	NetworkProxy               string             `json:"network_proxy,omitempty"`
@@ -75,12 +78,14 @@ type savedState struct {
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalWordSeparators  string              `json:"terminal_word_separators,omitempty"`
 	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
+	TerminalInputClickOff   bool                `json:"terminal_input_click_off,omitempty"`
 	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
 	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
@@ -106,6 +111,7 @@ type savedState struct {
 	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
 	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPDirectoryTree       bool                `json:"sftp_directory_tree,omitempty"`
 	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
@@ -117,6 +123,8 @@ type savedState struct {
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	RelaunchAction          string              `json:"relaunch_action,omitempty"`
+	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
@@ -126,6 +134,7 @@ type savedState struct {
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
+	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
@@ -138,14 +147,19 @@ type savedState struct {
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
 	LocalProxyPort          int                   `json:"local_proxy_port,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
-	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
-	Workspace               string                `json:"workspace,omitempty"`
-	ActiveSession           int                   `json:"active_session,omitempty"`
-	HostCatalogVersion      int                   `json:"host_catalog_version"`
-	Hosts                   []savedHost           `json:"hosts"`
-	HostGroups              []savedHostGroup      `json:"host_groups,omitempty"`
-	WorkspaceTemplates      []WorkspaceTemplate   `json:"workspace_templates,omitempty"`
-	IdentityFiles           []string              `json:"identity_files,omitempty"`
+	// ShortcutDefaultsGeneration is the generation of default chords this
+	// device last reconciled its table against. A build that changes a default
+	// migrates the chords still holding the old one once, and records that it
+	// did, so a chord the user later sets back to the old default stays put.
+	ShortcutDefaultsGeneration int                 `json:"shortcut_defaults_generation,omitempty"`
+	Shortcuts                  []savedShortcut     `json:"shortcuts,omitempty"`
+	Workspace                  string              `json:"workspace,omitempty"`
+	ActiveSession              int                 `json:"active_session,omitempty"`
+	HostCatalogVersion         int                 `json:"host_catalog_version"`
+	Hosts                      []savedHost         `json:"hosts"`
+	HostGroups                 []savedHostGroup    `json:"host_groups,omitempty"`
+	WorkspaceTemplates         []WorkspaceTemplate `json:"workspace_templates,omitempty"`
+	IdentityFiles              []string            `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. It belongs to this computer, not to the hosts that sync, so a host
 	// that arrives from another device starts out closed to agents.
@@ -187,6 +201,8 @@ type savedSnippet struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
+	Group   string `json:"group,omitempty"`
+	Order   int    `json:"order,omitempty"`
 }
 
 // savedSnippetKey is the shortcut of the snippet of that name. It lives apart
@@ -444,6 +460,7 @@ func (state *State) snapshot() savedState {
 		Theme:                      state.appearanceMode.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabNumbers:                 state.tabNumbers,
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
@@ -475,12 +492,14 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
+		TerminalInputClickOff:      state.terminalInputClickOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
 		AIComposerHeight:           state.ai.composerHeight,
@@ -506,6 +525,7 @@ func (state *State) snapshot() savedState {
 		SFTPTerminalFollow:         state.sftpTerminalFollow,
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
+		SFTPDirectoryTree:          state.sftpDirectoryTree,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
@@ -517,8 +537,11 @@ func (state *State) snapshot() savedState {
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
+		RelaunchAction:             state.relaunchAction.String(),
+		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
+		ShortcutDefaultsGeneration: shortcutDefaultsGeneration,
 		Shortcuts:                  make([]savedShortcut, 0, shortcutActionCount-1),
 		Workspace:                  state.workspaceName(),
 		HostCatalogVersion:         hostCatalogSchemaVersion,
@@ -548,14 +571,15 @@ func (state *State) snapshot() savedState {
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
+	saved.Credentials = state.savedCredentials()
 	saved.NoteView = state.savedNotesView()
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
-	for _, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run})
-		if entry.Shortcut.valid() {
+	for index, entry := range state.snippets.list {
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
+		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
-				Name: entry.Name, Key: string([]byte{entry.Shortcut.Key}), Modifiers: uint8(entry.Shortcut.Modifiers),
+				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
 	}
@@ -565,9 +589,9 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		chord := state.shortcuts.chords[action]
+		chord := state.shortcuts.chords.Chord(action)
 		saved.Shortcuts = append(saved.Shortcuts, savedShortcut{
-			Action: action.String(), Key: chord.savedKey(), Modifiers: uint8(chord.Modifiers),
+			Action: action.String(), Key: chord.Name(), Modifiers: uint8(chord.Modifiers),
 		})
 	}
 	for _, host := range state.hosts {
@@ -590,7 +614,7 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for _, bookmark := range state.sftpBookmarks {
-		saved.SFTPBookmarks = append(saved.SFTPBookmarks, savedBookmark{Host: bookmark.host, Path: bookmark.path, Name: bookmark.name, Local: bookmark.local, Shared: bookmark.shared})
+		saved.SFTPBookmarks = append(saved.SFTPBookmarks, savedBookmark{Host: bookmark.host, Path: bookmark.path, Name: bookmark.name, Local: bookmark.local, Shared: bookmark.shared, Sync: bookmark.sync})
 	}
 	saved.SFTPLocalBookmarks = slices.Clone(state.sftpLocalBookmarks)
 	for _, group := range state.hostGroups {
@@ -813,15 +837,28 @@ func (state *State) configurationSaved(changes []savedFieldChange, shared, flush
 // sessions and the layout it left open.
 func (state *State) restore(saved savedState) {
 	state.restoreSettings(saved)
+	// A build that changed a default chord migrates the bindings still holding
+	// the old one, once. It runs here rather than in restoreSettings because only
+	// a start writes back: another window's change, and a reload, must leave the
+	// table as it is. The chords a snippet already holds keep their owner, and a
+	// table with nothing saved has no stale default to migrate — its defaults are
+	// this build's already, so a first run writes nothing.
+	staleDefaults := saved.ShortcutDefaultsGeneration < shortcutDefaultsGeneration && len(saved.Shortcuts) > 0
+	if staleDefaults {
+		state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool {
+			return state.snippetNamed(chord) != ""
+		})
+	}
 	state.stopAppearanceWatch = state.options.WatchSystemAppearance(state.systemAppearanceChanged)
 	sourceSessions := state.restoreSessions(saved.Sessions, saved.ActiveSession)
 	state.restoreWorkspaceDeck(saved.Deck, sourceSessions)
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
-	if state.mergedHosts {
-		// What was folded into another host is still in the store: record the
-		// fold so the next start, and every other device, need not do it again.
+	if state.mergedHosts || staleDefaults {
+		// What was folded into another host is still in the store, and so is the
+		// generation this table was reconciled against: record both so the next
+		// start, and every other device, need not do it again.
 		state.save()
 	}
 }
@@ -884,6 +921,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.setTabNumbers(saved.TabNumbers)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
@@ -991,10 +1029,13 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalWordSeparators = saved.TerminalWordSeparators
+	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
 	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.terminalBellOff = saved.TerminalBellOff
+	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {
 		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = migrateTerminalScheme(saved.TerminalScheme)
@@ -1016,6 +1057,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)
 	state.restoreAutofill(saved)
+	state.restoreCredentials(saved)
 
 	// A host keeps the number the sessions and the selection know it by.
 	known := make(map[string]uint32, len(state.hosts))
@@ -1052,13 +1094,8 @@ func (state *State) restoreShared(saved savedState) {
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
 	}
-	// The row height follows the font and the line-spacing choice together, so the
-	// saved spacing is reflected here as it is on every painted frame.
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	// This also runs when a synced setting arrives on a live window, so open
-	// terminals have to take the new row height now, not on the next resize.
-	state.fitTerminals()
+	// The cell follows the font and the line-spacing choice together; the next paint
+	// measures it, and refits open terminals when a synced setting changed it.
 }
 
 func (state *State) workspaceName() string {
@@ -1103,7 +1140,7 @@ func (state *State) workspaceName() string {
 // its default back.
 func restoreShortcuts(saved []savedShortcut) shortcutMap {
 	defaults := defaultShortcuts()
-	var shortcuts shortcutMap
+	shortcuts := newShortcutMap()
 	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
 		action := shortcutActionFromString(entry.Action)
@@ -1115,7 +1152,7 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 			continue
 		}
-		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
+		chord, ok := keymap.Parse(ui.Modifiers(entry.Modifiers), entry.Key)
 		if !ok {
 			continue
 		}
@@ -1124,10 +1161,10 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if specified[action] || shortcuts.chords[action].valid() {
+		if specified[action] || shortcuts.chords.Chord(action).Valid() {
 			continue
 		}
-		shortcuts.bind(action, defaults.chords[action])
+		shortcuts.bind(action, defaults.chords.Chord(action))
 	}
 	shortcuts.refreshLabels()
 	return shortcuts

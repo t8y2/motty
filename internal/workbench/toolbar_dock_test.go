@@ -230,7 +230,7 @@ func TestToolbarDockHidesTerminalSideRailWithoutVisibleContent(t *testing.T) {
 func TestToolbarDockPresenceCheckDoesNotRecalculateManagedSplitBounds(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	workspaceID := state.deck.ActiveWorkspace()
-	state.managedWorkspaceColumns = map[layoutcore.WorkspaceID]uint8{workspaceID: 1}
+	state.managedWorkspaceLayouts = map[layoutcore.WorkspaceID]layoutcore.LayoutSpec{workspaceID: layoutcore.GridSpec(1)}
 	state.activeSection = sectionTerminal
 	entries := state.toolbars.customize(toolbarTerminal)
 	for index := range entries {
@@ -275,7 +275,7 @@ func TestToolbarDockManagedCompactionUsesActualVisibleSide(t *testing.T) {
 	state.activeSection = sectionTerminal
 	state.terminalToolbarPosition = terminalToolbarLeft
 	workspaceID := state.deck.ActiveWorkspace()
-	state.managedWorkspaceColumns = map[layoutcore.WorkspaceID]uint8{workspaceID: 1}
+	state.managedWorkspaceLayouts = map[layoutcore.WorkspaceID]layoutcore.LayoutSpec{workspaceID: layoutcore.GridSpec(1)}
 	size := ui.Size{Width: 1200, Height: 800}
 	entries := state.toolbars.customize(toolbarTerminal)
 	for index := range entries {

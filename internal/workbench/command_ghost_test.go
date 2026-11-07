@@ -184,6 +184,29 @@ func (h *historyWorld) awaitHistory(t *testing.T, key string) {
 	}
 }
 
+// A re-run moves a command to the front of the cache and updates its use time,
+// so the completion list shows the latest run rather than an older one.
+func TestARerunUpdatesTheCachedUseTime(t *testing.T) {
+	h := newHistoryWorld(t, true)
+	key := historyKey(&h.state.sessions[0])
+	old := time.Now().Add(-48 * time.Hour)
+	h.state.history.ghost = map[string][]cmdhistory.Entry{
+		key: {{Command: "git status", Used: old, Count: 1}},
+		"":  {{Command: "git status", Used: old, Count: 1}},
+	}
+	now := time.Now()
+	h.state.noteGhostCommand(key, "git status", now)
+	for _, cacheKey := range []string{key, ""} {
+		entries := h.state.history.ghost[cacheKey]
+		if len(entries) != 1 {
+			t.Fatalf("cache %q holds %d entries, want 1", cacheKey, len(entries))
+		}
+		if !entries[0].Used.Equal(now) {
+			t.Fatalf("cache %q keeps Used = %v, want the rerun time %v", cacheKey, entries[0].Used, now)
+		}
+	}
+}
+
 // A command this host has never run, but the user ran on another host, is
 // suggested once the host's own history has no match: the same machines often
 // share one job (#219). The merged cache is not injected: the background read

@@ -224,6 +224,7 @@ func (selection terminalSelection) span(lineNumber uint64, line term.Row, cols i
 
 func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.EventResult {
 	terminal := session.term
+	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
 	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
@@ -310,7 +311,10 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			changed := terminal.links.clear()
 			return ui.EventResult{Handled: event.Captured, Repaint: changed}
 		}
-		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+		changed := false
+		if event.Kind == ui.PointerUp {
+			changed = selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+		}
 		selection.dragging = false
 		selection.edge = selectionEdge{}
 		open := false
@@ -321,6 +325,10 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 				var linkChanged bool
 				target, open, linkChanged = terminal.links.release(terminal.screen, linkPosition)
 				changed = changed || linkChanged
+			}
+			// A link the click opens is not also a cursor move.
+			if !open && !state.terminalInputClickOff && terminalInputClick(event) && state.moveInputCursor(session, position) {
+				return ui.EventResult{Handled: true, Repaint: changed}
 			}
 		} else {
 			changed = terminal.links.clear() || changed

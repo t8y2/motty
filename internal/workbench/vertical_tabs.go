@@ -269,8 +269,8 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 			state.declareGroupedVerticalTabs(f, tabWidth, compact)
 			return
 		}
-		for _, workspace := range state.workspaceTabs {
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact))
+		for index, workspace := range state.workspaceTabs {
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact, index+1))
 		}
 	})
 	f.End()

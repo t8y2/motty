@@ -108,6 +108,58 @@ func TestUnixShellDiscoveryKeepsOneEntryPerFamily(t *testing.T) {
 	}
 }
 
+// TestUnixShellDiscoveryCollapsesCShellHardLinks checks the macOS layout:
+// /bin/csh and /bin/tcsh are two names for one executable, so the picker
+// offers the C shell once instead of repeating the same program.
+func TestUnixShellDiscoveryCollapsesCShellHardLinks(t *testing.T) {
+	root := t.TempDir()
+	tcsh := writeExecutable(t, root, "tcsh")
+	csh := filepath.Join(root, "csh")
+	if err := os.Link(tcsh, csh); err != nil {
+		t.Skipf("hard links are not available: %v", err)
+	}
+
+	restorePrefixes := pointShellPrefixesAt(t, root)
+	defer restorePrefixes()
+	restoreShellFile := pointShellFileAt(t, filepath.Join(root, "no-shells"))
+	defer restoreShellFile()
+	t.Setenv("PATH", t.TempDir())
+
+	choices := InstalledWindowsShells()
+	count := 0
+	for _, choice := range choices {
+		if choice.Name == "csh" || choice.Name == "tcsh" {
+			count++
+		}
+	}
+	if count != 1 || !hasShell(choices, tcsh) || hasShell(choices, csh) {
+		t.Fatalf("C shell entries = %+v, want only %q", choices, tcsh)
+	}
+}
+
+// TestUnixShellDiscoveryKeepsShWithItsTarget checks that collapsing one file
+// reached by two names does not remove sh: on many systems /bin/sh links to
+// dash or bash, but argv[0] selects POSIX mode, a distinct interactive shell.
+func TestUnixShellDiscoveryKeepsShWithItsTarget(t *testing.T) {
+	root := t.TempDir()
+	dash := writeExecutable(t, root, "dash")
+	sh := filepath.Join(root, "sh")
+	if err := os.Symlink("dash", sh); err != nil {
+		t.Skipf("symbolic links are not available: %v", err)
+	}
+
+	restorePrefixes := pointShellPrefixesAt(t, root)
+	defer restorePrefixes()
+	restoreShellFile := pointShellFileAt(t, filepath.Join(root, "no-shells"))
+	defer restoreShellFile()
+	t.Setenv("PATH", t.TempDir())
+
+	choices := InstalledWindowsShells()
+	if !hasShell(choices, dash) || !hasShell(choices, sh) {
+		t.Fatalf("shells = %+v, want both %q and %q", choices, dash, sh)
+	}
+}
+
 // writeExecutable creates an empty executable file and returns its path.
 func writeExecutable(t *testing.T, dir, name string) string {
 	t.Helper()

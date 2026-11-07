@@ -48,7 +48,8 @@ func aiMCPClientFromKey(key string) aiMCPClient {
 	return aiMCPClaude
 }
 
-// Export preferences do not reconfigure either MCP service or its access level.
+// Export preferences do not reconfigure either MCP service or its access level,
+// but every open window shows the same stored choice.
 func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
 	if client >= aiMCPClientCount {
 		return
@@ -69,6 +70,9 @@ func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
 		state.ai.cfg.agentClient = client
 	} else {
 		state.ai.cfg.mcpClient = client
+	}
+	if state.options.Group != nil {
+		state.options.Group.assistantChoicesChanged(state)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -98,7 +99,7 @@ func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
 	if !state.remoteToolsVisible() || event.Release {
 		return ui.EventResult{}
 	}
-	chord, ok := shortcutChordFromEvent(event)
+	chord, ok := keymap.FromEvent(event)
 	if !ok || state.shortcuts.actionFor(chord) != shortcutFind {
 		return ui.EventResult{}
 	}

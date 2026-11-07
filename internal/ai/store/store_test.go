@@ -52,6 +52,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	}
 	p.Name = "A2"
 	p.Enabled = false
+	p.ModelsURL = "https://models.example.com/v1"
 	if err := s.SaveProvider(p); err != nil {
 		t.Fatal(err)
 	}

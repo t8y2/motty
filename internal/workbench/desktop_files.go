@@ -255,6 +255,45 @@ func (state *State) finishFileOffers(view *desktopView) {
 	}
 }
 
+// receiveDesktopFiles puts files the remote copied on this computer's
+// clipboard. The files stand for the clipboard from then on: the sync that
+// offers the local clipboard to the remote must not send them back.
+func (state *State) receiveDesktopFiles(view *desktopView, files desktop.ReceivedFiles) {
+	m := state.messages.Tools
+	if len(files.Paths) == 0 {
+		if files.Err != nil {
+			state.status = fmt.Sprintf(m.DesktopFilesReceiveFailedFmt, files.Err)
+		}
+		return
+	}
+	if state.options.SetClipboardFiles == nil {
+		return
+	}
+	previousKey := view.files.sentKey
+	view.files.sentKey = filesKey(files.Paths)
+	if err := state.options.SetClipboardFiles(files.Paths); err != nil {
+		view.files.sentKey = previousKey
+		state.status = fmt.Sprintf(m.DesktopFilesReceiveFailedFmt, err)
+		return
+	}
+	view.files.dropped = false
+	// Remember what the system clipboard now reports, not only the paths that
+	// were put there: a platform may normalize them (a resolved symlink, for
+	// one), and the next sync compares against that same report.
+	view.files.sentKey = filesKey(files.Paths)
+	if copied, err := state.options.ClipboardFiles(); err == nil && len(copied) > 0 {
+		view.files.sentKey = filesKey(copied)
+	}
+	if text, err := state.options.ClipboardText(); err == nil {
+		view.sentClip = text
+	}
+	text := fmt.Sprintf(m.DesktopFilesReceivedFmt, files.Files+files.Folders, formatBytes(int64(files.Bytes)))
+	if files.Skipped > 0 {
+		text += " " + fmt.Sprintf(m.DesktopFilesReceivedSkippedFmt, files.Skipped)
+	}
+	state.status = text
+}
+
 // desktopFilesOffered tells what was put on the remote clipboard, and what was left out.
 func (state *State) desktopFilesOffered(offer desktop.FileOffer) string {
 	m := state.messages.Tools

@@ -14,14 +14,40 @@ import (
 
 type openAI struct {
 	base
-	baseErr error
+	baseErr        error
+	modelsEndpoint string
+	modelsErr      error
 }
 
 // NewOpenAI returns a Provider speaking OpenAI-compatible Chat Completions.
 // An empty BaseURL selects https://api.openai.com/v1.
 func NewOpenAI(cfg Config) Provider {
 	u, err := openAIBase(cfg.BaseURL)
-	return &openAI{base: newBase(cfg, u), baseErr: err}
+	p := &openAI{base: newBase(cfg, u), baseErr: err}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = openAIModelsBase(cfg.ModelsURL)
+	}
+	return p
+}
+
+// openAIModelsBase normalizes a models URL: trailing slashes and a pasted
+// /models suffix are dropped, and a bare host gets /v1.
+func openAIModelsBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	u, err := normalizeBase(raw)
+	if err != nil {
+		return "", err
+	}
+	if path, ok := cutSuffixFold(u.Path, "/models"); ok {
+		u.Path = path
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if u.Path == "" {
+		u.Path = "/v1"
+	}
+	return u.String(), nil
 }
 
 // openAIBase normalizes a base URL: trailing slashes and a pasted
@@ -195,10 +221,16 @@ func (p *openAI) Stream(ctx context.Context, req Request) (<-chan Event, error) 
 }
 
 func (p *openAI) Models(ctx context.Context) ([]string, error) {
-	if p.baseErr != nil {
+	if p.modelsErr != nil {
+		return nil, p.modelsErr
+	}
+	endpoint := p.endpoint
+	if p.modelsEndpoint != "" {
+		endpoint = p.modelsEndpoint
+	} else if p.baseErr != nil {
 		return nil, p.baseErr
 	}
-	resp, err := p.do(ctx, http.MethodGet, p.endpoint+"/models", nil, func(r *http.Request) {
+	resp, err := p.do(ctx, http.MethodGet, endpoint+"/models", nil, func(r *http.Request) {
 		r.Header.Set("Accept", "application/json")
 		if p.key != "" {
 			r.Header.Set("Authorization", "Bearer "+p.key)

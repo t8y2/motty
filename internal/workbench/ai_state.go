@@ -272,39 +272,12 @@ func (state *State) reloadAI() {
 	ai.providers, _ = ai.store.Providers()
 	state.aiAdoptKeys()
 	ai.models, _ = ai.store.Models()
-	ai.settings = defaultAISettings()
+	state.reloadAISettings()
 	read := func(key string, apply func(string)) {
 		if value, ok, err := ai.store.Setting(key); err == nil && ok {
 			apply(value)
 		}
 	}
-	read("ai.auto_up_to", func(v string) {
-		switch v {
-		case "medium":
-			ai.settings.autoUpTo = risk.Medium
-		case "high":
-			ai.settings.autoUpTo = risk.High
-		default:
-			ai.settings.autoUpTo = risk.Low
-		}
-	})
-	read("ai.max_steps", func(v string) {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 50 {
-			ai.settings.maxSteps = n
-		}
-	})
-	read("ai.context_lines", func(v string) {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 500 {
-			ai.settings.contextLines = n
-		}
-	})
-	read("ai.redact", func(v string) { ai.settings.redact = v != "off" })
-	read("ai.history", func(v string) { ai.settings.keepHistory = v != "off" })
-	read("ai.mcp.enabled", func(v string) { ai.settings.mcpEnabled = v == "on" })
-	read("ai.mcp.mode", func(v string) { ai.settings.mcpMode = mcpModeFromSetting(v) })
-	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
-	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
-	read(agentModeSetting, func(v string) { ai.settings.agentMode = mcpModeFromSetting(v) })
 	ai.agentAudit, _ = ai.store.Audit(agentAuditShown)
 	ai.agentSummary.lines = nil
 	read("ai.mode", func(v string) {
@@ -314,11 +287,66 @@ func (state *State) reloadAI() {
 			ai.mode = agent.ModeAsk
 		}
 	})
-	if provider, model, ok, err := ai.store.DefaultModel(); err == nil && ok {
-		ai.settings.defaultProvider, ai.settings.defaultModel = provider, model
-	}
 	// The providers changed, or were just read: the records follow.
 	state.save()
+}
+
+// reloadAISettings refreshes choices shared by already-open windows. It reads
+// only an opened store and never saves or changes a conversation, a running
+// request, or a settings dialog's draft.
+func (state *State) reloadAISettings() {
+	ai := &state.ai
+	if ai.store == nil {
+		return
+	}
+	settings := defaultAISettings()
+	failed := false
+	read := func(key string, apply func(string)) {
+		value, ok, err := ai.store.Setting(key)
+		if err != nil {
+			failed = true
+		} else if ok {
+			apply(value)
+		}
+	}
+	read("ai.auto_up_to", func(v string) {
+		switch v {
+		case "medium":
+			settings.autoUpTo = risk.Medium
+		case "high":
+			settings.autoUpTo = risk.High
+		default:
+			settings.autoUpTo = risk.Low
+		}
+	})
+	read("ai.max_steps", func(v string) {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 50 {
+			settings.maxSteps = n
+		}
+	})
+	read("ai.context_lines", func(v string) {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 500 {
+			settings.contextLines = n
+		}
+	})
+	read("ai.redact", func(v string) { settings.redact = v != "off" })
+	read("ai.history", func(v string) { settings.keepHistory = v != "off" })
+	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
+	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
+	read(agentModeSetting, func(v string) { settings.agentMode = mcpModeFromSetting(v) })
+	// Export client choices live beside the settings in ai.db but not in
+	// aiSettings: they change which configuration the page shows, not what the
+	// assistant or the MCP servers do.
+	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
+	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
+	if provider, model, ok, err := ai.store.DefaultModel(); err != nil {
+		failed = true
+	} else if ok {
+		settings.defaultProvider, settings.defaultModel = provider, model
+	}
+	if !failed {
+		ai.settings = settings
+	}
 }
 
 // aiVaultUsable reports whether the vault can be read and written right now: it
@@ -411,7 +439,7 @@ func (state *State) aiProvider(provider store.Provider) llm.Provider {
 	if store.IsCLIKind(provider.Kind) || !store.ValidProviderKind(provider.Kind) {
 		return cli.New(provider.Kind, provider.CLIPath)
 	}
-	config := llm.Config{BaseURL: provider.BaseURL, APIKey: provider.APIKey, AuthStyle: provider.AuthStyle}
+	config := llm.Config{BaseURL: provider.BaseURL, ModelsURL: provider.ModelsURL, APIKey: provider.APIKey, AuthStyle: provider.AuthStyle}
 	if provider.Kind == store.KindAnthropic {
 		return llm.NewAnthropic(config)
 	}

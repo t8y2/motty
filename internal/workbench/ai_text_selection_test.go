@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 
@@ -11,13 +12,20 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
+// selectAnswerRange selects bytes of the primary block of one row, as a drag
+// inside it would.
+func selectAnswerRange(panel *aiPanel, row, start, end int) {
+	surface := aiTextSurface(row, aiTextPrimary)
+	panel.textSelect.Select(components.TextPoint{Surface: surface, Offset: start}, components.TextPoint{Surface: surface, Offset: end})
+}
+
 func selectAnswerText(t *testing.T, state *State, start, end int) *aiPanel {
 	t.Helper()
 	state.ai.open = true
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta gamma"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
-	panel.textSelect = aiTextSelection{row: 0, sel: components.MarkdownSelection{Anchor: start, Focus: end}}
+	selectAnswerRange(panel, 0, start, end)
 	paintAt(state, panelWide)
 	if text, ok := panel.aiTextSelectionText(); !ok || text == "" {
 		t.Fatalf("the answer selection is not readable: %q %v", text, ok)
@@ -100,7 +108,7 @@ func dragSelectWholeText(t *testing.T, state *State, canvas *ui.Canvas, id ui.ID
 }
 
 func copyChord(target ui.ID) ui.KeyEvent {
-	return ui.KeyEvent{Text: "c", Modifiers: defaultShortcutModifier(), Target: target}
+	return ui.KeyEvent{Text: "c", Modifiers: keymap.Primary, Target: target}
 }
 
 func TestCopyChordCopiesTheAnswerSelection(t *testing.T) {
@@ -117,7 +125,7 @@ func TestCopyChordCopiesTheAnswerSelection(t *testing.T) {
 func TestNamedCopyBindingCopiesTheAnswerSelection(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	selectAnswerText(t, state, 0, 5)
-	state.shortcuts.bind(shortcutCopy, shortcutChord{Named: ui.KeyF8})
+	state.shortcuts.bind(shortcutCopy, keymap.Chord{Key: ui.KeyF8})
 	var copied string
 	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
 	result := state.Key(ui.KeyEvent{Key: ui.KeyF8, Target: hitAIAnswerText.At(0)})
@@ -306,7 +314,7 @@ func TestAnswerLinkOpensAndClearsTheSelection(t *testing.T) {
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "See [the first](https://one.example/a) and more text."}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
-	panel.textSelect = aiTextSelection{row: 0, sel: components.MarkdownSelection{Anchor: 0, Focus: 4}}
+	selectAnswerRange(panel, 0, 0, 4)
 	canvas, _ := paintAt(state, panelWide)
 	link := firstLinkHit(t, canvas)
 	// The real pointer path first, like the runtime: pressing a link is a press
@@ -329,7 +337,7 @@ func TestCodeCopyButtonCopiesItsBlockAndClearsTheSelection(t *testing.T) {
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "Run:\n```\nls -la\n```"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
-	panel.textSelect = aiTextSelection{row: 0, sel: components.MarkdownSelection{Anchor: 0, Focus: 3}}
+	selectAnswerRange(panel, 0, 0, 3)
 	canvas, _ := paintAt(state, panelWide)
 	button := hitAICopies.At(0)
 	answerPointer(state, ui.PointerDown, hitCenter(t, canvas, button), button)
@@ -407,7 +415,7 @@ func TestAnswerTextDragUpwardKeepsTheAnchorAcrossPaints(t *testing.T) {
 	// Start at the beginning of the second line and drag up.
 	second := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + row.md.Height() - 1}
 	answerPointer(state, ui.PointerDown, second, id)
-	anchor := panel.textSelect.sel.Anchor
+	anchor := panel.textSelect.Anchor.Offset
 	if anchor != len("alpha beta\n") {
 		t.Fatalf("the drag started at %d, want the second line", anchor)
 	}
@@ -416,13 +424,13 @@ func TestAnswerTextDragUpwardKeepsTheAnchorAcrossPaints(t *testing.T) {
 	middle := ui.Point{X: row.textRect.X + row.textRect.Width - 20, Y: row.textRect.Y + 1}
 	answerPointer(state, ui.PointerMove, middle, id)
 	paintAt(state, panelWide)
-	if got := panel.textSelect.sel.Anchor; got != anchor {
+	if got := panel.textSelect.Anchor.Offset; got != anchor {
 		t.Fatalf("the first repaint moved the anchor from %d to %d", anchor, got)
 	}
 	first := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
 	answerPointer(state, ui.PointerMove, first, id)
 	paintAt(state, panelWide)
-	if got := panel.textSelect.sel.Anchor; got != anchor {
+	if got := panel.textSelect.Anchor.Offset; got != anchor {
 		t.Fatalf("the second repaint moved the anchor from %d to %d", anchor, got)
 	}
 	answerPointer(state, ui.PointerUp, first, id)
@@ -443,9 +451,9 @@ func TestAnswerTextDragIgnoresAnUncapturedMove(t *testing.T) {
 	end := ui.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
 	answerPointer(state, ui.PointerDown, start, id)
 	answerPointerCaptured(state, ui.PointerMove, end, id, true)
-	atEnd := panel.textSelect.sel.Focus
+	atEnd := panel.textSelect.Focus.Offset
 	answerPointerCaptured(state, ui.PointerMove, start, id, false)
-	if got := panel.textSelect.sel.Focus; got != atEnd {
+	if got := panel.textSelect.Focus.Offset; got != atEnd {
 		t.Fatalf("an uncaptured move changed the focus from %d to %d", atEnd, got)
 	}
 }
@@ -463,15 +471,15 @@ func TestAnswerTextDragEndsWhenThePointerLeaves(t *testing.T) {
 	answerPointer(state, ui.PointerDown, start, id)
 	answerPointerCaptured(state, ui.PointerMove, end, id, true)
 	answerPointerCaptured(state, ui.PointerExit, end, id, true)
-	if panel.textSelect.dragging {
+	if panel.textSelect.Dragging() {
 		t.Fatal("the drag is still active after the pointer left")
 	}
 	if !panel.hasAITextSelection() {
 		t.Fatal("leaving the window dropped the selection")
 	}
-	atExit := panel.textSelect.sel.Focus
+	atExit := panel.textSelect.Focus.Offset
 	answerPointerCaptured(state, ui.PointerMove, start, id, true)
-	if got := panel.textSelect.sel.Focus; got != atExit {
+	if got := panel.textSelect.Focus.Offset; got != atExit {
 		t.Fatalf("a move after leaving extended the selection from %d to %d", atExit, got)
 	}
 }
@@ -517,14 +525,14 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 	if !result.Handled || result.Focus != id {
 		t.Fatalf("pressing the answer = %+v, want it focused", result)
 	}
-	if !panel.textSelect.dragging || panel.textSelect.row != 0 || panel.textSelect.sel.Anchor != 0 {
+	if !panel.textSelect.Dragging() || panel.textSelect.Anchor != (components.TextPoint{Surface: aiTextSurface(0, aiTextPrimary)}) {
 		t.Fatalf("press did not start a selection: %+v", panel.textSelect)
 	}
 	answerPointer(state, ui.PointerMove, end, id)
-	if !panel.textSelect.dragging {
+	if !panel.textSelect.Dragging() {
 		t.Fatal("the drag ended before the button was released")
 	}
-	if got := panel.textSelect.sel.Focus; got != len("alpha beta\n") {
+	if got := panel.textSelect.Focus.Offset; got != len("alpha beta\n") {
 		t.Fatalf("dragging to the second line selected to %d, want %d", got, len("alpha beta\n"))
 	}
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta\n" {
@@ -539,7 +547,7 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 		t.Fatalf("the selection was not highlighted: %+v", canvas.Rectangles())
 	}
 	answerPointer(state, ui.PointerUp, end, id)
-	if panel.textSelect.dragging {
+	if panel.textSelect.Dragging() {
 		t.Fatal("the selection is still dragging after the release")
 	}
 	if !panel.hasAITextSelection() {
@@ -575,7 +583,7 @@ func TestAnswerTextClickWithoutADragLeavesNoSelection(t *testing.T) {
 	}
 }
 
-func TestAnswerTextDragStaysInTheMessageItStartedIn(t *testing.T) {
+func TestAnswerTextDragRunsOnIntoTheNextMessage(t *testing.T) {
 	state, _ := panelState(t, nil)
 	state.ai.open = true
 	state.ai.items = []aiItem{
@@ -588,11 +596,59 @@ func TestAnswerTextDragStaysInTheMessageItStartedIn(t *testing.T) {
 	id := hitAIAnswerText.At(0)
 	answerPointer(state, ui.PointerDown, ui.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
 	answerPointer(state, ui.PointerMove, ui.Point{X: first.textRect.X + first.textRect.Width - 1, Y: second.textRect.Y + 1}, id)
-	if panel.textSelect.row != 0 {
-		t.Fatalf("the drag moved to row %d", panel.textSelect.row)
+	if got := panel.textSelect.Focus.Surface; got != aiTextSurface(1, aiTextPrimary) {
+		t.Fatalf("the drag stayed in surface %d", got)
 	}
+	answerPointer(state, ui.PointerMove, ui.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
+	answerPointer(state, ui.PointerUp, ui.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "first answer\n\nsecond answer" {
+		t.Fatalf("the drag selected %q, %v", got, ok)
+	}
+}
+
+func TestAnswerTextDragThroughTheGapBetweenMessagesGoesOn(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	state.ai.items = []aiItem{
+		{kind: aiAssistant, text: "first answer"},
+		{kind: aiAssistant, text: "second answer"},
+	}
+	paintAt(state, panelWide)
+	panel := &state.ai.panel
+	first, second := &panel.rows[0], &panel.rows[1]
+	gap := (first.textRect.Y + first.textRect.Height + second.textRect.Y) / 2
+	id := hitAIAnswerText.At(0)
+	answerPointer(state, ui.PointerDown, ui.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
+	answerPointer(state, ui.PointerMove, ui.Point{X: first.textRect.X + 1, Y: gap}, id)
+	if !panel.hasAITextSelection() {
+		t.Fatal("dragging into the gap below the message selected nothing")
+	}
+	answerPointer(state, ui.PointerUp, ui.Point{X: first.textRect.X + 1, Y: gap}, id)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "first answer" {
 		t.Fatalf("the drag selected %q, %v", got, ok)
+	}
+}
+
+func TestSelectionAcrossMessagesCoversTheBlocksBetween(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	state.ai.items = []aiItem{
+		{kind: aiAssistant, text: "alpha beta"},
+		{kind: aiUser, text: "gamma delta"},
+		{kind: aiAssistant, text: "epsilon zeta"},
+	}
+	paintAt(state, panelWide)
+	panel := &state.ai.panel
+	panel.textSelect.Select(
+		components.TextPoint{Surface: aiTextSurface(0, aiTextPrimary), Offset: len("alpha ")},
+		components.TextPoint{Surface: aiTextSurface(2, aiTextPrimary), Offset: len("epsilon")},
+	)
+	canvas, _ := paintAt(state, panelWide)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "beta\n\ngamma delta\n\nepsilon" {
+		t.Fatalf("copied %q, %v", got, ok)
+	}
+	if highlighted := markdownSelectionRects(canvas, withAlpha(state.pal.text, 0.25)); len(highlighted) == 0 {
+		t.Fatal("the selected blocks were not highlighted")
 	}
 }
 
@@ -610,7 +666,7 @@ func TestAnswerSelectionClearsWhenTheConversationIsReset(t *testing.T) {
 	state, _ := panelState(t, nil)
 	panel := selectAnswerText(t, state, 0, 5)
 	state.aiPanelReset()
-	if panel.hasAITextSelection() || panel.textSelect.row != -1 {
+	if panel.hasAITextSelection() || panel.textSelect != (components.TextSelection{}) {
 		t.Fatalf("reset kept the selection: %+v", panel.textSelect)
 	}
 
@@ -655,7 +711,7 @@ func TestAnswerSelectionClearsWhenStreamingChangesTheRendering(t *testing.T) {
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
 	// With the backtick still unclosed it is literal text, so "中" starts at 3.
-	panel.textSelect = aiTextSelection{row: 0, sel: components.MarkdownSelection{Anchor: 3, Focus: 6}}
+	selectAnswerRange(panel, 0, 3, 6)
 	paintAt(state, panelWide)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "中" {
 		t.Fatalf("the unclosed-backtick answer selected %q, %v", got, ok)
@@ -695,8 +751,8 @@ func TestAnswerSelectionClampsToTheRenderedText(t *testing.T) {
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta gamma" {
 		t.Fatalf("an oversized selection copies %q, %v", got, ok)
 	}
-	if panel.textSelect.sel.Focus != len("alpha beta gamma") {
-		t.Fatalf("the selection was not clamped: %+v", panel.textSelect.sel)
+	if panel.textSelect.Focus.Offset != len("alpha beta gamma") {
+		t.Fatalf("the selection was not clamped: %+v", panel.textSelect)
 	}
 }
 

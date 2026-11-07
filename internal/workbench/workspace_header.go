@@ -10,7 +10,11 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-const workspaceHeaderHeight = float32(44)
+// workspaceHeaderLabelSize is the size of the header buttons' labels, one for all
+// three so the bar reads as a row.
+const workspaceHeaderLabelSize = float32(13)
+
+const workspaceHeaderHeight = float32(38)
 
 var workspaceHeaderHits = tree.Feature("workspace-header")
 
@@ -20,7 +24,6 @@ var (
 	hitWorkspaceHeaderLayout        = tree.ID(workspaceHeaderHits, "layout")
 	hitWorkspaceHeaderSave          = tree.ID(workspaceHeaderHits, "save-template")
 	hitWorkspaceHeaderLayoutDismiss = tree.ID(workspaceHeaderHits, "layout-dismiss")
-	hitWorkspaceHeaderColumnsList   = tree.Sub(workspaceHeaderHits, tree.Name("columns"))
 )
 
 // workspaceHeaderPaint keeps the controls whose popup anchors are needed after
@@ -34,19 +37,14 @@ type workspaceHeaderPaint struct {
 }
 
 func (state *State) workspaceManaged(workspaceID layoutcore.WorkspaceID) bool {
-	_, ok := state.managedWorkspaceColumns[workspaceID]
+	_, ok := state.managedWorkspaceLayouts[workspaceID]
 	return ok
 }
 
 func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open bool) {
 	workspaceID := state.deck.ActiveWorkspace()
-	columns, managed := state.managedWorkspaceColumns[workspaceID]
-	if !managed || workspaceID == 0 || state.activeSection != sectionTerminal {
+	if !state.workspaceManaged(workspaceID) || workspaceID == 0 || state.activeSection != sectionTerminal {
 		return false
-	}
-	if columns < layoutcore.MinGridColumns || int(columns) > layoutcore.MaxGridColumns {
-		columns = uint8(DefaultWorkspaceColumns(len(state.deck.Panes(workspaceID, nil))))
-		state.managedWorkspaceColumns[workspaceID] = columns
 	}
 
 	pal, m := state.pal, state.messages
@@ -73,25 +71,25 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 	if broadcasting {
 		broadcastLabel = fmt.Sprintf(m.WorkspaceHeaderBroadcastingFmt, status.Connected)
 	}
-	broadcastWidth := canvas.TextWidthWeight(broadcastLabel, metrics.FontSizeS, ui.WeightMedium) + 36
+	broadcastWidth := canvas.TextWidthWeight(broadcastLabel, workspaceHeaderLabelSize, ui.WeightMedium) + 36
 	layoutLabel := m.WorkspaceHeaderLayout
-	layoutWidth := canvas.TextWidthWeight(layoutLabel, metrics.FontSizeS, ui.WeightMedium) + 36
-	_, temporary := state.temporaryWorkspaceColumns[workspaceID]
-	saveWidth := canvas.TextWidthWeight(m.WorkspaceDraftSave, metrics.FontSizeS, ui.WeightMedium) + 36
+	layoutWidth := canvas.TextWidthWeight(layoutLabel, workspaceHeaderLabelSize, ui.WeightMedium) + 36
+	_, temporary := state.temporaryWorkspaceLayouts[workspaceID]
+	saveWidth := canvas.TextWidthWeight(m.WorkspaceDraftSave, workspaceHeaderLabelSize, ui.WeightMedium) + 36
 	compactWidth := float32(640)
 	if temporary {
 		compactWidth = max(compactWidth, connectionWidth+broadcastWidth+layoutWidth+saveWidth+180)
 	}
 	compact := bounds.Width < compactWidth
 	if compact {
-		layoutWidth, saveWidth = 32, 32
+		layoutWidth, saveWidth = 30, 30
 	}
 
 	// Every painted element reserves its measured width, including status text.
 	var slots workspaceHeaderPaint
 	f := state.workspaceHeaderLayout.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().PadX(10).Gap(6).Items(flex.Center).Children(func() {
-		slots.back = f.Slot().Size(32, 32).Shrink(0)
+		slots.back = f.Slot().Size(30, 30).Shrink(0)
 		f.Column().Grow(1).Gap(0).Children(func() {
 			f.Text(state.workspaceTitle(workspaceID)).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).
 				Color(pal.text).LineHeight(20).Ellipsis()
@@ -124,7 +122,7 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 			state.paintIconButton(canvas, hitWorkspaceHeaderSave, iconFolderPlus, slots.save.Rect(), m.WorkspaceSaveMenu,
 				false, iconButtonQuiet, background)
 		} else {
-			components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderSave, slots.save.Rect()).Small().
+			components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderSave, slots.save.Rect()).Small().FontSize(workspaceHeaderLabelSize).
 				WithIcon(lucideIcons[iconFolderPlus]).Ghost(m.WorkspaceDraftSave)
 		}
 	}
@@ -132,7 +130,7 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 		state.paintIconButton(canvas, hitWorkspaceHeaderLayout, iconColumns2, slots.layout.Rect(), m.WorkspaceHeaderLayout,
 			false, iconButtonQuiet, background)
 	} else {
-		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderLayout, slots.layout.Rect()).Small().
+		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderLayout, slots.layout.Rect()).Small().FontSize(workspaceHeaderLabelSize).
 			WithIcon(lucideIcons[iconColumns2]).Ghost(layoutLabel)
 	}
 
@@ -175,7 +173,7 @@ func (state *State) paintWorkspaceBroadcast(canvas *ui.Canvas, bounds ui.Rect, l
 	}
 	canvas.DrawIcon(lucideIcons[iconRadio], ui.Rect{X: bounds.X + 9, Y: bounds.Y + 7, Width: 16, Height: 16}, foreground)
 	canvas.Label(label, ui.Rect{X: bounds.X + 30, Y: bounds.Y, Width: max(0, bounds.Width-36), Height: bounds.Height},
-		ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: foreground})
+		ui.TextStyle{Size: workspaceHeaderLabelSize, Weight: ui.WeightMedium, Color: foreground})
 	canvas.HitWithOptions(hitWorkspaceHeaderBroadcast, bounds, hint, ui.HitOptions{
 		Role: ui.RoleSwitch, Checked: enabled, Disabled: !available, Hint: hint,
 		Description: label,
@@ -225,6 +223,10 @@ func (state *State) clickWorkspaceHeader(id ui.ID) bool {
 		return false
 	}
 	switch {
+	case id.Scope() == hitWorkspacePaneTabs:
+		if index, ok := id.In(hitWorkspacePaneTabs); ok && index < len(state.panes) {
+			state.activatePane(state.deck.ActiveWorkspace(), state.panes[index].ID)
+		}
 	case id == hitWorkspaceHeaderBack:
 		state.leaveWorkspaceForLibrary()
 	case id == hitWorkspaceHeaderBroadcast:

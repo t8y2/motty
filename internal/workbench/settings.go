@@ -131,9 +131,6 @@ func (state *State) setTerminalFontSize(value float32) bool {
 		return false
 	}
 	state.terminalFontSize = value
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	state.fitTerminals()
 	return true
 }
 
@@ -145,9 +142,6 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 		return false
 	}
 	state.terminalFontFace = face
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	state.fitTerminals()
 	return true
 }
 
@@ -207,6 +201,27 @@ func closeActionFromString(value string) closeAction {
 		return closeQuits
 	}
 	return closeToTray
+}
+
+type relaunchAction uint8
+
+const (
+	relaunchRaise relaunchAction = iota
+	relaunchNewWindow
+)
+
+func (action relaunchAction) String() string {
+	if action == relaunchNewWindow {
+		return "new-window"
+	}
+	return "raise"
+}
+
+func relaunchActionFromString(value string) relaunchAction {
+	if value == relaunchNewWindow.String() {
+		return relaunchNewWindow
+	}
+	return relaunchRaise
 }
 
 // networkProxyMode is which proxy a local terminal's programs are told to use.
@@ -366,6 +381,10 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTabOrientation(tabsHorizontal)
 	case hitSettingsTabsVertical:
 		changed = state.setTabOrientation(tabsVertical)
+	case hitSettingsTabNumbers:
+		changed = state.setTabNumbers(!state.tabNumbers)
+	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
+		changed = state.setTabNumberModifier(id)
 	case hitSettingsOutputAlerts:
 		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
 		state.clearOutputAlerts()
@@ -390,6 +409,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 	case hitSettingsCloseQuit:
 		changed = state.closeAction != closeQuits
 		state.closeAction = closeQuits
+	case hitSettingsRelaunchRaise:
+		changed = state.relaunchAction != relaunchRaise
+		state.relaunchAction = relaunchRaise
+	case hitSettingsRelaunchNewWindow:
+		changed = state.relaunchAction != relaunchNewWindow
+		state.relaunchAction = relaunchNewWindow
 	case hitSettingsOptionText:
 		changed = state.terminalOption != terminalOptionText
 		state.terminalOption = terminalOptionText
@@ -583,6 +608,14 @@ func (state *State) settingsCloseOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsRelaunchOptions() [2]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsRelaunchRaise, Label: m.GeneralRelaunchRaise},
+		{ID: hitSettingsRelaunchNewWindow, Label: m.GeneralRelaunchNewWindow},
+	}
+}
+
 func (state *State) settingsOptionOptions() [2]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsOptionText, Label: state.messages.SettingsTerminalOptionText},
@@ -731,6 +764,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsTabsHorizontal, hitSettingsTabsVertical:
 		options := state.settingsTabOrientationOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
+		options := state.tabNumberOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
 		options := state.settingsNetworkProxyOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
@@ -739,6 +775,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsCloseTray, hitSettingsCloseQuit:
 		options := state.settingsCloseOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsRelaunchRaise, hitSettingsRelaunchNewWindow:
+		options := state.settingsRelaunchOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsOptionText, hitSettingsOptionMeta:
 		options := state.settingsOptionOptions()

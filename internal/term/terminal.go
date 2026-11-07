@@ -139,7 +139,8 @@ type screen struct {
 
 // Terminal is the emulator. Create it with New.
 type Terminal struct {
-	cols, rows int
+	cols, rows     int
+	wordSeparators string
 
 	main, alt screen
 	scr       *screen // the active one
@@ -198,6 +199,8 @@ type Terminal struct {
 	promptReadyFn      func()
 	promptStartFn      func()
 	promptToken        string
+	inputStart         Point // where the shell's editable line begins; see InputMove
+	inputStartSet      bool
 	inputEnvironmentFn func(InputEnvironment)
 	commandStartFn     func()
 	commandFinishedFn  func(int)
@@ -511,6 +514,7 @@ func (t *Terminal) Reset() {
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
+	t.inputStartSet = false
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false
 	t.top, t.bot = 0, t.rows-1
@@ -766,6 +770,9 @@ func (t *Terminal) Resize(cols, rows int) {
 	}
 	oldCols := t.cols
 	t.cols = cols
+	if cols != oldCols {
+		t.inputStartSet = false // reflow moves the line the shell is editing
+	}
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
 	if cols != oldCols {
 		t.reflowMain()
@@ -845,14 +852,20 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 
 // fitCols makes l exactly as wide as the terminal.
 func (t *Terminal) fitCols(l *line) {
+	changed := false
 	switch {
 	case len(l.cells) > t.cols:
+		if l.used > t.cols {
+			changed = true
+		}
 		l.cells = l.cells[:t.cols]
 		for len(l.marks) > 0 && int(l.marks[len(l.marks)-1].Col) >= t.cols {
 			l.marks = l.marks[:len(l.marks)-1]
+			changed = true
 		}
 		if l.cells[t.cols-1].Attr&WideHead != 0 { // its tail was cut off
 			l.orphan(t.cols - 1)
+			changed = true
 		}
 	case len(l.cells) < t.cols:
 		if cap(l.cells) >= t.cols {
@@ -870,7 +883,9 @@ func (t *Terminal) fitCols(l *line) {
 	}
 	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
-	l.version++
+	if changed {
+		l.version++
+	}
 }
 
 // eraseRange blanks cells a..b-1 of l with the current background, repairing

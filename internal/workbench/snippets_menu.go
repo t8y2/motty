@@ -10,6 +10,8 @@ var (
 	hitSnippetMenuSend    = tree.ID(snippetsHits, "snippet-menu-send")
 	hitSnippetMenuEdit    = tree.ID(snippetsHits, "snippet-menu-edit")
 	hitSnippetMenuDelete  = tree.ID(snippetsHits, "snippet-menu-delete")
+	hitSnippetMenuUp      = tree.ID(snippetsHits, "snippet-menu-up")
+	hitSnippetMenuDown    = tree.ID(snippetsHits, "snippet-menu-down")
 )
 
 // snippetMenu is the right-click menu of a row of the Snippets page: which
@@ -91,6 +93,9 @@ func (state *State) snippetActionRows(rows *menuRows) {
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
 	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
+	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
@@ -114,6 +119,10 @@ func (state *State) clickSnippetMenu(id ui.ID) bool {
 		state.sendSnippetFromPage(index, menu.at)
 	case hitSnippetMenuEdit:
 		state.openSnippetDialog(index)
+	case hitSnippetMenuUp:
+		state.moveSnippet(index, -1)
+	case hitSnippetMenuDown:
+		state.moveSnippet(index, 1)
 	case hitSnippetMenuDelete:
 		state.deleteSnippet(index)
 	}

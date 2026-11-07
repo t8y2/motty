@@ -34,6 +34,10 @@ type Host struct {
 	// an empty value lets that mode try the default and imported keys.
 	Auth     hostAuth
 	Identity string
+	// Credential is the id of the saved password (see credentials.go) the host
+	// takes its password from; empty keeps the host's own. An id that no saved
+	// password has is treated as empty.
+	Credential string
 	// ForwardX11 asks the server to forward the X11 connections of this host's
 	// shells to the local display. Off unless the user turned it on.
 	ForwardX11 bool

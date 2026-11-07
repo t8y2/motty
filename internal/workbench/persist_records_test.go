@@ -21,19 +21,23 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"notes_view": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
 		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
-		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
+		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
 		"terminal_toolbar_size":     true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
-		"host_view": true, "background": true, "snippet_shortcuts": true,
+		// The generation of default chords this computer's table was reconciled
+		// against: which defaults a build ships is not another device's business.
+		"shortcut_defaults_generation": true,
+		"host_view":                    true, "background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
+		"tab_numbers":            true,
 		"vertical_tabs_grouping": true,
 		"workspace_layouts":      true,
 		"sftp_local_bookmarks":   true,
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
-		"sftp_window_order": true, "sftp_open_mode": true, "custom_editor_path": true,
+		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"toolbars":    true,
 		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
 		// What a launch opens is chosen per computer: the shells and hosts of
@@ -66,7 +70,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/",
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{

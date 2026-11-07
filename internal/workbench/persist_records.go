@@ -79,7 +79,13 @@ import (
 // Version 23 requires lossless transactional field patches from every writer.
 // Workspace templates travel as shared records; the layout they restore is a
 // device-local object, which epoch 23 preserves without a version of its own.
-const configFormat = 23
+// Version 24 preserves the SFTP location profile synchronization flag. Profiles
+// are array records, so an older writer would otherwise drop the new field.
+// Version 25 preserves an AI provider's models URL, on the same terms: providers
+// are array records too.
+// Version 26 adds the saved passwords and the hosts' reference to one: an older
+// writer would drop the records it does not know.
+const configFormat = 26
 
 const (
 	kindSetting             = "setting"
@@ -178,6 +184,7 @@ var entityFields = []entityField{
 		return joinKey(fieldText(fields, "pattern"), fieldText(fields, "regex"), fieldText(fields, "case_sensitive"))
 	}},
 	{field: "autofill_rules", kind: "autofill", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
+	{field: "credentials", kind: "credential", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "sftp_bookmarks", kind: "bookmark", key: func(fields map[string]json.RawMessage) string {
 		if name := fieldText(fields, "name"); name != "" {
 			return joinKey("profile", fieldText(fields, "host"), fieldText(fields, "shared"), name)
@@ -218,11 +225,13 @@ var syncedSettings = map[string]bool{
 	"terminal_cursor_steady":       true,
 	"terminal_cursor_thickness":    true,
 	"terminal_copy_on_select":      true,
+	"terminal_word_separators":     true,
 	"terminal_right_click_paste":   true,
 	"terminal_tab_title":           true,
 	"terminal_show_latency":        true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
+	"terminal_input_click_off":     true,
 	"terminal_scheme":              true,
 	"terminal_scheme_dark":         true,
 	"terminal_scheme_light":        true,

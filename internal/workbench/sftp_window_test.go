@@ -146,10 +146,17 @@ func dualDrag(t *testing.T, view *headless.Session, source, target ui.Rect) {
 func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 	state, w, remote, host, localDir := dualSFTPFixture(t, 1.25)
 	view := host.windows[0].view
+	settled := func(count int) bool {
+		return len(w.view.transfers) == count && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	}
 	sourceID := w.session.ID
 	state.activeSessionID = 0 // returning home must not retarget the independent window
+	uploadListID := w.view.acceptedListID
 	dualDrag(t, view, dualHit(t, view, dualRow(t, w, true, "中文上传.yml")), dualHit(t, view, dualRow(t, w, false, "docs")))
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
+	// A completed transfer precedes its result and the automatic directory
+	// refresh. The next gesture needs the refreshed list to be interactive.
+	dualWait(t, state, w, view, func() bool { return settled(1) && w.view.acceptedListID != uploadListID })
 	remote.mu.Lock()
 	uploaded := bytes.Clone(remote.files["/home/test/docs/中文上传.yml"])
 	remote.mu.Unlock()
@@ -157,7 +164,7 @@ func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 		t.Fatalf("upload missed the folder target: %q %+v", uploaded, w.view.transfers)
 	}
 	dualDrag(t, view, dualHit(t, view, dualRow(t, w, false, "notes.txt")), dualHit(t, view, dualRow(t, w, true, "destination")))
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 2 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(2) })
 	actual, err := os.ReadFile(filepath.Join(localDir, "destination", "notes.txt"))
 	if err != nil || string(actual) != "hello world" {
 		t.Fatalf("download missed target: %q %v", actual, err)
@@ -168,19 +175,19 @@ func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 	if err := view.ClickLabel("tree"); err != nil {
 		t.Fatal(err)
 	}
+	uploadListID = w.view.acceptedListID
 	w.queueSelection(true)
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 3 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(3) && w.view.acceptedListID != uploadListID })
 	remote.mu.Lock()
 	nested := string(remote.files["/home/test/tree/leaf.txt"])
 	remote.mu.Unlock()
 	if nested != "nested file" {
 		t.Fatal("recursive directory upload failed", w.view.errorText)
 	}
-	dualWait(t, state, w, view, func() bool { return !w.view.busy })
 	remoteFolder := dualHit(t, view, dualRow(t, w, false, "docs"))
 	view.Click(remoteFolder.X+25, remoteFolder.Y+10)
 	w.queueSelection(false)
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 4 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(4) })
 	guide, err := os.ReadFile(filepath.Join(localDir, "docs", "guide.md"))
 	if err != nil || string(guide) != "guide\n" {
 		t.Fatal("recursive directory download failed", err)

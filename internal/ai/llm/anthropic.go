@@ -15,14 +15,36 @@ const anthropicVersion = "2023-06-01"
 
 type anthropic struct {
 	base
-	baseErr error
+	baseErr        error
+	modelsEndpoint string
+	modelsErr      error
 }
 
 // NewAnthropic returns a Provider speaking the Anthropic Messages API. An
 // empty BaseURL selects https://api.anthropic.com.
 func NewAnthropic(cfg Config) Provider {
 	u, err := anthropicBase(cfg.BaseURL)
-	return &anthropic{base: newBase(cfg, u), baseErr: err}
+	p := &anthropic{base: newBase(cfg, u), baseErr: err}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = anthropicModelsBase(cfg.ModelsURL)
+	}
+	return p
+}
+
+// anthropicModelsBase normalizes a models URL: trailing slashes, /models, and
+// /v1 are dropped so /v1/models can be cleanly appended.
+func anthropicModelsBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	u, err := normalizeBase(raw)
+	if err != nil {
+		return "", err
+	}
+	u.Path, _ = cutSuffixFold(u.Path, "/models")
+	u.Path, _ = cutSuffixFold(u.Path, "/v1")
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String(), nil
 }
 
 // anthropicBase returns the base without any /v1 or /v1/messages suffix;
@@ -221,7 +243,13 @@ func (p *anthropic) Stream(ctx context.Context, req Request) (<-chan Event, erro
 }
 
 func (p *anthropic) Models(ctx context.Context) ([]string, error) {
-	if p.baseErr != nil {
+	if p.modelsErr != nil {
+		return nil, p.modelsErr
+	}
+	endpoint := p.endpoint
+	if p.modelsEndpoint != "" {
+		endpoint = p.modelsEndpoint
+	} else if p.baseErr != nil {
 		return nil, p.baseErr
 	}
 	var ids []string
@@ -231,7 +259,7 @@ func (p *anthropic) Models(ctx context.Context) ([]string, error) {
 		if after != "" {
 			q.Set("after_id", after)
 		}
-		resp, err := p.do(ctx, http.MethodGet, p.endpoint+"/v1/models?"+q.Encode(), nil, func(r *http.Request) {
+		resp, err := p.do(ctx, http.MethodGet, endpoint+"/v1/models?"+q.Encode(), nil, func(r *http.Request) {
 			r.Header.Set("Accept", "application/json")
 			p.headers(r)
 		})

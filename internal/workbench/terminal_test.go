@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
@@ -394,12 +395,13 @@ func TestDigitChordsDriveTheTabs(t *testing.T) {
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
+	state.setTabNumbers(true)
 
 	// A tab is a workspace on the tab bar: selecting one has to move the bar,
 	// not only the session the keyboard goes to.
 	workspaces := state.deck.Workspaces(nil)
 	digit := func(text string) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: text})
+		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text})
 	}
 	digit("1")
 	if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
@@ -409,18 +411,18 @@ func TestDigitChordsDriveTheTabs(t *testing.T) {
 	if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
 		t.Fatal("the second digit did not select the second tab")
 	}
-	if result := digit("9"); result.Handled != (defaultShortcutModifier() == ui.ModifierMeta) {
+	if result := digit("9"); result.Handled != (keymap.Primary == ui.ModifierMeta) {
 		t.Fatalf("a digit with no tab behind it: handled=%v", result.Handled)
 	}
 	if state.activeSessionID != second {
 		t.Fatal("a missing tab changed the selection")
 	}
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "t"})
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "t"})
 	if state.modal != modalCommandPalette || !state.commandPalette.connect {
 		t.Fatal("new-tab shortcut did not open the connection picker")
 	}
 	state.Click(hitCommandPaletteClose)
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "w"})
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "w"})
 	if len(state.sessions) != 1 || state.activeSessionID != first {
 		t.Fatalf("close-tab shortcut left sessions=%d active=%d", len(state.sessions), state.activeSessionID)
 	}

@@ -113,8 +113,8 @@ func TestLoginPasteShortcutCannotReachActiveSSHSession(t *testing.T) {
 	s.ai.login = &aiCLILogin{provider: store.Provider{ID: "auth"}, term: local, cancel: func() {}}
 	s.ai.cfg.dialog = aiDialogCLILogin
 	s.options.ClipboardText = func() (string, error) { return "sensitive-login-code", nil }
-	chord := s.shortcuts.chords[shortcutPaste]
-	s.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: chord.Modifiers, Text: string(chord.Key)})
+	chord := s.shortcuts.chords.Chord(shortcutPaste)
+	s.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: chord.Modifiers, Text: string(chord.Char)})
 	if remote.typed() != "" {
 		t.Fatal("login clipboard was sent to the active SSH session")
 	}

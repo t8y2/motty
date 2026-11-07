@@ -254,9 +254,9 @@ func TestSFTPPathDoesNotNavigateOnRepeatsModifiersOrIMEConfirmation(t *testing.T
 func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
-	shortcut := state.shortcuts.chords[shortcutFilesPath]
+	shortcut := state.shortcuts.chords.Chord(shortcutFilesPath)
 	result := state.Shortcut(ui.KeyEvent{
-		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Key),
+		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char),
 	})
 	if !result.Handled || result.Focus != contextID(hitSFTPPath) || !result.FocusVisible || !view.sftpFolder.pathEditing {
 		t.Fatalf("path shortcut result=%+v editing=%v", result, view.sftpFolder.pathEditing)
@@ -273,7 +273,7 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("remote draft")
 	openLocalPane(t, state, session, localFixture(t))
-	result = state.Shortcut(ui.KeyEvent{Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Key)})
+	result = state.Shortcut(ui.KeyEvent{Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
 	if !result.Handled || !view.lfolder.pathEditing || state.EditorFor(hitSFTPPath).String() != view.lfolder.path {
 		t.Fatalf("local temporary editor result=%+v value=%q", result, state.EditorFor(hitSFTPPath).String())
 	}

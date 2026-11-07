@@ -300,6 +300,9 @@ type Options struct {
 	// which a desktop session offers to the remote system. Nil uses
 	// app.ClipboardFiles.
 	ClipboardFiles func() ([]string, error)
+	// SetClipboardFiles puts files on the system clipboard, as a file manager
+	// does after a copy. Nil uses app.SetClipboardFiles.
+	SetClipboardFiles func([]string) error
 	// ClipboardImagePNG reads an image from the system clipboard as PNG bytes.
 	// Nil uses app.ClipboardImagePNG.
 	ClipboardImagePNG func() ([]byte, error)
@@ -418,6 +421,9 @@ func (options Options) withDefaults() Options {
 	if options.ClipboardFiles == nil {
 		options.ClipboardFiles = app.ClipboardFiles
 	}
+	if options.SetClipboardFiles == nil {
+		options.SetClipboardFiles = app.SetClipboardFiles
+	}
 	if options.Notify == nil {
 		options.Notify = app.SendNotification
 	}
@@ -497,6 +503,7 @@ const (
 	modalWorkspaceSave
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
+	modalCredential
 )
 
 // tone colors a session's headline.
@@ -1179,6 +1186,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalDeleteRule {
 		state.ruleDelete = ruleDelete{}
+	}
+	if state.modal == modalCredential {
+		state.credentialForm = credentialUI{} // the password does not stay in the form
 	}
 	if state.modal == modalWorkspaceDraft {
 		state.workspaceDraft.reset()

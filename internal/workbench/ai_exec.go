@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"motty/internal/ai/capture"
@@ -20,6 +21,11 @@ type aiExec struct {
 	tap  *capture.Tap
 	done chan gate.ExecResult // buffered; receives exactly once
 	job  *aiJob               // set for a background command nobody is waiting on
+	// A device console has no completion marker. The prompt seen before the
+	// command is the signal: once it is drawn again on a later line, the command
+	// has returned.
+	consolePrompt string
+	consoleRow    uint64
 }
 
 // execEnd is why a command stopped being the one the assistant waits on.
@@ -41,6 +47,9 @@ var (
 	errNoShell    = errors.New("the session has no open shell yet")
 	errExecBusy   = errors.New("the terminal is already running another assistant command")
 	errExecRefuse = errors.New("the terminal did not accept input")
+	// errNoConsolePrompt means there is no prompt to wait for. Typing a command
+	// then would have no completion signal.
+	errNoConsolePrompt = errors.New("the device console is not showing a prompt; read the terminal and wait for its prompt, then try again")
 )
 
 // aiSession finds the session a tool call names: "" is the active one.
@@ -93,12 +102,27 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 		return nil, errExecBusy
 	}
 	kind := t.shellKind()
-	nonce := capture.NewNonce()
+	nonce := ""
+	consolePrompt := ""
+	if kind == shellkind.Console {
+		// Read the prompt from the live screen. This is what a person types at,
+		// and it is also the only completion signal a device gives.
+		t.screen.ScrollToBottom()
+		consolePrompt = t.consolePrompt()
+		if consolePrompt == "" {
+			return nil, errNoConsolePrompt
+		}
+	} else {
+		nonce = capture.NewNonce()
+	}
 	wrapped, err := capture.WrapFor(kind, args.Command, nonce)
 	if err != nil {
 		return nil, err
 	}
 	tap := capture.NewTap(nonce, maxExecOutput)
+	if kind == shellkind.Console {
+		tap = capture.NewConsoleTap(maxExecOutput)
+	}
 	switch {
 	case args.Background:
 		tap.RetainWindow(jobRetainWindow)
@@ -110,16 +134,19 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	// its cursor is, and it waits for the answer. Holding that output back to swap
 	// the wrapper for the plain command would withhold the question, so the user
 	// sees what the shell echoes.
-	if kind != shellkind.PowerShell {
+	if kind != shellkind.PowerShell && kind != shellkind.Console {
 		tap.SetDisplay(capture.DisplayCommandFor(kind, args.Command))
-	}
-	t.exec = &aiExec{t: t, tap: tap, done: make(chan gate.ExecResult, 1)}
-	if t.aiRows == nil {
-		t.aiRows = map[uint64]struct{}{}
 	}
 	// The prompt row is where the assistant's command will be shown, so mark it
 	// before the shell echoes anything. A line ID survives scrolling.
 	line := t.screen.Row(t.screen.Cursor().Y).ID
+	t.exec = &aiExec{
+		t: t, tap: tap, done: make(chan gate.ExecResult, 1),
+		consolePrompt: consolePrompt, consoleRow: line,
+	}
+	if t.aiRows == nil {
+		t.aiRows = map[uint64]struct{}{}
+	}
 	t.aiStartID = line
 	t.aiRows[line] = struct{}{}
 	if !t.sendAssistant(wrapped) {
@@ -168,6 +195,45 @@ func (t *terminal) feedExec(output []byte) []byte {
 		t.finishExec(endMarker)
 	}
 	return display
+}
+
+// consolePrompt returns the text from the start of the cursor's line to the
+// cursor, which is the prompt a device console is waiting at.
+func (t *terminal) consolePrompt() string {
+	cursor := t.screen.Cursor()
+	_, rows := t.screen.Size()
+	if cursor.Y < 0 || cursor.Y >= rows || cursor.X <= 0 {
+		return ""
+	}
+	text, ok := t.screen.AppendCellText(nil, cursor.Y, 0, cursor.X)
+	if !ok {
+		return ""
+	}
+	return strings.TrimRight(string(text), " ")
+}
+
+// consoleReturnedToPrompt reports whether the running console command has come
+// back to the prompt it started from. The start row is excluded: it still shows
+// that prompt until the device echoes the command, and accepting it then would
+// finish before the command ran.
+func (t *terminal) consoleReturnedToPrompt(exec *aiExec) bool {
+	cursor := t.screen.Cursor()
+	_, rows := t.screen.Size()
+	if cursor.Y < 0 || cursor.Y >= rows || t.screen.Row(cursor.Y).ID == exec.consoleRow {
+		return false
+	}
+	return t.screen.RowText(cursor.Y) == exec.consolePrompt
+}
+
+// finishConsoleExec ends a device-console command once its prompt is back. It
+// has no exit status, so the result says so rather than inventing one.
+func (t *terminal) finishConsoleExec() {
+	exec := t.exec
+	if exec == nil || exec.consolePrompt == "" || !t.consoleReturnedToPrompt(exec) {
+		return
+	}
+	exec.tap.FinishConsole(exec.consolePrompt, -1)
+	t.finishExec(endMarker)
 }
 
 // finishExec ends the running command: normally when its marker arrived, or

@@ -93,7 +93,9 @@ check("a wrong token is refused", rpc("initialize", tok="x" * 30)[0] == 401)
 status, data = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}})
 check("initialize", status == 200 and "motty" in data, data[:100])
 names = [x["name"] for x in json.loads(rpc("tools/list")[1])["result"]["tools"]]
-check("tools are listed", "terminal_exec" in names and "sftp_list" in names, names)
+check("tools are listed", "terminal_exec" in names and "sftp_list" in names and "list_hosts" in names, names)
+err, text = pumped("list_hosts", {})
+check("no unapproved hosts are exposed", not err and text == "no hosts are open to agents", text)
 
 for c in ['click "主机"', 'click 462 68', 'type tester@127.0.0.1:2222', 'click "连接"', 'waitfor "信任" 5000', 'click "信任并保存"',
           'waitfor "密码" 5000', 'type secret', 'key enter', 'waitfor "tester@e2e" 8000']:

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -62,7 +63,7 @@ func TestCommandPaletteKeyboardNavigationAndSessionSwitch(t *testing.T) {
 
 func TestCommandPaletteShortcutOpensFromTerminal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	result := state.Shortcut(ui.KeyEvent{Text: "p", Modifiers: defaultShortcutModifier() | ui.ModifierShift})
+	result := state.Shortcut(ui.KeyEvent{Text: "p", Modifiers: keymap.Primary | ui.ModifierShift})
 	if !result.Handled || !result.Repaint || result.Focus != hitCommandPaletteSearch || state.modal != modalCommandPalette {
 		t.Fatalf("shortcut result=%+v modal=%d", result, state.modal)
 	}
@@ -83,7 +84,7 @@ func TestNewWindowCommandAndShortcutUseTheHostLifecycle(t *testing.T) {
 	if opened != 1 {
 		t.Fatalf("palette opened %d windows", opened)
 	}
-	result := state.Shortcut(ui.KeyEvent{Text: "n", Modifiers: defaultShortcutModifier() | ui.ModifierShift})
+	result := state.Shortcut(ui.KeyEvent{Text: "n", Modifiers: keymap.Primary | ui.ModifierShift})
 	if !result.Handled || opened != 2 {
 		t.Fatalf("shortcut result=%+v opened=%d", result, opened)
 	}

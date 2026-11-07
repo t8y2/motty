@@ -23,11 +23,6 @@ func (s *State) noteButton(c *ui.Canvas, id ui.ID, b ui.Rect, label string, icon
 	if b.Width <= 0 {
 		return
 	}
-	v := &s.noteContent().view
-	if v.anchors == nil {
-		v.anchors = map[ui.ID]ui.Rect{}
-	}
-	v.anchors[id] = b
 	button := components.BeginButton(c, s.Theme().WithControlHeight(28), id, b).Height(b.Height)
 	if len(icon.Commands) > 0 {
 		button = button.WithIcon(icon).IconSmall()
@@ -236,6 +231,7 @@ func (s *State) paintNoteTree(c *ui.Canvas, b ui.Rect) {
 				v.menu = "folder"
 			}
 			v.overlayAnchor = ui.Rect{X: event.X, Y: event.Y, Width: 1, Height: 1}
+			v.overlayFrom = ui.ID{}
 			c.Consume()
 		}
 	}
@@ -391,7 +387,7 @@ func (s *State) paintNotePreviewContent(c *ui.Canvas, b ui.Rect, n *notesUI) {
 	c.HitWithOptions(hitNotePreviewText, ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: min(b.Height, max(0, geo.Content.Y+height+12-b.Y))}, s.noteText("Preview text", "预览文本"), ui.HitOptions{Role: ui.RoleGroup, SkipTab: true, ReadOnly: true, Cursor: ui.PointerCursorText})
 	look := components.MarkdownLookFor(s.Theme())
 	look.Code = s.codeColors()
-	n.rendered.Paint(c, components.MarkdownPaint{Selection: n.view.previewSelection, Look: look, X: geo.Content.X + 6, Y: geo.Content.Y + 6, Clip: b, Links: hitNoteLinks})
+	n.rendered.Paint(c, components.MarkdownPaint{Selection: n.view.previewSelect.In(0), Look: look, X: geo.Content.X + 6, Y: geo.Content.Y + 6, Clip: b, Links: hitNoteLinks})
 	s.paintNoteCodeCopies(c, n, ui.Point{X: geo.Content.X + 6, Y: geo.Content.Y + 6}, b)
 	s.paintNoteImagesContent(c, ui.Rect{X: geo.Content.X, Y: geo.Content.Y, Width: b.Width - 12, Height: b.Height}, geo.Content.Y+height+12, n)
 	area.EndContent()

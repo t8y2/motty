@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -51,7 +52,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	}
 	detailsText := &state.remote.containerDetails.text
 	result := state.Shortcut(ui.KeyEvent{
-		Text: "a", Modifiers: defaultShortcutModifier(), Target: hitRemoteContainerDetailsText,
+		Text: "a", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("container environment select-all result=%+v", result)
@@ -93,7 +94,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 		return nil
 	}
 	result = state.Shortcut(ui.KeyEvent{
-		Text: "c", Modifiers: defaultShortcutModifier(), Target: hitRemoteContainerDetailsText,
+		Text: "c", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || copied != selected {
 		t.Fatalf("copy result=%+v copied=%q, want %q", result, copied, selected)

@@ -133,7 +133,7 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	// Only the separately confirmed full-access mode skips approvals. In other
 	// modes nothing can approve a call, so policy requests remain refusals.
 	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode}
-	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_sessions first to get a host id. " +
+	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_hosts or list_sessions to get a host id. " +
 		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. "
 	if mode == gate.ModeAllowAll {
 		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval."
@@ -395,6 +395,17 @@ func (b *agentBackend) Sessions(context.Context) ([]gate.SessionInfo, error) {
 	return sessions, nil
 }
 
+func (b *agentBackend) Hosts(context.Context) ([]gate.HostInfo, error) {
+	hosts := make([]gate.HostInfo, 0, len(b.hosts))
+	for _, host := range b.hosts {
+		hosts = append(hosts, gate.HostInfo{
+			ID: host.CatalogID, Title: host.Label,
+			Address: b.catalog.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),
+		})
+	}
+	return hosts, nil
+}
+
 func (b *agentBackend) ReadTerminal(context.Context, tools.TerminalReadArgs) (string, error) {
 	return "", errAgentNoTerminal
 }
@@ -606,7 +617,7 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 		if !isPasswordQuestion(status.Questions) {
 			return fmt.Errorf("%s asks for more than a password (a one-time code?), which an agent cannot answer", who)
 		}
-		password, err := lookup(hostSecretName(b.catalog.secretOwner(host, status.Endpoint, status.EndpointRole), hostPasswordPart))
+		password, err := lookup(b.catalog.passwordSecret(host, status.Endpoint, status.EndpointRole))
 		if err != nil {
 			return err
 		}
@@ -677,7 +688,7 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 				hostIDs, labels = append(hostIDs, id), append(labels, id)
 			}
 		}
-		if len(ids) == 0 && name != tools.NameListSessions {
+		if len(ids) == 0 && name != tools.NameListSessions && name != tools.NameListHosts {
 			if host, err := b.resolve(""); err == nil { // the only host there is
 				hostIDs, labels = []string{host.CatalogID}, []string{host.Label}
 			}

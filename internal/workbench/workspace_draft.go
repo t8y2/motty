@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
+	layoutcore "motty/internal/workspace"
 )
 
 type workspaceDraftMode uint8
@@ -26,8 +27,8 @@ type workspaceDraft struct {
 	name, query    text.Editor
 	selected       map[string]bool
 	order          []string
-	columns        uint8
-	columnsTouched bool
+	layout         layoutcore.LayoutSpec
+	layoutTouched  bool
 	error          string
 	bounds         ui.Rect
 	content        float32
@@ -45,7 +46,7 @@ func (state *State) openWorkspaceDraft(mode workspaceDraftMode) {
 	state.workspaceDraft = workspaceDraft{
 		mode:     mode,
 		selected: make(map[string]bool, maxWorkspaceTemplateHosts),
-		columns:  1,
+		layout:   layoutcore.GridSpec(1),
 	}
 	state.modal = modalWorkspaceDraft
 }
@@ -59,12 +60,12 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 	}
 	template := state.templates[index]
 	draft := workspaceDraft{
-		mode:           workspaceDraftEdit,
-		editID:         template.ID,
-		selected:       make(map[string]bool, len(template.HostIDs)),
-		order:          slices.Clone(template.HostIDs),
-		columns:        template.Columns,
-		columnsTouched: true,
+		mode:          workspaceDraftEdit,
+		editID:        template.ID,
+		selected:      make(map[string]bool, len(template.HostIDs)),
+		order:         slices.Clone(template.HostIDs),
+		layout:        template.Layout,
+		layoutTouched: true,
 	}
 	draft.name.Insert(template.Name)
 	draft.name.SetSelection(text.Range{End: draft.name.RuneCount()})
@@ -97,12 +98,10 @@ func (state *State) clickWorkspaceDraft(id ui.ID) {
 		}
 		draft.mode = workspaceDraftFixed
 		draft.error = ""
-	case id == hitWorkspaceDraftColumns1:
-		state.setWorkspaceDraftColumns(1)
-	case id == hitWorkspaceDraftColumns2:
-		state.setWorkspaceDraftColumns(2)
-	case id == hitWorkspaceDraftColumns3:
-		state.setWorkspaceDraftColumns(3)
+	case id.Scope() == hitWorkspaceDraftPresets:
+		if index, ok := id.In(hitWorkspaceDraftPresets); ok && index < len(workspacePresets) {
+			state.setWorkspaceDraftLayout(workspacePresets[index])
+		}
 	case id == hitWorkspaceDraftSubmit:
 		state.submitWorkspaceDraft()
 	case id.Scope() == hitWorkspaceDraftHostList:
@@ -125,9 +124,7 @@ func (state *State) clickWorkspaceDraft(id ui.ID) {
 				draft.order = append(draft.order, host.CatalogID)
 			}
 		}
-		if !draft.columnsTouched {
-			draft.columns = DefaultWorkspaceColumns(state.workspaceDraftSelectionCount())
-		}
+		state.workspaceDraftCountChanged()
 		draft.error = ""
 	case id.Scope() == hitWorkspaceDraftRemoveItem:
 		index, ok := id.In(hitWorkspaceDraftRemoveItem)
@@ -139,9 +136,9 @@ func (state *State) clickWorkspaceDraft(id ui.ID) {
 	}
 }
 
-func (state *State) setWorkspaceDraftColumns(columns uint8) {
-	state.workspaceDraft.columns = columns
-	state.workspaceDraft.columnsTouched = true
+func (state *State) setWorkspaceDraftLayout(spec layoutcore.LayoutSpec) {
+	state.workspaceDraft.layout = spec
+	state.workspaceDraft.layoutTouched = true
 }
 
 func (state *State) submitWorkspaceDraft() {
@@ -161,7 +158,7 @@ func (state *State) submitWorkspaceDraft() {
 		return
 	}
 
-	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), hostIDs, draft.columns)
+	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), hostIDs, draft.layout)
 	if err != nil {
 		draft.error = state.messages.WorkspaceDraftHostsRequired
 		return
@@ -173,9 +170,9 @@ func (state *State) submitWorkspaceDraft() {
 			title = plan.Hosts[0].Label
 		}
 		workspaceID, _, err := state.launchWorkspaceWithIdentity(plan, title, workspaceLaunchIdentity{
-			managedColumns:   plan.Columns,
-			temporary:        true,
-			temporaryColumns: plan.Columns,
+			managedLayout:   plan.Layout,
+			temporary:       true,
+			temporaryLayout: plan.Layout,
 		})
 		if err != nil {
 			draft.error = state.messages.WorkspaceTemplateApplyFailed
@@ -186,7 +183,7 @@ func (state *State) submitWorkspaceDraft() {
 		return
 	}
 
-	template, err := NewWorkspaceTemplate(name, state.workspaceDraftHostCatalogIDs(plan.Hosts), draft.columns)
+	template, err := NewWorkspaceTemplate(name, state.workspaceDraftHostCatalogIDs(plan.Hosts), plan.Layout)
 	if err != nil {
 		draft.error = state.messages.WorkspaceDraftNameRequired
 		return
@@ -220,7 +217,7 @@ func (state *State) submitWorkspaceDraftEdit(name string, hostIDs []string) {
 		return
 	}
 	template := WorkspaceTemplate{
-		ID: draft.editID, Name: name, HostIDs: slices.Clone(hostIDs), Columns: draft.columns,
+		ID: draft.editID, Name: name, HostIDs: slices.Clone(hostIDs), Layout: draft.layout,
 	}
 	if err := template.validate(); err != nil {
 		draft.error = state.workspaceSaveTemplateError(err)
@@ -283,14 +280,25 @@ func (state *State) workspaceDraftOrderedIDs() []string {
 func (state *State) moveWorkspaceDraftItem(from, to int) bool {
 	draft := &state.workspaceDraft
 	if draft.mode == workspaceDraftEdit {
-		return moveWorkspaceItem(draft.order, from, to)
+		return placeWorkspaceItem(draft.order, from, to, draft.layout)
 	}
 	ids := state.workspaceDraftSelectedCatalogIDs()
-	if !moveWorkspaceItem(ids, from, to) {
+	if !placeWorkspaceItem(ids, from, to, draft.layout) {
 		return false
 	}
 	draft.order = ids
 	return true
+}
+
+// dockWorkspaceDraftCard records a layout drawn on the draft's cards.
+func (state *State) dockWorkspaceDraftCard(spec layoutcore.LayoutSpec, order []int) {
+	draft := &state.workspaceDraft
+	ids := draft.order
+	if draft.mode != workspaceDraftEdit {
+		ids = state.workspaceDraftSelectedCatalogIDs()
+	}
+	draft.order = permuteWorkspaceItems(ids, order)
+	state.setWorkspaceDraftLayout(spec)
 }
 
 func (state *State) workspaceDraftRemoveItem(index int) {
@@ -301,7 +309,21 @@ func (state *State) workspaceDraftRemoveItem(index int) {
 	id := draft.order[index]
 	draft.order = slices.Delete(draft.order, index, index+1)
 	delete(draft.selected, id)
+	if draft.layout.Kind == layoutcore.LayoutCustom {
+		state.workspaceDraftCountChanged()
+	}
 	draft.error = ""
+}
+
+// workspaceDraftCountChanged keeps the layout fitting the chosen hosts: an
+// untouched choice follows the count, and a drawn layout, which names its
+// panes one by one, cannot outlive a change of count.
+func (state *State) workspaceDraftCountChanged() {
+	draft := &state.workspaceDraft
+	if !draft.layoutTouched || draft.layout.Kind == layoutcore.LayoutCustom {
+		draft.layout = DefaultWorkspaceLayout(state.workspaceDraftSelectionCount())
+		draft.layoutTouched = false
+	}
 }
 
 func cloneWorkspaceTemplates(templates []WorkspaceTemplate) []WorkspaceTemplate {
@@ -468,29 +490,30 @@ func (state *State) paintWorkspaceDraftLayout(canvas *ui.Canvas, bounds ui.Rect,
 	countWidth := canvas.TextWidth(countLabel, 12) + 4
 	monitorLabel(canvas, m.WorkspaceDraftPreview, ui.Rect{X: bounds.X, Y: bounds.Y, Width: max(0, bounds.Width-countWidth-12), Height: 22}, 13, pal.text, ui.WeightSemibold)
 	monitorRight(canvas, countLabel, ui.Rect{X: bounds.X + bounds.Width - countWidth, Y: bounds.Y, Width: countWidth, Height: 22}, 12, pal.muted, ui.WeightRegular)
-	ids := [3]ui.ID{hitWorkspaceDraftColumns1, hitWorkspaceDraftColumns2, hitWorkspaceDraftColumns3}
-	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: bounds.X, Y: bounds.Y + 30, Width: bounds.Width, Height: 54}, ids, draft.columns)
-	draft.previewBounds = ui.Rect{X: bounds.X, Y: bounds.Y + 96, Width: bounds.Width, Height: max(0, bounds.Height-96)}
+	strip := workspacePresetStripHeight(bounds.Width)
+	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: bounds.X, Y: bounds.Y + 30, Width: bounds.Width, Height: strip}, hitWorkspaceDraftPresets, 0, draft.layout)
+	previewY := 30 + strip + 12
+	draft.previewBounds = ui.Rect{X: bounds.X, Y: bounds.Y + previewY, Width: bounds.Width, Height: max(0, bounds.Height-previewY)}
 	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
-	draft.previewContent = workspaceCardContentHeight(len(items), draft.columns)
+	draft.previewContent = workspaceCardContentHeight(len(items), draft.layout)
 	area := components.BeginScrollArea(canvas, state.Theme(), draft.previewBounds, ui.Size{Width: max(0, bounds.Width-10), Height: draft.previewContent}).Offset(0, draft.previewScroll).ReserveScrollbars().
 		Viewport(hitWorkspaceDraftPreviewScroll, m.WorkspaceDraftPreview).VerticalScrollbar(hitWorkspaceDraftPreviewScrollbar, m.WorkspaceDraftPreview, "")
 	geometry := area.BeginContent()
 	draft.previewScroll = geometry.OffsetY
 	if len(items) == 0 {
-		state.paintWorkspaceGridPreview(canvas, geometry.Viewport, nil, draft.columns)
+		state.paintWorkspaceGridPreview(canvas, geometry.Viewport, nil, draft.layout)
 	} else {
 		content := ui.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, bounds.Width-10), Height: draft.previewContent}
-		state.paintWorkspaceCards(canvas, content, geometry.Viewport, items, draft.columns, workspaceCardsDraft, "", 0)
+		state.paintWorkspaceCards(canvas, content, geometry.Viewport, items, draft.layout, workspaceCardsDraft, "", 0)
 		if draft.mode == workspaceDraftEdit {
-			state.paintWorkspaceDraftRemoveButtons(canvas, content, geometry.Viewport, items, draft.columns)
+			state.paintWorkspaceDraftRemoveButtons(canvas, content, geometry.Viewport, items, draft.layout)
 		}
 	}
 	area.EndContent()
 }
 
-func (state *State) paintWorkspaceDraftRemoveButtons(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, columns uint8) {
-	cells := workspaceGridCells(len(items), columns)
+func (state *State) paintWorkspaceDraftRemoveButtons(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec) {
+	cells := workspaceLayoutCells(len(items), spec)
 	for index, item := range items {
 		if index >= len(cells) {
 			continue
@@ -603,17 +626,6 @@ func (state *State) workspaceDraftKey(event ui.KeyEvent) ui.EventResult {
 			{ID: hitWorkspaceDraftFixed, Label: state.messages.WorkspaceDraftFixed},
 		}
 		if next, ok := components.TabsKeyDown(event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
-		}
-	}
-	columns := []components.SegmentOption{
-		{ID: hitWorkspaceDraftColumns1, Label: "1"}, {ID: hitWorkspaceDraftColumns2, Label: "2"}, {ID: hitWorkspaceDraftColumns3, Label: "3"},
-	}
-	for _, option := range columns {
-		if event.Target != option.ID {
-			continue
-		}
-		if next, ok := components.SegmentedControlKeyDown(event.Target, columns, components.DirectionLTR, event.Key); ok {
 			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}

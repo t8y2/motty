@@ -17,6 +17,8 @@ var connectPickerHits = tree.Feature("connect-picker")
 var (
 	hitConnectPickLocal = tree.ID(connectPickerHits, "connect-pick-local")
 	hitConnectPickList  = tree.Sub(connectPickerHits, tree.Name("connect-pick")) // + the host's ID
+	// hitConnectPickShellPicker expands the list of shells this computer can run.
+	hitConnectPickShellPicker = tree.ID(connectPickerHits, "connect-pick-shell-picker")
 	// hitConnectPickShells is a local terminal running one particular shell, by
 	// its place among the shells this computer lists.
 	hitConnectPickShells = tree.Sub(connectPickerHits, tree.Name("connect-pick-shell"))
@@ -32,7 +34,7 @@ func (state *State) openConnectPicker() {
 		state.refreshLocalShells()
 	}
 	state.commandPalette.connect, state.commandPalette.snippets = true, false
-	state.commandPalette.workspaces = false
+	state.commandPalette.workspaces, state.commandPalette.localShells = false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
@@ -61,7 +63,7 @@ func (state *State) rebuildConnectPicker() {
 			palette.addHeader(state.hostGroupLabel(*item.group), item.group.Count)
 		}
 		previousGroup = item.group
-		palette.addDetailed(item.label, item.detail, item.target)
+		palette.addCandidate(item)
 	})
 	palette.rawQuery = ""
 	palette.query = ""
@@ -76,6 +78,9 @@ type connectPickerCandidate struct {
 	target        ui.ID
 	group         *hostGroup
 	key           string
+	// searchOnly rows are indexed for the search but stay out of the
+	// unfiltered list until the Local Terminal row is expanded.
+	searchOnly bool
 }
 
 // eachConnectPickerCandidate keeps both modes' labels, targets and default
@@ -85,7 +90,7 @@ func (state *State) eachConnectPickerCandidate(add func(connectPickerCandidate))
 	add(connectPickerCandidate{label: state.messages.LocalTerminal, detail: local.Address, target: hitConnectPickLocal, key: "local-terminal"})
 	if choices := state.localShellMenu.choices; localShellSettingVisible() && len(choices) > 1 {
 		for index, choice := range choices {
-			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal"})
+			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal", searchOnly: true})
 		}
 	}
 	addHost := func(host Host, group *hostGroup) {

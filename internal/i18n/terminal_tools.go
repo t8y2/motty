@@ -60,7 +60,16 @@ type ToolsMessages struct {
 	SnippetCountFmt           string
 	SnippetColumnName         string
 	SnippetColumnShortcut     string
+	SnippetColumnGroup        string
+	SnippetFilterAll          string
+	SnippetFilterNone         string
+	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
+	SnippetSortAction         string
+	SnippetSortAscending      string
+	SnippetSortDescending     string
+	SnippetMoveUp             string
+	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string
@@ -133,8 +142,13 @@ type ToolsMessages struct {
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
+	WordSeparatorsRow          string
+	WordSeparatorsDescription  string
+	WordSeparatorsPlaceholder  string
 	RightClickPasteRow         string
 	RightClickPasteDescription string
+	InputClickRow              string
+	InputClickDescription      string
 	LinkPlainClickRow          string
 	LinkPlainClickDescription  string
 	BellRow                    string
@@ -313,6 +327,8 @@ type ToolsMessages struct {
 	CatFiles                        string
 	FilesPanelAutoOpen              string
 	FilesPanelAutoOpenDescription   string
+	FilesDirectoryTree              string
+	FilesDirectoryTreeDescription   string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
@@ -477,6 +493,9 @@ type ToolsMessages struct {
 	DesktopFilesTooManyFmt          string // limit
 	DesktopFilesPathTooLongFmt      string // path
 	DesktopFilesFailedFmt           string // error
+	DesktopFilesReceivedFmt         string // count, size
+	DesktopFilesReceivedSkippedFmt  string // count
+	DesktopFilesReceiveFailedFmt    string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
@@ -489,6 +508,10 @@ type ToolsMessages struct {
 	GeneralCloseDescription         string
 	GeneralCloseTray                string
 	GeneralCloseQuit                string
+	GeneralRelaunch                 string
+	GeneralRelaunchDescription      string
+	GeneralRelaunchRaise            string
+	GeneralRelaunchNewWindow        string
 	GeneralUpdate                   string
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
@@ -612,6 +635,7 @@ type ToolsMessages struct {
 	SyncErrAddress                  string
 	SyncConfigureS3                 string
 	SyncConfigureGist               string
+	SyncConfigureGitee              string
 	SyncErrTooLarge                 string
 	S3DialogTitle                   string
 	S3DialogDescription             string
@@ -633,6 +657,10 @@ type ToolsMessages struct {
 	GistAPI                         string
 	GistErrFields                   string
 	GistErrTooLarge                 string
+	GiteeDialogTitle                string
+	GiteeDialogDescription          string
+	GiteeID                         string
+	GiteeErrTooLarge                string
 	MenuSaveOutput                  string
 	MenuSearchSelection             string
 	OutputSaveTitle                 string

@@ -120,12 +120,28 @@ func startBackend(config Config) (backend, error) {
 
 	output := os.NewFile(uintptr(outRead), "conpty-out")
 	input := os.NewFile(uintptr(inWrite), "conpty-in")
-	var closeOnce sync.Once
-	closeConsole := func() { closeOnce.Do(func() { windows.ClosePseudoConsole(console) }) }
+	var consoleMu sync.Mutex
+	consoleClosed := false
+	closeConsole := func() {
+		consoleMu.Lock()
+		if consoleClosed {
+			consoleMu.Unlock()
+			return
+		}
+		// Wait for any in-flight resize before releasing the console, then
+		// prevent queued resizes from using its handle while it closes.
+		consoleClosed = true
+		consoleMu.Unlock()
+		windows.ClosePseudoConsole(console)
+	}
 	return backend{
 		io: &consoleIO{output: output, input: input, closeConsole: closeConsole},
 		resize: func(cols, rows int) {
-			_ = windows.ResizePseudoConsole(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+			consoleMu.Lock()
+			defer consoleMu.Unlock()
+			if !consoleClosed {
+				_ = windows.ResizePseudoConsole(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+			}
 		},
 		wait: func() (int, error) {
 			defer windows.CloseHandle(process.Process)

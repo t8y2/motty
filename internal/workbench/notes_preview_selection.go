@@ -4,14 +4,14 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
 var hitNotePreviewText = tree.ID(notesHits, "preview-text")
 
 func (v *noteViewState) clearPreviewSelection() {
-	v.previewSelection = components.MarkdownSelection{}
-	v.previewSelecting = false
+	v.previewSelect.Clear()
 }
 
 func (s *State) notePreviewSelectionPointer(e ui.PointerEvent) ui.EventResult {
@@ -20,34 +20,28 @@ func (s *State) notePreviewSelectionPointer(e ui.PointerEvent) ui.EventResult {
 
 func notePreviewSelectionPointerContent(e ui.PointerEvent, n *notesUI) ui.EventResult {
 	v := &n.view
-	if e.Kind == ui.PointerDown && e.Target == hitNotePreviewText && (e.Button == ui.PointerButtonPrimary || e.Button == ui.PointerButtonNone) {
-		if offset, ok := n.rendered.OffsetAt(ui.Point{X: e.X, Y: e.Y}); ok {
-			v.previewSelection = components.MarkdownSelection{Anchor: offset, Focus: offset}
-			v.previewSelecting = true
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitNotePreviewText}
+	if e.Kind == ui.PointerDown {
+		// A press ends a drag whose release was never seen; only one on the
+		// preview text begins another.
+		v.previewSelect.EndDrag()
+		if e.Target != hitNotePreviewText {
+			return ui.EventResult{}
 		}
+	} else if !v.previewSelect.Dragging() {
+		return ui.EventResult{}
 	}
-	if v.previewSelecting {
-		switch e.Kind {
-		case ui.PointerMove, ui.PointerUp:
-			if e.Kind == ui.PointerMove && !e.Captured {
-				return ui.EventResult{}
-			}
-			if offset, ok := n.rendered.OffsetAt(ui.Point{X: e.X, Y: e.Y}); ok {
-				v.previewSelection.Focus = offset
-			}
-			if e.Kind == ui.PointerUp {
-				v.previewSelecting = false
-			}
-			return ui.EventResult{Handled: true, Repaint: true}
-		case ui.PointerExit:
-			v.previewSelecting = false
-			return ui.EventResult{Handled: true, Repaint: true}
-		case ui.PointerDown:
-			v.previewSelecting = false
-		}
+	result := v.previewSelect.Pointer(e, func(point ui.Point) (components.TextPoint, bool) {
+		offset, ok := n.rendered.OffsetAt(point)
+		return components.TextPoint{Offset: offset}, ok
+	})
+	if !result.Handled {
+		return ui.EventResult{}
 	}
-	return ui.EventResult{}
+	outcome := ui.EventResult{Handled: true, Repaint: result.Changed}
+	if e.Kind == ui.PointerDown {
+		outcome.Focus = hitNotePreviewText
+	}
+	return outcome
 }
 
 func (s *State) notePreviewShortcut(e ui.KeyEvent) ui.EventResult {
@@ -61,7 +55,7 @@ func (s *State) notePreviewShortcut(e ui.KeyEvent) ui.EventResult {
 
 func (s *State) notePreviewShortcutContent(e ui.KeyEvent, n *notesUI) ui.EventResult {
 	v := &n.view
-	chord, ok := shortcutChordFromEvent(e)
+	chord, ok := keymap.FromEvent(e)
 	if !ok {
 		return ui.EventResult{}
 	}
@@ -72,8 +66,8 @@ func (s *State) notePreviewShortcutContent(e ui.KeyEvent, n *notesUI) ui.EventRe
 	}
 	if !e.Release && !e.Repeat {
 		if all {
-			v.previewSelection = components.MarkdownSelection{Focus: n.rendered.TextLen()}
-		} else if value := n.rendered.SelectedText(v.previewSelection); value != "" && s.options.SetClipboardText != nil {
+			v.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: n.rendered.TextLen()})
+		} else if value := n.rendered.SelectedText(v.previewSelect.In(0)); value != "" && s.options.SetClipboardText != nil {
 			if err := s.options.SetClipboardText(value); err != nil {
 				n.error = err.Error()
 			}

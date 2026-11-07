@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 	"motty/internal/sessionlog"
@@ -362,7 +363,14 @@ func (state *State) pumpDesktop(session *Session) {
 	}
 	view.session.Bells() // a bell has no sound to make here
 	state.finishFileOffers(view)
-	if text, ok := view.session.RemoteClipboard(); ok && view.clipboard {
+	receivedFiles := false
+	if receiver, ok := view.session.(desktop.FileReceiver); ok {
+		if files, ok := receiver.RemoteFiles(); ok {
+			state.receiveDesktopFiles(view, files)
+			receivedFiles = len(files.Paths) > 0
+		}
+	}
+	if text, ok := view.session.RemoteClipboard(); ok && view.clipboard && !receivedFiles {
 		view.sentClip = text // what the remote has: not to be sent back
 		if err := state.options.SetClipboardText(text); err != nil {
 			state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
@@ -643,7 +651,7 @@ func (state *State) desktopShortcut(view *desktopView, event ui.KeyEvent) ui.Eve
 	// text system would paste text (and nothing at all from a clipboard that has
 	// none, as a file manager's copy on Windows is), so Motty presses the remote's
 	// own paste instead. Held until the files are offered, in an event of its own.
-	if !event.Release && event.Modifiers == defaultShortcutModifier() && strings.EqualFold(event.Text, "v") {
+	if !event.Release && event.Modifiers == keymap.Primary && strings.EqualFold(event.Text, "v") {
 		if !event.Repeat && state.pasteFiles(view) {
 			return ui.EventResult{Handled: true}
 		}

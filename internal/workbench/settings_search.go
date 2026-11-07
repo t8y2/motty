@@ -127,6 +127,10 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
+	if state.tabNumbers {
+		row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
+	}
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
 	if state.tabOrientation == tabsVertical {
 		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
@@ -141,6 +145,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	if state.closeActionVisible() {
 		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
+	}
+	if state.options.NewWindow != nil {
+		row(settingsGeneral, tools.GeneralRelaunch, tools.GeneralRelaunchDescription)
 	}
 	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
 		row(settingsGeneral, label, m.Toolbars.Description)
@@ -160,7 +167,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
 	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)
+	row(settingsTerminal, tools.WordSeparatorsRow, tools.WordSeparatorsDescription)
 	row(settingsTerminal, tools.RightClickPasteRow, tools.RightClickPasteDescription)
+	row(settingsTerminal, tools.InputClickRow, tools.InputClickDescription)
 	row(settingsTerminal, tools.LinkPlainClickRow, tools.LinkPlainClickDescription)
 	row(settingsTerminal, tools.BellRow, tools.BellDescription)
 	row(settingsTerminal, tools.TabTitleRow, tools.TabTitleDescription)
@@ -200,6 +209,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
 	row(settingsFiles, tools.FilesWindowOrder, tools.FilesWindowOrderDescription)
 	row(settingsFiles, tools.FilesOpenMode, tools.FilesOpenModeDescription)
+	row(settingsFiles, tools.FilesDirectoryTree, tools.FilesDirectoryTreeDescription)
 	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesColumns, tools.FilesColumnsDescription)
 	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)

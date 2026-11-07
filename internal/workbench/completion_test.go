@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/i18n"
 )
 
 // completionWorld is a live SSH terminal with shell integration: the prompt
@@ -212,6 +213,70 @@ func TestCompletionHistoryMergesFirstOnlyWhileLearning(t *testing.T) {
 			if candidate.Text == "git status --short" {
 				t.Fatal("the history was read while learning is off")
 			}
+		}
+	}
+}
+
+// A history match's age is bucketed by whole units, and every bucket agrees on
+// where it ends: the month bucket runs to a year, so 360 days is twelve months
+// and never "0y ago". The wording comes from the catalog, not from here.
+func TestHumanRelativeTimeBucketsAndWording(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	m := i18n.CompletionMessages{
+		TimeJustNow:    "just now",
+		TimeMinutesFmt: "%dm ago",
+		TimeHoursFmt:   "%dh ago",
+		TimeDaysFmt:    "%dd ago",
+		TimeMonthsFmt:  "%dmo ago",
+		TimeYearsFmt:   "%dy ago",
+	}
+	cases := []struct {
+		name string
+		ago  time.Duration
+		want string
+	}{
+		{"just used", 30 * time.Second, "just now"},
+		{"a minute", time.Minute, "1m ago"},
+		{"an hour", time.Hour, "1h ago"},
+		{"a day", 24 * time.Hour, "1d ago"},
+		{"thirty days", 30 * 24 * time.Hour, "1mo ago"},
+		{"360 days is twelve months, not a zero year", 360 * 24 * time.Hour, "12mo ago"},
+		{"364 days", 364 * 24 * time.Hour, "12mo ago"},
+		{"a year", 365 * 24 * time.Hour, "1y ago"},
+		{"two years", 730 * 24 * time.Hour, "2y ago"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := humanRelativeTime(now, now.Add(-c.ago), m); got != c.want {
+				t.Fatalf("%v ago = %q, want %q", c.ago, got, c.want)
+			}
+		})
+	}
+	// A zero time reads as just used rather than as an age nobody recorded, and
+	// a clock that went backwards says the same instead of a negative age.
+	if got := humanRelativeTime(now, time.Time{}, m); got != "just now" {
+		t.Fatalf("zero time = %q", got)
+	}
+	if got := humanRelativeTime(now, now.Add(time.Hour), m); got != "just now" {
+		t.Fatalf("future time = %q", got)
+	}
+}
+
+// The shared prefix is offered as something the user can accept without
+// leaving an unrunnable fragment, so it stops at a whole word. A lead with no
+// separator at all is already one word, so it is kept as it is.
+func TestPrefixWordEndCutsBackToAWholeWord(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"git sta", "git "},
+		{"ip route get ", "ip route get "},
+		{"git", "git"},
+		{"list", "list"},
+		{"", ""},
+		{"a\tb", "a\t"},
+	}
+	for _, c := range cases {
+		if got := prefixWordEnd(c.in); got != c.want {
+			t.Fatalf("prefixWordEnd(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

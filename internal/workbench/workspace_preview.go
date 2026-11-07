@@ -9,7 +9,7 @@ import (
 
 // Preview geometry comes from the same layout tree as a launched workspace,
 // including the full-width last row when it has fewer panes.
-func (state *State) paintWorkspaceGridPreview(canvas *ui.Canvas, bounds ui.Rect, hosts []string, columns uint8) {
+func (state *State) paintWorkspaceGridPreview(canvas *ui.Canvas, bounds ui.Rect, hosts []string, spec layoutcore.LayoutSpec) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -24,7 +24,7 @@ func (state *State) paintWorkspaceGridPreview(canvas *ui.Canvas, bounds ui.Rect,
 	for index := range sessions {
 		sessions[index] = layoutcore.SessionID(index + 1)
 	}
-	layout, err := layoutcore.NewGrid(sessions, int(columns))
+	layout, err := layoutcore.NewLayout(sessions, spec)
 	if err != nil {
 		return
 	}

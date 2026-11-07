@@ -805,7 +805,7 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 	}
 }
 
-func TestTerminalFindRemovesTheSharedRailWhileSearching(t *testing.T) {
+func TestTerminalFindKeepsTheSharedRailWhileSearching(t *testing.T) {
 	for _, position := range []terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight} {
 		t.Run(position.String(), func(t *testing.T) {
 			state, _, _, _ := liveSession(t)
@@ -814,9 +814,18 @@ func TestTerminalFindRemovesTheSharedRailWhileSearching(t *testing.T) {
 			size := ui.Size{Width: 900, Height: 700}
 			state.Resize(size)
 
+			before := state.layoutForSession(session.ID)
 			state.openTerminalFind(session)
-			if _, ok := state.terminalSideRailSession(); ok {
-				t.Fatal("find mode kept the shared rail visible")
+			if _, ok := state.terminalSideRailSession(); !ok {
+				t.Fatal("find mode hid the shared rail")
+			}
+			if reserve := state.toolbarDockSideReserveFor(position == terminalToolbarLeft, true); reserve != state.terminalToolbarMetrics().railExtent {
+				t.Fatalf("find mode left %v pixels reserved, want the rail extent", reserve)
+			}
+			// The bar sits above the grid, so the rail and the columns it shares
+			// stay put: the pane does not get wider when a search opens.
+			if after := state.layoutForSession(session.ID); after.cols != before.cols || after.left != before.left {
+				t.Fatalf("opening find changed the columns: %+v, was %+v", after, before)
 			}
 			geometry := state.layoutForSession(session.ID)
 			cols, rows := session.term.screen.Size()
@@ -826,7 +835,10 @@ func TestTerminalFindRemovesTheSharedRailWhileSearching(t *testing.T) {
 
 			state.closeTerminalFind(session)
 			if _, ok := state.terminalSideRailSession(); !ok {
-				t.Fatal("closing find did not restore the shared rail")
+				t.Fatal("closing find lost the shared rail")
+			}
+			if layout := state.layoutForSession(session.ID); layout != before {
+				t.Fatalf("closing find did not restore the grid: %+v, was %+v", layout, before)
 			}
 			geometry = state.layoutForSession(session.ID)
 			cols, rows = session.term.screen.Size()
@@ -834,6 +846,37 @@ func TestTerminalFindRemovesTheSharedRailWhileSearching(t *testing.T) {
 				t.Fatalf("find-closed terminal=%dx%d geometry=%dx%d", cols, rows, geometry.cols, geometry.rows)
 			}
 		})
+	}
+}
+
+// The search bar belongs above the grid, so a search never narrows the pane:
+// the columns the user's text was wrapped to stay the same. Rows do change,
+// which is why the selection cannot survive — that is the grid following the
+// bar, not the rail disappearing.
+func TestTerminalFindKeepsTheColumnCount(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	state.Resize(ui.Size{Width: 900, Height: 700})
+	shell.say("keep me\r\n")
+	state.Wake()
+
+	cols, _ := session.term.screen.Size()
+	before := state.layoutForSession(session.ID)
+
+	state.openTerminalFind(session)
+	if gotCols, _ := session.term.screen.Size(); gotCols != cols {
+		t.Fatalf("opening find changed the column count: %d, was %d", gotCols, cols)
+	}
+	if after := state.layoutForSession(session.ID); after.cols != before.cols || after.left != before.left {
+		t.Fatalf("opening find moved the grid sideways: %+v, was %+v", after, before)
+	}
+
+	state.closeTerminalFind(session)
+	if gotCols, _ := session.term.screen.Size(); gotCols != cols {
+		t.Fatalf("closing find changed the column count: %d, was %d", gotCols, cols)
+	}
+	if after := state.layoutForSession(session.ID); after != before {
+		t.Fatalf("closing find did not restore the grid: %+v, was %+v", after, before)
 	}
 }
 

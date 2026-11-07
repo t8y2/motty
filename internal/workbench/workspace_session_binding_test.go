@@ -85,7 +85,7 @@ func createEmptyWorkspace(t testing.TB, state *State, paneCount int) (layoutcore
 		}
 		panes = append(panes, paneID)
 	}
-	if err := state.deck.SetGrid(workspaceID, panes, min(paneCount, 3)); err != nil {
+	if err := state.deck.SetLayout(workspaceID, panes, layoutcore.GridSpec(uint8(min(paneCount, 3)))); err != nil {
 		t.Fatal(err)
 	}
 	state.syncActiveSession()

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -59,9 +60,9 @@ func TestHeadlessShortcutCaptureClickAndChord(t *testing.T) {
 	if err := session.Keys("cmd+alt+x"); err != nil {
 		t.Fatal(err)
 	}
-	want := shortcutChord{Modifiers: ui.ModifierMeta | ui.ModifierAlt, Key: 'x'}
-	if state.shortcuts.chords[shortcutCommandPalette] != want || state.modal != modalNone {
-		t.Fatalf("binding=%+v modal=%d, want %+v and closed", state.shortcuts.chords[shortcutCommandPalette], state.modal, want)
+	want := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierAlt, Char: 'x'}
+	if state.shortcuts.chords.Chord(shortcutCommandPalette) != want || state.modal != modalNone {
+		t.Fatalf("binding=%+v modal=%d, want %+v and closed", state.shortcuts.chords.Chord(shortcutCommandPalette), state.modal, want)
 	}
 }
 
@@ -100,7 +101,7 @@ func TestHeadlessFlexibleShortcutsRecordAndTriggerThroughKeyboard(t *testing.T) 
 
 func TestHeadlessFlexibleShortcutLeavesUnboundKeysWithARealLocalShell(t *testing.T) {
 	state, local := openLocal(t)
-	if _, ok := state.shortcuts.bind(shortcutZoomIn, shortcutChord{Key: 'x'}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutZoomIn, keymap.Chord{Char: 'x'}); !ok {
 		t.Fatal("could not bind X")
 	}
 	view, err := headless.Open(app.Config{
@@ -159,8 +160,8 @@ func TestHeadlessShortcutCanBeDeletedFromTheCaptureDialog(t *testing.T) {
 	if err := session.ClickLabel(state.messages.ShortcutsDelete); err != nil {
 		t.Fatal(err)
 	}
-	if state.modal != modalNone || state.shortcuts.chords[shortcutFind].valid() {
-		t.Fatalf("delete left modal=%d chord=%+v", state.modal, state.shortcuts.chords[shortcutFind])
+	if state.modal != modalNone || state.shortcuts.chords.Chord(shortcutFind).Valid() {
+		t.Fatalf("delete left modal=%d chord=%+v", state.modal, state.shortcuts.chords.Chord(shortcutFind))
 	}
 	if label := state.shortcuts.labels[shortcutFind]; label != "—" {
 		t.Fatalf("the deleted shortcut reads %q, want —", label)
@@ -187,11 +188,11 @@ func TestHeadlessShortcutCaptureRestoresOnlyItsOwnDefault(t *testing.T) {
 			options := freshOptions(t)
 			state := newTestState(t, options)
 			showShortcutSettings(state)
-			state.shortcuts.bind(shortcutFind, shortcutChord{Named: ui.KeyF8})
+			state.shortcuts.bind(shortcutFind, keymap.Chord{Key: ui.KeyF8})
 			if deleted {
 				state.shortcuts.unbind(shortcutFind)
 			}
-			other := shortcutChord{Modifiers: ui.ModifierAlt, Key: 'j'}
+			other := keymap.Chord{Modifiers: ui.ModifierAlt, Char: 'j'}
 			state.shortcuts.bind(shortcutCompletion, other)
 			state.save()
 			view, err := headless.Open(app.Config{
@@ -218,13 +219,13 @@ func TestHeadlessShortcutCaptureRestoresOnlyItsOwnDefault(t *testing.T) {
 			if err := view.Click(reset.X+reset.Width/2, reset.Y+reset.Height/2); err != nil {
 				t.Fatal(err)
 			}
-			want := defaultShortcuts().chords[shortcutFind]
-			if state.modal != modalNone || state.shortcuts.chords[shortcutFind] != want || state.shortcutError != "" {
-				t.Fatalf("reset left modal=%d chord=%+v error=%q", state.modal, state.shortcuts.chords[shortcutFind], state.shortcutError)
+			want := defaultShortcuts().chords.Chord(shortcutFind)
+			if state.modal != modalNone || state.shortcuts.chords.Chord(shortcutFind) != want || state.shortcutError != "" {
+				t.Fatalf("reset left modal=%d chord=%+v error=%q", state.modal, state.shortcuts.chords.Chord(shortcutFind), state.shortcutError)
 			}
 			restored := newTestState(t, options)
-			if restored.shortcuts.chords[shortcutFind] != want || restored.shortcuts.chords[shortcutCompletion] != other {
-				t.Fatalf("restored find=%+v completion=%+v", restored.shortcuts.chords[shortcutFind], restored.shortcuts.chords[shortcutCompletion])
+			if restored.shortcuts.chords.Chord(shortcutFind) != want || restored.shortcuts.chords.Chord(shortcutCompletion) != other {
+				t.Fatalf("restored find=%+v completion=%+v", restored.shortcuts.chords.Chord(shortcutFind), restored.shortcuts.chords.Chord(shortcutCompletion))
 			}
 		})
 	}
@@ -313,7 +314,7 @@ func TestHeadlessShortcutResetLivesInThePageHeader(t *testing.T) {
 	if err := session.ClickLabel(state.messages.ShortcutsReset); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := state.shortcuts.chords[shortcutFind], defaultShortcuts().chords[shortcutFind]; got != want {
+	if got, want := state.shortcuts.chords.Chord(shortcutFind), defaultShortcuts().chords.Chord(shortcutFind); got != want {
 		t.Fatalf("after the header reset find = %+v, want %+v", got, want)
 	}
 }
@@ -409,6 +410,7 @@ func TestHeadlessDigitShortcutSwitchesTabs(t *testing.T) {
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
+	state.setTabNumbers(true)
 	session, err := headless.Open(app.Config{
 		Title: "tabs", Width: 1400, Height: 900,
 		Paint: state.Paint, OnPointer: state.Pointer,
@@ -421,7 +423,7 @@ func TestHeadlessDigitShortcutSwitchesTabs(t *testing.T) {
 	defer session.Close()
 
 	modifier := "ctrl"
-	if defaultShortcutModifier()&ui.ModifierMeta != 0 {
+	if keymap.Primary&ui.ModifierMeta != 0 {
 		modifier = "cmd"
 	}
 	if err := session.Keys(modifier + "+1"); err != nil {
@@ -456,7 +458,7 @@ func TestHeadlessLocalTerminalShortcutOpensItsTab(t *testing.T) {
 	defer session.Close()
 
 	modifier := "ctrl"
-	if defaultShortcutModifier()&ui.ModifierMeta != 0 {
+	if keymap.Primary&ui.ModifierMeta != 0 {
 		modifier = "cmd"
 	}
 	if err := session.Keys(modifier + "+shift+t"); err != nil {

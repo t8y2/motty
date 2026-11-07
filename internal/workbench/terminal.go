@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
@@ -858,6 +859,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	t.recording.append(state.now(), terminalRecordingOutput, data)
 	t.writeRemote(data, state.now())
 	if wasExec {
+		t.finishConsoleExec()
 		t.markAIBlock(t.exec == nil)
 	}
 	t.recorder.Output(state.now())
@@ -989,7 +991,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	var chrome terminalChrome
 	// Every pane in a split keeps the same top chrome whether it owns focus or
 	// not. The active pane leaves that strip blank, but reserving it here keeps
-	// switching panes from resizing either PTY or clearing a selection.
+	// switching panes from resizing either PTY or clearing a selection. The
+	// shared rail keeps its width in find mode: the search bar takes this strip
+	// and nothing else.
 	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
@@ -1027,16 +1031,16 @@ func (state *State) terminalInputNoticeVisibleInWorkspace(session *Session) bool
 // rail while settings or another page covers them.
 func (state *State) terminalToolbarSession() (*Session, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || session.term == nil || session.restored || session.desk != nil ||
-		session.term.find.open {
+	if !ok || session.term == nil || session.restored || session.desk != nil {
 		return nil, false
 	}
 	return session, true
 }
 
 // terminalSideRailSession reports the terminal whose shared rail is visible.
-// Connection, restored and desktop pages use their own chrome, and find mode
-// temporarily replaces the rail with its top search bar.
+// Connection, restored and desktop pages use their own chrome. Find mode keeps
+// the rail: its bar floats over the pane rather than taking the rail's room, so
+// searching never resizes a PTY or clears a selection.
 func (state *State) terminalSideRailSession() (*Session, bool) {
 	if state.activeSection != sectionTerminal {
 		return nil, false
@@ -1319,7 +1323,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		return handled
 	}
 	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
-		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && defaultShortcutModifier() == ui.ModifierMeta {
+		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == ui.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
 			// A chord the application has bound belongs to it even where the
@@ -1458,8 +1462,8 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 // shortcutBound reports whether the shortcut table binds the chord of event,
 // whether or not its action applies to the focused target.
 func (state *State) shortcutBound(event ui.KeyEvent) bool {
-	chord, ok := shortcutChordFromEvent(event)
-	return ok && state.shortcuts.actionFor(chord) != shortcutNone
+	chord, ok := keymap.FromEvent(event)
+	return ok && state.shortcutActionFor(chord) != shortcutNone
 }
 
 func (state *State) copySelection(session *Session) ui.EventResult {

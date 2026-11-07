@@ -18,6 +18,12 @@ type Point struct {
 	Column int
 }
 
+// SetWordSeparators overrides the punctuation that separates words in selections.
+// An empty value keeps the Unicode-based default classification.
+func (t *Terminal) SetWordSeparators(separators string) {
+	t.wordSeparators = separators
+}
+
 // PointAt is the buffer point under a view position.
 func (t *Terminal) PointAt(position Position) Point {
 	return Point{Line: t.LineNumber(position.Row), Column: position.Column}
@@ -118,14 +124,14 @@ func (t *Terminal) wordColumns(row Row, column int) (int, int) {
 	if column < len(row.Cells) && row.Cells[column].Attr&WideTail != 0 && column > 0 {
 		column--
 	}
-	kind := selectedCellKind(row.Cells, column)
+	kind := t.selectedCellKind(row.Cells, column)
 	start := column
 	for start > 0 {
 		previous := start - 1
 		if previous < len(row.Cells) && row.Cells[previous].Attr&WideTail != 0 && previous > 0 {
 			previous--
 		}
-		if selectedCellKind(row.Cells, previous) != kind {
+		if t.selectedCellKind(row.Cells, previous) != kind {
 			break
 		}
 		start = previous
@@ -133,7 +139,7 @@ func (t *Terminal) wordColumns(row Row, column int) (int, int) {
 	end := column
 	for {
 		next := end + selectedCellWidth(row.Cells, end)
-		if next >= t.cols || selectedCellKind(row.Cells, next) != kind {
+		if next >= t.cols || t.selectedCellKind(row.Cells, next) != kind {
 			break
 		}
 		end = next
@@ -227,9 +233,15 @@ const (
 	cellPunctuation
 )
 
-func selectedCellKind(cells []Cell, column int) cellKind {
+func (t *Terminal) selectedCellKind(cells []Cell, column int) cellKind {
 	if column < 0 || column >= len(cells) || cells[column].R == 0 || unicode.IsSpace(cells[column].R) {
 		return cellBlank
+	}
+	if t.wordSeparators != "" {
+		if strings.ContainsRune(t.wordSeparators, cells[column].R) {
+			return cellPunctuation
+		}
+		return cellWord
 	}
 	if cells[column].R == '_' || unicode.IsLetter(cells[column].R) || unicode.IsNumber(cells[column].R) {
 		return cellWord

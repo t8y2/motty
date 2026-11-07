@@ -425,9 +425,19 @@ func (state *State) namedHostGroups() int {
 // is a group to choose.
 func (state *State) hasHostFilter() bool { return state.namedHostGroups() > 0 }
 
-// hostsFlat is whether the list has no group headers: with no named group there
-// is nothing to head, and with one group chosen its name is on the chip.
-func (state *State) hostsFlat() bool { return state.hostFilterOn || state.namedHostGroups() == 0 }
+// hostsFlat is whether the list has no group headers: a selected leaf group's
+// name is already on its chip, but its child groups still need their headers.
+func (state *State) hostsFlat() bool {
+	if !state.hostFilterOn {
+		return state.namedHostGroups() == 0
+	}
+	for _, group := range state.hostGroups {
+		if group.Name != state.hostFilter && hostGroupWithin(group.Name, state.hostFilter) {
+			return false
+		}
+	}
+	return true
+}
 
 // setHostFilter shows every group (on false) or only the named one. What was
 // checked is let go, so no action reaches a host that is out of sight.
@@ -450,6 +460,12 @@ func (state *State) rebuildHostTreeRows() {
 	words := strings.Fields(strings.ToLower(state.visibleQuery))
 	filtering := len(words) != 0
 	flat := state.hostsFlat()
+	filterDepth := 0
+	if state.hostFilterOn {
+		if index := state.hostGroupIndex(state.hostFilter); index >= 0 {
+			filterDepth = int(state.hostGroups[index].Depth) + 1
+		}
+	}
 	hidden := ""
 	for groupIndex, group := range state.hostGroups {
 		if state.hostFilterOn && !hostGroupWithin(group.Name, state.hostFilter) {
@@ -477,10 +493,11 @@ func (state *State) rebuildHostTreeRows() {
 		if matched == 0 && !explicit {
 			continue
 		}
-		if !flat {
-			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: group.Depth})
+		selected := state.hostFilterOn && group.Name == state.hostFilter
+		if !flat && !selected {
+			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: uint8(max(0, int(group.Depth)-filterDepth))})
 		}
-		if !flat && !group.Expanded && !filtering {
+		if !flat && !selected && !group.Expanded && !filtering {
 			hidden = group.Name
 			continue
 		}
@@ -488,7 +505,7 @@ func (state *State) rebuildHostTreeRows() {
 			if strings.TrimSpace(state.hosts[hostIndex].Group) != group.Name {
 				continue
 			}
-			depth := group.Depth + 1
+			depth := uint8(max(0, int(group.Depth)+1-filterDepth))
 			if flat {
 				depth = 0
 			}

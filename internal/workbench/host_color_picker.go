@@ -112,7 +112,7 @@ func (state *State) clickHostColorPicker(id ui.ID) bool {
 		}
 		p.setValue(components.ColorPickerValue{}.WithColor(color))
 		p.open = true
-		state.editor.iconOpen, state.editor.authOpen, state.editor.identityOpen, state.editor.portsOpen = false, false, false, false
+		state.editor.iconOpen, state.editor.authOpen, state.editor.identityOpen, state.editor.credentialOpen, state.editor.portsOpen = false, false, false, false, false
 		return true
 	case hostPickerIDs.Cancel, hostPickerIDs.Dismiss:
 		if p.open {

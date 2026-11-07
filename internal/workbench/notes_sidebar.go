@@ -49,7 +49,8 @@ func (s *State) notePreviewState() *notesUI {
 }
 func (v *noteSidebar) stopCapture() {
 	v.widthDragging, v.splitDragging = false, false
-	v.content.view.scrollDrag, v.content.view.previewDragging, v.content.view.previewSelecting = false, false, false
+	v.content.view.scrollDrag, v.content.view.previewDragging = false, false
+	v.content.view.previewSelect.EndDrag()
 	v.content.view.pointerValid = false
 }
 func (s *State) noteBrowserNote(note savedNote) savedNote {

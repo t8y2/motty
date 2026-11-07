@@ -1,6 +1,6 @@
 ---
 title: 备份与同步
-description: 加密导出，以及通过 WebDAV、S3 或 GitHub Gist 做记录级同步。
+description: 加密导出，以及通过 WebDAV、S3、GitHub Gist 或 Gitee 做记录级同步。
 ---
 ## 备份
 
@@ -13,6 +13,7 @@ description: 加密导出，以及通过 WebDAV、S3 或 GitHub Gist 做记录�
 - WebDAV
 - 兼容 S3 的存储
 - GitHub Gist
+- Gitee 代码片段
 
 记录带有混合逻辑时钟，删除会保留为 90 天的墓碑，因此多台电脑可以收敛到一致，而不会
 互相覆盖。WebDAV 表单可在保存前测试登录，测试会在服务器上创建缺失的文件夹；配置完成后可以立即同步，
@@ -24,6 +25,13 @@ description: 加密导出，以及通过 WebDAV、S3 或 GitHub Gist 做记录�
 上传时 Motty 会创建备份文件上面的各级文件夹，但有些服务只允许自家客户端创建顶层文件夹，
 坚果云就是这样：请先在它的网页或客户端里建一个同步文件夹，再把“文件”填成
 `该文件夹/backup.mottybak`（留空时的默认值是 `motty/backup.mottybak`，需要先建好名为 `motty` 的文件夹）。密码要用坚果云账户安全设置里生成的“第三方应用密码”，不是登录密码。
+
+### Gitee 代码片段
+
+在 [Gitee → 设置 → 私人令牌](https://gitee.com/profile/personal_access_tokens)
+创建一个带 `gists` 权限的私人令牌，在同步设置里选择 **Gitee**，代码片段 ID 留空则会在
+第一次上传时创建一个私密代码片段。令牌保存在「已保存的密码」中，代码片段里存放的
+是与其他同步服务相同的加密备份。
 
 ## 只留在本机的内容
 

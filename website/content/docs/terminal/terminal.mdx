@@ -38,6 +38,11 @@ restored without reconnecting. All of these are palette commands.
 Search the retained history with **Command+F** (**Control+F** elsewhere). HTTP,
 HTTPS and OSC 8 links can be opened from the terminal.
 
+Double-click selects a word; dragging after the second click extends the selection
+by whole words. Under **Settings → Terminal → Word separators**, enter the
+characters that should split words (for example, `-/`); leave the field empty
+for the default punctuation rules. Whitespace always splits words.
+
 ## Images
 
 Kitty, iTerm2 and SIXEL images are rendered inline.
@@ -54,10 +59,18 @@ its dialog and press the keys. A shortcut needs Command, or Control together
 with Shift or Alt, so that terminal keys such as Ctrl+R keep working. It sends
 the snippet to the active terminal while the terminal page is showing, and
 shortcuts are kept per device because the free modifier differs by platform.
+The command field accepts multiple lines; Enter inserts a line break and the Save
+button saves it. On send, each line break becomes Enter in the remote terminal.
+Terminals with bracketed paste enabled receive the lines as a paste; otherwise
+earlier lines may execute immediately, even when **Press Enter after sending**
+is off (that option only controls the final Enter).
 
 A snippet does not need a shortcut. On the Snippets page, select it and choose
 **Send to terminal**, double-click its row, or right-click the row for a menu with
-Send, Edit and Delete. With one terminal open it is sent there; with several
+Send, Move up/down, Edit and Delete. In the unfiltered manual view, drag the handle beside a row or use the
+menu's Move actions to save a custom order; the handle also supports keyboard
+reordering. Clicking the same table heading cycles through ascending, descending,
+and your saved manual order. With one terminal open it is sent there; with several
 (tabs or split panes) a list of them opens so you choose the target, the active
 one marked "Current", and the chosen terminal is shown after sending. The status
 line names the terminal it went to. A **↵** keycap in the command column marks snippets that press
@@ -77,6 +90,11 @@ never runs it. In Settings > Terminal choose **Off**, **List**, or **List +
 inline**, which also shows the suggestion in gray while you type. Completion
 works without remembering commands, and **Check for updates** refreshes the
 catalog on request.
+Updates try GitHub directly first. If the connection fails or GitHub returns
+403, 429, or 5xx, Motty retries the public catalog release and source archive
+through the third-party `gh-proxy.com` mirror. No SSH credentials or terminal
+contents are sent. If you prefer not to use a third-party mirror, leave the
+built-in catalog in place rather than checking for updates.
 
 ## Appearance
 

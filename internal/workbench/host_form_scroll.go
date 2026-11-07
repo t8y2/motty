@@ -60,7 +60,7 @@ func (state *State) rememberHostControl(id ui.ID, bounds ui.Rect) {
 
 func (state *State) hostFormPopupOpen() bool {
 	e := &state.editor
-	return e.colorPicker.open || e.authOpen || e.identityOpen || e.portsOpen || e.iconOpen
+	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen || e.iconOpen
 }
 
 func (state *State) scrollHostForm(event ui.ScrollEvent) ui.EventResult {

@@ -34,6 +34,7 @@ const (
 	controlHit                                         // the slot is a pointer target
 	controlSearch                                      // the search box
 	controlModelInput                                  // the assistant's model-name field
+	controlWordSeparators                              // the terminal's word-selection separators
 	controlSwatches                                    // a strip of round color dots
 	controlLabel                                       // the words of a row, which label the control beside them
 	controlMCPSelect                                   // client configuration select
@@ -194,6 +195,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
+		case controlWordSeparators:
+			state.paintWordSeparatorsInput(canvas, rect)
 		case controlSwatches:
 			// The dots are the drawing: a strip of circles a pitch apart.
 			for slot, color := range state.settings.colors[control.first : control.first+control.count] {
@@ -299,6 +302,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				selectedTabs = hitSettingsTabsVertical
 			}
 			page.row(messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], selectedTabs)
+			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
+			if state.tabNumbers {
+				numberKeys := state.tabNumberOptions()
+				page.row(messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, numberKeys[:], state.tabNumberModifierID())
+			}
 			page.toggleRow(messages.SettingsOutputAlerts, messages.SettingsOutputAlertsDescription, state.backgroundOutputAlerts, hitSettingsOutputAlerts)
 			if state.tabOrientation == tabsVertical {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
@@ -318,6 +326,14 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 					selected = hitSettingsCloseQuit
 				}
 				page.row(messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, options[:], selected)
+			}
+			if state.options.NewWindow != nil {
+				options := state.settingsRelaunchOptions()
+				selected := hitSettingsRelaunchRaise
+				if state.relaunchAction == relaunchNewWindow {
+					selected = hitSettingsRelaunchNewWindow
+				}
+				page.row(messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, options[:], selected)
 			}
 			state.paintToolbarSettingsRows(page)
 		})
@@ -407,7 +423,9 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
+			page.wordSeparatorsRow()
 			page.toggleRow(state.messages.Tools.RightClickPasteRow, state.messages.Tools.RightClickPasteDescription, state.terminalRightClickPaste, hitSettingsRightClickPaste)
+			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)
 			page.toggleRow(state.messages.Tools.BellRow, state.messages.Tools.BellDescription, !state.terminalBellOff, hitSettingsBellToggle)
 			page.toggleRow(state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, state.terminalTabTitle, hitSettingsTabTitle)

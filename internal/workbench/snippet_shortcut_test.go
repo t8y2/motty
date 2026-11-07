@@ -4,11 +4,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
-func pressChord(state *State, chord shortcutChord) ui.EventResult {
-	return state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Key})})
+func pressChord(state *State, chord keymap.Chord) ui.EventResult {
+	return state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
 }
 
 func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.T) {
@@ -16,7 +17,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
 	shell := world.conns[0].shell(t)
-	chord := shortcutChord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Key: '1'}
+	chord := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '1'}
 
 	state.Click(hitSnippets)
 	state.Click(hitSnippetAdd)
@@ -26,11 +27,11 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	if !state.snippets.capturing {
 		t.Fatal("the shortcut button did not start waiting for a chord")
 	}
-	pressChord(state, shortcutChord{Modifiers: ui.ModifierControl, Key: 'r'})
+	pressChord(state, keymap.Chord{Modifiers: ui.ModifierControl, Char: 'r'})
 	if !state.snippets.capturing || state.snippets.dialogError != state.messages.Tools.SnippetShortcutInvalid {
 		t.Fatalf("Ctrl+R alone belongs to the terminal: capturing=%v error=%q", state.snippets.capturing, state.snippets.dialogError)
 	}
-	taken := state.shortcuts.chords[shortcutFind]
+	taken := state.shortcuts.chords.Chord(shortcutFind)
 	pressChord(state, taken)
 	if !state.snippets.capturing || state.snippets.dialogError == "" {
 		t.Fatalf("a built-in chord was taken: capturing=%v error=%q", state.snippets.capturing, state.snippets.dialogError)
@@ -60,8 +61,8 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	// A built-in shortcut cannot be moved onto it.
 	state.openShortcutCapture(shortcutFind)
 	pressChord(state, chord)
-	if state.modal != modalShortcutCapture || state.shortcutError == "" || state.shortcuts.chords[shortcutFind] != taken {
-		t.Fatalf("modal=%d error=%q find=%+v", state.modal, state.shortcutError, state.shortcuts.chords[shortcutFind])
+	if state.modal != modalShortcutCapture || state.shortcutError == "" || state.shortcuts.chords.Chord(shortcutFind) != taken {
+		t.Fatalf("modal=%d error=%q find=%+v", state.modal, state.shortcutError, state.shortcuts.chords.Chord(shortcutFind))
 	}
 	state.clickShortcutCapture(hitShortcutCaptureCancel)
 
@@ -75,7 +76,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	if got := pressChord(state, chord); got.Handled {
 		t.Fatal("a cleared shortcut still fired")
 	}
-	if restarted := newTestState(t, options); restarted.snippets.list[0].Shortcut.valid() {
+	if restarted := newTestState(t, options); restarted.snippets.list[0].Shortcut.Valid() {
 		t.Fatalf("a cleared shortcut came back: %+v", restarted.snippets.list[0])
 	}
 }
@@ -83,13 +84,13 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 func TestAChordTwoSnippetsWantGoesToTheFirst(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	chord := shortcutChord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Key: '2'}
+	chord := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '2'}
 	state.snippets.list = []snippet{{Name: "a", Command: "ls", Shortcut: chord}, {Name: "b", Command: "pwd"}}
 
 	state.openSnippetDialog(1)
 	state.Click(hitSnippetShortcut)
 	pressChord(state, chord)
-	if !state.snippets.capturing || state.snippets.dialogError == "" || state.snippets.shortcut.valid() {
+	if !state.snippets.capturing || state.snippets.dialogError == "" || state.snippets.shortcut.Valid() {
 		t.Fatalf("a chord of snippet a was given to b: %+v", state.snippets)
 	}
 }
@@ -97,8 +98,8 @@ func TestAChordTwoSnippetsWantGoesToTheFirst(t *testing.T) {
 func TestResettingShortcutsUnbindsSnippetsTheyNowCollideWith(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	defaultPalette := state.shortcuts.chords[shortcutCommandPalette]
-	moved := shortcutChord{Modifiers: defaultPalette.Modifiers | ui.ModifierAlt, Key: 'p'}
+	defaultPalette := state.shortcuts.chords.Chord(shortcutCommandPalette)
+	moved := keymap.Chord{Modifiers: defaultPalette.Modifiers | ui.ModifierAlt, Char: 'p'}
 	if _, ok := state.shortcuts.bind(shortcutCommandPalette, moved); !ok {
 		t.Fatal("could not move the command palette")
 	}
@@ -108,7 +109,7 @@ func TestResettingShortcutsUnbindsSnippetsTheyNowCollideWith(t *testing.T) {
 		t.Fatalf("a free chord was not kept: %+v", restarted.snippets.list[0])
 	}
 	state.Click(hitShortcutReset)
-	if state.snippets.list[0].Shortcut.valid() {
+	if state.snippets.list[0].Shortcut.Valid() {
 		t.Fatalf("snippet kept a chord the palette now uses: %+v", state.snippets.list[0])
 	}
 }
@@ -116,7 +117,7 @@ func TestResettingShortcutsUnbindsSnippetsTheyNowCollideWith(t *testing.T) {
 func TestSnippetsPageSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.snippets.list = []snippet{
-		{Name: "Restart nginx", Command: "systemctl restart nginx", Run: true, Shortcut: shortcutChord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Key: '1'}},
+		{Name: "Restart nginx", Command: "systemctl restart nginx", Run: true, Shortcut: keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '1'}},
 		{Name: "Disk", Command: "df -h"},
 	}
 	state.refreshSnippets()

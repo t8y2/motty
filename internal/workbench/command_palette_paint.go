@@ -112,6 +112,25 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					if entry.detail != "" {
 						f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(detailColor).Ellipsis().MaxWidth(layout.Body.Width * 0.45).Shrink(0)
 					}
+					// The Local Terminal row keeps one plain choice and opens the
+					// shell list from its arrow without leaving this dialog.
+					if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+						expanded := state.commandPalette.localShells
+						glyph := iconChevronRight
+						if expanded {
+							glyph = iconChevronDown
+						}
+						var arrowWash ui.Color
+						if canvas.Hovered() == hitConnectPickShellPicker {
+							arrowWash = state.pal.line
+						}
+						f.Stack().Size(24, 24).Shrink(0).HitWith(hitConnectPickShellPicker, state.messages.LocalShellChoose, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, SkipFocus: true, Hint: state.messages.LocalShellChoose, Expanded: expanded}).Children(func() {
+							f.Row().Fill().Radius(radius.item).Background(arrowWash)
+							f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+								f.Icon(lucideIcons[glyph]).Size(14, 14).Color(state.pal.muted).Shrink(0)
+							})
+						})
+					}
 					// A saved host can be opened for editing from its own row: the
 					// pencil opens the host's dialog instead of connecting.
 					if edit := connectPickEdit(entry.target); !edit.IsZero() {

@@ -42,7 +42,7 @@ func TestTemporaryWorkspaceCanBeSavedFromItsTabMenu(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	workspaceID := launchTemporaryWorkspace(t, state, 1, 0)
-	if _, ok := state.temporaryWorkspaceColumns[workspaceID]; !ok {
+	if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; !ok {
 		t.Fatal("temporary launch did not record its source")
 	}
 
@@ -57,8 +57,8 @@ func TestTemporaryWorkspaceCanBeSavedFromItsTabMenu(t *testing.T) {
 	if got, want := state.workspaceSave.name.String(), state.tabLabel(state.workspaceTabs[0]); got != want {
 		t.Fatalf("save name starts as %q, want %q", got, want)
 	}
-	if state.workspaceSave.columns != 2 {
-		t.Fatalf("save columns = %d, want 2", state.workspaceSave.columns)
+	if !isGrid(state.workspaceSave.layout, 2) {
+		t.Fatalf("save columns = %+v, want 2", state.workspaceSave.layout)
 	}
 	if state.workspaceSave.error != "" {
 		t.Fatalf("save dialog opened with error %q", state.workspaceSave.error)
@@ -114,7 +114,7 @@ func TestSavingTemporaryWorkspaceStoresOnlyCompositionInVisualOrder(t *testing.T
 		t.Fatalf("panes = %d", len(panes))
 	}
 	ordered := []layoutcore.PaneID{panes[2].ID, panes[0].ID, panes[1].ID}
-	if err := state.deck.SetGrid(workspaceID, ordered, 3); err != nil {
+	if err := state.deck.SetLayout(workspaceID, ordered, layoutcore.GridSpec(3)); err != nil {
 		t.Fatal(err)
 	}
 	state.refreshWorkspaceViews()
@@ -130,14 +130,14 @@ func TestSavingTemporaryWorkspaceStoresOnlyCompositionInVisualOrder(t *testing.T
 		t.Fatalf("templates = %+v", state.templates)
 	}
 	template := state.templates[0]
-	if template.Name != "Ops cluster" || template.Columns != 3 || !slices.Equal(template.HostIDs,
+	if template.Name != "Ops cluster" || !isGrid(template.Layout, 3) || !slices.Equal(template.HostIDs,
 		[]string{state.hosts[2].CatalogID, state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
 		t.Fatalf("template = %+v", template)
 	}
 	if state.selectedWorkspaceTemplateID != template.ID {
 		t.Fatalf("selected = %q, want %q", state.selectedWorkspaceTemplateID, template.ID)
 	}
-	if _, ok := state.temporaryWorkspaceColumns[workspaceID]; ok {
+	if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; ok {
 		t.Fatal("saved temporary workspace retained its save marker")
 	}
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != strings.ReplaceAll(
@@ -153,7 +153,7 @@ func TestSavingTemporaryWorkspaceStoresOnlyCompositionInVisualOrder(t *testing.T
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "columns": true}
+	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "layout": true}
 	for field := range fields {
 		if !allowed[field] {
 			t.Fatalf("template carries %q: %s", field, raw)
@@ -177,15 +177,15 @@ func TestSavingTemporaryWorkspaceUsesTheCurrentHeaderColumns(t *testing.T) {
 
 	state.Click(hitWorkspaceHeaderLayout)
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	state.Click(hitWorkspaceHeaderColumnsList.At(3))
-	if state.temporaryWorkspaceColumns[workspaceID] != 3 {
-		t.Fatalf("temporary source columns = %d, want 3", state.temporaryWorkspaceColumns[workspaceID])
+	state.Click(hitWorkspaceHeaderPresets.At(2))
+	if !isGrid(state.temporaryWorkspaceLayouts[workspaceID], 3) {
+		t.Fatalf("temporary source columns = %+v, want 3", state.temporaryWorkspaceLayouts[workspaceID])
 	}
 
 	state.openWorkspaceSave(workspaceID)
 	state.workspaceSave.name.Insert("Current layout")
 	state.submitWorkspaceSave()
-	if len(state.templates) != 1 || state.templates[0].Columns != 3 {
+	if len(state.templates) != 1 || !isGrid(state.templates[0].Layout, 3) {
 		t.Fatalf("saved template = %+v", state.templates)
 	}
 }
@@ -204,7 +204,7 @@ func TestSavingTemporaryWorkspaceRequiresAName(t *testing.T) {
 	if len(state.templates) != before {
 		t.Fatalf("empty name added templates: %+v", state.templates)
 	}
-	if _, ok := state.temporaryWorkspaceColumns[workspaceID]; !ok {
+	if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; !ok {
 		t.Fatal("failed save removed the temporary source marker")
 	}
 	state.Click(hitWorkspaceSaveCancel)
@@ -243,8 +243,8 @@ func TestSavingTemporaryWorkspaceReportsAnUnwritableStoreWithoutChangingState(t 
 		t.Fatalf("failed save changed library state: templates=%+v selected=%q expanded=%t",
 			state.templates, state.selectedWorkspaceTemplateID, state.workspaceLibraryExpanded)
 	}
-	if columns, ok := state.temporaryWorkspaceColumns[workspaceID]; !ok || columns != 2 {
-		t.Fatalf("failed save changed temporary marker: columns=%d present=%t", columns, ok)
+	if columns, ok := state.temporaryWorkspaceLayouts[workspaceID]; !ok || !isGrid(columns, 2) {
+		t.Fatalf("failed save changed temporary marker: columns=%+v present=%t", columns, ok)
 	}
 	if state.broadcast != beforeBroadcast || state.status != beforeStatus || state.activeSection != beforeSection {
 		t.Fatalf("failed save changed broadcast=%d status=%q section=%d, want %d %q %d",
@@ -260,7 +260,7 @@ func TestFailedWorkspaceSaveKeepsItsOpenSFTPViewAndConnection(t *testing.T) {
 	previousConfig := state.config
 	t.Cleanup(func() { state.config = previousConfig })
 	workspaceID := state.deck.ActiveWorkspace()
-	state.temporaryWorkspaceColumns[workspaceID] = 1
+	state.temporaryWorkspaceLayouts[workspaceID] = layoutcore.GridSpec(1)
 	state.openWorkspaceSave(workspaceID)
 	state.workspaceSave.name = *text.NewEditor("Unwritable")
 	view := session.files
@@ -379,7 +379,7 @@ func TestWorkspaceSaveRejectsPanesThatCannotBecomeATemplate(t *testing.T) {
 			if len(state.templates) != 0 {
 				t.Fatalf("invalid composition added %+v", state.templates)
 			}
-			if _, ok := state.temporaryWorkspaceColumns[workspaceID]; !ok {
+			if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; !ok {
 				t.Fatal("invalid composition removed temporary marker")
 			}
 		})
@@ -430,7 +430,7 @@ func TestTemporaryWorkspaceSaveMarkerIsRemovedWhenTheWorkspaceEnds(t *testing.T)
 		state := newTestState(t, options)
 		workspaceID := launchTemporaryWorkspace(t, state, 0)
 		state.closeWorkspaceNow(workspaceID)
-		if _, ok := state.temporaryWorkspaceColumns[workspaceID]; ok {
+		if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; ok {
 			t.Fatal("closing the tab left its save marker")
 		}
 	})
@@ -440,7 +440,7 @@ func TestTemporaryWorkspaceSaveMarkerIsRemovedWhenTheWorkspaceEnds(t *testing.T)
 		state := newTestState(t, options)
 		workspaceID := launchTemporaryWorkspace(t, state, 0)
 		state.closeSession(uint32(state.deck.Panes(workspaceID, nil)[0].SessionID))
-		if _, ok := state.temporaryWorkspaceColumns[workspaceID]; ok {
+		if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; ok {
 			t.Fatal("closing the last pane left its save marker")
 		}
 	})
@@ -452,7 +452,7 @@ func TestTemporaryWorkspaceSaveMarkerIsRemovedWhenTheWorkspaceEnds(t *testing.T)
 		if _, ok := state.detachWorkspace(workspaceID); !ok {
 			t.Fatal("detach failed")
 		}
-		if _, ok := state.temporaryWorkspaceColumns[workspaceID]; ok {
+		if _, ok := state.temporaryWorkspaceLayouts[workspaceID]; ok {
 			t.Fatal("detaching the tab left its save marker")
 		}
 	})
@@ -469,10 +469,10 @@ func workspaceCatalogIDs(state *State, indexes ...int) []string {
 func workspaceDraftColumnID(columns uint8) ui.ID {
 	switch columns {
 	case 2:
-		return hitWorkspaceDraftColumns2
+		return hitWorkspaceDraftPresets.At(1)
 	case 3:
-		return hitWorkspaceDraftColumns3
+		return hitWorkspaceDraftPresets.At(2)
 	default:
-		return hitWorkspaceDraftColumns1
+		return hitWorkspaceDraftPresets.At(0)
 	}
 }

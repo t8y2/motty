@@ -289,11 +289,11 @@ func TestLocalTerminalShortcutOpensAShell(t *testing.T) {
 	skipWithoutUnixShell(t)
 	state := newTestState(t, testOptions(t))
 	state.options.Invalidate = func() {}
-	chord := state.shortcuts.chords[shortcutLocalTerminal]
-	if !chord.valid() {
+	chord := state.shortcuts.chords.Chord(shortcutLocalTerminal)
+	if !chord.Valid() {
 		t.Fatalf("the local terminal shortcut is not a valid chord: %+v", chord)
 	}
-	result := state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Key})})
+	result := state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("shortcut result = %+v", result)
 	}

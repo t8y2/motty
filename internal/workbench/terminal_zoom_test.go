@@ -3,11 +3,12 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
 func zoomChord(key string, shift bool) ui.KeyEvent {
-	modifiers := defaultShortcutModifier()
+	modifiers := keymap.Primary
 	if shift {
 		modifiers |= ui.ModifierShift
 	}
@@ -61,6 +62,7 @@ func TestAZoomChangeRefitsTheTerminalToTheNewGrid(t *testing.T) {
 	before, _ := state.sessions[0].term.screen.Size()
 	state.Shortcut(zoomChord("=", false))
 	state.Shortcut(zoomChord("=", false))
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	after, _ := state.sessions[0].term.screen.Size()
 	if after >= before {
 		t.Fatalf("columns %d then %d: a larger font should fit fewer", before, after)
@@ -99,14 +101,46 @@ func TestPaddingChangesHowManyCellsFitAndIsKept(t *testing.T) {
 
 func TestZoomShortcutsAreCustomisableLikeTheOthers(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	custom := shortcutChord{Modifiers: defaultShortcutModifier() | ui.ModifierAlt, Key: '='}
+	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt, Char: '='}
 	if conflict, ok := state.shortcuts.bind(shortcutZoomIn, custom); !ok {
 		t.Fatalf("binding zoom in failed (conflict %d)", conflict)
 	}
-	if got := state.shortcuts.chords[shortcutZoomIn].label(); got == "—" {
+	if got := chordLabel(state.shortcuts.chords.Chord(shortcutZoomIn)); got == "—" {
 		t.Fatalf("label = %q", got)
 	}
-	if _, ok := state.shortcuts.bind(shortcutZoomOut, shortcutChord{Modifiers: defaultShortcutModifier(), Key: '='}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutZoomOut, keymap.Chord{Modifiers: keymap.Primary, Char: '='}); !ok {
 		t.Fatal("zoom out could not take the freed chord")
+	}
+}
+
+// narrowFontEngine measures a fixed-pitch font narrower than the reference cell, as the
+// platform's text engine does for Consolas.
+type narrowFontEngine struct{ ui.TextEngine }
+
+func (narrowFontEngine) MonoCell(size float32, _ ui.MonoFace) (float32, float32) {
+	return size * 0.5, size * 1.2
+}
+
+// The terminal's columns come from the font that draws it, as the window's text engine
+// measures it: a narrower font fits more columns, and the open terminal takes them with the
+// frame that first sees the font, not on the next resize.
+func TestTheTerminalCellFollowsTheFontTheWindowMeasures(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	size := ui.Size{Width: 1400, Height: 900}
+	var reference ui.Canvas
+	state.Paint(&reference, size)
+	referenceColumns, _ := state.sessions[0].term.screen.Size()
+
+	var measured ui.Canvas
+	measured.SetTextEngine(narrowFontEngine{ui.ReferenceTextEngine()})
+	state.Paint(&measured, size)
+	width, height := measured.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	if state.cellWidth != width || state.cellHeight != height*state.terminalLineHeight.factor() {
+		t.Fatalf("cell %vx%v, want the canvas's %vx%v", state.cellWidth, state.cellHeight, width, height)
+	}
+	if columns, _ := state.sessions[0].term.screen.Size(); columns <= referenceColumns {
+		t.Fatalf("columns %d then %d: a narrower font should fit more", referenceColumns, columns)
 	}
 }

@@ -15,7 +15,7 @@ func TestWorkspaceAutoSaveTemplateLayoutAndOrder(t *testing.T) {
 	template := mustWorkspaceTemplate(t, "API", workspaceCatalogIDs(state, 0, 1, 2), 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.Click(hitWorkspaceTemplatePresets.At(0))
-	if state.templates[0].Columns != 1 {
+	if !isGrid(state.templates[0].Layout, 1) {
 		t.Fatal("choosing a template layout did not save it immediately")
 	}
 	state.moveWorkspaceCard(workspaceCardRegion{view: workspaceCardsTemplate, template: template.ID, index: 0}, 2)
@@ -25,7 +25,7 @@ func TestWorkspaceAutoSaveTemplateLayoutAndOrder(t *testing.T) {
 	}
 	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
 	loaded, _, err := loadState(state.options.StatePath)
-	if err != nil || len(loaded.WorkspaceTemplates) != 1 || loaded.WorkspaceTemplates[0].Columns != 1 || !slices.Equal(loaded.WorkspaceTemplates[0].HostIDs, want) {
+	if err != nil || len(loaded.WorkspaceTemplates) != 1 || !isGrid(loaded.WorkspaceTemplates[0].Layout, 1) || !slices.Equal(loaded.WorkspaceTemplates[0].HostIDs, want) {
 		t.Fatalf("auto-saved template = %+v, error = %v", loaded.WorkspaceTemplates, err)
 	}
 	if len(world.configs) != 0 {
@@ -44,16 +44,16 @@ func TestWorkspaceAutoSaveRuntimeLayoutKeepsEditingAndPersists(t *testing.T) {
 	before := paneSessionIDs(state.deck.Panes(workspace, nil))
 	active, dials := state.activeSessionID, len(world.configs)
 	state.Click(hitWorkspaceHeaderLayout)
-	state.Click(hitWorkspaceHeaderColumnsList.At(2))
-	if state.managedWorkspaceColumns[workspace] != 2 || state.workspaceHeaderMenu != workspaceHeaderMenuLayout {
+	state.Click(hitWorkspaceHeaderPresets.At(1))
+	if !isGrid(state.managedWorkspaceLayouts[workspace], 2) || state.workspaceHeaderMenu != workspaceHeaderMenuLayout {
 		t.Fatal("runtime layout did not apply immediately and keep the editor open")
 	}
 	state.moveWorkspaceCard(workspaceCardRegion{view: workspaceCardsRuntime, index: 0}, 2)
 	if got := paneSessionIDs(state.deck.Panes(workspace, nil)); !slices.Equal(got, []uint32{before[1], before[2], before[0]}) {
 		t.Fatalf("runtime order = %v", got)
 	}
-	state.Click(hitWorkspaceHeaderColumnsList.At(1))
-	if state.workspaceLayoutDraft.err != "" || state.managedWorkspaceColumns[workspace] != 1 {
+	state.Click(hitWorkspaceHeaderPresets.At(0))
+	if state.workspaceLayoutDraft.err != "" || !isGrid(state.managedWorkspaceLayouts[workspace], 1) {
 		t.Fatal("a second edit was rejected as a stale layout")
 	}
 	state.Click(hitWorkspaceHeaderLayoutDismiss)

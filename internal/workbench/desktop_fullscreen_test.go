@@ -47,6 +47,28 @@ func repaintDesktopDriver(driver *app.Driver, state *State) error {
 	return driver.Pump()
 }
 
+func TestNativeWindowFullscreenKeepsTheDesktopWorkspace(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	driver := desktopDriver(t, state)
+	if err := driver.SetFullscreen(true); err != nil {
+		t.Fatal(err)
+	}
+	if !state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 || session.desk.fullscreen {
+		t.Fatal("native fullscreen entered the remote desktop's fullscreen mode")
+	}
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopFit); !ok {
+		t.Fatal("native fullscreen hid the desktop toolbar")
+	}
+	if err := driver.SetFullscreen(false); err != nil {
+		t.Fatal(err)
+	}
+	if state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 || session.desk.fullscreen {
+		t.Fatal("exiting native fullscreen left the desktop in fullscreen mode")
+	}
+}
+
 func TestDesktopFullscreenOverLoopbackPreservesInputAndRestoresChrome(t *testing.T) {
 	fixture := startVNCFixture(t, "secret")
 	state, session := vncState(t, fixture)

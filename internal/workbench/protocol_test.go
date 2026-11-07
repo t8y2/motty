@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,15 +18,18 @@ import (
 // streamWorld replaces the opener of Telnet and serial streams with one that
 // hands out fake shells (or an error), and records what was asked for.
 type streamWorld struct {
-	requests []streamRequest
-	shells   []*fakeShell
-	err      error
-	hold     chan struct{} // when set, opening waits for it to close
+	mu               sync.Mutex
+	recordedRequests []streamRequest
+	shells           []*fakeShell
+	err              error
+	hold             chan struct{} // when set, opening waits for it to close
 }
 
 func (world *streamWorld) install(state *State) {
 	state.openStream = func(ctx context.Context, request streamRequest) (Shell, error) {
-		world.requests = append(world.requests, request)
+		world.mu.Lock()
+		world.recordedRequests = append(world.recordedRequests, request)
+		world.mu.Unlock()
 		if world.hold != nil {
 			select {
 			case <-world.hold:
@@ -37,9 +41,17 @@ func (world *streamWorld) install(state *State) {
 			return nil, world.err
 		}
 		shell := &fakeShell{done: make(chan struct{})}
+		world.mu.Lock()
 		world.shells = append(world.shells, shell)
+		world.mu.Unlock()
 		return shell, nil
 	}
+}
+
+func (world *streamWorld) requests() []streamRequest {
+	world.mu.Lock()
+	defer world.mu.Unlock()
+	return append([]streamRequest(nil), world.recordedRequests...)
 }
 
 func addStreamHost(state *State, host Host) Host {
@@ -83,8 +95,9 @@ func TestTelnetHostOpensAStreamAndNotAnSSHConnection(t *testing.T) {
 	if len(world.conns) != 0 {
 		t.Fatalf("a Telnet host dialed %d SSH connections", len(world.conns))
 	}
-	if len(streams.requests) != 1 || streams.requests[0].Host.Address != "10.0.0.2" || streams.requests[0].Host.Port != 23 {
-		t.Fatalf("stream requests = %+v", streams.requests)
+	requests := streams.requests()
+	if len(requests) != 1 || requests[0].Host.Address != "10.0.0.2" || requests[0].Host.Port != 23 {
+		t.Fatalf("stream requests = %+v", requests)
 	}
 	if session.Address != "10.0.0.2:23" {
 		t.Fatalf("address = %q", session.Address)
@@ -154,8 +167,8 @@ func TestAStreamThatFailsToOpenShowsWhyAndRetries(t *testing.T) {
 	streams.err = nil
 	state.Click(hitConnRetry)
 	waitUntil(t, state, "the retry", func() bool { return session.term != nil && session.term.shell != nil })
-	if len(streams.requests) != 2 {
-		t.Fatalf("requests = %d", len(streams.requests))
+	if requests := streams.requests(); len(requests) != 2 {
+		t.Fatalf("requests = %d", len(requests))
 	}
 }
 
@@ -185,9 +198,9 @@ func TestOutboundProxyCarriesTelnetToo(t *testing.T) {
 	state.proxy = outboundProxy{kind: 1, address: "127.0.0.1:1080"}
 	addStreamHost(state, Host{Label: "Switch", Address: "10.0.0.2", Protocol: protocolTelnet})
 	openHost(state)
-	waitUntil(t, state, "the request", func() bool { return len(streams.requests) == 1 })
-	if streams.requests[0].Proxy == nil || streams.requests[0].Proxy.Address != "127.0.0.1:1080" {
-		t.Fatalf("proxy = %+v", streams.requests[0].Proxy)
+	waitUntil(t, state, "the request", func() bool { return len(streams.requests()) == 1 })
+	if proxy := streams.requests()[0].Proxy; proxy == nil || proxy.Address != "127.0.0.1:1080" {
+		t.Fatalf("proxy = %+v", proxy)
 	}
 }
 
@@ -444,8 +457,8 @@ func TestTypingATelnetOrSSHLinkConnectsToIt(t *testing.T) {
 
 	state.search.Insert("telnet://10.0.0.5:2323/")
 	state.connectTyped()
-	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests) == 1 })
-	if host := streams.requests[0].Host; host.Protocol != protocolTelnet || host.Address != "10.0.0.5" || host.Port != 2323 {
+	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests()) == 1 })
+	if host := streams.requests()[0].Host; host.Protocol != protocolTelnet || host.Address != "10.0.0.5" || host.Port != 2323 {
 		t.Fatalf("host = %+v", host)
 	}
 	if len(world.conns) != 0 {

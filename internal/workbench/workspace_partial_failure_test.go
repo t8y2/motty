@@ -18,7 +18,7 @@ func TestWorkspaceLaunchKeepsAFailedPaneAndRetriesOnlyThatSession(t *testing.T) 
 			testWorkspaceHost("db", "db.example.com"),
 			testWorkspaceHost("cache", "cache.example.com"),
 		},
-		Columns: 3,
+		Layout: layoutcore.GridSpec(3),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Operations")
 	if err != nil {

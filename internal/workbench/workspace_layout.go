@@ -42,13 +42,25 @@ func (state *State) Panes(dst []Pane) []Pane {
 	if layout == nil || layout.Root() == 0 {
 		return dst
 	}
-	return state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	start := len(dst)
+	dst = state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	if state.workspaceTabbed(workspaceID) {
+		// One pane shows at a time, filling the area; the rest keep their place
+		// in reading order with nothing to draw.
+		for index := start; index < len(dst); index++ {
+			dst[index].Bounds = FractionBounds{}
+			if dst[index].Active {
+				dst[index].Bounds = FractionBounds{Width: 1, Height: 1}
+			}
+		}
+	}
+	return dst
 }
 
 // PaneSplits appends active-workspace divider targets in deterministic order.
 func (state *State) PaneSplits(dst []PaneSplit) []PaneSplit {
-	_, layout := state.activeWorkspaceLayout()
-	if layout == nil || layout.Root() == 0 {
+	workspaceID, layout := state.activeWorkspaceLayout()
+	if layout == nil || layout.Root() == 0 || state.workspaceTabbed(workspaceID) {
 		return dst
 	}
 	return state.appendWorkspaceSplits(dst, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
@@ -170,6 +182,43 @@ func (state *State) ActivatePane(session uint32) bool {
 	return true
 }
 
+// restoreEmptyPaneActive finds an empty pane (SessionID==0) in the active
+// workspace and activates it. Called after the host-editor modal closes so
+// the New-Tab-Page paint returns instead of only a small "New tab" label.
+func (state *State) restoreEmptyPaneActive() {
+	workspace := state.deck.ActiveWorkspace()
+	if workspace == 0 {
+		return
+	}
+	var scratch [layoutcore.MaxPanes]layoutcore.Pane
+	for _, p := range state.deck.Panes(workspace, scratch[:0]) {
+		if p.SessionID == 0 {
+			state.deck.ActivatePane(workspace, p.ID)
+			state.syncActiveSession()
+			return
+		}
+	}
+}
+
+// restoreAfterHostDialog closes the host-edit modal and restores whatever was
+// open underneath it: a prompt that waited for the dialog, then the connect
+// picker (command palette in connect mode), or nothing.
+func (state *State) restoreAfterHostDialog() {
+	state.modal = modalNone
+	// A prompt that arrived while the dialog was up could not open; it takes
+	// precedence over the picker, which the answer may well replace.
+	state.showNextPrompt()
+	if state.modal == modalNone && state.commandPalette.connect {
+		// Came from the new-tab connect picker: rebuild it so edited/added
+		// hosts show up (refreshCommandPalette caches on search query). The
+		// empty pane the picker was opened on stays active so the New-Tab page
+		// still paints underneath it.
+		state.modal = modalCommandPalette
+		state.rebuildCommandPalette()
+		state.restoreEmptyPaneActive()
+	}
+}
+
 func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) bool {
 	previous := state.deck.ActivePane(workspaceID)
 	if !state.deck.ActivatePane(workspaceID, paneID) {
@@ -181,9 +230,9 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 	if previous != paneID {
 		// The candidate list belongs to the terminal that opened it.
 		state.closeCompletionList()
-		// So does find mode: the bar replaces the shared rail, and a find left
-		// open on a pane that lost focus would toggle the rail with every
-		// switch, resizing both PTYs and clearing their selections.
+		// So does find mode: the bar belongs to one pane, and a search left open
+		// on a pane that lost focus would reappear on a session the user is no
+		// longer searching.
 		state.closePaneFind(workspaceID, previous)
 	}
 	if previous != paneID && state.viewport.Width > 0 && state.viewport.Height > 0 {

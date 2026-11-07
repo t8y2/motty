@@ -32,6 +32,23 @@ type agentTransfer struct {
 	done   bool
 }
 
+// workingLocked reports whether the transfer can still touch its paths, which is
+// what the overlap check and the active count ask. A terminal state answers that
+// on its own, and it is published before done is set: the finishing goroutine
+// writes the terminal state, then records the audit, and only then marks done. A
+// caller that has already been told "completed" must not be told that the same
+// path is still busy, so done alone cannot decide this.
+func (task *agentTransfer) workingLocked() bool {
+	if task.done {
+		return false
+	}
+	switch task.value.State {
+	case "completed", "failed", "canceled":
+		return false
+	}
+	return true
+}
+
 type agentTransferRoot struct {
 	configured string
 	resolved   string
@@ -130,7 +147,7 @@ func (b *agentBackend) StartTransfer(ctx context.Context, args tools.TransferArg
 	active, oldestDone := 0, -1
 	for index, task := range b.transfers {
 		task.mu.Lock()
-		if !task.done {
+		if task.workingLocked() {
 			conflict := (task.value.Direction == "download" || !upload) && localTransferOverlap(task.value.LocalPath, args.LocalPath)
 			if task.value.Session == host.CatalogID && (task.value.Direction == "upload" || upload) {
 				conflict = conflict || remoteTransferOverlap(task.value.RemotePath, args.RemotePath)
@@ -324,7 +341,7 @@ func (b *agentBackend) Transfers(ctx context.Context, id string) ([]gate.Transfe
 		if id == "" || id == task.value.ID {
 			task.updateLocked()
 			value := task.value
-			if value.CancelRequested && !task.done && value.State != "completed" {
+			if value.CancelRequested && task.workingLocked() {
 				value.State = "canceling"
 			}
 			values = append(values, value)
@@ -353,12 +370,12 @@ func (b *agentBackend) CancelTransfer(ctx context.Context, id string) (gate.Tran
 			continue
 		}
 		task.updateLocked()
-		if !task.done && task.value.State != "completed" {
+		if task.workingLocked() {
 			task.value.CancelRequested = true
 			task.cancel()
 		}
 		value := task.value
-		if value.CancelRequested && !task.done {
+		if value.CancelRequested && task.workingLocked() {
 			value.State = "canceling"
 		}
 		task.mu.Unlock()

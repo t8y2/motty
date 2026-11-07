@@ -230,6 +230,7 @@ func TestUpdateClientBoundsRedirects(t *testing.T) {
 		{"https://codeload.github.com/archive", 1, true},
 		{"https://api.github.com/repos/carapace-sh/carapace-bin", 1, true},
 		{"https://objects.githubusercontent.com/archive", 1, true},
+		{"https://gh-proxy.com/https://api.github.com/repos/carapace-sh/carapace-bin/releases/latest", 1, true},
 		{"http://example.com", 1, false},
 		{"https://evil.example/archive", 1, false},
 		{"https://github.com.evil.example/archive", 1, false},
@@ -244,6 +245,89 @@ func TestUpdateClientBoundsRedirects(t *testing.T) {
 			t.Errorf("redirect %s (%d hops) = %v", test.url, test.hops, err)
 		}
 	}
+}
+
+func TestUpdateFallbackRetriesOnlyCatalogGitHubFailures(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusBadGateway} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var requests []string
+			transport := updateFallbackTransport{primary: catalogTransport(func(request *http.Request) (*http.Response, error) {
+				requests = append(requests, request.URL.String())
+				if request.URL.Host == updateMirror {
+					if request.Header.Get("Authorization") != "" {
+						t.Fatal("credentials were sent to the mirror")
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v1.9.0"}`)), Header: make(http.Header)}, nil
+				}
+				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("failed")), Header: make(http.Header)}, nil
+			})}
+			client := &http.Client{Transport: transport}
+			var release struct {
+				Tag string `json:"tag_name"`
+			}
+			if err := getJSON(context.Background(), client, "https://api.github.com/repos/carapace-sh/carapace-bin/releases/latest", &release); err != nil || release.Tag != "v1.9.0" {
+				t.Fatalf("mirrored release = %+v, %v", release, err)
+			}
+			if len(requests) != 2 || requests[1] != "https://"+updateMirror+"/"+requests[0] {
+				t.Fatalf("requests = %v", requests)
+			}
+		})
+	}
+	requests := 0
+	transport := updateFallbackTransport{primary: catalogTransport(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("missing"))}, nil
+	})}
+	request, _ := http.NewRequest(http.MethodGet, "https://api.github.com/repos/other/project/releases/latest", nil)
+	response, err := transport.RoundTrip(request)
+	if err != nil || requests != 1 || response.StatusCode != http.StatusNotFound {
+		t.Fatalf("unrelated request: response=%v err=%v count=%d", response, err, requests)
+	}
+	response.Body.Close()
+}
+
+func TestUpdateFallbackFetchesPinnedArchiveOnConnectionFailure(t *testing.T) {
+	archive := releaseArchive(t)
+	var requests []string
+	client := &http.Client{Transport: updateFallbackTransport{primary: catalogTransport(func(request *http.Request) (*http.Response, error) {
+		requests = append(requests, request.URL.String())
+		if request.URL.Host != updateMirror {
+			return nil, errors.New("GitHub unavailable")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(archive)), Header: make(http.Header)}, nil
+	})}}
+	catalog, _, err := FetchCatalog(context.Background(), client, Release{Tag: "v1.9.0", Commit: "commit-sha"})
+	if err != nil || catalog == nil || catalog.Root("tool") == nil {
+		t.Fatalf("mirrored archive: catalog=%v err=%v", catalog, err)
+	}
+	if len(requests) != 2 || requests[1] != "https://"+updateMirror+"/"+requests[0] {
+		t.Fatalf("requests = %v", requests)
+	}
+}
+
+func TestUpdateFallbackDoesNotForwardRequestCredentials(t *testing.T) {
+	requests := 0
+	transport := updateFallbackTransport{primary: catalogTransport(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.Hostname() == updateMirror {
+			if request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "" {
+				t.Fatal("the mirror received request credentials")
+			}
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("unavailable"))}, nil
+		}
+		return &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(strings.NewReader("blocked"))}, nil
+	})}
+	request, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/carapace-sh/carapace-bin/releases/latest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Cookie", "session=secret")
+	response, err := transport.RoundTrip(request)
+	if err != nil || response.StatusCode != http.StatusBadGateway || requests != 2 {
+		t.Fatalf("fallback: response=%v err=%v requests=%d", response, err, requests)
+	}
+	response.Body.Close()
 }
 
 func TestFetchCatalogRejectsDownloadFailure(t *testing.T) {

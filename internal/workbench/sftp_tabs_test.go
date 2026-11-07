@@ -645,6 +645,26 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	}
 }
 
+func TestMiddleClickFileTabUsesItsCloseConfirmation(t *testing.T) {
+	state, source, _, _ := openTestSFTP(t)
+	state.sftpOpenMode = sftpOpenTab
+	state.openSFTPWindow(source)
+	w := state.sftpWindows[source.ID]
+	w.view.extracting = true
+	press := ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonMiddle, Target: sftpFileTabID(source.ID)}
+	result := pointer(state, press)
+	if !result.Handled || !result.Repaint || !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
+		t.Fatalf("middle press skipped file-tab close confirmation: result=%+v confirm=%v closed=%v", result, w.closeConfirm, w.closed)
+	}
+	w.click(hitSFTPWindowCloseCancel)
+	w.view.extracting = false
+	press.Target = sftpFileTabCloseID(source.ID)
+	pointer(state, press)
+	if !w.closed || len(state.sftpTabs) != 0 {
+		t.Fatal("middle press did not close the file tab")
+	}
+}
+
 func TestSFTPFileTabIsRuntimeOnlyAndSourceCloseRemovesIt(t *testing.T) {
 	state, source, w, _, _ := openSFTPTabFixture(t)
 

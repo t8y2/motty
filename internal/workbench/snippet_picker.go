@@ -26,13 +26,35 @@ func (state *State) openSnippetPicker() {
 // to the Snippets page where one is added.
 func (state *State) rebuildSnippetPicker() {
 	palette := &state.commandPalette
-	for index, entry := range state.snippets.list {
-		detail := ""
-		if entry.Shortcut.valid() {
-			detail = entry.Shortcut.label()
-		}
-		palette.addDetailed(entry.Name, detail, hitSnippetSendList.At(index))
+	add := func(index int) {
+		entry := &state.snippets.list[index]
+		palette.addDetailed(entry.Name, snippetDetail(entry), hitSnippetSendList.At(index))
 		palette.entries[len(palette.entries)-1].search += " " + strings.ToLower(entry.Command)
+	}
+	form := &state.snippets
+	if len(form.groups) == 0 {
+		for index := range form.list {
+			add(index)
+		}
+	} else {
+		// With groups, the unfiltered list is sectioned by them, the ungrouped
+		// last; a search drops the headings and still matches the group name.
+		for _, group := range form.groups {
+			palette.addHeader(group, "")
+			for index := range form.list {
+				if sameSnippetGroup(form.list[index].Group, group) {
+					add(index)
+				}
+			}
+		}
+		if form.hasUngrouped {
+			palette.addHeader(state.messages.Tools.SnippetFilterNone, "")
+			for index := range form.list {
+				if form.list[index].Group == "" {
+					add(index)
+				}
+			}
+		}
 	}
 	if len(state.snippets.list) == 0 {
 		palette.add(state.messages.Tools.SnippetPickerAdd, hitSnippets)

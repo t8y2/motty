@@ -68,7 +68,7 @@ func hostSecretName(catalogID, part string) string { return "host:" + catalogID 
 // passwordName and otpSecretName are the secrets of the host the prompt of a
 // session is about (see hostCatalog.secretOwner).
 func (state *State) passwordName(session *Session) string {
-	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), hostPasswordPart)
+	return state.passwordSecret(session.host, session.endpoint, session.role)
 }
 
 func (state *State) otpSecretName(session *Session) string {
@@ -201,7 +201,7 @@ func (state *State) canAutofill(session *Session, status sshconn.Status) bool {
 	var name string
 	switch {
 	case status.Phase == sshconn.PhasePasswordPrompt && isPasswordQuestion(status.Questions):
-		name = hostSecretName(owner, hostPasswordPart)
+		name = state.passwordSecret(session.host, status.Endpoint, status.EndpointRole)
 	case status.Phase == sshconn.PhaseKeyPassphrasePrompt && status.IdentityPath != "":
 		name = passphraseSecretName(status.IdentityPath)
 	default:
@@ -218,6 +218,12 @@ func (state *State) forgetRefusedSecret(session *Session, name string) bool {
 		return false
 	}
 	session.filledSecret = ""
+	if strings.HasPrefix(name, credentialSecretName("")) {
+		// Other hosts use it too, and one host that refuses it says nothing about
+		// the rest. The user changes it in Settings.
+		state.status = state.messages.Credentials.StatusRefused
+		return false
+	}
 	_ = state.secrets.vault.Delete(name)
 	return true
 }
@@ -425,6 +431,7 @@ func (state *State) clickVaultSettings(id ui.ID) bool {
 func (state *State) paintSecuritySettings(page *settingsPage) {
 	m := state.messages
 	page.groups(func() {
+		state.paintCredentialSettings(page)
 		state.paintSessionLogSettingsGroup(page)
 		vaultFile := state.secrets.vault
 		if vaultFile == nil {

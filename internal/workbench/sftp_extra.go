@@ -44,6 +44,7 @@ var (
 	hitSettingsPathInput            = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup          = tree.ID(sftpHits, "settings-follow-setup")
 	hitSettingsPanelAutoOpen        = tree.ID(sftpHits, "settings-panel-auto-open")
+	hitSettingsDirectoryTree        = tree.ID(sftpHits, "settings-directory-tree")
 	hitSettingsPanelLeft            = tree.ID(sftpHits, "settings-panel-left")
 	hitSettingsPanelRight           = tree.ID(sftpHits, "settings-panel-right")
 	hitSettingsWindowLocalLeft      = tree.ID(sftpHits, "settings-window-local-left")
@@ -72,9 +73,9 @@ const (
 
 // sftpBookmark is a folder kept for a host, which the host's catalog id names.
 type sftpBookmark struct {
-	host, path  string
-	name, local string
-	shared      bool
+	host, path   string
+	name, local  string
+	shared, sync bool
 }
 
 // clickSFTPExtra handles the presses this file adds to the panel.
@@ -354,6 +355,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
 			page.row(m.FilesWindowOrder, m.FilesWindowOrderDescription, windowOrder[:], selectedWindowOrder)
 			page.row(m.FilesOpenMode, m.FilesOpenModeDescription, openModes[:], selectedOpenMode)
+			page.toggleRow(m.FilesDirectoryTree, m.FilesDirectoryTreeDescription, state.sftpDirectoryTree, hitSettingsDirectoryTree)
 			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
 			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
 				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
@@ -400,6 +402,14 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 	case hitSettingsPanelAutoOpen:
 		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
 		state.save()
+	case hitSettingsDirectoryTree:
+		state.sftpDirectoryTree = !state.sftpDirectoryTree
+		state.save()
+		for _, window := range state.sftpWindows {
+			if window != nil && !window.closed {
+				window.setDirectoryTreeDefault(state.sftpDirectoryTree)
+			}
+		}
 	case hitSettingsPanelLeft, hitSettingsPanelRight:
 		side := layoutcore.ContextLeft
 		if id == hitSettingsPanelRight {
@@ -571,6 +581,7 @@ type savedBookmark struct {
 	Name   string `json:"name,omitempty"`
 	Local  string `json:"local,omitempty"`
 	Shared bool   `json:"shared,omitempty"`
+	Sync   bool   `json:"sync,omitempty"`
 }
 
 // restoreSFTPSettings reads the file panel's settings and bookmarks from a state.
@@ -585,6 +596,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpTerminalFollow = saved.SFTPTerminalFollow
 	state.sftpPathInput = saved.SFTPPathInput
 	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.sftpDirectoryTree = saved.SFTPDirectoryTree
 	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
 		state.sftpPanelWidth = saved.SFTPPanelWidth
 	}
@@ -605,6 +617,8 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.closeAction = closeActionFromString(saved.CloseAction)
+	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
+	state.trayHintShown = saved.TrayHintShown
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)
 	state.sftpBookmarks = state.sftpBookmarks[:0]
@@ -618,9 +632,12 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 			perHost[entry.Host] >= maxBookmarksPerHost || len(state.sftpBookmarks) >= maxBookmarks {
 			continue
 		}
-		bookmark := sftpBookmark{host: entry.Host, path: clean, name: cleanBookmarkName(entry.Name), local: entry.Local, shared: entry.Shared}
+		bookmark := sftpBookmark{host: entry.Host, path: clean, name: cleanBookmarkName(entry.Name), local: entry.Local, shared: entry.Shared, sync: entry.Sync}
 		if !validSavedBookmarkLocal(bookmark.local) {
 			bookmark.local = ""
+		}
+		if bookmark.local == "" {
+			bookmark.sync = false
 		}
 		if slices.Contains(state.sftpBookmarks, bookmark) {
 			continue

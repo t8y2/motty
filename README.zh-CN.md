@@ -226,10 +226,14 @@ Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使�
 可选 MCP 服务器把同样的工具交给外部 agent：默认关闭、只监听 loopback、要求
 bearer token，支持 observe 和 ask 两种模式。`motty mcp-serve` 是不开窗口的同类做法：
 agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有端口，也没有 token。
+`list_hosts` 查询已对 agent 开放的保存 SSH 主机（无需连接），返回稳定的主机 ID、名称和地址；
+窗口版 HTTP MCP 与独立 stdio MCP 都不会列出未授权主机。窗口版 `list_sessions` 只列出
+打开的终端会话，其会话 ID 与主机 ID 不同；独立服务的 `list_sessions` 仍以主机 ID
+列出已授权主机，供其命令和文件工具使用。
 
 ### 备份与同步
 
-支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储或 GitHub Gist 同步。
+支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储、GitHub Gist 或 Gitee 代码片段同步。
 同步按记录合并，使用混合逻辑时钟和 90 天删除墓碑；标签页、窗口布局、快捷键、
 字体、密钥路径和云服务凭据只留在本机。
 

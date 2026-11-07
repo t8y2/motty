@@ -73,6 +73,9 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	}
 	var candidates []candidate
 	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
+		if item.searchOnly && query == "" && !state.commandPalette.localShells {
+			return
+		}
 		search := strings.ToLower(item.label + " " + item.detail)
 		if !matchesSearchWords(search, keywords) {
 			return
@@ -82,7 +85,7 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 			group = state.hostGroupLabel(*item.group)
 		}
 		candidates = append(candidates, candidate{
-			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target},
+			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target, searchOnly: item.searchOnly},
 			group: group, at: state.recentConnections[item.key],
 		})
 	})

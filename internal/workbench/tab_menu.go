@@ -132,7 +132,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	restart := hasSession && state.canReconnectLive(session)
 	disconnect := hasSession && state.canDisconnect(session)
 	var keys [6]string
-	closeKeys := state.shortcuts.chords[shortcutCloseTab].keys(keys[:0])
+	closeKeys := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(keys[:0])
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	address, name := "", ""
@@ -186,7 +186,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if disconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
-	if _, temporary := state.temporaryWorkspaceColumns[state.tabMenu.workspace]; temporary {
+	if _, temporary := state.temporaryWorkspaceLayouts[state.tabMenu.workspace]; temporary {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}

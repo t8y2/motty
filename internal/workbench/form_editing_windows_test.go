@@ -133,7 +133,7 @@ func TestWindowsProviderFormUsesFrameworkClipboard(t *testing.T) {
 		id    ui.ID
 		value string
 	}{
-		{hitAISetFormName, "测试服务商"}, {hitAISetFormURL, "https://example.com/v1"}, {hitAISetFormKey, "sk-test-key"},
+		{hitAISetFormName, "测试服务商"}, {hitAISetFormURL, "https://example.com/v1"}, {hitAISetFormModelsURL, "https://example.com/models/v1"}, {hitAISetFormKey, "sk-test-key"},
 	} {
 		focusFormField(t, driver, tc.id)
 		formChord(t, driver, ui.ModifierControl, 'a')

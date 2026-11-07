@@ -306,11 +306,16 @@ default, loopback-only, bearer-token protected, and supports observe and ask
 modes. `motty mcp-serve` is the same idea without the window: an agent starts it
 over stdio and it works on the hosts you opened to agents, with no port and no
 token.
+`list_hosts` lists saved SSH hosts explicitly opened to agents, without connecting,
+and returns stable host IDs, names and addresses. Both HTTP and stdio MCP omit
+unauthorized hosts. In windowed HTTP MCP, `list_sessions` lists only open terminals
+and uses different session IDs; in `mcp-serve` it lists authorized hosts by host ID
+for use with its command and file tools.
 
 ### Backup and sync
 
 Encrypted `.mottybak` export, plus record-level sync through WebDAV,
-S3-compatible storage or a GitHub Gist. Records carry hybrid logical clocks and
+S3-compatible storage, a GitHub Gist or a Gitee snippet. Records carry hybrid logical clocks and
 90-day deletion tombstones, so computers converge without one overwriting the
 other. Tabs, window layout, shortcuts, fonts, key paths and cloud credentials
 stay local.

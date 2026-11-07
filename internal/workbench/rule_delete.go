@@ -25,6 +25,7 @@ type ruleDeleteKind uint8
 const (
 	ruleDeleteAutofill ruleDeleteKind = iota + 1
 	ruleDeleteHighlight
+	ruleDeleteCredential
 )
 
 // ruleDelete is the rule the open dialog would delete.
@@ -38,6 +39,10 @@ type ruleDelete struct {
 	pattern  string
 	name     string
 	text     bool
+	// credential is the saved password to delete, by id; uses is how many hosts
+	// take their password from it when the question is asked.
+	credential string
+	uses       int
 }
 
 func (state *State) askDeleteAutofillRule(index int) {
@@ -47,6 +52,15 @@ func (state *State) askDeleteAutofillRule(index int) {
 	}
 	rule := rules[index]
 	state.ruleDelete = ruleDelete{kind: ruleDeleteAutofill, autofill: rule, name: rule.Name, text: rule.Send == autofill.SendText}
+	state.modal = modalDeleteRule
+}
+
+func (state *State) askDeleteCredential(index int) {
+	if index < 0 || index >= len(state.credentials) {
+		return
+	}
+	entry := state.credentials[index]
+	state.ruleDelete = ruleDelete{kind: ruleDeleteCredential, credential: entry.ID, name: entry.Name, uses: state.credentialUses(entry.ID)}
 	state.modal = modalDeleteRule
 }
 
@@ -72,6 +86,8 @@ func (state *State) clickDeleteRuleDialog(id ui.ID) {
 					break
 				}
 			}
+		case ruleDeleteCredential:
+			state.deleteCredential(ask.credential)
 		case ruleDeleteHighlight:
 			if rules := state.highlighting.rules; ask.index < len(rules) && rules[ask.index].Pattern == ask.pattern {
 				state.deleteHighlightRule(ask.index)
@@ -89,12 +105,20 @@ func (state *State) paintDeleteRuleDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if ask.text {
 		description += " " + m.DeleteTextNote
 	}
+	title := m.DeleteTitle
+	if ask.kind == ruleDeleteCredential {
+		c := state.messages.Credentials
+		title, description = c.DeleteTitle, fmt.Sprintf(c.DeleteFmt, ask.name)
+		if ask.uses > 0 {
+			description += " " + fmt.Sprintf(c.DeleteInUseFmt, ask.uses)
+		}
+	}
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitRuleDeleteDismiss, CloseID: hitRuleDeleteClose, InitialFocusID: hitRuleDeleteCancel,
 		ContentSize: ui.Size{Width: 520}, FitBody: true,
 	})
-	layout := dialog.Begin(m.DeleteTitle, description)
+	layout := dialog.Begin(title, description)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitRuleDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitRuleDeleteConfirm, Label: m.Delete, Variant: components.ButtonDestructive},

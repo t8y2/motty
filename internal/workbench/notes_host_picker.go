@@ -159,7 +159,7 @@ func (s *State) paintNoteHostPopup(c *ui.Canvas, viewport ui.Rect) {
 	}
 	width, maxHeight := s.notePopupSize(viewport)
 	items, height := s.layoutNoteHostPicker(max(1, width-2*pad-12), query)
-	pop := components.BeginPopover(c, theme, viewport, v.overlayAnchor, components.PopoverOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true, Align: components.PopoverAlignStart, Side: s.notePopoverSide(), ContentSize: ui.Size{Width: width, Height: min(maxHeight, 2*pad+38+height)}, InitialFocusID: hitNotePicker})
+	pop := components.BeginPopover(c, theme, viewport, v.overlayAnchorRect(c), components.PopoverOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true, Align: components.PopoverAlignStart, Side: s.notePopoverSide(), ContentSize: ui.Size{Width: width, Height: min(maxHeight, 2*pad+38+height)}, InitialFocusID: hitNotePicker})
 	layout := pop.Begin("", "")
 	c.TrapFocus(hitNoteDismiss)
 	body := layout.Content.Inset(ui.All(pad))

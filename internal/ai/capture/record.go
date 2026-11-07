@@ -289,6 +289,19 @@ func (r *recorder) finish() {
 	}
 }
 
+// dropPendingLine removes the current unfinished line when it is prompt. A
+// device leaves its prompt as the last, unterminated line, and that line is the
+// signal the command has returned rather than part of its output.
+func (r *recorder) dropPendingLine(prompt string) {
+	if prompt == "" || !bytes.Equal(bytes.TrimRight(r.cur, " "), []byte(prompt)) {
+		return
+	}
+	r.cur = r.cur[:0]
+	r.col = 0
+	r.erased = false
+	r.lineOver = false
+}
+
 // snapshot builds the output text without mutating the recorder.
 func (r *recorder) snapshot(final bool) (string, bool) {
 	head, tail, total := r.head, r.tail, r.total

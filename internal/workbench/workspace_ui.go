@@ -74,8 +74,12 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 		bounds.Width = max(0, bounds.Width-state.notesPanelWidth(size))
 	}
 	if state.workspaceManaged(workspaceID) {
-		bounds.Y += workspaceHeaderHeight
-		bounds.Height = max(0, bounds.Height-workspaceHeaderHeight)
+		reserve := workspaceHeaderHeight
+		if state.workspaceTabbed(workspaceID) {
+			reserve += workspacePaneTabsHeight
+		}
+		bounds.Y += reserve
+		bounds.Height = max(0, bounds.Height-reserve)
 	}
 	return bounds
 }
@@ -130,6 +134,7 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	if !headerOpen {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	}
+	state.paintWorkspacePaneTabs(canvas, frame)
 	if len(state.panes) == 0 {
 		state.paintEmptyWorkspace(canvas, frame)
 		state.paintContextPanel(canvas, size, frame)
@@ -159,6 +164,9 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 
 	for index := range state.panes {
 		pane := state.panes[index]
+		if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
+			continue // a tab that is not showing
+		}
 		bounds := pixelBounds(frame, pane.Bounds)
 		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
 		session, ok := state.sessionByIDPointer(pane.SessionID)
@@ -178,7 +186,9 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 		}
 	}
 	state.paintPaneDividers(canvas, frame)
-	state.paintActivePaneGlow(canvas, frame, size)
+	if !state.workspaceTabbed(state.deck.ActiveWorkspace()) {
+		state.paintActivePaneGlow(canvas, frame, size)
+	}
 	state.paintTerminalDrop(canvas)
 	state.paintContextPanel(canvas, size, frame)
 }
@@ -877,6 +887,11 @@ func (state *State) paneFractionBounds(workspaceID layoutcore.WorkspaceID, paneI
 	layout, ok := state.deck.Layout(workspaceID)
 	if !ok || layout.Root() == 0 {
 		return FractionBounds{}, 0, false
+	}
+	if state.workspaceTabbed(workspaceID) {
+		// Every tab is sized for the whole area, so showing one needs no resize.
+		_, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
+		return FractionBounds{Width: 1, Height: 1}, (layout.Len() + 1) / 2, found
 	}
 	bounds, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
 	return bounds, (layout.Len() + 1) / 2, found

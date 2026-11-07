@@ -126,6 +126,9 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsRightClickPaste:
 		state.terminalRightClickPaste = !state.terminalRightClickPaste
 		state.save()
+	case id == hitSettingsInputClick:
+		state.terminalInputClickOff = !state.terminalInputClickOff
+		state.save()
 	case id == hitSettingsBellToggle:
 		state.terminalBellOff = !state.terminalBellOff
 		state.save()
@@ -159,6 +162,7 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		}
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
+	case state.clickCredentialSettings(id):
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:

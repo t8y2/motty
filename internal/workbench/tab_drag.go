@@ -32,6 +32,9 @@ const (
 	dockRight
 	dockTop
 	dockBottom
+	// dockCenter is the middle of a pane: a drop there swaps two panes of one
+	// workspace, and is no dock for a tab.
+	dockCenter
 )
 
 func (edge dockEdge) axis() layoutcore.Axis {
@@ -178,7 +181,7 @@ func (state *State) trackTabDrag(drag *tabDrag, event ui.PointerEvent) {
 		// A pane only ever lands among this window's tabs.
 		drag.outside, drag.peer = false, nil
 		state.closeTabPreview()
-		drag.drop = state.paneUndockDropAt(drag.at)
+		drag.drop = state.paneDropAt(drag.workspace, drag.pane, drag.at)
 		return
 	}
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
@@ -259,7 +262,7 @@ func (state *State) trackTabDragEnd(drag *tabDrag, event ui.PointerEvent) {
 	drag.at = ui.Point{X: event.X, Y: event.Y}
 	if drag.pane != 0 {
 		drag.outside, drag.peer = false, nil
-		drag.drop = state.paneUndockDropAt(drag.at)
+		drag.drop = state.paneDropAt(drag.workspace, drag.pane, drag.at)
 		return
 	}
 	drag.outside = event.X < 0 || event.Y < 0 || event.X >= state.viewport.Width || event.Y >= state.viewport.Height
@@ -436,8 +439,11 @@ func dockZoneAt(at ui.Point, bounds ui.Rect) (dockEdge, ui.Rect) {
 // dropTab carries out a drop.
 func (state *State) dropTab(drag tabDrag) {
 	if drag.pane != 0 {
-		if drag.drop.kind == dropReorder {
+		switch drag.drop.kind {
+		case dropReorder:
 			state.undockPane(drag.workspace, drag.pane, drag.drop.boundary)
+		case dropDock:
+			state.movePaneBeside(drag.workspace, drag.pane, drag.drop)
 		}
 		return
 	}
@@ -765,6 +771,50 @@ func (state *State) paneBarAt(event ui.PointerEvent) (layoutcore.PaneID, *Sessio
 		return 0, nil, false
 	}
 	return pane.ID, session, true
+}
+
+// paneDropAt is where a pane dragged to window point at would land: among the
+// tabs, or beside another pane of its own workspace.
+func (state *State) paneDropAt(workspace layoutcore.WorkspaceID, source layoutcore.PaneID, at ui.Point) tabDrop {
+	if drop := state.paneUndockDropAt(at); drop.kind != dropNone {
+		return drop
+	}
+	if state.activeSection != sectionTerminal || state.workspaceTabbed(workspace) || state.deck.ActiveWorkspace() != workspace {
+		return tabDrop{}
+	}
+	state.refreshWorkspaceViews()
+	frame := state.workspacePixelBounds(state.viewport)
+	for index := range state.panes {
+		pane := state.panes[index]
+		bounds := pixelBounds(frame, pane.Bounds)
+		if pane.ID == source || !pointInRect(at.X, at.Y, bounds) {
+			continue
+		}
+		edge, zone := dockZoneAt(at, bounds)
+		if edge == dockNone {
+			edge, zone = dockCenter, bounds
+		}
+		return tabDrop{kind: dropDock, pane: pane.ID, edge: edge, zone: zone}
+	}
+	return tabDrop{}
+}
+
+// movePaneBeside docks a pane against another pane's edge. The pane keeps its
+// session, connection and screen; only the split tree changes.
+func (state *State) movePaneBeside(workspace layoutcore.WorkspaceID, paneID layoutcore.PaneID, drop tabDrop) {
+	var err error
+	if drop.edge == dockCenter {
+		err = state.deck.SwapPanes(workspace, paneID, drop.pane)
+	} else {
+		err = state.deck.Move(workspace, paneID, drop.pane, drop.edge.axis(), defaultPaneRatio, drop.edge.placement())
+	}
+	if err != nil {
+		state.status = err.Error()
+		return
+	}
+	state.activatePane(workspace, paneID)
+	state.workspaceViewCacheID = 0
+	state.rebuildManagedWorkspace(workspace)
 }
 
 // paneUndockDropAt is where a pane dragged to window point at would become a

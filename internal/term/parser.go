@@ -511,6 +511,7 @@ func (t *Terminal) endOSC() {
 		own := t.promptToken != ""
 		value := string(text)
 		if value == "A"+suffix {
+			t.inputStartSet = false
 			if own {
 				t.ReclaimApplicationModes()
 			}
@@ -518,13 +519,20 @@ func (t *Terminal) endOSC() {
 				t.promptStartFn()
 			}
 		}
-		if value == "B"+suffix && t.promptReadyFn != nil {
-			t.promptReadyFn()
+		if value == "B"+suffix {
+			t.markInputStart(own)
+			if t.promptReadyFn != nil {
+				t.promptReadyFn()
+			}
 		}
-		if value == "C"+suffix && t.commandStartFn != nil {
-			t.commandStartFn()
+		if value == "C"+suffix {
+			t.inputStartSet = false
+			if t.commandStartFn != nil {
+				t.commandStartFn()
+			}
 		}
 		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+			t.inputStartSet = false
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
 				if own {

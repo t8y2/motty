@@ -58,6 +58,7 @@ type verticalTabRow struct {
 	group    int
 	tab      int // -1 is a group header
 	indented bool
+	number   int // the tab's place in the number row, zero for a header
 }
 
 type verticalTabGrouping struct {
@@ -244,11 +245,14 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 		}
 		for _, tabIndex := range group.members[:group.count] {
 			tab := state.workspaceTabs[tabIndex]
+			// A collapsed group keeps the numbers of the tabs it hides: they
+			// still occupy their places in the row the shortcuts count.
+			number := len(view.order) + 1
 			view.order = append(view.order, tab)
 			if group.count > 1 && view.collapsed[group.key] && !compact {
 				continue
 			}
-			view.rows = append(view.rows, verticalTabRow{group: index, tab: tabIndex, indented: group.count > 1 && !compact})
+			view.rows = append(view.rows, verticalTabRow{group: index, tab: tabIndex, indented: group.count > 1 && !compact, number: number})
 			view.layout = append(view.layout, tab)
 			view.options = append(view.options, components.TabOption{ID: hitTabList.At(int(tab.ID)), Label: state.tabLabel(tab)})
 		}
@@ -280,7 +284,7 @@ func (state *State) declareGroupedVerticalTabs(f *flex.Frame, width float32, com
 			if indent > 0 {
 				f.Slot().Width(indent).Shrink(0)
 			}
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact))
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
 		})
 	}
 }

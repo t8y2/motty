@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDeckSetGridPreservesBindingsAndActivePane(t *testing.T) {
+func TestDeckSetLayoutPreservesBindingsAndActivePane(t *testing.T) {
 	var deck Deck
 	workspaceID, first, err := deck.Create("Operations")
 	if err != nil {
@@ -31,7 +31,7 @@ func TestDeckSetGridPreservesBindingsAndActivePane(t *testing.T) {
 	beforeRevision, _ := deck.Revision(workspaceID)
 
 	order := []PaneID{third, first, second}
-	if err := deck.SetGrid(workspaceID, order, 2); err != nil {
+	if err := deck.SetLayout(workspaceID, order, GridSpec(2)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,7 +60,7 @@ func TestDeckSetGridPreservesBindingsAndActivePane(t *testing.T) {
 	}
 }
 
-func TestDeckSetGridRejectsInvalidOrderWithoutMutation(t *testing.T) {
+func TestDeckSetLayoutRejectsInvalidOrderWithoutMutation(t *testing.T) {
 	var deck Deck
 	workspaceID, first, err := deck.Create("Atomic")
 	if err != nil {
@@ -95,16 +95,16 @@ func TestDeckSetGridRejectsInvalidOrderWithoutMutation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			before := deck.DTO()
-			err := deck.SetGrid(workspaceID, test.order, test.columns)
+			err := deck.SetLayout(workspaceID, test.order, GridSpec(uint8(test.columns)))
 			if !errors.Is(err, test.want) {
-				t.Fatalf("SetGrid() error = %v, want %v", err, test.want)
+				t.Fatalf("SetLayout() error = %v, want %v", err, test.want)
 			}
 			if got := deck.DTO(); !reflect.DeepEqual(got, before) {
-				t.Fatalf("failed SetGrid mutated deck:\n got %+v\nwant %+v", got, before)
+				t.Fatalf("failed SetLayout mutated deck:\n got %+v\nwant %+v", got, before)
 			}
 		})
 	}
-	if err := deck.SetGrid(workspaceID+1, []PaneID{first}, 1); !errors.Is(err, ErrWorkspaceNotFound) {
+	if err := deck.SetLayout(workspaceID+1, []PaneID{first}, GridSpec(1)); !errors.Is(err, ErrWorkspaceNotFound) {
 		t.Fatalf("missing workspace error = %v", err)
 	}
 }

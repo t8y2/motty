@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -220,6 +221,8 @@ var (
 	hitSettingsToolbarRight        = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray           = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit           = tree.ID(settingsHits, "settings-close-quit")
+	hitSettingsRelaunchRaise       = tree.ID(settingsHits, "settings-relaunch-raise")
+	hitSettingsRelaunchNewWindow   = tree.ID(settingsHits, "settings-relaunch-new-window")
 	hitSettingsOptionText          = tree.ID(settingsHits, "settings-option-text")
 	hitSettingsOptionMeta          = tree.ID(settingsHits, "settings-option-meta")
 	hitSettingsFontSizeDown        = tree.ID(settingsHits, "settings-font-size-down")
@@ -260,7 +263,9 @@ var (
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators      = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsInputClick          = tree.ID(settingsHits, "settings-input-click")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
 	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
 	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
@@ -504,48 +509,51 @@ type State struct {
 	// windowID is which window of this run this is. Its tabs, the deck they fill,
 	// where it sits and what it shows are filed under that number, so no other
 	// window's save can replace them.
-	windowID           int
-	stateNotice        stateNotice
-	developmentImport  developmentImport
-	stateFileOutcome   string // how the saved state was read at start, for diagnostics
-	sessions           []Session
-	tabOptions         []components.TabOption
-	workspaceTabs      []layoutcore.WorkspaceInfo
-	tabStrip           tabStrip
-	tabOrientation     tabOrientation
-	verticalTabs       verticalTabs
-	tabMenu            tabMenu
-	hostMenu           hostMenu
-	localShellPicker   localShellPicker
-	snippetMenu        snippetMenu
-	sftpMenu           sftpMenu
-	sftpHeaderMenu     sftpHeaderMenuRequest
-	fileProperties     sftpFileProperties
-	popups             popupMenus
-	selectedHostID     uint32
-	hostRevealID       uint32
-	activeSessionID    uint32
-	nextSessionID      uint32
-	nextHostID         uint32
-	nextIdentityID     uint32
-	nextForwardID      uint32
-	nextForwardStartID uint64
-	nextProxyID        uint32
-	forwards           []forwardRecord
-	selectedIdentityID uint32
-	selectedForwardID  uint32
-	selectedProxyID    uint32
-	activeSection      uint8
-	hostFilterOn       bool   // only the group named hostFilter is listed
-	hostFilter         string // a group name; empty is the unnamed bucket
-	hostFilterMenu     bool   // the chips that did not fit, as a menu
-	hostFilterHidden   int    // the first of hostChips whose chip is in that menu
-	hostChips          []int  // the groups that get a chip, as indexes of hostGroups
-	chipMenu           hostChipMenu
-	filterMoreButton   ui.Rect
-	hostTotalDigits    string
-	groupMenu          groupMenuAnchor // where the Move group picker opens
-	hostSelectionText  string
+	windowID          int
+	stateNotice       stateNotice
+	developmentImport developmentImport
+	stateFileOutcome  string // how the saved state was read at start, for diagnostics
+	sessions          []Session
+	tabOptions        []components.TabOption
+	workspaceTabs     []layoutcore.WorkspaceInfo
+	// workspacePaneTabLabels is the tab strip's labels, reused every frame.
+	workspacePaneTabLabels []string
+	tabStrip               tabStrip
+	tabOrientation         tabOrientation
+	tabNumbers             bool // each tab shows the number its shortcut key names
+	verticalTabs           verticalTabs
+	tabMenu                tabMenu
+	hostMenu               hostMenu
+	localShellPicker       localShellPicker
+	snippetMenu            snippetMenu
+	sftpMenu               sftpMenu
+	sftpHeaderMenu         sftpHeaderMenuRequest
+	fileProperties         sftpFileProperties
+	popups                 popupMenus
+	selectedHostID         uint32
+	hostRevealID           uint32
+	activeSessionID        uint32
+	nextSessionID          uint32
+	nextHostID             uint32
+	nextIdentityID         uint32
+	nextForwardID          uint32
+	nextForwardStartID     uint64
+	nextProxyID            uint32
+	forwards               []forwardRecord
+	selectedIdentityID     uint32
+	selectedForwardID      uint32
+	selectedProxyID        uint32
+	activeSection          uint8
+	hostFilterOn           bool   // only the group named hostFilter is listed
+	hostFilter             string // a group name; empty is the unnamed bucket
+	hostFilterMenu         bool   // the chips that did not fit, as a menu
+	hostFilterHidden       int    // the first of hostChips whose chip is in that menu
+	hostChips              []int  // the groups that get a chip, as indexes of hostGroups
+	chipMenu               hostChipMenu
+	filterMoreButton       ui.Rect
+	hostTotalDigits        string
+	groupMenu              groupMenuAnchor // where the Move group picker opens
+	hostSelectionText      string
 	// inputGapNote is the last terminal input gap reported to the log, so a
 	// paint that keeps asking for a surface that cannot exist logs it once.
 	inputGapNote       string
@@ -619,12 +627,12 @@ type State struct {
 	workspaceCardRegions          []workspaceCardRegion
 	workspaceCardDrag             workspaceCardDrag
 	workspaceHeaderPanes          [layoutcore.MaxPanes]layoutcore.Pane
-	// temporaryWorkspaceColumns marks workspaces opened from the temporary
+	// temporaryWorkspaceLayouts marks workspaces opened from the temporary
 	// selector and keeps the column count needed to save their current shape.
-	temporaryWorkspaceColumns map[layoutcore.WorkspaceID]uint8
-	// managedWorkspaceColumns marks workspaces launched from the workspace
+	temporaryWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
+	// managedWorkspaceLayouts marks workspaces launched from the workspace
 	// feature and keeps their current grid column count for the in-app header.
-	managedWorkspaceColumns map[layoutcore.WorkspaceID]uint8
+	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
 	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout flex.View // the Port Forwarding and Proxies pages and their dialogs
@@ -707,13 +715,14 @@ type State struct {
 	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
-	launchBacklog [][]string
-	launchTarget  connection
-	update        updateState
-	updateAtStart bool
-	updateStarted bool
-	loginOn       bool
-	closeAction   closeAction
+	launchBacklog  [][]string
+	launchTarget   connection
+	update         updateState
+	updateAtStart  bool
+	updateStarted  bool
+	loginOn        bool
+	closeAction    closeAction
+	relaunchAction relaunchAction
 	// The file panel's settings and the folders kept for each host.
 	sftpParallel           int
 	sftpKeepTimesOff       bool
@@ -721,6 +730,7 @@ type State struct {
 	sftpTerminalFollow     bool
 	sftpPathInput          bool
 	sftpPanelAutoOpen      bool
+	sftpDirectoryTree      bool
 	sftpWindowOrder        sftpWindowOrder
 	sftpOpenMode           sftpOpenMode
 	sftpColumns            sftpColumnPreferences
@@ -759,6 +769,8 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
+	terminalWordSeparators                        string
+	terminalWordEditor                            text.Editor
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle       bool
@@ -775,6 +787,9 @@ type State struct {
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).
 	terminalBellOff, terminalLinkPlainClick bool
+	// terminalInputClickOff stops a click on the line being typed from moving
+	// the shell's cursor (see moveInputCursor).
+	terminalInputClickOff bool
 
 	// settingsScroll is how far the settings page is scrolled, in pixels, and
 	// settingsContent how tall it was when last painted.
@@ -826,12 +841,13 @@ type State struct {
 	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
-	syncEpoch  uint32
-	closeAsked bool
-	sync       syncState
-	sshSync    sshSyncState
-	remote     remoteToolsView
-	edits      externalEdits
+	syncEpoch     uint32
+	closeAsked    bool
+	trayHintShown bool
+	sync          syncState
+	sshSync       sshSyncState
+	remote        remoteToolsView
+	edits         externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText  string
 	fontSizeShown float32
@@ -921,6 +937,7 @@ type State struct {
 	keyPassphraseDescription string
 	clipboardRequest         remoteClipboardRequest
 	autofillRules            autofillUI
+	credentialForm           credentialUI
 	commandPalette           commandPalette
 	// sessionLogs is this window's local connection journal; it is off only
 	// when the user disabled metadata capture in the settings.
@@ -1056,9 +1073,11 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	// The reference cell stands in until the first paint measures the font on the
+	// window's canvas (measureTerminalCell).
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.temporaryWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)
-	state.managedWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)
+	state.temporaryWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
+	state.managedWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
 	// An icon-only button names itself to the keyboard as well as the pointer.
 	state.tooltip.ShowOnFocus()
 	state.setAppearance(appearanceDark)
@@ -1245,6 +1264,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitSettingsSearch && state.activeSection == sectionSettings {
 			return &state.settings.search
 		}
+		if hit == hitSettingsWordSeparators && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal {
+			return &state.terminalWordEditor
+		}
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search
 		}
@@ -1329,6 +1351,13 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 	case modalForm:
 		return state.formEditor(hit)
+	case modalCredential:
+		switch hit {
+		case hitCredentialName:
+			return &state.credentialForm.name
+		case hitCredentialPassword:
+			return &state.credentialForm.password
+		}
 	case modalAutofillRule:
 		switch hit {
 		case hitAutofillName:
@@ -1350,6 +1379,8 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.snippets.name
 		case hitSnippetCommand:
 			return &state.snippets.command
+		case hitSnippetGroup:
+			return &state.snippets.groupPicker.Query
 		}
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
@@ -1507,6 +1538,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalAutofillRule:
 		state.clickAutofillDialog(id)
+		return
+	case modalCredential:
+		state.clickCredentialDialog(id)
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
@@ -1870,8 +1904,8 @@ func (state *State) closeSession(id uint32) {
 		// The last pane of a tab takes the tab with it.
 		if len(state.deck.Panes(workspaceID, nil)) == 0 {
 			_, _ = state.deck.RemoveWorkspace(workspaceID, nil)
-			delete(state.temporaryWorkspaceColumns, workspaceID)
-			delete(state.managedWorkspaceColumns, workspaceID)
+			delete(state.temporaryWorkspaceLayouts, workspaceID)
+			delete(state.managedWorkspaceLayouts, workspaceID)
 		}
 	}
 	// Delete rather than truncating an append: the vacated slot must not keep
@@ -1957,8 +1991,8 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 	if err != nil {
 		return
 	}
-	delete(state.temporaryWorkspaceColumns, id)
-	delete(state.managedWorkspaceColumns, id)
+	delete(state.temporaryWorkspaceLayouts, id)
+	delete(state.managedWorkspaceLayouts, id)
 	state.clearWorkspaceBroadcast(id)
 	for _, sessionID := range sessions {
 		state.closeSession(uint32(sessionID))
@@ -2007,10 +2041,9 @@ func (state *State) clickHostDialog(id ui.ID) {
 	case hitDialogClose, hitDialogCancel:
 		state.cancelHostTest()
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
-		state.modal = modalNone
 		state.dialogError = ""
 		state.status = state.messages.StatusEditCanceled
-		state.showNextPrompt()
+		state.restoreAfterHostDialog()
 	case hitDialogSubmit:
 		state.submitHostDialog()
 	case hitDialogTest:
@@ -2209,6 +2242,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.tabMiddlePointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabDragPointer(event); handled {
 		return result
 	}
@@ -2216,6 +2252,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		return result
 	}
 	if result, handled := state.hostSortPointer(event); handled {
+		return result
+	}
+	if result, handled := state.snippetReorderPointer(event); handled {
 		return result
 	}
 	if result, handled := state.hostGroupDragPointer(event); handled {
@@ -2319,6 +2358,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if state.modal == modalSnippet && event.Kind == ui.PointerDown {
 		state.snippets.abandonOther(event.Target)
+	}
+	if result, handled := state.snippetGroupPointer(event); handled {
+		return result
 	}
 	if state.modal == modalSnippet && event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) && event.Target == hitSnippetSubmit {
 		if target := state.snippets.composingTarget(); !target.IsZero() {
@@ -2543,6 +2585,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
+	if result, handled := state.snippetGroupKey(event); handled {
+		return result
+	}
+	if result, handled := state.snippetReorderKey(event); handled {
+		return result
+	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
 		return result
 	}
@@ -2721,11 +2769,27 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitAutofillRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
+	if state.modal == modalCredential && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitCredentialName || event.Target == hitCredentialPassword) {
+		state.submitCredential()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
 	if state.modal == modalHighlightRule && event.Key == ui.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand) && !event.Repeat {
+	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
+		if _, composing := state.snippets.command.Composition(); !composing {
+			movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
+			if movement != components.TextareaMoveNone {
+				value := state.snippets.command.String()
+				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
+				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
+				return ui.EventResult{Handled: true, Repaint: true}
+			}
+		}
+	}
+	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()

@@ -163,3 +163,39 @@ func countText(texts []string, value string) int {
 	}
 	return count
 }
+
+// The inspector names the control the pointer is over, so a person building a
+// page can see in the real window what a headless tree lists. Its chord cycles
+// it off, to the hovered control, to every control, and off again.
+func TestDevInspectorNamesTheHoveredControl(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	cycle := ui.KeyEvent{Modifiers: devInspectorChord.Modifiers, Text: string(rune(devInspectorChord.Char))}
+	if result := state.Shortcut(cycle); !result.Handled {
+		t.Fatalf("the inspector chord was not taken: %+v", result)
+	}
+	var canvas ui.Canvas
+	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	entry, found := hitByID(&canvas, hitDebug)
+	if !found {
+		t.Fatal("the Debug entry is not on the page")
+	}
+	described := entry.Role.String() + "  " + tree.Text(hitDebug)
+	var texts []string
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	if !contains(texts, described) {
+		t.Fatalf("the hovered control is not named: %v", texts)
+	}
+	state.Shortcut(cycle)
+	state.Shortcut(cycle)
+	canvas.Reset()
+	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for _, text := range canvas.Texts() {
+		if strings.Contains(text.Value, described) {
+			t.Fatalf("the inspector is still on: %q", text.Value)
+		}
+	}
+}

@@ -44,8 +44,9 @@ const (
 // paintTerminalPage draws a session. Active panes get a configurable tool rail
 // with only connection latency and actions. Every split pane reserves the same
 // bar height and identifies its own session there, so switching focus cannot
-// move or resize a PTY. Find mode temporarily replaces the bar with its search
-// controls.
+// move or resize a PTY. Find mode puts its search controls in that strip, as a
+// macOS terminal puts its search bar above the text rather than over it, and
+// leaves the shared rail where it is.
 func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *Session) {
 	state.wantLatencyProbe(session, canvas)
 	chrome, ok := state.terminalChromeForSession(session.ID)
@@ -63,7 +64,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
 	status, _ := state.sessionStatus(session)
-	if inactive || finding {
+	if inactive {
 		state.clearTerminalRail(session)
 	}
 	title := session.Title
@@ -75,31 +76,22 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		switch {
-		case inSplit || finding:
+		if inSplit || finding {
 			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
-				switch {
-				case finding:
+				if finding {
 					find = state.declareFindBar(f, session)
-				default:
+				} else {
 					spinner, light = state.declarePaneBar(f, size.Width, title, status, session, !inactive)
 				}
 				f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
 			})
-			f.Column().Grow(1).FillHeight().Children(func() {
-				if showingInputNotice {
-					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
-				}
-				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
-			})
-		default:
-			f.Column().Grow(1).FillHeight().Children(func() {
-				if showingInputNotice {
-					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
-				}
-				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
-			})
 		}
+		f.Column().Grow(1).FillHeight().Children(func() {
+			if showingInputNotice {
+				inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+			}
+			f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+		})
 	})
 	f.End()
 
@@ -107,11 +99,12 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	case finding:
 		state.paintFindBarSlots(canvas, session, find)
 	case inSplit:
-		if session.busy {
+		switch {
+		case session.busy:
 			phase := components.SpinnerPhase(canvas.Now() / spinnerStep)
 			components.PaintSpinner(canvas, state.Theme(), spinner.Rect(), phase)
 			canvas.RequestFrameIn(spinnerStep)
-		} else if !inactive {
+		case !inactive:
 			// Only the active pane declares the status-light slot. Calling Rect on
 			// the empty box used by an inactive pane would dereference nil.
 			spot := light.Rect()
@@ -128,7 +121,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
-	if session == nil || session.term == nil || state.paneIsInactive(session.ID) || session.term.find.open {
+	if session == nil || session.term == nil || state.paneIsInactive(session.ID) {
 		return nil
 	}
 	tools := toolList[:0]
@@ -549,7 +542,10 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 			}
 		}
 		if len(entry.runs) > 0 {
-			canvas.LabelRuns(entry.text, ui.Rect{X: geometry.left, Y: y, Width: labelWidth, Height: cellHeight}, style, cellWidth, entry.runs)
+			last := entry.runs[len(entry.runs)-1]
+			rowCols := min(int(last.Column+last.Cells)+1, cols)
+			rowWidth := min(float32(math.Ceil(float64(float32(rowCols)*cellWidth)))+1, labelWidth)
+			canvas.LabelRuns(entry.text, ui.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)

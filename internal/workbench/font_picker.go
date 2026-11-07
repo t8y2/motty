@@ -658,7 +658,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 				line.Background(pal.accent)
 				color = pal.onAccent
 			} else {
-				line.HoverBackground(pal.surfaceHot)
+				line.Hover(flex.Look{}.Background(pal.surfaceHot))
 			}
 			line.Children(func() {
 				f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)

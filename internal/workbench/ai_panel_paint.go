@@ -564,9 +564,8 @@ func (state *State) paintAIBody(canvas *ui.Canvas, bounds ui.Rect) {
 	list := body.list.Rect()
 	panel.list = list
 	panel.listing = panel.history
-	if row := panel.textSelect.row; row >= len(ai.items) {
-		panel.clearAITextSelection()
-	}
+	panel.textFirst, panel.textLast = -1, -1
+	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	switch {
 	case panel.history:
 		state.paintAIHistory(canvas, list)
@@ -812,47 +811,19 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 		}
 		lastAnswer := index == len(state.ai.items)-1 && item.kind == aiAssistant
 		if !view.current(item, rowW, cell, title) || view.actions != lastAnswer {
-			// A selection indexes source text, so it survives a rebuild only when
-			// the new block still begins with the old one.
-			keepSelection := panel.textSelect.row == index
-			var rendered string
-			if keepSelection {
-				if layout := view.textLayout(panel.textSelect.part); layout != nil {
-					rendered = layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()})
-				}
-			}
+			ends := panel.selectionEnds(index)
 			state.aiBuild(canvas, view, item, rowW, cell, cellHeight, title)
 			view.actions = lastAnswer
 			if lastAnswer {
 				view.height += aiAnswerAction
 			}
-			if keepSelection {
-				layout := view.textLayout(panel.textSelect.part)
-				if layout == nil || !strings.HasPrefix(layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()}), rendered) {
-					panel.clearAITextSelection()
-				}
-			}
-		}
-		if panel.textSelect.row == index && panel.textSelect.sel.Anchor != panel.textSelect.sel.Focus {
-			// Clamp each end without ordering them: Anchor must stay where the
-			// drag began, or dragging upward would move it on every repaint.
-			layout := view.textLayout(panel.textSelect.part)
-			if layout == nil {
-				panel.clearAITextSelection()
-			} else {
-				length := layout.TextLen()
-				anchor := min(max(panel.textSelect.sel.Anchor, 0), length)
-				focus := min(max(panel.textSelect.sel.Focus, 0), length)
-				if anchor == focus {
-					panel.clearAITextSelection()
-				} else {
-					panel.textSelect.sel = components.MarkdownSelection{Anchor: anchor, Focus: focus}
-				}
-			}
+			panel.keepSelectionEnds(index, ends)
 		}
 		view.top = y
 		y += view.height + aiGap
 	}
+	// A rebuilt row may be shorter than the text a selection pointed into.
+	panel.textSelect.Clamp(panel.textSurfaces(), panel.textLength)
 	content := y
 	if statusHeight > 0 {
 		content += statusHeight + aiGap
@@ -872,6 +843,7 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 		}
 		last = index
 	}
+	panel.textFirst, panel.textLast = first, last
 
 	// The rows are placed by a Scroll of slots, then declared one by one into them
 	// under the clip of the viewport, so that a row's hits are followed by its
@@ -1048,7 +1020,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				f.Text(view.title).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18)
 			})
 			if index < aiMaxRowHits {
-				header.HoverBackground(pal.surfaceSoft).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{Role: ui.RoleButton, Expanded: view.expanded})
+				header.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{Role: ui.RoleButton, Expanded: view.expanded})
 			}
 			if view.expanded {
 				// The thread down the left side, and the thought beside it.
@@ -1127,7 +1099,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				}
 			})
 			if index < aiMaxRowHits {
-				strip.HoverBackground(pal.surfaceSoft).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{
+				strip.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{
 					Role: ui.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
 				})
 			}
@@ -1161,13 +1133,19 @@ func (state *State) paintAIPlainTextSelections(canvas *ui.Canvas, list ui.Rect, 
 			view.plain[part].rect = view.textSlots[part].Rect()
 		}
 	}
-	if panel.textSelect.row != index || panel.textSelect.sel.Anchor == panel.textSelect.sel.Focus ||
-		panel.textSelect.part >= aiTextPartCount || !view.textSlotSet[panel.textSelect.part] {
+	if panel.textSelect.Empty() {
 		return
 	}
 	canvas.Clip(list)
 	defer canvas.Unclip()
-	view.plain[panel.textSelect.part].paintSelection(canvas, panel.textSelect.sel, withAlpha(state.pal.text, 0.25))
+	for part := range aiTextPartCount {
+		if !view.textSlotSet[part] {
+			continue
+		}
+		if selected := panel.textSelect.In(aiTextSurface(index, part)); selected.Anchor != selected.Focus {
+			view.plain[part].paintSelection(canvas, selected, withAlpha(state.pal.text, 0.25))
+		}
+	}
 }
 
 // paintAIAssistant paints an assistant message, which is Markdown, in the room

@@ -13,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
@@ -25,7 +26,7 @@ func TestTerminalInterruptPassesTheCopyShortcut(t *testing.T) {
 		t.Run(fmt.Sprintf("kitty=%v", kitty), func(t *testing.T) {
 			state, _, _, shell := liveSession(t)
 			// Also exercise the Windows/Linux copy binding when run on macOS.
-			state.shortcuts.chords[shortcutCopy] = shortcutChord{Modifiers: ui.ModifierControl, Key: 'c'}
+			state.shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: ui.ModifierControl, Char: 'c'})
 			if kitty {
 				shell.say("\x1b[=1u")
 				state.Wake()
@@ -126,7 +127,7 @@ func TestTerminalInterruptSSH(t *testing.T) {
 			}
 			state, _, _, _ := liveSession(t)
 			state.sessions[0].term.shell = remote
-			state.shortcuts.chords[shortcutCopy] = shortcutChord{Modifiers: ui.ModifierControl, Key: 'c'}
+			state.shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: ui.ModifierControl, Char: 'c'})
 			session, err := headless.Open(app.Config{Title: "SSH interrupt", Width: 1400, Height: 900, Paint: state.Paint, TextInput: state.TerminalInput, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize}, nil, headless.Options{})
 			if err != nil {
 				t.Fatal(err)

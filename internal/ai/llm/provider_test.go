@@ -519,6 +519,19 @@ func TestBaseURLNormalisation(t *testing.T) {
 			t.Errorf("anthropicBase(%q) = %q, %v; want %q", c.in, got, err, c.want)
 		}
 	}
+	oaModels := []struct{ in, want string }{
+		{"", ""},
+		{"https://opencode.ai/inference/go/v1", "https://opencode.ai/inference/go/v1"},
+		{"https://opencode.ai/inference/go/v1/models", "https://opencode.ai/inference/go/v1"},
+		{"https://opencode.ai/inference/go/v1/models/", "https://opencode.ai/inference/go/v1"},
+		{"https://api.openai.com", "https://api.openai.com/v1"},
+	}
+	for _, c := range oaModels {
+		got, err := openAIModelsBase(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("openAIModelsBase(%q) = %q, %v; want %q", c.in, got, err, c.want)
+		}
+	}
 	for _, bad := range []string{"ftp://x", "not a url", "http://", "://x"} {
 		if _, err := openAIBase(bad); err == nil {
 			t.Errorf("openAIBase(%q) should fail", bad)
@@ -549,6 +562,50 @@ func TestEndpointPaths(t *testing.T) {
 				t.Errorf("%s base %q: path %v want %s", p.name, suffix, path.Load(), want)
 			}
 		}
+	}
+}
+
+func TestModelsURLSeparateFromBaseURL(t *testing.T) {
+	var chatCalled, modelsCalled bool
+	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chatCalled = true
+		if r.URL.Path != "/inference/go/openai/v1/chat/completions" {
+			t.Errorf("chat path = %q", r.URL.Path)
+		}
+		w.Write([]byte(protos[0].text("hello")))
+	}))
+	defer chatSrv.Close()
+
+	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelsCalled = true
+		if r.URL.Path != "/inference/go/v1/models" {
+			t.Errorf("models path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"gpt-4o"}]}`))
+	}))
+	defer modelsSrv.Close()
+
+	prov := NewOpenAI(Config{
+		BaseURL:   chatSrv.URL + "/inference/go/openai/v1",
+		ModelsURL: modelsSrv.URL + "/inference/go/v1",
+	})
+
+	list, err := prov.Models(bg)
+	if err != nil || len(list) != 1 || list[0] != "gpt-4o" {
+		t.Fatalf("Models() = %v, %v; want [gpt-4o]", list, err)
+	}
+	if !modelsCalled {
+		t.Fatal("models server was not called")
+	}
+
+	ch, err := prov.Stream(bg, simpleReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	if !chatCalled {
+		t.Fatal("chat server was not called")
 	}
 }
 

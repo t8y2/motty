@@ -3,6 +3,7 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -85,21 +86,21 @@ func TestControlTabDoesNothingBehindADialogOrWithOneTab(t *testing.T) {
 func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
-	want := map[shortcutAction]shortcutChord{
-		shortcutNextTab:     {Modifiers: ui.ModifierControl, Named: ui.KeyTab},
-		shortcutPreviousTab: {Modifiers: ui.ModifierControl | ui.ModifierShift, Named: ui.KeyTab},
+	want := map[shortcutAction]keymap.Chord{
+		shortcutNextTab:     {Modifiers: ui.ModifierControl, Key: ui.KeyTab},
+		shortcutPreviousTab: {Modifiers: ui.ModifierControl | ui.ModifierShift, Key: ui.KeyTab},
 	}
 	for action, chord := range want {
-		if state.shortcuts.chords[action] != chord {
-			t.Fatalf("%v default = %+v, want %+v", action, state.shortcuts.chords[action], chord)
+		if state.shortcuts.chords.Chord(action) != chord {
+			t.Fatalf("%v default = %+v, want %+v", action, state.shortcuts.chords.Chord(action), chord)
 		}
 	}
 
 	state.openShortcutCapture(shortcutNextTab)
 	result := state.Key(ui.KeyEvent{Key: ui.KeyPageDown, Modifiers: ui.ModifierControl})
-	custom := shortcutChord{Modifiers: ui.ModifierControl, Named: ui.KeyPageDown}
-	if !result.Handled || state.modal != modalNone || state.shortcuts.chords[shortcutNextTab] != custom {
-		t.Fatalf("capture result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords[shortcutNextTab])
+	custom := keymap.Chord{Modifiers: ui.ModifierControl, Key: ui.KeyPageDown}
+	if !result.Handled || state.modal != modalNone || state.shortcuts.chords.Chord(shortcutNextTab) != custom {
+		t.Fatalf("capture result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords.Chord(shortcutNextTab))
 	}
 	if label := state.shortcuts.labels[shortcutNextTab]; label != "Ctrl+PageDown" {
 		t.Fatalf("label = %q", label)
@@ -115,16 +116,17 @@ func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 
 	state.save()
 	restored := newTestState(t, options)
-	if restored.shortcuts.chords[shortcutNextTab] != custom || restored.shortcuts.chords[shortcutPreviousTab] != want[shortcutPreviousTab] {
-		t.Fatalf("restored next=%+v previous=%+v", restored.shortcuts.chords[shortcutNextTab], restored.shortcuts.chords[shortcutPreviousTab])
+	if restored.shortcuts.chords.Chord(shortcutNextTab) != custom || restored.shortcuts.chords.Chord(shortcutPreviousTab) != want[shortcutPreviousTab] {
+		t.Fatalf("restored next=%+v previous=%+v", restored.shortcuts.chords.Chord(shortcutNextTab), restored.shortcuts.chords.Chord(shortcutPreviousTab))
 	}
 }
 
 func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 	state, _ := threeTabs(t)
 	state.Click(hitHosts)
+	state.setTabNumbers(true)
 	digit := func(text string, repeat bool) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: text, Repeat: repeat})
+		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text, Repeat: repeat})
 	}
 
 	if result := digit("2", false); !result.Handled {
@@ -142,7 +144,7 @@ func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 	// Control plus a digit is a terminal control code, so a digit with no tab
 	// behind it stays with the program; Command has no meaning there.
 	result := digit("9", false)
-	if defaultShortcutModifier() == ui.ModifierControl && result.Handled {
+	if keymap.Primary == ui.ModifierControl && result.Handled {
 		t.Fatal("a missing tab swallowed a terminal control code")
 	}
 	if got := tabIndex(state); got != 0 {
@@ -152,12 +154,12 @@ func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 
 func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 	state, _ := threeTabs(t)
-	primary := defaultShortcutModifier()
-	if got, want := state.shortcuts.chords[shortcutTabNumber], (shortcutChord{Modifiers: primary, Key: '1'}); got != want {
+	primary := keymap.Primary
+	if got, want := state.shortcuts.chords.Chord(shortcutTabNumber), (keymap.Chord{Modifiers: primary, Char: '1'}); got != want {
 		t.Fatalf("default = %+v, want %+v", got, want)
 	}
 	for _, digit := range []byte{'1', '5', '9'} {
-		if got := state.shortcuts.actionFor(shortcutChord{Modifiers: primary, Key: digit}); got != shortcutTabNumber {
+		if got := state.shortcuts.actionFor(keymap.Chord{Modifiers: primary, Char: digit}); got != shortcutTabNumber {
 			t.Fatalf("%c maps to %v, want the tab-number action", digit, got)
 		}
 	}
@@ -165,25 +167,25 @@ func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 	// The row is rebound like any other action: one chord names the modifiers,
 	// and the whole digit row follows it.
 	state.openShortcutCapture(shortcutTabNumber)
-	custom := shortcutChord{Modifiers: ui.ModifierAlt, Key: '3'}
-	state.Key(ui.KeyEvent{Modifiers: custom.Modifiers, Text: string(custom.Key)})
-	if state.modal != modalNone || state.shortcuts.chords[shortcutTabNumber] != custom {
-		t.Fatalf("capture left modal=%d chord=%+v", state.modal, state.shortcuts.chords[shortcutTabNumber])
+	custom := keymap.Chord{Modifiers: ui.ModifierAlt, Char: '3'}
+	state.Key(ui.KeyEvent{Modifiers: custom.Modifiers, Text: string(custom.Char)})
+	if state.modal != modalNone || state.shortcuts.chords.Chord(shortcutTabNumber) != custom {
+		t.Fatalf("capture left modal=%d chord=%+v", state.modal, state.shortcuts.chords.Chord(shortcutTabNumber))
 	}
 	if label := state.shortcuts.labels[shortcutTabNumber]; label != "Alt+1…9" {
 		t.Fatalf("label = %q", label)
 	}
-	if got := state.shortcuts.actionFor(shortcutChord{Modifiers: custom.Modifiers, Key: '7'}); got != shortcutTabNumber {
+	if got := state.shortcuts.actionFor(keymap.Chord{Modifiers: custom.Modifiers, Char: '7'}); got != shortcutTabNumber {
 		t.Fatalf("the rebound family did not cover 7: %v", got)
 	}
-	if got := state.shortcuts.actionFor(shortcutChord{Modifiers: primary, Key: '5'}); got == shortcutTabNumber {
+	if got := state.shortcuts.actionFor(keymap.Chord{Modifiers: primary, Char: '5'}); got == shortcutTabNumber {
 		t.Fatal("the old modifiers still matched after the rebind")
 	}
 
 	state.save()
 	restored := newTestState(t, state.options)
-	if restored.shortcuts.chords[shortcutTabNumber] != custom || restored.shortcuts.labels[shortcutTabNumber] != "Alt+1…9" {
-		t.Fatalf("restored chord=%+v label=%q", restored.shortcuts.chords[shortcutTabNumber], restored.shortcuts.labels[shortcutTabNumber])
+	if restored.shortcuts.chords.Chord(shortcutTabNumber) != custom || restored.shortcuts.labels[shortcutTabNumber] != "Alt+1…9" {
+		t.Fatalf("restored chord=%+v label=%q", restored.shortcuts.chords.Chord(shortcutTabNumber), restored.shortcuts.labels[shortcutTabNumber])
 	}
 
 	// Only a digit can name the row.
@@ -196,8 +198,8 @@ func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 }
 
 func TestANamedKeyNeverBecomesASnippetShortcut(t *testing.T) {
-	chord := shortcutChord{Modifiers: ui.ModifierControl | ui.ModifierShift, Named: ui.KeyTab}
-	if !chord.valid() || chord.validForSnippet() {
-		t.Fatalf("valid=%v validForSnippet=%v", chord.valid(), chord.validForSnippet())
+	chord := keymap.Chord{Modifiers: ui.ModifierControl | ui.ModifierShift, Key: ui.KeyTab}
+	if !chord.Valid() || validForSnippet(chord) {
+		t.Fatalf("valid=%v validForSnippet=%v", chord.Valid(), validForSnippet(chord))
 	}
 }

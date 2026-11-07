@@ -138,7 +138,7 @@ func (state *State) openSelectedHostsWorkspace() {
 			state.workspaceDraft.selected[host.CatalogID] = true
 		}
 	}
-	state.workspaceDraft.columns = DefaultWorkspaceColumns(state.workspaceDraftSelectionCount())
+	state.workspaceDraft.layout = DefaultWorkspaceLayout(state.workspaceDraftSelectionCount())
 }
 
 func (state *State) selectedHostsWorkspaceEligible() bool {
@@ -371,7 +371,6 @@ func (state *State) submitHostDialog() {
 	state.hosts = append(state.hosts, host)
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
-	state.modal = modalNone
 	state.dialogError = ""
 	if state.hostDialogMode == hostDialogCopy {
 		state.status = state.messages.HostCopied + host.Label
@@ -384,18 +383,17 @@ func (state *State) submitHostDialog() {
 	state.appendStatusNote(proxyNote)
 	state.hostDataChanged()
 	state.save()
-	state.showNextPrompt()
+	state.restoreAfterHostDialog()
 }
 
 func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...string) {
 	index := state.hostIndex(state.hostDialogID)
 	if index < 0 {
-		state.modal = modalNone
+		state.restoreAfterHostDialog()
 		return
 	}
 	state.replaceHost(index, previous, updated)
 	state.cancelHostTest()
-	state.modal = modalNone
 	state.dialogError = ""
 	state.status = state.messages.HostUpdated + updated.Label
 	state.commitOTP(updated)
@@ -404,7 +402,7 @@ func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...s
 	}
 	state.hostDataChanged()
 	state.save()
-	state.showNextPrompt()
+	state.restoreAfterHostDialog()
 }
 
 // replaceHost puts updated in the place of previous, the host at index, and
@@ -469,6 +467,11 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 	name, hasPassword := hostPasswordSecretName(host)
 	typed := state.editor.password.String()
 	editing := state.hostDialogMode == hostDialogEdit && source != nil
+	if state.hostTakesCredential() {
+		// The password is the saved one's. What the host kept of its own is left
+		// as it is, for the day the host goes back to it.
+		return nil, ""
+	}
 	switch {
 	case hasPassword && typed != "":
 		if state.secrets.vault == nil {
@@ -740,6 +743,7 @@ func (state *State) hostDataChanged() {
 	state.reconcileDashboard()
 	state.sshSyncMark()
 	state.visible = nil
+	state.workspaceViewCacheID = 0
 	state.refreshHostGroups()
 	state.pruneHostSelections()
 	selected, ok := state.hostByID(state.selectedHostID)
