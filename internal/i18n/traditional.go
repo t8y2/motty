@@ -16,7 +16,7 @@ var TraditionalMessages = Messages{
 		DirectoryTree: "目錄樹", ShowDirectoryTree: "顯示目錄樹", HideDirectoryTree: "隱藏目錄樹",
 		DirectoryTreeLoadFailedFmt: "%s，載入失敗：%s", DirectoryTreeTruncated: "目錄內容已截斷",
 		DirectoryTreeNeedsWidth: "視窗過窄，無法同時顯示目錄樹和檔案清單",
-		BrowseSync: "同步瀏覽", BrowseHint: "設定位置檔案，或開啟兩側對應目錄後開啟同步瀏覽", BrowseRootsFmt: "已配對：%s  ⇄  %s",
+		BrowseSync:              "同步瀏覽", BrowseHint: "設定位置檔案，或開啟兩側對應目錄後開啟同步瀏覽", BrowseRootsFmt: "已配對：%s  ⇄  %s",
 		BrowseOutside:     "已離開配對目錄，或目錄名稱無法對映到本機，同步瀏覽已暫停。可在兩側開啟對應目錄後重新開啟。",
 		BrowseFailedFmt:   "無法開啟對應目錄 %s：%s。同步瀏覽已暫停；請確認兩側目錄後重新開啟。",
 		BrowseCreateTitle: "建立對應目錄？", BrowseCreateDescriptionFmt: "%s上沒有對應目錄：\n%s\n建立後將進入該目錄並繼續同步瀏覽。選擇暫停將保留目前兩側目錄。",

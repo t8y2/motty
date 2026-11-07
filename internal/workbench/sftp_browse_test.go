@@ -647,7 +647,7 @@ func TestSFTPVisibleProfileCountMatchesTheListWithoutAllocating(t *testing.T) {
 	w.session.host.CatalogID = "count-profiles"
 	state.sftpBookmarks = []sftpBookmark{
 		{host: "count-profiles", name: "项目", local: dir, path: "/home/test"},
-		{host: "count-profiles", path: "/home/test"},              // nothing names it, so it is not offered
+		{host: "count-profiles", path: "/home/test"},           // nothing names it, so it is not offered
 		{host: "another-host", name: "别处", path: "/home/test"}, // another connection's own profile
 		{shared: true, name: "共享", path: "/var/log"},
 	}
