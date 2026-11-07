@@ -315,7 +315,7 @@ for use with its command and file tools.
 ### Backup and sync
 
 Encrypted `.mottybak` export, plus record-level sync through WebDAV,
-S3-compatible storage or a GitHub Gist. Records carry hybrid logical clocks and
+S3-compatible storage, a GitHub Gist or a Gitee snippet. Records carry hybrid logical clocks and
 90-day deletion tombstones, so computers converge without one overwriting the
 other. Tabs, window layout, shortcuts, fonts, key paths and cloud credentials
 stay local.

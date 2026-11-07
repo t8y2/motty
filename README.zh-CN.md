@@ -233,7 +233,7 @@ agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有
 
 ### 备份与同步
 
-支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储或 GitHub Gist 同步。
+支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储、GitHub Gist 或 Gitee 代码片段同步。
 同步按记录合并，使用混合逻辑时钟和 90 天删除墓碑；标签页、窗口布局、快捷键、
 字体、密钥路径和云服务凭据只留在本机。
 

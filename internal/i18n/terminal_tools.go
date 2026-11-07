@@ -631,6 +631,7 @@ type ToolsMessages struct {
 	SyncErrAddress                  string
 	SyncConfigureS3                 string
 	SyncConfigureGist               string
+	SyncConfigureGitee              string
 	SyncErrTooLarge                 string
 	S3DialogTitle                   string
 	S3DialogDescription             string
@@ -652,6 +653,10 @@ type ToolsMessages struct {
 	GistAPI                         string
 	GistErrFields                   string
 	GistErrTooLarge                 string
+	GiteeDialogTitle                string
+	GiteeDialogDescription          string
+	GiteeID                         string
+	GiteeErrTooLarge                string
 	MenuSaveOutput                  string
 	MenuSearchSelection             string
 	OutputSaveTitle                 string
