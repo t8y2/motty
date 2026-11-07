@@ -677,7 +677,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
-		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+3*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
+		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+4*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
 	})
 	layout := dialog.Begin(title, m.FormDescription)
 
@@ -690,7 +690,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 	if cfg.kind == store.KindAnthropic {
 		selected, placeholder = hitAISetFormKindClaude, m.FormBaseURLClaude
 	}
-	var preset, name, kind, auth, format, url, key flex.Box
+	var preset, name, kind, auth, format, url, modelsURL, key flex.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		if presetHeight > 0 {
@@ -702,6 +702,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 			auth = f.Slot().Height(authHeight)
 		}
 		url = f.Slot().Height(60)
+		modelsURL = f.Slot().Height(60)
 		if formatHeight > 0 {
 			format = f.Slot().Height(formatHeight)
 		}
@@ -723,6 +724,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAIAuthField(canvas, auth.Rect())
 	}
 	state.aiFormField(canvas, hitAISetFormURL, m.FormBaseURL, placeholder, "", false, &cfg.baseURL, url.Rect())
+	state.aiFormField(canvas, hitAISetFormModelsURL, m.FormModelsURL, m.FormModelsURLPH, "", false, &cfg.modelsURL, modelsURL.Rect())
 	if formatHeight > 0 {
 		state.paintAIFormatField(canvas, format.Rect())
 	}

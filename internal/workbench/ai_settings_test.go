@@ -444,6 +444,45 @@ func TestAIProviderFormValidates(t *testing.T) {
 	}
 }
 
+func TestAIProviderFormModelsURL(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	m := state.messages.AISettings
+
+	state.Click(hitAISetProviderAdd)
+	world.typeInto(t, hitAISetFormName, "OpenCode")
+	world.typeInto(t, hitAISetFormURL, "https://opencode.ai/inference/go/openai/v1")
+	world.typeInto(t, hitAISetFormModelsURL, "ftp://invalid-models-url")
+	world.typeInto(t, hitAISetFormKey, testSecretKey)
+	state.Click(hitAISetFormSubmit)
+	if state.ai.cfg.formErr != m.ErrFormModelsURL {
+		t.Fatalf("formErr = %q; want %q", state.ai.cfg.formErr, m.ErrFormModelsURL)
+	}
+
+	for range "ftp://invalid-models-url" {
+		state.EditorFor(hitAISetFormModelsURL).DeleteBackward()
+	}
+	world.typeInto(t, hitAISetFormModelsURL, "https://opencode.ai/inference/go/v1")
+	state.Click(hitAISetFormSubmit)
+	if len(state.ai.providers) != 1 {
+		t.Fatalf("providers len = %d; want 1", len(state.ai.providers))
+	}
+	p := state.ai.providers[0]
+	if p.BaseURL != "https://opencode.ai/inference/go/openai/v1" {
+		t.Errorf("BaseURL = %q", p.BaseURL)
+	}
+	if p.ModelsURL != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("ModelsURL = %q, want https://opencode.ai/inference/go/v1", p.ModelsURL)
+	}
+
+	// Reopen form for edit and verify ModelsURL is populated
+	state.aiOpenProviderForm(p.ID)
+	if got := state.ai.cfg.modelsURL.String(); got != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("cfg.modelsURL = %q; want https://opencode.ai/inference/go/v1", got)
+	}
+	state.Click(hitAISetFormCancel)
+}
+
 func TestAIEditKeepsTheOldKeyUnlessReplaced(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state

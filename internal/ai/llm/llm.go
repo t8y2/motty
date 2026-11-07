@@ -154,8 +154,9 @@ const (
 
 // Config selects the endpoint and credentials of a Provider.
 type Config struct {
-	BaseURL string
-	APIKey  string
+	BaseURL   string
+	ModelsURL string
+	APIKey    string
 	// AuthStyle applies to Anthropic only. AuthStyleBearer sends the key as
 	// Authorization: Bearer instead of x-api-key. OpenAI-compatible requests
 	// always use bearer authentication.

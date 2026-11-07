@@ -81,7 +81,9 @@ import (
 // device-local object, which epoch 23 preserves without a version of its own.
 // Version 24 preserves the SFTP location profile synchronization flag. Profiles
 // are array records, so an older writer would otherwise drop the new field.
-const configFormat = 24
+// Version 25 preserves an AI provider's models URL, on the same terms: providers
+// are array records too.
+const configFormat = 25
 
 const (
 	kindSetting             = "setting"

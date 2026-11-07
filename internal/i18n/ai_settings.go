@@ -48,6 +48,8 @@ type AISettingsMessages struct {
 	FormBaseURL              string
 	FormBaseURLOpenAI        string // placeholder: the official default
 	FormBaseURLClaude        string
+	FormModelsURL            string
+	FormModelsURLPH          string
 	FormKey                  string
 	FormKeyPH                string
 	FormKeySaved             string
@@ -55,6 +57,7 @@ type AISettingsMessages struct {
 	FormAdd                  string
 	ErrFormName              string
 	ErrFormBaseURL           string
+	ErrFormModelsURL         string
 	ErrFormKey               string
 	ErrFormSaveFmt           string
 	ErrModelName             string
