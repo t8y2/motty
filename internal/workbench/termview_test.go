@@ -7,8 +7,101 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/highlight"
 	"motty/internal/term"
 )
+
+func TestResizeReusesRowsWhoseContentStillFits(t *testing.T) {
+	for _, rules := range [][]highlight.Rule{nil, highlight.Builtin()} {
+		screen := term.New(40, 3, 10)
+		screen.Write([]byte("error: 你好 é"))
+		look := darkPalette
+		look.highlight = highlight.Compile(rules)
+		var cache rowCache
+		cache.begin()
+		cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
+		for _, cols := range []int{80, 60, 30, 40} {
+			screen.Resize(cols, 3)
+			cache.begin()
+			entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+			var fresh rowCache
+			fresh.begin()
+			want := fresh.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+			if entry.text != want.text || !reflect.DeepEqual(entry.runs, want.runs) || !reflect.DeepEqual(entry.spans, want.spans) {
+				t.Fatalf("at width %d, cached row %+v disagrees with fresh row %+v", cols, entry, want)
+			}
+		}
+		if cache.builds != 1 {
+			t.Fatalf("resizing blank padding rebuilt the same row %d times", cache.builds)
+		}
+	}
+}
+
+func TestResizeReevaluatesHighlightsThatMatchTrailingPadding(t *testing.T) {
+	screen := term.New(8, 2, 0)
+	screen.Write([]byte("error"))
+	look := darkPalette
+	look.highlight = highlight.Compile([]highlight.Rule{{Pattern: `error {3}$`, Regex: true, Slot: highlight.Red}})
+	var cache rowCache
+	for _, cols := range []int{8, 10, 8} {
+		screen.Resize(cols, 2)
+		cache.begin()
+		entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+		want := look.termFG
+		if cols == 8 {
+			want = look.highlightColor(highlight.Red, false)
+		}
+		if len(entry.runs) == 0 || entry.runs[0].Color != want {
+			t.Fatalf("at width %d, runs = %+v, want first word in %v", cols, entry.runs, want)
+		}
+	}
+}
+
+func TestResizeClipsCachedAlternateScreenCellsAndBackgrounds(t *testing.T) {
+	for _, text := range []string{"abc界XYZ", "abc\x1b[44m     ", "abc\x1b[4m     ", "abcdéXYZ"} {
+		t.Run(text, func(t *testing.T) {
+			screen := term.New(8, 2, 0)
+			screen.Write([]byte("\x1b[?1049h" + text))
+			var cache rowCache
+			for _, cols := range []int{8, 4, 12} {
+				screen.Resize(cols, 2)
+				cache.begin()
+				entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &darkPalette, false)
+				var fresh rowCache
+				fresh.begin()
+				want := fresh.row(screen.Row(0), cols, -1, cellSpan{}, &darkPalette, false)
+				if entry.text != want.text || !reflect.DeepEqual(entry.runs, want.runs) || !reflect.DeepEqual(entry.spans, want.spans) {
+					t.Fatalf("at width %d, cached row %+v disagrees with fresh row %+v", cols, entry, want)
+				}
+			}
+		})
+	}
+}
+
+func TestResizeRevealsCachedHistoryBackground(t *testing.T) {
+	for _, from := range []int{0, 5} {
+		t.Run(fmt.Sprintf("from=%d", from), func(t *testing.T) {
+			screen := term.New(8, 2, 20)
+			fmt.Fprintf(screen, "\x1b[%dG\x1b[44m\x1b[K\x1b[0m\r\nx\r\ny", from+1)
+			screen.Resize(4, 2)
+			screen.Scroll(1)
+			var cache rowCache
+			cache.begin()
+			before := screen.Row(0)
+			cache.row(before, 4, -1, cellSpan{}, &darkPalette, false)
+			screen.Resize(8, 2)
+			line := screen.Row(0)
+			if line.ID != before.ID || line.Version != before.Version {
+				t.Fatal("history padding unexpectedly reflowed or changed its version")
+			}
+			cache.begin()
+			entry := cache.row(line, 8, -1, cellSpan{}, &darkPalette, false)
+			if len(entry.spans) != 1 || entry.spans[0].from != from || entry.spans[0].to != 8 {
+				t.Fatalf("revealed history background = %+v, want [%d,8)", entry.spans, from)
+			}
+		})
+	}
+}
 
 func TestClippedWideHistoryRowMatchesFreshCache(t *testing.T) {
 	for _, prefix := range []string{"", "\x1b[44m"} {

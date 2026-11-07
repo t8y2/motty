@@ -37,17 +37,18 @@ func (span cellSpan) holds(column int) bool { return column >= span.from && colu
 // an unchanged line costs nothing to paint again, and a line that only moved
 // (the screen scrolled) is found again by its ID.
 type rowEntry struct {
-	id      uint64
-	version uint32
-	cursor  int // the column drawn as the cursor block, or -1
-	covered cellSpan
-	epoch   uint32
-	cols    int
-	used    uint32 // paint generation that last used the entry
-	text    string
-	gutter  gutterEntry
-	runs    []ui.TextRun
-	spans   []bgSpan
+	id       uint64
+	version  uint32
+	cursor   int // the column drawn as the cursor block, or -1
+	covered  cellSpan
+	epoch    uint32
+	cols     int
+	usedCols int
+	used     uint32 // paint generation that last used the entry
+	text     string
+	gutter   gutterEntry
+	runs     []ui.TextRun
+	spans    []bgSpan
 }
 
 // rowCache holds the prepared lines of one terminal.
@@ -111,9 +112,26 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 		entry.version = ^uint32(0) // never matches: build below
 	}
 	entry.used = cache.generation
-	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch || entry.cols != cols {
+	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
 		cache.build(entry, line, cols, cursor, covered, pal, inactive)
 		entry.version, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, cursor, covered, epoch, cols
+	} else if entry.cols != cols {
+		rebuild := entry.usedCols > min(entry.cols, cols) || pal.highlight.PaddingSensitive()
+		if !rebuild && cols > entry.cols {
+			// Row clips history to the viewport. Its hidden background cells
+			// survive a resize without changing the line's version, so inspect
+			// the newly exposed columns before reusing the narrower rendering.
+			for _, cell := range line.Cells[min(entry.cols, len(line.Cells)):min(cols, len(line.Cells))] {
+				if cell != (term.Cell{}) {
+					rebuild = true
+					break
+				}
+			}
+		}
+		if rebuild {
+			cache.build(entry, line, cols, cursor, covered, pal, inactive)
+		}
+		entry.cols = cols
 	}
 	return entry
 }
@@ -206,6 +224,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 
 	run := -1 // index into entry.runs of the run that may still grow
 	runASCII := false
+	usedCols := 0
 	marks := line.Marks
 	// Resolving a cell is the expensive half of a row: it maps the cell's own
 	// colors through the palette. A row is long stretches of one style, so the
@@ -237,6 +256,9 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		width := 1
 		if cell.Attr&term.WideHead != 0 {
 			width = 2
+		}
+		if cell != (term.Cell{}) {
+			usedCols = x + width
 		}
 		if covered.holds(x) {
 			closeSpan()
@@ -313,10 +335,22 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		runASCII = ascii
 	}
 	closeSpan()
+	for x := count; x < len(cells); x++ {
+		if cells[x] != (term.Cell{}) {
+			usedCols = x + 1
+		}
+	}
 	// The cursor may sit past the last stored cell of a short line.
 	if cursor >= count && cursor >= 0 {
 		entry.spans = append(entry.spans, bgSpan{from: cursor, to: cursor + 1, color: pal.cursor})
 	}
+	if cursor >= 0 && cursor+1 > usedCols {
+		usedCols = cursor + 1
+	}
+	if covered.to > usedCols {
+		usedCols = covered.to
+	}
+	entry.usedCols = usedCols
 
 	// Blanks at the end of the last run are not worth drawing.
 	for run = len(entry.runs) - 1; run >= 0; run = len(entry.runs) - 1 {
