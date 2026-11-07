@@ -86,6 +86,24 @@ func (group *Group) settingsChanged(origin *State) {
 	}
 }
 
+// assistantChoicesChanged tells every other window that origin changed a
+// database-backed assistant choice that does not reconfigure the MCP servers,
+// such as which client configuration the page shows. A window that has not
+// opened the assistant keeps its store closed and reads the choice when it does.
+func (group *Group) assistantChoicesChanged(origin *State) {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		if member == origin || member.closed || member.callbacksClosed.Load() || member.ai.store == nil {
+			continue
+		}
+		member.reloadAISettings()
+		member.invalidateWindow()
+	}
+}
+
 // sessionCount is how many sessions are open in all the windows.
 func (group *Group) sessionCount() int {
 	group.mu.Lock()

@@ -270,3 +270,20 @@ func TestAssistantSettingsPublicationLeavesUnusedStoresClosed(t *testing.T) {
 		t.Fatal("opening the settings page did not read the latest choice")
 	}
 }
+
+func TestAssistantExportChoicesReachOtherWindows(t *testing.T) {
+	windows, hub := assistantWindowsOnOneStore(t)
+	windows[0].Click(aiMCPClientID(aiMCPCodex))
+	windows[1].Click(aiAgentClientID(aiMCPCursor))
+	for index, state := range windows {
+		if got := state.ai.cfg.mcpClient; got != aiMCPCodex {
+			t.Fatalf("window %d HTTP export client = %v, want Codex", index+1, got)
+		}
+		if got := state.ai.cfg.agentClient; got != aiMCPCursor {
+			t.Fatalf("window %d stdio export client = %v, want Cursor", index+1, got)
+		}
+	}
+	if hub.Address() != "" {
+		t.Fatal("changing an export choice enabled the HTTP service")
+	}
+}

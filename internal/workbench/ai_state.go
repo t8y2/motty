@@ -278,8 +278,6 @@ func (state *State) reloadAI() {
 			apply(value)
 		}
 	}
-	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
-	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
 	ai.agentAudit, _ = ai.store.Audit(agentAuditShown)
 	ai.agentSummary.lines = nil
 	read("ai.mode", func(v string) {
@@ -336,6 +334,11 @@ func (state *State) reloadAISettings() {
 	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
 	read(agentModeSetting, func(v string) { settings.agentMode = mcpModeFromSetting(v) })
+	// Export client choices live beside the settings in ai.db but not in
+	// aiSettings: they change which configuration the page shows, not what the
+	// assistant or the MCP servers do.
+	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
+	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
 	if provider, model, ok, err := ai.store.DefaultModel(); err != nil {
 		failed = true
 	} else if ok {
