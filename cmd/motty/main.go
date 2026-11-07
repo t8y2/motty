@@ -313,6 +313,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if status.hasStatusArea() && state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
 			log.Print("motty: window hidden to the status area; the program keeps running")
 			mainWindow.Hide()
+			// A window that disappears into the status area is otherwise
+			// indistinguishable from one that ended the program, so the first
+			// time this happens the user is told the sessions are still there.
+			state.NoteHiddenToTray()
 			return
 		}
 		if state.ConfirmClose(allow) {

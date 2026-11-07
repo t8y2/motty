@@ -833,12 +833,13 @@ type State struct {
 	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
-	syncEpoch  uint32
-	closeAsked bool
-	sync       syncState
-	sshSync    sshSyncState
-	remote     remoteToolsView
-	edits      externalEdits
+	syncEpoch     uint32
+	closeAsked    bool
+	trayHintShown bool
+	sync          syncState
+	sshSync       sshSyncState
+	remote        remoteToolsView
+	edits         externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText  string
 	fontSizeShown float32

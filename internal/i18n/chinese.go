@@ -204,6 +204,8 @@ var ChineseMessages = Messages{
 	TrayCheckUpdates:                     "检查更新…",
 	TrayTooltipFmt:                       "Motty · %d 个打开的会话",
 	TrayTooltipEmpty:                     "Motty",
+	TrayHintTitle:                        "Motty 仍在运行",
+	TrayHintBody:                         "关闭窗口不会断开会话。托盘图标可以重新打开窗口，也可以在那里退出。",
 
 	SettingsTitle:                          "设置",
 	SettingsDescription:                    "选择 Motty 的外观与终端输入行为。",

@@ -204,6 +204,8 @@ var TraditionalMessages = Messages{
 	TrayCheckUpdates:                     "檢查更新…",
 	TrayTooltipFmt:                       "Motty · %d 個開啟的工作階段",
 	TrayTooltipEmpty:                     "Motty",
+	TrayHintTitle:                        "Motty 仍在執行",
+	TrayHintBody:                         "關閉視窗不會中斷工作階段。系統匣圖示可以重新開啟視窗，也可以在那裡退出。",
 
 	SettingsTitle:                          "設定",
 	SettingsDescription:                    "選擇 Motty 的外觀與終端機輸入行為。",

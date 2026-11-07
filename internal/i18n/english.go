@@ -204,6 +204,8 @@ var EnglishMessages = Messages{
 	TrayCheckUpdates:                     "Check for Updates…",
 	TrayTooltipFmt:                       "Motty (%d open)",
 	TrayTooltipEmpty:                     "Motty",
+	TrayHintTitle:                        "Motty is still running",
+	TrayHintBody:                         "Closing the window keeps the sessions connected. The tray icon reopens it, or quits from there.",
 
 	SettingsTitle:                          "Settings",
 	SettingsDescription:                    "Choose how Motty looks and how terminal input behaves.",
