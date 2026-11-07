@@ -22,6 +22,22 @@ Use `make dev` to rebuild and restart when a Go file in this repository or
 `../viva` changes. Watch mode needs `fswatch`; one-shot mode does not.
 `tools/dev.sh --once` is the same entry point as `make run`.
 
+## Inspecting the interface
+
+A development build has an inspector: press Command+Option+Shift+I (Control+Alt+Shift+I on
+Windows and Linux) to cycle it. It first names the control under the pointer
+(its identity, role, accessible name, bounds and state), then outlines every
+control of the frame, then turns off. It is the real-window view of what
+`tree` lists in a headless run, and it is not part of a release build.
+
+A headless script can record an interaction as frames with the input drawn on
+them, so a clip shows where a press landed and which keys were typed:
+
+```text
+click "New Host"
+record /tmp/new-host 800 60 input
+```
+
 ## Data directories
 
 Development builds use `motty-dev` under the platform's configuration

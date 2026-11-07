@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
@@ -77,8 +78,8 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer driver.Close()
-	find := state.shortcuts.chords[shortcutFind]
-	if err := driver.Chord(find.Modifiers, string(find.Key)); err != nil {
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused != hitRemoteSearch {
@@ -144,7 +145,7 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer driver.Close()
-		state.shortcuts.bind(shortcutFind, shortcutChord{Named: ui.KeyF8})
+		state.shortcuts.bind(shortcutFind, keymap.Chord{Key: ui.KeyF8})
 		if err := driver.Key(ui.KeyF8, 0); err != nil {
 			t.Fatal(err)
 		}
@@ -152,8 +153,8 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 			t.Fatal("named Find binding did not focus the utility window's search")
 		}
 		state.shortcuts = defaultShortcuts()
-		find := state.shortcuts.chords[shortcutFind]
-		if err := driver.Chord(find.Modifiers, string(find.Key)); err != nil {
+		find := state.shortcuts.chords.Chord(shortcutFind)
+		if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
 			t.Fatal(err)
 		}
 		if err := driver.Type("ALICE"); err != nil {

@@ -59,6 +59,28 @@ func TestWordBoundsRespectWideCharactersAndWordClasses(t *testing.T) {
 	}
 }
 
+func TestCustomWordSeparatorsKeepPathsTogetherAndPreserveWideCells(t *testing.T) {
+	screen := New(30, 2, 0)
+	screen.Write([]byte("path/to-file 世界!next"))
+	for _, test := range []struct {
+		separators string
+		column     int
+		want       string
+	}{
+		{"", 1, "path"},
+		{"-", 1, "path/to"},
+		{"-", 8, "file"},
+		{"-", 14, "世界!next"},
+		{"-/", 1, "path"},
+	} {
+		screen.SetWordSeparators(test.separators)
+		start, end := screen.WordBounds(Position{Column: test.column})
+		if got := screen.SelectedText(start, end); got != test.want {
+			t.Errorf("separators %q at %d: got %q, want %q", test.separators, test.column, got, test.want)
+		}
+	}
+}
+
 func FuzzSelectedText(f *testing.F) {
 	f.Add([]byte("plain\r\n世界 e\xcc\x81"), uint8(0), uint8(0), uint8(2), uint8(7))
 	f.Add([]byte("\x1b[31mred\x1b[0m\r\nnext"), uint8(3), uint8(12), uint8(1), uint8(0))
@@ -87,6 +109,22 @@ func BenchmarkSelectedText(b *testing.B) {
 		selected = screen.SelectedText(Position{0, 0}, Position{39, 119})
 	}
 	_ = selected
+}
+
+func BenchmarkWordBounds(b *testing.B) {
+	for _, test := range []struct{ name, separators string }{
+		{"default", ""}, {"custom", "-/."},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			screen := New(100, 2, 0)
+			screen.Write([]byte(strings.Repeat("path/to-file_世界 ", 5)))
+			screen.SetWordSeparators(test.separators)
+			b.ReportAllocs()
+			for b.Loop() {
+				screen.WordBounds(Position{Column: 13})
+			}
+		})
+	}
 }
 
 func TestSelectedRangeFollowsTextThroughScrollingAndHistoryTrim(t *testing.T) {

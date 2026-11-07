@@ -7,7 +7,6 @@ import (
 )
 
 func (s *State) noteHeaderIcon(c *ui.Canvas, id ui.ID, b ui.Rect, label string, icon ui.Icon, selected bool) {
-	s.noteContent().view.anchors[id] = b
 	components.BeginButton(c, s.Theme(), id, b).Height(28).WithIcon(icon).Icon().Ghost(label)
 	hits := c.Hits()
 	if len(hits) > 0 && hits[len(hits)-1].ID == id {
@@ -66,7 +65,6 @@ func (s *State) paintNoteLibraryHeader(c *ui.Canvas, b ui.Rect, x, y, right floa
 	for i, item := range modes {
 		id := hitNoteModes.At(item.token)
 		rect := ui.Rect{X: group.X + float32(i)*32, Y: group.Y, Width: 32, Height: 28}
-		v.anchors[id] = rect
 		c.DrawIcon(item.icon, ui.Rect{X: rect.X + 8, Y: rect.Y + 6, Width: 16, Height: 16}, s.pal.text)
 		// Keep the group's native interaction and one focus stop per action while
 		// supplying the names hidden by the icon-only presentation.

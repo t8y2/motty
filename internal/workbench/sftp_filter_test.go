@@ -128,16 +128,16 @@ func TestSFTPFilterRefreshesTheCompleteListingWhileFiltered(t *testing.T) {
 
 func TestSFTPFilterShortcutUsesTheFileListFocusAndLeavesTerminalFindAlone(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	find := state.shortcuts.chords[shortcutFind]
+	find := state.shortcuts.chords.Chord(shortcutFind)
 	result := state.Shortcut(ui.KeyEvent{
-		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Key),
+		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Char),
 	})
 	if !result.Handled || result.Focus != contextID(hitSFTPFilter) || !session.files.active().filterOpen || session.term.find.open {
 		t.Fatalf("file-list find result=%+v filter=%v terminal=%v", result, session.files.active().filterOpen, session.term.find.open)
 	}
 
 	result = state.Shortcut(ui.KeyEvent{
-		Target: contextID(hitTerminalList.At(int(session.ID))), Modifiers: find.Modifiers, Text: string(find.Key),
+		Target: contextID(hitTerminalList.At(int(session.ID))), Modifiers: find.Modifiers, Text: string(find.Char),
 	})
 	if !result.Handled || result.Focus != hitTerminalFindField || !session.term.find.open {
 		t.Fatalf("terminal find result=%+v open=%v", result, session.term.find.open)

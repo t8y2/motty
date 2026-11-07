@@ -25,6 +25,10 @@ func (state *State) devClick(ui.ID) bool { return false }
 
 func (state *State) devBeginPaint() {}
 
+func (state *State) devEndPaint(*ui.Canvas, ui.Size) {}
+
+func (state *State) devShortcut(ui.KeyEvent) (ui.EventResult, bool) { return ui.EventResult{}, false }
+
 func (state *State) devPaintPage(*ui.Canvas, ui.Rect) bool { return false }
 
 func (state *State) devAddPaletteCommands(*commandPalette) {}

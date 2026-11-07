@@ -72,12 +72,12 @@ func cleanSnippetGroup(value string) string {
 // group and its shortcut.
 func snippetDetail(entry *snippet) string {
 	switch {
-	case entry.Group != "" && entry.Shortcut.valid():
-		return entry.Group + " · " + entry.Shortcut.label()
+	case entry.Group != "" && entry.Shortcut.Valid():
+		return entry.Group + " · " + chordLabel(entry.Shortcut)
 	case entry.Group != "":
 		return entry.Group
-	case entry.Shortcut.valid():
-		return entry.Shortcut.label()
+	case entry.Shortcut.Valid():
+		return chordLabel(entry.Shortcut)
 	}
 	return ""
 }
@@ -109,10 +109,14 @@ func (form *snippetsUI) refreshSnippetGroups() {
 			form.visible = append(form.visible, index)
 		}
 	}
-	if len(form.groups) > 0 {
-		// Rows of one group sit together, those of no group first.
+	if form.sort.Direction != components.TableSortNone {
+		column := form.sort.Column
 		slices.SortStableFunc(form.visible, func(a, b int) int {
-			return strings.Compare(strings.ToLower(form.list[a].Group), strings.ToLower(form.list[b].Group))
+			comparison := strings.Compare(strings.ToLower(form.list[a].cells[column]), strings.ToLower(form.list[b].cells[column]))
+			if form.sort.Direction == components.TableSortDescending {
+				return -comparison
+			}
+			return comparison
 		})
 	}
 	if len(form.visible) > 0 && !slices.Contains(form.visible, form.selected) {

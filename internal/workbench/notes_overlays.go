@@ -40,7 +40,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteExport, s.noteText("Export Markdown", "导出 Markdown"))
 			add(hitNoteDelete, s.noteText("Delete note", "删除笔记"))
 		}
-		anchor := v.overlayAnchor
+		anchor := v.overlayAnchorRect(c)
 		menu := components.BeginContextMenu(c, theme, ui.Rect{X: anchor.X, Y: anchor.Y + anchor.Height, Width: 210, Height: float32(len(actions))*32 + 8}, components.ContextMenuOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, Viewport: viewport, Scroll: s.menuScrollFor(hitNoteDismiss)})
 		s.menuPlaced(menu.Bounds())
 		for _, a := range actions {
@@ -54,7 +54,8 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 		s.paintNoteHostPopup(c, viewport)
 	}
 	if i, ok := c.Hovered().In(hitNoteFormats); ok && v.menu == "" && v.popup == "" {
-		components.BeginTooltip(c, theme, viewport, v.anchors[c.Hovered()], components.TooltipOptions{Layer: tooltipLayer, Side: components.TooltipTop}).Paint(s.noteFormatName(i))
+		tooltipAnchor, _ := c.HitBounds(c.Hovered())
+		components.BeginTooltip(c, theme, viewport, tooltipAnchor, components.TooltipOptions{Layer: tooltipLayer, Side: components.TooltipTop}).Paint(s.noteFormatName(i))
 	}
 	if n.confirm != "" {
 		dialog := components.BeginDialog(c, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitNoteConfirm, CloseID: hitNoteCancel, InitialFocusID: hitNoteCancel, ContentSize: ui.Size{Width: 440}, FitBody: true, BodyHeight: 54})

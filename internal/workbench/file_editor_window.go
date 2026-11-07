@@ -76,7 +76,7 @@ func (m *fileWindowManager) activate(key string) {
 	// A tab the user picked now outranks a document that is still loading.
 	m.pending = ""
 	if previous := m.activeDocument(); previous != nil && previous != d && previous.note != nil {
-		previous.note.content.view.previewSelecting = false
+		previous.note.content.view.previewSelect.EndDrag()
 		previous.note.content.view.previewDragging = false
 		previous.note.content.view.pointerValid = false
 	}

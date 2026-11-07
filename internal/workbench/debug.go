@@ -6,6 +6,8 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/inspector"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -52,6 +54,9 @@ type devState struct {
 	editor  text.Editor
 	code    components.CodeEditor
 	started bool
+	// inspector names the control under the pointer, and outlines the controls
+	// of the frame, over the whole window. devInspectorChord cycles it.
+	inspector inspector.Inspector
 	// marks is the highlighter's scratch, reused by every line of every paint.
 	marks []components.MarkdownCodeRun
 	// highlight is debugHighlight held as a value: a method value made at paint
@@ -100,6 +105,27 @@ func (state *State) devClick(id ui.ID) bool {
 
 // devBeginPaint forgets what the last paint laid out.
 func (state *State) devBeginPaint() {}
+
+// devInspectorChord is the shortcut that cycles the inspector: off, the control
+// under the pointer, every control. Command or Control with Alt and Shift, so no
+// terminal program or page binding comes near it.
+var devInspectorChord = keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt | ui.ModifierShift, Char: 'i'}
+
+// devEndPaint paints the inspector over the finished frame.
+func (state *State) devEndPaint(canvas *ui.Canvas, size ui.Size) {
+	state.dev.inspector.Paint(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+}
+
+// devShortcut cycles the inspector.
+func (state *State) devShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+	if chord, ok := keymap.FromEvent(event); !ok || chord != devInspectorChord {
+		return ui.EventResult{}, false
+	}
+	if !event.Release && !event.Repeat {
+		state.dev.inspector.Cycle()
+	}
+	return ui.EventResult{Handled: true, Repaint: true}, true
+}
 
 // devPaintPage paints the gallery and reports whether it was the page on show.
 func (state *State) devPaintPage(canvas *ui.Canvas, bounds ui.Rect) bool {

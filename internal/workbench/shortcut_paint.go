@@ -76,7 +76,7 @@ func (state *State) clickShortcutCapture(id ui.ID) {
 	switch id {
 	case hitShortcutCaptureReset:
 		defaults := defaultShortcuts()
-		state.captureShortcut(ui.KeyEvent{}, defaults.chords[state.shortcutCapture])
+		state.captureShortcut(ui.KeyEvent{}, defaults.chords.Chord(state.shortcutCapture))
 	case hitShortcutCaptureDelete:
 		state.clearShortcut(state.shortcutCapture)
 	case hitShortcutCaptureDismiss, hitShortcutCaptureClose, hitShortcutCaptureCancel:
@@ -154,7 +154,7 @@ func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Re
 	var actions [3]components.ButtonAction
 	actions[0] = components.ButtonAction{ID: hitShortcutCaptureReset, Label: messages.ShortcutsReset, Variant: components.ButtonOutline}
 	count := 1
-	if state.shortcuts.chords[state.shortcutCapture].valid() {
+	if state.shortcuts.chords.Chord(state.shortcutCapture).Valid() {
 		actions[count] = components.ButtonAction{ID: hitShortcutCaptureDelete, Label: messages.ShortcutsDelete, Variant: components.ButtonOutline}
 		count++
 	}

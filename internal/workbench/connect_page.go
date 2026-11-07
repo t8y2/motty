@@ -702,7 +702,7 @@ func (state *State) paintRestoredSessionPage(canvas *ui.Canvas, size ui.Size, se
 	// Under each button the keys that press it, as wide as their keycaps; they hang
 	// below the button without taking room from the page's centring.
 	var closeKeys, connectKeys [6]string
-	closeHint := state.shortcuts.chords[shortcutCloseTab].keys(closeKeys[:0])
+	closeHint := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(closeKeys[:0])
 	connectHint := append(connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
 	closeHintWidth, connectHintWidth := state.keyHintWidth(canvas, closeHint, hintHeight), state.keyHintWidth(canvas, connectHint, hintHeight)

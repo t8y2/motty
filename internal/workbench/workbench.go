@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -260,6 +261,7 @@ var (
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators      = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsInputClick          = tree.ID(settingsHits, "settings-input-click")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
@@ -763,6 +765,8 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
+	terminalWordSeparators                        string
+	terminalWordEditor                            text.Editor
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle       bool
@@ -833,12 +837,13 @@ type State struct {
 	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
-	syncEpoch  uint32
-	closeAsked bool
-	sync       syncState
-	sshSync    sshSyncState
-	remote     remoteToolsView
-	edits      externalEdits
+	syncEpoch     uint32
+	closeAsked    bool
+	trayHintShown bool
+	sync          syncState
+	sshSync       sshSyncState
+	remote        remoteToolsView
+	edits         externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText  string
 	fontSizeShown float32
@@ -928,6 +933,7 @@ type State struct {
 	keyPassphraseDescription string
 	clipboardRequest         remoteClipboardRequest
 	autofillRules            autofillUI
+	credentialForm           credentialUI
 	commandPalette           commandPalette
 	// sessionLogs is this window's local connection journal; it is off only
 	// when the user disabled metadata capture in the settings.
@@ -1252,6 +1258,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		if hit == hitSettingsSearch && state.activeSection == sectionSettings {
 			return &state.settings.search
 		}
+		if hit == hitSettingsWordSeparators && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal {
+			return &state.terminalWordEditor
+		}
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search
 		}
@@ -1336,6 +1345,13 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 	case modalForm:
 		return state.formEditor(hit)
+	case modalCredential:
+		switch hit {
+		case hitCredentialName:
+			return &state.credentialForm.name
+		case hitCredentialPassword:
+			return &state.credentialForm.password
+		}
 	case modalAutofillRule:
 		switch hit {
 		case hitAutofillName:
@@ -1516,6 +1532,9 @@ func (state *State) click(id ui.ID, feedback bool) {
 		return
 	case modalAutofillRule:
 		state.clickAutofillDialog(id)
+		return
+	case modalCredential:
+		state.clickCredentialDialog(id)
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
@@ -2229,6 +2248,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
+	if result, handled := state.snippetReorderPointer(event); handled {
+		return result
+	}
 	if result, handled := state.hostGroupDragPointer(event); handled {
 		return result
 	}
@@ -2567,6 +2589,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result
 	}
+	if result, handled := state.snippetReorderKey(event); handled {
+		return result
+	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
 		return result
 	}
@@ -2748,11 +2773,27 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitAutofillRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
+	if state.modal == modalCredential && event.Key == ui.KeyEnter && !event.Repeat &&
+		(event.Target == hitCredentialName || event.Target == hitCredentialPassword) {
+		state.submitCredential()
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
 	if state.modal == modalHighlightRule && event.Key == ui.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand || event.Target == hitSnippetGroup) && !event.Repeat {
+	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
+		if _, composing := state.snippets.command.Composition(); !composing {
+			movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
+			if movement != components.TextareaMoveNone {
+				value := state.snippets.command.String()
+				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
+				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
+				return ui.EventResult{Handled: true, Repaint: true}
+			}
+		}
+	}
+	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()

@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -29,7 +30,7 @@ const (
 // symbol away from the terminal.
 func (state *State) tabNumberOptions() [3]components.SegmentOption {
 	primary, shifted := "Ctrl", "Ctrl+Shift"
-	if defaultShortcutModifier() == ui.ModifierMeta {
+	if keymap.Primary == ui.ModifierMeta {
 		primary, shifted = "Cmd", "Cmd+Shift"
 	}
 	return [...]components.SegmentOption{
@@ -41,7 +42,7 @@ func (state *State) tabNumberOptions() [3]components.SegmentOption {
 
 // tabNumberModifiers is the modifier set of one of those options.
 func tabNumberModifiers(id ui.ID) (ui.Modifiers, bool) {
-	primary := defaultShortcutModifier()
+	primary := keymap.Primary
 	switch id {
 	case hitSettingsTabNumbersPrimary:
 		return primary, true
@@ -57,7 +58,7 @@ func tabNumberModifiers(id ui.ID) (ui.Modifiers, bool) {
 // user bound to some other combination on the shortcuts page has none: the
 // settings row then shows no choice until one is pressed.
 func (state *State) tabNumberModifierID() ui.ID {
-	chord := state.shortcuts.chords[shortcutTabNumber]
+	chord := state.shortcuts.chords.Chord(shortcutTabNumber)
 	for _, option := range state.tabNumberOptions() {
 		if modifiers, _ := tabNumberModifiers(option.ID); modifiers == chord.Modifiers {
 			return option.ID
@@ -73,8 +74,8 @@ func (state *State) setTabNumberModifier(id ui.ID) bool {
 	if !ok {
 		return false
 	}
-	chord := shortcutChord{Modifiers: modifiers, Key: '1'}
-	if state.shortcuts.chords[shortcutTabNumber] == chord {
+	chord := keymap.Chord{Modifiers: modifiers, Char: '1'}
+	if state.shortcuts.chords.Chord(shortcutTabNumber) == chord {
 		return false
 	}
 	if _, bound := state.shortcuts.bind(shortcutTabNumber, chord); !bound {
@@ -115,7 +116,7 @@ func tabNumberColor(foreground ui.Color) ui.Color {
 // shortcutActionFor is actionFor with the settings that switch an action off.
 // The number row is the one action a setting can silence: with the numbers
 // hidden, its keys belong to the terminal again.
-func (state *State) shortcutActionFor(chord shortcutChord) shortcutAction {
+func (state *State) shortcutActionFor(chord keymap.Chord) shortcutAction {
 	action := state.shortcuts.actionFor(chord)
 	if action == shortcutTabNumber && !state.tabNumbers {
 		return shortcutNone

@@ -187,6 +187,27 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	}
 }
 
+func TestWordSeparatorsInputPersistsAcrossRestart(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
+	input := state.TerminalWordInput(app.TextInputContext{ID: hitSettingsWordSeparators})
+	if input == nil || state.EditorFor(hitSettingsWordSeparators) == nil {
+		t.Fatal("word separators field is not editable")
+	}
+	if _, err := input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "-/"}); err != nil {
+		t.Fatal(err)
+	}
+	if state.terminalWordSeparators != "-/" {
+		t.Fatalf("configured separators = %q", state.terminalWordSeparators)
+	}
+	reopened := newTestState(t, options)
+	if reopened.terminalWordSeparators != "-/" || reopened.terminalWordEditor.String() != "-/" {
+		t.Fatalf("restored separators = %q, editor = %q", reopened.terminalWordSeparators, reopened.terminalWordEditor.String())
+	}
+}
+
 func TestSettingsApplyScrollbackToExistingTerminalsAndReliabilityToNewConnections(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	layoutcore "motty/internal/workspace"
@@ -113,7 +114,7 @@ func TestNumberKeysDoNothingWhileTheNumbersAreHidden(t *testing.T) {
 	state.Click(hitHosts)
 	before := tabIndex(state)
 	press := func(digit string) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: digit})
+		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: digit})
 	}
 	if result := press("1"); result.Handled {
 		t.Fatal("a hidden number still took its key from the terminal")
@@ -158,8 +159,8 @@ func TestTheNumbersSettingOwnsTheNumberKeys(t *testing.T) {
 	}
 
 	state.Click(hitSettingsTabNumbersAlt)
-	want := shortcutChord{Modifiers: ui.ModifierAlt, Key: '1'}
-	if got := state.shortcuts.chords[shortcutTabNumber]; got != want {
+	want := keymap.Chord{Modifiers: ui.ModifierAlt, Char: '1'}
+	if got := state.shortcuts.chords.Chord(shortcutTabNumber); got != want {
 		t.Fatalf("choosing Alt bound %+v, want %+v", got, want)
 	}
 	if label := state.shortcuts.labels[shortcutTabNumber]; label != "Alt+1…9" {
@@ -168,8 +169,8 @@ func TestTheNumbersSettingOwnsTheNumberKeys(t *testing.T) {
 
 	state.save()
 	restored := newTestState(t, state.options)
-	if !restored.tabNumbers || restored.shortcuts.chords[shortcutTabNumber] != want {
-		t.Fatalf("restored numbers=%v chord=%+v", restored.tabNumbers, restored.shortcuts.chords[shortcutTabNumber])
+	if !restored.tabNumbers || restored.shortcuts.chords.Chord(shortcutTabNumber) != want {
+		t.Fatalf("restored numbers=%v chord=%+v", restored.tabNumbers, restored.shortcuts.chords.Chord(shortcutTabNumber))
 	}
 }
 
@@ -188,7 +189,7 @@ func TestTheNumberKeysSettingTakesTheKeyboard(t *testing.T) {
 	if !result.Handled || result.Focus != hitSettingsTabNumbersAlt {
 		t.Fatalf("keyboard choice: %+v", result)
 	}
-	if got := state.shortcuts.chords[shortcutTabNumber].Modifiers; got != ui.ModifierAlt {
+	if got := state.shortcuts.chords.Chord(shortcutTabNumber).Modifiers; got != ui.ModifierAlt {
 		t.Fatalf("the keyboard chose %v, want Alt", got)
 	}
 }
@@ -200,8 +201,8 @@ func TestTheNumberKeysAreAbleToFireInATerminal(t *testing.T) {
 	// Shift alone cannot be told apart from typing its symbol, so the third
 	// choice is the platform's primary key with Shift.
 	state.Click(hitSettingsTabNumbersShift)
-	want := shortcutChord{Modifiers: defaultShortcutModifier() | ui.ModifierShift, Key: '1'}
-	if got := state.shortcuts.chords[shortcutTabNumber]; got != want {
+	want := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierShift, Char: '1'}
+	if got := state.shortcuts.chords.Chord(shortcutTabNumber); got != want {
 		t.Fatalf("the third choice bound %+v, want %+v", got, want)
 	}
 	result := state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: want.Modifiers, Text: "2"})
@@ -222,7 +223,7 @@ func TestHiddenNumberKeysStayWithTheTerminalDuringCLILogin(t *testing.T) {
 	state.ai.login = &aiCLILogin{provider: store.Provider{ID: "auth"}, term: local, cancel: func() {}}
 	state.ai.cfg.dialog = aiDialogCLILogin
 	digit := func(text string) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: defaultShortcutModifier(), Text: text})
+		return state.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: keymap.Primary, Text: text})
 	}
 	if state.tabNumbers {
 		t.Fatal("tab numbers must default to off")

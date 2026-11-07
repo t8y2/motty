@@ -88,6 +88,8 @@ type Messages struct {
 	TerminalInput TerminalInputMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
 	Autofill AutofillMessages
+	// Credentials holds the saved passwords' texts; see credentials.go.
+	Credentials CredentialMessages
 	// History holds the command history's texts; see history.go.
 	History HistoryMessages
 	// SessionLogs holds the local session-log page's texts; see session_logs.go.
@@ -232,6 +234,11 @@ type Messages struct {
 	TrayCheckUpdates  string
 	TrayTooltipFmt    string
 	TrayTooltipEmpty  string
+	// TrayHintTitle and TrayHintBody are the notification shown the first time
+	// closing a window leaves the application running in the status area, which
+	// is otherwise indistinguishable from quitting.
+	TrayHintTitle string
+	TrayHintBody  string
 
 	// Settings workspace.
 	SettingsTitle                          string
@@ -1118,6 +1125,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = chineseAIPanel, chineseAISettings, chineseTools
 		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
+		messages.Credentials = chineseCredentials
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
 		messages.SSHSync = chineseSSHSync
@@ -1129,6 +1137,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
 		messages.Toolbars = traditionalToolbars
 		messages.Autofill = traditionalAutofill
+		messages.Credentials = traditionalCredentials
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
 		messages.SSHSync = traditionalSSHSync
@@ -1140,6 +1149,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = englishAIPanel, englishAISettings, englishTools
 		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
+		messages.Credentials = englishCredentials
 		messages.History = englishHistory
 		messages.Completion = englishCompletion
 		messages.SSHSync = englishSSHSync

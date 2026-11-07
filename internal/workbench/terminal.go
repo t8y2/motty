@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
@@ -1321,7 +1322,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		return handled
 	}
 	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
-		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && defaultShortcutModifier() == ui.ModifierMeta {
+		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == ui.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
 			// A chord the application has bound belongs to it even where the
@@ -1460,7 +1461,7 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 // shortcutBound reports whether the shortcut table binds the chord of event,
 // whether or not its action applies to the focused target.
 func (state *State) shortcutBound(event ui.KeyEvent) bool {
-	chord, ok := shortcutChordFromEvent(event)
+	chord, ok := keymap.FromEvent(event)
 	return ok && state.shortcutActionFor(chord) != shortcutNone
 }
 

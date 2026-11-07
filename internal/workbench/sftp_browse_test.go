@@ -14,6 +14,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -565,7 +566,7 @@ func TestSFTPBrowseIntegratesWithIndependentFiltersAndHeaderMenus(t *testing.T) 
 	}
 	// Explicit paths still navigate when a counterpart is filtered out.
 	dualClickID(t, view, sftpWindowPath[0])
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'a'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'a'); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Type(filepath.Join(dir, "docs")); err != nil {

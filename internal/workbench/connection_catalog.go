@@ -22,6 +22,8 @@ type hostCatalog struct {
 	templates  []WorkspaceTemplate
 	proxies    []proxyRecord
 	identities []identityRecord
+	// credentials are the saved passwords hosts can share; the secrets are in the vault.
+	credentials []credential
 	// proxy is the outbound proxy every host inherits unless it names its own.
 	proxy             outboundProxy
 	connectionTimeout time.Duration
@@ -617,12 +619,13 @@ func connectionTimes(saved savedState) (timeout, keepAlive time.Duration) {
 func catalogFromSaved(saved savedState, systemUser string, messages keyMessages) hostCatalog {
 	hosts, _ := decodeHosts(saved.Hosts, nil, 1)
 	catalog := hostCatalog{
-		hosts:      hosts,
-		proxies:    decodeProxies(saved.Proxies, hosts),
-		identities: decodeIdentities(saved.IdentityFiles, messages),
-		proxy:      decodeOutboundProxy(saved.OutboundProxy),
-		systemUser: systemUser,
-		agentHosts: agentHostSet(saved.AgentHosts),
+		hosts:       hosts,
+		proxies:     decodeProxies(saved.Proxies, hosts),
+		identities:  decodeIdentities(saved.IdentityFiles, messages),
+		credentials: decodeCredentials(saved.Credentials),
+		proxy:       decodeOutboundProxy(saved.OutboundProxy),
+		systemUser:  systemUser,
+		agentHosts:  agentHostSet(saved.AgentHosts),
 	}
 	catalog.connectionTimeout, catalog.connectionKeepAlive = connectionTimes(saved)
 	catalog.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)

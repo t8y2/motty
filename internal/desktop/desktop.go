@@ -202,6 +202,30 @@ type FileClipboard interface {
 	SetClipboardFiles(paths []string) (FileOffer, error)
 }
 
+// FileReceiver is a Session that can take files the remote system put on its
+// clipboard. The files are saved beside this computer's own clipboard, so the
+// user can paste them where they are working.
+type FileReceiver interface {
+	Session
+	// RemoteFiles returns the files the remote clipboard delivered since the
+	// previous call, if any. Paths names the top-level entries to put on the
+	// local clipboard; Err says why none or only some arrived.
+	RemoteFiles() (ReceivedFiles, bool)
+}
+
+// ReceivedFiles is a remote file list saved on this computer.
+type ReceivedFiles struct {
+	// Paths are the top-level files and folders, absolute and local.
+	Paths []string
+	// Files and Folders count what arrived; Bytes is their total size.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts entries that could not be saved.
+	Skipped int
+	// Err reports a failure, including one that left only some entries saved.
+	Err error
+}
+
 // FileOffer says what SetClipboardFiles put on the remote clipboard.
 type FileOffer struct {
 	// Files and Folders count what is offered; Bytes is the total size of the files.

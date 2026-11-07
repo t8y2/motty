@@ -617,7 +617,7 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 		if !isPasswordQuestion(status.Questions) {
 			return fmt.Errorf("%s asks for more than a password (a one-time code?), which an agent cannot answer", who)
 		}
-		password, err := lookup(hostSecretName(b.catalog.secretOwner(host, status.Endpoint, status.EndpointRole), hostPasswordPart))
+		password, err := lookup(b.catalog.passwordSecret(host, status.Endpoint, status.EndpointRole))
 		if err != nil {
 			return err
 		}

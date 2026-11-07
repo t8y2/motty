@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
@@ -76,6 +78,7 @@ type savedState struct {
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalWordSeparators  string              `json:"terminal_word_separators,omitempty"`
 	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
@@ -120,6 +123,7 @@ type savedState struct {
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
@@ -129,6 +133,7 @@ type savedState struct {
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
+	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
@@ -196,6 +201,7 @@ type savedSnippet struct {
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
 	Group   string `json:"group,omitempty"`
+	Order   int    `json:"order,omitempty"`
 }
 
 // savedSnippetKey is the shortcut of the snippet of that name. It lives apart
@@ -485,6 +491,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
@@ -529,6 +536,7 @@ func (state *State) snapshot() savedState {
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
+		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
 		ShortcutDefaultsGeneration: shortcutDefaultsGeneration,
@@ -561,14 +569,15 @@ func (state *State) snapshot() savedState {
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
+	saved.Credentials = state.savedCredentials()
 	saved.NoteView = state.savedNotesView()
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
-	for _, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group})
-		if entry.Shortcut.valid() {
+	for index, entry := range state.snippets.list {
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
+		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
-				Name: entry.Name, Key: string([]byte{entry.Shortcut.Key}), Modifiers: uint8(entry.Shortcut.Modifiers),
+				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
 	}
@@ -578,9 +587,9 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		chord := state.shortcuts.chords[action]
+		chord := state.shortcuts.chords.Chord(action)
 		saved.Shortcuts = append(saved.Shortcuts, savedShortcut{
-			Action: action.String(), Key: chord.savedKey(), Modifiers: uint8(chord.Modifiers),
+			Action: action.String(), Key: chord.Name(), Modifiers: uint8(chord.Modifiers),
 		})
 	}
 	for _, host := range state.hosts {
@@ -834,7 +843,7 @@ func (state *State) restore(saved savedState) {
 	// this build's already, so a first run writes nothing.
 	staleDefaults := saved.ShortcutDefaultsGeneration < shortcutDefaultsGeneration && len(saved.Shortcuts) > 0
 	if staleDefaults {
-		state.shortcuts.migrateChangedDefaults(func(chord shortcutChord) bool {
+		state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool {
 			return state.snippetNamed(chord) != ""
 		})
 	}
@@ -1018,6 +1027,8 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalWordSeparators = saved.TerminalWordSeparators
+	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
 	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency
@@ -1044,6 +1055,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)
 	state.restoreAutofill(saved)
+	state.restoreCredentials(saved)
 
 	// A host keeps the number the sessions and the selection know it by.
 	known := make(map[string]uint32, len(state.hosts))
@@ -1131,7 +1143,7 @@ func (state *State) workspaceName() string {
 // its default back.
 func restoreShortcuts(saved []savedShortcut) shortcutMap {
 	defaults := defaultShortcuts()
-	var shortcuts shortcutMap
+	shortcuts := newShortcutMap()
 	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
 		action := shortcutActionFromString(entry.Action)
@@ -1143,7 +1155,7 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 			continue
 		}
-		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
+		chord, ok := keymap.Parse(ui.Modifiers(entry.Modifiers), entry.Key)
 		if !ok {
 			continue
 		}
@@ -1152,10 +1164,10 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if specified[action] || shortcuts.chords[action].valid() {
+		if specified[action] || shortcuts.chords.Chord(action).Valid() {
 			continue
 		}
-		shortcuts.bind(action, defaults.chords[action])
+		shortcuts.bind(action, defaults.chords.Chord(action))
 	}
 	shortcuts.refreshLabels()
 	return shortcuts

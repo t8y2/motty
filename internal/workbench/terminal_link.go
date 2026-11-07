@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
@@ -22,7 +23,7 @@ func (state *State) terminalLinkOpens(modifiers ui.Modifiers) bool {
 	if modifiers&ui.ModifierShift != 0 {
 		return false
 	}
-	return state.terminalLinkPlainClick || modifiers == defaultShortcutModifier()
+	return state.terminalLinkPlainClick || modifiers == keymap.Primary
 }
 
 // terminalLinks tracks the link under the pointer. Detection stays dormant

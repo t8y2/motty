@@ -236,7 +236,7 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 	var icon, groupCheck flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(flex.Center).
-		Radius(radius.control).HoverBackground(pal.surfaceSoft).
+		Radius(radius.control).Hover(flex.Look{}.Background(pal.surfaceSoft)).
 		HitWith(hitHostGroupOpenList.At(groupIndex), label, ui.HitOptions{Role: ui.RoleButton, Expanded: group.Expanded}).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)

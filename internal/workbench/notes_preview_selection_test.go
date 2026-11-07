@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -36,11 +38,11 @@ func TestNotesRenderedPreviewSelectsAndCopiesText(t *testing.T) {
 	s.notesPointer(end)
 	var copied string
 	s.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	copy := ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: defaultShortcutModifier()}
-	if r := s.Shortcut(copy); !r.Handled || copied != "alpha" || s.notes.view.previewSelecting {
+	copy := ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: keymap.Primary}
+	if r := s.Shortcut(copy); !r.Handled || copied != "alpha" || s.notes.view.previewSelect.Dragging() {
 		t.Fatalf("drag copy = %q, result=%+v", copied, r)
 	}
-	all := ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: defaultShortcutModifier()}
+	all := ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary}
 	if !s.Key(all).Handled {
 		t.Fatal("select-all was not routed from preview")
 	}
@@ -64,10 +66,10 @@ func TestNotesPreviewSelectionIsIsolatedAndClearedWhenContentChanges(t *testing.
 	s.notes.view.mode = notePreview
 	var c ui.Canvas
 	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
-	s.Shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: defaultShortcutModifier()})
+	s.Shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary})
 	copied := "unchanged"
 	s.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	copy := ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: defaultShortcutModifier()}
+	copy := ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: keymap.Primary}
 	s.Shortcut(copy)
 	if copied != "中文内容" {
 		t.Fatalf("Chinese copy = %q", copied)
@@ -87,14 +89,15 @@ func TestNotesPreviewSelectionIsIsolatedAndClearedWhenContentChanges(t *testing.
 	if copied != "unchanged" {
 		t.Fatal("changed content retained stale selection")
 	}
-	s.Shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: defaultShortcutModifier()})
+	s.Shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary})
 	s.notesKey(ui.KeyEvent{Target: hitNotePreviewText, Key: ui.KeyEscape})
-	if s.notes.rendered.SelectedText(s.notes.view.previewSelection) != "" {
+	if s.notes.rendered.SelectedText(s.notes.view.previewSelect.In(0)) != "" {
 		t.Fatal("Escape did not clear selection")
 	}
-	s.notes.view.previewSelecting = true
+	s.notes.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: 1})
+	s.notes.view.previewSelect.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary}, func(ui.Point) (components.TextPoint, bool) { return components.TextPoint{}, true })
 	s.selectNoteWithoutSave(s.notes.selected)
-	if s.notes.view.previewSelecting {
+	if s.notes.view.previewSelect.Dragging() {
 		t.Fatal("switching notes retained a drag")
 	}
 }

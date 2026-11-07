@@ -149,11 +149,11 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 
 func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	state, _ := panelState(t, nil)
-	chord := state.shortcuts.chords[shortcutAssistant]
-	if !chord.valid() || state.shortcuts.actionFor(chord) != shortcutAssistant {
+	chord := state.shortcuts.chords.Chord(shortcutAssistant)
+	if !chord.Valid() || state.shortcuts.actionFor(chord) != shortcutAssistant {
 		t.Fatalf("assistant chord %+v", chord)
 	}
-	event := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Key))}
+	event := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char))}
 	result := state.Shortcut(event)
 	if !result.Handled || !state.ai.open || result.Focus != hitAIInput {
 		t.Fatalf("shortcut opened = %+v, open=%v", result, state.ai.open)

@@ -65,6 +65,11 @@ type ToolsMessages struct {
 	SnippetFilterNone         string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
+	SnippetSortAction         string
+	SnippetSortAscending      string
+	SnippetSortDescending     string
+	SnippetMoveUp             string
+	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string
@@ -137,6 +142,9 @@ type ToolsMessages struct {
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
+	WordSeparatorsRow          string
+	WordSeparatorsDescription  string
+	WordSeparatorsPlaceholder  string
 	RightClickPasteRow         string
 	RightClickPasteDescription string
 	InputClickRow              string
@@ -485,6 +493,9 @@ type ToolsMessages struct {
 	DesktopFilesTooManyFmt          string // limit
 	DesktopFilesPathTooLongFmt      string // path
 	DesktopFilesFailedFmt           string // error
+	DesktopFilesReceivedFmt         string // count, size
+	DesktopFilesReceivedSkippedFmt  string // count
+	DesktopFilesReceiveFailedFmt    string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
