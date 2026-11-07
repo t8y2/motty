@@ -310,7 +310,10 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 			changed := terminal.links.clear()
 			return ui.EventResult{Handled: event.Captured, Repaint: changed}
 		}
-		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+		changed := false
+		if event.Kind == ui.PointerUp {
+			changed = selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+		}
 		selection.dragging = false
 		selection.edge = selectionEdge{}
 		open := false

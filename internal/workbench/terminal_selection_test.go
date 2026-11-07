@@ -445,6 +445,40 @@ func TestDraggingBelowTheGridScrollsAndSelectsHistory(t *testing.T) {
 	}
 }
 
+func TestInterruptedDragDoesNotSelectTextAboveItsFocus(t *testing.T) {
+	for _, steps := range []int{0, 3} {
+		t.Run(fmt.Sprintf("scrolled_%d", steps), func(t *testing.T) {
+			state, session, geometry := selectionState()
+			terminal := session.term
+			fillHistory(t, terminal, 30)
+			terminal.screen.Scroll(20)
+			hit := hitTerminalList.At(int(session.ID))
+			startRow := 1
+			if steps == 0 {
+				startRow = 3
+			}
+			startX, startY := cellPoint(geometry, startRow, 0, state.cellWidth, state.cellHeight)
+			state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+			belowY := geometry.top + 8*state.cellHeight
+			state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
+			for step := 1; step <= steps; step++ {
+				state.stepSelectionScroll(terminal, time.Duration(step)*selectionScrollInterval)
+			}
+			want := terminal.selection.text(terminal.screen)
+			if want == "" {
+				t.Fatal("drag did not select text")
+			}
+			state.Pointer(ui.PointerEvent{Kind: ui.PointerExit, Target: hit, Captured: true, X: -1, Y: -1, Viewport: state.viewport})
+			if got := terminal.selection.text(terminal.screen); got != want {
+				t.Fatalf("losing the pointer changed the selection from %q to %q", want, got)
+			}
+			if terminal.selection.dragging || terminal.selection.edge.direction != 0 {
+				t.Fatalf("interrupted drag still active: %+v", terminal.selection)
+			}
+		})
+	}
+}
+
 func TestDraggingAboveTheGridScrollsBackIntoHistory(t *testing.T) {
 	state, session, geometry := selectionState()
 	terminal := session.term
