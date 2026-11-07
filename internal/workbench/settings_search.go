@@ -26,7 +26,7 @@ var (
 // one entry per keyboard shortcut and what the About page holds. The test keeps
 // a quarter of it free, so adding entries fails loudly here instead of becoming
 // silently unsearchable when the array fills.
-const maxSettingsEntries = 192
+const maxSettingsEntries = 256
 
 // settingsEntry is one thing a user may look for.
 type settingsEntry struct {
@@ -206,6 +206,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
+	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)

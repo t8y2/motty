@@ -722,6 +722,9 @@ type State struct {
 	terminalCopyOnSelect, terminalRightClickPaste bool
 	terminalWordSeparators                        string
 	terminalWordEditor                            text.Editor
+	// hiddenHostTags are the keys of the built-in tag suggestions deleted in
+	// Settings; see host_tag_settings.go.
+	hiddenHostTags []string
 	// tabTitleMode selects the dynamic label without changing the stored name.
 	tabTitleMode           tabTitleMode
 	backgroundOutputAlerts bool
