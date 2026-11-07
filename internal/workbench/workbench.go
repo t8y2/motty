@@ -547,6 +547,7 @@ type State struct {
 	filterMoreButton   ui.Rect
 	hostTotalDigits    string
 	groupMenu          groupMenuAnchor // where the Move group picker opens
+	moveGroups         *hostMoveGroupMenu
 	hostSelectionText  string
 	// inputGapNote is the last terminal input gap reported to the log, so a
 	// paint that keeps asking for a surface that cannot exist logs it once.
@@ -2363,6 +2364,13 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 			return result
 		}
 	}
+	if state.hostGroupMenu {
+		if menu := state.moveGroupTree(); menu != nil {
+			if result := menu.Pointer(event); result.Handled {
+				return result
+			}
+		}
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
 			state.editor.groupPicker.control.Open = false
@@ -2578,6 +2586,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.transferCenterKey(event); handled {
+		return result
+	}
+	if result, handled := state.hostMoveGroupKey(event); handled {
 		return result
 	}
 	// A tooltip is the topmost transient thing when no popup menu is open:

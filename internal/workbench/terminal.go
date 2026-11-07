@@ -1511,6 +1511,11 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		// The menu is modal: only its own panels scroll.
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
+	if state.hostGroupMenu {
+		if menu := state.moveGroupTree(); menu != nil {
+			return ui.EventResult{Handled: true, Repaint: menu.Wheel(event)}
+		}
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
 		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}

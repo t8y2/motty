@@ -1544,7 +1544,7 @@ func (state *State) paintHostFilterMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	menu.End()
 }
 
-func (state *State) paintHostGroupMenu(canvas *ui.Canvas, bounds, viewport ui.Rect) {
+func (state *State) paintFlatHostGroupMenu(canvas *ui.Canvas, bounds, viewport ui.Rect) {
 	// The ungrouped bucket is in the list with an empty name; "No group" already
 	// says it, so it is not offered a second time as a blank row.
 	named := 0
@@ -1572,7 +1572,7 @@ func (state *State) paintHostGroupMenu(canvas *ui.Canvas, bounds, viewport ui.Re
 		if group.Name == "" {
 			continue
 		}
-		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name})
+		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name, Value: group.Name})
 	}
 	menu.AddSeparator()
 	menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupNew, Label: state.messages.MoveGroupNew})
