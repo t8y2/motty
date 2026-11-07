@@ -173,8 +173,7 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	// The terminal layout follows the window and the font; remember what it
 	// was painted with so a resize can work out the rows and columns.
 	state.viewport = size
-	state.cellWidth, state.cellHeight = canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
+	state.measureTerminalCell(canvas)
 	if session := state.fullscreenDesktop(); session != nil {
 		state.beginMenus()
 		state.paintDesktopPage(canvas, size, session)

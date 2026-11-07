@@ -61,16 +61,29 @@ var (
 	lineHeightRoomyFactor   float32 = 1.25
 )
 
-// setTerminalLineHeight is the user choosing denser or airier rows: the cell
-// height is recomputed from the same font size, and every pane refits.
+// setTerminalLineHeight is the user choosing denser or airier rows; the next
+// paint measures the cell with the new factor and every pane refits.
 func (state *State) setTerminalLineHeight(mode lineHeight) bool {
 	mode = normalizeTerminalLineHeight(mode)
 	if state.terminalLineHeight == mode {
 		return false
 	}
 	state.terminalLineHeight = mode
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.cellHeight *= mode.factor()
-	state.fitTerminals()
 	return true
+}
+
+// measureTerminalCell is the terminal's cell at the current font, size and line
+// spacing, measured on the window's own canvas: its text engine knows the advance
+// and the line box of the font that draws the terminal, so the columns and rows are
+// the ones that font gives. Until the first paint the cell is the reference estimate
+// the state was made with. A changed cell refits every terminal, whichever setting
+// (font, size, spacing, display scale, installed fonts) moved it.
+func (state *State) measureTerminalCell(canvas *ui.Canvas) {
+	width, height := canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	height *= state.terminalLineHeight.factor()
+	if width == state.cellWidth && height == state.cellHeight {
+		return
+	}
+	state.cellWidth, state.cellHeight = width, height
+	state.fitTerminals()
 }

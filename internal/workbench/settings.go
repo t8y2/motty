@@ -131,9 +131,6 @@ func (state *State) setTerminalFontSize(value float32) bool {
 		return false
 	}
 	state.terminalFontSize = value
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	state.fitTerminals()
 	return true
 }
 
@@ -145,9 +142,6 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 		return false
 	}
 	state.terminalFontFace = face
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	state.fitTerminals()
 	return true
 }
 

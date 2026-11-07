@@ -1068,6 +1068,8 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	// The reference cell stands in until the first paint measures the font on the
+	// window's canvas (measureTerminalCell).
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
 	state.temporaryWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)
 	state.managedWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)

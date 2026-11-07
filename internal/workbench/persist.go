@@ -1092,13 +1092,8 @@ func (state *State) restoreShared(saved savedState) {
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
 	}
-	// The row height follows the font and the line-spacing choice together, so the
-	// saved spacing is reflected here as it is on every painted frame.
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	// This also runs when a synced setting arrives on a live window, so open
-	// terminals have to take the new row height now, not on the next resize.
-	state.fitTerminals()
+	// The cell follows the font and the line-spacing choice together; the next paint
+	// measures it, and refits open terminals when a synced setting changed it.
 }
 
 func (state *State) workspaceName() string {
