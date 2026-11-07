@@ -109,7 +109,9 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 		case reflect.Bool:
 			last.SetBool(!last.Bool())
 		case reflect.Slice:
-			last.Set(reflect.ValueOf([]string{"other"}))
+			changed := reflect.MakeSlice(last.Type(), last.Len()+1, last.Len()+1)
+			reflect.Copy(changed, last)
+			last.Set(changed)
 		case reflect.Ptr:
 			last.Set(reflect.ValueOf(&savedOutboundProxy{Kind: "other"}))
 		default:

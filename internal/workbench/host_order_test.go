@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestHostDisplayOrderNameIsDeterministicAndPreservesManual(t *testing.T) {
 	if got := displayHostIDs(state); !slices.Equal(got, want) {
 		t.Fatalf("name order = %v, want %v", got, want)
 	}
-	if !slices.Equal(state.hosts, original) || !state.hostSelected(2) {
+	if !reflect.DeepEqual(state.hosts, original) || !state.hostSelected(2) {
 		t.Fatal("display order rewrote the catalog or selection identity")
 	}
 	slices.Reverse(state.hosts)
@@ -135,7 +136,7 @@ func TestHostDisplayOrderAutomaticDisablesManualMoves(t *testing.T) {
 	before := slices.Clone(state.hosts)
 	move := components.ReorderGridMove{ID: hitHostSortHandles.At(1), Target: hitHostSortHandles.At(2), From: 0, To: 1}
 	state.applyHostSortMove(move)
-	if !slices.Equal(state.hosts, before) {
+	if !reflect.DeepEqual(state.hosts, before) {
 		t.Fatal("stale reorder gesture rewrote an automatically ordered catalog")
 	}
 	canvas, _ := paintedTexts(state)

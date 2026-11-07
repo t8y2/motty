@@ -401,9 +401,9 @@ func TestVNCHostIsSavedWithoutAPasswordAndKeepsItsSwitches(t *testing.T) {
 	if !restored.applyTransport(host.transport()) || restored.Protocol != protocolVNC || !restored.ViaSSH || !restored.Clipboard {
 		t.Fatalf("restored = %+v", restored)
 	}
-	direct := Host{Address: "10.0.0.9", Protocol: protocolVNC, User: "ignored"}
+	direct := Host{Address: "10.0.0.9", Protocol: protocolVNC, User: "alice"}
 	direct.normalizeEndpoint()
-	if direct.Port != 5900 || direct.User != "" {
+	if direct.Port != 5900 || direct.User != "alice" {
 		t.Fatalf("a direct VNC host keeps port %d, user %q", direct.Port, direct.User)
 	}
 }

@@ -130,10 +130,11 @@ type savedTransport struct {
 	// a desktop host's: its page shows the picture without the bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
-	ViaSSH     bool `json:"via_ssh,omitempty"`
-	Clipboard  bool `json:"clipboard,omitempty"`
-	Console    bool `json:"console,omitempty"`
-	Chromeless bool `json:"chromeless,omitempty"`
+	ViaSSH     bool         `json:"via_ssh,omitempty"`
+	Clipboard  bool         `json:"clipboard,omitempty"`
+	Console    bool         `json:"console,omitempty"`
+	Chromeless bool         `json:"chromeless,omitempty"`
+	VNCKeys    []vncHostKey `json:"vnc_keys,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -144,6 +145,7 @@ func (host Host) transport() savedTransport {
 		return transport
 	case protocolVNC:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
+		transport.VNCKeys = slices.Clone(host.VNCKeys)
 		return transport
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
@@ -173,6 +175,7 @@ func (host Host) transport() savedTransport {
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
 	host.Credential = strings.TrimSpace(transport.Credential)
+	host.VNCKeys = nil
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
@@ -193,6 +196,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
+		host.VNCKeys = slices.Clone(transport.VNCKeys)
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
@@ -463,9 +467,6 @@ func (host *Host) normalizeEndpoint() {
 		host.User, host.Port = "", 0
 		return
 	}
-	if host.Protocol == protocolVNC && !host.ViaSSH {
-		host.User = "" // the account is the SSH tunnel's
-	}
 	if host.Port == 0 {
 		host.Port = host.defaultPort()
 	}
@@ -523,7 +524,11 @@ func (state *State) sayStreamOpened(session *Session) {
 	case protocolTelnet:
 		session.term.say(sgrWarn, m.TelnetPlaintext)
 	case protocolVNC:
-		if !session.host.tunneled() {
+		protected := session.host.tunneled()
+		if source, ok := session.conn.(desktopSource); ok && source.Desktop() != nil {
+			protected = protected || source.Desktop().Info().Encrypted
+		}
+		if !protected {
 			session.term.say(sgrWarn, state.messages.Desktop.VNCPlaintext)
 		}
 	case protocolSerial:

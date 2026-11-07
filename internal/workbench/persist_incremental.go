@@ -282,7 +282,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.ForwardX11 == right.ForwardX11 && left.AgentForward == right.AgentForward &&
 		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
-		left.Chromeless == right.Chromeless
+		left.Chromeless == right.Chromeless && slices.Equal(left.VNCKeys, right.VNCKeys)
 }
 
 func sameSavedProxy(left, right *savedOutboundProxy) bool {

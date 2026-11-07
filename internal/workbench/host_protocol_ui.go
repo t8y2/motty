@@ -99,9 +99,7 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 				third = f.Slot().Width(hostPortWidth).Shrink(0)
 			})
 			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				if editor.viaSSH {
-					second = f.Slot().Grow(1)
-				}
+				second = f.Slot().Grow(1)
 				password = f.Slot().Grow(1)
 			})
 		case protocolSSH:
@@ -158,6 +156,8 @@ func (state *State) paintHostEndpointRows(canvas *ui.Canvas, x, y, width, rowHei
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
 		if editor.viaSSH {
 			state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldSSHUser, m.FieldUserPlaceholder, second.Rect())
+		} else {
+			state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldVNCUser, state.messages.Desktop.VNCUserHint, second.Rect())
 		}
 		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldVNCPassword, state.hostPasswordHint(), password.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
