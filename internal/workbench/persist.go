@@ -1060,11 +1060,18 @@ func (state *State) restoreShared(saved savedState) {
 	clear(state.hosts)
 	clear(state.hostGroups)
 	state.hosts, state.nextHostID = decodeHosts(saved.Hosts, known, state.nextHostID)
+	unmerged := state.hosts
 	var merges []hostMerge
 	state.hosts, merges = mergeSameHosts(state.hosts)
 	state.merged, state.mergedHosts = nil, false
 	if len(merges) > 0 {
-		saved = state.foldMergedHosts(saved, merges)
+		folded, err := state.foldMergedHosts(saved, merges)
+		if err != nil {
+			state.hosts = unmerged
+			state.showActionFailure(state.messages.SettingsVault, err, state.hostPasswordSaveError(err))
+		} else {
+			saved = folded
+		}
 	}
 	state.templates = state.templates[:0]
 	for _, template := range saved.WorkspaceTemplates {
