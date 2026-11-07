@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 // Snippets are commands the user keeps to send to a terminal later: from the
@@ -36,7 +37,7 @@ const (
 	// the command palette nothing noticeable.
 	maxSnippets       = 512
 	maxSnippetName    = 80
-	maxSnippetCommand = 1000
+	maxSnippetCommand = 4096
 )
 
 // snippetsHits is the place of the controls this file paints.
@@ -61,7 +62,9 @@ var (
 )
 
 var (
-	hitSnippetRowList  = tree.Sub(snippetsHits, tree.Name("snippet-row"))  // + snippet index
+	hitSnippetRowList  = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
+	hitSnippetHandles  = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
+	hitSnippetSort     = tree.Sub(snippetsHits, tree.Name("snippet-sort")) // + column index
 	hitSnippetSendList = tree.Sub(snippetsHits, tree.Name("snippet-send")) // the command palette's entries
 	hitSnippetPickList = tree.Sub(snippetsHits, tree.Name("snippet-pick")) // + session ID: the terminals to send to
 )
@@ -78,17 +81,20 @@ type snippetsUI struct {
 	filterOpen   bool
 
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
-	editing     int
-	name        text.Editor
-	command     text.Editor
-	run         bool
-	groupPicker components.SingleSelectState
-	shortcut    shortcutChord
-	capturing   bool // the next chord pressed becomes shortcut
-	dialogError string
+	editing       int
+	name          text.Editor
+	command       text.Editor
+	commandLayout components.TextareaLayout
+	run           bool
+	groupPicker   components.SingleSelectState
+	shortcut      shortcutChord
+	capturing     bool // the next chord pressed becomes shortcut
+	dialogError   string
 
 	// The page: the selected row, its layout and the count under the table.
 	selected  int
+	sort      components.TableSortState
+	grid      components.ReorderGridState
 	layout    flex.View
 	countText string
 	// sendAt is where the menu of terminals opens from the Send button.
@@ -107,7 +113,16 @@ func cleanSnippetText(value string, limit int) string {
 // leading space keeps a command out of the shell's history. A command of nothing
 // but space is empty.
 func cleanSnippetCommand(value string, limit int) string {
-	value = cleanSnippetLine(value, limit)
+	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
+	value = strings.Map(func(character rune) rune {
+		if character < 0x20 && character != '\n' || character == 0x7f {
+			return -1
+		}
+		return character
+	}, value)
+	if len(value) > limit {
+		value = strings.ToValidUTF8(value[:limit], "")
+	}
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
@@ -176,6 +191,7 @@ func (state *State) openSnippetDialog(index int) {
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
+	form.commandLayout = components.TextareaLayout{}
 	form.run = true
 	group := ""
 	form.shortcut, form.capturing = shortcutChord{}, false
@@ -323,6 +339,81 @@ func (state *State) deleteSnippet(index int) {
 	state.save()
 }
 
+func (state *State) snippetNeighbor(index, direction int) int {
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) {
+		return -1
+	}
+	for target := index + direction; target >= 0 && target < len(form.list); target += direction {
+		if form.filter.matches(&form.list[target]) {
+			return target
+		}
+	}
+	return -1
+}
+
+func (state *State) moveSnippet(index, direction int) bool {
+	target := state.snippetNeighbor(index, direction)
+	if target < 0 {
+		return false
+	}
+	form := &state.snippets
+	form.list[index], form.list[target] = form.list[target], form.list[index]
+	form.selected = target
+	form.sort = components.TableSortState{}
+	state.refreshSnippets()
+	state.save()
+	return true
+}
+
+func (state *State) moveSnippetTo(source, target int) bool {
+	form := &state.snippets
+	if source < 0 || target < 0 || source >= len(form.list) || target >= len(form.list) || source == target ||
+		form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return false
+	}
+	entry := form.list[source]
+	if source < target {
+		copy(form.list[source:target], form.list[source+1:target+1])
+	} else {
+		copy(form.list[target+1:source+1], form.list[target:source])
+	}
+	form.list[target] = entry
+	form.selected = target
+	state.refreshSnippets()
+	state.save()
+	return true
+}
+
+func (state *State) snippetReorderPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	form := &state.snippets
+	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		form.grid.Cancel()
+		return ui.EventResult{}, false
+	}
+	move, result := form.grid.Pointer(event)
+	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
+		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
+			result.Focus = hitSnippetHandles.At(item(move.Target))
+		}
+	}
+	return result, result.Handled
+}
+
+func (state *State) snippetReorderKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	form := &state.snippets
+	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return ui.EventResult{}, false
+	}
+	move, result := form.grid.Key(event)
+	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
+		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
+			result.Focus = hitSnippetHandles.At(item(move.Target))
+		}
+	}
+	return result, result.Handled
+}
+
 // sendSnippet types a snippet into the active terminal, and into the other panes
 // of its tab while the tab is broadcasting.
 func (state *State) sendSnippet(index int) bool {
@@ -342,8 +433,7 @@ func (state *State) sendSnippetTo(index int, session *Session) bool {
 		return false
 	}
 	entry := state.snippets.list[index]
-	input := make([]byte, 0, len(entry.Command)+1)
-	input = append(input, entry.Command...)
+	input := term.EncodePaste(entry.Command, session.term.screen.Modes().BracketedPaste && strings.Contains(entry.Command, "\n"))
 	if entry.Run {
 		input = append(input, '\r')
 	}
@@ -414,7 +504,7 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(272, form.dialogError), // three fields, a box and the shortcut
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(350, form.dialogError),
 	})
 	layout := dialog.Begin(title, "")
 	entries := [...]struct {
@@ -430,9 +520,8 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	var group, run, shortcutButtons flex.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index := range fields {
-			fields[index] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		}
+		fields[0] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
+		fields[1] = f.Slot().Height(140).MarginSides(0, 0, 6, 0)
 		group = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		run = state.declareDialogCheckbox(f, m.SnippetRun, 7, 0)
 		f.Row().Height(32).Items(flex.Center).MarginSides(12, 0, 0, 2).Children(func() {
@@ -447,6 +536,21 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	for index, entry := range entries {
 		content := components.BeginField(canvas, theme, fields[index].Rect()).Paint(entry.label, "", "")
 		focused := canvas.Focused() == entry.id
+		if entry.id == hitSnippetCommand {
+			selection := form.command.Selection()
+			snapshot := components.TextareaSnapshot{
+				ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
+				Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
+				Layout: &form.commandLayout, SelectionStart: aiByteOffset(entry.value, selection.Start),
+				SelectionEnd: aiByteOffset(entry.value, selection.End), Caret: aiByteOffset(entry.value, form.command.Caret()),
+			}
+			if marked, composing := form.command.Composition(); composing {
+				snapshot.CompositionStart = aiByteOffset(entry.value, marked.Start)
+				snapshot.CompositionEnd = aiByteOffset(entry.value, marked.End)
+			}
+			components.PaintTextarea(canvas, theme, content, snapshot)
+			continue
+		}
 		components.PaintInput(canvas, theme, content, components.InputSnapshot{
 			ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
 			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",

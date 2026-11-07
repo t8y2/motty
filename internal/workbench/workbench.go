@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -2228,6 +2229,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
+	if result, handled := state.snippetReorderPointer(event); handled {
+		return result
+	}
 	if result, handled := state.hostGroupDragPointer(event); handled {
 		return result
 	}
@@ -2559,6 +2563,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result
 	}
+	if result, handled := state.snippetReorderKey(event); handled {
+		return result
+	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
 		return result
 	}
@@ -2741,7 +2748,18 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitHighlightRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand || event.Target == hitSnippetGroup) && !event.Repeat {
+	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
+		if _, composing := state.snippets.command.Composition(); !composing {
+			movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
+			if movement != components.TextareaMoveNone {
+				value := state.snippets.command.String()
+				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
+				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
+				return ui.EventResult{Handled: true, Repaint: true}
+			}
+		}
+	}
+	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()

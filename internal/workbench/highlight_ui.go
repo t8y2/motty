@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp/syntax"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -410,6 +411,15 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	slices.SortStableFunc(saved.Snippets, func(left, right savedSnippet) int {
+		switch {
+		case left.Order < right.Order:
+			return -1
+		case left.Order > right.Order:
+			return 1
+		}
+		return 0
+	})
 	for _, entry := range saved.Snippets {
 		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group)}
 		if clean.Name == "" || clean.Command == "" || len(state.snippets.list) == maxSnippets {

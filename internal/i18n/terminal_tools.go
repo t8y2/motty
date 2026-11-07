@@ -65,6 +65,11 @@ type ToolsMessages struct {
 	SnippetFilterNone         string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
+	SnippetSortAction         string
+	SnippetSortAscending      string
+	SnippetSortDescending     string
+	SnippetMoveUp             string
+	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string

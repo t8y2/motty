@@ -1,8 +1,12 @@
 package workbench
 
 import (
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -45,9 +49,153 @@ func TestSnippetCommandOfOnlySpaceIsRefused(t *testing.T) {
 	}
 }
 
+func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	state.openSnippetDialog(-1)
+	state.snippets.name.Insert("deploy")
+	state.snippets.command.Insert("echo one\r\necho two")
+	if result := state.Key(ui.KeyEvent{Target: hitSnippetCommand, Key: ui.KeyEnter}); result.Handled || state.modal != modalSnippet {
+		t.Fatalf("Enter in multiline command: result=%+v modal=%d", result, state.modal)
+	}
+	state.Click(hitSnippetSubmit)
+	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "echo one\necho two" || state.snippets.list[0].cells[3] != "echo one ↵ echo two" {
+		t.Fatalf("saved multiline snippet = %+v", state.snippets.list)
+	}
+	loaded := newTestState(t, options)
+	if len(loaded.snippets.list) != 1 || loaded.snippets.list[0].Command != "echo one\necho two" {
+		t.Fatalf("restored multiline snippet = %+v", loaded.snippets.list)
+	}
+	world.connectFirst(t, loaded)
+	shell := world.conns[0].shell(t)
+	if !loaded.sendSnippetTo(0, &loaded.sessions[0]) || shell.typed() != "echo one\recho two\r" {
+		t.Fatalf("plain shell received %q", shell.typed())
+	}
+	loaded.sessions[0].term.screen.Write([]byte("\x1b[?2004h"))
+	if !loaded.sendSnippetTo(0, &loaded.sessions[0]) || !strings.HasSuffix(shell.typed(), "\x1b[200~echo one\recho two\x1b[201~\r") {
+		t.Fatalf("bracketed paste shell received %q", shell.typed())
+	}
+}
+
 func addTestSnippets(state *State, entries ...snippet) {
 	state.snippets.list = append(state.snippets.list[:0], entries...)
 	state.refreshSnippets()
+}
+
+func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "zulu", Command: "echo z", Group: "ops"},
+		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
+		snippet{Name: "beta", Command: "echo b", Group: "ops"},
+	)
+	state.Click(hitSnippetSort.At(0))
+	state.snippets.filter = snippetFilter{group: "ops"}
+	state.refreshSnippets()
+	if !state.moveSnippet(2, -1) || state.snippets.sort.Direction != 0 || state.snippets.selected != 0 {
+		t.Fatalf("move in filtered table: visible=%v selected=%d sort=%+v", state.snippets.visible, state.snippets.selected, state.snippets.sort)
+	}
+	if got := []string{state.snippets.list[0].Name, state.snippets.list[1].Name, state.snippets.list[2].Name}; !slices.Equal(got, []string{"beta", "alpha", "zulu"}) {
+		t.Fatalf("reordered list = %v", got)
+	}
+	state.snippets.filter = snippetFilter{}
+	state.refreshSnippets()
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if _, ok := canvasHit(canvas.Hits(), hitSnippetHandles.At(0)); !ok {
+		t.Fatal("manual ordering did not expose a drag handle")
+	}
+	result, handled := state.snippetReorderKey(ui.KeyEvent{Target: hitSnippetHandles.At(0), Key: ui.KeyDown})
+	if !handled || result.Focus != hitSnippetHandles.At(1) || state.snippets.list[1].Name != "beta" {
+		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", handled, tree.Text(result.Focus), state.snippets.list)
+	}
+	if err := state.saveWithResult(); err != nil {
+		t.Fatalf("persist keyboard reorder: %v", err)
+	}
+	if !slices.Equal(state.snippets.visible, []int{0, 1, 2}) {
+		t.Fatalf("manual order visible = %v", state.snippets.visible)
+	}
+	loaded := newTestState(t, options)
+	if got := []string{loaded.snippets.list[0].Name, loaded.snippets.list[1].Name, loaded.snippets.list[2].Name}; !slices.Equal(got, []string{"alpha", "beta", "zulu"}) {
+		t.Fatalf("restored order = %v", got)
+	}
+}
+
+func TestSnippetOrderRestoresLegacyAndDuplicateNames(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.restoreTerminalTools(savedState{Snippets: []savedSnippet{
+		{Name: "same", Command: "echo first"},
+		{Name: "same", Command: "echo second"},
+		{Name: "last", Command: "echo third"},
+	}})
+	if got := []string{state.snippets.list[0].Command, state.snippets.list[1].Command, state.snippets.list[2].Command}; !slices.Equal(got, []string{"echo first", "echo second", "echo third"}) {
+		t.Fatalf("legacy order = %v", got)
+	}
+	state.restoreTerminalTools(savedState{Snippets: []savedSnippet{
+		{Name: "last", Command: "echo third", Order: 2},
+		{Name: "same", Command: "echo first", Order: 0},
+		{Name: "same", Command: "echo second", Order: 1},
+	}})
+	if got := []string{state.snippets.list[0].Command, state.snippets.list[1].Command, state.snippets.list[2].Command}; !slices.Equal(got, []string{"echo first", "echo second", "echo third"}) {
+		t.Fatalf("manual order with duplicate names = %v", got)
+	}
+}
+
+func BenchmarkPaintSnippetsPage(b *testing.B) {
+	state := newTestState(b, freshOptions(b))
+	state.activeSection = sectionSnippets
+	for index := range 30 {
+		state.snippets.list = append(state.snippets.list, snippet{
+			Name: fmt.Sprintf("Command %d", index), Command: "echo one\necho two",
+		})
+	}
+	state.refreshSnippets()
+	var canvas ui.Canvas
+	size := ui.Size{Width: 1400, Height: 900}
+	state.Paint(&canvas, size)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}
+}
+
+func TestSnippetTableSortKeepsActionsOnTheirOriginalRows(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "zeta", Command: "echo z", Group: "Ops"},
+		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
+		snippet{Name: "beta", Command: "echo b", Group: "Ops"},
+	)
+	form := &state.snippets
+	form.selected = 0
+	state.Click(hitSnippetSort.At(0))
+	if got := form.visible; !slices.Equal(got, []int{1, 2, 0}) || form.selected != 0 {
+		t.Fatalf("ascending names: visible=%v selected=%d", got, form.selected)
+	}
+	state.Click(hitSnippetSort.At(0))
+	if got := form.visible; !slices.Equal(got, []int{0, 2, 1}) || form.selected != 0 {
+		t.Fatalf("descending names: visible=%v selected=%d", got, form.selected)
+	}
+	state.Click(hitSnippetSort.At(0))
+	if got := form.visible; !slices.Equal(got, []int{0, 1, 2}) || form.sort.Direction != components.TableSortNone {
+		t.Fatalf("restored manual order: visible=%v sort=%+v", got, form.sort)
+	}
+	state.Click(hitSnippetSort.At(0))
+	state.Click(hitSnippetSort.At(0))
+	form.filter = snippetFilter{group: "Ops"}
+	state.refreshSnippets()
+	if got := form.visible; !slices.Equal(got, []int{0, 2}) {
+		t.Fatalf("filtered descending names: %v", got)
+	}
+	state.Click(hitSnippetSort.At(3))
+	if got := form.visible; !slices.Equal(got, []int{2, 0}) || form.list[form.selected].Name != "zeta" {
+		t.Fatalf("ascending commands: visible=%v selected=%d", got, form.selected)
+	}
 }
 
 // The page lists the snippets of one group at a time, and a group exists only

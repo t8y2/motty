@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
@@ -19,7 +20,7 @@ func (state *State) refreshSnippets() {
 		if entry.Shortcut.valid() {
 			shortcut = entry.Shortcut.label()
 		}
-		entry.cells = [4]string{entry.Name, entry.Group, shortcut, command}
+		entry.cells = [4]string{entry.Name, entry.Group, shortcut, strings.ReplaceAll(command, "\n", " ↵ ")}
 	}
 	form.selected = max(0, min(form.selected, len(form.list)-1))
 	form.refreshSnippetGroups()
@@ -37,6 +38,18 @@ func (state *State) clickSnippetsPage(id ui.ID) bool {
 		return false
 	}
 	if state.clickSnippetFilter(id) {
+		return true
+	}
+	if id.Scope() == hitSnippetSort {
+		column := item(id)
+		if column >= 0 && column < len(snippet{}.cells) && len(state.snippets.list) > 0 {
+			if state.snippets.sort.Column == column && state.snippets.sort.Direction == components.TableSortDescending {
+				state.snippets.sort = components.TableSortState{}
+			} else {
+				state.snippets.sort = state.snippets.sort.Toggle(column)
+			}
+			state.refreshSnippets()
+		}
 		return true
 	}
 	switch {
@@ -123,15 +136,45 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	theme := state.Theme()
 	keyHeight := theme.Metrics.FontSizeS + 9
 	keyWidth := max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, ui.WeightMedium)+8, keyHeight)
-	columns := [...]components.TableColumn{{Width: 200}, {Width: 140}, {Width: 150}, {Width: 0, Inset: keyWidth + 6}}
+	manualOrder := form.sort.Direction == components.TableSortNone && form.filter.all() && len(form.list) > 1
+	nameInset := float32(0)
+	if manualOrder {
+		nameInset = 24
+	}
+	columns := [...]components.TableColumn{{Width: 200, Inset: nameInset}, {Width: 140}, {Width: 150}, {Width: 0, Inset: keyWidth + 6}}
 	headings := [...]string{m.SnippetColumnName, m.SnippetColumnGroup, m.SnippetColumnShortcut, m.SnippetColumnCommand}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
+	var headers [4]components.TableHeader
+	for index, heading := range headings {
+		headers[index] = components.TableHeader{ID: hitSnippetSort.At(index), Label: heading, Description: m.SnippetSortAction}
+		if form.sort.Direction != components.TableSortNone && form.sort.Column == index {
+			headers[index].Sort = form.sort.Direction
+			if form.sort.Direction == components.TableSortAscending {
+				headers[index].Description = m.SnippetSortAscending
+			} else {
+				headers[index].Description = m.SnippetSortDescending
+			}
+		}
+	}
+	components.FitSortableTableHeadings(canvas, state.Theme(), columns[:], headers[:])
 	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
-	table.Header(headings[:])
+	table.SortableHeader(headers[:])
+	var grid components.ReorderGrid
+	if manualOrder {
+		grid = components.BeginReorderGrid(canvas, theme, content.Rect(), &form.grid)
+		for index := range form.list {
+			grid.Order(hitSnippetHandles.At(index), 0, index, false)
+		}
+	} else {
+		form.grid.Cancel()
+	}
 	for _, index := range form.visible {
 		rowID := hitSnippetRowList.At(index)
 		var cellRects [4]ui.Rect
 		row := table.RowLayout(rowID, form.list[index].cells[:], components.TableRowState{Selected: index == form.selected}, cellRects[:0])
+		if manualOrder && row.Bounds.Height > 0 {
+			grid.Item(hitSnippetHandles.At(index), form.list[index].Name, 0, index, row.Bounds,
+				ui.Rect{X: row.Bounds.X + 7, Y: row.Bounds.Y + (row.Bounds.Height-24)/2, Width: 24, Height: 24}, false)
+		}
 		if clicked, ok := canvas.ClickedIn(hitSnippetRowList); ok && clicked == index && state.modal == modalNone {
 			form.selected = index
 		}
@@ -141,6 +184,9 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		}
 		state.sendSnippetOn(canvas, rowID, index)
 		state.openSnippetMenuOn(canvas, rowID, index)
+	}
+	if manualOrder {
+		grid.End()
 	}
 	if len(form.groups) > 0 {
 		state.paintSnippetFilter(canvas, filter.Rect())
