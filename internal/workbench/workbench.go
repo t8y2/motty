@@ -2015,10 +2015,9 @@ func (state *State) clickHostDialog(id ui.ID) {
 	case hitDialogClose, hitDialogCancel:
 		state.cancelHostTest()
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
-		state.modal = modalNone
 		state.dialogError = ""
 		state.status = state.messages.StatusEditCanceled
-		state.showNextPrompt()
+		state.restoreAfterHostDialog()
 	case hitDialogSubmit:
 		state.submitHostDialog()
 	case hitDialogTest:
