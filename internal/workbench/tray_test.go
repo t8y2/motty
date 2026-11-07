@@ -359,7 +359,8 @@ func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	if len(w.shown) != 1 {
 		t.Fatalf("shown = %+v, want one explanation", w.shown)
 	}
-	if w.shown[0].Title != state.messages.TrayHintTitle || w.shown[0].Body != state.messages.TrayHintBody {
+	wantTitle := buildinfo.ProductName + " is still running"
+	if w.shown[0].Title != wantTitle || w.shown[0].Body != state.messages.TrayHintBody {
 		t.Fatalf("shown = %+v", w.shown[0])
 	}
 	state.NoteHiddenToTray()
