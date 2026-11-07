@@ -154,8 +154,8 @@ func TestSFTPDirectoryTreeKeyboardNavigatesAndLoadsLocalChild(t *testing.T) {
 	result := window.key(ui.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: ui.KeyRight})
 	childIndex := directoryTreeIndex(window, true, childDirectory)
 	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(childIndex) ||
-		!sameDirectoryTreePath(true, window.directoryTree[0].selectedPath, childDirectory) {
-		t.Fatalf("Right did not select the child: %+v", result)
+		!sameDirectoryTreeTestLocation(true, window.directoryTree[0].selectedPath, childDirectory) {
+		t.Fatalf("Right did not select the child: focus=%+v childIndex=%d selected=%q child=%q", result, childIndex, window.directoryTree[0].selectedPath, childDirectory)
 	}
 	result = window.key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyLeft})
 	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(branchIndex) ||
