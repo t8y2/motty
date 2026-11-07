@@ -48,4 +48,14 @@ type CompletionMessages struct {
 	CacheFailedFmt   string
 	CheckedFmt       string
 	NoDataDir        string
+	// PrefixRow names the shared-prefix row of the history matches.
+	PrefixRow string
+	// The relative age of a history match, as its row shows it. TimeJustNow
+	// covers a match used less than a minute ago.
+	TimeJustNow    string
+	TimeMinutesFmt string
+	TimeHoursFmt   string
+	TimeDaysFmt    string
+	TimeMonthsFmt  string
+	TimeYearsFmt   string
 }

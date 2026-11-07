@@ -2550,6 +2550,13 @@ var chineseCompletion = CompletionMessages{
 	CacheFailedFmt:         "%s（下载的命令库无法读取：%v）",
 	CheckedFmt:             "%s · 检查于 %s",
 	NoDataDir:              "此版本没有可存放下载命令库的数据目录。",
+	PrefixRow:              "公共前缀",
+	TimeJustNow:            "刚刚",
+	TimeMinutesFmt:         "%d 分钟前",
+	TimeHoursFmt:           "%d 小时前",
+	TimeDaysFmt:            "%d 天前",
+	TimeMonthsFmt:          "%d 个月前",
+	TimeYearsFmt:           "%d 年前",
 
 	Title:                 "补全候选",
 	Open:                  "打开命令补全",

@@ -2550,6 +2550,13 @@ var englishCompletion = CompletionMessages{
 	CacheFailedFmt:         "%s (the downloaded catalog could not be read: %v)",
 	CheckedFmt:             "%s · checked %s",
 	NoDataDir:              "This build has no data directory for a downloaded catalog.",
+	PrefixRow:              "common prefix",
+	TimeJustNow:            "just now",
+	TimeMinutesFmt:         "%dm ago",
+	TimeHoursFmt:           "%dh ago",
+	TimeDaysFmt:            "%dd ago",
+	TimeMonthsFmt:          "%dmo ago",
+	TimeYearsFmt:           "%dy ago",
 
 	Title:                 "Completions",
 	Open:                  "Open command completions",

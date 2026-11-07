@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -49,13 +50,14 @@ func (state *State) everyGhostEntries() []cmdhistory.Entry {
 
 // noteGhostCommand puts a command just remembered at the front of the cache,
 // the host's own and the merged one, so the next host of the same job
-// suggests it at once (#219).
-func (state *State) noteGhostCommand(key, command string) {
-	state.noteGhostEntry("", command)
-	state.noteGhostEntry(key, command)
+// suggests it at once (#219). used is the moment it was recorded, so the list
+// keeps showing the most recent use rather than the time of an older run.
+func (state *State) noteGhostCommand(key, command string, used time.Time) {
+	state.noteGhostEntry("", command, used)
+	state.noteGhostEntry(key, command, used)
 }
 
-func (state *State) noteGhostEntry(key, command string) {
+func (state *State) noteGhostEntry(key, command string, used time.Time) {
 	entries, ok := state.history.ghost[key]
 	if !ok {
 		return
@@ -64,12 +66,13 @@ func (state *State) noteGhostEntry(key, command string) {
 		if entries[index].Command == command {
 			entry := entries[index]
 			entry.Count++
+			entry.Used = used
 			copy(entries[1:index+1], entries[:index])
 			entries[0] = entry
 			return
 		}
 	}
-	state.history.ghost[key] = append([]cmdhistory.Entry{{Command: command, Count: 1}}, entries...)
+	state.history.ghost[key] = append([]cmdhistory.Entry{{Command: command, Count: 1, Used: used}}, entries...)
 }
 
 // commandGhost is the rest of the command the line being typed in the session
