@@ -7,7 +7,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"motty/internal/shellkind"
 )
+
+func TestASerialSessionIsADeviceConsole(t *testing.T) {
+	if got := (&Session{}).Kind(); got != shellkind.Console {
+		t.Fatalf("Kind() = %v; want a device console", got)
+	}
+}
 
 func TestParseLine(t *testing.T) {
 	for _, test := range []struct {

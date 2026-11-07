@@ -118,7 +118,7 @@ func jobResult(status JobStatus, requested int, stop bool) Result {
 		Data: status.Data, Pending: status.Pending, NextOffset: status.Next, TotalBytes: status.Total,
 		SkippedBytes: max(0, status.Start-requested),
 	}
-	if status.State == JobCompleted {
+	if status.State == JobCompleted && status.ExitCode >= 0 {
 		code := status.ExitCode
 		view.ExitCode = &code
 	}

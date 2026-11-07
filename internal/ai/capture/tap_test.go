@@ -485,6 +485,50 @@ func TestWrapForUnknownShellKeepsThePOSIXWrapper(t *testing.T) {
 	}
 }
 
+func TestConsoleWrapperSendsTheCommandExactlyAsTyped(t *testing.T) {
+	tests := map[string]string{
+		"show version": "show version\r",
+		"a\nb":         "a\rb\r",
+		"":             "\r",
+		"a\\":          "a\\\r",
+	}
+	for command, want := range tests {
+		sent, err := WrapFor(shellkind.Console, command, "n1")
+		if err != nil || string(sent) != want {
+			t.Errorf("WrapFor(Console, %q) = %q, %v; want %q", command, sent, err, want)
+		}
+		if strings.Contains(string(sent), "GOPAI_") || strings.Contains(string(sent), "printf") || strings.Contains(string(sent), "};") {
+			t.Errorf("WrapFor(Console, %q) leaked a shell wrapper: %q", command, sent)
+		}
+	}
+}
+
+func TestConsoleTapLeavesThePromptOutOfTheOutput(t *testing.T) {
+	tests := []struct {
+		name, command, stream, want string
+	}{
+		{"command with output", "show version", "Switch#show version\r\nVersion 1.0\r\nSwitch#", "Version 1.0"},
+		{"command with no output", "terminal length 0", "Switch#terminal length 0\r\nSwitch#", ""},
+	}
+	for _, tc := range tests {
+		sent, err := WrapFor(shellkind.Console, tc.command, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tap := NewConsoleTap(4096)
+		tap.SetEcho(sent)
+		display, done := tap.Feed([]byte(tc.stream))
+		if done || string(display) != tc.stream {
+			t.Fatalf("%s: display = %q done=%v; want the stream unchanged", tc.name, display, done)
+		}
+		tap.FinishConsole("Switch#", -1)
+		result := tap.Result()
+		if !result.Done || result.ExitCode != -1 || result.Output != tc.want {
+			t.Errorf("%s: result = %+v; want done, no exit status, output %q", tc.name, result, tc.want)
+		}
+	}
+}
+
 func TestPowerShellWrapperInvariants(t *testing.T) {
 	for _, command := range []string{"hostname", "a\nb", `dir C:\`, "", "x `"} {
 		sent, err := WrapFor(shellkind.PowerShell, command, "n1")

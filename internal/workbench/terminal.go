@@ -859,6 +859,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	t.recording.append(state.now(), terminalRecordingOutput, data)
 	t.writeRemote(data, state.now())
 	if wasExec {
+		t.finishConsoleExec()
 		t.markAIBlock(t.exec == nil)
 	}
 	t.recorder.Output(state.now())

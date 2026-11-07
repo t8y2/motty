@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"motty/internal/shellkind"
 )
 
 // Parity is how a frame's parity bit is chosen.
@@ -283,3 +285,8 @@ func (session *Session) Close() {
 	session.space.Broadcast()
 	session.port.Close()
 }
+
+// Kind reports that this is a raw terminal, not a known shell. A serial line may
+// reach a device console or a login shell; the command is sent exactly as typed
+// and the prompt returning marks the end.
+func (session *Session) Kind() shellkind.Kind { return shellkind.Console }

@@ -153,7 +153,7 @@ var specs = []Spec{
 	},
 	{
 		Name:        NameTerminalExec,
-		Description: "Run one shell command in the user's visible terminal session and return its output and exit status. The user sees it run and may refuse it. Use it for a single non-interactive command; it must finish within the timeout. Do not start interactive programs.",
+		Description: "Run one command in the user's visible terminal session and return its output and, in a shell, its exit status. The user sees it run and may refuse it. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. Use it for a single non-interactive command; it must finish within the timeout. Do not start interactive programs.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"session":{"type":"string","maxLength":256,"description":"Session id from list_sessions. Defaults to the active session."},` +
 			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run."},` +
@@ -200,7 +200,7 @@ var specs = []Spec{
 	},
 	{
 		Name:        NameTerminalExecMany,
-		Description: "Run the same shell command on several terminal sessions at once and return each session's output and exit status, labelled by session. The user approves the command once, seeing every target. Use it to check or change the same thing across hosts; use terminal_exec for one host. It must finish within the timeout on every host. Do not start interactive programs.",
+		Description: "Run the same command on several terminal sessions at once and return each session's output and, in a shell, exit status, labelled by session. Device consoles have none. The user approves the command once, seeing every target. Use it to check or change the same thing across hosts; use terminal_exec for one host. It must finish within the timeout on every host. Do not start interactive programs.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"sessions":{"type":"array","minItems":2,"maxItems":8,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":256},"description":"Session ids from list_sessions, two to eight, each a host that is ready."},` +
 			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run on every listed session."},` +
@@ -270,7 +270,7 @@ func Targeted() []Spec {
 		case NameListSessions:
 			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id."
 		case NameTerminalExec:
-			spec.Description = "Run one non-interactive shell command in the addressed terminal session and return its output and exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
+			spec.Description = "Run one command in the addressed terminal session and return its output and, in a shell, its exit status. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
 		}
 		out = append(out, spec)
 	}

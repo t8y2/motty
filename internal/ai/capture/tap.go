@@ -16,7 +16,9 @@ type Result struct {
 	Truncated  bool
 	Retained   string
 	RetainLost bool
-	// ExitCode is the command's status, or -1 until Done.
+	// ExitCode is the command's status, -1 while the command is still running,
+	// and also -1 once a device console has returned to its prompt, which has no
+	// exit status.
 	ExitCode int
 	Done     bool
 }
@@ -26,6 +28,7 @@ type Result struct {
 type Tap struct {
 	nlT   []byte // "\n" + marker prefix + nonce
 	crnlT []byte // "\r\n" + the same
+	plain bool   // a device console: no marker line to find
 
 	hold    []byte // bytes withheld because they might start the marker
 	buf     []byte
@@ -57,6 +60,14 @@ func NewTap(nonce string, maxOutput int) *Tap {
 		rec:   newRecorder(maxOutput),
 		code:  -1,
 	}
+}
+
+// NewConsoleTap returns a Tap for a command typed into a device console. There
+// is no completion marker to look for: the caller watches the device's prompt
+// and calls [Tap.FinishConsole] when it returns. Every byte passes through to the
+// terminal unchanged.
+func NewConsoleTap(maxOutput int) *Tap {
+	return &Tap{rec: newRecorder(maxOutput), code: -1, plain: true}
 }
 
 // Retain keeps up to maxBytes of normalized output for later paging. The
@@ -155,6 +166,13 @@ func (t *Tap) SetDisplay(command string) {
 // After completion or Abort everything passes through unchanged.
 func (t *Tap) Feed(p []byte) (display []byte, done bool) {
 	t.out = t.out[:0]
+	if t.plain {
+		if !t.done && !t.aborted {
+			t.rec.write(p)
+		}
+		t.out = append(t.out, p...)
+		return t.out, t.done
+	}
 	if t.done || t.aborted {
 		t.out = append(t.out, p...)
 		return t.out, t.done
@@ -199,6 +217,20 @@ func (t *Tap) Feed(p []byte) (display []byte, done bool) {
 			return t.out, true
 		}
 	}
+}
+
+// FinishConsole ends a console capture when the device's prompt is back. The
+// prompt itself is still the recorder's unfinished line, so it is removed from
+// the captured output before the line is committed. There is no exit status on
+// a console, so code is normally -1.
+func (t *Tap) FinishConsole(prompt string, code int) {
+	if !t.plain || t.done || t.aborted {
+		return
+	}
+	t.rec.dropPendingLine(prompt)
+	t.rec.finish()
+	t.done = true
+	t.code = code
 }
 
 func (t *Tap) emit(b []byte) {
