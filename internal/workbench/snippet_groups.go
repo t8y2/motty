@@ -72,12 +72,12 @@ func cleanSnippetGroup(value string) string {
 // group and its shortcut.
 func snippetDetail(entry *snippet) string {
 	switch {
-	case entry.Group != "" && entry.Shortcut.valid():
-		return entry.Group + " · " + entry.Shortcut.label()
+	case entry.Group != "" && entry.Shortcut.Valid():
+		return entry.Group + " · " + chordLabel(entry.Shortcut)
 	case entry.Group != "":
 		return entry.Group
-	case entry.Shortcut.valid():
-		return entry.Shortcut.label()
+	case entry.Shortcut.Valid():
+		return chordLabel(entry.Shortcut)
 	}
 	return ""
 }

@@ -151,8 +151,8 @@ func TestSFTPPathShortcutFocusAndInternalEditingSurviveUntilTerminalClick(t *tes
 	state, session, _, _ := openTestSFTP(t)
 	driver := sftpPathFocusDriver(t, state)
 	clickSFTPPathFocusHit(t, driver, contextID(hitSFTPEntryList.At(1)))
-	shortcut := state.shortcuts.chords[shortcutFilesPath]
-	if err := driver.Chord(shortcut.Modifiers, string(shortcut.Key)); err != nil {
+	shortcut := state.shortcuts.chords.Chord(shortcutFilesPath)
+	if err := driver.Chord(shortcut.Modifiers, string(shortcut.Char)); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused != contextID(hitSFTPPath) {

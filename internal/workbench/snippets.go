@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
@@ -24,7 +25,7 @@ type snippet struct {
 	Run bool
 	// Shortcut sends the snippet from the terminal; the zero chord is none. It is
 	// kept on this device only: the modifier that is free differs by platform.
-	Shortcut shortcutChord
+	Shortcut keymap.Chord
 
 	// cells is what the page's table shows of it, made by refreshSnippets.
 	cells [4]string
@@ -87,7 +88,7 @@ type snippetsUI struct {
 	commandLayout components.TextareaLayout
 	run           bool
 	groupPicker   components.SingleSelectState
-	shortcut      shortcutChord
+	shortcut      keymap.Chord
 	capturing     bool // the next chord pressed becomes shortcut
 	dialogError   string
 
@@ -144,8 +145,8 @@ func cleanSnippetLine(value string, limit int) string {
 
 // snippetFor is the snippet a chord sends, or -1; skip is one that does not count
 // (the one being edited).
-func (state *State) snippetFor(chord shortcutChord, skip int) int {
-	if !chord.valid() {
+func (state *State) snippetFor(chord keymap.Chord, skip int) int {
+	if !chord.Valid() {
 		return -1
 	}
 	for index := range state.snippets.list {
@@ -157,7 +158,7 @@ func (state *State) snippetFor(chord shortcutChord, skip int) int {
 }
 
 // snippetNamed is the name of the snippet a chord sends, or "".
-func (state *State) snippetNamed(chord shortcutChord) string {
+func (state *State) snippetNamed(chord keymap.Chord) string {
 	if index := state.snippetFor(chord, -1); index >= 0 {
 		return state.snippets.list[index].Name
 	}
@@ -166,7 +167,7 @@ func (state *State) snippetNamed(chord shortcutChord) string {
 
 // chordOwner says what already uses a chord: a built-in action, or a snippet
 // other than the one at skip. It is "" when the chord is free.
-func (state *State) chordOwner(chord shortcutChord, skip int) string {
+func (state *State) chordOwner(chord keymap.Chord, skip int) string {
 	if action := state.shortcuts.actionFor(chord); action != shortcutNone {
 		return state.shortcutActionLabel(action)
 	}
@@ -181,7 +182,7 @@ func (state *State) chordOwner(chord shortcutChord, skip int) string {
 func (state *State) dropSnippetChordsTaken() {
 	for index := range state.snippets.list {
 		if chord := state.snippets.list[index].Shortcut; state.shortcuts.actionFor(chord) != shortcutNone {
-			state.snippets.list[index].Shortcut = shortcutChord{}
+			state.snippets.list[index].Shortcut = keymap.Chord{}
 		}
 	}
 	state.refreshSnippets()
@@ -194,7 +195,7 @@ func (state *State) openSnippetDialog(index int) {
 	form.commandLayout = components.TextareaLayout{}
 	form.run = true
 	group := ""
-	form.shortcut, form.capturing = shortcutChord{}, false
+	form.shortcut, form.capturing = keymap.Chord{}, false
 	form.dialogError = ""
 	if index >= 0 && index < len(form.list) {
 		form.name.Insert(form.list[index].Name)
@@ -224,7 +225,7 @@ func (state *State) clickSnippetDialog(id ui.ID) {
 		form.capturing = !form.capturing
 		form.dialogError = ""
 	case hitSnippetShortcutOff:
-		form.shortcut, form.capturing = shortcutChord{}, false
+		form.shortcut, form.capturing = keymap.Chord{}, false
 		form.dialogError = ""
 	}
 }
@@ -232,13 +233,13 @@ func (state *State) clickSnippetDialog(id ui.ID) {
 // captureSnippetShortcut takes the chord pressed while the dialog waits for one.
 // ok is false for a key that is no chord at all, which is refused the same way
 // as a chord a snippet may not use.
-func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord shortcutChord, ok bool) ui.EventResult {
+func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord keymap.Chord, ok bool) ui.EventResult {
 	form, m := &state.snippets, state.messages
 	result := ui.EventResult{Handled: true, Repaint: true}
 	if event.Repeat {
 		return ui.EventResult{Handled: true}
 	}
-	if !ok || !chord.validForSnippet() {
+	if !ok || !validForSnippet(chord) {
 		form.dialogError = m.Tools.SnippetShortcutInvalid
 		return result
 	}
@@ -562,12 +563,12 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	switch {
 	case form.capturing:
 		label = m.SnippetShortcutRecording
-	case form.shortcut.valid():
-		label = form.shortcut.label()
+	case form.shortcut.Valid():
+		label = chordLabel(form.shortcut)
 	}
 	buttons := [...]components.ButtonAction{
 		{ID: hitSnippetShortcut, Label: label, Variant: components.ButtonOutline},
-		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.valid() && !form.capturing},
+		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.Valid() && !form.capturing},
 	}
 	components.BeginButtonRow(canvas, theme, shortcutButtons.Rect()).Paint(buttons[:]...)
 	dialog.Actions(layout,

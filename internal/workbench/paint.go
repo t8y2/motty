@@ -118,6 +118,7 @@ func (state *State) terminalPage() bool {
 
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
+	defer state.devEndPaint(canvas, size)
 	defer state.paintNoteExit(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	canvas.SetTree(&tree)
 	state.autosaveNotes(canvas)

@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/highlight"
@@ -431,12 +432,12 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		if len(entry.Key) != 1 {
 			continue
 		}
-		chord := shortcutChord{Modifiers: ui.Modifiers(entry.Modifiers), Key: entry.Key[0]}
+		chord := keymap.Chord{Modifiers: ui.Modifiers(entry.Modifiers), Char: entry.Key[0]}
 		for index := range state.snippets.list {
 			// The first snippet of that name without a shortcut takes it; a chord
 			// that a built-in action or an earlier snippet has is not given twice.
-			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.valid() {
-				if chord.validForSnippet() && state.chordOwner(chord, index) == "" {
+			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.Valid() {
+				if validForSnippet(chord) && state.chordOwner(chord, index) == "" {
 					snippet.Shortcut = chord
 				}
 				break

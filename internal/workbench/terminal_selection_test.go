@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
@@ -57,7 +58,7 @@ func TestDraggingTerminalCellsSelectsAndCopiesText(t *testing.T) {
 		X: endX, Y: endY, Viewport: state.viewport,
 	})
 
-	result := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"})
+	result := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"})
 	if !result.Handled || result.Repaint || result.ClipboardText != "pha beta\ngam" {
 		t.Fatalf("copy shortcut = %+v", result)
 	}
@@ -79,7 +80,7 @@ func TestDoubleClickSelectsAUnicodeWord(t *testing.T) {
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("double click = %+v", result)
 	}
-	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText; copied != "世界" {
+	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "世界" {
 		t.Fatalf("copied %q", copied)
 	}
 	from, to, selected := session.term.selection.span(session.term.screen.LineNumber(0), session.term.screen.Row(0), 20)
@@ -439,7 +440,7 @@ func TestDraggingBelowTheGridScrollsAndSelectsHistory(t *testing.T) {
 	if terminal.selection.edge.direction != 0 {
 		t.Fatal("releasing the button left the auto-scroll armed")
 	}
-	copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText
+	copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
 	if !strings.HasPrefix(copied, strings.TrimSpace(first)) || strings.Count(copied, "\n") < 8 {
 		t.Fatalf("selection covers only %q", copied)
 	}
@@ -560,7 +561,7 @@ func TestShiftClickStretchesTheSelectionFromTheLastClick(t *testing.T) {
 		state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
 	}
 	copied := func() string {
-		return state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText
+		return state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
 	}
 
 	// With nothing selected, Shift-click goes from the place last clicked.

@@ -3,11 +3,12 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
 func zoomChord(key string, shift bool) ui.KeyEvent {
-	modifiers := defaultShortcutModifier()
+	modifiers := keymap.Primary
 	if shift {
 		modifiers |= ui.ModifierShift
 	}
@@ -99,14 +100,14 @@ func TestPaddingChangesHowManyCellsFitAndIsKept(t *testing.T) {
 
 func TestZoomShortcutsAreCustomisableLikeTheOthers(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	custom := shortcutChord{Modifiers: defaultShortcutModifier() | ui.ModifierAlt, Key: '='}
+	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt, Char: '='}
 	if conflict, ok := state.shortcuts.bind(shortcutZoomIn, custom); !ok {
 		t.Fatalf("binding zoom in failed (conflict %d)", conflict)
 	}
-	if got := state.shortcuts.chords[shortcutZoomIn].label(); got == "—" {
+	if got := chordLabel(state.shortcuts.chords.Chord(shortcutZoomIn)); got == "—" {
 		t.Fatalf("label = %q", got)
 	}
-	if _, ok := state.shortcuts.bind(shortcutZoomOut, shortcutChord{Modifiers: defaultShortcutModifier(), Key: '='}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutZoomOut, keymap.Chord{Modifiers: keymap.Primary, Char: '='}); !ok {
 		t.Fatal("zoom out could not take the freed chord")
 	}
 }

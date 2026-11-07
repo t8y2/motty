@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 	"motty/internal/sshconn"
@@ -489,7 +490,7 @@ func TestThePasteShortcutPastesFilesOnTheRemote(t *testing.T) {
 		ClipboardFiles: func() ([]string, error) { return paths, nil },
 		ClipboardText:  func() (string, error) { return clipboardText, nil },
 	})
-	paste := ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "v"}
+	paste := ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "v"}
 	if result := state.Shortcut(paste); !result.Handled {
 		t.Fatalf("the paste shortcut was left to the text system: %+v", result)
 	}

@@ -59,7 +59,7 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 		n.dragID = ""
 		v.resizing = false
 		v.previewDragging = false
-		v.previewSelecting = false
+		v.previewSelect.EndDrag()
 		return ui.EventResult{}
 	}
 	if v.popup == "tags" || v.popup == "hosts" {

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
@@ -569,9 +570,9 @@ func (state *State) snapshot() savedState {
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for index, entry := range state.snippets.list {
 		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
-		if entry.Shortcut.valid() {
+		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
-				Name: entry.Name, Key: string([]byte{entry.Shortcut.Key}), Modifiers: uint8(entry.Shortcut.Modifiers),
+				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
 	}
@@ -581,9 +582,9 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		chord := state.shortcuts.chords[action]
+		chord := state.shortcuts.chords.Chord(action)
 		saved.Shortcuts = append(saved.Shortcuts, savedShortcut{
-			Action: action.String(), Key: chord.savedKey(), Modifiers: uint8(chord.Modifiers),
+			Action: action.String(), Key: chord.Name(), Modifiers: uint8(chord.Modifiers),
 		})
 	}
 	for _, host := range state.hosts {
@@ -837,7 +838,7 @@ func (state *State) restore(saved savedState) {
 	// this build's already, so a first run writes nothing.
 	staleDefaults := saved.ShortcutDefaultsGeneration < shortcutDefaultsGeneration && len(saved.Shortcuts) > 0
 	if staleDefaults {
-		state.shortcuts.migrateChangedDefaults(func(chord shortcutChord) bool {
+		state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool {
 			return state.snippetNamed(chord) != ""
 		})
 	}
@@ -1135,7 +1136,7 @@ func (state *State) workspaceName() string {
 // its default back.
 func restoreShortcuts(saved []savedShortcut) shortcutMap {
 	defaults := defaultShortcuts()
-	var shortcuts shortcutMap
+	shortcuts := newShortcutMap()
 	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
 		action := shortcutActionFromString(entry.Action)
@@ -1147,7 +1148,7 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 			continue
 		}
-		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
+		chord, ok := keymap.Parse(ui.Modifiers(entry.Modifiers), entry.Key)
 		if !ok {
 			continue
 		}
@@ -1156,10 +1157,10 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if specified[action] || shortcuts.chords[action].valid() {
+		if specified[action] || shortcuts.chords.Chord(action).Valid() {
 			continue
 		}
-		shortcuts.bind(action, defaults.chords[action])
+		shortcuts.bind(action, defaults.chords.Chord(action))
 	}
 	shortcuts.refreshLabels()
 	return shortcuts

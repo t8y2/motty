@@ -17,8 +17,8 @@ func (state *State) refreshSnippets() {
 		entry := &form.list[index]
 		command := entry.Command
 		shortcut := ""
-		if entry.Shortcut.valid() {
-			shortcut = entry.Shortcut.label()
+		if entry.Shortcut.Valid() {
+			shortcut = chordLabel(entry.Shortcut)
 		}
 		entry.cells = [4]string{entry.Name, entry.Group, shortcut, strings.ReplaceAll(command, "\n", " ↵ ")}
 	}

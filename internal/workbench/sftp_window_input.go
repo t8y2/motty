@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -805,7 +806,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch strings.ToLower(event.Text) {
 	case "f":
-		if event.Modifiers != defaultShortcutModifier() {
+		if event.Modifiers != keymap.Primary {
 			return ui.EventResult{}
 		}
 		w.cancelDrag()

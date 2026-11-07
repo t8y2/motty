@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
@@ -14,17 +15,15 @@ import (
 // process and container detail dialogs. MarkdownView supplies the text layout
 // and hit testing; the detail dialog owns the surrounding tabs and actions.
 type remoteDetailText struct {
-	mode           remoteDetailMode
-	doc            markdown.Document
-	view           components.MarkdownView
-	table          components.Table
-	source         string
-	layoutWidth    float32
-	layoutSize     float32
-	lineHeight     float32
-	selectionStart int
-	selectionEnd   int
-	dragging       bool
+	mode        remoteDetailMode
+	doc         markdown.Document
+	view        components.MarkdownView
+	table       components.Table
+	source      string
+	layoutWidth float32
+	layoutSize  float32
+	lineHeight  float32
+	selection   components.TextSelection
 
 	scroll         float32
 	scrollBar      components.ScrollAreaGeometry
@@ -42,8 +41,13 @@ const (
 )
 
 func (text *remoteDetailText) clearSelection() {
-	text.selectionStart, text.selectionEnd = 0, 0
-	text.dragging = false
+	text.selection.Clear()
+}
+
+// pointAt is where a window point lies in the text: it has one surface.
+func (text *remoteDetailText) pointAt(point ui.Point) (components.TextPoint, bool) {
+	offset, ok := text.offsetAt(point)
+	return components.TextPoint{Offset: offset}, ok
 }
 
 func (text *remoteDetailText) selectedText() (string, bool) {
@@ -52,16 +56,14 @@ func (text *remoteDetailText) selectedText() (string, bool) {
 			return "", false
 		}
 		value := text.table.SelectedText(components.TableSelection{
-			Enabled: true, Anchor: text.selectionStart, Focus: text.selectionEnd,
+			Enabled: true, Anchor: text.selection.Anchor.Offset, Focus: text.selection.Focus.Offset,
 		})
 		return value, value != ""
 	}
 	if text.view.TextLen() == 0 {
 		return "", false
 	}
-	value := text.view.SelectedText(components.MarkdownSelection{
-		Anchor: text.selectionStart, Focus: text.selectionEnd,
-	})
+	value := text.view.SelectedText(text.selection.In(0))
 	return value, value != ""
 }
 
@@ -182,8 +184,8 @@ func (state *State) paintRemoteDetailTable(
 	table := components.BeginTable(canvas, theme, tableBounds, columns)
 	table.Selection = components.TableSelection{
 		Enabled: true,
-		Anchor:  text.selectionStart,
-		Focus:   text.selectionEnd,
+		Anchor:  text.selection.Anchor.Offset,
+		Focus:   text.selection.Focus.Offset,
 	}
 	table.Header(header)
 	for _, row := range rows {
@@ -245,13 +247,11 @@ func (state *State) paintRemoteDetailTextSource(
 	}
 	look.Selection = theme.Selection
 	text.view.Paint(canvas, components.MarkdownPaint{
-		Look: look,
-		X:    geometry.Viewport.X + 12,
-		Y:    geometry.Viewport.Y + 10 - geometry.OffsetY,
-		Clip: geometry.Viewport,
-		Selection: components.MarkdownSelection{
-			Anchor: text.selectionStart, Focus: text.selectionEnd,
-		},
+		Look:      look,
+		X:         geometry.Viewport.X + 12,
+		Y:         geometry.Viewport.Y + 10 - geometry.OffsetY,
+		Clip:      geometry.Viewport,
+		Selection: text.selection.In(0),
 	})
 	area.EndContent()
 }
@@ -301,46 +301,24 @@ func areaMaxOffset(content, viewport float32) float32 {
 }
 
 func (state *State) remoteDetailTextPointer(event ui.PointerEvent, text *remoteDetailText, textID ui.ID) (ui.EventResult, bool) {
-	if textID.IsZero() || !text.dragging && !(event.Kind == ui.PointerDown && event.Target == textID) {
+	if textID.IsZero() || !text.selection.Dragging() && !(event.Kind == ui.PointerDown && event.Target == textID) {
 		return ui.EventResult{}, false
 	}
 	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
 		return ui.EventResult{}, false
 	}
-	beforeStart, beforeEnd := text.selectionStart, text.selectionEnd
-	switch event.Kind {
-	case ui.PointerDown:
-		offset, ok := text.offsetAt(ui.Point{X: event.X, Y: event.Y})
-		if !ok {
-			return ui.EventResult{}, false
-		}
-		text.dragging = true
-		text.selectionStart, text.selectionEnd = offset, offset
-		return ui.EventResult{Handled: true, Repaint: true, Focus: textID}, true
-	case ui.PointerMove:
-		if !event.Captured {
-			return ui.EventResult{}, true
-		}
-		offset, ok := text.offsetAt(ui.Point{X: event.X, Y: event.Y})
-		if ok {
-			text.selectionEnd = offset
-		}
-	case ui.PointerUp:
-		text.dragging = false
-		if text.selectionStart == text.selectionEnd {
-			text.clearSelection()
-		}
-	case ui.PointerExit:
-		if !event.Captured {
-			text.dragging = false
-		}
-	default:
+	if event.Kind == ui.PointerMove && !event.Captured {
+		return ui.EventResult{}, true
+	}
+	result := text.selection.Pointer(event, text.pointAt)
+	if !result.Handled {
 		return ui.EventResult{}, false
 	}
-	return ui.EventResult{
-		Handled: true,
-		Repaint: beforeStart != text.selectionStart || beforeEnd != text.selectionEnd,
-	}, true
+	outcome := ui.EventResult{Handled: true, Repaint: result.Changed}
+	if event.Kind == ui.PointerDown {
+		outcome.Focus = textID
+	}
+	return outcome, true
 }
 
 func (state *State) remoteDetailScrollPointer(event ui.PointerEvent, text *remoteDetailText, scrollbarID ui.ID) (ui.EventResult, bool) {
@@ -431,17 +409,16 @@ func (state *State) remoteDetailKeyboardScroll(
 }
 
 func (state *State) remoteDetailTextShortcut(event ui.KeyEvent, text *remoteDetailText) (ui.EventResult, bool) {
-	chord, ok := shortcutChordFromEvent(event)
+	chord, ok := keymap.FromEvent(event)
 	if !ok {
 		return ui.EventResult{}, false
 	}
-	if chord.Modifiers == defaultShortcutModifier() && chord.Key == 'a' {
+	if chord.Modifiers == keymap.Primary && chord.Char == 'a' {
 		length := text.textLen()
 		if length == 0 {
 			return ui.EventResult{}, false
 		}
-		text.selectionStart, text.selectionEnd = 0, length
-		text.dragging = false
+		text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: length})
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	if state.shortcuts.actionFor(chord) != shortcutCopy {

@@ -162,7 +162,7 @@ func TestNotesTagPopupPositionsCreationAndDefaultOrder(t *testing.T) {
 	s.notes.list = append(s.notes.list, savedNote{ID: "other", Tags: []string{"a-unselected"}})
 	var c ui.Canvas
 	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
-	anchor := s.notes.view.anchors[hitNoteTagsOpen]
+	anchor, _ := c.HitBounds(hitNoteTagsOpen)
 	s.Click(hitNoteTagsOpen)
 	c.Reset()
 	s.Paint(&c, ui.Size{Width: 1400, Height: 900})

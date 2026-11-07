@@ -19,8 +19,7 @@ const (
 type noteViewState struct {
 	splitScroll                                          noteSplitScroll
 	codeActions                                          noteCodeActions
-	previewSelection                                     components.MarkdownSelection
-	previewSelecting                                     bool
+	previewSelect                                        components.TextSelection
 	previewSource                                        string
 	treeBar, previewBar, popupBar                        noteScrollbar
 	pointer                                              ui.Point
@@ -46,22 +45,25 @@ type noteViewState struct {
 	expanded                                             map[string]bool
 	searchOpen, drawer                                   bool
 	treeBounds, workspace, documentBounds, overlayAnchor ui.Rect
-	listArea                                             components.ScrollArea
-	treeScroll                                           float32
-	noteTokens, folderTokens                             map[string]int
-	tokenNotes, tokenFolders                             map[int]string
-	inlineID, inlineParent                               string
-	inlineFolder, inlineNew                              bool
-	inline                                               text.Editor
-	focus                                                ui.ID
-	menu                                                 string
-	menuID                                               string
-	menuFolder                                           bool
-	popup                                                string
-	picker                                               text.Editor
-	anchors                                              map[ui.ID]ui.Rect
-	resizing                                             bool
-	drop                                                 noteDrop
+	// overlayFrom is the control the open menu or popup hangs under, found by
+	// its identity each paint; without one the overlay hangs at overlayAnchor,
+	// the point a context menu was opened at.
+	overlayFrom              ui.ID
+	listArea                 components.ScrollArea
+	treeScroll               float32
+	noteTokens, folderTokens map[string]int
+	tokenNotes, tokenFolders map[int]string
+	inlineID, inlineParent   string
+	inlineFolder, inlineNew  bool
+	inline                   text.Editor
+	focus                    ui.ID
+	menu                     string
+	menuID                   string
+	menuFolder               bool
+	popup                    string
+	picker                   text.Editor
+	resizing                 bool
+	drop                     noteDrop
 }
 type noteDrop struct {
 	parent, before string
@@ -215,14 +217,21 @@ func (s *State) commitNoteInline() bool {
 	s.save()
 	return true
 }
+
+// overlayAnchorRect is where the open menu or popup hangs: under the control
+// that opened it, as this paint declared it, or at the point it was opened at.
+func (v *noteViewState) overlayAnchorRect(c *ui.Canvas) ui.Rect {
+	if bounds, ok := c.HitBounds(v.overlayFrom); ok {
+		return bounds
+	}
+	return v.overlayAnchor
+}
+
 func (s *State) noteViewClick(id ui.ID) bool {
 	if s.clickNoteFindActions(id) {
 		return true
 	}
 	n, v := s.noteContent(), &s.noteContent().view
-	if anchor, ok := v.anchors[id]; ok {
-		v.overlayAnchor = anchor
-	}
 	if id == hitNoteDismiss {
 		v.menu = ""
 		v.popup = ""
@@ -249,6 +258,7 @@ func (s *State) noteViewClick(id ui.ID) bool {
 	switch id {
 	case hitNoteTreeMore:
 		v.menu = "tree"
+		v.overlayFrom = id
 	case hitNoteTreeToggle:
 		if v.workspace.Width < v.width+480 {
 			v.drawer = !v.drawer
@@ -272,6 +282,7 @@ func (s *State) noteViewClick(id ui.ID) bool {
 	case hitNoteTagsExpand:
 		v.tagsExpanded = !v.tagsExpanded
 	case hitNoteTagsOpen:
+		v.overlayFrom = id
 		v.tagPopupScroll = 0
 		v.resetPopupScrollbar()
 		v.tagQuery = ""
@@ -280,6 +291,7 @@ func (s *State) noteViewClick(id ui.ID) bool {
 		v.picker = text.Editor{}
 		v.focus = hitNotePicker
 	case hitNoteHostsOpen:
+		v.overlayFrom = id
 		v.tagPopupScroll = 0
 		v.resetPopupScrollbar()
 		v.tagQuery = ""
@@ -368,12 +380,14 @@ func (s *State) noteViewClick(id ui.ID) bool {
 			v.menu = "note"
 			v.menuID = v.tokenNotes[token]
 			v.menuFolder = false
+			v.overlayFrom = id
 			return true
 		}
 		if token, ok := id.In(hitNoteFolderMore); ok {
 			v.menu = "folder"
 			v.menuID = v.tokenFolders[token]
 			v.menuFolder = true
+			v.overlayFrom = id
 			return true
 		}
 		if token, ok := id.In(hitNoteRows); ok {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -72,14 +73,14 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 			t.Fatal("note exposes text input")
 		}
 		d.click(hitDocumentSave)
-		d.shortcut(ui.KeyEvent{Text: "s", Modifiers: defaultShortcutModifier()})
+		d.shortcut(ui.KeyEvent{Text: "s", Modifiers: keymap.Primary})
 		if d.dirty() || s.notes.list[0].Body != mainBody || s.notes.body.String() != mainBody {
 			t.Fatal("note save affected file editor or lost draft")
 		}
 		var copied string
 		s.options.SetClipboardText = func(value string) error { copied = value; return nil }
-		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: defaultShortcutModifier()})
-		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: defaultShortcutModifier()})
+		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary})
+		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: keymap.Primary})
 		if !strings.Contains(copied, "live") {
 			t.Fatalf("copy missed content: %q", copied)
 		}
@@ -89,10 +90,10 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 			t.Fatal("live update missing")
 		}
 		d.note.content.previewScroll = 17
-		d.note.content.view.previewSelection = components.MarkdownSelection{Focus: 2}
+		d.note.content.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: 2})
 		s.openNoteWindow("second")
 		s.openNoteWindow("note")
-		if m.activeDocument() != d || d.note.content.previewScroll != 17 || d.note.content.view.previewSelection.Focus != 2 {
+		if m.activeDocument() != d || d.note.content.previewScroll != 17 || d.note.content.view.previewSelect.Focus.Offset != 2 {
 			t.Fatal("tab reuse lost state")
 		}
 		s.notes.list = s.notes.list[1:]

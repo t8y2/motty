@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/term"
@@ -203,7 +204,7 @@ func hasTerminalLinkUnderline(rectangles []ui.Rectangle, bounds ui.Rect, color u
 }
 
 func TestTerminalLinkOpensOnlyWithTheModifierUnlessPlainClicksAreChosen(t *testing.T) {
-	modifier := defaultShortcutModifier()
+	modifier := keymap.Primary
 	tests := []struct {
 		name      string
 		plain     bool

@@ -53,7 +53,6 @@ func (d *fileDocument) syncNoteWindow() bool {
 		n.selected = v.id
 		n.windowView = true
 		n.view.mode = notePreview
-		n.view.anchors = map[ui.ID]ui.Rect{}
 	}
 	if v.missing && !missing {
 		n.noteDraft = s.noteBuffer(v.id)

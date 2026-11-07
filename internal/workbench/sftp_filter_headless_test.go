@@ -76,7 +76,7 @@ func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
 		t.Fatal("missing terminal focus target")
 	}
 	terminalResult := state.Shortcut(ui.KeyEvent{
-		Target: terminalID, Modifiers: state.shortcuts.chords[shortcutFilesPath].Modifiers, Text: string(state.shortcuts.chords[shortcutFilesPath].Key),
+		Target: terminalID, Modifiers: state.shortcuts.chords.Chord(shortcutFilesPath).Modifiers, Text: string(state.shortcuts.chords.Chord(shortcutFilesPath).Char),
 	})
 	if terminalResult.Handled {
 		t.Fatal("path shortcut stole Ctrl/Cmd+L from the terminal")

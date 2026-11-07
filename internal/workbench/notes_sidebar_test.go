@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"net/http"
@@ -154,12 +155,12 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	if n.previewScroll <= 0 || n.view.treeScroll != 0 || s.notes.previewScroll != 0 {
 		t.Fatal("scroll state leaked")
 	}
-	n.view.previewSelection.Focus = n.rendered.TextLen()
-	if n.rendered.SelectedText(n.view.previewSelection) == "" {
+	n.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: n.rendered.TextLen()})
+	if n.rendered.SelectedText(n.view.previewSelect.In(0)) == "" {
 		t.Fatal("rendered preview cannot be selected")
 	}
 	s.Click(hitNotesPanel)
-	if v.widthDragging || v.splitDragging || n.view.previewSelecting {
+	if v.widthDragging || v.splitDragging || n.view.previewSelect.Dragging() {
 		t.Fatal("close retained capture")
 	}
 	s.Click(hitNotesPanel)

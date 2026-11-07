@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -208,7 +209,7 @@ func TestDigitShortcutFollowsTheGroupedTabOrder(t *testing.T) {
 	if len(visual) < 3 {
 		t.Fatalf("%d visual tabs", len(visual))
 	}
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "3"})
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "3"})
 	if state.deck.ActiveWorkspace() != visual[2].ID {
 		t.Fatal("the digit shortcut must follow the grouped order")
 	}

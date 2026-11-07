@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 	"motty/internal/sshconn"
@@ -39,7 +41,7 @@ func TestProcessDetailsKeepsTwoColumnMetadataAndSelectableEnvironment(t *testing
 	}
 	detailsText := &state.remote.processDetails.text
 	result := state.Shortcut(ui.KeyEvent{
-		Text: "a", Modifiers: defaultShortcutModifier(), Target: hitRemoteProcessDetailsText,
+		Text: "a", Modifiers: keymap.Primary, Target: hitRemoteProcessDetailsText,
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("environment select-all result=%+v", result)
@@ -190,7 +192,7 @@ func TestEnvironmentTableCopiesCompleteMarkupLookingValues(t *testing.T) {
 	if text.mode != remoteDetailTable {
 		t.Fatalf("environment mode = %v, want table", text.mode)
 	}
-	text.selectionStart, text.selectionEnd = 0, text.table.TextLen()
+	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.table.TextLen()})
 	selected, ok := text.selectedText()
 	want := header[0] + "\t" + header[1] + "\n" +
 		"PIPE\tleft|right\n" +
@@ -219,7 +221,7 @@ func TestEnvironmentTableCopiesDelimitedValuesAsLosslessTSV(t *testing.T) {
 		state.messages.Tools.RemoteProcessEnvironment,
 		hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
 	)
-	text.selectionStart, text.selectionEnd = 0, text.table.TextLen()
+	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.table.TextLen()})
 	selected, ok := text.selectedText()
 	if !ok {
 		t.Fatal("environment table produced no selectable text")
@@ -278,7 +280,7 @@ func TestProcessDetailsSupportsSelectingAndCopyingText(t *testing.T) {
 		return nil
 	}
 	result := state.Shortcut(ui.KeyEvent{
-		Text: "c", Modifiers: defaultShortcutModifier(), Target: hitRemoteProcessDetailsText,
+		Text: "c", Modifiers: keymap.Primary, Target: hitRemoteProcessDetailsText,
 	})
 	if !result.Handled || copied != selected {
 		t.Fatalf("copy result=%+v copied=%q, want %q", result, copied, selected)
@@ -301,7 +303,7 @@ func TestProcessDetailsLoadsTheCompleteCommandAndSupportsKeyboardSelection(t *te
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
 	result := state.Shortcut(ui.KeyEvent{
-		Text: "a", Modifiers: defaultShortcutModifier(), Target: hitRemoteProcessDetailsText,
+		Text: "a", Modifiers: keymap.Primary, Target: hitRemoteProcessDetailsText,
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("select-all result=%+v", result)
