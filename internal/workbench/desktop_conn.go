@@ -419,6 +419,9 @@ func (conn *desktopConn) innerChanged() {
 		return // newDesktopConn calls again once the tunnel is attached
 	}
 	status := inner.Status()
+	// The SSH target is a gateway of the desktop, so its questions and saved
+	// credentials belong to that gateway regardless of its login name.
+	status.EndpointRole = sshconn.EndpointProxyJump
 	conn.mu.Lock()
 	if conn.closed || status.Version == conn.innerVersion {
 		conn.mu.Unlock()

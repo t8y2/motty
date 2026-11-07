@@ -42,13 +42,15 @@ func (state *State) preparePassword(session *Session) {
 			accountError = err
 			if ok {
 				username = saved
-			} else {
+			} else if !state.passwordShared(session) {
 				passwordName = "" // no unique account to prefill, including an empty one
 			}
 		}
 		state.passwordFields[0].Insert(username)
 		if passwordName != "" {
-			passwordName = hostSecretName(owner, vncSystemPasswordPart(username))
+			endpoint := session.endpoint
+			endpoint.User = vncAccountPrefix + username
+			passwordName = state.passwordSecret(session.host, endpoint, session.role)
 		}
 	}
 	state.passwordRects = make([]ui.Rect, len(questions))
