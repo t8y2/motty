@@ -419,7 +419,7 @@ func TestDevelopmentWorkspaceLayoutsStayWithTheirOwnDeck(t *testing.T) {
 	if err := json.Unmarshal(localConfigValue(t, options.StatePath, windowKey(1, true)), &gotDevelopment); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(gotRelease.WorkspaceLayouts, release.WorkspaceLayouts) || len(gotDevelopment.WorkspaceLayouts) != 1 || gotDevelopment.WorkspaceLayouts[0].Columns != 2 || !gotDevelopment.WorkspaceLayouts[0].Temporary {
+	if !reflect.DeepEqual(gotRelease.WorkspaceLayouts, release.WorkspaceLayouts) || len(gotDevelopment.WorkspaceLayouts) != 1 || !isGrid(gotDevelopment.WorkspaceLayouts[0].Layout, 2) || !gotDevelopment.WorkspaceLayouts[0].Temporary {
 		t.Fatalf("workspace identities crossed builds: release=%+v development=%+v", gotRelease.WorkspaceLayouts, gotDevelopment.WorkspaceLayouts)
 	}
 }
