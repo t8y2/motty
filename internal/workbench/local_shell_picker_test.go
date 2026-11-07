@@ -59,8 +59,10 @@ func TestNewTabPageOpensALocalTerminalWithTheChosenShell(t *testing.T) {
 	if !state.localShellPicker.open {
 		t.Fatal("the arrow did not open the shell menu")
 	}
+	// The menu picks the distributions up as it is painted, so the wait goes
+	// through a repaint instead of adopting them itself.
 	waitUntil(t, state, "the WSL shell choices", func() bool {
-		state.adoptWSLDistros()
+		paintedTexts(state)
 		return state.localShellMenu.listing == nil
 	})
 	canvas, _ = paintedTexts(state)
