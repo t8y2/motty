@@ -2550,6 +2550,13 @@ var traditionalCompletion = CompletionMessages{
 	CacheFailedFmt:         "%s（下載的指令庫無法讀取：%v）",
 	CheckedFmt:             "%s · 檢查於 %s",
 	NoDataDir:              "此版本沒有可存放下載指令庫的資料目錄。",
+	PrefixRow:              "共同前綴",
+	TimeJustNow:            "剛剛",
+	TimeMinutesFmt:         "%d 分鐘前",
+	TimeHoursFmt:           "%d 小時前",
+	TimeDaysFmt:            "%d 天前",
+	TimeMonthsFmt:          "%d 個月前",
+	TimeYearsFmt:           "%d 年前",
 
 	Title:                 "自動完成候選",
 	Open:                  "開啟指令自動完成",

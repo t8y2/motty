@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/i18n"
 )
 
 // Command completion: the offline command/option catalog next to the command
@@ -690,10 +691,10 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		if len(fullEntries) >= 2 {
 			filtered := filterPrefixEntries(fullEntries)
 			if len(filtered) >= 2 {
-				commonPrefix := cmdhistory.CommonPrefix(entryCommands(filtered))
+				commonPrefix := prefixWordEnd(cmdhistory.CommonPrefix(entryCommands(filtered)))
 				if len(commonPrefix) > len(line) {
 					insertText := commonPrefix[len(line):]
-					add(completion.Candidate{Text: commonPrefix, Insert: insertText, Desc: "common prefix", Kind: completion.KindCommand})
+					add(completion.Candidate{Text: commonPrefix, Insert: insertText, Desc: state.messages.Completion.PrefixRow, Kind: completion.KindCommand})
 				}
 			}
 		}
@@ -702,7 +703,7 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		now := time.Now()
 		for _, entry := range fullEntries {
 			insertText := entry.Command[len(line):]
-			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used), Kind: completion.KindCommand})
+			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used, state.messages.Completion), Kind: completion.KindCommand})
 		}
 	}
 	if catalog := state.completionCatalog(); catalog != nil {
@@ -962,6 +963,17 @@ func filterPrefixEntries(entries []cmdhistory.Entry) []cmdhistory.Entry {
 	return filtered
 }
 
+// prefixWordEnd cuts a shared prefix back to its last whole word, the way zsh
+// and fish complete: the fragment before a half-typed word is what the user can
+// accept without leaving something unrunnable on the line.
+func prefixWordEnd(prefix string) string {
+	end := strings.LastIndexAny(prefix, " \t")
+	if end < 0 {
+		return prefix
+	}
+	return prefix[:end+1]
+}
+
 // entryCommands extracts the command strings from entries.
 func entryCommands(entries []cmdhistory.Entry) []string {
 	commands := make([]string, len(entries))
@@ -971,28 +983,30 @@ func entryCommands(entries []cmdhistory.Entry) []string {
 	return commands
 }
 
-// humanRelativeTime returns a human-readable relative time like "2h", "3d".
-func humanRelativeTime(now, t time.Time) string {
+// humanRelativeTime says how long ago a history match was used, in the words
+// the interface already uses for time. The month bucket runs to a year so no
+// age renders as a zero year: 360 days is twelve months, not "0y ago".
+func humanRelativeTime(now, t time.Time, m i18n.CompletionMessages) string {
 	if t.IsZero() {
-		return "now"
+		return m.TimeJustNow
 	}
 	d := now.Sub(t)
 	if d < 0 {
-		return "now"
+		return m.TimeJustNow
 	}
 	switch {
 	case d < time.Minute:
-		return "now"
+		return m.TimeJustNow
 	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+		return fmt.Sprintf(m.TimeMinutesFmt, int(d/time.Minute))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+		return fmt.Sprintf(m.TimeHoursFmt, int(d/time.Hour))
 	case d < 30*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
-	case d < 12*30*24*time.Hour:
-		return fmt.Sprintf("%dmo ago", int(d/(30*24*time.Hour)))
+		return fmt.Sprintf(m.TimeDaysFmt, int(d/(24*time.Hour)))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf(m.TimeMonthsFmt, int(d/(30*24*time.Hour)))
 	default:
-		return fmt.Sprintf("%dy ago", int(d/(365*24*time.Hour)))
+		return fmt.Sprintf(m.TimeYearsFmt, int(d/(365*24*time.Hour)))
 	}
 }
 
