@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/store"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -206,5 +207,31 @@ func TestTheNumberKeysAreAbleToFireInATerminal(t *testing.T) {
 	result := state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: want.Modifiers, Text: "2"})
 	if !result.Handled || tabIndex(state) != 1 {
 		t.Fatalf("the third choice did not reach the second tab: %+v", result)
+	}
+}
+
+// A hidden number has to reach the terminal behind the CLI login dialog too:
+// the dialog swallows every action it recognises, so it must recognise none of
+// the numbers while the setting is off.
+func TestHiddenNumberKeysStayWithTheTerminalDuringCLILogin(t *testing.T) {
+	w := newSettingsWorld(t, newLister())
+	state := w.state
+	auth := &fakeShell{done: make(chan struct{})}
+	local := newTerminal(80, 24)
+	local.shell = auth
+	state.ai.login = &aiCLILogin{provider: store.Provider{ID: "auth"}, term: local, cancel: func() {}}
+	state.ai.cfg.dialog = aiDialogCLILogin
+	digit := func(text string) ui.EventResult {
+		return state.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: defaultShortcutModifier(), Text: text})
+	}
+	if state.tabNumbers {
+		t.Fatal("tab numbers must default to off")
+	}
+	if result := digit("1"); result.Handled {
+		t.Fatal("the login dialog took a number key while the numbers are hidden")
+	}
+	state.setTabNumbers(true)
+	if result := digit("1"); !result.Handled {
+		t.Fatal("the login dialog left the number key with the terminal while the numbers are shown")
 	}
 }

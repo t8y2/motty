@@ -496,7 +496,7 @@ func (state *State) shortcut(event ui.KeyEvent, chord shortcutChord) ui.EventRes
 		}
 	}
 	if login := state.ai.login; login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
-		action := state.shortcuts.actionFor(chord)
+		action := state.shortcutActionFor(chord)
 		if action == shortcutNone {
 			return ui.EventResult{}
 		}
