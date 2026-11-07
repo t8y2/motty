@@ -123,6 +123,7 @@ type savedState struct {
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
@@ -536,6 +537,7 @@ func (state *State) snapshot() savedState {
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
+		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,

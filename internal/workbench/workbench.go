@@ -221,6 +221,8 @@ var (
 	hitSettingsToolbarRight        = tree.ID(settingsHits, "settings-toolbar-right")
 	hitSettingsCloseTray           = tree.ID(settingsHits, "settings-close-tray")
 	hitSettingsCloseQuit           = tree.ID(settingsHits, "settings-close-quit")
+	hitSettingsRelaunchRaise       = tree.ID(settingsHits, "settings-relaunch-raise")
+	hitSettingsRelaunchNewWindow   = tree.ID(settingsHits, "settings-relaunch-new-window")
 	hitSettingsOptionText          = tree.ID(settingsHits, "settings-option-text")
 	hitSettingsOptionMeta          = tree.ID(settingsHits, "settings-option-meta")
 	hitSettingsFontSizeDown        = tree.ID(settingsHits, "settings-font-size-down")
@@ -713,13 +715,14 @@ type State struct {
 	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
-	launchBacklog [][]string
-	launchTarget  connection
-	update        updateState
-	updateAtStart bool
-	updateStarted bool
-	loginOn       bool
-	closeAction   closeAction
+	launchBacklog  [][]string
+	launchTarget   connection
+	update         updateState
+	updateAtStart  bool
+	updateStarted  bool
+	loginOn        bool
+	closeAction    closeAction
+	relaunchAction relaunchAction
 	// The file panel's settings and the folders kept for each host.
 	sftpParallel           int
 	sftpKeepTimesOff       bool

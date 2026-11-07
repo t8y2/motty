@@ -129,6 +129,10 @@ func (state *State) openLaunch(args []string) {
 		return
 	}
 	text, link := launchText(args)
+	if len(args) == 0 && state.relaunchAction == relaunchNewWindow && state.options.NewWindow != nil {
+		state.openNewWindow()
+		return
+	}
 	// A second start of the program brings the window forward even with nothing
 	// to open; without it the user who double-clicks the icon of a program hidden
 	// in the tray sees nothing happen. A start at login (--background) does not.

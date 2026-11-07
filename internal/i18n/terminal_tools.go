@@ -508,6 +508,10 @@ type ToolsMessages struct {
 	GeneralCloseDescription         string
 	GeneralCloseTray                string
 	GeneralCloseQuit                string
+	GeneralRelaunch                 string
+	GeneralRelaunchDescription      string
+	GeneralRelaunchRaise            string
+	GeneralRelaunchNewWindow        string
 	GeneralUpdate                   string
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string

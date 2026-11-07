@@ -327,6 +327,14 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				}
 				page.row(messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, options[:], selected)
 			}
+			if state.options.NewWindow != nil {
+				options := state.settingsRelaunchOptions()
+				selected := hitSettingsRelaunchRaise
+				if state.relaunchAction == relaunchNewWindow {
+					selected = hitSettingsRelaunchNewWindow
+				}
+				page.row(messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, options[:], selected)
+			}
 			state.paintToolbarSettingsRows(page)
 		})
 		state.paintUpdateSettings(page)
