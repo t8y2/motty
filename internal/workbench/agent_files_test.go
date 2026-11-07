@@ -259,6 +259,52 @@ func waitAgentTransfer(t *testing.T, backend *agentBackend, id string) gate.Tran
 	}
 }
 
+func TestAgentSettledTransferReleasesItsPaths(t *testing.T) {
+	world := newAgentWorld(t)
+	backend, root := transferTestBackend(t, world)
+	payload := []byte("x")
+	local := filepath.Join(root, "settled.bin")
+	if err := os.WriteFile(local, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first, err := backend.StartTransfer(ctx, tools.TransferArgs{LocalPath: local, RemotePath: "settled.bin", Existing: "replace"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := waitAgentTransfer(t, backend, first.ID); result.State != "completed" {
+		t.Fatalf("upload: %+v", result)
+	}
+
+	// A caller that has been told "completed" must not be told the same path is
+	// still busy. The finishing goroutine publishes the terminal state before it
+	// records the audit and marks the transfer done, so that gap is reachable:
+	// hold the task in exactly that shape and try to reuse the path.
+	backend.mu.Lock()
+	var task *agentTransfer
+	for _, candidate := range backend.transfers {
+		if candidate.value.ID == first.ID {
+			task = candidate
+		}
+	}
+	backend.mu.Unlock()
+	if task == nil {
+		t.Fatalf("transfer %s is not in the history", first.ID)
+	}
+	task.mu.Lock()
+	terminal := task.value.State
+	task.done = false // the window the finishing goroutine can be in
+	task.mu.Unlock()
+
+	second, err := backend.StartTransfer(ctx, tools.TransferArgs{LocalPath: local, RemotePath: "settled.bin", Existing: "replace"}, true)
+	if err != nil {
+		t.Fatalf("a transfer that already reports %q still held its path: %v", terminal, err)
+	}
+	if result := waitAgentTransfer(t, backend, second.ID); result.State != "completed" {
+		t.Fatalf("second upload: %+v", result)
+	}
+}
+
 func TestAgentFileTransferBinaryRoundTripAndNoOverwrite(t *testing.T) {
 	world := newAgentWorld(t)
 	backend, root := transferTestBackend(t, world)
