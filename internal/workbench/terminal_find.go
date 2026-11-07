@@ -158,6 +158,9 @@ func (state *State) activeTerminalFind() (*Session, bool) {
 	return session, ok && state.activeSection == sectionTerminal && state.modal == modalNone && session.term != nil
 }
 
+// openTerminalFind opens the search bar of a pane. The bar takes a strip above
+// the grid, as a macOS terminal does, and leaves the shared rail its width, so
+// only the row count changes and only the columns stay put.
 func (state *State) openTerminalFind(session *Session) ui.EventResult {
 	find := &session.term.find
 	find.open = true
@@ -173,9 +176,8 @@ func (state *State) closeTerminalFind(session *Session) ui.EventResult {
 }
 
 // closePaneFind ends find mode on the session a pane shows. The find bar paints
-// only for the active pane, and the rail follows the active session, so a find
-// left open on a pane that lost focus would keep toggling the rail and resizing
-// every PTY in the workspace on each switch.
+// only for the active pane, so a find left open on a pane that lost focus would
+// come back into view on a session the user is no longer searching.
 func (state *State) closePaneFind(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) {
 	pane, ok := state.deck.Pane(workspaceID, paneID)
 	if !ok {

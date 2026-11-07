@@ -989,7 +989,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	var chrome terminalChrome
 	// Every pane in a split keeps the same top chrome whether it owns focus or
 	// not. The active pane leaves that strip blank, but reserving it here keeps
-	// switching panes from resizing either PTY or clearing a selection.
+	// switching panes from resizing either PTY or clearing a selection. The
+	// shared rail keeps its width in find mode: the search bar takes this strip
+	// and nothing else.
 	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
@@ -1027,16 +1029,16 @@ func (state *State) terminalInputNoticeVisibleInWorkspace(session *Session) bool
 // rail while settings or another page covers them.
 func (state *State) terminalToolbarSession() (*Session, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || session.term == nil || session.restored || session.desk != nil ||
-		session.term.find.open {
+	if !ok || session.term == nil || session.restored || session.desk != nil {
 		return nil, false
 	}
 	return session, true
 }
 
 // terminalSideRailSession reports the terminal whose shared rail is visible.
-// Connection, restored and desktop pages use their own chrome, and find mode
-// temporarily replaces the rail with its top search bar.
+// Connection, restored and desktop pages use their own chrome. Find mode keeps
+// the rail: its bar floats over the pane rather than taking the rail's room, so
+// searching never resizes a PTY or clears a selection.
 func (state *State) terminalSideRailSession() (*Session, bool) {
 	if state.activeSection != sectionTerminal {
 		return nil, false
