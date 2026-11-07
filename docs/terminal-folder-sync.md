@@ -26,6 +26,20 @@ press Ctrl+C once to clear that ambiguity, then navigate again. Motty never
 sends an interrupt automatically. A reconnect rotates the session token and
 requires entirely fresh prompt authorization.
 
+## Remembered Directory
+
+The last directory reported by a remote shell's own prompt is saved with the
+tab. A restored tab that reconnects starts its integrated Bash or Zsh there,
+instead of in the account's home directory. The directory is still only a hint:
+if it has since been removed, the shell starts where it normally would. Splits
+made before that reconnect inherit the same remembered directory.
+
+Only trusted prompt reports are remembered. A running program, a nested login,
+or a report that does not belong to this session's integration cannot change
+the next start directory. Native Windows SSH hosts are not POSIX shell targets,
+and disabling both integration directions keeps the ordinary shell startup, so
+neither remembers a remote directory in this way.
+
 Local panes, standalone file windows and container command sessions do not
 control terminals. Refreshing a list or following a terminal report never sends
 another `cd` back. Both preferences use the existing shared-settings storage.

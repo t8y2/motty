@@ -172,9 +172,9 @@ func shortHostName(name string) string {
 
 // Coalesce reports from one output drain. Terminal callbacks themselves only
 // update memory, without reentering persistence while the parser is running.
-func (state *State) flushLocalDirectories() {
-	if state.localDirectoryDirty {
-		state.localDirectoryDirty = false
+func (state *State) flushTerminalDirectories() {
+	if state.terminalDirectoryDirty {
+		state.terminalDirectoryDirty = false
 		state.save()
 	}
 }

@@ -296,8 +296,12 @@ type savedSession struct {
 	// destination.
 	CatalogID string `json:"catalog_id,omitempty"`
 	// Local marks a shell on this computer: it has no address to dial.
-	Local          bool   `json:"local,omitempty"`
+	Local bool `json:"local,omitempty"`
+	// LocalDirectory is the local shell's last trusted directory.
 	LocalDirectory string `json:"local_directory,omitempty"`
+	// RemoteDirectory is the remote shell's last trusted directory, which the
+	// next integrated shell starts in.
+	RemoteDirectory string `json:"remote_directory,omitempty"`
 	// LocalShell is the shell this local tab was opened with; empty follows the default.
 	LocalShell string `json:"local_shell,omitempty"`
 	savedTransport
@@ -660,7 +664,8 @@ func (state *State) snapshot() savedState {
 		saved.Sessions = append(saved.Sessions, savedSession{
 			Label: session.Title, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
-			CatalogID: session.savedCatalogID(), savedTransport: session.host.transport(),
+			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
+			savedTransport: session.host.transport(),
 		})
 		if session.ID == state.activeSessionID {
 			saved.ActiveSession = len(saved.Sessions)
@@ -1253,8 +1258,10 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
-		if entry.Local && validLocalDirectory(entry.LocalDirectory) {
-			session.localDirectory = filepath.Clean(entry.LocalDirectory)
+		if entry.Local {
+			session.setStartDirectory(entry.LocalDirectory)
+		} else {
+			session.setStartDirectory(entry.RemoteDirectory)
 		}
 		sourceSessions[sourceIndex] = session.ID
 		state.nextSessionID++

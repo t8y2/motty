@@ -707,7 +707,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
 	defer state.syncDesktopFullscreen()
-	defer state.flushLocalDirectories()
+	defer state.flushTerminalDirectories()
 	defer state.syncLocalProxySessions()
 	state.adoptHistoryClear()
 	state.adoptCompletion()

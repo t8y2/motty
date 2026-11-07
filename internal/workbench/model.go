@@ -106,8 +106,9 @@ type Session struct {
 	// localDirectory is this shell's last reported directory, independent of
 	// the files panel and of other sessions on the same machine.
 	localDirectory string
-	// startDirectory is where this remote shell starts, when it was split off a
-	// pane that was somewhere: a hint to the server, which may not have it.
+	// startDirectory is where this remote shell starts: the last directory a
+	// trusted prompt reported, or the place a split asked for. It is a hint to
+	// the server, which may no longer have that directory.
 	startDirectory string
 
 	host     Host // what was dialed, to dial again

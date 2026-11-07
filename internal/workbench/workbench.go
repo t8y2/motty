@@ -760,7 +760,7 @@ type State struct {
 	terminalClipboard      terminalClipboardPolicy
 	terminalIntense        terminalIntense
 
-	localDirectoryDirty bool
+	terminalDirectoryDirty bool
 	// terminalCursorSteady keeps the terminal cursor from blinking.
 	terminalCursorSteady bool
 	// terminalCursorThickness is how thick the bar and underline cursors draw.
@@ -978,7 +978,7 @@ func (state *State) Close() {
 	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
-	state.flushLocalDirectories()
+	state.flushTerminalDirectories()
 	state.closeRemoteToolsWindows()
 	state.closeFileWindows()
 	state.closeSFTPWindows()

@@ -33,12 +33,22 @@ func (state *State) recordTerminalDirectory(sessionID uint32, cwd term.Cwd, repl
 		}
 		if directory := filepath.Clean(cwd.Path); session.term.folderIntegrationSeen && session.term.promptStarted && directory != session.localDirectory {
 			session.localDirectory = directory
-			state.localDirectoryDirty = true
+			state.terminalDirectoryDirty = true
 		}
-	} else if !validSyncDirectory(cwd.Path) {
-		// Native Windows OSC 9;9 reports are useful locally, but are not
-		// POSIX SFTP paths. Keep remote following's existing path contract.
-		return
+	} else {
+		if !validSyncDirectory(cwd.Path) {
+			// Native Windows OSC 9;9 reports are useful locally, but are not
+			// POSIX SFTP paths. Keep remote following's existing path contract.
+			return
+		}
+		// Only the shell integration's prompt proves this is the shell's own
+		// directory, rather than a program or nested login reporting one.
+		if session.hasServer() && session.term.folderIntegrationSeen && session.term.promptStarted {
+			if directory := path.Clean(cwd.Path); directory != session.startDirectory {
+				session.startDirectory = directory
+				state.terminalDirectoryDirty = true
+			}
+		}
 	}
 	// Deduplicate accepted reports, rather than the terminal's raw reports. A
 	// repeated prompt must not undo manual browsing, but its first trusted

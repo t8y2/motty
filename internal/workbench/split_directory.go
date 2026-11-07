@@ -1,18 +1,30 @@
 package workbench
 
-import "path/filepath"
+import (
+	"path"
+	"path/filepath"
+)
 
 // splitDirectory is the directory a shell split off this session starts in: where
-// this shell last reported being, which needs its prompt integration to have
-// reported anything. Empty means the new shell starts where a new shell does.
+// this shell last reported being, or the directory a restored shell will use
+// when it reconnects. Empty means the new shell starts where a new shell does.
 func (session *Session) splitDirectory() string {
 	if session.isLocal() {
 		return session.localDirectory
 	}
-	if session.term == nil || session.containerCommand != "" {
+	if session.containerCommand != "" {
 		return ""
 	}
-	if directory := session.term.reportedDirectory.Path; validSyncDirectory(directory) {
+	if session.term == nil {
+		if directory := path.Clean(session.startDirectory); validSyncDirectory(directory) {
+			return directory
+		}
+		return ""
+	}
+	if directory := path.Clean(session.term.reportedDirectory.Path); validSyncDirectory(directory) {
+		return directory
+	}
+	if directory := path.Clean(session.startDirectory); validSyncDirectory(directory) {
 		return directory
 	}
 	return ""
@@ -30,6 +42,6 @@ func (session *Session) setStartDirectory(directory string) {
 			session.localDirectory = filepath.Clean(directory)
 		}
 	case validSyncDirectory(directory):
-		session.startDirectory = directory
+		session.startDirectory = path.Clean(directory)
 	}
 }
