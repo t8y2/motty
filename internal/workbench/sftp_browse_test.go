@@ -639,6 +639,30 @@ func TestSFTPProfileScopeChangesPersistWithoutDuplicatingOrOverfilling(t *testin
 	}
 }
 
+// The pane header decides whether the profile menu can open while it paints,
+// so it counts instead of building the list. Both must name the same profiles,
+// and the count must not allocate.
+func TestSFTPVisibleProfileCountMatchesTheListWithoutAllocating(t *testing.T) {
+	state, w, _, _, dir := dualSFTPFixture(t, 1)
+	w.session.host.CatalogID = "count-profiles"
+	state.sftpBookmarks = []sftpBookmark{
+		{host: "count-profiles", name: "项目", local: dir, path: "/home/test"},
+		{host: "count-profiles", path: "/home/test"},              // nothing names it, so it is not offered
+		{host: "another-host", name: "别处", path: "/home/test"}, // another connection's own profile
+		{shared: true, name: "共享", path: "/var/log"},
+	}
+	offered := w.visibleProfiles()
+	if count := w.visibleProfileCount(); count != len(offered) {
+		t.Fatalf("counted %d profile(s), listed %d", count, len(offered))
+	}
+	if len(offered) != 2 {
+		t.Fatalf("offered profiles = %+v, want the named one and the shared one", offered)
+	}
+	if allocs := testing.AllocsPerRun(50, func() { _ = w.visibleProfileCount() }); allocs != 0 {
+		t.Errorf("counting the profiles allocates %v times", allocs)
+	}
+}
+
 func TestSFTPLocationProfileListScrollSelectionRenameAndDeletion(t *testing.T) {
 	state, w, _, host, dir := dualSFTPFixture(t, 1)
 	view := host.windows[0].view

@@ -91,10 +91,16 @@ func validSavedBookmarkLocal(directory string) bool {
 	return filepath.IsAbs(directory) || path.IsAbs(directory)
 }
 
+// bookmarkBelongsTo is the one rule for which saved location profiles a window
+// may offer: this connection's own, and the shared ones.
+func bookmarkBelongsTo(bookmark sftpBookmark, session *Session) bool {
+	return bookmark.host == session.host.CatalogID || bookmark.shared
+}
+
 func (state *State) sftpHostBookmarks(session *Session) []sftpBookmark {
 	var bookmarks []sftpBookmark
 	for _, bookmark := range state.sftpBookmarks {
-		if bookmark.host == session.host.CatalogID || bookmark.shared {
+		if bookmarkBelongsTo(bookmark, session) {
 			bookmarks = append(bookmarks, bookmark)
 		}
 	}
@@ -111,14 +117,33 @@ func (state *State) bookmarkScopeSize(host string, shared bool) int {
 	return count
 }
 
+// profileVisible is the one rule for which saved location profiles a window
+// offers. visibleProfiles and visibleProfileCount both ask it, so the drawn
+// list and the count taken while painting a button cannot disagree.
+func profileVisible(bookmark sftpBookmark) bool {
+	return bookmark.name != "" || bookmark.local != "" || bookmark.shared
+}
+
 func (w *sftpWindow) visibleProfiles() []sftpBookmark {
 	var profiles []sftpBookmark
 	for _, bookmark := range w.owner.sftpHostBookmarks(&w.session) {
-		if bookmark.name != "" || bookmark.local != "" || bookmark.shared {
+		if profileVisible(bookmark) {
 			profiles = append(profiles, bookmark)
 		}
 	}
 	return profiles
+}
+
+// visibleProfileCount counts the same profiles without building the slice: the
+// pane header asks while it paints, and painting must not allocate.
+func (w *sftpWindow) visibleProfileCount() int {
+	count := 0
+	for _, bookmark := range w.owner.sftpBookmarks {
+		if bookmarkBelongsTo(bookmark, &w.session) && profileVisible(bookmark) {
+			count++
+		}
+	}
+	return count
 }
 
 func (w *sftpWindow) selectProfile(bookmark sftpBookmark) {
