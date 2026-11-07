@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrderAndLookup(t *testing.T) {
-	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
+	want := []string{NameListSessions, NameListHosts, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
 	var got []string
 	for _, s := range All() {
 		got = append(got, s.Name)
@@ -53,7 +53,7 @@ func jsonNames(t *testing.T, v any) []string {
 
 func TestSchemasMatchArgs(t *testing.T) {
 	args := map[string]any{
-		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
+		NameListSessions: ListSessionsArgs{}, NameListHosts: ListHostsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
 		NameSFTPList: SFTPListArgs{}, NameSFTPRead: SFTPReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
 	}
 	required := map[string][]string{
@@ -267,10 +267,10 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 		}
 		return names
 	}
-	if got, want := names(false), []string{NameListSessions, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
+	if got, want := names(false), []string{NameListSessions, NameListHosts, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("read-only headless tools %v, want %v", got, want)
 	}
-	if got, want := names(true), []string{NameListSessions, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
+	if got, want := names(true), []string{NameListSessions, NameListHosts, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("headless tools with commands %v, want %v", got, want)
 	}
 	if _, ok := Lookup(NameTerminalRead); !ok {

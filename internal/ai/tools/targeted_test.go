@@ -13,12 +13,12 @@ func TestTargetedToolsDescribeTheLockedDefaultWithoutChangingMCP(t *testing.T) {
 		originals[spec.Name] = spec
 	}
 	targeted := Targeted()
-	if len(before) != len(targeted)+4 {
+	if len(before) != len(targeted)+5 {
 		t.Fatal("targeted catalog changed the available tool set")
 	}
 	for _, spec := range targeted {
 		original, ok := originals[spec.Name]
-		if !ok || spec.Name == NameToolOutputRead || isJobTool(spec.Name) || spec.Kind != original.Kind || !json.Valid(spec.Schema) {
+		if !ok || spec.Name == NameListHosts || spec.Name == NameToolOutputRead || isJobTool(spec.Name) || spec.Kind != original.Kind || !json.Valid(spec.Schema) {
 			t.Fatalf("invalid targeted tool: %+v", spec)
 		}
 		var schema struct {

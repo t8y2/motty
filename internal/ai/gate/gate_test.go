@@ -17,6 +17,33 @@ type fakeBackend struct {
 	lastCommand                   string
 }
 
+type hostListBackend struct{ *fakeBackend }
+
+func (hostListBackend) Hosts(context.Context) ([]HostInfo, error) {
+	return []HostInfo{{ID: "saved-id", Title: "Saved", Address: "ops@host.invalid:22"}}, nil
+}
+
+func TestListHostsRequiresAnAuthorizedListerAndClosedArguments(t *testing.T) {
+	ctx := context.Background()
+	backend := hostListBackend{&fakeBackend{}}
+	readOnly := Gate{Backend: backend, Mode: ModeObserve}
+	result := readOnly.Run(ctx, tools.NameListHosts, []byte(`{}`))
+	if result.IsError || result.Text != "saved-id: Saved ops@host.invalid:22" {
+		t.Fatalf("list_hosts = %+v", result)
+	}
+	for _, args := range []string{`{"session":"1"}`, `[]`} {
+		if result := readOnly.Run(ctx, tools.NameListHosts, []byte(args)); !result.IsError {
+			t.Fatalf("list_hosts accepted %s: %+v", args, result)
+		}
+	}
+	if result := (Gate{Backend: &fakeBackend{}}).Run(ctx, tools.NameListHosts, []byte(`{}`)); !result.IsError {
+		t.Fatalf("backend without a host catalog listed hosts: %+v", result)
+	}
+	if result := (Gate{Backend: backend, Target: &SessionInfo{ID: "1"}}).Run(ctx, tools.NameListHosts, []byte(`{}`)); !result.IsError {
+		t.Fatalf("session-scoped request listed unrelated hosts: %+v", result)
+	}
+}
+
 func (b *fakeBackend) Sessions(context.Context) ([]SessionInfo, error) {
 	return []SessionInfo{{ID: "1", Title: "web", Address: "web:22", Active: true, Ready: true}}, nil
 }

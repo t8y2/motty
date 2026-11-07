@@ -55,7 +55,8 @@ const (
 )
 
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
-	"Call list_sessions first to get a session id. Commands and file changes may need the user's approval " +
+	"Call list_sessions first to get a session id. list_hosts lists saved SSH hosts explicitly opened to agents, " +
+	"including hosts without a session; its host ids are not terminal session ids. Commands and file changes may need the user's approval " +
 	"in the Motty window; such a call waits for the answer and is refused if the user declines."
 
 // Config configures a Server.

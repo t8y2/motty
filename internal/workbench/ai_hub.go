@@ -322,6 +322,36 @@ func (b hubBackend) Sessions(ctx context.Context) ([]gate.SessionInfo, error) {
 	return all, nil
 }
 
+func (b hubBackend) Hosts(ctx context.Context) ([]gate.HostInfo, error) {
+	b.hub.mu.Lock()
+	windows := append([]*hubWindow(nil), b.hub.windows...)
+	b.hub.mu.Unlock()
+	var hosts []gate.HostInfo
+	seen := make(map[string]bool)
+	for _, window := range windows {
+		listed, err := aiCall(window.state, ctx, func() ([]gate.HostInfo, error) {
+			var result []gate.HostInfo
+			for _, host := range window.state.agentHostList() {
+				result = append(result, gate.HostInfo{
+					ID: host.CatalogID, Title: host.Label,
+					Address: window.state.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),
+				})
+			}
+			return result, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, host := range listed {
+			if !seen[host.ID] {
+				hosts = append(hosts, host)
+				seen[host.ID] = true
+			}
+		}
+	}
+	return hosts, nil
+}
+
 // target resolves a handle to a window's backend and the local handle.
 func (b hubBackend) target(ctx context.Context, handle string) (*aiBackend, string, error) {
 	window, local, err := b.hub.resolve(ctx, handle)

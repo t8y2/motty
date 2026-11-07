@@ -83,6 +83,36 @@ func TestAnExternalAgentSeesTheSessionsAndRunsAReadOnlyCommandWhenAllowedToAsk(t
 	}
 }
 
+func TestHTTPMCPListsOnlyAuthorizedSavedHostsWithoutSessions(t *testing.T) {
+	state, _, address, token := hubFixture(t, "observe")
+	state.closeSession(state.sessions[0].ID)
+	if len(state.sessions) != 0 {
+		t.Fatal("the terminal session was not closed")
+	}
+	state.agentHosts = nil
+	check := func(want string) {
+		t.Helper()
+		out := rpc(t, state, address, token, "tools/call", `{"name":"list_hosts","arguments":{}}`)
+		text, isError := toolText(t, out)
+		if isError || text != want {
+			t.Fatalf("list_hosts = %q (error %t), want %q", text, isError, want)
+		}
+	}
+	check("no hosts are open to agents")
+	state.hosts = []Host{
+		{ID: 1, CatalogID: "allowed", Label: "Allowed", Address: "allowed.invalid", Port: 22, User: "operator", Protocol: protocolSSH},
+		{ID: 2, CatalogID: "private", Label: "Private", Address: "private.invalid", Port: 22, User: "secret", Protocol: protocolSSH},
+	}
+	check("no hosts are open to agents")
+	state.agentHosts = map[string]bool{"allowed": true}
+	check("allowed: Allowed operator@allowed.invalid:22")
+	out := rpc(t, state, address, token, "tools/call", `{"name":"list_sessions","arguments":{}}`)
+	text, isError := toolText(t, out)
+	if isError || text != "no sessions are open" {
+		t.Fatalf("list_sessions with an authorized saved host = %q (error %t)", text, isError)
+	}
+}
+
 func TestObserverModeRefusesCommandsFromAnExternalAgent(t *testing.T) {
 	state, _, address, token := hubFixture(t, "observe")
 	out := rpc(t, state, address, token, "tools/call", `{"name":"terminal_exec","arguments":{"command":"echo nope"}}`)

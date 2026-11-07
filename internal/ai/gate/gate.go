@@ -28,6 +28,16 @@ type SessionInfo struct {
 	Ready   bool // a shell is open and can take commands
 }
 
+type HostInfo struct {
+	ID      string
+	Title   string
+	Address string
+}
+
+type HostLister interface {
+	Hosts(context.Context) ([]HostInfo, error)
+}
+
 // ExecResult is what a command printed and how it ended.
 type ExecResult struct {
 	Output     string
@@ -159,6 +169,22 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		return result
 	}
 	switch name {
+	case tools.NameListHosts:
+		if _, err := tools.DecodeListHosts(raw); err != nil {
+			return failure(err)
+		}
+		if g.Target != nil {
+			return Result{Text: "host listing is unavailable in a session-scoped request", IsError: true}
+		}
+		lister, ok := g.Backend.(HostLister)
+		if !ok {
+			return Result{Text: "host listing is unavailable", IsError: true}
+		}
+		hosts, err := lister.Hosts(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		return Result{Text: formatHosts(hosts)}
 	case tools.NameListSessions:
 		if _, err := tools.DecodeListSessions(raw); err != nil {
 			return failure(err)
@@ -606,6 +632,17 @@ func formatSessions(sessions []SessionInfo) string {
 		fmt.Fprintf(&b, "%s: %s %s [%s]%s\n", s.ID, s.Title, s.Address, state, active)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatHosts(hosts []HostInfo) string {
+	if len(hosts) == 0 {
+		return "no hosts are open to agents"
+	}
+	var output strings.Builder
+	for _, host := range hosts {
+		fmt.Fprintf(&output, "%s: %s %s\n", host.ID, host.Title, host.Address)
+	}
+	return strings.TrimRight(output.String(), "\n")
 }
 
 func formatEntries(entries []FileEntry) string {

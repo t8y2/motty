@@ -87,6 +87,7 @@ func DecodeRequestAgentMode(raw []byte) (RequestAgentModeArgs, error) {
 // Tool names.
 const (
 	NameListSessions   = "list_sessions"
+	NameListHosts      = "list_hosts"
 	NameTerminalRead   = "terminal_read"
 	NameTerminalExec   = "terminal_exec"
 	NameToolOutputRead = "tool_output_read"
@@ -131,6 +132,12 @@ var specs = []Spec{
 	{
 		Name:        NameListSessions,
 		Description: "List the open terminal sessions with their ids, titles, hosts and connection state, and say which one is active. Call this first when you need a session id.",
+		Schema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		Kind:        Read,
+	},
+	{
+		Name:        NameListHosts,
+		Description: "List saved SSH hosts explicitly opened to agents, including hosts without an open session. Returns stable host ids, names and addresses without connecting. A host id is not an open terminal session id.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Kind:        Read,
 	},
@@ -253,7 +260,7 @@ func Targeted() []Spec {
 	const targetHint = "Session id from list_sessions. If omitted, uses this request's locked primary session. Always specify the id when operating on an explicitly @referenced session."
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
-		if spec.Name == NameToolOutputRead || isJobTool(spec.Name) {
+		if spec.Name == NameListHosts || spec.Name == NameToolOutputRead || isJobTool(spec.Name) {
 			continue
 		}
 		if schema := string(spec.Schema); strings.Contains(schema, activeHint) {
@@ -297,6 +304,8 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 		switch spec.Name {
 		case NameListSessions:
 			spec.Description = "List the saved hosts the user allowed you to use, with their ids. A host connects when you first use it. Call this first when you need a host id."
+		case NameListHosts:
+			spec.Description = "List saved SSH hosts the user opened to agents, with stable host ids, names and addresses, without connecting. In this server list_sessions lists the same authorized hosts; those ids can be used in tool calls."
 		case NameTerminalExec:
 			spec.Description = "Run one shell command on a saved host over a fresh SSH exec channel and return its combined output and exit status. There is no terminal: nothing interactive works, and the working directory and environment do not carry over to the next call. The user does not watch it run. It must finish within the timeout."
 		case NameTerminalExecMany:
@@ -343,6 +352,8 @@ func Lookup(name string) (Spec, bool) {
 // for external MCP, or the locked primary of an in-app request.
 
 type ListSessionsArgs struct{}
+
+type ListHostsArgs struct{}
 
 type TerminalReadArgs struct {
 	Session string `json:"session,omitempty"`
@@ -485,6 +496,11 @@ type SFTPRemoveArgs struct {
 func DecodeListSessions(raw []byte) (ListSessionsArgs, error) {
 	var w struct{}
 	return ListSessionsArgs{}, decode(raw, &w)
+}
+
+func DecodeListHosts(raw []byte) (ListHostsArgs, error) {
+	var args ListHostsArgs
+	return args, decode(raw, &args)
 }
 
 func DecodeTerminalRead(raw []byte) (TerminalReadArgs, error) {
