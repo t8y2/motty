@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
 )
 
 // defaultShell is the user's login shell, else sh.
@@ -46,7 +47,16 @@ func startBackend(config Config) (backend, error) {
 	return backend{
 		io: master,
 		resize: func(cols, rows int) {
-			_ = pty.Setsize(master, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+			control, err := master.SyscallConn()
+			if err != nil {
+				return
+			}
+			// A queued resize can overlap Close. Control holds a reference to
+			// the descriptor until the ioctl returns, so it cannot be destroyed
+			// or recycled for another file while the resize is in flight.
+			_ = control.Control(func(fd uintptr) {
+				_ = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(cols), Row: uint16(rows)})
+			})
 		},
 		wait: func() (int, error) {
 			err := cmd.Wait()
