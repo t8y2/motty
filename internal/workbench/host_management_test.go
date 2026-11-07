@@ -438,7 +438,7 @@ func TestHostGroupDropdownMovesToExistingOrNoGroup(t *testing.T) {
 	if index < 0 {
 		t.Fatalf("groups = %v", state.hostGroups)
 	}
-	state.Click(hitHostGroupItemList.At(index))
+	state.Click(hostMoveGroupChoice(t, state, "Network"))
 	if state.hosts[0].Group != "Network" {
 		t.Fatalf("existing group move = %q", state.hosts[0].Group)
 	}
@@ -673,7 +673,7 @@ func TestAHostMovedOutOfTheShownGroupDoesNotVanish(t *testing.T) {
 	state.Click(hitHostFilterList.At(state.hostGroupIndex("Network")))
 	state.Click(hitHostCheckList.At(int(state.hosts[2].ID)))
 	state.Click(hitMoveHostGroup)
-	state.Click(hitHostGroupItemList.At(state.hostGroupIndex("Servers")))
+	state.Click(hostMoveGroupChoice(t, state, "Servers"))
 	if state.hostFilterOn {
 		t.Fatal("the list still shows only the group the host left")
 	}

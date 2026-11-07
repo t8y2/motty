@@ -45,8 +45,7 @@ func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
 	}
 
 	clickHostAction(state, hitMoveHostGroup)
-	network := state.hostGroupIndex("Network")
-	state.Click(hitHostGroupItemList.At(network))
+	state.Click(hostMoveGroupChoice(t, state, "Network"))
 	if state.hosts[0].Group != "Network" || !state.hostSelected(state.hosts[0].ID) {
 		t.Fatalf("batch move result host=%+v selection=%v", state.hosts[0], state.hostSelections)
 	}
