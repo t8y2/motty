@@ -40,6 +40,7 @@ type savedState struct {
 	Theme                      string             `json:"theme,omitempty"`
 	BackgroundOutputAlerts     bool               `json:"background_output_alerts,omitempty"`
 	TabOrientation             string             `json:"tab_orientation,omitempty"`
+	TabNumbers                 bool               `json:"tab_numbers,omitempty"`
 	VerticalTabsAutoHide       bool               `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool               `json:"vertical_tabs_grouping,omitempty"`
 	NetworkProxy               string             `json:"network_proxy,omitempty"`
@@ -445,6 +446,7 @@ func (state *State) snapshot() savedState {
 		Theme:                      state.appearanceMode.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabNumbers:                 state.tabNumbers,
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
@@ -886,6 +888,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.setTabNumbers(saved.TabNumbers)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)

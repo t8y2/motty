@@ -203,6 +203,7 @@ func TestDigitShortcutFollowsTheGroupedTabOrder(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1200, Height: 760})
+	state.setTabNumbers(true)
 	visual := state.visualWorkspaceTabs()
 	if len(visual) < 3 {
 		t.Fatalf("%d visual tabs", len(visual))

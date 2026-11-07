@@ -512,6 +512,7 @@ type barTab struct {
 	title        flex.Box
 	output       outputAlertKind
 	label        string
+	number       string // the tab's number, empty for a tab no number key reaches
 	workspace    layoutcore.WorkspaceInfo
 	fileSession  uint32
 	id, closeID  ui.ID
@@ -528,6 +529,7 @@ type barGeometry struct {
 	tabCount          int
 	barButtons        int
 	locked            bool
+	numbers           bool
 	orientation       tabOrientation
 	leading, trailing float32
 	valid             bool
@@ -552,17 +554,19 @@ func (state *State) windowBarGeometry(canvas *ui.Canvas, width float32) barGeome
 		geometry.barButtons == buttons &&
 		geometry.orientation == state.tabOrientation &&
 		geometry.locked == locked &&
+		geometry.numbers == state.tabNumbers &&
 		geometry.leading == leading && geometry.trailing == trailing {
 		return *geometry
 	}
 	f := chrome.probe.Begin(canvas, state.Theme(), ui.Rect{Width: width, Height: windowBarHeight})
 	f.Column().Fill().Children(func() {
-		state.declareWindowBar(f, &chrome.probeBar, true, false, barGeometry{locked: locked}, 0)
+		state.declareWindowBar(f, &chrome.probeBar, true, false, barGeometry{locked: locked, numbers: state.tabNumbers}, 0)
 	})
 	f.End()
 	*geometry = barGeometry{
 		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, valid: true,
 		locked:      locked,
+		numbers:     state.tabNumbers,
 		orientation: state.tabOrientation,
 		area:        chrome.probeArea.Rect(), row: chrome.probeRow.Rect(), tabWidth: barTabMax,
 	}
@@ -647,6 +651,10 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 								// lock beside it. The strip uses a uniform tab pitch.
 								minimum += 18
 							}
+							if geometry.numbers {
+								// The number sits beside the name, which keeps its room.
+								minimum += tabNumberMinExtra
+							}
 							tab = f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
@@ -656,7 +664,7 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 						if index == 0 {
 							first = -scroll
 						}
-						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false)
+						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
 						bar.tabs = append(bar.tabs, entry)
 					}
 					for fileIndex, fileTab := range state.sftpTabs {
@@ -670,12 +678,18 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 							if geometry.locked {
 								minimum += 18
 							}
+							if geometry.numbers {
+								minimum += tabNumberMinExtra
+							}
 							tab := f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
 						}
 						entry := barTab{fileSession: fileTab.session.ID, id: id, closeID: closeID}
+						if state.tabNumbers {
+							entry.number = tabNumber(index + 1)
+						}
 						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
 						hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
 						foreground := pal.muted
@@ -708,6 +722,11 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, ui.HitOptions{Role: ui.RoleTab, Selected: active}).Children(func() {
 							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+							if state.tabNumbers && entry.number != "" {
+								// File tabs follow the session tabs in the number row,
+								// as they do for the number shortcuts.
+								f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+							}
 							f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 							entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
 							f.Spacer()
@@ -740,11 +759,17 @@ func (state *State) declareWindowBar(f *flex.Frame, bar *windowBar, probe, pictu
 	})
 }
 
-// declareWorkspaceTab shares tab styling and hit identities between both orientations.
-func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool) barTab {
+// declareWorkspaceTab shares tab styling and hit identities between both
+// orientations. number is the tab's place in the number row, zero for a tab no
+// number key reaches.
+func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
 	m, pal := state.messages, state.pal
 	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 	entry := barTab{workspace: workspace, id: id, closeID: closeID}
+	if state.tabNumbers {
+		// Numbering costs a string per tab, so a bar without numbers pays none.
+		entry.number = tabNumber(number)
+	}
 	active := state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() == workspace.ID
 	hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
 	foreground := pal.muted
@@ -800,6 +825,10 @@ func (state *State) declareWorkspaceTab(f *flex.Frame, workspace layoutcore.Work
 			return
 		}
 		entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+		if state.tabNumbers && entry.number != "" {
+			// The number names the name beside it, so it carries less ink.
+			f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+		}
 		titleColor := foreground
 		if entry.output != outputAlertNone {
 			titleColor.Alpha = 0

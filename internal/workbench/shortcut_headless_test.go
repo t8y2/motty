@@ -409,6 +409,7 @@ func TestHeadlessDigitShortcutSwitchesTabs(t *testing.T) {
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
+	state.setTabNumbers(true)
 	session, err := headless.Open(app.Config{
 		Title: "tabs", Width: 1400, Height: 900,
 		Paint: state.Paint, OnPointer: state.Pointer,

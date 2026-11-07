@@ -299,6 +299,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				selectedTabs = hitSettingsTabsVertical
 			}
 			page.row(messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], selectedTabs)
+			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
+			if state.tabNumbers {
+				numberKeys := state.tabNumberOptions()
+				page.row(messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, numberKeys[:], state.tabNumberModifierID())
+			}
 			page.toggleRow(messages.SettingsOutputAlerts, messages.SettingsOutputAlertsDescription, state.backgroundOutputAlerts, hitSettingsOutputAlerts)
 			if state.tabOrientation == tabsVertical {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
