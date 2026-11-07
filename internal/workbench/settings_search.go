@@ -203,6 +203,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
+	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)

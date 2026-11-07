@@ -174,6 +174,7 @@ type savedState struct {
 	Sync             *savedSync             `json:"sync,omitempty"`
 	HostView         string                 `json:"host_view,omitempty"`
 	HostOrder        string                 `json:"host_order,omitempty"`
+	HiddenHostTags   []string               `json:"hidden_host_tags,omitempty"`
 	Background       *savedBackground       `json:"background,omitempty"`
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
@@ -671,6 +672,7 @@ func (state *State) snapshot() savedState {
 	saved.Sync = state.savedSyncValue()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
+	saved.HiddenHostTags = state.hiddenHostTags
 	saved.Background = state.savedBackgroundValue()
 	if len(state.workspaceTabs) > 0 {
 		deck := state.savedWorkspaceDeck()
@@ -1013,6 +1015,7 @@ func (state *State) restoreLocal(saved savedState) {
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
 	state.hostOrder = hostOrderFromString(saved.HostOrder)
+	state.hiddenHostTags = normalizeHiddenHostTags(saved.HiddenHostTags)
 	if state.hostOrder != hostOrderManual {
 		state.hostSort.enabled = false
 		state.hostSort.grid.Cancel()

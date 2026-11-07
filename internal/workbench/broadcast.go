@@ -163,6 +163,7 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
 	case state.clickCredentialSettings(id):
+	case state.clickHostTagSettings(id):
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:

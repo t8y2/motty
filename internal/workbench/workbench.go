@@ -770,7 +770,10 @@ type State struct {
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
 	terminalWordSeparators                        string
-	terminalWordEditor                            text.Editor
+	// hiddenHostTags are the keys of the built-in tag suggestions deleted in
+	// Settings; see host_tag_settings.go.
+	hiddenHostTags     []string
+	terminalWordEditor text.Editor
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle       bool
