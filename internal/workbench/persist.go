@@ -189,6 +189,7 @@ type savedSnippet struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
+	Group   string `json:"group,omitempty"`
 }
 
 // savedSnippetKey is the shortcut of the snippet of that name. It lives apart
@@ -556,7 +557,7 @@ func (state *State) snapshot() savedState {
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for _, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run})
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group})
 		if entry.Shortcut.valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
 				Name: entry.Name, Key: string([]byte{entry.Shortcut.Key}), Modifiers: uint8(entry.Shortcut.Modifiers),

@@ -17,6 +17,8 @@ import (
 type snippet struct {
 	Name    string
 	Command string
+	// Group names the group the snippet is listed under; "" is none.
+	Group string
 	// Run presses Enter after sending, so the command runs at once.
 	Run bool
 	// Shortcut sends the snippet from the terminal; the zero chord is none. It is
@@ -24,7 +26,7 @@ type snippet struct {
 	Shortcut shortcutChord
 
 	// cells is what the page's table shows of it, made by refreshSnippets.
-	cells [3]string
+	cells [4]string
 }
 
 const (
@@ -67,11 +69,20 @@ var (
 type snippetsUI struct {
 	list []snippet
 
+	// The page's group filter: the groups there are, the list indices it shows
+	// in the order it shows them, and the filter's popup.
+	groups       []string
+	hasUngrouped bool
+	visible      []int
+	filter       snippetFilter
+	filterOpen   bool
+
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
 	editing     int
 	name        text.Editor
 	command     text.Editor
 	run         bool
+	groupPicker components.SingleSelectState
 	shortcut    shortcutChord
 	capturing   bool // the next chord pressed becomes shortcut
 	dialogError string
@@ -86,14 +97,30 @@ type snippetsUI struct {
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
 // keystrokes, so a control character in it would be a key the user never meant.
+// Surrounding space is not part of a name.
 func cleanSnippetText(value string, limit int) string {
+	return strings.TrimSpace(cleanSnippetLine(value, limit))
+}
+
+// cleanSnippetCommand is cleanSnippetText for a command, which keeps its
+// surrounding space: "cd " or "ssh " is sent to be finished by hand, and a
+// leading space keeps a command out of the shell's history. A command of nothing
+// but space is empty.
+func cleanSnippetCommand(value string, limit int) string {
+	value = cleanSnippetLine(value, limit)
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return value
+}
+
+func cleanSnippetLine(value string, limit int) string {
 	value = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return -1
 		}
 		return r
 	}, value)
-	value = strings.TrimSpace(value)
 	if len(value) > limit {
 		value = strings.ToValidUTF8(value[:limit], "")
 	}
@@ -150,6 +177,7 @@ func (state *State) openSnippetDialog(index int) {
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
 	form.run = true
+	group := ""
 	form.shortcut, form.capturing = shortcutChord{}, false
 	form.dialogError = ""
 	if index >= 0 && index < len(form.list) {
@@ -157,12 +185,17 @@ func (state *State) openSnippetDialog(index int) {
 		form.command.Insert(form.list[index].Command)
 		form.run = form.list[index].Run
 		form.shortcut = form.list[index].Shortcut
+		group = form.list[index].Group
 	}
+	state.snippetGroupPicker(group)
 	state.modal = modalSnippet
 }
 
 func (state *State) clickSnippetDialog(id ui.ID) {
 	form := &state.snippets
+	if state.clickSnippetGroup(id) {
+		return
+	}
 	switch id {
 	case hitSnippetSubmit:
 		state.submitSnippet()
@@ -170,6 +203,7 @@ func (state *State) clickSnippetDialog(id ui.ID) {
 		state.closeModal()
 	case hitSnippetRun:
 		form.run = !form.run
+		form.groupPicker.Open = false
 	case hitSnippetShortcut:
 		form.capturing = !form.capturing
 		form.dialogError = ""
@@ -208,7 +242,7 @@ func (form *snippetsUI) composingTarget() ui.ID {
 	fields := [...]struct {
 		id     ui.ID
 		editor *text.Editor
-	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}}
+	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}, {hitSnippetGroup, &form.groupPicker.Query}}
 	for _, field := range fields {
 		if marked, composing := field.editor.Composition(); composing && marked.Start != marked.End {
 			return field.id
@@ -227,21 +261,30 @@ func (form *snippetsUI) composing() bool {
 // later save. Unmark keeps the text, which is what the user already sees.
 func (form *snippetsUI) abandonOther(target ui.ID) {
 	switch target {
-	case hitSnippetName:
-		form.command.Unmark()
-	case hitSnippetCommand:
+	case hitSnippetName, hitSnippetCommand, hitSnippetGroup:
+	default:
+		return
+	}
+	if target != hitSnippetName {
 		form.name.Unmark()
+	}
+	if target != hitSnippetCommand {
+		form.command.Unmark()
+	}
+	if target != hitSnippetGroup {
+		form.groupPicker.Query.Unmark()
 	}
 }
 
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
-	if form.composing() {
+	if form.composing() || !state.commitSnippetGroupQuery() {
 		return
 	}
 	entry := snippet{
+		Group:    cleanSnippetGroup(form.groupPicker.Value()),
 		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
-		Command:  cleanSnippetText(form.command.String(), maxSnippetCommand),
+		Command:  cleanSnippetCommand(form.command.String(), maxSnippetCommand),
 		Run:      form.run,
 		Shortcut: form.shortcut,
 	}
@@ -263,6 +306,7 @@ func (state *State) submitSnippet() {
 		form.list = append(form.list, entry)
 		form.selected = len(form.list) - 1
 	}
+	form.showSnippet(form.selected)
 	state.refreshSnippets()
 	state.closeModal()
 	state.save()
@@ -370,7 +414,7 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(204, form.dialogError), // two fields, a box and the shortcut
+		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(272, form.dialogError), // three fields, a box and the shortcut
 	})
 	layout := dialog.Begin(title, "")
 	entries := [...]struct {
@@ -383,12 +427,13 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
 	}
 	var fields [len(entries)]flex.Box
-	var run, shortcutButtons flex.Box
+	var group, run, shortcutButtons flex.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		for index := range fields {
 			fields[index] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		}
+		group = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		run = state.declareDialogCheckbox(f, m.SnippetRun, 7, 0)
 		f.Row().Height(32).Items(flex.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			f.Text(m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
@@ -407,6 +452,7 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",
 		})
 	}
+	state.paintSnippetGroupField(canvas, group.Rect())
 	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, run)
 	label := m.SnippetShortcutNone
 	switch {

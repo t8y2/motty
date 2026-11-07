@@ -19,10 +19,14 @@ func (state *State) refreshSnippets() {
 		if entry.Shortcut.valid() {
 			shortcut = entry.Shortcut.label()
 		}
-		entry.cells = [3]string{entry.Name, shortcut, command}
+		entry.cells = [4]string{entry.Name, entry.Group, shortcut, command}
 	}
 	form.selected = max(0, min(form.selected, len(form.list)-1))
+	form.refreshSnippetGroups()
 	form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFmt, len(form.list))
+	if len(form.visible) != len(form.list) {
+		form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFilteredFmt, len(form.visible), len(form.list))
+	}
 }
 
 // enterKeyLabel is the keycap of a snippet that presses Enter after it is sent.
@@ -31,6 +35,9 @@ const enterKeyLabel = "↵"
 func (state *State) clickSnippetsPage(id ui.ID) bool {
 	if state.activeSection != sectionSnippets || state.modal != modalNone {
 		return false
+	}
+	if state.clickSnippetFilter(id) {
+		return true
 	}
 	switch {
 	case id == hitSnippetAdd:
@@ -68,7 +75,7 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
-	var content, emptyIcon, emptyAdd, remove, edit, send, add flex.Box
+	var content, filter, emptyIcon, emptyAdd, remove, edit, send, add flex.Box
 	f := form.layout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
@@ -84,6 +91,11 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		if len(form.list) == 0 {
 			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
 		} else {
+			if len(form.groups) > 0 {
+				f.Row().Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
+					filter = f.Slot().Size(220, toolbarHeight)
+				})
+			}
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		f.Divider().Background(pal.line)
@@ -111,23 +123,26 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	theme := state.Theme()
 	keyHeight := theme.Metrics.FontSizeS + 9
 	keyWidth := max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, ui.WeightMedium)+8, keyHeight)
-	columns := [...]components.TableColumn{{Width: 220}, {Width: 170}, {Width: 0, Inset: keyWidth + 6}}
-	headings := [...]string{m.SnippetColumnName, m.SnippetColumnShortcut, m.SnippetColumnCommand}
+	columns := [...]components.TableColumn{{Width: 200}, {Width: 140}, {Width: 150}, {Width: 0, Inset: keyWidth + 6}}
+	headings := [...]string{m.SnippetColumnName, m.SnippetColumnGroup, m.SnippetColumnShortcut, m.SnippetColumnCommand}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
 	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
 	table.Header(headings[:])
-	for index := range form.list {
+	for _, index := range form.visible {
 		rowID := hitSnippetRowList.At(index)
-		var cellRects [3]ui.Rect
+		var cellRects [4]ui.Rect
 		row := table.RowLayout(rowID, form.list[index].cells[:], components.TableRowState{Selected: index == form.selected}, cellRects[:0])
 		if clicked, ok := canvas.ClickedIn(hitSnippetRowList); ok && clicked == index && state.modal == modalNone {
 			form.selected = index
 		}
 		if form.list[index].Run && len(row.Cells) == len(cellRects) {
-			command := row.Cells[2]
+			command := row.Cells[3]
 			components.Kbd(canvas, theme, ui.Rect{X: command.X + theme.Metrics.GapItem, Y: command.Y + (command.Height-keyHeight)/2, Height: keyHeight}, enterKeyLabel)
 		}
 		state.sendSnippetOn(canvas, rowID, index)
 		state.openSnippetMenuOn(canvas, rowID, index)
+	}
+	if len(form.groups) > 0 {
+		state.paintSnippetFilter(canvas, filter.Rect())
 	}
 }

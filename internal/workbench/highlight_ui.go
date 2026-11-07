@@ -411,7 +411,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
 	for _, entry := range saved.Snippets {
-		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetText(entry.Command, maxSnippetCommand), Run: entry.Run}
+		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group)}
 		if clean.Name == "" || clean.Command == "" || len(state.snippets.list) == maxSnippets {
 			continue
 		}

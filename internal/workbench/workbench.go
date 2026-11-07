@@ -1355,6 +1355,8 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.snippets.name
 		case hitSnippetCommand:
 			return &state.snippets.command
+		case hitSnippetGroup:
+			return &state.snippets.groupPicker.Query
 		}
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
@@ -2325,6 +2327,9 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if state.modal == modalSnippet && event.Kind == ui.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
+	if result, handled := state.snippetGroupPointer(event); handled {
+		return result
+	}
 	if state.modal == modalSnippet && event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) && event.Target == hitSnippetSubmit {
 		if target := state.snippets.composingTarget(); !target.IsZero() {
 			// Keep the composition and its field focused; swallowing this press
@@ -2548,6 +2553,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
+	if result, handled := state.snippetGroupKey(event); handled {
+		return result
+	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
 		return result
 	}
@@ -2730,7 +2738,7 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		state.submitHighlightRule()
 		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand) && !event.Repeat {
+	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetCommand || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()

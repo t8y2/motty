@@ -60,6 +60,10 @@ type ToolsMessages struct {
 	SnippetCountFmt           string
 	SnippetColumnName         string
 	SnippetColumnShortcut     string
+	SnippetColumnGroup        string
+	SnippetFilterAll          string
+	SnippetFilterNone         string
+	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
