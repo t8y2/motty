@@ -33,7 +33,35 @@ var shellFamilies = []string{"zsh", "bash", "fish", "nu", "elvish", "xonsh", "tc
 // the standard installation prefixes and PATH, keeping one entry per family.
 func InstalledWindowsShells() []Choice {
 	paths := shellPathsByFamily(systemShellFile, shellPrefixes)
-	return discoverShells(candidatesFrom(paths), defaultShell(), exec.LookPath)
+	return collapseCShellAlias(discoverShells(candidatesFrom(paths), defaultShell(), exec.LookPath))
+}
+
+// collapseCShellAlias keeps one entry when csh and tcsh are two names for the
+// same executable, as on macOS. They run the same C shell there, so offering
+// both only repeats the same program in the picker. sh is not merged with the
+// shell it may link to: argv[0] selects POSIX mode, which is a distinct shell.
+func collapseCShellAlias(choices []Choice) []Choice {
+	csh, tcsh := -1, -1
+	for index, choice := range choices {
+		switch choice.Name {
+		case "csh":
+			csh = index
+		case "tcsh":
+			tcsh = index
+		}
+	}
+	if csh < 0 || tcsh < 0 {
+		return choices
+	}
+	cshInfo, err := os.Stat(choices[csh].Path)
+	if err != nil {
+		return choices
+	}
+	tcshInfo, err := os.Stat(choices[tcsh].Path)
+	if err != nil || !os.SameFile(cshInfo, tcshInfo) {
+		return choices
+	}
+	return append(choices[:csh], choices[csh+1:]...)
 }
 
 // shellPathsByFamily gathers the places each shell family may live, in the

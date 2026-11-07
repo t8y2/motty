@@ -26,10 +26,11 @@ Runs your login shell on a pseudo-terminal of this machine: a pty on macOS and
 Linux, ConPTY on Windows.
 
 On Windows, PowerShell, CMD, Git Bash and every installed WSL distribution can
-be used side by side, one per tab. The new-tab list (the `+` in the title bar) has a
-"Local Terminal · name" row for each shell, which typing a name narrows down;
-right-clicking Local Terminal in the sidebar or the title bar, or the arrow on
-that row of the new-tab page, picks a shell too. **Settings → Terminal →
+be used side by side, one per tab. The new-tab list (the `+` in the title bar) has
+one "Local Terminal" row; its arrow expands the complete shell list under the
+same search field, which keeps filtering it. A right-click on Local Terminal in
+the sidebar, title bar or new-tab page opens the same list. The list starts
+collapsed, so saved hosts are not pushed below every shell. **Settings → Terminal →
 Default local shell** only decides what a plain click on Local Terminal starts.
 A tab keeps its own shell through reconnects, duplicates and restarts. A WSL
 distribution opens the terminal inside it, with the file panel following the

@@ -31,6 +31,10 @@ type commandPaletteEntry struct {
 	detail      string // shown after the label, muted (a host's address)
 	search      string
 	target      ui.ID
+	// searchOnly rows answer the search without appearing in the unfiltered
+	// list. The shells behind the Local Terminal row use this: one line until
+	// the user expands it, but typing "bash" still finds the shell.
+	searchOnly bool
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
@@ -59,13 +63,16 @@ type commandPalette struct {
 	// the palette of commands.
 	connect    bool
 	workspaces bool
+	// localShells expands the Local Terminal row into the shells this computer
+	// can run, inside the same searchable new-tab list.
+	localShells bool
 	// snippets makes the list a picker of the saved snippets to send to the
 	// active terminal, opened from the terminal toolbar.
 	snippets bool
 }
 
 func (state *State) openCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces = false, false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -75,7 +82,7 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces = false, false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -174,6 +181,15 @@ func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
 	})
 }
 
+// addCandidate adds a row of the new-tab picker, keeping whether a search is
+// the only way it reaches the list.
+func (palette *commandPalette) addCandidate(item connectPickerCandidate) {
+	palette.entries = append(palette.entries, commandPaletteEntry{
+		label: item.label, detail: item.detail, search: strings.ToLower(item.label + " " + item.detail),
+		target: item.target, searchOnly: item.searchOnly,
+	})
+}
+
 // addHeader names a group in the new-tab picker: a row to read, not to choose.
 func (palette *commandPalette) addHeader(label, detail string) {
 	palette.entries = append(palette.entries, commandPaletteEntry{label: label, detail: detail, header: true})
@@ -199,7 +215,8 @@ func (state *State) refreshCommandPalette() {
 	palette.filtered = true
 	palette.visible = palette.visible[:0]
 	for index := range palette.entries {
-		if palette.entries[index].header {
+		entry := &palette.entries[index]
+		if entry.header {
 			// Group names only head the unfiltered list: a search shows what
 			// matches, not the folders the matches came from.
 			if query == "" {
@@ -207,8 +224,11 @@ func (state *State) refreshCommandPalette() {
 			}
 			continue
 		}
+		if entry.searchOnly && query == "" && !palette.localShells {
+			continue
+		}
 		if query != "" {
-			search := palette.entries[index].search
+			search := entry.search
 			if palette.connect {
 				if !matchesSearchWords(search, keywords) {
 					continue
@@ -286,6 +306,11 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	case hitCommandPaletteSearch:
 		return
 	default:
+		if id == hitConnectPickShellPicker {
+			state.commandPalette.localShells = !state.commandPalette.localShells
+			state.rebuildCommandPalette()
+			return
+		}
 		// The pencil of a host row opens the host for editing instead of
 		// connecting: the palette closes and the edit dialog takes over.
 		if id.Scope() == hitConnectPickEdit {
@@ -409,6 +434,31 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
 	row := palette.selected
+	if inItems && palette.connect && !event.Repeat {
+		toggleShells := func(expand bool) (ui.EventResult, bool) {
+			if palette.localShells == expand {
+				return ui.EventResult{}, false
+			}
+			palette.localShells = expand
+			state.rebuildCommandPalette()
+			first := palette.choiceAt(0, 1)
+			if first < 0 {
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+		}
+		switch event.Key {
+		case ui.KeyRight:
+			if row >= 0 && row < len(palette.visible) {
+				entry := palette.entries[palette.visible[row]]
+				if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+					return toggleShells(true)
+				}
+			}
+		case ui.KeyLeft:
+			return toggleShells(false)
+		}
+	}
 	move := func(selected, direction int) (ui.EventResult, bool) {
 		if len(palette.visible) == 0 {
 			return ui.EventResult{Handled: true}, true
