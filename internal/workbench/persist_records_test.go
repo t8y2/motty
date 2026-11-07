@@ -26,7 +26,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"terminal_toolbar_position": true,
 		"terminal_toolbar_size":     true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
-		"host_view": true, "background": true, "snippet_shortcuts": true,
+		// The generation of default chords this computer's table was reconciled
+		// against: which defaults a build ships is not another device's business.
+		"shortcut_defaults_generation": true,
+		"host_view":                    true, "background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
 		"tab_numbers":            true,

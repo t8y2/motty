@@ -152,8 +152,9 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords[shortcutTabNumber] = shortcutChord{Modifiers: primary, Key: '1'}
 	shortcuts.chords[shortcutPanePrevious] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'j'}
 	shortcuts.chords[shortcutPaneNext] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'k'}
-	shortcuts.chords[shortcutPaneSplitHorizontal] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'h'}
-	shortcuts.chords[shortcutPaneSplitVertical] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'v'}
+	splitHorizontal, splitVertical := defaultPaneSplitChords()
+	shortcuts.chords[shortcutPaneSplitHorizontal] = splitHorizontal
+	shortcuts.chords[shortcutPaneSplitVertical] = splitVertical
 	shortcuts.chords[shortcutPaneClose] = shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'w'}
 	shortcuts.chords[shortcutFilesPath] = shortcutChord{Modifiers: primary, Key: 'l'}
 	shortcuts.chords[shortcutSFTP] = shortcutChord{Modifiers: primary | ui.ModifierShift, Key: 's'}
@@ -166,6 +167,46 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords[shortcutCompletion] = shortcutChord{Modifiers: primary | ui.ModifierShift, Key: 'j'}
 	shortcuts.refreshLabels()
 	return shortcuts
+}
+
+// shortcutDefaultsGeneration is the generation of default chords this build
+// ships. Each device records the generation its table was last reconciled
+// against, so a default a later build changed is replaced once rather than on
+// every start.
+const shortcutDefaultsGeneration = 1
+
+// legacyPaneSplitChords are the split defaults builds before generation 1
+// shipped. On macOS Command+Alt+H is the menu bar's Hide Others, which an
+// application's key equivalents never reach, so the chord could not work.
+func legacyPaneSplitChords() (horizontal, vertical shortcutChord) {
+	primary := defaultShortcutModifier()
+	return shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'h'},
+		shortcutChord{Modifiers: primary | ui.ModifierAlt, Key: 'v'}
+}
+
+// migrateChangedDefaults replaces the default chords a later generation changed
+// with their new defaults, where the table still holds the old one. A chord the
+// user chose differently is theirs and stays, and a chord taken keeps its owner:
+// taken reports the chords something other than a built-in action holds.
+func (shortcuts *shortcutMap) migrateChangedDefaults(taken func(shortcutChord) bool) {
+	previousHorizontal, previousVertical := legacyPaneSplitChords()
+	horizontal, vertical := defaultPaneSplitChords()
+	for _, change := range [...]struct {
+		action shortcutAction
+		was    shortcutChord
+		now    shortcutChord
+	}{
+		{shortcutPaneSplitHorizontal, previousHorizontal, horizontal},
+		{shortcutPaneSplitVertical, previousVertical, vertical},
+	} {
+		if shortcuts.chords[change.action] != change.was {
+			continue
+		}
+		if taken != nil && taken(change.now) {
+			continue
+		}
+		shortcuts.bind(change.action, change.now)
+	}
 }
 
 func (shortcuts *shortcutMap) refreshLabels() {

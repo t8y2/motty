@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -398,6 +399,105 @@ func TestClipboardInsertChordsAliasPasteAndCopy(t *testing.T) {
 	}
 	if got := shortcuts.actionFor(shiftInsert); got != shortcutClearScreen {
 		t.Fatalf("explicit binding lost to the alias: %v", got)
+	}
+}
+
+// The split defaults must be chords no other action holds, or one of the two
+// would be shadowed by whichever the table happens to reach first. They must
+// also have left the macOS menu bar's chord: Command+Alt+H is Hide Others, which
+// a key equivalent never reaches the application for.
+func TestSplitDefaultsAreUnclaimedAndOffTheMenuBarChord(t *testing.T) {
+	shortcuts := defaultShortcuts()
+	for _, action := range []shortcutAction{shortcutPaneSplitHorizontal, shortcutPaneSplitVertical} {
+		chord := shortcuts.chords[action]
+		if !chord.valid() {
+			t.Fatalf("%v has no default", action)
+		}
+		for other := shortcutAction(1); other < shortcutActionCount; other++ {
+			if other != action && shortcuts.chords[other] == chord {
+				t.Fatalf("%v and %v share %s", action, other, chord.label())
+			}
+		}
+	}
+	legacyHorizontal, _ := legacyPaneSplitChords()
+	if shortcuts.chords[shortcutPaneSplitHorizontal] == legacyHorizontal {
+		t.Fatalf("the split default is still %s", legacyHorizontal.label())
+	}
+}
+
+// Migration moves the bindings still holding the split default an earlier build
+// shipped, and only those: a chord the user chose, and a chord a snippet sends,
+// keep their owner.
+func TestOnlyUntouchedSplitDefaultsMigrate(t *testing.T) {
+	legacyHorizontal, legacyVertical := legacyPaneSplitChords()
+	horizontal, vertical := defaultPaneSplitChords()
+
+	shortcuts := defaultShortcuts()
+	if conflict, ok := shortcuts.bind(shortcutPaneSplitHorizontal, legacyHorizontal); !ok {
+		t.Fatalf("saving the old split default was refused by %v", conflict)
+	}
+	if conflict, ok := shortcuts.bind(shortcutPaneSplitVertical, legacyVertical); !ok {
+		t.Fatalf("saving the old split default was refused by %v", conflict)
+	}
+	shortcuts.migrateChangedDefaults(nil)
+	if got := shortcuts.chords[shortcutPaneSplitHorizontal]; got != horizontal {
+		t.Fatalf("split right = %s, want the new default %s", got.label(), horizontal.label())
+	}
+	if got := shortcuts.chords[shortcutPaneSplitVertical]; got != vertical {
+		t.Fatalf("split down = %s, want the new default %s", got.label(), vertical.label())
+	}
+
+	// A chord the user picked is not a default gone stale.
+	custom := shortcutChord{Modifiers: defaultShortcutModifier() | ui.ModifierShift, Key: 'x'}
+	shortcuts = defaultShortcuts()
+	if conflict, ok := shortcuts.bind(shortcutPaneSplitHorizontal, custom); !ok {
+		t.Fatalf("binding a custom split chord was refused by %v", conflict)
+	}
+	shortcuts.migrateChangedDefaults(nil)
+	if got := shortcuts.chords[shortcutPaneSplitHorizontal]; got != custom {
+		t.Fatalf("a custom split chord was migrated away to %s", got.label())
+	}
+
+	// A snippet that sends the new chord keeps it; the split waits for the user.
+	shortcuts = defaultShortcuts()
+	if conflict, ok := shortcuts.bind(shortcutPaneSplitVertical, legacyVertical); !ok {
+		t.Fatalf("saving the old split default was refused by %v", conflict)
+	}
+	shortcuts.migrateChangedDefaults(func(chord shortcutChord) bool { return chord == vertical })
+	if got := shortcuts.chords[shortcutPaneSplitVertical]; got != legacyVertical {
+		t.Fatalf("split down took a chord a snippet sends: %s", got.label())
+	}
+}
+
+// A start reconciles a stale table once and records that it did, so a chord the
+// user later sets back to the old default stays where they put it.
+func TestSplitDefaultsMigrateOncePerDevice(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
+	legacyHorizontal, _ := legacyPaneSplitChords()
+	primary := defaultShortcutModifier()
+	saveReleaseState(t, options.StatePath, savedState{
+		HostCatalogVersion: hostCatalogSchemaVersion,
+		ShortcutVersion:    shortcutSchemaVersion,
+		Shortcuts: []savedShortcut{{
+			Action: shortcutPaneSplitHorizontal.String(), Key: string([]byte{legacyHorizontal.Key}), Modifiers: uint8(primary | ui.ModifierAlt),
+		}},
+	})
+
+	state := newTestState(t, options)
+	horizontal, _ := defaultPaneSplitChords()
+	if got := state.shortcuts.chords[shortcutPaneSplitHorizontal]; got != horizontal {
+		t.Fatalf("a stale split default survived the start: %s", got.label())
+	}
+
+	// The user puts it back. Nothing may move it again.
+	if conflict, ok := state.shortcuts.bind(shortcutPaneSplitHorizontal, legacyHorizontal); !ok {
+		t.Fatalf("binding the old default back was refused by %v", conflict)
+	}
+	state.save()
+	restarted := newTestState(t, options)
+	if got := restarted.shortcuts.chords[shortcutPaneSplitHorizontal]; got != legacyHorizontal {
+		t.Fatalf("a chord the user set was migrated again to %s", got.label())
 	}
 }
 

@@ -141,14 +141,19 @@ type savedState struct {
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
 	LocalProxyPort          int                   `json:"local_proxy_port,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
-	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
-	Workspace               string                `json:"workspace,omitempty"`
-	ActiveSession           int                   `json:"active_session,omitempty"`
-	HostCatalogVersion      int                   `json:"host_catalog_version"`
-	Hosts                   []savedHost           `json:"hosts"`
-	HostGroups              []savedHostGroup      `json:"host_groups,omitempty"`
-	WorkspaceTemplates      []WorkspaceTemplate   `json:"workspace_templates,omitempty"`
-	IdentityFiles           []string              `json:"identity_files,omitempty"`
+	// ShortcutDefaultsGeneration is the generation of default chords this
+	// device last reconciled its table against. A build that changes a default
+	// migrates the chords still holding the old one once, and records that it
+	// did, so a chord the user later sets back to the old default stays put.
+	ShortcutDefaultsGeneration int                 `json:"shortcut_defaults_generation,omitempty"`
+	Shortcuts                  []savedShortcut     `json:"shortcuts,omitempty"`
+	Workspace                  string              `json:"workspace,omitempty"`
+	ActiveSession              int                 `json:"active_session,omitempty"`
+	HostCatalogVersion         int                 `json:"host_catalog_version"`
+	Hosts                      []savedHost         `json:"hosts"`
+	HostGroups                 []savedHostGroup    `json:"host_groups,omitempty"`
+	WorkspaceTemplates         []WorkspaceTemplate `json:"workspace_templates,omitempty"`
+	IdentityFiles              []string            `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. It belongs to this computer, not to the hosts that sync, so a host
 	// that arrives from another device starts out closed to agents.
@@ -526,6 +531,7 @@ func (state *State) snapshot() savedState {
 		CloseAction:                state.closeAction.String(),
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
+		ShortcutDefaultsGeneration: shortcutDefaultsGeneration,
 		Shortcuts:                  make([]savedShortcut, 0, shortcutActionCount-1),
 		Workspace:                  state.workspaceName(),
 		HostCatalogVersion:         hostCatalogSchemaVersion,
@@ -820,15 +826,28 @@ func (state *State) configurationSaved(changes []savedFieldChange, shared, flush
 // sessions and the layout it left open.
 func (state *State) restore(saved savedState) {
 	state.restoreSettings(saved)
+	// A build that changed a default chord migrates the bindings still holding
+	// the old one, once. It runs here rather than in restoreSettings because only
+	// a start writes back: another window's change, and a reload, must leave the
+	// table as it is. The chords a snippet already holds keep their owner, and a
+	// table with nothing saved has no stale default to migrate — its defaults are
+	// this build's already, so a first run writes nothing.
+	staleDefaults := saved.ShortcutDefaultsGeneration < shortcutDefaultsGeneration && len(saved.Shortcuts) > 0
+	if staleDefaults {
+		state.shortcuts.migrateChangedDefaults(func(chord shortcutChord) bool {
+			return state.snippetNamed(chord) != ""
+		})
+	}
 	state.stopAppearanceWatch = state.options.WatchSystemAppearance(state.systemAppearanceChanged)
 	sourceSessions := state.restoreSessions(saved.Sessions, saved.ActiveSession)
 	state.restoreWorkspaceDeck(saved.Deck, sourceSessions)
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
-	if state.mergedHosts {
-		// What was folded into another host is still in the store: record the
-		// fold so the next start, and every other device, need not do it again.
+	if state.mergedHosts || staleDefaults {
+		// What was folded into another host is still in the store, and so is the
+		// generation this table was reconciled against: record both so the next
+		// start, and every other device, need not do it again.
 		state.save()
 	}
 }
