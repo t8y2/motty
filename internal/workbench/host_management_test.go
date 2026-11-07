@@ -21,7 +21,7 @@ func TestSelectedHostsOpenPreselectedTemporaryWorkspace(t *testing.T) {
 	}
 	state.Click(hitConnectSelectedHosts)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftTemporary ||
-		!state.workspaceDraft.selected[state.hosts[0].CatalogID] || !state.workspaceDraft.selected[state.hosts[1].CatalogID] || state.workspaceDraft.columns != 2 {
+		!state.workspaceDraft.selected[state.hosts[0].CatalogID] || !state.workspaceDraft.selected[state.hosts[1].CatalogID] || !isGrid(state.workspaceDraft.layout, 2) {
 		t.Fatalf("draft = %+v", state.workspaceDraft)
 	}
 	state.Click(hitWorkspaceDraftSubmit)

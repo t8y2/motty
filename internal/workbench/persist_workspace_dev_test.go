@@ -389,12 +389,12 @@ func TestDevelopmentWorkspaceLayoutsStayWithTheirOwnDeck(t *testing.T) {
 	options := freshOptions(t)
 	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
 	release := releaseWorkspaceFixture()
-	release.WorkspaceLayouts = []savedWorkspaceLayout{{ID: 1, Columns: 1}}
+	release.WorkspaceLayouts = []savedWorkspaceLayout{{ID: 1, Layout: layoutcore.GridSpec(1)}}
 	saveReleaseState(t, options.StatePath, release)
 	development := savedWorkspace{
 		Workspace: "terminal", ActiveSession: 1, Deck: workspaceDeck("Dev Session", 1),
 		Sessions:         []savedSession{{Label: "Dev Session", Address: "dev.example.com", User: "me", Port: 22}},
-		WorkspaceLayouts: []savedWorkspaceLayout{{ID: 1, Columns: 1, Temporary: true}},
+		WorkspaceLayouts: []savedWorkspaceLayout{{ID: 1, Layout: layoutcore.GridSpec(1), Temporary: true}},
 	}
 	raw, err := json.Marshal(development)
 	if err != nil {
@@ -402,11 +402,11 @@ func TestDevelopmentWorkspaceLayoutsStayWithTheirOwnDeck(t *testing.T) {
 	}
 	saveDevelopmentWorkspace(t, options.StatePath, string(raw))
 	state := newTestState(t, options)
-	if state.temporaryWorkspaceColumns[1] != 1 {
+	if !isGrid(state.temporaryWorkspaceLayouts[1], 1) {
 		t.Fatal("development restored the release workspace's identity")
 	}
 	state.Click(hitWorkspaceHeaderLayout)
-	state.Click(hitWorkspaceHeaderColumnsList.At(2))
+	state.Click(hitWorkspaceHeaderPresets.At(1))
 	if err := state.reloadShared(); err != nil {
 		t.Fatal(err)
 	}

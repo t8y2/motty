@@ -42,13 +42,25 @@ func (state *State) Panes(dst []Pane) []Pane {
 	if layout == nil || layout.Root() == 0 {
 		return dst
 	}
-	return state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	start := len(dst)
+	dst = state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	if state.workspaceTabbed(workspaceID) {
+		// One pane shows at a time, filling the area; the rest keep their place
+		// in reading order with nothing to draw.
+		for index := start; index < len(dst); index++ {
+			dst[index].Bounds = FractionBounds{}
+			if dst[index].Active {
+				dst[index].Bounds = FractionBounds{Width: 1, Height: 1}
+			}
+		}
+	}
+	return dst
 }
 
 // PaneSplits appends active-workspace divider targets in deterministic order.
 func (state *State) PaneSplits(dst []PaneSplit) []PaneSplit {
-	_, layout := state.activeWorkspaceLayout()
-	if layout == nil || layout.Root() == 0 {
+	workspaceID, layout := state.activeWorkspaceLayout()
+	if layout == nil || layout.Root() == 0 || state.workspaceTabbed(workspaceID) {
 		return dst
 	}
 	return state.appendWorkspaceSplits(dst, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})

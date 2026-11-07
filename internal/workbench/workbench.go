@@ -507,49 +507,51 @@ type State struct {
 	// windowID is which window of this run this is. Its tabs, the deck they fill,
 	// where it sits and what it shows are filed under that number, so no other
 	// window's save can replace them.
-	windowID           int
-	stateNotice        stateNotice
-	developmentImport  developmentImport
-	stateFileOutcome   string // how the saved state was read at start, for diagnostics
-	sessions           []Session
-	tabOptions         []components.TabOption
-	workspaceTabs      []layoutcore.WorkspaceInfo
-	tabStrip           tabStrip
-	tabOrientation     tabOrientation
-	tabNumbers         bool // each tab shows the number its shortcut key names
-	verticalTabs       verticalTabs
-	tabMenu            tabMenu
-	hostMenu           hostMenu
-	localShellPicker   localShellPicker
-	snippetMenu        snippetMenu
-	sftpMenu           sftpMenu
-	sftpHeaderMenu     sftpHeaderMenuRequest
-	fileProperties     sftpFileProperties
-	popups             popupMenus
-	selectedHostID     uint32
-	hostRevealID       uint32
-	activeSessionID    uint32
-	nextSessionID      uint32
-	nextHostID         uint32
-	nextIdentityID     uint32
-	nextForwardID      uint32
-	nextForwardStartID uint64
-	nextProxyID        uint32
-	forwards           []forwardRecord
-	selectedIdentityID uint32
-	selectedForwardID  uint32
-	selectedProxyID    uint32
-	activeSection      uint8
-	hostFilterOn       bool   // only the group named hostFilter is listed
-	hostFilter         string // a group name; empty is the unnamed bucket
-	hostFilterMenu     bool   // the chips that did not fit, as a menu
-	hostFilterHidden   int    // the first of hostChips whose chip is in that menu
-	hostChips          []int  // the groups that get a chip, as indexes of hostGroups
-	chipMenu           hostChipMenu
-	filterMoreButton   ui.Rect
-	hostTotalDigits    string
-	groupMenu          groupMenuAnchor // where the Move group picker opens
-	hostSelectionText  string
+	windowID          int
+	stateNotice       stateNotice
+	developmentImport developmentImport
+	stateFileOutcome  string // how the saved state was read at start, for diagnostics
+	sessions          []Session
+	tabOptions        []components.TabOption
+	workspaceTabs     []layoutcore.WorkspaceInfo
+	// workspacePaneTabLabels is the tab strip's labels, reused every frame.
+	workspacePaneTabLabels []string
+	tabStrip               tabStrip
+	tabOrientation         tabOrientation
+	tabNumbers             bool // each tab shows the number its shortcut key names
+	verticalTabs           verticalTabs
+	tabMenu                tabMenu
+	hostMenu               hostMenu
+	localShellPicker       localShellPicker
+	snippetMenu            snippetMenu
+	sftpMenu               sftpMenu
+	sftpHeaderMenu         sftpHeaderMenuRequest
+	fileProperties         sftpFileProperties
+	popups                 popupMenus
+	selectedHostID         uint32
+	hostRevealID           uint32
+	activeSessionID        uint32
+	nextSessionID          uint32
+	nextHostID             uint32
+	nextIdentityID         uint32
+	nextForwardID          uint32
+	nextForwardStartID     uint64
+	nextProxyID            uint32
+	forwards               []forwardRecord
+	selectedIdentityID     uint32
+	selectedForwardID      uint32
+	selectedProxyID        uint32
+	activeSection          uint8
+	hostFilterOn           bool   // only the group named hostFilter is listed
+	hostFilter             string // a group name; empty is the unnamed bucket
+	hostFilterMenu         bool   // the chips that did not fit, as a menu
+	hostFilterHidden       int    // the first of hostChips whose chip is in that menu
+	hostChips              []int  // the groups that get a chip, as indexes of hostGroups
+	chipMenu               hostChipMenu
+	filterMoreButton       ui.Rect
+	hostTotalDigits        string
+	groupMenu              groupMenuAnchor // where the Move group picker opens
+	hostSelectionText      string
 	// inputGapNote is the last terminal input gap reported to the log, so a
 	// paint that keeps asking for a surface that cannot exist logs it once.
 	inputGapNote       string
@@ -623,12 +625,12 @@ type State struct {
 	workspaceCardRegions          []workspaceCardRegion
 	workspaceCardDrag             workspaceCardDrag
 	workspaceHeaderPanes          [layoutcore.MaxPanes]layoutcore.Pane
-	// temporaryWorkspaceColumns marks workspaces opened from the temporary
+	// temporaryWorkspaceLayouts marks workspaces opened from the temporary
 	// selector and keeps the column count needed to save their current shape.
-	temporaryWorkspaceColumns map[layoutcore.WorkspaceID]uint8
-	// managedWorkspaceColumns marks workspaces launched from the workspace
+	temporaryWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
+	// managedWorkspaceLayouts marks workspaces launched from the workspace
 	// feature and keeps their current grid column count for the in-app header.
-	managedWorkspaceColumns map[layoutcore.WorkspaceID]uint8
+	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
 	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout flex.View // the Port Forwarding and Proxies pages and their dialogs
@@ -1071,8 +1073,8 @@ func New(options Options) *State {
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).
 	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.temporaryWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)
-	state.managedWorkspaceColumns = make(map[layoutcore.WorkspaceID]uint8)
+	state.temporaryWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
+	state.managedWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
 	// An icon-only button names itself to the keyboard as well as the pointer.
 	state.tooltip.ShowOnFocus()
 	state.setAppearance(appearanceDark)
@@ -1899,8 +1901,8 @@ func (state *State) closeSession(id uint32) {
 		// The last pane of a tab takes the tab with it.
 		if len(state.deck.Panes(workspaceID, nil)) == 0 {
 			_, _ = state.deck.RemoveWorkspace(workspaceID, nil)
-			delete(state.temporaryWorkspaceColumns, workspaceID)
-			delete(state.managedWorkspaceColumns, workspaceID)
+			delete(state.temporaryWorkspaceLayouts, workspaceID)
+			delete(state.managedWorkspaceLayouts, workspaceID)
 		}
 	}
 	// Delete rather than truncating an append: the vacated slot must not keep
@@ -1986,8 +1988,8 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 	if err != nil {
 		return
 	}
-	delete(state.temporaryWorkspaceColumns, id)
-	delete(state.managedWorkspaceColumns, id)
+	delete(state.temporaryWorkspaceLayouts, id)
+	delete(state.managedWorkspaceLayouts, id)
 	state.clearWorkspaceBroadcast(id)
 	for _, sessionID := range sessions {
 		state.closeSession(uint32(sessionID))

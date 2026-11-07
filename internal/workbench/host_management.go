@@ -138,7 +138,7 @@ func (state *State) openSelectedHostsWorkspace() {
 			state.workspaceDraft.selected[host.CatalogID] = true
 		}
 	}
-	state.workspaceDraft.columns = DefaultWorkspaceColumns(state.workspaceDraftSelectionCount())
+	state.workspaceDraft.layout = DefaultWorkspaceLayout(state.workspaceDraftSelectionCount())
 }
 
 func (state *State) selectedHostsWorkspaceEligible() bool {

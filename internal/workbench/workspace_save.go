@@ -24,13 +24,13 @@ var (
 // into a reusable template. The workspace remains open after saving.
 type workspaceSave struct {
 	workspace layoutcore.WorkspaceID
-	columns   uint8
+	layout    layoutcore.LayoutSpec
 	name      text.Editor
 	error     string
 }
 
 func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
-	columns, temporary := state.temporaryWorkspaceColumns[workspace]
+	layout, temporary := state.temporaryWorkspaceLayouts[workspace]
 	if !temporary {
 		return
 	}
@@ -38,7 +38,7 @@ func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
 	if !ok {
 		return
 	}
-	state.workspaceSave = workspaceSave{workspace: workspace, columns: columns}
+	state.workspaceSave = workspaceSave{workspace: workspace, layout: layout}
 	state.workspaceSave.name.Insert(state.tabLabel(state.workspaceTabs[index]))
 	state.workspaceSave.name.SetSelection(text.Range{End: state.workspaceSave.name.RuneCount()})
 	state.modal = modalWorkspaceSave
@@ -62,7 +62,7 @@ func (state *State) submitWorkspaceSave() {
 		save.error = state.workspaceSaveCompositionError(err)
 		return
 	}
-	template, err := NewWorkspaceTemplate(strings.TrimSpace(save.name.String()), hostIDs, save.columns)
+	template, err := NewWorkspaceTemplate(strings.TrimSpace(save.name.String()), hostIDs, save.layout)
 	if err != nil {
 		save.error = state.workspaceSaveTemplateError(err)
 		return
@@ -73,7 +73,7 @@ func (state *State) submitWorkspaceSave() {
 	state.templates = append(state.templates, template)
 	state.selectedWorkspaceTemplateID = template.ID
 	state.workspaceLibraryExpanded = true
-	delete(state.temporaryWorkspaceColumns, save.workspace)
+	delete(state.temporaryWorkspaceLayouts, save.workspace)
 	previousBroadcast := state.broadcast
 	previousStatus := state.status
 	state.clearBroadcast()
@@ -84,7 +84,7 @@ func (state *State) submitWorkspaceSave() {
 		state.templates = previousTemplates
 		state.selectedWorkspaceTemplateID = previousSelected
 		state.workspaceLibraryExpanded = previousExpanded
-		state.temporaryWorkspaceColumns[save.workspace] = save.columns
+		state.temporaryWorkspaceLayouts[save.workspace] = save.layout
 		state.broadcast = previousBroadcast
 		state.status = previousStatus
 		state.activeSection = previousSection

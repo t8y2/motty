@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	layoutcore "motty/internal/workspace"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ func TestWorkspaceLocalReferenceCannotCollideWithASavedHost(t *testing.T) {
 	if got := workspaceHostReference(localHost("Renamed terminal")); got != workspaceLocalTerminalRef {
 		t.Fatalf("ordinary or restored local terminal reference = %q", got)
 	}
-	if _, err := NewWorkspaceTemplate("Duplicate", []string{workspaceLocalTerminalRef, workspaceLocalTerminalRef}, 1); err != ErrWorkspaceTemplateDupID {
+	if _, err := NewWorkspaceTemplate("Duplicate", []string{workspaceLocalTerminalRef, workspaceLocalTerminalRef}, layoutcore.GridSpec(1)); err != ErrWorkspaceTemplateDupID {
 		t.Fatalf("duplicate local reference error = %v", err)
 	}
 }

@@ -26,9 +26,6 @@ var (
 	hitWorkspaceDraftFixed            = tree.ID(workspaceHits, "draft-fixed")
 	hitWorkspaceDraftName             = tree.ID(workspaceHits, "draft-name")
 	hitWorkspaceDraftSearch           = tree.ID(workspaceHits, "draft-search")
-	hitWorkspaceDraftColumns1         = tree.ID(workspaceHits, "draft-columns-1")
-	hitWorkspaceDraftColumns2         = tree.ID(workspaceHits, "draft-columns-2")
-	hitWorkspaceDraftColumns3         = tree.ID(workspaceHits, "draft-columns-3")
 	hitWorkspaceDraftHostList         = tree.Sub(workspaceHits, tree.Name("draft-host"))
 	hitWorkspaceDraftScroll           = tree.ID(workspaceHits, "draft-scroll")
 	hitWorkspaceDraftScrollbar        = tree.ID(workspaceHits, "draft-scrollbar")
@@ -40,7 +37,6 @@ var (
 const (
 	workspaceLibraryRowGap           = float32(10)
 	workspaceLibraryHeaderHeight     = float32(76)
-	workspaceLibraryLayoutHeight     = float32(68)
 	workspaceLibraryBottomInset      = float32(12)
 	workspaceLibraryScrollbarReserve = float32(10)
 )
@@ -142,7 +138,7 @@ func (state *State) applySelectedWorkspaceTemplate() {
 		return
 	}
 	template := state.templates[index]
-	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), template.HostIDs, template.Columns)
+	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), template.HostIDs, template.Layout)
 	if err != nil {
 		detail := state.messages.WorkspaceTemplateApplyFailed
 		if err == ErrWorkspaceLaunchEmpty && len(plan.Missing) > 0 {
@@ -153,7 +149,7 @@ func (state *State) applySelectedWorkspaceTemplate() {
 	}
 	plan = orderedWorkspaceLaunch(plan, template.HostIDs)
 	workspaceID, _, err := state.launchWorkspaceWithIdentity(plan, template.Name, workspaceLaunchIdentity{
-		managedColumns: template.Columns,
+		managedLayout: template.Layout,
 	})
 	if err != nil {
 		state.showActionWarning(template.Name, state.messages.WorkspaceTemplateApplyFailed)
@@ -301,11 +297,17 @@ func (state *State) workspaceLibraryRowLayout(width float32, expandedIndex int) 
 	return rows, y
 }
 
-func workspaceLibraryRowHeight(template WorkspaceTemplate, _ float32, expanded bool) float32 {
+// workspaceLibraryLayoutHeight is the room above a template's cards for its
+// strip of layouts, at the row's width.
+func workspaceLibraryLayoutHeight(width float32) float32 {
+	return workspacePresetStripHeight(max(0, width-32)) + 14
+}
+
+func workspaceLibraryRowHeight(template WorkspaceTemplate, width float32, expanded bool) float32 {
 	if !expanded {
 		return workspaceLibraryHeaderHeight
 	}
-	return workspaceLibraryHeaderHeight + workspaceLibraryLayoutHeight + workspaceCardContentHeight(len(template.HostIDs), template.Columns) + workspaceLibraryBottomInset
+	return workspaceLibraryHeaderHeight + workspaceLibraryLayoutHeight(width) + workspaceCardContentHeight(len(template.HostIDs), template.Layout) + workspaceLibraryBottomInset
 }
 
 func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, index int,
@@ -345,7 +347,7 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	if len(template.HostIDs) == 1 {
 		hostCount = m.WorkspaceSingleHost
 	}
-	label := template.Name + ", " + hostCount + ", " + fmt.Sprintf(m.WorkspaceColumnsFmt, template.Columns)
+	label := template.Name + ", " + hostCount + ", " + state.workspacePresetLabel(template.Layout)
 	if len(hostLabels) > 0 {
 		label += ", " + strings.Join(hostLabels, ", ")
 	}
@@ -404,16 +406,11 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 
 func (state *State) paintWorkspaceLibraryHosts(canvas *ui.Canvas, bounds ui.Rect, template WorkspaceTemplate, index int) {
 	panel := ui.Rect{X: bounds.X + 12, Y: bounds.Y + workspaceLibraryHeaderHeight, Width: max(0, bounds.Width-24)}
-	ids := [3]ui.ID{hitWorkspaceTemplatePresets.At(index * 3), hitWorkspaceTemplatePresets.At(index*3 + 1), hitWorkspaceTemplatePresets.At(index*3 + 2)}
-	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: panel.X + 4, Y: panel.Y + 4, Width: min(288, max(0, panel.Width-8)), Height: 54}, ids, template.Columns)
-	if panel.Width > 600 {
-		hintWidth := panel.Width - 316
-		monitorLabel(canvas, elide(canvas, state.messages.WorkspaceTemplateLayoutHint, 12, ui.WeightRegular, hintWidth), ui.Rect{X: panel.X + 308, Y: panel.Y + 14, Width: hintWidth, Height: 28}, 12, state.pal.muted, ui.WeightRegular)
-	}
+	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: panel.X + 4, Y: panel.Y + 4, Width: max(0, panel.Width-8), Height: workspacePresetStripHeight(max(0, panel.Width-8))}, hitWorkspaceTemplatePresets, index*len(workspacePresets), template.Layout)
 	items := workspaceTemplateItems(template)
-	height := workspaceCardContentHeight(len(items), template.Columns)
-	content := ui.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight, Width: panel.Width, Height: height}
-	state.paintWorkspaceCards(canvas, content, state.workspaceLibraryBounds, items, template.Columns, workspaceCardsTemplate, template.ID, index)
+	height := workspaceCardContentHeight(len(items), template.Layout)
+	content := ui.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight(bounds.Width), Width: panel.Width, Height: height}
+	state.paintWorkspaceCards(canvas, content, state.workspaceLibraryBounds, items, template.Layout, workspaceCardsTemplate, template.ID, index)
 
 }
 

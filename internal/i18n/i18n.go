@@ -136,6 +136,9 @@ type Messages struct {
 	WorkspaceSingleHost                   string
 	WorkspaceSingleColumn                 string
 	WorkspaceColumnsFmt                   string
+	WorkspaceLayoutMainRight              string
+	WorkspaceLayoutMainBottom             string
+	WorkspaceLayoutTabs                   string
 	WorkspaceTemplateHostCountFmt         string
 	WorkspaceTemplateMissingFmt           string
 	WorkspaceTemplateMissingListFmt       string

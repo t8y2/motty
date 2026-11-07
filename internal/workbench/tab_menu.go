@@ -186,7 +186,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if disconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
-	if _, temporary := state.temporaryWorkspaceColumns[state.tabMenu.workspace]; temporary {
+	if _, temporary := state.temporaryWorkspaceLayouts[state.tabMenu.workspace]; temporary {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}

@@ -66,14 +66,14 @@ func TestWorkspaceDraftFitsAtTheMinimumWindow(t *testing.T) {
 		if list.Y+list.Height >= submit.Y {
 			t.Fatalf("host list covers footer: %+v, submit %+v", list, submit)
 		}
-		for _, id := range []ui.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftColumns1, hitWorkspaceDraftColumns2, hitWorkspaceDraftColumns3} {
+		for _, id := range []ui.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftPresets.At(0), hitWorkspaceDraftPresets.At(1), hitWorkspaceDraftPresets.At(2)} {
 			box := panelHit(t, canvas, id).Bounds
 			if box.X < 0 || box.X+box.Width > MinimumWindowWidth || box.Y < 0 || box.Y+box.Height > submit.Y {
 				t.Fatalf("%s: draft control %d escapes body: %+v", language, id, box)
 			}
 		}
-		result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitWorkspaceDraftColumns1})
-		if !result.Handled || result.Focus != hitWorkspaceDraftColumns2 || !result.FocusVisible {
+		result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitWorkspaceDraftPresets.At(0)})
+		if !result.Handled || result.Focus != hitWorkspaceDraftPresets.At(1) || !result.FocusVisible {
 			t.Fatalf("columns cannot be reached with arrow keys: %+v", result)
 		}
 	}

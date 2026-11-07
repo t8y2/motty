@@ -12,7 +12,7 @@ func launchWorkspaceWithConnections(t *testing.T, hosts []Host) (*State, layoutc
 	t.Helper()
 	world, options := newWorld(t)
 	state := newTestState(t, options)
-	plan := WorkspaceLaunchPlan{Hosts: hosts, Columns: uint8(min(len(hosts), 3))}
+	plan := WorkspaceLaunchPlan{Hosts: hosts, Layout: layoutcore.GridSpec(uint8(min(len(hosts), 3)))}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Broadcast")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestWorkspaceBroadcastWaitsForEveryAttemptAndTwoShells(t *testing.T) {
 			testWorkspaceHost("web", "web.example.com"),
 			testWorkspaceHost("db", "db.example.com"),
 		},
-		Columns: 2,
+		Layout: layoutcore.GridSpec(2),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Broadcast")
 	if err != nil {
@@ -76,7 +76,7 @@ func TestWorkspaceBroadcastNeedsTwoConnectedShellsAfterFailuresSettle(t *testing
 			testWorkspaceHost("db", "db.example.com"),
 			testWorkspaceHost("cache", "cache.example.com"),
 		},
-		Columns: 3,
+		Layout: layoutcore.GridSpec(3),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Broadcast")
 	if err != nil {
@@ -162,8 +162,8 @@ func TestWorkspaceBroadcastClearsOnTabChangeLeaveAndNewLaunch(t *testing.T) {
 	state.activeSection = sectionTerminal
 	state.Click(hitBroadcast)
 	if _, _, err := state.launchWorkspace(WorkspaceLaunchPlan{
-		Hosts:   []Host{testWorkspaceHost("api", "api.example.com"), testWorkspaceHost("cache", "cache.example.com")},
-		Columns: 2,
+		Hosts:  []Host{testWorkspaceHost("api", "api.example.com"), testWorkspaceHost("cache", "cache.example.com")},
+		Layout: layoutcore.GridSpec(2),
 	}, "New"); err != nil {
 		t.Fatal(err)
 	}
@@ -179,8 +179,8 @@ func TestWorkspaceBroadcastClearsWhenAPaneReconnects(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	workspaceID, sessions, err := state.launchWorkspace(WorkspaceLaunchPlan{
-		Hosts:   []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
-		Columns: 2,
+		Hosts:  []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
+		Layout: layoutcore.GridSpec(2),
 	}, "Reconnect")
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestWorkspaceBroadcastSkipsAFailedShellAndStopsOnReconnect(t *testing.T) {
 			testWorkspaceHost("db", "db.example.com"),
 			testWorkspaceHost("cache", "cache.example.com"),
 		},
-		Columns: 3,
+		Layout: layoutcore.GridSpec(3),
 	}, "Filtered")
 	if err != nil {
 		t.Fatal(err)

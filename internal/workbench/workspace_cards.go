@@ -38,21 +38,73 @@ type workspaceCardDrag struct {
 	region          workspaceCardRegion
 	start, at       ui.Point
 	target          int
+	zone            workspaceCardZone
 	order           []workspaceArrangementItem
 }
 
-func workspaceCardContentHeight(count int, columns uint8) float32 {
-	return float32((count+int(columns)-1)/max(1, int(columns))) * workspaceCardHeight
+// workspaceCardZone is the part of a card a drag is over. The middle swaps the
+// two cards' places; an edge docks the dragged card beside that card on that
+// side, which is how a layout is drawn rather than picked.
+type workspaceCardZone uint8
+
+const (
+	zoneSwap workspaceCardZone = iota
+	zoneLeft
+	zoneRight
+	zoneTop
+	zoneBottom
+)
+
+// workspaceCardEdge is the share of a card's width or height that counts as its edge.
+const workspaceCardEdge = float32(0.25)
+
+func workspaceCardZoneAt(box ui.Rect, at ui.Point) workspaceCardZone {
+	x, y := (at.X-box.X)/max(box.Width, 1), (at.Y-box.Y)/max(box.Height, 1)
+	zone, depth := zoneSwap, workspaceCardEdge
+	for _, edge := range [...]struct {
+		zone     workspaceCardZone
+		distance float32
+	}{{zoneLeft, x}, {zoneRight, 1 - x}, {zoneTop, y}, {zoneBottom, 1 - y}} {
+		if edge.distance < depth {
+			zone, depth = edge.zone, edge.distance
+		}
+	}
+	return zone
+}
+
+// dock is the split a dock zone makes: the axis, and whether the dragged card
+// goes before the target on it.
+func (zone workspaceCardZone) dock() (layoutcore.Axis, layoutcore.Placement) {
+	switch zone {
+	case zoneLeft:
+		return layoutcore.Horizontal, layoutcore.Before
+	case zoneRight:
+		return layoutcore.Horizontal, layoutcore.After
+	case zoneTop:
+		return layoutcore.Vertical, layoutcore.Before
+	}
+	return layoutcore.Vertical, layoutcore.After
+}
+
+// workspaceCardContentHeight is tall enough for the shortest cell of the
+// layout to hold one card, so a grid of N rows is N cards high and any other
+// shape follows its own proportions.
+func workspaceCardContentHeight(count int, spec layoutcore.LayoutSpec) float32 {
+	shortest := float32(1)
+	for _, cell := range workspaceLayoutCells(count, spec) {
+		shortest = min(shortest, cell.Height)
+	}
+	return workspaceCardHeight * min(1/shortest, layoutcore.MaxPanes)
 }
 
 // Use the launcher's split tree, so incomplete rows occupy the same width in
 // the editor and in the running workspace.
-func workspaceGridCells(count int, columns uint8) []FractionBounds {
+func workspaceLayoutCells(count int, spec layoutcore.LayoutSpec) []FractionBounds {
 	ids := make([]layoutcore.SessionID, count)
 	for index := range ids {
 		ids[index] = layoutcore.SessionID(index + 1)
 	}
-	layout, err := layoutcore.NewGrid(ids, int(columns))
+	layout, err := layoutcore.NewLayout(ids, spec)
 	if err != nil {
 		return nil
 	}
@@ -72,8 +124,8 @@ func appendWorkspaceGridCells(cells []FractionBounds, layout *layoutcore.Layout,
 	return appendWorkspaceGridCells(cells, layout, node.Second, second)
 }
 
-func (state *State) paintWorkspaceCards(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, columns uint8, view workspaceCardView, template string, templateIndex int) {
-	cells := workspaceGridCells(len(items), columns)
+func (state *State) paintWorkspaceCards(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec, view workspaceCardView, template string, templateIndex int) {
+	cells := workspaceLayoutCells(len(items), spec)
 	for index, cell := range cells {
 		box := pixelBounds(content, cell).Inset(ui.All(4))
 		if box.Y+box.Height <= viewport.Y || box.Y >= viewport.Y+viewport.Height {
@@ -147,7 +199,11 @@ func (state *State) paintWorkspaceHostCard(canvas *ui.Canvas, region workspaceCa
 		Description: address + " · " + detail, PosInSet: int32(region.index + 1), SetSize: int32(count), Selected: active})
 	drag := &state.workspaceCardDrag
 	if workspaceCardDropTarget(drag, region) {
-		canvas.RoundedBorder(box, radius.control, 2, pal.accent, background)
+		if drag.zone == zoneSwap {
+			canvas.RoundedBorder(box, radius.control, 2, pal.accent, background)
+		} else {
+			canvas.Rounded(workspaceCardZoneBar(box, drag.zone), 2, pal.accent)
+		}
 	}
 }
 
@@ -198,4 +254,21 @@ func paintWorkspaceCardHandle(canvas *ui.Canvas, box ui.Rect, color ui.Color) {
 			canvas.Rounded(ui.Rect{X: box.X + box.Width - 18 + float32(column)*4, Y: box.Y + 15 + float32(row)*4, Width: 1.5, Height: 1.5}, .75, color)
 		}
 	}
+}
+
+// workspaceCardZoneBar is the half of the card the docked card would take.
+func workspaceCardZoneBar(box ui.Rect, zone workspaceCardZone) ui.Rect {
+	switch zone {
+	case zoneLeft:
+		box.Width /= 2
+	case zoneRight:
+		box.X += box.Width / 2
+		box.Width /= 2
+	case zoneTop:
+		box.Height /= 2
+	default:
+		box.Y += box.Height / 2
+		box.Height /= 2
+	}
+	return box.Inset(ui.All(2))
 }
