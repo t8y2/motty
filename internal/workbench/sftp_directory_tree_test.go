@@ -122,6 +122,52 @@ func TestSFTPDirectoryTreeIsOffByDefaultAndLoadsLocalChildrenOnExpand(t *testing
 	}
 }
 
+func TestSFTPDirectoryTreeKeyboardNavigatesAndLoadsLocalChild(t *testing.T) {
+	state, window, _, host, directory := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	childDirectory := filepath.Join(directory, "tree", "nested-keyboard")
+	if err := os.Mkdir(childDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	window.click(sftpWindowTreeToggle[0])
+	var branch *sftpTreeNode
+	waitDirectoryTree(t, state, window, view, func() bool {
+		branch = directoryTreeTestNode(window, true, filepath.Join(directory, "tree"))
+		return branch != nil && !branch.loading
+	})
+	window.window.Invalidate()
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	view.Rest()
+	branchIndex := directoryTreeIndex(window, true, branch.path)
+	if branchIndex < 0 {
+		t.Fatal("directory is not in the visible tree")
+	}
+	if result := window.key(ui.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: ui.KeyRight}); !result.Handled || !branch.expanded {
+		t.Fatal("Right did not expand the branch")
+	}
+	waitDirectoryTree(t, state, window, view, func() bool {
+		return branch.loaded && !branch.loading && directoryTreeIndex(window, true, childDirectory) >= 0
+	})
+	branchIndex = directoryTreeIndex(window, true, branch.path)
+	result := window.key(ui.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: ui.KeyRight})
+	childIndex := directoryTreeIndex(window, true, childDirectory)
+	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(childIndex) ||
+		!sameDirectoryTreePath(true, window.directoryTree[0].selectedPath, childDirectory) {
+		t.Fatalf("Right did not select the child: %+v", result)
+	}
+	result = window.key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyLeft})
+	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(branchIndex) ||
+		!sameDirectoryTreePath(true, window.directoryTree[0].selectedPath, branch.path) {
+		t.Fatalf("Left did not select the parent: %+v", result)
+	}
+	result = window.key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyLeft})
+	if !result.Handled || branch.expanded {
+		t.Fatalf("Left did not collapse the parent: %+v", result)
+	}
+}
+
 func TestSFTPDirectoryTreeLoadsRemoteChildrenOnlyWhenExpanded(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1)
 	view := host.windows[0].view

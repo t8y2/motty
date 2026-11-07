@@ -61,6 +61,7 @@ type sftpDirectoryTree struct {
 	requests       map[uint64]string
 	selectedPath   string
 	visible        []sftpTreeVisibleRow
+	navigation     []components.TreeNavigationItem
 	bounds         ui.Rect
 	offset         float32
 	bar            components.ScrollAreaGeometry
@@ -124,6 +125,7 @@ func resetDirectoryTree(tree *sftpDirectoryTree) {
 	tree.requests = nil
 	tree.selectedPath = ""
 	tree.visible = nil
+	tree.navigation = nil
 	tree.bounds = ui.Rect{}
 	tree.offset = 0
 	tree.bar = components.ScrollAreaGeometry{}
@@ -785,8 +787,17 @@ func (w *sftpWindow) directoryTreeKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		if !event.Repeat {
 			w.clickDirectoryTree(event.Target)
 		}
-	case ui.KeyRight:
-		if !node.expanded {
+	case ui.KeyRight, ui.KeyLeft, ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd, ui.KeyPageUp, ui.KeyPageDown:
+		tree.navigation = tree.navigation[:0]
+		for _, row := range tree.visible {
+			branch := !row.node.loaded || row.node.loading || row.node.err != "" || len(row.node.children) > 0
+			tree.navigation = append(tree.navigation, components.TreeNavigationItem{
+				Depth: row.depth, Branch: branch, Expanded: row.node.expanded,
+			})
+		}
+		next, action, _ := components.NavigateTree(tree.navigation, index, event.Key, int(tree.bounds.Height/sftpDirectoryTreeRowHeight))
+		switch action {
+		case components.TreeNavigationExpand:
 			node.expanded = true
 			if node.err != "" {
 				node.loaded, node.err = false, ""
@@ -794,53 +805,14 @@ func (w *sftpWindow) directoryTreeKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			if !node.loaded {
 				w.loadDirectoryTreeNode(side, node)
 			}
-		} else if index+1 < len(tree.visible) &&
-			len(node.children) > 0 &&
-			tree.visible[index+1].depth == tree.visible[index].depth+1 {
-			index++
-			tree.selectedPath = tree.visible[index].node.path
-			result.Focus = sftpWindowTreeRows[side].At(index)
+		case components.TreeNavigationCollapse:
+			node.expanded = false
+		case components.TreeNavigationMove:
+			tree.selectedPath = tree.visible[next].node.path
+			tree.revealSelected = true
+			result.Focus = sftpWindowTreeRows[side].At(next)
 			result.FocusVisible = true
 		}
-	case ui.KeyLeft:
-		if node.expanded {
-			node.expanded = false
-		} else {
-			parentPath := path.Dir(node.path)
-			if local {
-				parentPath = filepath.Dir(node.path)
-			}
-			for parentIndex, row := range tree.visible {
-				if sameDirectoryTreePath(local, row.node.path, parentPath) {
-					index = parentIndex
-					tree.selectedPath = row.node.path
-					result.Focus = sftpWindowTreeRows[side].At(index)
-					result.FocusVisible = true
-					break
-				}
-			}
-		}
-	case ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd, ui.KeyPageUp, ui.KeyPageDown:
-		next := index
-		switch event.Key {
-		case ui.KeyUp:
-			next--
-		case ui.KeyDown:
-			next++
-		case ui.KeyHome:
-			next = 0
-		case ui.KeyEnd:
-			next = len(tree.visible) - 1
-		case ui.KeyPageUp:
-			next -= max(1, int(tree.bounds.Height/sftpDirectoryTreeRowHeight))
-		case ui.KeyPageDown:
-			next += max(1, int(tree.bounds.Height/sftpDirectoryTreeRowHeight))
-		}
-		next = max(0, min(next, len(tree.visible)-1))
-		tree.selectedPath = tree.visible[next].node.path
-		tree.revealSelected = true
-		result.Focus = sftpWindowTreeRows[side].At(next)
-		result.FocusVisible = true
 	default:
 		return ui.EventResult{}, false
 	}
