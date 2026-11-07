@@ -37,7 +37,7 @@ func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 		hitHosts: true, hitWorkspaces: true, hitKeychain: true, hitProxies: true, hitPortForwarding: true,
 		hitKnownHosts: true, hitSnippets: true, hitNotes: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
 		hitAddHost: true, hitHostFilterAll: true, hitImportMenu: true, hitTheme: true, hitHome: true, hitNewTab: true,
-		hitGitHub: true,
+		hitGitHub: true, hitWindowReconnect: true,
 	}
 	// A development build also declares the component gallery.
 	for _, id := range devOnlyShellHits() {

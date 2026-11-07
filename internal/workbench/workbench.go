@@ -37,6 +37,7 @@ var (
 	hitSettings                = tree.ID(shellHits, "settings")
 	hitWindowSettings          = tree.ID(shellHits, "window-settings")
 	hitWindowLocalTerminal     = tree.ID(shellHits, "window-local-terminal")
+	hitWindowReconnect         = tree.ID(shellHits, "window-reconnect")
 	hitSearch                  = tree.ID(shellHits, "search")
 	hitConnect                 = tree.ID(shellHits, "connect")
 	hitAddHost                 = tree.ID(shellHits, "add-host")
@@ -1724,6 +1725,15 @@ func (state *State) click(id ui.ID, feedback bool) {
 		state.importSSHConfig()
 	case id == hitLocalTerminal || id == hitWindowLocalTerminal:
 		state.openLocalTerminal()
+	case id == hitWindowReconnect:
+		if session, ok := state.reconnectToolbarSession(); ok {
+			if state.canReconnectLive(session) {
+				state.askSessionLink(session, false)
+			} else {
+				state.reconnect(session)
+				state.save()
+			}
+		}
 	case id == hitGitHub:
 		state.openExternal(aboutRepoURL)
 	case id == hitTheme:

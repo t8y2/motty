@@ -28,6 +28,7 @@ type toolbarSpec struct {
 // available in a particular connection/split/local-files context.
 var toolbarCatalog = [3][]toolbarSpec{
 	toolbarWindow: {
+		{"reconnect", hitWindowReconnect, iconRefresh},
 		{"transfers", hitTransferCenter, iconTransfer}, {"assistant", hitAIToggle, iconBot},
 		{"local-terminal", hitWindowLocalTerminal, iconTerminal}, {"commands", hitCommandPalette, iconSearch},
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
@@ -159,6 +160,8 @@ func (prefs *toolbarPreferences) customize(group toolbarGroup) []toolbarEntry {
 func (state *State) toolbarLabel(id ui.ID) string {
 	m := state.messages
 	switch id {
+	case hitWindowReconnect:
+		return m.MenuReconnect
 	case hitTransferCenter:
 		return m.Transfers.Title
 	case hitAIToggle:

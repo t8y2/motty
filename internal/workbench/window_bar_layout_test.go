@@ -19,7 +19,7 @@ func TestWindowBarButtonsStayInsideANarrowWindowWithManyTabs(t *testing.T) {
 	state.Paint(&canvas, ui.Size{Width: width, Height: 520})
 
 	var bounds []ui.Rect
-	for _, id := range []ui.ID{hitHome, hitNewTab, hitWindowLocalTerminal, hitCommandPalette, hitTheme, hitGitHub, hitWindowSettings} {
+	for _, id := range []ui.ID{hitHome, hitNewTab, hitWindowReconnect, hitWindowLocalTerminal, hitCommandPalette, hitTheme, hitGitHub, hitWindowSettings} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok {
 			t.Fatalf("button %d is not in the window bar", id)

@@ -113,6 +113,9 @@ func toolbarDockIdentity(id ui.ID) (toolbarDockEntry, bool) {
 func (state *State) windowDockTool(spec toolbarSpec) barTool {
 	tool := barTool{id: spec.id, icon: spec.icon, hint: state.toolbarLabel(spec.id)}
 	switch spec.id {
+	case hitWindowReconnect:
+		_, enabled := state.reconnectToolbarSession()
+		tool.disabled = !enabled
 	case hitTheme:
 		tool.icon, tool.hint = iconSun, state.messages.LabelThemeToLight
 		if state.appearance == appearanceLight {
