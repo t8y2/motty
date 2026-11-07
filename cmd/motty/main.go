@@ -394,6 +394,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.TerminalFindInput(context); input != nil {
 			return input
 		}
+		if input := state.TerminalWordInput(context); input != nil {
+			return input
+		}
 		// The assistant's message box is multi-line and takes Enter itself.
 		if input := state.AIPanelInput(context); input != nil {
 			return input

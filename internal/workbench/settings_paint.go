@@ -34,6 +34,7 @@ const (
 	controlHit                                         // the slot is a pointer target
 	controlSearch                                      // the search box
 	controlModelInput                                  // the assistant's model-name field
+	controlWordSeparators                              // the terminal's word-selection separators
 	controlSwatches                                    // a strip of round color dots
 	controlLabel                                       // the words of a row, which label the control beside them
 	controlMCPSelect                                   // client configuration select
@@ -194,6 +195,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
+		case controlWordSeparators:
+			state.paintWordSeparatorsInput(canvas, rect)
 		case controlSwatches:
 			// The dots are the drawing: a strip of circles a pitch apart.
 			for slot, color := range state.settings.colors[control.first : control.first+control.count] {
@@ -412,6 +415,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
+			page.wordSeparatorsRow()
 			page.toggleRow(state.messages.Tools.RightClickPasteRow, state.messages.Tools.RightClickPasteDescription, state.terminalRightClickPaste, hitSettingsRightClickPaste)
 			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)

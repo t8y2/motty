@@ -261,6 +261,7 @@ var (
 	hitSettingsCursorBar           = tree.ID(settingsHits, "settings-cursor-shape-bar")
 	hitSettingsCursorUnderline     = tree.ID(settingsHits, "settings-cursor-shape-underline")
 	hitSettingsCopyOnSelect        = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators      = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsInputClick          = tree.ID(settingsHits, "settings-input-click")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
@@ -763,6 +764,8 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
+	terminalWordSeparators                        string
+	terminalWordEditor                            text.Editor
 	// terminalTabTitle lets a tab show the title its terminal reports instead
 	// of the host's name (see tabLabel).
 	terminalTabTitle       bool
@@ -1253,6 +1256,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 		if hit == hitSettingsSearch && state.activeSection == sectionSettings {
 			return &state.settings.search
+		}
+		if hit == hitSettingsWordSeparators && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal {
+			return &state.terminalWordEditor
 		}
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search

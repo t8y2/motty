@@ -89,6 +89,25 @@ func TestDoubleClickSelectsAUnicodeWord(t *testing.T) {
 	}
 }
 
+func TestWordSeparatorsApplyToDoubleClickAndWordDrag(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("path/to-file other"))
+	state.terminalWordSeparators = "-"
+	gesture(state, session, geometry, 2, [2]int{0, 1})
+	if got := selectedText(session); got != "path/to" {
+		t.Fatalf("double click selected %q", got)
+	}
+	gesture(state, session, geometry, 2, [2]int{0, 1}, [2]int{0, 9})
+	if got := selectedText(session); got != "path/to-file" {
+		t.Fatalf("word drag selected %q", got)
+	}
+	state.terminalWordSeparators = "-/"
+	gesture(state, session, geometry, 2, [2]int{0, 1})
+	if got := selectedText(session); got != "path" {
+		t.Fatalf("updated separators selected %q", got)
+	}
+}
+
 func TestTerminalPointerClampsToTheScreensCurrentRows(t *testing.T) {
 	tests := []struct {
 		name       string

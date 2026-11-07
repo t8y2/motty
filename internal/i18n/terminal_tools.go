@@ -142,6 +142,9 @@ type ToolsMessages struct {
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
+	WordSeparatorsRow          string
+	WordSeparatorsDescription  string
+	WordSeparatorsPlaceholder  string
 	RightClickPasteRow         string
 	RightClickPasteDescription string
 	InputClickRow              string

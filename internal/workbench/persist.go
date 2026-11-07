@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
@@ -77,6 +78,7 @@ type savedState struct {
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalWordSeparators  string              `json:"terminal_word_separators,omitempty"`
 	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
@@ -489,6 +491,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TerminalTabTitle:           state.terminalTabTitle,
 		TerminalShowLatency:        state.terminalShowLatency,
@@ -1024,6 +1027,8 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalWordSeparators = saved.TerminalWordSeparators
+	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
 	state.terminalTabTitle = saved.TerminalTabTitle
 	state.terminalShowLatency = saved.TerminalShowLatency

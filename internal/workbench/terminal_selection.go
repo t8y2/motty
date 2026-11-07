@@ -224,6 +224,7 @@ func (selection terminalSelection) span(lineNumber uint64, line term.Row, cols i
 
 func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.EventResult {
 	terminal := session.term
+	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
 	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
 	if result, handled := state.terminalMousePointer(session, event, position); handled {

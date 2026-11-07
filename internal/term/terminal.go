@@ -139,7 +139,8 @@ type screen struct {
 
 // Terminal is the emulator. Create it with New.
 type Terminal struct {
-	cols, rows int
+	cols, rows     int
+	wordSeparators string
 
 	main, alt screen
 	scr       *screen // the active one
