@@ -851,14 +851,20 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 
 // fitCols makes l exactly as wide as the terminal.
 func (t *Terminal) fitCols(l *line) {
+	changed := false
 	switch {
 	case len(l.cells) > t.cols:
+		if l.used > t.cols {
+			changed = true
+		}
 		l.cells = l.cells[:t.cols]
 		for len(l.marks) > 0 && int(l.marks[len(l.marks)-1].Col) >= t.cols {
 			l.marks = l.marks[:len(l.marks)-1]
+			changed = true
 		}
 		if l.cells[t.cols-1].Attr&WideHead != 0 { // its tail was cut off
 			l.orphan(t.cols - 1)
+			changed = true
 		}
 	case len(l.cells) < t.cols:
 		if cap(l.cells) >= t.cols {
@@ -876,7 +882,9 @@ func (t *Terminal) fitCols(l *line) {
 	}
 	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
-	l.version++
+	if changed {
+		l.version++
+	}
 }
 
 // eraseRange blanks cells a..b-1 of l with the current background, repairing

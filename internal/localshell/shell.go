@@ -22,6 +22,9 @@ const (
 	maxPendingOutput = 1 << 20
 	// maxPendingInput is how much typed or pasted input may wait to be written.
 	maxPendingInput = 4 << 20
+	// resizeInterval bounds PTY redraws during a window drag while keeping the
+	// program up to date even when the window never pauses at one size.
+	resizeInterval = time.Second / 60
 )
 
 // ArgsFor is how an interactive session starts the chosen program: Git Bash
@@ -101,6 +104,11 @@ type Shell struct {
 	pending int
 	closed  bool
 
+	resizeWake         chan struct{}
+	resizeMu           sync.Mutex
+	wantCols, wantRows int
+	curCols, curRows   int
+
 	kind shellkind.Kind
 }
 
@@ -109,7 +117,7 @@ type Shell struct {
 func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
 
 // liveShells counts shells that were started and not yet closed: each holds a
-// pty and three goroutines until Close.
+// pty and four goroutines until Close.
 var liveShells = leaks.New("local shells")
 
 // Start launches the shell. It returns once the process is running.
@@ -119,10 +127,17 @@ func Start(config Config) (*Shell, error) {
 		return nil, err
 	}
 	liveShells.Acquire()
-	shell := &Shell{b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}), input: make(chan []byte, 256), kind: kindOf(config)}
+	cols, rows := max(config.Cols, 1), max(config.Rows, 1)
+	shell := &Shell{
+		b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}),
+		input: make(chan []byte, 256), kind: kindOf(config),
+		resizeWake: make(chan struct{}, 1),
+		wantCols:   cols, wantRows: rows, curCols: cols, curRows: rows,
+	}
 	shell.space = sync.NewCond(&shell.mu)
 	go shell.readLoop()
 	go shell.writeLoop()
+	go shell.resizeLoop()
 	go shell.wait()
 	return shell, nil
 }
@@ -173,8 +188,48 @@ func (shell *Shell) writeLoop() {
 	for data := range shell.input {
 		shell.mu.Lock()
 		shell.pending -= len(data)
+		ended := shell.closed || shell.finished
 		shell.mu.Unlock()
+		if ended {
+			return
+		}
+		// Input starts at the latest size. The actual write holds no resize
+		// lock: a program that stops reading input can still be resized.
+		shell.flushResize()
 		if _, err := shell.b.io.Write(data); err != nil {
+			return
+		}
+	}
+}
+
+func (shell *Shell) resizeLoop() {
+	var timer *time.Timer
+	var resizeReady <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+	for {
+		select {
+		case _, ok := <-shell.resizeWake:
+			if !ok {
+				return
+			}
+			// Keep the first deadline. Resetting it for every motion would
+			// leave full-screen programs frozen until the drag ends.
+			if resizeReady == nil {
+				if timer == nil {
+					timer = time.NewTimer(resizeInterval)
+				} else {
+					timer.Reset(resizeInterval)
+				}
+				resizeReady = timer.C
+			}
+		case <-resizeReady:
+			resizeReady = nil
+			shell.flushResize()
+		case <-shell.done:
 			return
 		}
 	}
@@ -235,12 +290,43 @@ func (shell *Shell) Write(p []byte) bool {
 	}
 }
 
-// Resize tells the program the terminal size in cells.
+// Resize queues the terminal size in cells without blocking the caller.
+// Updates within one frame interval collapse into the latest size.
 func (shell *Shell) Resize(cols, rows int) {
 	if cols < 1 || rows < 1 {
 		return
 	}
-	shell.b.resize(cols, rows)
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if shell.closed || shell.finished {
+		return
+	}
+	if cols == shell.wantCols && rows == shell.wantRows {
+		return
+	}
+	shell.wantCols, shell.wantRows = cols, rows
+	select {
+	case shell.resizeWake <- struct{}{}:
+	default:
+	}
+}
+
+// flushResize serializes the timer and input writer's size updates. Backend
+// calls hold no shell-state lock, so a slow resize never blocks the window.
+func (shell *Shell) flushResize() {
+	shell.resizeMu.Lock()
+	defer shell.resizeMu.Unlock()
+	shell.mu.Lock()
+	if shell.closed || shell.finished || (shell.wantCols == shell.curCols && shell.wantRows == shell.curRows) {
+		shell.mu.Unlock()
+		return
+	}
+	cols, rows := shell.wantCols, shell.wantRows
+	shell.curCols, shell.curRows = cols, rows
+	shell.mu.Unlock()
+	if shell.b.resize != nil {
+		shell.b.resize(cols, rows)
+	}
 }
 
 // Done is closed once the shell has ended and its output is complete.
@@ -273,6 +359,9 @@ func (shell *Shell) Close() {
 	shell.closed = true
 	liveShells.Release()
 	close(shell.input)
+	if shell.resizeWake != nil {
+		close(shell.resizeWake)
+	}
 	shell.mu.Unlock()
 	shell.b.hangup()
 	timer := time.AfterFunc(killGrace, shell.b.kill)
