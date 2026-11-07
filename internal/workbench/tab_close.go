@@ -104,6 +104,21 @@ func (state *State) askCloseLockedTab(id layoutcore.WorkspaceID) {
 	state.modal = modalCloseTabs
 }
 
+func (state *State) tabMiddlePointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonMiddle || state.modal != modalNone || state.tabMenu.open {
+		return ui.EventResult{}, false
+	}
+	switch event.Target.Scope() {
+	case hitTabList, hitTabCloseList:
+		state.closeWorkspace(layoutcore.WorkspaceID(item(event.Target)))
+	case fileTabList, fileTabCloseList:
+		state.requestCloseSFTPTab(state.sftpWindows[uint32(item(event.Target))])
+	default:
+		return ui.EventResult{}, false
+	}
+	return ui.EventResult{Handled: true, Repaint: true}, true
+}
+
 func (state *State) clickCloseTabsDialog(id ui.ID) {
 	switch id {
 	case hitTabsCloseDismiss, hitTabsCloseClose, hitTabsCloseCancel:

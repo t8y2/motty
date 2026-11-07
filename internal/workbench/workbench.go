@@ -2216,6 +2216,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.tabMiddlePointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabDragPointer(event); handled {
 		return result
 	}
