@@ -210,7 +210,7 @@ func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 
 	for _, item := range items {
 		if rows[item.entry].Kind == hostTreeGroup {
-			state.paintHostGridHeader(canvas, item.box.Rect(), rows[item.entry].GroupIndex)
+			state.paintHostGridHeader(canvas, item.box.Rect(), rows[item.entry].GroupIndex, rows[item.entry].Depth)
 		} else {
 			host := state.hosts[rows[item.entry].HostIndex]
 			state.paintHostCard(canvas, item.box.Rect(), host)
@@ -220,11 +220,11 @@ func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 }
 
 // paintHostGridHeader draws the row that opens or closes a group of cards.
-func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int) {
+func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int, depth uint8) {
 	pal, group := state.pal, state.hostGroups[groupIndex]
 	row := header
-	header.X += float32(group.Depth) * 22
-	header.Width = max(0, header.Width-float32(group.Depth)*22-38)
+	header.X += float32(depth) * 22
+	header.Width = max(0, header.Width-float32(depth)*22-38)
 	label := group.Label
 	if group.Name == "" {
 		label = state.messages.HostGroupDefault
