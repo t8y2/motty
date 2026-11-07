@@ -123,8 +123,7 @@ func TestCommandWOnTheHostListLeavesTabsOpenBehindIt(t *testing.T) {
 	closed := 0
 	world, options := newWorld(t)
 	options.CloseWindow = func() { closed++ }
-	state := New(options)
-	t.Cleanup(state.Close)
+	state := newTestState(t, options)
 	connect(t, state, world)
 	state.activeSection = sectionHosts
 	tabs := len(state.deck.Workspaces(nil))

@@ -555,16 +555,16 @@ func TestStreamHostsUseTheirOwnProxyPolicyAndSerialUsesNone(t *testing.T) {
 		Proxy: &outboundProxy{kind: sshconn.ProxyHTTPConnect, address: "host.proxy:3128"},
 	})
 	openHost(state)
-	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests) == 1 })
-	if proxy := streams.requests[0].Proxy; proxy == nil || proxy.Address != "host.proxy:3128" {
+	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests()) == 1 })
+	if proxy := streams.requests()[0].Proxy; proxy == nil || proxy.Address != "host.proxy:3128" {
 		t.Fatalf("Telnet proxy = %+v", proxy)
 	}
 
 	state.Click(hitHosts)
 	addStreamHost(state, Host{Label: "Console", Address: "/dev/ttyUSB0", Protocol: protocolSerial})
 	openHost(state)
-	waitUntil(t, state, "the serial request", func() bool { return len(streams.requests) == 2 })
-	if proxy := streams.requests[1].Proxy; proxy != nil {
+	waitUntil(t, state, "the serial request", func() bool { return len(streams.requests()) == 2 })
+	if proxy := streams.requests()[1].Proxy; proxy != nil {
 		t.Fatalf("serial proxy = %+v", proxy)
 	}
 }
@@ -574,16 +574,16 @@ func TestDirectAndTunneledDesktopHostsUseTheDesktopHostsProxyPolicy(t *testing.T
 	state := newTestState(t, options)
 	state.options.Invalidate = func() {}
 	state.proxy = outboundProxy{kind: sshconn.ProxySOCKS5, address: "global.proxy:1080"}
-	var requests []desktopRequest
+	requests := make(chan desktopRequest, 1)
 	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
-		requests = append(requests, request)
+		requests <- request
 		return newPictureOnly(), nil
 	}
 	dedicated := &outboundProxy{kind: sshconn.ProxyHTTPConnect, address: "desktop.proxy:3128"}
 	addStreamHost(state, Host{Label: "Direct desktop", Address: "direct.example.com", Protocol: protocolRDP, Proxy: dedicated})
 	openHost(state)
 	waitUntil(t, state, "the direct desktop request", func() bool { return len(requests) == 1 })
-	if proxy := requests[0].Proxy; proxy == nil || proxy.Address != "desktop.proxy:3128" {
+	if proxy := (<-requests).Proxy; proxy == nil || proxy.Address != "desktop.proxy:3128" {
 		t.Fatalf("direct desktop proxy = %+v", proxy)
 	}
 

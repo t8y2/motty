@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,7 +78,12 @@ func newTestState(t testing.TB, options Options) *State {
 	// A test never waits for the automatic check; the ones that exercise it set
 	// these back to something short.
 	state.update.firstDelay, state.update.every = time.Hour, time.Hour
-	t.Cleanup(state.Close)
+	t.Cleanup(func() {
+		state.Close()
+		eventCanvasesMu.Lock()
+		delete(eventCanvases, state)
+		eventCanvasesMu.Unlock()
+	})
 	return state
 }
 
@@ -86,6 +92,7 @@ func newTestState(t testing.TB, options Options) *State {
 // helper makes it. It lives in the test, not in State: production code never holds
 // a canvas.
 var eventCanvases = map[*State]*ui.Canvas{}
+var eventCanvasesMu sync.Mutex
 
 // pointer sends a pointer event the way a window does: to the state's Pointer
 // first and, if nothing there took it, to the controls that declared themselves
@@ -95,10 +102,14 @@ func pointer(state *State, event ui.PointerEvent) ui.EventResult {
 	if event.Viewport == (ui.Size{}) {
 		event.Viewport = ui.Size{Width: 1400, Height: 900}
 	}
+	eventCanvasesMu.Lock()
 	canvas, seen := eventCanvases[state]
 	if !seen {
 		canvas = &ui.Canvas{}
 		eventCanvases[state] = canvas
+	}
+	eventCanvasesMu.Unlock()
+	if !seen {
 		canvas.BeginFrame()
 		state.Paint(canvas, event.Viewport)
 		canvas.EndFrame()
