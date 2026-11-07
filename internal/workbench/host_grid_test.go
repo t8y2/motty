@@ -168,3 +168,56 @@ func TestHostCardShowsConnectionAndCentersCheckbox(t *testing.T) {
 		}
 	}
 }
+
+// A card grows with the window while it has the row to itself. The grid must not
+// keep a column no host fills: widening the window past the point where one more
+// column would fit would shrink the only card, and widening again would grow it
+// back, which reads as the card changing length for no reason.
+func TestHostGridDoesNotReserveAColumnNoHostFills(t *testing.T) {
+	state := manyHostsState(t, 1)
+	state.hostView = hostViewGrid
+	last := float32(0)
+	for width := 640; width <= 1400; width++ {
+		var canvas ui.Canvas
+		state.Paint(&canvas, ui.Size{Width: float32(width), Height: 700})
+		card, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
+		if !ok {
+			t.Fatalf("the only host has no card at width %d", width)
+		}
+		if card.Bounds.Width+0.01 < last {
+			t.Fatalf("the only host's card shrank from %.2f to %.2f as the window widened to %d", last, card.Bounds.Width, width)
+		}
+		last = card.Bounds.Width
+	}
+}
+
+// The cap is the widest run of cards between group headers: a grid with more
+// hosts than that still takes every column its width allows.
+func TestHostGridColumnsStopAtTheWidestRun(t *testing.T) {
+	few := manyHostsState(t, 3)
+	if got := few.hostGridColumnCount(4000); got != 3 {
+		t.Fatalf("a three-host grid asks for %d columns, want 3", got)
+	}
+	many := manyHostsState(t, 10)
+	if got, want := many.hostGridColumnCount(1000), hostGridColumns(1000); got != want {
+		t.Fatalf("a ten-host grid asks for %d columns at 1000px, want the %d its width allows", got, want)
+	}
+}
+
+// The reveal offset a session log entry computes must place the host exactly
+// where the grid paints it, so the two must count columns the same way.
+func TestSessionLogRevealUsesTheGridColumnCount(t *testing.T) {
+	state := manyHostsState(t, 2)
+	state.hostView = hostViewGrid
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 700})
+	second := state.hosts[1]
+	row, ok := hitByID(&canvas, hitHostList.At(int(second.ID)))
+	if !ok {
+		t.Fatal("the second host has no card")
+	}
+	offset := state.sessionLogHostOffset(second.ID, state.chrome.hostList.Width)
+	if want := row.Bounds.Y - state.chrome.hostList.Y; math.Abs(float64(offset-want)) > 0.01 {
+		t.Fatalf("the reveal offset is %.2f, but the card is painted %.2f below the list top", offset, want)
+	}
+}
