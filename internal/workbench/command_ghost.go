@@ -12,8 +12,8 @@ import (
 )
 
 // Inline command suggestions: the rest of a command that the line being typed
-// most likely continues into, drawn dim after the cursor, taken with Right or
-// End (a word at a time with Alt or Ctrl+Right).
+// most likely continues into, drawn dim after the cursor, taken with Right,
+// End or Ctrl+F (a word at a time with Alt or Ctrl+Right).
 //
 // Ownership: the line comes from the emulator's screen and the candidates from
 // the command history, both application state, and what is accepted is typed
@@ -177,6 +177,8 @@ func (state *State) ghostKey(session *Session, event ui.KeyEvent) bool {
 		return false
 	}
 	switch {
+	case !event.Release && event.Key == ui.KeyUnknown && event.Modifiers == ui.ModifierControl && (event.Text == "f" || event.Text == "F"):
+		return state.acceptGhost(session, false)
 	case event.Key == ui.KeyRight && event.Modifiers == 0, event.Key == ui.KeyEnd && event.Modifiers == 0:
 		return state.acceptGhost(session, false)
 	case event.Key == ui.KeyRight:
