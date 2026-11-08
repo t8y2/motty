@@ -415,3 +415,93 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 		}
 	})
 }
+
+// The grouped rows are a tree to the keyboard: the visible order is a header A, its two connections,
+// then the lone connections B and A-other. The arrows stop at the ends instead of wrapping, the
+// page keys jump by a viewport, and Right and Left open, enter, close and leave a group.
+func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
+	state := restoredGroupedTabs(t, groupingEntries()...)
+	ids := tabOrder(state)
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1200, Height: 760})
+	header := state.verticalTabs.grouped.groups[0].id()
+	row := func(i int) ui.ID { return hitTabList.At(int(ids[i])) }
+	// Visible rows: header, ids[0], ids[2] (the group), ids[1], ids[3].
+	order := []ui.ID{header, row(0), row(2), row(1), row(3)}
+	press := func(target ui.ID, key ui.Key) ui.EventResult {
+		t.Helper()
+		return state.Key(ui.KeyEvent{Target: target, Key: key})
+	}
+	if got := press(header, ui.KeyRight); got.Focus != order[1] || !got.Handled {
+		t.Errorf("Right on an open header focused %v, want its first connection", got.Focus)
+	}
+	if got := press(order[2], ui.KeyLeft); got.Focus != header || !got.Handled {
+		t.Errorf("Left on a connection focused %v, want its group's header", got.Focus)
+	}
+	if got := press(order[1], ui.KeyRight); got.Focus != (ui.ID{}) {
+		t.Errorf("Right on a connection moved the focus to %v, want it to stay", got.Focus)
+	}
+	if got := press(order[3], ui.KeyLeft); got.Focus != (ui.ID{}) {
+		t.Errorf("Left on a lone connection moved the focus to %v, want it to stay: it has no group", got.Focus)
+	}
+	for i := 0; i+1 < len(order); i++ {
+		if got := press(order[i], ui.KeyDown); got.Focus != order[i+1] {
+			t.Errorf("Down from row %d focused %v, want row %d", i, got.Focus, i+1)
+		}
+		if got := press(order[i+1], ui.KeyUp); got.Focus != order[i] {
+			t.Errorf("Up from row %d focused %v, want row %d", i+1, got.Focus, i)
+		}
+	}
+	// A tree does not wrap: the arrows stop at its ends.
+	if got := press(header, ui.KeyUp); got.Focus != (ui.ID{}) {
+		t.Errorf("Up from the first row moved the focus to %v, want it to stay", got.Focus)
+	}
+	if got := press(order[4], ui.KeyDown); got.Focus != (ui.ID{}) {
+		t.Errorf("Down from the last row moved the focus to %v, want it to stay", got.Focus)
+	}
+	if got := press(order[2], ui.KeyHome); got.Focus != header {
+		t.Errorf("Home focused %v, want the first row", got.Focus)
+	}
+	if got := press(order[2], ui.KeyEnd); got.Focus != order[4] {
+		t.Errorf("End focused %v, want the last row", got.Focus)
+	}
+	// All five rows fit the strip, so a page is the whole list.
+	if got := press(header, ui.KeyPageDown); got.Focus != order[4] {
+		t.Errorf("PageDown focused %v, want the last row of a short list", got.Focus)
+	}
+	if got := press(order[4], ui.KeyPageUp); got.Focus != header {
+		t.Errorf("PageUp focused %v, want the first row of a short list", got.Focus)
+	}
+}
+
+// Left closes an open header and Right opens it again, keeping the keyboard on the header; a closed
+// header's connections are not rows, so the arrows pass over them. Left on a closed header and Right
+// on a lone connection change nothing.
+func TestVerticalTabGroupingKeysCollapseAndExpandWithoutMovingTheFocus(t *testing.T) {
+	state := restoredGroupedTabs(t, groupingEntries()...)
+	var canvas ui.Canvas
+	size := ui.Size{Width: 1200, Height: 760}
+	state.Paint(&canvas, size)
+	header := state.verticalTabs.grouped.groups[0].id()
+	collapse := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyLeft})
+	if !collapse.Handled || collapse.Focus != header || !collapse.Repaint {
+		t.Fatalf("Left on an open header = %+v, want it handled, repainted and still on the header", collapse)
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if rows := len(state.verticalTabs.grouped.rows); rows != 3 {
+		t.Fatalf("a collapsed group left %d rows, want its header and the two lone connections", rows)
+	}
+	if again := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyLeft}); again.Repaint || again.Focus != (ui.ID{}) {
+		t.Errorf("Left on a closed header = %+v, want nothing to happen", again)
+	}
+	expand := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyRight})
+	if !expand.Handled || expand.Focus != header || !expand.Repaint {
+		t.Fatalf("Right on a closed header = %+v, want it opened with the focus kept", expand)
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if rows := len(state.verticalTabs.grouped.rows); rows != 5 {
+		t.Errorf("an opened group shows %d rows, want 5", rows)
+	}
+}
