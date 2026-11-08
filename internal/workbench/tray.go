@@ -168,27 +168,43 @@ func (state *State) RevealSession(id uint32) bool {
 // Menu is the menu the icon opens, built when it opens: how many sessions are
 // open, the sessions of every window (a workspace with several is a submenu of
 // them), then a new local terminal, the windows, and Quit. Choosing a session
-// brings its window forward at that session.
+// brings its window forward at that session. Every entry carries an id for
+// the hosts that remember one: an entry keeps the id it was served with, and
+// so stays choosable, while its title or state changes. Session and workspace
+// numbers count within one window, so their entries carry the window's number
+// too.
 func (tray *Tray) Menu() []app.MenuItem {
 	if len(tray.members) == 0 {
 		return nil
 	}
 	messages := tray.members[0].state.messages
-	items := make([]app.MenuItem, 0, 8+tray.SessionCount())
-	if count := tray.SessionCount(); count == 0 {
-		items = append(items, app.MenuItem{Title: messages.TrayEmpty, Disabled: true})
-	} else {
-		items = append(items, app.MenuItem{Title: fmt.Sprintf("%s · %d", messages.TrayTitle, count), Disabled: true})
+	count := tray.SessionCount()
+	items := make([]app.MenuItem, 0, 8+count)
+	heading := messages.TrayEmpty
+	if count > 0 {
+		heading = fmt.Sprintf("%s · %d", messages.TrayTitle, count)
+	}
+	items = append(items, app.MenuItem{ID: "sessions", Title: heading, Disabled: true})
+	if count > 0 {
 		items = tray.appendSessions(items)
 	}
 	return append(items,
 		app.MenuItem{Separator: true},
-		app.MenuItem{Title: messages.TrayLocalTerminal, OnSelect: tray.openLocalTerminal},
-		app.MenuItem{Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
-		app.MenuItem{Title: messages.TrayCheckUpdates, OnSelect: tray.checkForUpdates, Disabled: tray.checkingForUpdates()},
+		app.MenuItem{ID: "new-local-terminal", Title: messages.TrayLocalTerminal, OnSelect: tray.openLocalTerminal},
+		app.MenuItem{ID: "show-window", Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
+		app.MenuItem{ID: "check-updates", Title: messages.TrayCheckUpdates, OnSelect: tray.checkForUpdates, Disabled: tray.checkingForUpdates()},
 		app.MenuItem{Separator: true},
-		app.MenuItem{Title: productText(messages.TrayQuit), OnSelect: tray.quit},
+		app.MenuItem{ID: "quit", Title: productText(messages.TrayQuit), OnSelect: tray.quit},
 	)
+}
+
+// trayEntryID names an entry that stands for one numbered thing in one window.
+// Session and workspace numbers are counted within a window while this menu
+// lists every window, so the window's number is part of the name. A host that
+// keeps the ids it was served keeps the entry while its title or state
+// changes.
+func trayEntryID(windowID int, kind string, id uint32) string {
+	return fmt.Sprintf("window:%d/%s:%d", windowID, kind, id)
 }
 
 // appendSessions lists the sessions of every window, in window order, then
@@ -213,7 +229,11 @@ func (tray *Tray) appendSessions(items []app.MenuItem) []app.MenuItem {
 			case 1:
 				items = append(items, sessions[0])
 			default:
-				items = append(items, app.MenuItem{Title: fmt.Sprintf("%s (%d)", workspace.Title, len(sessions)), Submenu: sessions})
+				items = append(items, app.MenuItem{
+					ID:      trayEntryID(member.state.windowID, "workspace", uint32(workspace.ID)),
+					Title:   fmt.Sprintf("%s (%d)", workspace.Title, len(sessions)),
+					Submenu: sessions,
+				})
 			}
 		}
 	}
@@ -229,6 +249,7 @@ func (tray *Tray) sessionItem(member trayMember, session *Session) app.MenuItem 
 	status, _ := member.state.sessionStatus(session)
 	id := session.ID
 	return app.MenuItem{
+		ID:       trayEntryID(member.state.windowID, "session", session.ID),
 		Title:    label + " · " + status,
 		OnSelect: func() { tray.reveal(member, id) },
 	}
