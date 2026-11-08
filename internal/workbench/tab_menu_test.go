@@ -71,6 +71,52 @@ func TestTabMenuOffersDuplicateForSessionTab(t *testing.T) {
 	t.Fatal("a session tab does not offer Duplicate Tab")
 }
 
+func TestTabMenuEditsTheSavedHostOfTheClickedTab(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	workspace := state.deck.ActiveWorkspace()
+	first := state.sessions[0].host
+	state.newHostSession(state.hosts[1])
+	if state.deck.ActiveWorkspace() == workspace {
+		t.Fatal("setup did not activate the second tab")
+	}
+	rightClickTab(state, hitTabList.At(int(workspace)))
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || hit.Disabled {
+		t.Fatalf("edit host: found=%v disabled=%v", ok, hit.Disabled)
+	}
+	state.Click(hitTabMenuEditHost)
+	index := state.hostIndex(state.hostDialogID)
+	if index < 0 {
+		t.Fatalf("host dialog refers to missing host %d", state.hostDialogID)
+	}
+	if state.modal != modalNewHost || state.hostDialogMode != hostDialogEdit || state.editor.value(fieldLabel) != first.Label ||
+		state.hosts[index].CatalogID != first.CatalogID {
+		t.Fatalf("wrong host opened for editing: modal=%v mode=%v id=%d label=%q", state.modal, state.hostDialogMode, state.hostDialogID, state.editor.value(fieldLabel))
+	}
+	if state.deck.ActiveWorkspace() == workspace || state.tabMenu.open {
+		t.Fatal("editing the clicked tab changed the active workspace or left the menu open")
+	}
+}
+
+func TestTabMenuCannotEditAnUncataloguedSession(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	workspace := state.deck.ActiveWorkspace()
+	state.sessions[0].host.CatalogID = ""
+	rightClickTab(state, hitTabList.At(int(workspace)))
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || !hit.Disabled {
+		t.Fatalf("temporary session edit: found=%v disabled=%v", ok, hit.Disabled)
+	}
+	state.Click(hitTabMenuEditHost)
+	if state.modal != modalNone {
+		t.Fatal("a temporary session opened the host editor")
+	}
+}
+
 func TestTabMenuCopiesTheActiveSessionsAddressAndConnectionName(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
@@ -121,7 +167,7 @@ func TestTabMenuDisablesConnectionCopyOnAnEmptyTab(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitTabMenuCopyAddress, hitTabMenuCopyName} {
+	for _, id := range []ui.ID{hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
 		if hit, ok := hitByID(&canvas, id); !ok || !hit.Disabled {
 			t.Fatalf("item %d: found=%v disabled=%v, want disabled", id, ok, hit.Disabled)
 		}
