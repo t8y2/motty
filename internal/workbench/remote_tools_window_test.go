@@ -156,7 +156,22 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if config := host.windows[0].config; config.MinWidth != remoteToolsMinWidth || config.MinHeight != remoteToolsMinHeight {
 			t.Fatalf("remote tools window lost its native size limits: %+v", config)
 		}
+		if config := host.windows[0].config; config.WindowMode != app.WindowCustomTitlebar || config.TitlebarHeight != TitlebarHeight {
+			t.Fatalf("remote tools window lost its custom titlebar: %+v", config)
+		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
+		var canvas ui.Canvas
+		w.paint(&canvas, ui.Size{Width: 1100, Height: 780})
+		movable := false
+		for _, hit := range canvas.Hits() {
+			movable = movable || hit.MovesWindow && hit.Bounds.Y == 0 && hit.Bounds.Height == TitlebarHeight
+		}
+		if !movable {
+			t.Fatal("remote tools titlebar cannot drag the window")
+		}
+		if tab, ok := hitByID(&canvas, hitRemoteTabProcesses); !ok || tab.Bounds.Y < TitlebarHeight {
+			t.Fatal("remote tools tabs overlap the window titlebar")
+		}
 		if len(w.ui.remote.rows) != 3 || !strings.Contains(host.windows[0].config.Title, state.sessions[0].Address) {
 			t.Fatal("native window lost source data or identity")
 		}

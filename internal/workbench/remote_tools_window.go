@@ -68,8 +68,8 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 	window, err := state.options.OpenContentWindow(app.Config{
 		Title: state.messages.Tools.RemoteTitle + " · " + session.Title + " · " + session.Address,
 		Icon:  AppIcon(), Width: 1100, Height: 780, Tree: &tree,
-		WindowMode: app.WindowTitled,
-		MinWidth:   remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
+		WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+		MinWidth: remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
 		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
 		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
@@ -388,6 +388,7 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	theme := w.ui.Theme()
 	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	const pad, buttonHeight, buttonGap = float32(16), float32(32), float32(8)
+	w.paintTitlebar(canvas, size.Width)
 	width := max(size.Width-pad*2, 0)
 	actions, count := w.ui.remoteToolActions()
 	var boxes [8]ui.Rect
@@ -401,7 +402,8 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		x += buttonWidth + buttonGap
 	}
 	footerTop := max(pad, size.Height-pad-y-buttonHeight)
-	body := ui.Rect{X: pad, Y: pad, Width: width, Height: max(footerTop-pad-12, 0)}
+	bodyTop := TitlebarHeight + pad
+	body := ui.Rect{X: pad, Y: bodyTop, Width: width, Height: max(footerTop-bodyTop-12, 0)}
 	toolbar := remoteToolbarHeight + remoteSearchHeight + 8
 	if width < 800 {
 		toolbar += remoteToolbarHeight + 8
@@ -443,5 +445,31 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	w.ui.paintRemoteContainerDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	if w.ui.modal == modalSudoSFTP {
 		w.ui.paintSudoSFTP(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	}
+}
+
+func (w *remoteToolsWindow) paintTitlebar(canvas *ui.Canvas, width float32) {
+	canvas.MoveRegion(ui.Rect{Width: width, Height: TitlebarHeight})
+	metrics := w.ui.Theme().Metrics
+	leading, trailing := app.TitlebarInsets()
+	const gap = float32(14)
+	start := leading + gap
+	available := width - start - trailing - gap
+	if available <= 0 {
+		return
+	}
+	label := w.ui.messages.Tools.RemoteTitle
+	labelWidth := canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightMedium)
+	if labelWidth > available {
+		label = elide(canvas, label, metrics.FontSizeS, ui.WeightMedium, available)
+		labelWidth = canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightMedium)
+	}
+	bar := ui.Rect{X: start, Width: labelWidth, Height: TitlebarHeight}
+	canvas.Label(label, bar, ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: w.ui.pal.text})
+	if room := available - labelWidth - gap; room > 24 {
+		bar.X, bar.Width = start+labelWidth+gap, room
+		connection := w.session.Title + " · " + w.session.Address
+		canvas.Label(elide(canvas, connection, metrics.FontSizeS, ui.WeightRegular, room), bar,
+			ui.TextStyle{Size: metrics.FontSizeS, Color: w.ui.pal.muted})
 	}
 }
