@@ -29,9 +29,13 @@ func (s *State) paintNoteLibraryHeader(c *ui.Canvas, b ui.Rect, x, y, right floa
 		titleRight = right
 		actionsY += 36
 	}
+	// The title is a field with no surface: it reads as the page's own heading until it is
+	// edited, so only its content is painted, with the text where the field's would sit.
 	titleTheme := theme.WithFontSize(16)
-	titleTheme.Input, titleTheme.Border, titleTheme.Primary = s.pal.workspace, s.pal.workspace, s.pal.workspace
-	components.PaintInput(c, titleTheme, ui.Rect{X: x, Y: y, Width: max(30, titleRight-x), Height: 28}, components.InputSnapshot{ID: hitNoteTitle, Label: s.noteText("Title", "标题"), Value: n.title.String(), Placeholder: s.noteText("Untitled", "无标题"), Focused: c.Focused() == hitNoteTitle, PlatformEditing: c.Focused() == hitNoteTitle})
+	title := ui.Rect{X: x, Y: y, Width: max(30, titleRight-x), Height: 28}
+	inset := titleTheme.Metrics.TextInsetX()
+	titleText := ui.Rect{X: title.X + inset, Y: title.Y, Width: max(title.Width-2*inset, 0), Height: title.Height}
+	components.PaintInputContent(c, titleTheme, title, titleText, components.InputSnapshot{ID: hitNoteTitle, Label: s.noteText("Title", "标题"), Value: n.title.String(), Placeholder: s.noteText("Untitled", "无标题"), Focused: c.Focused() == hitNoteTitle, PlatformEditing: c.Focused() == hitNoteTitle})
 	s.noteHeaderIcon(c, hitNoteTagsOpen, ui.Rect{X: actionsX, Y: actionsY, Width: 28, Height: 28}, s.noteText("Tags", "标签"), icons.Tags, false)
 	s.noteHeaderIcon(c, hitNoteHostsOpen, ui.Rect{X: actionsX + 34, Y: actionsY, Width: 28, Height: 28}, s.noteText("Linked hosts", "关联主机"), icons.Server, false)
 	pinIcon, pinLabel := icons.Star, s.noteText("Pin note", "置顶笔记")
