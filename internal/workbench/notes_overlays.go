@@ -23,6 +23,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteAdd, s.noteText("New note", "新建笔记"))
 			add(hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"))
 			add(hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"))
+			add(hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"))
 			add(hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"))
 			actions = append(actions, components.ContextMenuItem{ID: hitNoteExpandAll, Label: s.noteExpandLabel(), Disabled: len(n.folders) == 0})
 		case "folder":
@@ -30,6 +31,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"))
 			add(hitNoteRename, s.noteText("Rename", "重命名"))
 			add(hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"))
+			add(hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"))
 			add(hitNoteFolderRemove, s.noteText("Delete folder", "删除文件夹"))
 		default:
 			if s.activeSection == sectionTerminal {
@@ -38,6 +40,9 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteRename, s.noteText("Rename", "重命名"))
 			add(hitNotePin, s.noteText("Pin / unpin", "置顶 / 取消"))
 			add(hitNoteExport, s.noteText("Export Markdown", "导出 Markdown"))
+			if s.noteLinkPath(v.menuID) != "" {
+				add(hitNoteLinkUnlink, s.noteText("Unlink file (keep as note)", "取消文件链接（保留为笔记）"))
+			}
 			add(hitNoteDelete, s.noteText("Delete note", "删除笔记"))
 		}
 		anchor := v.overlayAnchorRect(c)

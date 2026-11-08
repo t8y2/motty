@@ -854,12 +854,17 @@ type State struct {
 	highlights    *highlight.Set
 	highlighting  highlightUI
 	notes         notesUI
-	noteExit      *noteExitRequest
-	noteTarget    *notesUI
-	snippets      snippetsUI
-	history       historyUI
-	historyLayout flex.View
-	completion    completionUI
+	// noteLinks is what this window knows about the files of linked notes, and
+	// noteWatches the directory watches that follow them.
+	noteLinks      map[string]*noteLinkState
+	noteWatches    map[string]*app.DirectoryWatch
+	noteWatchNames []string
+	noteExit       *noteExitRequest
+	noteTarget     *notesUI
+	snippets       snippetsUI
+	history        historyUI
+	historyLayout  flex.View
+	completion     completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
 
@@ -966,6 +971,7 @@ func (state *State) Close() {
 	}
 	state.flushNoteDraft()
 	state.save()
+	state.closeNoteWatches()
 	state.cancelNoteImages()
 	if state.notes.sidebar != nil && state.notes.sidebar.content.imageCancel != nil {
 		state.notes.sidebar.content.imageCancel()

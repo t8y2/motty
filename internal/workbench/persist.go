@@ -1023,6 +1023,7 @@ func (state *State) restoreShared(saved savedState) {
 		state.hostSort.grid.Cancel()
 	}
 	state.restoreNotes(saved.Notes, saved.NoteFolders)
+	state.noteLinksRestored()
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
 	state.shortcuts = restoreShortcuts(saved.Shortcuts)
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))

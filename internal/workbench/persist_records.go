@@ -280,6 +280,12 @@ func windowKey(id int, development bool) string {
 
 const collapsedGroupsKey = "collapsed_groups"
 
+// linkedNotesKey is the device-local list of notes whose text lives in a file.
+// They are notes in the state, but not records: nothing about them is shared. A
+// build that does not know the field leaves it in the store, as epoch 23 requires
+// of every device-local field, so it needs no format version of its own.
+const linkedNotesKey = "linked_notes"
+
 func fieldText(fields map[string]json.RawMessage, name string) string {
 	raw := fields[name]
 	var text string
@@ -521,10 +527,15 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
 		}
 		used := map[string]bool{}
+		var linked []json.RawMessage
 		for _, item := range items {
 			var itemFields map[string]json.RawMessage
 			if err := json.Unmarshal(item, &itemFields); err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
+			}
+			if entity.kind == "note" && isLinkedNote(itemFields) {
+				linked = append(linked, item)
+				continue
 			}
 			id := boundKey(entity.key(itemFields))
 			if id == "" {
@@ -551,6 +562,9 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			}
 			entries = append(entries, configstore.Entry{Kind: entity.kind, ID: id, Payload: payload})
 		}
+		if len(linked) > 0 {
+			own[linkedNotesKey], _ = json.Marshal(linked)
+		}
 	}
 	local, err = json.Marshal(own)
 	if err != nil {
@@ -564,6 +578,54 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 		return nil, nil, nil, err
 	}
 	return entries, local, window, nil
+}
+
+// isLinkedNote reports whether a note's fields name the file it lives in.
+func isLinkedNote(fields map[string]json.RawMessage) bool {
+	raw := fields["link"]
+	return len(raw) > 0 && !bytes.Equal(raw, []byte("null"))
+}
+
+// linkedSavedNotes is the notes of a list that live in a file.
+func linkedSavedNotes(notes []savedNote) []savedNote {
+	var linked []savedNote
+	for _, note := range notes {
+		if note.Link != nil {
+			linked = append(linked, note)
+		}
+	}
+	return linked
+}
+
+// mergeLinkedNotes appends the device's linked notes to the shared ones. A note
+// the shared records also hold by id stays the shared one: that is a note that was
+// unlinked, and the stale local entry must not shadow it.
+func mergeLinkedNotes(shared, linked json.RawMessage) json.RawMessage {
+	var held, local []json.RawMessage
+	if json.Unmarshal(shared, &held) != nil && len(shared) > 0 && !bytes.Equal(shared, []byte("null")) {
+		return shared
+	}
+	if json.Unmarshal(linked, &local) != nil {
+		return shared
+	}
+	ids := make(map[string]bool, len(held))
+	for _, item := range held {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) == nil {
+			ids[fieldText(fields, "id")] = true
+		}
+	}
+	for _, item := range local {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) == nil && !ids[fieldText(fields, "id")] {
+			held = append(held, item)
+		}
+	}
+	merged, err := json.Marshal(held)
+	if err != nil {
+		return shared
+	}
+	return merged
 }
 
 // joinState builds a state from records and this device's own values, and the
@@ -632,6 +694,10 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 			list[index] = each.data
 		}
 		fields[entity.field], _ = json.Marshal(list)
+	}
+	if raw, ok := fields[linkedNotesKey]; ok {
+		fields["notes"] = mergeLinkedNotes(fields["notes"], raw)
+		delete(fields, linkedNotesKey)
 	}
 	var collapsed []string
 	if raw, ok := fields[collapsedGroupsKey]; ok {
@@ -805,6 +871,7 @@ func savedStateFieldNames() map[string]bool {
 		}
 	}
 	names[collapsedGroupsKey] = true
+	names[linkedNotesKey] = true
 	return names
 }
 

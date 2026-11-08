@@ -43,6 +43,15 @@ type savedNote struct {
 	// ordinary later edit from two edits made independently on different devices.
 	Revision  string   `json:"revision"`
 	Ancestors []string `json:"ancestors,omitempty"`
+	// Link names the Markdown file the note's text lives in. Such a note is kept
+	// in this device's own state, not in the shared records, because the path
+	// means nothing elsewhere; Body is then the last text seen in the file.
+	Link *noteLink `json:"link,omitempty"`
+}
+
+// noteLink is where a linked note's text is stored.
+type noteLink struct {
+	Path string `json:"path"`
 }
 type savedNoteFolder struct {
 	ID     string `json:"id"`
@@ -279,6 +288,9 @@ func (s *State) flushNoteBuffer(id string, buffer *noteDraft) bool {
 		buffer.problem = s.noteText("Note exceeds the 1 MiB record limit; draft retained.", "笔记超过 1 MiB 记录上限，草稿已保留。")
 		return false
 	}
+	if next.Link != nil && next.Body != n.draft.Body {
+		s.noteLinkWrite(next)
+	}
 	s.notes.list[i] = next
 	n.draft = next
 	buffer.problem = ""
@@ -452,6 +464,7 @@ func (s *State) clickNotes(id ui.ID) bool {
 		if !s.flushNoteDraft() {
 			return true
 		}
+		s.noteLinksRecheck()
 		s.activeSection = sectionNotes
 		s.refreshNoteHosts()
 		s.save()
@@ -528,6 +541,8 @@ func (s *State) clickNotes(id ui.ID) bool {
 		s.loadNoteImages()
 	case hitNoteImport:
 		s.importNotes()
+	case hitNoteLinkFile:
+		s.linkNotes()
 	case hitNoteExport:
 		s.exportNotes(false)
 	case hitNoteExportAll:

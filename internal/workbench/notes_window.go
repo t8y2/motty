@@ -163,6 +163,7 @@ func (d *fileDocument) paintNoteWindow(c *ui.Canvas, size ui.Size) {
 			c.Label(message, ui.Rect{X: b.X, Y: y, Width: b.Width, Height: 24}, ui.TextStyle{Size: 12, Color: s.pal.danger})
 			y += 26
 		}
+		y += s.paintNoteLinkNotice(c, b.X, y, b.Width)
 		body := ui.Rect{X: b.X, Y: y, Width: b.Width, Height: max(0, footerTop-8-y)}
 		switch mode {
 		case noteSource:

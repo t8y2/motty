@@ -711,6 +711,7 @@ func (state *State) Wake() {
 	defer state.syncLocalProxySessions()
 	state.adoptHistoryClear()
 	state.adoptCompletion()
+	state.pumpNoteLinks()
 	state.pumpRevealResults()
 	state.pumpFileWindows()
 	if state.syncPending {

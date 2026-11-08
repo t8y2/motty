@@ -135,6 +135,14 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			if err != nil {
 				return false, true, err
 			}
+			if notes, ok := change.value.([]savedNote); ok && entity.kind == "note" {
+				// Notes linked to a file are this device's own, not shared records.
+				changed, err := setLocalField(releaseLocal, linkedNotesKey, linkedSavedNotes(notes))
+				if err != nil {
+					return false, true, err
+				}
+				releaseChanged = releaseChanged || changed
+			}
 		case syncedSettings[change.name]:
 			entries = withoutSetting(entries, change.name)
 			entries, err = appendSettingEntry(entries, base, defaults, change.name, change.value)
@@ -236,6 +244,9 @@ func appendEntityEntries(entries []configstore.Entry, base *configBase, defaults
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(item, &fields); err != nil {
 			return nil, nextOrd, err
+		}
+		if entity.kind == "note" && isLinkedNote(fields) {
+			continue // kept in this device's own state, see linkedNotesKey
 		}
 		id := boundKey(entity.key(fields))
 		if id == "" {

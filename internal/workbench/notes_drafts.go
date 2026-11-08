@@ -175,6 +175,7 @@ func (s *State) pruneNoteDrafts() {
 			d.owner = nil
 		}
 	}
+	s.noteLinksRestored()
 }
 
 func (s *State) notePopoverSide() components.PopoverSide {

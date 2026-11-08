@@ -79,7 +79,7 @@ func (s *State) paintNoteTree(c *ui.Canvas, b ui.Rect) {
 		label string
 		icon  ui.Icon
 	}{
-		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
+		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
 	}
 	for i, a := range actions {
 		if i == max(0, int((b.Width-16)/30)-1) && i < len(actions)-1 {
@@ -290,6 +290,7 @@ func (s *State) paintNoteEditor(c *ui.Canvas, b ui.Rect) {
 		c.Label(message, ui.Rect{X: b.X + 20, Y: y, Width: b.Width - 40, Height: 24}, ui.TextStyle{Size: 12, Color: s.pal.danger})
 		y += 26
 	}
+	y += s.paintNoteLinkNotice(c, b.X+20, y, b.Width-40)
 	content := ui.Rect{X: b.X + 16, Y: y, Width: max(0, b.Width-32), Height: max(0, b.Y+b.Height-y-16)}
 	if mode == noteSource {
 		n.sourceBounds = content
@@ -322,6 +323,9 @@ func (s *State) paintNoteFormatting(c *ui.Canvas, b ui.Rect, y, right float32) f
 		x += 32
 	}
 	status := s.noteUpdatedLabel()
+	if linked, ok := s.noteLinkStatus(s.noteContent().selected, func(text string) float32 { return c.TextWidth(text, 11) }, right-x-12); ok {
+		status = linked
+	}
 	width := c.TextWidth(status, 11)
 	if right-width >= x-4+12 {
 		c.Label(status, ui.Rect{X: right - width, Y: y + 3, Width: width, Height: 20}, ui.TextStyle{Size: 11, Color: s.pal.muted})
