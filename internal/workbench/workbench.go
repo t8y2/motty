@@ -283,6 +283,8 @@ var (
 	hitSettingsAgentCustom         = tree.ID(settingsHits, "settings-agent-custom")
 	hitSettingsRestoreOff          = tree.ID(settingsHits, "settings-restore-off")
 	hitSettingsRestoreAll          = tree.ID(settingsHits, "settings-restore-all")
+	hitSettingsLocalStartRemember  = tree.ID(settingsHits, "settings-local-start-remember")
+	hitSettingsLocalStartHome      = tree.ID(settingsHits, "settings-local-start-home")
 	hitSettingsShareToggle         = tree.ID(settingsHits, "settings-share")
 	hitSettingsVaultForget         = tree.ID(settingsHits, "settings-vault-forget")
 	hitSettingsVaultConvert        = tree.ID(settingsHits, "settings-vault-convert")
@@ -685,6 +687,8 @@ type State struct {
 	recentConnectSort   bool
 	recentConnections   map[string]time.Time
 	localShell          string // executable on this computer; empty uses the platform default
+	localStart          localStartPolicy
+	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
 	localShellMenu      localShellSelect
 	editorMenu          editorSelect
 	terminalFontSize    float32
@@ -997,6 +1001,7 @@ func (state *State) Close() {
 		return
 	}
 	state.flushNoteDraft()
+	state.noteActiveLocalDirectory()
 	state.save()
 	state.closeNoteWatches()
 	state.cancelNoteImages()

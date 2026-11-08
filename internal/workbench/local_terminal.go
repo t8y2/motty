@@ -212,6 +212,8 @@ func (state *State) openLocalTerminal() *Session {
 // openLocalTerminalWith opens a local terminal that runs shell, whatever the
 // default shell is. A zero Choice starts the default one, which stays the
 // default for this tab on a reconnect, so changing the setting later moves it.
+// It starts in the folder the setting picks (newLocalTerminalDirectory) unless
+// the caller already chose one.
 func (state *State) openLocalTerminalWith(shell localshell.Choice) *Session {
 	label := state.messages.LocalTerminalTitle
 	if shell.Path != "" {
@@ -219,6 +221,9 @@ func (state *State) openLocalTerminalWith(shell localshell.Choice) *Session {
 	}
 	host := localHost(label)
 	host.localShell = shell.Path
+	if state.pendingDirectory == "" {
+		state.pendingDirectory = state.newLocalTerminalDirectory()
+	}
 	return state.createHostSession(host, host.Address)
 }
 

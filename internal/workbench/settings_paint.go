@@ -446,6 +446,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.CloseConfirmRow, state.messages.Tools.CloseConfirmDescription, !state.closeConfirmOff, hitSettingsCloseConfirmToggle)
 			page.toggleRow(state.messages.Tools.PasswordHintRow, state.messages.Tools.PasswordHintDescription, !state.passwordHintOff, hitSettingsPasswordHintToggle)
 			page.toggleRow(state.messages.Tools.NotifyRow, state.messages.Tools.NotifyDescription, !state.notifyOff, hitSettingsNotifyToggle)
+			state.paintLocalStartSetting(page)
 			state.paintLocalShellSetting(page)
 		})
 		state.paintSchemeSettings(page)

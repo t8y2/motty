@@ -521,6 +521,10 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setRestoreConnectPolicy(restoreConnectOff)
 	case hitSettingsRestoreAll:
 		changed = state.setRestoreConnectPolicy(restoreConnectAll)
+	case hitSettingsLocalStartRemember:
+		changed = state.setLocalStartPolicy(localStartRemember)
+	case hitSettingsLocalStartHome:
+		changed = state.setLocalStartPolicy(localStartHome)
 	case hitSettingsAgentSystem:
 		changed = state.setSSHAgent(agentChoice{})
 	case hitSettingsAgentOnePassword:
@@ -719,6 +723,13 @@ func (state *State) settingsRestoreOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsLocalStartOptions() [2]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitSettingsLocalStartRemember, Label: state.messages.SettingsLocalStartRemember},
+		{ID: hitSettingsLocalStartHome, Label: state.messages.SettingsLocalStartHome},
+	}
+}
+
 func (state *State) settingsClipboardOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsClipboardBlock, Label: state.messages.SettingsTerminalClipboardBlock},
@@ -826,6 +837,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsRestoreOff, hitSettingsRestoreActive, hitSettingsRestoreAll:
 		options := state.settingsRestoreOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsLocalStartRemember, hitSettingsLocalStartHome:
+		options := state.settingsLocalStartOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAgentSystem, hitSettingsAgentOnePassword, hitSettingsAgentBitwarden, hitSettingsAgentCustom:
 		options := state.settingsAgentOptions()

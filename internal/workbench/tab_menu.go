@@ -249,6 +249,11 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	case hitTabMenuDuplicate:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			state.pendingWorkspace, state.pendingPane = 0, 0
+			if session.isLocal() && state.localStart == localStartRemember {
+				// A copy of a local tab is opened beside it, so it starts in
+				// the same folder, the way a split does.
+				state.pendingDirectory = session.localDirectory
+			}
 			state.newHostSession(session.host)
 		}
 	case hitTabMenuEditHost:
