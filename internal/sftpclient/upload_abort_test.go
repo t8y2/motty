@@ -272,3 +272,40 @@ func TestFailedUploadLeavesNoGapInThePartial(t *testing.T) {
 		t.Fatalf("resumed upload differs from the source (%d bytes, err %v)", len(got), err)
 	}
 }
+
+// A canceled upload's tidying requests must not outlast a link that stopped
+// answering: the transfer ends after the grace period and the subsystem is
+// discarded, which is what frees the request.
+func TestSettlingACanceledUploadDoesNotWaitOnAStalledLink(t *testing.T) {
+	worker, _, _ := gatedWorker(t, 1<<20)
+	worker.cancelGrace = 50 * time.Millisecond
+	generation := generationOf(worker)
+	stuck, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	finished := make(chan error, 1)
+	go func() {
+		finished <- worker.settleCanceled(generation, 0, func() error {
+			close(stuck)
+			<-release
+			return errors.New("late")
+		})
+	}()
+	waitSignal(t, "the cleanup request to start", stuck)
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("a request that never answered contributed %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("settling a canceled upload waited on the stalled request")
+	}
+	if generationOf(worker) == generation {
+		t.Fatal("the stalled subsystem was not discarded")
+	}
+}
+
+func generationOf(worker *Worker) uint64 {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	return worker.generation
+}

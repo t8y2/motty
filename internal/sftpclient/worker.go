@@ -1415,12 +1415,29 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		// owns the handle until the discarded subsystem releases it.
 		if errors.Is(err, errUploadAbandoned) {
 			err = ErrCanceled
-		} else if !closed && !errors.Is(err, ErrUploadFinalizeTimeout) {
-			err = errors.Join(err, destination.Close())
+			return
 		}
-		if discard {
-			worker.removeRemotePartial(client, generation, partial)
+		if closed || errors.Is(err, ErrUploadFinalizeTimeout) {
+			if discard {
+				worker.removeRemotePartial(client, generation, partial)
+			}
+			return
 		}
+		cleanup := func() error {
+			closeErr := destination.Close()
+			if discard {
+				worker.removeRemotePartial(client, generation, partial)
+			}
+			return closeErr
+		}
+		if errors.Is(err, ErrCanceled) {
+			// No write was in flight when the upload stopped, so it was not
+			// abandoned, but the link may be the very thing that stalled: closing
+			// the handle and removing the partial are requests it never answers.
+			err = errors.Join(err, worker.settleCanceled(generation, transferID, cleanup))
+			return
+		}
+		err = errors.Join(err, cleanup())
 	}()
 	if policy == ExistingResume && partialExists {
 		if partialInfo.Size() > sourceInfo.Size() {
@@ -1483,6 +1500,25 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		return written, resumed, err
 	}
 	return written, resumed, nil
+}
+
+// settleCanceled runs the requests that tidy up after a canceled transfer, and
+// gives them cancelGrace to answer. The user has already given up, so a link that
+// does not answer must not hold the transfer: when the upload is the only user of
+// the subsystem it is discarded, which is what ends a request that cannot return,
+// and the cleanup is left to finish or fail with the connection.
+func (worker *Worker) settleCanceled(generation, transferID uint64, action func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- action() }()
+	timer := time.NewTimer(worker.cancelGrace)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		worker.interruptIfAlone(generation, transferID)
+		return nil
+	}
 }
 
 // finalizeUpload bounds one request of the upload commit. pkg/sftp waits for a
