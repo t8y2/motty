@@ -185,6 +185,8 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuCompress, Label: messages.Tools.Compress, Icon: icon(iconArchive), Disabled: busy})
 		}
 		rows.separate()
+	}
+	if count > 0 && !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDelete, Label: messages.SFTPDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive, Disabled: busy})
 	}
 	rows.separate()

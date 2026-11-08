@@ -33,6 +33,7 @@ type workbenchSFTPRemote struct {
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
 	removeErr    error             // refuses every removal while set
+	removeErrAt  map[string]error  // refuses a particular path
 	unreadable   map[string]bool   // folders whose listing is refused
 	onRead       func(dir string)  // runs before a folder is listed, outside the lock
 }
@@ -316,6 +317,9 @@ func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.removeErrAt[remotePath]; err != nil {
+		return err
+	}
 	if remote.removeErr != nil {
 		return remote.removeErr
 	}
@@ -336,6 +340,9 @@ func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 func (remote *workbenchSFTPRemote) RemoveDirectory(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.removeErrAt[remotePath]; err != nil {
+		return err
+	}
 	if remote.removeErr != nil {
 		return remote.removeErr
 	}
@@ -1047,6 +1054,61 @@ func TestRemoteMoveRejectsItsOwnDirectory(t *testing.T) {
 	state.Click(hitSFTPDialogSubmit)
 	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
 		t.Fatalf("moving a folder into its descendant = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+}
+
+func TestSFTPMultiDeleteConfirmsSelectionAndRemovesFilesAndFolders(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	clickSFTPRow(t, state, view, "docs")
+	if !sftpMenuRowIDs(state.sftpMenuRows(session, view))[hitSFTPMenuDelete] {
+		t.Fatal("multi-selection has no delete action")
+	}
+	state.Click(hitSFTPDelete)
+	if view.dialog != sftpDialogDelete || len(view.dialogEntries) != 2 {
+		t.Fatalf("delete confirmation lost the selection: dialog=%v entries=%v", view.dialog, view.dialogEntries)
+	}
+	state.Click(hitSFTPDialogCancel)
+	remote.mu.Lock()
+	_, untouched := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if !untouched || view.dialog != sftpDialogNone {
+		t.Fatal("canceling the multi-delete changed files")
+	}
+	state.Click(hitSFTPDelete)
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "notes.txt") < 0 && sftpRowIndexOrNegative(view, "docs") < 0
+	})
+	remote.mu.Lock()
+	_, fileLeft := remote.files["/home/test/notes.txt"]
+	_, childLeft := remote.files["/home/test/docs/guide.md"]
+	remote.mu.Unlock()
+	if fileLeft || childLeft {
+		t.Fatalf("confirmed selection remains: file=%v child=%v", fileLeft, childLeft)
+	}
+}
+
+func TestSFTPMultiDeleteStopsAfterFailureAndRefreshes(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPDelete)
+	remote.mu.Lock()
+	remote.removeErrAt = map[string]error{"/home/test/notes.txt": os.ErrPermission}
+	remote.mu.Unlock()
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && view.dialog == sftpDialogNone && len(view.deleteRemaining) == 0 && sftpRowIndexOrNegative(view, "notes.txt") >= 0
+	})
+	remote.mu.Lock()
+	_, untouched := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if !untouched || sftpRowIndexOrNegative(view, "docs") >= 0 || len(state.fileNotices.items) == 0 ||
+		!strings.Contains(state.fileNotices.items[0].detail, "/home/test/notes.txt") {
+		t.Fatal("failure deleted another selected item or lacked partial-failure notice")
 	}
 }
 

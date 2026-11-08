@@ -395,6 +395,34 @@ func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	}
 }
 
+func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("hello world"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	state.options.ClipboardText = func() (string, error) { return "paste", nil }
+	state.terminalRightClickPaste = true
+	x, y := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
+	click := func(modifiers ui.Modifiers) {
+		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Modifiers: modifiers,
+			Target: hitTerminalList.At(int(session.ID)), X: x, Y: y, Viewport: state.viewport})
+	}
+	click(0)
+	if copied != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
+		t.Fatalf("selected right click: copied=%q input=%q menu=%v", copied, shell.input, state.terminalMenu.open)
+	}
+	click(ui.ModifierShift)
+	if !state.terminalMenu.open || len(shell.input) != 0 {
+		t.Fatal("Shift+right click with a selection did not open the menu")
+	}
+}
+
 func fillHistory(t *testing.T, terminal *terminal, lines int) {
 	t.Helper()
 	for line := 0; line < lines; line++ {

@@ -1029,6 +1029,9 @@ type Messages struct {
 	SFTPMovedFmt                string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
+	SFTPDeleteSelectionTitle    string
+	SFTPDeleteSelectionFmt      string
+	SFTPDeleteSelectionPartial  string
 	SFTPDeleteDescriptionFmt    string
 	// SFTPDeleteFolderContentsFmt says a folder goes with everything inside it:
 	// the panel deletes a folder's contents too, not only an empty folder.
@@ -1039,6 +1042,7 @@ type Messages struct {
 	SFTPDeleteConfirm           string
 	SFTPDeletingFmt             string
 	SFTPDeletedFmt              string
+	SFTPDeletedCountFmt         string
 	SFTPPermissionsTitle        string
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string

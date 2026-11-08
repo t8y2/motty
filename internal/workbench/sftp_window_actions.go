@@ -80,6 +80,8 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		if entry.IsDir() && !entry.IsLink() && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPCompress, iconArchive, m.Tools.Compress)
 		}
+	}
+	if count > 0 {
 		add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 	}
 	return actions

@@ -1,0 +1,31 @@
+# Run tools/e2esshd on port 2333, then substitute the printed fixture path:
+# sed "s|[$]SFTP_ROOT|<sftp root>|g" tools/e2e/issue602_multi_delete_e2e.txt > /tmp/issue602-e2e.txt
+# MOTTY_LANG=en python3 tools/headless_drive.py <isolated-home> /tmp/issue602-e2e.txt
+# This removes only the fixture's alpha.txt and docs/guide.txt.
+# lang: en
+click "Search"
+type tester@127.0.0.1:2333
+click "Connect"
+waitfor "Trust this host" 5000
+click "Connect Once"
+waitfor "Password" 5000
+type secret
+key enter
+settle 2500
+click id:sftp/sftp-open
+click "Folder path"
+key cmd+a
+type $SFTP_ROOT
+key enter
+waitfor "alpha.txt" 5000
+click "docs"
+keydown shift
+click "alpha.txt"
+keyup shift
+click "Delete"
+waitfor "Delete Selected Items" 3000
+shot /tmp/motty-602-confirm.png
+click "Delete"
+waitfor "Deleted 2 items" 5000
+shot /tmp/motty-602-deleted.png
+layout

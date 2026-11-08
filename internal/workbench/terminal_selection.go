@@ -240,6 +240,13 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 	switch event.Kind {
 	case ui.PointerDown:
 		if event.Button == ui.PointerButtonSecondary {
+			if state.terminalRightClickPaste && event.Modifiers&ui.ModifierShift == 0 && terminal.selection.selected {
+				state.terminalMenu.open = false
+				if err := state.options.SetClipboardText(terminal.selection.text(terminal.screen)); err != nil {
+					state.status = err.Error()
+				}
+				return ui.EventResult{Handled: true, Repaint: true}
+			}
 			// A program that asked for the mouse already had this press; what
 			// reaches here is the terminal's own. It pastes when the user chose
 			// that, and Shift keeps the menu one press away.
