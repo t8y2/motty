@@ -713,3 +713,124 @@ func TestAVC420FrameBatching(t *testing.T) {
 		t.Fatalf("frame[1] NAL type = 0x%02X, want 0x66", frames[1].NALData[3])
 	}
 }
+
+// The progressive codec's tile state is not part of the graphics output. A
+// ResetGraphics PDU only resizes that output; Windows keeps sending UPGRADE
+// tiles for a surface recreated with the same ID and does not repeat the
+// SYNC/CONTEXT blocks of the first pass. Rebuilding the decoder here loses
+// those base tiles and leaves the resized desktop black or fragmented.
+func TestProgressiveTilesSurviveResetGraphics(t *testing.T) {
+	h := NewHandler(func([]byte) error { return nil }, slog.New(slog.DiscardHandler))
+
+	updates := 0
+	h.OnStridedBitmap(func(_ uint16, _, _, w, hh int, _ []byte, stride int) {
+		if w != 64 || hh != 64 || stride != 64*4 {
+			t.Fatalf("update = %dx%d stride %d, want 64x64 stride %d", w, hh, stride, 64*4)
+		}
+		updates++
+	})
+
+	testCreateSurface(h, 1, 64, 64)
+	h.handleWireToSurface2(testWireToSurface2(1, testProgressiveSimpleStream()))
+	if updates != 1 {
+		t.Fatalf("first pass emitted %d updates, want 1", updates)
+	}
+
+	// ResetGraphics implicitly destroys the surface but not the progressive
+	// tile context that later upgrade passes refine.
+	reset := make([]byte, 12)
+	binary.LittleEndian.PutUint32(reset[0:4], 64)
+	binary.LittleEndian.PutUint32(reset[4:8], 64)
+	h.handleResetGraphics(reset)
+
+	testCreateSurface(h, 1, 64, 64)
+	h.handleWireToSurface2(testWireToSurface2(1, testProgressiveUpgradeStream()))
+	if updates != 2 {
+		t.Fatalf("upgrade after reset emitted %d total updates, want 2", updates)
+	}
+}
+
+func testCreateSurface(h *Handler, id, width, height uint16) {
+	data := make([]byte, 7)
+	binary.LittleEndian.PutUint16(data[0:2], id)
+	binary.LittleEndian.PutUint16(data[2:4], width)
+	binary.LittleEndian.PutUint16(data[4:6], height)
+	data[6] = PixelFormatXRGB8888
+	h.handleCreateSurface(data)
+}
+
+func testWireToSurface2(surfaceID uint16, bitmap []byte) []byte {
+	data := make([]byte, 13+len(bitmap))
+	binary.LittleEndian.PutUint16(data[0:2], surfaceID)
+	binary.LittleEndian.PutUint16(data[2:4], CodecProgressive)
+	binary.LittleEndian.PutUint32(data[4:8], 7)
+	data[8] = PixelFormatXRGB8888
+	binary.LittleEndian.PutUint32(data[9:13], uint32(len(bitmap)))
+	copy(data[13:], bitmap)
+	return data
+}
+
+// Progressive block types (MS-RDPEGFX 2.2.4.2).
+const (
+	testProgressiveSyncBlock        = 0xCCC0
+	testProgressiveContextBlock     = 0xCCC1
+	testProgressiveFrameBeginBlock  = 0xCCC2
+	testProgressiveFrameEndBlock    = 0xCCC3
+	testProgressiveRegionBlock      = 0xCCC4
+	testProgressiveTileSimpleBlock  = 0xCCC5
+	testProgressiveTileUpgradeBlock = 0xCCC7
+)
+
+func testProgressiveBlock(kind uint16, body []byte) []byte {
+	block := make([]byte, 6+len(body))
+	binary.LittleEndian.PutUint16(block[0:2], kind)
+	binary.LittleEndian.PutUint32(block[2:6], uint32(len(block)))
+	copy(block[6:], body)
+	return block
+}
+
+func testProgressiveSimpleStream() []byte {
+	sync := make([]byte, 8)
+	binary.LittleEndian.PutUint32(sync[0:4], 0xCACCACCA)
+	binary.LittleEndian.PutUint32(sync[4:8], 0x00000100)
+	context := make([]byte, 8)
+	binary.LittleEndian.PutUint16(context[4:6], 64)
+
+	stream := testProgressiveBlock(testProgressiveSyncBlock, sync)
+	stream = append(stream, testProgressiveBlock(testProgressiveContextBlock, context)...)
+	stream = append(stream, testProgressiveFrameBegin(0)...)
+	stream = append(stream, testProgressiveRegion(testProgressiveTileSimpleBlock, make([]byte, 16))...)
+	return append(stream, testProgressiveBlock(testProgressiveFrameEndBlock, nil)...)
+}
+
+func testProgressiveUpgradeStream() []byte {
+	upgrade := make([]byte, 20)
+	upgrade[7] = 0xFF // full quality: no progressive quantization
+
+	stream := testProgressiveFrameBegin(1)
+	stream = append(stream, testProgressiveRegion(testProgressiveTileUpgradeBlock, upgrade)...)
+	return append(stream, testProgressiveBlock(testProgressiveFrameEndBlock, nil)...)
+}
+
+func testProgressiveFrameBegin(frame uint32) []byte {
+	body := make([]byte, 6)
+	binary.LittleEndian.PutUint32(body[0:4], frame)
+	binary.LittleEndian.PutUint16(body[4:6], 1)
+	return testProgressiveBlock(testProgressiveFrameBeginBlock, body)
+}
+
+func testProgressiveRegion(tileType uint16, tileBody []byte) []byte {
+	tile := testProgressiveBlock(tileType, tileBody)
+	region := make([]byte, 12+8+5)
+	region[0] = 64 // tile size
+	binary.LittleEndian.PutUint16(region[1:3], 1)
+	region[3] = 1 // one quantization table
+	binary.LittleEndian.PutUint16(region[6:8], 1)
+	binary.LittleEndian.PutUint32(region[8:12], uint32(len(tile)))
+	binary.LittleEndian.PutUint16(region[12:14], 0)
+	binary.LittleEndian.PutUint16(region[14:16], 0)
+	binary.LittleEndian.PutUint16(region[16:18], 64)
+	binary.LittleEndian.PutUint16(region[18:20], 64)
+	region = append(region, tile...)
+	return testProgressiveBlock(testProgressiveRegionBlock, region)
+}

@@ -179,7 +179,9 @@ func (d *Decoder) ClearContext(id uint32) {
 }
 
 // ClearAllContexts removes all stored tile state across all contexts.
-// Must be called when a surface is deleted or reset to avoid stale coeffDiff data.
+// A fresh graphics channel starts with no progressive state. ResetGraphics does
+// not: Windows continues with UPGRADE tiles for a recreated surface without
+// repeating SYNC and CONTEXT.
 func (d *Decoder) ClearAllContexts() {
 	clear(d.contexts)
 }
