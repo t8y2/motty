@@ -264,6 +264,7 @@ func (state *State) openSettings() {
 	state.settingsScroll = 0
 	state.settings.navScroll = 0
 	state.settings.aboutCopied = false
+	state.schemeBrowserOpen = false
 	state.revealSettingsCategory()
 	state.aiSettingsOpened()
 	state.save()
@@ -274,6 +275,14 @@ func (state *State) openSettings() {
 // of travel; a trackpad moves it by exactly what it reports.
 func (state *State) scrollSettings(event ui.ScrollEvent) ui.EventResult {
 	step := event.StepY(24)
+	if state.schemeBrowserOpen {
+		if pointInRect(event.X, event.Y, state.schemeDrawerBody) {
+			result := state.schemeDrawerView.Wheel(event)
+			result.Handled = true
+			return result
+		}
+		return ui.EventResult{Handled: true}
+	}
 	view := &state.settings
 	nav := view.navRect
 	if nav.Width > 0 && event.X >= nav.X && event.X < nav.X+nav.Width && event.Y >= nav.Y && event.Y < nav.Y+nav.Height {

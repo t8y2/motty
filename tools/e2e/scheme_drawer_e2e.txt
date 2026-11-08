@@ -1,0 +1,32 @@
+# The complete color scheme collection opens in a left-hand drawer over the
+# settings page, while the page itself stays at the height of the quick picks.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/scheme_drawer_e2e.txt
+# lang: en
+resize 1400 900
+settle 600
+click "Settings"
+settle 900
+click "Terminal"
+settle 900
+scroll 780 500 0 1900
+settle 700
+shot /tmp/scheme-folded.png
+click id:scheme/scheme-browse-all
+settle 900
+shot /tmp/scheme-drawer.png
+expect text "All schemes" within 1000
+expect text "Community" within 1000
+expect layout clean
+click "textfield:Search color schemes"
+settle 300
+type rose
+settle 600
+shot /tmp/scheme-search.png
+expect text "matches" within 1000
+key escape
+settle 700
+shot /tmp/scheme-closed.png
+expect text "Quick picks" within 1000
+expect layout clean

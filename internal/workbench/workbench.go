@@ -824,7 +824,20 @@ type State struct {
 	// terminalSchemes is the terminal color scheme of each look, indexed by
 	// appearance: the terminal follows the window between light and dark.
 	terminalSchemes [2]string
-	terminalPad     terminalPad
+	// dirSchemes are the user's own schemes from the data folder, loaded before
+	// the saved state restores the ids that select them.
+	dirSchemes     []colorScheme
+	dirSchemeIndex map[string]int
+	// schemeFilter is the drawer's search box. View state, so it is not kept.
+	schemeFilter text.Editor
+	// schemeBrowserOpen shows the complete collection in a drawer. The drawer's
+	// view and body outlive a paint so wheel handling can use the last layout.
+	schemeBrowserOpen  bool
+	schemeDrawerView   flex.View
+	schemeDrawerBody   ui.Rect
+	schemeDrawerFilter string
+	schemeDrawerReset  bool
+	terminalPad        terminalPad
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter
@@ -1117,6 +1130,9 @@ func New(options Options) *State {
 		// Settings and hosts, but none of the tabs the last session left.
 		saved.Sessions, saved.Deck, saved.ActiveSession, saved.Workspace = nil, nil, 0, ""
 	}
+	// The user's schemes are part of the choices restore validates saved ids
+	// against, so they are read before the saved state.
+	state.loadDirSchemes()
 	state.restore(saved)
 	state.migrateSecretsToHosts(false)
 	if report.outcome == loadOK && err == nil {
@@ -1279,6 +1295,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 		}
 		if hit == hitSettingsWordSeparators && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal {
 			return &state.terminalWordEditor
+		}
+		if hit == hitSchemeSearch && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && state.schemeBrowserOpen {
+			return &state.schemeFilter
 		}
 		if hit == hitKnownHostsSearch && state.activeSection == sectionKnownHosts && state.knownHosts.action == knownHostsActionNone {
 			return &state.knownHosts.search

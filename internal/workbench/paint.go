@@ -301,6 +301,13 @@ func (state *State) Paint(canvas *ui.Canvas, size ui.Size) {
 	}
 	state.paintToolbarDockBottom(canvas, size)
 	state.paintVerticalTabs(canvas, size)
+	if state.activeSection == sectionSettings &&
+		state.settingsCategory == settingsTerminal &&
+		!state.settingsSearching() &&
+		state.schemeBrowserOpen &&
+		state.modal == modalNone {
+		state.paintSchemeDrawer(canvas, state.baseWorkspacePixelBounds(size))
+	}
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
