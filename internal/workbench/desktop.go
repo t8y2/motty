@@ -1093,7 +1093,11 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 	case session.host.tunneled():
 		parts = append(parts, m.StripEncrypted)
 	case view.session.Info().Encrypted:
-		parts = append(parts, m.StripTLS)
+		if session.host.Protocol == protocolVNC {
+			parts = append(parts, m.StripVNCEncrypted)
+		} else {
+			parts = append(parts, m.StripTLS)
+		}
 	default:
 		parts = append(parts, m.StripPlain)
 	}
@@ -1135,7 +1139,7 @@ func (state *State) hostSubtitle(host Host) string {
 			return state.messages.Desktop.ProtocolRDP
 		}
 		return host.User
-	case host.isDesktop() && !host.ViaSSH:
+	case host.isDesktop() && !host.ViaSSH && host.User == "":
 		return state.messages.Desktop.ProtocolVNC
 	}
 	return state.login(host)
@@ -1150,4 +1154,12 @@ func (state *State) rdpCertificateDescription(key sshconn.HostKeyInfo) string {
 		return fmt.Sprintf(m.CertChangedFmt, key.Address, key.Known[0])
 	}
 	return fmt.Sprintf(m.CertNewFmt, key.Address)
+}
+
+func (state *State) vncKeyDescription(key sshconn.HostKeyInfo) string {
+	m := state.messages.Desktop
+	if len(key.Known) > 0 {
+		return fmt.Sprintf(m.VNCKeyChangedFmt, key.Address, key.Known[0])
+	}
+	return fmt.Sprintf(m.VNCKeyNewFmt, key.Address)
 }

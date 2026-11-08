@@ -455,7 +455,16 @@ func hostPasswordSecretName(host Host) (string, bool) {
 	default:
 		return "", false
 	}
-	return hostSecretName(host.CatalogID, hostPasswordPart), true
+	return hostSecretName(host.CatalogID, hostPasswordPartFor(host)), true
+}
+
+// hostPasswordPartFor identifies the authentication account independently of
+// the catalog identity assigned to an edited or copied host.
+func hostPasswordPartFor(host Host) string {
+	if host.Protocol == protocolVNC && !host.tunneled() && host.User != "" {
+		return vncSystemPasswordPart(host.User)
+	}
+	return hostPasswordPart
 }
 
 // hostDialogPasswordChanges plans what the form's password field does to the
@@ -472,6 +481,22 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 		// as it is, for the day the host goes back to it.
 		return nil, ""
 	}
+	if source != nil && source.Protocol == protocolVNC && host.Protocol == protocolVNC && state.editor.passwordSaved &&
+		hostPasswordPartFor(*source) != hostPasswordPartFor(host) {
+		previous, _ := hostPasswordSecretName(*source)
+		if typed == "" {
+			return nil, "" // changing the account must not delete another account's secret
+		}
+		if state.secrets.vault != nil {
+			value, found, err := state.secrets.vault.Get(previous)
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			if found && typed == value {
+				return nil, state.messages.Desktop.VNCAccountPasswordChanged
+			}
+		}
+	}
 	switch {
 	case hasPassword && typed != "":
 		if state.secrets.vault == nil {
@@ -482,6 +507,23 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 		// Emptied by the user, or no longer a host that has a password.
 		if previous, had := hostPasswordSecretName(*source); had {
 			changes = append(changes, vault.Change{Name: previous, Delete: true})
+		}
+	}
+	if editing && source.Protocol != host.Protocol && state.secrets.vault != nil {
+		if previous, had := hostPasswordSecretName(*source); had && previous != name {
+			changes = append(changes, vault.Change{Name: previous, Delete: true})
+		}
+		if source.Protocol == protocolVNC && state.secrets.vault.Len() > 0 {
+			names, err := state.secrets.vault.Names()
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			prefix := hostSecretName(source.CatalogID, "vnc-system-password:")
+			for _, saved := range names {
+				if strings.HasPrefix(saved, prefix) {
+					changes = append(changes, vault.Change{Name: saved, Delete: true})
+				}
+			}
 		}
 	}
 	return changes, ""
@@ -598,6 +640,15 @@ func (state *State) confirmDeleteHosts() {
 	vaultFile := state.secrets.vault
 	var changes []vault.Change
 	if vaultFile != nil && vaultFile.Len() > 0 {
+		var names []string
+		if !vaultFile.NeedsConversion() {
+			var err error
+			names, err = vaultFile.Names()
+			if err != nil {
+				state.dialogError = state.hostPasswordSaveError(err)
+				return
+			}
+		}
 		for _, host := range state.hosts {
 			if !containsHostID(state.hostActionIDs, host.ID) {
 				continue
@@ -605,6 +656,12 @@ func (state *State) confirmDeleteHosts() {
 			changes = append(changes,
 				vault.Change{Name: hostSecretName(host.CatalogID, hostPasswordPart), Delete: true},
 				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true})
+			prefix := hostSecretName(host.CatalogID, "vnc-system-password:")
+			for _, name := range names {
+				if strings.HasPrefix(name, prefix) {
+					changes = append(changes, vault.Change{Name: name, Delete: true})
+				}
+			}
 			if host.Proxy != nil && host.Proxy.kind != sshconn.ProxyNone && host.Proxy.user != "" {
 				changes = append(changes, vault.Change{Name: hostProxyPasswordSecret(host.CatalogID, host.Proxy), Delete: true})
 			}

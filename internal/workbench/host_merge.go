@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"slices"
+	"strings"
 
 	"motty/internal/vault"
 )
@@ -42,8 +43,16 @@ func (catalog *hostCatalog) resolveMerged(id string) string {
 // hosts an agent may use, the tabs open in this window and the saved password.
 // It returns saved with those references replaced; the slices it changes are
 // copies, so what the caller loaded is untouched.
-func (state *State) foldMergedHosts(saved savedState, merges []hostMerge) savedState {
+func (state *State) foldMergedHosts(saved savedState, merges []hostMerge) (savedState, error) {
+	merges = slices.Clone(merges)
+	slices.SortFunc(merges, func(a, b hostMerge) int {
+		return strings.Compare(a.dropped.CatalogID, b.dropped.CatalogID)
+	})
 	state.merged = mergeAliases(merges)
+	if err := state.moveMergedSecrets(merges); err != nil {
+		state.merged = nil
+		return saved, err
+	}
 	state.mergedHosts = true
 
 	saved.Proxies = slices.Clone(saved.Proxies)
@@ -86,34 +95,67 @@ func (state *State) foldMergedHosts(saved savedState, merges []hostMerge) savedS
 			}
 		}
 	}
-	state.moveMergedSecrets(merges)
-	return saved
+	return saved, nil
 }
 
-// moveMergedSecrets gives the host that stayed the password and one-time code of
-// a host that was folded into it, unless it has its own. It reads the vault only
-// when there is something to move, and does nothing while the vault is not open.
-func (state *State) moveMergedSecrets(merges []hostMerge) {
+// moveMergedSecrets carries passwords, VNC system accounts and one-time codes
+// to the surviving host without replacing its own secrets. VNC merges fail if
+// their accounts cannot be carried over. Other protocols keep merging while
+// the vault is unavailable, as they did before.
+func (state *State) moveMergedSecrets(merges []hostMerge) error {
+	hasVNC := false
+	for _, merge := range merges {
+		if merge.dropped.Protocol == protocolVNC {
+			hasVNC = true
+			break
+		}
+	}
 	if state.secrets.vault == nil {
-		return
+		if hasVNC {
+			return vault.ErrUnavailable
+		}
+		return nil
 	}
 	var changes []vault.Change
+	var names []string
+	if hasVNC {
+		var err error
+		names, err = state.secrets.vault.Names()
+		if err != nil {
+			return err
+		}
+	}
 	for _, merge := range merges {
 		kept := state.resolveMerged(merge.dropped.CatalogID)
-		for _, part := range []string{hostPasswordPart, hostOTPPart} {
+		parts := []string{hostPasswordPart, hostOTPPart}
+		if merge.dropped.Protocol == protocolVNC {
+			prefix := hostSecretName(merge.dropped.CatalogID, "vnc-system-password:")
+			for _, name := range names {
+				if account, ok := strings.CutPrefix(name, prefix); ok {
+					parts = append(parts, vncSystemPasswordPart(account))
+				}
+			}
+		}
+		for _, part := range parts {
 			value, found, err := state.secrets.vault.Get(hostSecretName(merge.dropped.CatalogID, part))
-			if err != nil || !found {
+			if err != nil {
+				if merge.dropped.Protocol == protocolVNC {
+					return err
+				}
 				continue
 			}
-			if _, has, err := state.secrets.vault.Get(hostSecretName(kept, part)); err != nil || has {
+			if !found {
 				continue
 			}
 			changes = append(changes, vault.Change{Name: hostSecretName(kept, part), Value: value})
 		}
 	}
 	if len(changes) > 0 {
-		_ = state.secrets.vault.Apply(changes)
+		if _, err := state.secrets.vault.ApplyMissingWithCommit(changes, func(int) error { return nil }); err != nil && hasVNC {
+			return err
+		}
 	}
+	return nil
 }
 
 func (catalog *hostCatalog) hostByCatalogID(id string) (Host, bool) {

@@ -2592,11 +2592,17 @@ func (state *State) paintHostKeyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 	})
 	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
-	)
+	actions := [...]components.ButtonAction{
+		{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
+		{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
+		{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
+		{ID: hitHostKeyForget, Label: m.HostKeyForget, Variant: components.ButtonOutline},
+	}
+	actionCount := 3
+	if canForgetServerIdentity(session) {
+		actionCount++
+	}
+	dialog.Actions(layout, actions[:actionCount]...)
 	dialog.End()
 }
 

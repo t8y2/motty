@@ -90,7 +90,7 @@ func (catalog *hostCatalog) passwordSecret(target Host, endpoint sshconn.Endpoin
 	if catalog.usesCredential(owner) {
 		return credentialSecretName(owner.Credential)
 	}
-	return hostSecretName(catalog.secretOwner(target, endpoint, role), hostPasswordPart)
+	return hostSecretName(catalog.secretOwner(target, endpoint, role), passwordPart(target, endpoint))
 }
 
 // passwordShared reports whether the password a prompt would be answered with

@@ -701,6 +701,8 @@ type Messages struct {
 	HostKeyTrust                   string
 	HostKeyOnce                    string
 	HostKeyReject                  string
+	HostKeyForget                  string
+	HostKeyForgetHint              string
 	PasswordTitle                  string
 	PasswordDescription            string
 	PasswordLabel                  string

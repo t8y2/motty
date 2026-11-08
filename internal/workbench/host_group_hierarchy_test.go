@@ -54,7 +54,7 @@ func TestHostGroupRenameUpdatesSubtreeFilterExpansionAndPersistence(t *testing.T
 	for index, host := range state.hosts {
 		old := before[index]
 		old.Group = host.Group
-		if host != old {
+		if !reflect.DeepEqual(host, old) {
 			t.Fatalf("rename changed connection fields: got %+v, want %+v", host, old)
 		}
 	}

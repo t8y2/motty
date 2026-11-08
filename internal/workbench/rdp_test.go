@@ -95,7 +95,7 @@ func TestRDPCertificateIsAskedOnceThenPinnedAndAChangeIsAskedLoudly(t *testing.T
 	state.Click(hitHostKeyTrust)
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil })
 	pinned, _ := os.ReadFile(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
-	if !strings.HasPrefix(string(pinned), "win.example.com:3389 SHA256:") {
+	if !strings.HasPrefix(string(pinned), "rdp:win.example.com:3389 SHA256:") {
 		t.Fatalf("pinned file = %q", pinned)
 	}
 	if request := opened[0]; request.Host.User != `CORP\alice` {

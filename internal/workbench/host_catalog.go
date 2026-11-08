@@ -227,8 +227,7 @@ func mergeKeyOf(host Host) mergeKey {
 // devices agree on before they have synced, so a host added on both appears
 // twice when their records meet. The host with the smallest ID stays, which every
 // device chooses alike, so each ends with the same one without talking to the
-// other. The kept host is not changed; what referred to a dropped host is the
-// caller's to point at the one that stays.
+// other. The caller carries secrets and references to the host that stays.
 func mergeSameHosts(hosts []Host) ([]Host, []hostMerge) {
 	first := make(map[mergeKey]int, len(hosts))
 	var merges []hostMerge
