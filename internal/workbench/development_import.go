@@ -277,7 +277,7 @@ func (state *State) paintDevelopmentImport(canvas *ui.Canvas, viewport ui.Rect) 
 	if view.recordsImported {
 		body, skip = m.DevelopmentImportResume, m.DevelopmentImportKeep
 	}
-	const width float32 = 620
+	const width float32 = 600
 	bodyWidth := width - 2*(metrics.PadSurface+metrics.GapItem)
 	lines := wrappedLines(canvas, body, metrics.FontSizeM, bodyWidth)
 	errorText := ""

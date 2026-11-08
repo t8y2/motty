@@ -48,9 +48,10 @@ var (
 		Levels:  []string{LevelNone, LevelMinimal, LevelLow, LevelMedium, LevelHigh},
 		Default: LevelMedium,
 	}
+	// Claude thinking costs output tokens, so it is opt-in: the default is off.
 	cfgClaude = &store.ReasoningConfig{
 		Levels:  []string{LevelNone, LevelLow, LevelMedium, LevelHigh, LevelXHigh, LevelMax},
-		Default: LevelMedium,
+		Default: LevelNone,
 	}
 	cfgQwen = &store.ReasoningConfig{
 		Levels:  []string{LevelNone, LevelDefault, LevelHigh},

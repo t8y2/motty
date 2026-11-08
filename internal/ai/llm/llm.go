@@ -79,6 +79,20 @@ type Message struct {
 	Images     []Image `json:"-"`
 	ToolCalls  []ToolCall
 	ToolCallID string
+	// Thinking is the reasoning blocks of an assistant turn that Anthropic
+	// requires back, unchanged, while the turn continues through tool calls.
+	// It is kept for the run in progress only, so it stays out of the JSON form.
+	Thinking []ThinkingBlock `json:"-"`
+}
+
+// ThinkingBlock is one thinking or redacted_thinking block of a Messages API
+// response, with the signature that proves it came from the model.
+type ThinkingBlock struct {
+	Text      string
+	Signature string
+	// Redacted marks a redacted_thinking block, whose opaque payload is in Data.
+	Redacted bool
+	Data     string
 }
 
 // ToolSpec declares a tool the model may call.
@@ -109,6 +123,9 @@ const (
 	EventToolCall
 	EventDone
 	EventError
+	// EventThinking carries one finished ThinkingBlock to keep for replay; the
+	// readable text already went out as EventReasoning deltas.
+	EventThinking
 )
 
 // Usage is the token accounting reported by the provider, when it reports any.
@@ -140,6 +157,7 @@ type Event struct {
 	Kind       EventKind
 	Text       string
 	ToolCall   *ToolCall
+	Thinking   *ThinkingBlock
 	Usage      Usage
 	StopReason string
 	Err        error

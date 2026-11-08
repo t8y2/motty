@@ -224,104 +224,6 @@ func checkHeader(path string) error {
 	return nil
 }
 
-func execMigration(ctx context.Context, tx *sql.Tx, script string) error {
-	if _, err := tx.ExecContext(ctx, script); err != nil {
-		// If executing the batch failed because one or more columns already exist
-		// (e.g. from an interrupted migration or rollback), execute statements individually
-		// and tolerate duplicate column name errors.
-		statements := strings.Split(script, ";")
-		for _, stmt := range statements {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
-			}
-			if _, sErr := tx.ExecContext(ctx, stmt); sErr != nil {
-				if strings.Contains(sErr.Error(), "duplicate column name") {
-					continue
-				}
-				return sErr
-			}
-		}
-	}
-	return nil
-}
-
-// ensureColumns checks and idempotently patches any missing columns caused by branch
-// switching, version skipping, or interrupted runs across versions.
-func (s *Store) ensureColumns(ctx context.Context) error {
-	cols := func(table string) (map[string]bool, error) {
-		rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		m := make(map[string]bool)
-		for rows.Next() {
-			var cid int
-			var name, ctype string
-			var notnull, pk int
-			var dflt sql.NullString
-			if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-				return nil, err
-			}
-			m[name] = true
-		}
-		return m, rows.Err()
-	}
-
-	pCols, err := cols("providers")
-	if err != nil {
-		return err
-	}
-	if !pCols["models_url"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE providers ADD COLUMN models_url TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !pCols["api_format"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE providers ADD COLUMN api_format TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !pCols["auth_style"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE providers ADD COLUMN auth_style TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !pCols["cli_path"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE providers ADD COLUMN cli_path TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !pCols["has_key"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE providers ADD COLUMN has_key INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-
-	mCols, err := cols("models")
-	if err != nil {
-		return err
-	}
-	if !mCols["reasoning_enabled"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !mCols["reasoning_levels"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE models ADD COLUMN reasoning_levels TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-	if !mCols["reasoning_default"] {
-		if _, err := s.db.ExecContext(ctx, `ALTER TABLE models ADD COLUMN reasoning_default TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *Store) init() error {
 	ctx := context.Background()
 	var res string
@@ -340,7 +242,7 @@ func (s *Store) init() error {
 		if err != nil {
 			return fmt.Errorf("ai store: migrate: %w", err)
 		}
-		if err := execMigration(ctx, tx, migrations[v]); err != nil {
+		if _, err := tx.ExecContext(ctx, migrations[v]); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("ai store: migrate to v%d: %w", v+1, err)
 		}
@@ -351,9 +253,6 @@ func (s *Store) init() error {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("ai store: migrate to v%d: %w", v+1, err)
 		}
-	}
-	if err := s.ensureColumns(ctx); err != nil {
-		return fmt.Errorf("ai store: ensure columns: %w", err)
 	}
 	var err error
 	if s.stAppend, err = s.db.PrepareContext(ctx,

@@ -2,7 +2,6 @@ package store
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -746,85 +745,5 @@ func TestModelReasoningPersistenceAndRetention(t *testing.T) {
 	models, _ = s.Models()
 	if len(models) != 1 || models[0].Reasoning == nil || models[0].Reasoning.Default != "high" {
 		t.Fatalf("expected retained reasoning after SaveModels, got %+v", models)
-	}
-}
-
-func TestMigrationToleratesExistingReasoningColumns(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "partial.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	// Run migrations up to v7
-	for i := 0; i < 7; i++ {
-		if _, err := db.ExecContext(ctx, migrations[i]); err != nil {
-			t.Fatalf("migrate to %d: %v", i+1, err)
-		}
-	}
-	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 7"); err != nil {
-		t.Fatal(err)
-	}
-	// Simulate the column already being added previously by an interrupted run
-	if _, err := db.ExecContext(ctx, "ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0;"); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	// Opening the store should migrate to v8 gracefully without duplicate column error
-	store, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open failed on database with existing column: %v", err)
-	}
-	defer store.Close()
-
-	var ver int
-	if err := store.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil || ver != schemaVersion {
-		t.Fatalf("expected schemaVersion %d, got %d, err: %v", schemaVersion, ver, err)
-	}
-}
-
-func TestMigrationRepairsMissingModelsURL(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing_models_url.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	// Run migrations up to v6 only (skipping v7 models_url)
-	for i := 0; i < 6; i++ {
-		if _, err := db.ExecContext(ctx, migrations[i]); err != nil {
-			t.Fatalf("migrate to %d: %v", i+1, err)
-		}
-	}
-	// Intentionally set user_version directly to 8 as if it had migrated past it
-	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 8"); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-
-	// Open should detect missing models_url and repair the schema automatically
-	store, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer store.Close()
-
-	// SaveProvider with ModelsURL should now succeed without "has no column named models_url" error
-	p := Provider{
-		ID:        "p_custom",
-		Name:      "NewAPI",
-		Kind:      KindOpenAI,
-		BaseURL:   "https://newapi.acme.red/v1",
-		ModelsURL: "https://newapi.acme.red/v1/models",
-		Enabled:   true,
-	}
-	if err := store.SaveProvider(p); err != nil {
-		t.Fatalf("SaveProvider failed on repaired store: %v", err)
-	}
-
-	got, err := store.Providers()
-	if err != nil || len(got) != 1 || got[0].ModelsURL != "https://newapi.acme.red/v1/models" {
-		t.Fatalf("unexpected providers: %+v, err: %v", got, err)
 	}
 }

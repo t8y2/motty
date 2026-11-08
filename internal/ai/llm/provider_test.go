@@ -1015,3 +1015,34 @@ func TestOpenAIResponsesIgnoresChatCompletionsStream(t *testing.T) {
 		t.Fatal("want error")
 	}
 }
+
+func TestAnthropicStreamKeepsThinkingBlocks(t *testing.T) {
+	h := &anHandler{}
+	var got []Event
+	events := make(chan Event, 16)
+	em := &emitter{ctx: context.Background(), ch: events}
+	send := func(name, data string) {
+		if _, err := h.event(sseEvent{Name: name, Data: []byte(data)}, em); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`)
+	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"a"}}`)
+	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}`)
+	send("content_block_stop", `{"type":"content_block_stop","index":0}`)
+	send("content_block_start", `{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque"}}`)
+	send("content_block_stop", `{"type":"content_block_stop","index":1}`)
+	close(events)
+	for ev := range events {
+		got = append(got, ev)
+	}
+	var blocks []ThinkingBlock
+	for _, ev := range got {
+		if ev.Kind == EventThinking {
+			blocks = append(blocks, *ev.Thinking)
+		}
+	}
+	if len(blocks) != 2 || blocks[0] != (ThinkingBlock{Text: "a", Signature: "sig"}) || blocks[1] != (ThinkingBlock{Redacted: true, Data: "opaque"}) {
+		t.Fatalf("thinking blocks = %+v", blocks)
+	}
+}
