@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -343,16 +344,7 @@ func TestSnippetGroupSurvivesRestore(t *testing.T) {
 	}
 }
 
-// The terminal's picker is sectioned by group while nothing is searched, and a
-// search shows the matches alone, found by group name too.
-func TestSnippetPickerSectionsByGroup(t *testing.T) {
-	state := newTestState(t, freshOptions(t))
-	addTestSnippets(state,
-		snippet{Name: "a", Command: "a", Group: "Ops"},
-		snippet{Name: "b", Command: "b"},
-		snippet{Name: "c", Command: "c", Group: "Dev"},
-	)
-	state.openSnippetPicker()
+func pickerShape(state *State) []string {
 	palette := &state.commandPalette
 	var shape []string
 	for _, index := range palette.visible {
@@ -363,22 +355,102 @@ func TestSnippetPickerSectionsByGroup(t *testing.T) {
 			shape = append(shape, entry.label)
 		}
 	}
-	want := []string{"#Dev", "c", "#Ops", "a", "#" + state.messages.Tools.SnippetFilterNone, "b"}
-	if len(shape) != len(want) {
-		t.Fatalf("picker rows %v, want %v", shape, want)
-	}
-	for i := range want {
-		if shape[i] != want[i] {
-			t.Fatalf("picker rows %v, want %v", shape, want)
+	return shape
+}
+
+func pickerHeaderRow(t *testing.T, state *State, label string) int {
+	t.Helper()
+	palette := &state.commandPalette
+	for row, index := range palette.visible {
+		if entry := palette.entries[index]; entry.header && entry.label == label {
+			return row
 		}
 	}
-	if palette.entries[palette.visible[palette.selected]].header {
-		t.Fatal("a heading holds the selection")
+	t.Fatalf("no group row %q in %v", label, pickerShape(state))
+	return -1
+}
+
+func sameShape(a, b []string) bool {
+	return len(a) == len(b) && (len(a) == 0 || strings.Join(a, "\x00") == strings.Join(b, "\x00"))
+}
+
+// The terminal's picker lists its groups closed, so a long catalog is found by
+// opening one group; clicking a group row opens and closes it, and a search
+// looks inside every group, closed or not, and shows the matches alone.
+func TestSnippetPickerGroupsFoldAndStartClosed(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	addTestSnippets(state,
+		snippet{Name: "a", Command: "a", Group: "Ops"},
+		snippet{Name: "b", Command: "b"},
+		snippet{Name: "c", Command: "c", Group: "Dev"},
+	)
+	state.openSnippetPicker()
+	palette := &state.commandPalette
+	none := state.messages.Tools.SnippetFilterNone
+	if got, want := pickerShape(state), []string{"#Dev", "#Ops", "#" + none}; !sameShape(got, want) {
+		t.Fatalf("picker rows %v, want every group closed: %v", got, want)
 	}
 
+	state.Click(hitCommandPaletteItems.At(pickerHeaderRow(t, state, "Ops")))
+	if state.modal != modalCommandPalette {
+		t.Fatal("opening a group closed the picker")
+	}
+	if got, want := pickerShape(state), []string{"#Dev", "#Ops", "a", "#" + none}; !sameShape(got, want) {
+		t.Fatalf("after opening Ops: %v, want %v", got, want)
+	}
+	if palette.entries[palette.visible[palette.selected]].label != "Ops" {
+		t.Fatal("the group row lost the selection when it opened")
+	}
+	state.Click(hitCommandPaletteItems.At(pickerHeaderRow(t, state, "Ops")))
+	if got, want := pickerShape(state), []string{"#Dev", "#Ops", "#" + none}; !sameShape(got, want) {
+		t.Fatalf("after closing Ops: %v, want %v", got, want)
+	}
+
+	palette.search.Insert("c")
+	state.refreshCommandPalette()
+	if got, want := pickerShape(state), []string{"c"}; !sameShape(got, want) {
+		t.Fatalf("a search must find a snippet inside a closed group without opening it: %v, want %v", got, want)
+	}
+	palette.search = text.Editor{}
 	palette.search.Insert("ops")
 	state.refreshCommandPalette()
-	if len(palette.visible) != 1 || palette.entries[palette.visible[0]].label != "a" {
-		t.Fatalf("search by group name shows %d rows", len(palette.visible))
+	if got, want := pickerShape(state), []string{"a"}; !sameShape(got, want) {
+		t.Fatalf("search by group name: %v, want %v", got, want)
+	}
+
+	state.closeCommandPalette()
+	state.openSnippetPicker()
+	if got, want := pickerShape(state), []string{"#Dev", "#Ops", "#" + none}; !sameShape(got, want) {
+		t.Fatalf("a reopened picker shows %v, want every group closed again", got)
+	}
+}
+
+// The keyboard reaches a group too: the arrows step onto its row, Right opens it
+// and Left closes it, and Enter on a snippet inside still sends it.
+func TestSnippetPickerGroupsFoldFromTheKeyboard(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	addTestSnippets(state, snippet{Name: "a", Command: "a", Group: "Ops"})
+	state.openSnippetPicker()
+	palette := &state.commandPalette
+	press := func(key ui.Key) {
+		t.Helper()
+		if _, handled := state.commandPaletteKey(ui.KeyEvent{Key: key, Target: hitCommandPaletteSearch}); !handled {
+			t.Fatalf("key %v not handled", key)
+		}
+	}
+	if palette.entries[palette.visible[palette.selected]].label != "Ops" {
+		t.Fatal("the first choice is not the group row")
+	}
+	press(ui.KeyRight)
+	if got, want := pickerShape(state), []string{"#Ops", "a"}; !sameShape(got, want) {
+		t.Fatalf("Right: %v, want %v", got, want)
+	}
+	press(ui.KeyLeft)
+	if got, want := pickerShape(state), []string{"#Ops"}; !sameShape(got, want) {
+		t.Fatalf("Left: %v, want %v", got, want)
+	}
+	press(ui.KeyEnter)
+	if got, want := pickerShape(state), []string{"#Ops", "a"}; !sameShape(got, want) {
+		t.Fatalf("Enter on a group: %v, want %v", got, want)
 	}
 }

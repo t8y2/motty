@@ -881,6 +881,7 @@ type State struct {
 	noteExit        *noteExitRequest
 	noteTarget      *notesUI
 	snippets        snippetsUI
+	snippetSend     snippetSender
 	history         historyUI
 	historyLayout   flex.View
 	completion      completionUI
@@ -1417,6 +1418,9 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
 			return &state.commandPalette.search
+		}
+		if hit == hitSnippetSendInput && state.commandPalette.snippets {
+			return &state.snippetSend.input
 		}
 	case modalHistory:
 		if hit == hitHistorySearch {

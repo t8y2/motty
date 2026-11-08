@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"fmt"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
@@ -26,7 +28,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitCommandPaletteDismiss, CloseID: hitCommandPaletteClose, InitialFocusID: hitCommandPaletteSearch,
-		ContentSize: ui.Size{Width: 620, Height: 474},
+		ContentSize: ui.Size{Width: 620, Height: state.commandPaletteHeight()},
 	})
 	title, placeholder, empty := state.messages.CommandPaletteTitle, state.messages.CommandPalettePlaceholder, state.messages.CommandPaletteEmpty
 	switch {
@@ -37,6 +39,9 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 	case state.commandPalette.snippets:
 		title, placeholder, empty = state.messages.Tools.SnippetsTitle, state.messages.Tools.SnippetPickerPlaceholder, state.messages.Tools.SnippetPickerEmpty
+		if state.snippetSend.target == sendChosen {
+			placeholder, empty = state.messages.Tools.SendTargetsPlaceholder, state.messages.Tools.SendTargetsEmpty
+		}
 	}
 	layout := dialog.Begin(title, "")
 	if state.commandPalette.connect {
@@ -48,14 +53,33 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	count := len(palette.visible)
 
 	var search, list flex.Box
+	var sendInput, sendButton, sendTargets, sendRun flex.Box
+	sending := palette.snippets
 	f := state.paletteLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
 		search = f.Slot().Height(36).FillWidth().Shrink(0)
 		if count == 0 {
 			f.Text(empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).TextCenter().MarginSides(36, 0, 0, 0)
+		} else {
+			list = f.Slot().Height(commandPaletteListHeight).FillWidth().Shrink(0).MarginSides(12, 0, 0, 0)
+		}
+		if !sending {
 			return
 		}
-		list = f.Slot().Height(commandPaletteListHeight).FillWidth().Shrink(0).MarginSides(12, 0, 0, 0)
+		// The send form sits under the list, whatever its length.
+		f.Spacer().Grow(1)
+		f.Row().Height(36).FillWidth().Shrink(0).Gap(8).MarginSides(12, 0, 0, 0).Children(func() {
+			sendInput = f.Slot().Height(36).Grow(1)
+			sendButton = f.Slot().Size(84, 36).Shrink(0)
+		})
+		f.Row().Height(32).FillWidth().Shrink(0).Gap(12).Items(flex.Center).MarginSides(8, 0, 0, 0).Children(func() {
+			sendTargets = f.Slot().Size(270, 32).Shrink(0)
+			if state.snippetSend.target == sendChosen {
+				f.Text(fmt.Sprintf(state.messages.Tools.SendChosenFmt, len(state.snippetSend.chosen))).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Shrink(0)
+			}
+			f.Spacer().Grow(1)
+			sendRun = state.declareDialogCheckbox(f, state.messages.Tools.SendRun, 0, 0)
+		})
 	})
 	f.End()
 	palette.listRect = ui.Rect{}
@@ -74,6 +98,10 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		f.Column().Gap(4).FillWidth().Children(func() {
 			for visible := first; visible < last; visible++ {
 				entry := palette.entries[palette.visible[visible]]
+				if entry.folds() {
+					state.paintFoldRow(f, entry, visible)
+					continue
+				}
 				if entry.header {
 					f.Row().Height(30).PadX(10).Gap(6).Items(flex.Center).Shrink(0).
 						HitOutset(2, 0, 2, 0).
@@ -100,7 +128,14 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 				// never takes the pointer off the list and flashes the first row.
 				// Rows are not tab stops: the pointer and the arrows are the one
 				// way the selection moves, so Tab keeps its normal traversal.
-				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: entry.recencyHint}).Children(func() {
+				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: entry.recencyHint, Selected: entry.checked}).Children(func() {
+					if entry.checkable {
+						// The tick keeps its place when unticked, so the names line up.
+						tick := f.Stack().Size(14, 14).Shrink(0)
+						if entry.checked {
+							tick.Children(func() { f.Icon(lucideIcons[iconCheck]).Size(14, 14).Color(color) })
+						}
+					}
 					if entry.recency == "" {
 						f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1)
 					} else {
@@ -165,5 +200,40 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		Placeholder: placeholder, Focused: focused, PlatformEditing: focused && value != "",
 		NavigationKeys: true,
 	})
+	if sending {
+		state.paintSnippetSend(canvas, sendInput, sendButton, sendTargets, sendRun)
+	}
 	dialog.End()
+}
+
+// commandPaletteHeight is the dialog's height: the snippet picker adds the form
+// that sends a typed command under its list.
+func (state *State) commandPaletteHeight() float32 {
+	if state.commandPalette.snippets {
+		return 474 + 12 + 36 + 8 + 32
+	}
+	return 474
+}
+
+// paintFoldRow is the heading of a group the list can open and close: a choice
+// like the rows under it, with a chevron for the way it will go.
+func (state *State) paintFoldRow(f *flex.Frame, entry commandPaletteEntry, visible int) {
+	selected := state.commandPalette.selected == visible
+	color, detailColor := state.pal.muted, state.pal.faint
+	row := f.Row().Height(30).PadX(10).Gap(8).Items(flex.Center).Shrink(0)
+	if selected {
+		color, detailColor = state.pal.onAccent, state.pal.onAccent
+		row.Background(state.pal.accent).Radius(radius.item)
+	}
+	glyph := iconChevronRight
+	if entry.expanded {
+		glyph = iconChevronDown
+	}
+	row.HitOutset(2, 0, 2, 0).HitWith(hitCommandPaletteItems.At(visible), entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Expanded: entry.expanded}).Children(func() {
+		f.Icon(lucideIcons[glyph]).Size(14, 14).Color(color).Shrink(0)
+		f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(color).Ellipsis().Grow(1)
+		if entry.detail != "" {
+			f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(detailColor).Shrink(0)
+		}
+	})
 }

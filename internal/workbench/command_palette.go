@@ -38,7 +38,23 @@ type commandPaletteEntry struct {
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
+	// foldKey makes a header a row that folds its group: a choice of its own,
+	// which opens or closes the rows under it. foldKey names the group and
+	// expanded says which way it is now. Headers without one only label.
+	foldKey  string
+	expanded bool
+	// checkable rows are choices that tick on and off without closing the
+	// palette: the terminals a command is sent to.
+	checkable bool
+	checked   bool
 }
+
+// folds reports whether the entry is a header that opens and closes a group.
+func (entry *commandPaletteEntry) folds() bool { return entry.header && entry.foldKey != "" }
+
+// isLabel reports whether the entry only names a group: the pointer and the
+// keyboard pass over it.
+func (entry *commandPaletteEntry) isLabel() bool { return entry.header && !entry.folds() }
 
 type commandPalette struct {
 	search   text.Editor
@@ -69,6 +85,10 @@ type commandPalette struct {
 	// snippets makes the list a picker of the saved snippets to send to the
 	// active terminal, opened from the terminal toolbar.
 	snippets bool
+	// expandedGroups are the snippet groups the picker shows open, by fold key.
+	// It starts empty, so every group begins closed and a search is what looks
+	// inside them.
+	expandedGroups []string
 }
 
 func (state *State) openCommandPalette() {
@@ -247,7 +267,7 @@ func (state *State) refreshCommandPalette() {
 // headings. It returns -1 when the direction runs out of choices.
 func (palette *commandPalette) choiceAt(index, direction int) int {
 	for index >= 0 && index < len(palette.visible) {
-		if !palette.entries[palette.visible[index]].header {
+		if entry := &palette.entries[palette.visible[index]]; !entry.header || entry.folds() {
 			return index
 		}
 		index += direction
@@ -282,7 +302,7 @@ func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 	// Other palettes resolve the row at the pointer after moving content.
 	if !palette.connect && !palette.dragging && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
 		row := int((event.Y - palette.listRect.Y + palette.scroll + 2) / commandPaletteRowStep)
-		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
+		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].isLabel() {
 			palette.selected = row
 		}
 	}
@@ -306,6 +326,9 @@ func (state *State) clickCommandPalette(id ui.ID) {
 	case hitCommandPaletteSearch:
 		return
 	default:
+		if state.clickSnippetSend(id) {
+			return
+		}
 		if id == hitConnectPickShellPicker {
 			state.commandPalette.localShells = !state.commandPalette.localShells
 			state.rebuildCommandPalette()
@@ -332,6 +355,13 @@ func (state *State) clickCommandPalette(id ui.ID) {
 func (state *State) executeCommandPalette(visible int) {
 	palette := &state.commandPalette
 	if visible >= len(palette.visible) {
+		return
+	}
+	if entry := &palette.entries[palette.visible[visible]]; entry.folds() {
+		state.foldSnippetGroup(entry.foldKey, !entry.expanded)
+		return
+	} else if entry.checkable {
+		state.toggleSendSession(uint32(item(entry.target)))
 		return
 	}
 	target := palette.entries[palette.visible[visible]].target
@@ -384,7 +414,7 @@ func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult
 	if row >= len(palette.visible) {
 		return ui.EventResult{}, false
 	}
-	if palette.entries[palette.visible[row]].header {
+	if palette.entries[palette.visible[row]].isLabel() {
 		return ui.EventResult{}, false
 	}
 	if event.Kind == ui.PointerMove && palette.selected != row {
@@ -420,6 +450,23 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			}
 		}
 	}
+	if palette.snippets {
+		switch event.Target {
+		case hitSendTargetCurrent, hitSendTargetAll, hitSendTargetChosen:
+			// Like the new-tab picker's switch: the arrows move between the
+			// options, and choosing one returns the keyboard to the search field.
+			options := state.sendTargetOptions()
+			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
+				state.clickCommandPalette(next)
+				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+			}
+		case hitSnippetSendInput:
+			if event.Key == ui.KeyEnter && !event.Repeat {
+				state.submitSend()
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+	}
 	inSearch := event.Target == hitCommandPaletteSearch
 	_, inItems := event.Target.In(hitCommandPaletteItems)
 	if !inSearch && !inItems {
@@ -434,6 +481,16 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
 	row := palette.selected
+	if palette.snippets && !event.Repeat && row >= 0 && row < len(palette.visible) {
+		// A group row opens with Right and closes with Left, like a tree.
+		if entry := &palette.entries[palette.visible[row]]; entry.folds() && (inItems || inSearch && palette.search.String() == "") {
+			switch {
+			case event.Key == ui.KeyRight && !entry.expanded, event.Key == ui.KeyLeft && entry.expanded:
+				state.foldSnippetGroup(entry.foldKey, event.Key == ui.KeyRight)
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+	}
 	if inItems && palette.connect && !event.Repeat {
 		toggleShells := func(expand bool) (ui.EventResult, bool) {
 			if palette.localShells == expand {
