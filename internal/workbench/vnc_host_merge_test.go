@@ -4,17 +4,16 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/components"
 	"motty/internal/desktop"
-	"motty/internal/desktop/rdp"
+	"motty/internal/desktop/pins"
 	"motty/internal/vault"
 )
 
-func TestVNCMergedHostKeepsServerIdentityAndSavedAccountAcrossRestart(t *testing.T) {
+func TestVNCMergedHostKeepsEndpointTrustAndSavedAccountAcrossRestart(t *testing.T) {
 	options := testOptions(t)
 	options.Invalidate = func() {}
 	initial := newTestState(t, options)
@@ -23,9 +22,13 @@ func TestVNCMergedHostKeepsServerIdentityAndSavedAccountAcrossRestart(t *testing
 	}
 	initial.Close()
 	key := []byte("saved Pi server identity")
-	pin := vncHostKey{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint(key)}
+	endpoint := pins.Endpoint{Protocol: pins.VNC, Address: "pi.example.com:5900"}
+	store := pins.New(filepath.Join(filepath.Dir(options.KnownHostsPath), rdpCertificatesFile))
+	if err := store.Remember(endpoint, pins.Fingerprint(key), ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
-		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{pin}}},
+		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
 		{ID: "host_a", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
 	}}); err != nil {
 		t.Fatal(err)
@@ -36,13 +39,13 @@ func TestVNCMergedHostKeepsServerIdentityAndSavedAccountAcrossRestart(t *testing
 			t.Fatalf("restart %d retained %d copies of a compatible VNC host", restart, len(state.hosts))
 		}
 		host := state.hosts[0]
-		if host.CatalogID != "host_a" || !slices.Equal(host.VNCKeys, []vncHostKey{pin}) {
-			t.Fatalf("restart %d lost the merged server identity: %+v", restart, host)
+		if host.CatalogID != "host_a" {
+			t.Fatalf("restart %d changed the surviving host: %+v", restart, host)
 		}
 		answers := make(chan [2]string, 1)
 		state.connectionReconnect = reconnectOff
 		state.dialDesktop = func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
-			if err := request.VerifyServerKey(pin.Address, key); err != nil {
+			if err := request.VerifyServerKey(endpoint.Address, key); err != nil {
 				return nil, err
 			}
 			username, password, err := request.AskCredentials()
@@ -60,7 +63,7 @@ func TestVNCMergedHostKeepsServerIdentityAndSavedAccountAcrossRestart(t *testing
 			return session.desk != nil || state.modal == modalHostKey || state.modal == modalPassword
 		})
 		if state.modal == modalHostKey || state.modal == modalPassword {
-			t.Fatalf("restart %d required confirmation for an already trusted server or saved account", restart)
+			t.Fatalf("restart %d prompted for an already trusted endpoint or saved account", restart)
 		}
 		if got := <-answers; got != [2]string{"pi", "saved Pi password"} {
 			t.Fatalf("restart %d used credentials %q", restart, got)
@@ -71,59 +74,11 @@ func TestVNCMergedHostKeepsServerIdentityAndSavedAccountAcrossRestart(t *testing
 	}
 }
 
-func TestVNCMergingHostsNeverDiscardsConflictingServerIdentities(t *testing.T) {
-	first := vncHostKey{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint([]byte("first identity"))}
-	second := first
-	second.Fingerprint = rdp.Fingerprint([]byte("second identity"))
-	hosts := []savedHost{
-		{ID: "host_a", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
-		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{first}}},
-		{ID: "host_c", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{second}}},
-	}
-	for _, order := range [][]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
-		t.Run(fmt.Sprint(order), func(t *testing.T) {
-			options := testOptions(t)
-			var entries []savedHost
-			for _, index := range order {
-				entries = append(entries, hosts[index])
-			}
-			if err := saveState(options.StatePath, savedState{Hosts: entries}); err != nil {
-				t.Fatal(err)
-			}
-			for restart := 0; restart < 2; restart++ {
-				state := newTestState(t, options)
-				if len(state.hosts) != len(hosts) {
-					t.Fatalf("restart %d merged a group with conflicting server identities", restart)
-				}
-				var fingerprints []string
-				for _, host := range state.hosts {
-					if len(host.VNCKeys) > 1 {
-						t.Fatal("conflicting pins were combined into an ambiguous host identity")
-					}
-					if fingerprint := host.vncFingerprint(first.Address, first.Kind); fingerprint != "" {
-						fingerprints = append(fingerprints, fingerprint)
-					}
-				}
-				slices.Sort(fingerprints)
-				want := []string{first.Fingerprint, second.Fingerprint}
-				slices.Sort(want)
-				if !slices.Equal(fingerprints, want) {
-					t.Fatalf("restart %d discarded conflicting identities: %v", restart, fingerprints)
-				}
-				state.Close()
-			}
-		})
-	}
-}
-
 func TestVNCMergedAccountChainsKeepExistingPasswordsAndOtherHostsSeparate(t *testing.T) {
-	pin := vncHostKey{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint([]byte("Pi identity"))}
-	otherPin := pin
-	otherPin.Address = "previous-pi.example.com:5900"
 	hosts := []savedHost{
 		{ID: "host_a", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
-		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{pin}}},
-		{ID: "host_c", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{pin, otherPin}}},
+		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
+		{ID: "host_c", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
 		{ID: "host_neighbor", Label: "Another Pi entry", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
 	}
 	for _, order := range [][]int{{0, 1, 2}, {1, 2, 0}, {2, 1, 0}} {
@@ -155,8 +110,8 @@ func TestVNCMergedAccountChainsKeepExistingPasswordsAndOtherHostsSeparate(t *tes
 			for restart := 0; restart < 2; restart++ {
 				state := newTestState(t, options)
 				merged, ok := state.hostByCatalogID("host_a")
-				if !ok || len(state.hosts) != 2 || len(merged.VNCKeys) != 2 || !slices.Contains(merged.VNCKeys, pin) || !slices.Contains(merged.VNCKeys, otherPin) {
-					t.Fatalf("restart %d lost compatible identities across the merge chain: %+v", restart, merged)
+				if !ok || len(state.hosts) != 2 || merged.CatalogID != "host_a" {
+					t.Fatalf("restart %d changed the surviving host across the merge chain: %+v", restart, merged)
 				}
 				for account, want := range map[string]string{"alice": "existing alice password", "bob": "first bob password", "charlie": "charlie password"} {
 					got, found := vaultValue(t, state, hostSecretName("host_a", vncSystemPasswordPart(account)))
@@ -181,68 +136,148 @@ func TestVNCMergedAccountChainsKeepExistingPasswordsAndOtherHostsSeparate(t *tes
 }
 
 func TestVNCMergeFailureShowsMissingVaultKeyAndKeepsHostsForRetry(t *testing.T) {
-	options := testOptions(t)
-	keys := &memKeys{}
-	options.Keystore = keys
-	initial := newTestState(t, options)
-	sourceName := hostSecretName("host_b", vncSystemPasswordPart("pi"))
-	targetName := hostSecretName("host_a", vncSystemPasswordPart("pi"))
-	if err := initial.secrets.vault.Set(sourceName, "saved Pi password"); err != nil {
-		t.Fatal(err)
+	for _, mixed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mixed=%t", mixed), func(t *testing.T) {
+			options := testOptions(t)
+			keys := &memKeys{}
+			options.Keystore = keys
+			initial := newTestState(t, options)
+			sourceName := hostSecretName("host_b", vncSystemPasswordPart("pi"))
+			targetName := hostSecretName("host_a", vncSystemPasswordPart("pi"))
+			if err := initial.secrets.vault.Set(sourceName, "saved Pi password"); err != nil {
+				t.Fatal(err)
+			}
+			sshSourceName := hostSecretName("host_ssh_b", hostPasswordPart)
+			if mixed {
+				if err := initial.secrets.vault.Set(sshSourceName, "saved SSH password"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			key, err := keys.Load(vault.KeyService, vault.KeyAccount)
+			if err != nil {
+				t.Fatal(err)
+			}
+			initial.Close()
+			vaultPath := filepath.Join(filepath.Dir(options.StatePath), "vault.json")
+			vault.Forget(vaultPath)
+			if err := keys.Delete(vault.KeyService, vault.KeyAccount); err != nil {
+				t.Fatal(err)
+			}
+			hosts := []savedHost{
+				{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
+				{ID: "host_a", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
+			}
+			if mixed {
+				hosts = append(hosts,
+					savedHost{ID: "host_ssh_b", Label: "SSH server", Address: "ssh.example.com", User: "alice"},
+					savedHost{ID: "host_ssh_a", Label: "SSH server", Address: "ssh.example.com", User: "alice"},
+				)
+			}
+			if err := saveState(options.StatePath, savedState{Hosts: hosts}); err != nil {
+				t.Fatal(err)
+			}
+			failed := newTestState(t, options)
+			if len(failed.hosts) != len(hosts) || failed.mergedHosts || len(failed.merged) != 0 {
+				t.Fatal("failed password migration discarded hosts or kept aliases to a merge that did not finish")
+			}
+			if len(failed.fileNotices.items) != 1 {
+				t.Fatalf("missing-key failure did not leave a visible notice: %+v", failed.fileNotices.items)
+			}
+			notice := failed.fileNotices.items[0]
+			reason := failed.vaultErrorText(vault.ErrKeyLost)
+			if notice.title != failed.messages.SettingsVault || notice.kind != components.ToastError || !strings.Contains(notice.detail, reason) {
+				t.Fatalf("migration failure lost its original cause: %+v", notice)
+			}
+			_, texts := paintedTexts(failed)
+			if !strings.Contains(strings.Join(texts, " "), reason) {
+				t.Fatalf("the missing-key explanation was not painted in the visible notice: %v", texts)
+			}
+			failed.Close()
+			vault.Forget(vaultPath)
+			if err := keys.Store(vault.KeyService, vault.KeyAccount, key); err != nil {
+				t.Fatal(err)
+			}
+			readable, err := vault.Open(vaultPath, keys)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, found, err := readable.Get(sourceName); err != nil || !found || got != "saved Pi password" {
+				t.Fatal("failed migration changed the source password")
+			}
+			if _, found, err := readable.Get(targetName); err != nil || found {
+				t.Fatal("failed migration wrote a password under the new host identity")
+			}
+			sshTargetName := hostSecretName("host_ssh_a", hostPasswordPart)
+			if mixed {
+				if got, found, err := readable.Get(sshSourceName); err != nil || !found || got != "saved SSH password" {
+					t.Fatal("failed mixed migration changed the SSH source password")
+				}
+				if _, found, err := readable.Get(sshTargetName); err != nil || found {
+					t.Fatal("failed mixed migration wrote an SSH password under the new host identity")
+				}
+			}
+			retried := newTestState(t, options)
+			_, keptVNC := retried.hostByCatalogID("host_a")
+			if len(retried.hosts) != len(hosts)/2 || !keptVNC {
+				t.Fatal("restoring the key could not retry the saved host merge")
+			}
+			if got, found := vaultValue(t, retried, targetName); !found || got != "saved Pi password" {
+				t.Fatal("retry did not migrate the saved system account")
+			}
+			if mixed {
+				if got, found := vaultValue(t, retried, sshTargetName); !found || got != "saved SSH password" {
+					t.Fatal("retry did not migrate the saved SSH password")
+				}
+			}
+		})
 	}
-	key, err := keys.Load(vault.KeyService, vault.KeyAccount)
-	if err != nil {
-		t.Fatal(err)
-	}
-	initial.Close()
-	vaultPath := filepath.Join(filepath.Dir(options.StatePath), "vault.json")
-	vault.Forget(vaultPath)
-	if err := keys.Delete(vault.KeyService, vault.KeyAccount); err != nil {
-		t.Fatal(err)
-	}
-	pin := vncHostKey{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint([]byte("Pi identity"))}
-	if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
-		{ID: "host_b", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc", VNCKeys: []vncHostKey{pin}}},
-		{ID: "host_a", Label: "Pi", Address: "pi.example.com", Port: 5900, savedTransport: savedTransport{Protocol: "vnc"}},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	failed := newTestState(t, options)
-	if len(failed.hosts) != 2 || failed.mergedHosts || len(failed.merged) != 0 {
-		t.Fatal("failed password migration discarded hosts or kept aliases to a merge that did not finish")
-	}
-	if len(failed.fileNotices.items) != 1 {
-		t.Fatalf("missing-key failure did not leave a visible notice: %+v", failed.fileNotices.items)
-	}
-	notice := failed.fileNotices.items[0]
-	reason := failed.vaultErrorText(vault.ErrKeyLost)
-	if notice.title != failed.messages.SettingsVault || notice.kind != components.ToastError || !strings.Contains(notice.detail, reason) {
-		t.Fatalf("migration failure lost its original cause: %+v", notice)
-	}
-	_, texts := paintedTexts(failed)
-	if !strings.Contains(strings.Join(texts, " "), reason) {
-		t.Fatalf("the missing-key explanation was not painted in the visible notice: %v", texts)
-	}
-	failed.Close()
-	vault.Forget(vaultPath)
-	if err := keys.Store(vault.KeyService, vault.KeyAccount, key); err != nil {
-		t.Fatal(err)
-	}
-	readable, err := vault.Open(vaultPath, keys)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, found, err := readable.Get(sourceName); err != nil || !found || got != "saved Pi password" {
-		t.Fatal("failed migration changed the source password")
-	}
-	if _, found, err := readable.Get(targetName); err != nil || found {
-		t.Fatal("failed migration wrote a password under the new host identity")
-	}
-	retried := newTestState(t, options)
-	if len(retried.hosts) != 1 || retried.hosts[0].CatalogID != "host_a" || !slices.Equal(retried.hosts[0].VNCKeys, []vncHostKey{pin}) {
-		t.Fatal("restoring the key could not retry the saved host merge")
-	}
-	if got, found := vaultValue(t, retried, targetName); !found || got != "saved Pi password" {
-		t.Fatal("retry did not migrate the saved system account")
+}
+
+func TestNonVNCHostMergesKeepWorkingWhenVaultKeyIsMissing(t *testing.T) {
+	for _, protocol := range []string{"ssh", "rdp"} {
+		t.Run(protocol, func(t *testing.T) {
+			options := testOptions(t)
+			keys := &memKeys{}
+			options.Keystore = keys
+			initial := newTestState(t, options)
+			sourceName := hostSecretName("host_b", hostPasswordPart)
+			if err := initial.secrets.vault.Set(sourceName, "saved password"); err != nil {
+				t.Fatal(err)
+			}
+			key, err := keys.Load(vault.KeyService, vault.KeyAccount)
+			if err != nil {
+				t.Fatal(err)
+			}
+			initial.Close()
+			vaultPath := filepath.Join(filepath.Dir(options.StatePath), "vault.json")
+			vault.Forget(vaultPath)
+			if err := keys.Delete(vault.KeyService, vault.KeyAccount); err != nil {
+				t.Fatal(err)
+			}
+			if err := saveState(options.StatePath, savedState{Hosts: []savedHost{
+				{ID: "host_b", Label: "Server", Address: "server.example.com", User: "alice", savedTransport: savedTransport{Protocol: protocol}},
+				{ID: "host_a", Label: "Server", Address: "server.example.com", User: "alice", savedTransport: savedTransport{Protocol: protocol}},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			for restart := 0; restart < 2; restart++ {
+				state := newTestState(t, options)
+				if len(state.hosts) != 1 || state.hosts[0].CatalogID != "host_a" {
+					t.Fatalf("restart %d blocked %s duplicate merging on an unreadable vault", restart, protocol)
+				}
+				state.Close()
+				vault.Forget(vaultPath)
+			}
+			if err := keys.Store(vault.KeyService, vault.KeyAccount, key); err != nil {
+				t.Fatal(err)
+			}
+			readable, err := vault.Open(vaultPath, keys)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, found, err := readable.Get(sourceName); err != nil || !found || got != "saved password" {
+				t.Fatal("skipping an unreadable vault changed the source password")
+			}
+		})
 	}
 }

@@ -644,6 +644,8 @@ var EnglishMessages = Messages{
 	HostKeyTrust:          "Trust and Save",
 	HostKeyOnce:           "Connect Once",
 	HostKeyReject:         "Reject",
+	HostKeyForget:         "Forget this server",
+	HostKeyForgetHint:     "If you expected this change, forget this server and reconnect to check its new identity.",
 	PasswordTitle:         "Password required",
 	PasswordDescription:   "Sign in as %s",
 	PasswordLabel:         "Password",

@@ -644,6 +644,8 @@ var ChineseMessages = Messages{
 	HostKeyTrust:          "信任并保存",
 	HostKeyOnce:           "仅本次连接",
 	HostKeyReject:         "拒绝",
+	HostKeyForget:         "忘记此服务器",
+	HostKeyForgetHint:     "若你确认服务器发生了变更，可忘记此服务器，重连后重新核对身份。",
 	PasswordTitle:         "需要密码",
 	PasswordDescription:   "以 %s 登录",
 	PasswordLabel:         "密码",

@@ -2,21 +2,25 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
-	"slices"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/text"
 	"motty/internal/desktop"
-	"motty/internal/desktop/rdp"
+	"motty/internal/desktop/pins"
 	"motty/internal/sshconn"
 )
 
-func TestVNCIdentityAndAccountPasswordSurviveBackupAndRestart(t *testing.T) {
+func TestVNCIdentityAndAccountPasswordSurviveRestartOutsideHostRecord(t *testing.T) {
 	key := []byte("VNC identity")
-	answers := make(chan [2]string, 3)
+	answers := make(chan [2]string, 2)
 	open := func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 		if err := request.VerifyServerKey("pi.example.com:5900", key); err != nil {
 			return nil, err
@@ -29,6 +33,7 @@ func TestVNCIdentityAndAccountPasswordSurviveBackupAndRestart(t *testing.T) {
 		return &encryptedVNC{newPictureOnly()}, nil
 	}
 	source, host := realVNCState(t, "alice", open)
+	options := source.options
 	openHost(source)
 	waitUntil(t, source, "initial identity", func() bool { return source.modal == modalHostKey })
 	source.Click(hitHostKeyTrust)
@@ -45,40 +50,33 @@ func TestVNCIdentityAndAccountPasswordSurviveBackupAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source.Close()
-
-	options := testOptions(t)
-	options.Invalidate = func() {}
-	target := newTestState(t, options)
-	if _, err := target.applyBackup(document); err != nil {
-		t.Fatal(err)
+	encoded, err := json.Marshal(document)
+	if err != nil || strings.Contains(string(encoded), "vnc_keys") || strings.Contains(string(encoded), pins.Fingerprint(key)) {
+		t.Fatalf("server identity is still part of the host backup: error=%v", err)
 	}
-	for _, state := range []*State{target, nil} {
-		if state == nil {
-			state = newTestState(t, options)
-		}
-		state.connectionReconnect, state.dialDesktop = reconnectOff, open
-		saved, ok := state.hostByCatalogID(host.CatalogID)
-		if !ok || saved.vncFingerprint("pi.example.com:5900", vncServerKeyType) != rdp.Fingerprint(key) {
-			t.Fatal("restoring the host lost its identity")
-		}
-		state.selectedHostID = saved.ID
-		state.Click(hitHosts)
-		openHost(state)
-		reconnected, _ := state.sessionByIDPointer(state.activeSessionID)
-		waitUntil(t, state, "restored desktop", func() bool { return reconnected.desk != nil })
-		if state.modal == modalHostKey || state.modal == modalPassword {
-			t.Fatal("a saved identity or account password was lost")
-		}
-		if got := <-answers; got != [2]string{"alice", "account password"} {
-			t.Fatalf("restored credentials = %q", got)
-		}
-		state.closeSession(reconnected.ID)
-		state.Close()
+	source.Close()
+	state := newTestState(t, options)
+	state.connectionReconnect, state.dialDesktop = reconnectOff, open
+	saved, ok := state.hostByCatalogID(host.CatalogID)
+	if !ok {
+		t.Fatal("host absent after restart")
+	}
+	state.selectedHostID = saved.ID
+	state.Click(hitHosts)
+	openHost(state)
+	reconnected, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "restarted desktop", func() bool {
+		return reconnected.desk != nil || state.modal == modalHostKey || state.modal == modalPassword
+	})
+	if state.modal == modalHostKey || state.modal == modalPassword {
+		t.Fatal("a saved endpoint identity or account password was lost")
+	}
+	if got := <-answers; got != [2]string{"alice", "account password"} {
+		t.Fatalf("restarted credentials = %q", got)
 	}
 }
 
-func TestVNCHostIdentityCopyAddressChangeAndDeletion(t *testing.T) {
+func TestVNCHostsShareEndpointTrustAcrossCopyDeletionAndAddressChange(t *testing.T) {
 	key := []byte("same server identity")
 	state, original := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 		address := net.JoinHostPort(request.Host.Address, strconv.Itoa(int(request.Host.Port)))
@@ -102,16 +100,30 @@ func TestVNCHostIdentityCopyAddressChangeAndDeletion(t *testing.T) {
 		t.Fatalf("copy failed: %q", state.dialogError)
 	}
 	copied := savedHostNamed(t, state, "Pi copy")
-	source, _ := state.hostByCatalogID(original.CatalogID)
-	if copied.CatalogID == source.CatalogID || !slices.Equal(copied.VNCKeys, source.VNCKeys) {
-		t.Fatal("copy did not preserve an independently owned identity")
+	if copied.CatalogID == original.CatalogID {
+		t.Fatal("copy did not get its own catalog identity")
 	}
-	copied.VNCKeys[0].Fingerprint = "changed copy"
-	if source.VNCKeys[0].Fingerprint != rdp.Fingerprint(key) {
-		t.Fatal("copy shares mutable identity storage with its source")
+	state.selectedHostID = copied.ID
+	openHost(state)
+	copySession, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "copy reuses endpoint trust", func() bool { return copySession.desk != nil || state.modal == modalHostKey })
+	if state.modal == modalHostKey {
+		t.Fatal("another catalog host asked again for the same endpoint")
 	}
-	// Edit through the actual form: preserving a pin must not reuse it at a
-	// different target, even when that target presents the identical key.
+	state.closeSession(copySession.ID)
+	state.hostActionIDs = []uint32{original.ID}
+	state.confirmDeleteHosts()
+	if _, ok := state.hostByCatalogID(original.CatalogID); ok {
+		t.Fatal("original host was not deleted")
+	}
+	state.selectedHostID = copied.ID
+	openHost(state)
+	afterDelete, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "trust survives host deletion", func() bool { return afterDelete.desk != nil || state.modal == modalHostKey })
+	if state.modal == modalHostKey {
+		t.Fatal("deleting a catalog host discarded endpoint trust")
+	}
+	state.closeSession(afterDelete.ID)
 	state.selectedHostID = copied.ID
 	clickHostAction(state, hitEditHost)
 	state.editor.address = *text.NewEditor("moved.example.com")
@@ -120,90 +132,101 @@ func TestVNCHostIdentityCopyAddressChangeAndDeletion(t *testing.T) {
 	moved, _ := state.sessionByIDPointer(state.activeSessionID)
 	waitUntil(t, state, "moved host identity", func() bool { return state.modal == modalHostKey })
 	if len(moved.hostKey.Known) != 0 {
-		t.Fatal("a pin for another target was reused")
+		t.Fatal("a pin for another endpoint was reused")
 	}
 	state.Click(hitHostKeyReject)
-	waitUntil(t, state, "rejected moved identity", func() bool { return moved.phase == sshconn.PhaseFailed })
-	state.closeSession(moved.ID)
-	state.hostActionIDs = []uint32{original.ID}
-	state.confirmDeleteHosts()
-	if _, ok := state.hostByCatalogID(original.CatalogID); ok {
-		t.Fatal("deleted host retained its identity record")
-	}
-	remaining, ok := state.hostByCatalogID(copied.CatalogID)
-	if !ok || len(remaining.VNCKeys) != 1 {
-		t.Fatal("deleting the source removed the copy's identity")
-	}
-	replacement := addStreamHost(state, Host{Label: "Replacement", Address: "pi.example.com", User: "alice", Protocol: protocolVNC})
-	state.selectedHostID = replacement.ID
-	openHost(state)
-	waitUntil(t, state, "replacement identity", func() bool { return state.modal == modalHostKey })
-	if len(state.promptSession().hostKey.Known) != 0 {
-		t.Fatal("a recreated host inherited the deleted host's trust")
-	}
 }
 
-func TestVNCSavingIdentityFailureNeverStartsAuthentication(t *testing.T) {
-	for _, scenario := range []string{"save blocked", "host deleted", "another key saved"} {
+func TestVNCSavingEndpointIdentityFailureNeverStartsAuthentication(t *testing.T) {
+	for _, scenario := range []string{"write failure", "another key saved"} {
 		t.Run(scenario, func(t *testing.T) {
 			key := []byte("pending identity")
 			started := make(chan bool, 1)
-			state, host := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
+			state, _ := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 				if err := request.VerifyServerKey("pi.example.com:5900", key); err != nil {
 					return nil, err
 				}
 				started <- true
 				return &encryptedVNC{newPictureOnly()}, nil
 			})
-			state.save()
 			openHost(state)
 			session, _ := state.sessionByIDPointer(state.activeSessionID)
 			waitUntil(t, state, "pending identity", func() bool { return state.modal == modalHostKey })
-			if scenario == "save blocked" {
-				state.pauseSave++
-				defer func() { state.pauseSave-- }()
-			} else {
-				other := newTestState(t, state.options)
-				current, ok := other.hostByCatalogID(host.CatalogID)
-				if !ok {
-					t.Fatal("host absent in other window")
+			path := filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)
+			store := pins.New(path)
+			endpoint := pins.Endpoint{Protocol: pins.VNC, Address: "pi.example.com:5900"}
+			other := pins.Fingerprint([]byte("another identity"))
+			if scenario == "write failure" {
+				if err := os.Mkdir(path+".tmp", 0o700); err != nil {
+					t.Fatal(err)
 				}
-				if scenario == "host deleted" {
-					for index := len(other.sessions) - 1; index >= 0; index-- {
-						if other.sessions[index].host.CatalogID == current.CatalogID {
-							other.closeSession(other.sessions[index].ID)
-						}
-					}
-					other.hostActionIDs = []uint32{current.ID}
-					other.confirmDeleteHosts()
-					if _, ok := other.hostByCatalogID(host.CatalogID); ok {
-						t.Fatalf("host deletion failed: %q", other.dialogError)
-					}
-				} else {
-					current.VNCKeys = []vncHostKey{{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint([]byte("another identity"))}}
-					other.hosts[other.hostIndex(current.ID)] = current
-					if err := other.saveWithResult(); err != nil {
-						t.Fatal(err)
-					}
-				}
-				other.Close()
+			} else if err := store.Remember(endpoint, other, ""); err != nil {
+				t.Fatal(err)
 			}
 			state.Click(hitHostKeyTrust)
-			waitUntil(t, state, "failed identity save", func() bool {
-				current, ok := state.sessionByIDPointer(session.ID)
-				return !ok || current.phase == sshconn.PhaseFailed || current.phase == sshconn.PhaseClosed
-			})
+			waitUntil(t, state, "failed pin save", func() bool { return session.phase == sshconn.PhaseFailed })
 			select {
 			case <-started:
 				t.Fatal("authentication started after saving identity failed")
 			default:
 			}
-			if saved, ok := state.hostByCatalogID(host.CatalogID); ok && saved.vncFingerprint("pi.example.com:5900", vncServerKeyType) == rdp.Fingerprint(key) {
-				t.Fatal("a failed save left the pending identity trusted")
+			got, err := store.Lookup(endpoint)
+			if err != nil || got == pins.Fingerprint(key) || scenario == "another key saved" && got != other {
+				t.Fatalf("a failed save changed trust: %q, %v", got, err)
 			}
-			if scenario == "save blocked" && !errors.Is(session.err, sshconn.ErrHostKeyRejected) {
-				t.Fatalf("failed save = %v", session.err)
+			if scenario == "another key saved" && !errors.Is(session.err, pins.ErrChanged) {
+				t.Fatalf("concurrent identity change lost its cause: %v", session.err)
 			}
 		})
+	}
+}
+
+func TestTemporaryVNCConnectionCanSaveEndpointIdentity(t *testing.T) {
+	store := pins.New(filepath.Join(t.TempDir(), "pins"))
+	host := Host{Address: "temporary.example.com", Port: 5900, Protocol: protocolVNC}
+	notified := make(chan struct{}, 8)
+	conn := newDesktopConn(host, func() { notified <- struct{}{} }, nil, 0, nil, store)
+	t.Cleanup(conn.Cancel)
+	key := []byte("temporary server identity")
+	result := make(chan error, 1)
+	go func() { result <- conn.verifyServerKey("temporary.example.com:5900", key) }()
+	select {
+	case <-notified:
+	case <-time.After(5 * time.Second):
+		t.Fatal("temporary server did not prompt")
+	}
+	conn.TrustHostKey(true)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Lookup(pins.Endpoint{Protocol: pins.VNC, Address: "temporary.example.com:5900"})
+	if err != nil || got != pins.Fingerprint(key) {
+		t.Fatalf("temporary host could not save trust: %q, %v", got, err)
+	}
+}
+
+func TestVNCUnreadablePinStoreDoesNotPromptOrStartAuthentication(t *testing.T) {
+	started := make(chan bool, 1)
+	state, _ := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
+		if err := request.VerifyServerKey("pi.example.com:5900", []byte("key")); err != nil {
+			return nil, err
+		}
+		started <- true
+		return &encryptedVNC{newPictureOnly()}, nil
+	})
+	path := filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	openHost(state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "unreadable pins fail closed", func() bool { return session.phase == sshconn.PhaseFailed })
+	if state.modal == modalHostKey || !strings.Contains(session.err.Error(), path) {
+		t.Fatalf("unreadable pins were hidden or prompted for replacement: %v", session.err)
+	}
+	select {
+	case <-started:
+		t.Fatal("unreadable trust store allowed authentication")
+	default:
 	}
 }

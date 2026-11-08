@@ -447,6 +447,9 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 							sized(f.Button(hitConnExport, m.ConnExportLog).Ghost())
 						}
 						sized(f.Button(hitConnClose, m.ConnClose).Outline())
+						if failed && canForgetServerIdentity(session) {
+							sized(f.Button(hitConnForget, m.HostKeyForget).Outline())
+						}
 						if session.reconnectPending {
 							sized(f.Button(hitConnCancelReconnect, m.ConnCancelReconnect))
 						} else if failed && state.canReconnect(session) {
@@ -806,6 +809,8 @@ func (state *State) clickConnection(id ui.ID) {
 		if state.canReconnect(session) {
 			state.reconnect(session)
 		}
+	case hitConnForget:
+		state.forgetServerIdentity(session)
 	case hitConnCancelReconnect:
 		if session.reconnectPending {
 			state.cancelReconnect(session)

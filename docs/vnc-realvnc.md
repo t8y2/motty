@@ -32,14 +32,30 @@ dialog offers rejection, trust for this connection, and trust with saving. A
 saved key change stops the connection, as a changed SSH host key does. Library
 callers must supply `VerifyServerKey`; a missing callback rejects RA2.
 
-Saved pins are public SHA-256 fingerprints in the host's configuration record.
-They follow its catalog identity through backup, sync, copying and deletion.
+Saved pins are public SHA-256 fingerprints in the endpoint pin store shared
+with RDP, in `rdp_certificates` next to SSH's `known_hosts`. VNC entries use
+`vnc:host:port`; RDP entries use `rdp:host:port`, and existing RDP entries remain
+readable. Catalog entries pointing to the same endpoint share its trust.
+Deleting or merging a host does not remove the endpoint's pin. Saved account
+passwords continue to belong to the host and account.
+
 The entered server host and port remain part of the pin's scope even when an
 SSH tunnel dials loopback. Changing the destination does not reuse trust from
 the previous destination. VNC pins cannot reuse SSH or RDP identities.
 
-If saving an identity fails, the host was deleted, or another window saved a
-different identity, authentication does not start.
+After a saved key changes, the connection stops before sending credentials.
+Once the server's new identity has been verified, use **Forget this server**
+and retry to receive a new trust prompt. The forget operation is shared with
+RDP. Forgetting a pin does not trust the replacement key or remove passwords.
+If reading, saving or forgetting a pin fails, the error remains visible and
+does not grant trust. Saving also checks that another connection has not
+changed the pin while the trust prompt was open.
+
+## Upgrade note
+
+When a server offers both RA2 and VNC Authentication, Motty now selects RA2.
+Existing RealVNC connections may therefore show a server-key trust prompt on
+their first connection after upgrading.
 
 ## Protocol and cryptographic boundaries
 
@@ -74,8 +90,9 @@ Automated tests cover the ten published AES-128-EAX vectors, split input and
 record boundaries, fuzzing of authentication and record parsing, both RA2
 credential subtypes, framebuffer traffic, tampering, replay, truncation,
 cancellation and concurrent reads/writes. Workbench tests cover trust decisions,
-separate passwords, backup/restart, host copying, destination changes, deletion
-and failed identity saves.
+separate passwords, endpoint pin persistence, trust shared across catalog
+entries, destination changes, deletion, failed identity saves and changed-key
+recovery through forgetting and a new trust prompt.
 
 A credential-free probe against RealVNC Server 7.13.1.57 verified 5.0-to-3.8
 negotiation, the server's RSA-AES proof and the UserPass subtype. A Windows

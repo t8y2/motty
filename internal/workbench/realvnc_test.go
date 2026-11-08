@@ -9,7 +9,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,7 +16,7 @@ import (
 
 	"github.com/vivaui/viva/text"
 	"motty/internal/desktop"
-	"motty/internal/desktop/rdp"
+	"motty/internal/desktop/pins"
 	"motty/internal/rfb"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
@@ -53,12 +52,14 @@ func TestVNCServerKeyPinIsSeparateAndAChangedKeyIsRefused(t *testing.T) {
 	}
 	state.Click(hitHostKeyTrust)
 	waitUntil(t, state, "encrypted VNC picture", func() bool { return session.desk != nil })
-	pinned, ok := state.hostByCatalogID(session.host.CatalogID)
-	if !ok || pinned.vncFingerprint("pi.example.com:5900", vncServerKeyType) != rdp.Fingerprint(key) {
-		t.Fatal("the VNC host did not save its own server identity")
+	store := pins.New(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
+	endpoint := pins.Endpoint{Protocol: pins.VNC, Address: "pi.example.com:5900"}
+	pinned, err := store.Lookup(endpoint)
+	if err != nil || pinned != pins.Fingerprint(key) {
+		t.Fatalf("server identity was not saved by endpoint: %q, %v", pinned, err)
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)); !os.IsNotExist(err) {
-		t.Fatalf("VNC wrote the RDP certificate file: %v", err)
+	if got, err := store.Lookup(pins.Endpoint{Protocol: pins.RDP, Address: endpoint.Address}); err != nil || got != "" {
+		t.Fatalf("VNC saved an RDP pin: %q, %v", got, err)
 	}
 	if strip := state.desktopStripLeft(session.desk, session); !strings.Contains(strip, state.messages.Desktop.StripVNCEncrypted) || strings.Contains(strip, "TLS") {
 		t.Fatalf("RSA-AES protection described as %q", strip)
@@ -84,9 +85,27 @@ func TestVNCServerKeyPinIsSeparateAndAChangedKeyIsRefused(t *testing.T) {
 	if !errors.Is(session.err, sshconn.ErrHostKeyChanged) {
 		t.Fatalf("refusal = %v", session.err)
 	}
-	pinnedAfter, ok := state.hostByCatalogID(session.host.CatalogID)
-	if !ok || pinnedAfter.vncFingerprint("pi.example.com:5900", vncServerKeyType) != pinned.VNCKeys[0].Fingerprint {
+	pinnedAfter, err := store.Lookup(endpoint)
+	if err != nil || pinnedAfter != pinned {
 		t.Fatal("rejecting a changed key replaced the saved pin")
+	}
+	canvas, _ := paintedTexts(state)
+	if _, ok := hitByID(canvas, hitConnForget); !ok {
+		t.Fatal("a changed VNC identity has no forget action")
+	}
+	state.Click(hitConnForget)
+	if got, err := store.Lookup(endpoint); err != nil || got != "" {
+		t.Fatalf("forgetting the server kept its pin: %q, %v", got, err)
+	}
+	state.Click(hitConnRetry)
+	waitUntil(t, state, "forgotten VNC server prompts again", func() bool { return state.modal == modalHostKey })
+	if len(session.hostKey.Known) != 0 || session.hostKey.Fingerprint != pins.Fingerprint(key) || session.desk != nil {
+		t.Fatal("forgetting a changed server granted trust instead of prompting again")
+	}
+	state.Click(hitHostKeyTrust)
+	waitUntil(t, state, "reinstalled server desktop", func() bool { return session.desk != nil })
+	if got, err := store.Lookup(endpoint); err != nil || got != pins.Fingerprint(key) {
+		t.Fatalf("new identity was not saved after explicit trust: %q, %v", got, err)
 	}
 }
 
@@ -130,7 +149,8 @@ func TestVNCTrustOnceRejectDismissAndCancelProtectCredentials(t *testing.T) {
 				default:
 				}
 			}
-			if host, ok := state.hostByCatalogID(session.host.CatalogID); !ok || len(host.VNCKeys) != 0 {
+			store := pins.New(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
+			if got, err := store.Lookup(pins.Endpoint{Protocol: pins.VNC, Address: "pi.example.com:5900"}); err != nil || got != "" {
 				t.Fatal("one-time trust/refusal saved a key")
 			}
 		})
@@ -273,13 +293,13 @@ func TestVNCRefusedSystemPasswordCanCorrectTheAccountWithoutDeletingLegacyPasswo
 }
 
 func TestVNCAndRDPCannotReuseEachOthersIdentityPin(t *testing.T) {
-	pins := rdp.NewPins(filepath.Join(t.TempDir(), "pins"))
+	store := pins.New(filepath.Join(t.TempDir(), "pins"))
 	address, key := "same.example.com:5900", []byte("same key")
-	if err := pins.Remember(address, rdp.Fingerprint(key)); err != nil {
+	if err := store.Remember(pins.Endpoint{Protocol: pins.RDP, Address: address}, pins.Fingerprint(key), ""); err != nil {
 		t.Fatal(err)
 	}
 	notified := make(chan struct{}, 1)
-	conn := newDesktopConn(Host{Address: "same.example.com", Port: 5900, Protocol: protocolVNC}, func() { notified <- struct{}{} }, nil, 0, nil, pins)
+	conn := newDesktopConn(Host{Address: "same.example.com", Port: 5900, Protocol: protocolVNC}, func() { notified <- struct{}{} }, nil, 0, nil, store)
 	t.Cleanup(conn.Cancel)
 	result := make(chan error, 1)
 	go func() { result <- conn.verifyServerKey(address, key) }()

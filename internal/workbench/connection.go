@@ -1026,7 +1026,9 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		}
 		t.say("", fmt.Sprintf(m.ConnChangedPresented, status.HostKey.Fingerprint))
 		t.say("", "")
-		if status.HostKey.Type != vncServerKeyType {
+		if status.HostKey.Type == vncServerKeyType || status.HostKey.Type == rdpCertificateType {
+			t.say(sgrMuted, m.HostKeyForgetHint)
+		} else {
 			t.say(sgrMuted, fmt.Sprintf(m.ConnChangedHintFmt, status.HostKey.File))
 		}
 	case errors.Is(status.Err, sshconn.ErrHostKeyRejected):
@@ -1255,25 +1257,12 @@ func (state *State) clickHostKey(id ui.ID) {
 	}
 	switch id {
 	case hitHostKeyTrust:
-		if session.host.Protocol == protocolVNC && session.hostKey.Type == vncServerKeyType {
-			id, conn := session.ID, session.conn
-			err := state.rememberVNCServerKey(session)
-			// Refreshing the catalog may move the session slice.
-			current, ok := state.sessionByIDPointer(id)
-			if !ok {
-				conn.RejectHostKey()
-				state.closeModal()
-				return
-			}
-			session = current
-			if err != nil {
-				state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
-				session.conn.RejectHostKey()
-				state.answered(session)
-				return
-			}
-		}
 		session.conn.TrustHostKey(true)
+	case hitHostKeyForget:
+		if !state.forgetServerIdentity(session) {
+			return
+		}
+		session.conn.RejectHostKey()
 	case hitHostKeyOnce:
 		session.conn.TrustHostKey(false)
 	case hitHostKeyReject, hitHostKeyClose, hitHostKeyDismiss:

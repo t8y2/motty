@@ -644,6 +644,8 @@ var TraditionalMessages = Messages{
 	HostKeyTrust:          "信任並儲存",
 	HostKeyOnce:           "僅本次連線",
 	HostKeyReject:         "拒絕",
+	HostKeyForget:         "忘記此伺服器",
+	HostKeyForgetHint:     "若你確認伺服器發生了變更，可忘記此伺服器，重新連線後再次核對身分。",
 	PasswordTitle:         "需要密碼",
 	PasswordDescription:   "以 %s 登入",
 	PasswordLabel:         "密碼",
