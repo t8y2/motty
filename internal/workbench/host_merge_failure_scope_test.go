@@ -77,6 +77,13 @@ func TestMixedHostMergesKeepNonVNCReferencesWhenOneVaultRecordIsCorrupt(t *testi
 			}
 			terminalTransport := savedTransport{Protocol: protocol}
 			vncTransport := savedTransport{Protocol: "vnc"}
+			template, err := normalizeWorkspaceTemplate(WorkspaceTemplate{
+				ID: "ws_0123456789abcdef0123456789abcdef", Name: "Mixed servers", Columns: 2,
+				HostIDs: []string{"host_terminal_b", "host_vnc_b"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			saved := savedState{
 				Hosts: []savedHost{
 					{ID: "host_terminal_b", Label: "Terminal", Address: "terminal.example.com", User: "ops", Port: port, savedTransport: terminalTransport},
@@ -89,10 +96,7 @@ func TestMixedHostMergesKeepNonVNCReferencesWhenOneVaultRecordIsCorrupt(t *testi
 					{Label: "Terminal", Address: "terminal.example.com", User: "ops", Port: port, SavedHost: true, CatalogID: "host_terminal_b", savedTransport: terminalTransport},
 					{Label: "Pi", Address: "pi.example.com", Port: 5900, SavedHost: true, CatalogID: "host_vnc_b", savedTransport: vncTransport},
 				},
-				WorkspaceTemplates: []WorkspaceTemplate{{
-					ID: "ws_0123456789abcdef0123456789abcdef", Name: "Mixed servers", Columns: 2,
-					HostIDs: []string{"host_terminal_b", "host_vnc_b"},
-				}},
+				WorkspaceTemplates: []WorkspaceTemplate{template},
 			}
 			if protocol == "ssh" {
 				saved.AgentHosts = []string{"host_terminal_b"}
