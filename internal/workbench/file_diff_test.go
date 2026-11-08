@@ -455,6 +455,41 @@ func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session, open bo
 	}
 }
 
+func TestDocumentComparisonGivesTheEditorRoomInANarrowWindow(t *testing.T) {
+	document := documentFixture(t)
+	document.local = false
+	document.editor.Insert("edited line\n")
+	document.comparison.active = true
+	document.comparison.baseline = document.original
+	document.comparison.result = components.DiffCodeLines(document.original, document.editor.String())
+	for _, width := range []int{560, 1200} {
+		config := document.comparisonConfig()
+		config.Width, config.Height = width, 540
+		view, err := headless.Open(config, nil, headless.Options{Scale: 1.25})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var input ui.Rect
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == hitDocumentInput {
+				input = hit.Bounds
+				break
+			}
+		}
+		bounds := document.comparison.ui.editorBounds
+		if input.Width <= 0 || input.Height <= 0 {
+			t.Fatalf("window width %v has no editable result", width)
+		}
+		if width < 800 && (input.Width <= bounds.Width/2 || input.Y <= bounds.Y) {
+			t.Fatalf("narrow result did not stack below the source: input=%+v bounds=%+v", input, bounds)
+		}
+		if width > 800 && (input.Width >= bounds.Width/2 || input.Y != bounds.Y) {
+			t.Fatalf("wide result did not stay beside the source: input=%+v bounds=%+v", input, bounds)
+		}
+		view.Close()
+	}
+}
+
 func TestDocumentComparisonReadsLatestRevisionAndProtectsAgainstLaterChanges(t *testing.T) {
 	host := &documentTestHost{}
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })

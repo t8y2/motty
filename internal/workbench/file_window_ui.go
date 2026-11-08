@@ -231,6 +231,14 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
 	}
+	fontSize := d.owner.terminalFontSize
+	if fontSize <= 0 {
+		fontSize = theme.Metrics.FontSizeM
+	}
+	cellWidth, _ := canvas.MonoCellSize(fontSize, d.owner.terminalFontFace)
+	if content.Rect().Width < 2*(40*cellWidth+72) {
+		snapshot.Layout = components.CodeDiffStacked
+	}
 	if marked, ok := d.editor.Composition(); ok {
 		snapshot.CompositionStart = d.editor.ByteOffset(marked.Start)
 		snapshot.CompositionEnd = d.editor.ByteOffset(marked.End)
