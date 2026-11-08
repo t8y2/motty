@@ -9,6 +9,9 @@ import (
 )
 
 func TestChangedDesktopIdentityPaintDoesNotAllocate(t *testing.T) {
+	if raceDetector {
+		t.Skip("allocation counts are not comparable under the race detector")
+	}
 	for _, appearance := range []appearance{appearanceDark, appearanceLight} {
 		for _, chinese := range []bool{false, true} {
 			for _, protocol := range []hostProtocol{protocolRDP, protocolVNC} {
