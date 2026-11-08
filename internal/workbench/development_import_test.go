@@ -233,9 +233,6 @@ func TestDevelopmentImportNativeDialog(t *testing.T) {
 			state.Click(hitDevelopmentImport)
 			sourceKeys.unavailable = false
 		}
-		if _, texts := paintedTexts(state); !contains(texts, state.messages.DevelopmentImportPasswords) {
-			t.Fatal("password consent checkbox has no visible description")
-		}
 		view, err := headless.Open(app.Config{
 			Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
 			Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
@@ -246,6 +243,16 @@ func TestDevelopmentImportNativeDialog(t *testing.T) {
 		t.Cleanup(view.Close)
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
+		}
+		// Read the text from the view's own paint: a throwaway canvas has no
+		// platform text engine, so it would wrap the dialog by the reference
+		// metrics and leave those lines for the view to reuse.
+		var texts []string
+		for _, text := range view.Snapshot().Texts {
+			texts = append(texts, text.Value)
+		}
+		if !contains(texts, state.messages.DevelopmentImportPasswords) {
+			t.Fatal("password consent checkbox has no visible description")
 		}
 		if problems := headless.CheckLayout(view.Snapshot()); len(problems) != 0 {
 			t.Fatalf("import dialog layout: %+v", problems)
