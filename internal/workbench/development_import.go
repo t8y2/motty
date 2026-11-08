@@ -40,7 +40,7 @@ type developmentImport struct {
 	hosts           int
 	err             string
 	// body declares the dialog's body: its checkbox writes passwords itself.
-	body *flex.Screen
+	body *flex.Page
 }
 
 func developmentImportPhase(local map[string][]byte) (string, error) {
@@ -292,14 +292,14 @@ func (state *State) paintDevelopmentImport(canvas *ui.Canvas, viewport ui.Rect) 
 	})
 	layout := dialog.Begin(m.DevelopmentImportTitle, "")
 	if view.body == nil {
-		view.body = flex.NewScreen(flex.ScreenConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
+		view.body = flex.NewPage(flex.PageConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
 	}
-	view.body.Draw(canvas, layout.Body, func(s flex.Screen) {
-		s.Column().Fill().Children(func() {
-			s.Paragraph(body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
-			s.Checkbox(&view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
+	view.body.Draw(canvas, layout.Body, func(c flex.C) {
+		flex.Column(c).Fill().Children(func() {
+			flex.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			flex.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
 			if errorLines != 0 {
-				s.Paragraph(errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+				flex.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
 			}
 		})
 	})
