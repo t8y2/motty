@@ -323,9 +323,27 @@ func TestChangingThePaletteRebuildsRows(t *testing.T) {
 	}
 }
 
+// steadyAllocs is the fewest allocations per call that several measurements of
+// paint saw. AllocsPerRun counts every goroutine's allocations, so a busy machine
+// (a parallel test binary, a CI runner under load) adds the runtime's own now and
+// then to a loop that allocates nothing. A paint that really allocates does so on
+// every call, in every measurement, and still fails.
+func steadyAllocs(paint func()) float64 {
+	best := testing.AllocsPerRun(50, paint)
+	for attempt := 0; attempt < 6 && best != 0; attempt++ {
+		best = min(best, testing.AllocsPerRun(50, paint))
+	}
+	return best
+}
+
 func TestPaintingAnUnchangedTerminalAllocatesNothing(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	shell.say("\x1b[32muser@host\x1b[0m:~$ ls\r\nfile1  \x1b[34mdir\x1b[0m  你好\r\n")
+	state.Wake()
+	// AllocsPerRun counts every goroutine's allocations. The completion catalog
+	// loads in the background after the first Wake; measuring while it decodes
+	// charges its allocations to the paint.
+	state.completion.workers.Wait()
 	state.Wake()
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
@@ -335,7 +353,7 @@ func TestPaintingAnUnchangedTerminalAllocatesNothing(t *testing.T) {
 	}
 	paint()
 	paint()
-	if allocs := testing.AllocsPerRun(50, paint); allocs != 0 {
+	if allocs := steadyAllocs(paint); allocs != 0 {
 		t.Errorf("painting an unchanged terminal allocates %v times", allocs)
 	}
 	state.sessions[0].term.selection.selectRange(
@@ -343,7 +361,7 @@ func TestPaintingAnUnchangedTerminalAllocatesNothing(t *testing.T) {
 		state.sessions[0].term.screen.PointAt(term.Position{Row: 1, Column: 20}),
 	)
 	paint()
-	if allocs := testing.AllocsPerRun(50, paint); allocs != 0 {
+	if allocs := steadyAllocs(paint); allocs != 0 {
 		t.Errorf("painting an unchanged selection allocates %v times", allocs)
 	}
 }
