@@ -10,6 +10,7 @@ The sftp-* action glyphs were supplied with the SFTP interface design and
 normalized to use the application's theme tint.
 The process glyph was supplied by the Motty project owner for this interface
 and normalized to use the application's theme tint.
+The serial glyph was drawn for the host icon set in the Lucide style.
 The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
 It is ISC licensed like the other Lucide icons above.

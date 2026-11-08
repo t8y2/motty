@@ -29,6 +29,7 @@ const (
 	iconSettings
 	iconSearch
 	iconTerminal
+	iconSerial
 	iconPlus
 	iconSun
 	iconMoon
@@ -2073,6 +2074,8 @@ func (state *State) paintHostCatalogIcon(canvas *ui.Canvas, host Host, bounds ui
 	switch host.Icon {
 	case hostIconTerminal:
 		kind = iconTerminal
+	case hostIconSerial:
+		kind = iconSerial
 	case hostIconGlobe:
 		kind = iconGlobe
 	case hostIconKey:
@@ -2127,6 +2130,7 @@ var lucideIcons = [...]ui.Icon{
 	iconSettings: icons.Settings,
 	iconSearch:   icons.Search,
 	iconTerminal: icons.Terminal,
+	iconSerial:   icons.Serial,
 	iconPlus:     icons.Plus,
 	iconSun:      icons.Sun,
 	iconMoon:     icons.Moon,
@@ -2457,6 +2461,8 @@ func (state *State) hostIconLabel(icon hostIcon) string {
 		return m.IconServer
 	case hostIconTerminal:
 		return m.IconTerminal
+	case hostIconSerial:
+		return m.IconSerial
 	case hostIconGlobe:
 		return m.IconGlobe
 	case hostIconKey:
@@ -2488,6 +2494,8 @@ func (state *State) hostIconArt(icon hostIcon, detected sshconn.RemoteSystem, de
 	switch icon {
 	case hostIconTerminal:
 		return icons.Terminal
+	case hostIconSerial:
+		return icons.Serial
 	case hostIconGlobe:
 		return icons.Globe
 	case hostIconKey:
@@ -2500,12 +2508,12 @@ func (state *State) hostIconArt(icon hostIcon, detected sshconn.RemoteSystem, de
 
 // hostIconChoices are the icons the list offers, in order.
 func hostIconChoices() []hostIcon {
-	choices := make([]hostIcon, 0, 1+len(hostSystemChoices)+5)
+	choices := make([]hostIcon, 0, 1+len(hostSystemChoices)+6)
 	choices = append(choices, hostIconAuto)
 	for _, choice := range hostSystemChoices {
 		choices = append(choices, hostIconOf(choice.system))
 	}
-	return append(choices, hostIconServer, hostIconTerminal, hostIconGlobe, hostIconKey, hostIconDesktop)
+	return append(choices, hostIconServer, hostIconTerminal, hostIconSerial, hostIconGlobe, hostIconKey, hostIconDesktop)
 }
 
 // paintHostIconChoice paints the list of icons a host can have.

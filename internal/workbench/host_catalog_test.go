@@ -335,9 +335,47 @@ func TestDesktopHostsGetAMonitorIconByDefault(t *testing.T) {
 	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("the explicit desktop icon is not the monitor")
 	}
+	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Serial) {
+		t.Fatal("the explicit serial icon is not the serial glyph")
+	}
 	icon, ok := parseHostIcon("desktop")
 	if !ok || icon != hostIconDesktop || icon.String() != "desktop" {
 		t.Fatalf("desktop icon = %v, %v", icon, ok)
+	}
+	serial, ok := parseHostIcon("serial")
+	if !ok || serial != hostIconSerial || serial.String() != "serial" {
+		t.Fatalf("serial icon = %v, %v", serial, ok)
+	}
+	offered := false
+	for _, choice := range hostIconChoices() {
+		if choice == hostIconSerial {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Fatal("the icon list does not offer serial")
+	}
+}
+
+// Switching the form to a serial connection selects the serial icon, until the
+// user picks one of their own.
+func TestSerialProtocolDefaultsTheHostIcon(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.setProtocol(protocolSerial)
+	if editor.icon != hostIconSerial {
+		t.Fatalf("serial form icon = %v, want serial", editor.icon)
+	}
+	editor.setProtocol(protocolSSH)
+	if editor.icon != hostIconAuto {
+		t.Fatalf("SSH form kept the serial icon: %v", editor.icon)
+	}
+	editor.setProtocol(protocolSerial)
+	editor.icon, editor.iconChosen = hostIconGlobe, true
+	editor.setProtocol(protocolSSH)
+	if editor.icon != hostIconGlobe {
+		t.Fatalf("an explicit icon changed with the protocol: %v", editor.icon)
 	}
 }
 

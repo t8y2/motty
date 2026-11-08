@@ -489,6 +489,7 @@ var ChineseMessages = Messages{
 	IconAuto:                    "自动 (按系统)",
 	IconServer:                  "服务器",
 	IconTerminal:                "终端",
+	IconSerial:                  "串口",
 	IconGlobe:                   "地球",
 	IconKey:                     "钥匙",
 	IconDesktop:                 "桌面",

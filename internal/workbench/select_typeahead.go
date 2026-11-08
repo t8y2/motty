@@ -182,7 +182,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 			if !ok || !choice.valid() {
 				return false
 			}
-			state.editor.icon = choice
+			state.editor.icon, state.editor.iconChosen = choice, true
 			return true
 		}, true
 	}

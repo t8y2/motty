@@ -298,7 +298,7 @@ func (state *State) clickHostProtocol(id ui.ID) bool {
 		editor.iconOpen = false
 	case id.Scope() == hitDialogIconItemList:
 		if choice := hostIcon(item(id)); choice.valid() {
-			editor.icon = choice
+			editor.icon, editor.iconChosen = choice, true
 		}
 		editor.iconOpen = false
 	case id.Scope() == hitDialogPortsItemList:

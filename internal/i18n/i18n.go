@@ -520,6 +520,7 @@ type Messages struct {
 	IconAuto                    string
 	IconServer                  string
 	IconTerminal                string
+	IconSerial                  string
 	IconGlobe                   string
 	IconKey                     string
 	IconDesktop                 string

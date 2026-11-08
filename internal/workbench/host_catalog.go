@@ -31,6 +31,9 @@ const (
 	// hostIconDesktop is the generic remote-desktop glyph, for VNC/RDP hosts
 	// whose system is not known.
 	hostIconDesktop
+	// hostIconSerial is the serial-port glyph, for a host opened over a serial
+	// line rather than a network.
+	hostIconSerial
 	// hostIconSystem and the values above it are a system's badge: the value is
 	// hostIconSystem plus the sshconn.RemoteSystem.
 	hostIconSystem
@@ -72,6 +75,8 @@ func (icon hostIcon) String() string {
 		return "key"
 	case hostIconDesktop:
 		return "desktop"
+	case hostIconSerial:
+		return "serial"
 	default:
 		return "auto"
 	}
@@ -91,6 +96,8 @@ func parseHostIcon(value string) (hostIcon, bool) {
 		return hostIconKey, true
 	case "desktop":
 		return hostIconDesktop, true
+	case "serial":
+		return hostIconSerial, true
 	default:
 		if system := sshconn.ParseRemoteSystem(value); system != sshconn.SystemUnknown {
 			return hostIconOf(system), true

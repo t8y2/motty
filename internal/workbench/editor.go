@@ -47,6 +47,10 @@ type hostEditor struct {
 	iconOpen bool
 	// iconReveal says the list has just opened and has to scroll to the chosen icon.
 	iconReveal bool
+	// iconChosen says the user picked an icon, or the host being edited already
+	// has one, so a protocol switch must not replace it with that protocol's
+	// default.
+	iconChosen bool
 	// port is the port of an SSH or Telnet host and the line settings of a serial
 	// one ("115200 8N1").
 	port text.Editor
@@ -267,7 +271,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.user.Insert(host.User)
 	editor.group.Insert(host.Group)
 	editor.tags.Insert(formatHostTags(host))
-	editor.icon, editor.system = host.Icon, host.System
+	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
@@ -348,7 +352,7 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.icon, editor.system, editor.iconOpen = hostIconAuto, sshconn.SystemUnknown, false
+	editor.icon, editor.iconChosen, editor.system, editor.iconOpen = hostIconAuto, false, sshconn.SystemUnknown, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
@@ -397,6 +401,13 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 		}
 	}
 	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
+	if !editor.iconChosen {
+		if protocol == protocolSerial {
+			editor.icon = hostIconSerial
+		} else if editor.icon == hostIconSerial {
+			editor.icon = hostIconAuto
+		}
+	}
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	if protocol == protocolSerial {
 		editor.ports = serial.Ports()

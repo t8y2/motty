@@ -489,6 +489,7 @@ var TraditionalMessages = Messages{
 	IconAuto:                    "自動 (按系統)",
 	IconServer:                  "伺服器",
 	IconTerminal:                "終端機",
+	IconSerial:                  "序列埠",
 	IconGlobe:                   "地球",
 	IconKey:                     "鑰匙",
 	IconDesktop:                 "桌面",

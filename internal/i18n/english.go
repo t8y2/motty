@@ -489,6 +489,7 @@ var EnglishMessages = Messages{
 	IconAuto:                    "Automatic (by system)",
 	IconServer:                  "Server",
 	IconTerminal:                "Terminal",
+	IconSerial:                  "Serial",
 	IconGlobe:                   "Globe",
 	IconKey:                     "Key",
 	IconDesktop:                 "Desktop",
