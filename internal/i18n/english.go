@@ -205,8 +205,8 @@ var EnglishMessages = Messages{
 	TrayLocalTerminal:                    "New local terminal",
 	TrayShowWindow:                       "Show Motty",
 	TrayCheckUpdates:                     "Check for Updates…",
-	TrayTooltipFmt:                       "Motty (%d open)",
-	TrayTooltipEmpty:                     "Motty",
+	TrayTooltipFmt:                       "Motty %s (%d open)",
+	TrayTooltipEmpty:                     "Motty %s",
 	TrayHintTitle:                        "Motty is still running",
 	TrayHintBody:                         "Closing the window keeps the sessions connected. The tray icon reopens it, or quits from there.",
 

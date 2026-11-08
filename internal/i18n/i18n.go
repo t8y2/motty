@@ -227,8 +227,9 @@ type Messages struct {
 	DevelopmentImportFailedFmt           string
 	DevelopmentImportNotEmpty            string
 
-	// The status-area icon and the panel beside it. TrayTooltipFmt takes the
-	// number of open sessions.
+	// The status-area icon and the panel beside it. TrayTooltipEmpty and
+	// TrayTooltipFmt take the version; the format then takes the number of open
+	// sessions.
 	TrayTitle         string
 	TrayEmpty         string
 	TrayQuit          string

@@ -171,8 +171,12 @@ func (status *tray) show(application *app.Application) {
 	if status == nil || status.item != nil {
 		return
 	}
+	// The icon is named from the start: the shell shows this text as soon as the
+	// pointer rests on it, which can be before the first window wake updates it.
+	tooltip, _ := status.list.Tooltip()
 	item, err := application.AddStatusItem(app.StatusItemConfig{
-		Icon: workbench.TrayIcon(),
+		Icon:    workbench.TrayIcon(),
+		Tooltip: tooltip,
 		// The system's menu, built when it opens. Where a desktop reports a
 		// primary press as an activation instead (a Linux tray), it brings the
 		// window back.
@@ -488,6 +492,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		}
 		if status != nil {
 			status.list.Add(state, mainWindow)
+			// The icon can be up before this window exists (a start at login), so
+			// its tooltip is named now instead of at the next wake.
+			status.refresh()
 		}
 		// Wake once now that connections can reach the window: this is when
 		// restored tabs are connected (see workbench.State.Wake).

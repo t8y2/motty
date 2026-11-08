@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/buildinfo"
+	"motty/internal/update"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -74,10 +75,11 @@ func (tray *Tray) Tooltip() (text string, changed bool) {
 	}
 	tray.count = count
 	messages := tray.members[0].state.messages
+	version := update.Current
 	if count == 0 {
-		tray.tooltip = productText(messages.TrayTooltipEmpty)
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipEmpty), version)
 	} else {
-		tray.tooltip = productText(fmt.Sprintf(messages.TrayTooltipFmt, count))
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipFmt), version, count)
 	}
 	return tray.tooltip, true
 }

@@ -130,15 +130,16 @@ func TestTrayMenuOfNoSessionsSaysSoAndOfNoWindowsIsEmpty(t *testing.T) {
 
 func TestTrayTooltipChangesOnlyWhenTheCountDoes(t *testing.T) {
 	fixture := newTrayFixture(t)
+	name := buildinfo.ProductName + " " + update.Current
 	text, changed := fixture.tray.Tooltip()
-	if !changed || text != buildinfo.ProductName+" (3 open)" {
+	if !changed || text != name+" (3 open)" {
 		t.Fatalf("first tooltip = %q, %t", text, changed)
 	}
 	if _, changed := fixture.tray.Tooltip(); changed {
 		t.Fatal("an unchanged count reported a change")
 	}
 	fixture.second.closeSession(fixture.second.sessions[0].ID)
-	if text, changed := fixture.tray.Tooltip(); !changed || text != buildinfo.ProductName+" (2 open)" {
+	if text, changed := fixture.tray.Tooltip(); !changed || text != name+" (2 open)" {
 		t.Fatalf("after closing a session: %q, %t", text, changed)
 	}
 	if _, changed := NewTray(nil).Tooltip(); changed {
@@ -162,7 +163,7 @@ func TestTrayUsesTheBuildProductNameInBothLanguages(t *testing.T) {
 			state.messages = i18n.For(test.language)
 			tray := NewTray(nil)
 			tray.Add(state, &fakeTrayWindow{})
-			if text, changed := tray.Tooltip(); !changed || text != buildinfo.ProductName {
+			if text, changed := tray.Tooltip(); !changed || text != buildinfo.ProductName+" "+update.Current {
 				t.Fatalf("empty tooltip = %q, %t", text, changed)
 			}
 			menu := tray.Menu()
