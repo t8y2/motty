@@ -208,12 +208,12 @@ func (state *State) clickStartupHosts(id ui.ID) bool {
 }
 
 // startupWanted reports whether the first Wake has anything to open: the
-// restored tabs, the restored local shells when their folders are remembered,
-// or the launch choice — a local terminal, a picked shell or hosts. A launch
+// restored tabs, the restored local shells (which never wait on the restore
+// policy), or the launch choice — a local terminal, a picked shell or hosts. A launch
 // with only a picked shell counts.
 func (state *State) startupWanted() bool {
 	return state.restoreConnect != restoreConnectOff ||
-		(state.localStart == localStartRemember && state.hasRestoredLocalSession()) ||
+		state.hasRestoredLocalSession() ||
 		(state.startupEnabled && (state.startupLocal || state.startupShell != "" || len(state.startupHosts) > 0))
 }
 

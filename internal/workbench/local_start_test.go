@@ -55,9 +55,8 @@ func localDirOf(t *testing.T, session *Session) string {
 	return conn.dir
 }
 
-// With the folder remembered, reopening the app starts every local tab in the
-// folder it was left in, even though the restore policy dials nothing: a local
-// shell is not a connection.
+// Reopening the app starts every local tab in the folder it was left in, even
+// though the restore policy dials nothing: a local shell is not a connection.
 func TestRememberedFolderStartsRestoredLocalTabsWhereTheyWere(t *testing.T) {
 	skipWithoutUnixShell(t)
 	directories := []string{realTempDir(t), realTempDir(t)}
@@ -83,25 +82,20 @@ func TestRememberedFolderStartsRestoredLocalTabsWhereTheyWere(t *testing.T) {
 	}
 }
 
-// With the home folder chosen, a restored local tab forgets where it was: it
-// follows the restore policy, and starts at home when that policy connects it.
+// With the home folder chosen, a restored local tab still starts, whatever the
+// restore policy says, but forgets where it was and starts at home.
 func TestHomeFolderStartsRestoredLocalTabsAtHome(t *testing.T) {
 	skipWithoutUnixShell(t)
 	directory := realTempDir(t)
 
-	off := newTestState(t, savedLocalTabs(t, restoreConnectOff, localStartHome, directory))
-	closeShells(t, off)
-	off.Wake()
-	if session := &off.sessions[0]; session.conn != nil || !session.restored {
-		t.Fatal("with the home folder chosen and restore off, a local tab was started")
-	}
-
-	all := newTestState(t, savedLocalTabs(t, restoreConnectAll, localStartHome, directory))
-	closeShells(t, all)
-	all.Wake()
-	session := &all.sessions[0]
-	if got := localDirOf(t, session); got != "" || session.localDirectory != "" {
-		t.Fatalf("restored local tab starts in %q (remembered %q), want the home folder", got, session.localDirectory)
+	for _, policy := range []restoreConnectPolicy{restoreConnectOff, restoreConnectAll} {
+		state := newTestState(t, savedLocalTabs(t, policy, localStartHome, directory))
+		closeShells(t, state)
+		state.Wake()
+		session := &state.sessions[0]
+		if got := localDirOf(t, session); got != "" || session.localDirectory != "" || session.restored {
+			t.Fatalf("restore policy %v: tab starts in %q (remembered %q, restored %v), want a started shell at home", policy, got, session.localDirectory, session.restored)
+		}
 	}
 }
 

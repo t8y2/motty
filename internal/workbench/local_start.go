@@ -11,7 +11,7 @@ const (
 	// the way it was left, and a new local terminal starts where the user is.
 	localStartRemember localStartPolicy = iota
 	// localStartHome starts every local tab in the home folder: a restored tab
-	// forgets where it was, and a new one inherits nothing.
+	// forgets where it was (and still starts), and a new one inherits nothing.
 	localStartHome
 )
 
@@ -82,13 +82,11 @@ func (state *State) noteActiveLocalDirectory() {
 }
 
 // startRestoredLocalSessions starts the shells of the local tabs the restore
-// brought back, in the folders they were left in, when the folder is
-// remembered. Starting one dials nothing, so it is not the network the restore
-// policy holds back; with the home folder chosen they follow that policy.
+// brought back. Starting one dials nothing, so the restore policy, which bounds
+// network connections, never holds it back. The folder choice only decides
+// where the shell starts: the folder the tab was left in, or home (the reconnect
+// forgets the saved folder).
 func (state *State) startRestoredLocalSessions() {
-	if state.localStart != localStartRemember {
-		return
-	}
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if !session.isLocal() || !session.restored || !state.canReconnect(session) {
@@ -100,7 +98,7 @@ func (state *State) startRestoredLocalSessions() {
 }
 
 // hasRestoredLocalSession reports whether a restored local tab waits for its
-// shell, which the first Wake starts when the folder is remembered.
+// shell, which the first Wake starts.
 func (state *State) hasRestoredLocalSession() bool {
 	for index := range state.sessions {
 		if session := &state.sessions[index]; session.isLocal() && session.restored {
