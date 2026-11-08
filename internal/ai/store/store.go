@@ -27,6 +27,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (e *LimitError) Error() string {
 // Is makes errors.Is(err, ErrTooLarge) true.
 func (e *LimitError) Is(target error) bool { return target == ErrTooLarge }
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 var migrations = [...]string{
 	// version 1
@@ -142,6 +143,10 @@ var migrations = [...]string{
 	// version 7: an optional models_url for providers where model listing is at
 	// a different path than completion requests.
 	`ALTER TABLE providers ADD COLUMN models_url TEXT NOT NULL DEFAULT '';`,
+	// version 8: reasoning effort configuration per model.
+	`ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE models ADD COLUMN reasoning_levels TEXT NOT NULL DEFAULT '';
+	ALTER TABLE models ADD COLUMN reasoning_default TEXT NOT NULL DEFAULT '';`,
 }
 
 const sqliteMagic = "SQLite format 3\x00"
@@ -478,11 +483,76 @@ func (s *Store) DeleteProvider(id string) error {
 
 // ---- models ----
 
+// ReasoningConfig defines the reasoning effort levels supported by a model.
+type ReasoningConfig struct {
+	Levels  []string `json:"levels"`
+	Default string   `json:"default"`
+}
+
+func (rc *ReasoningConfig) validate() error {
+	if rc == nil {
+		return nil
+	}
+	if len(rc.Levels) == 0 {
+		return fmt.Errorf("%w: reasoning levels cannot be empty when enabled", ErrInvalid)
+	}
+	for _, l := range rc.Levels {
+		if l == "" {
+			return fmt.Errorf("%w: reasoning level cannot be empty", ErrInvalid)
+		}
+	}
+	if rc.Default != "" && !slices.Contains(rc.Levels, rc.Default) {
+		return fmt.Errorf("%w: default reasoning level %q not in levels", ErrInvalid, rc.Default)
+	}
+	return nil
+}
+
+// EffectiveLevel resolves the reasoning level given an optional user override.
+func (rc *ReasoningConfig) EffectiveLevel(override string) (string, bool) {
+	if rc == nil || len(rc.Levels) == 0 {
+		return "", false
+	}
+	if override != "" && slices.Contains(rc.Levels, override) {
+		return override, true
+	}
+	if rc.Default != "" {
+		return rc.Default, true
+	}
+	return rc.Levels[0], true
+}
+
+func decodeReasoningConfig(levels, def string) (*ReasoningConfig, error) {
+	if levels == "" {
+		return nil, nil
+	}
+	parts := strings.Split(levels, ",")
+	var cleaned []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cleaned = append(cleaned, p)
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+	cfg := &ReasoningConfig{
+		Levels:  cleaned,
+		Default: strings.TrimSpace(def),
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 // Model is a model offered by a provider.
 type Model struct {
-	ProviderID string
-	Name       string
-	Enabled    bool
+	ProviderID        string
+	Name              string
+	Enabled           bool
+	Reasoning         *ReasoningConfig
+	ReasoningDisabled bool
 }
 
 // SaveModels replaces the model set of a provider.
@@ -492,6 +562,41 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 		if err := tx.QueryRow(`SELECT 1 FROM providers WHERE id=?`, providerID).Scan(&one); err != nil {
 			return wrapDB(err)
 		}
+		// The reasoning declaration belongs to the user or cached configuration,
+		// keep it for every model still in the new set if not explicitly passed.
+		type oldReasoning struct {
+			cfg      *ReasoningConfig
+			disabled bool
+		}
+		old := map[string]oldReasoning{}
+		rows, rerr := tx.Query(`SELECT name, reasoning_enabled, reasoning_levels, reasoning_default
+			FROM models WHERE provider_id=? AND reasoning_enabled<>0`, providerID)
+		if rerr != nil {
+			return wrapDB(rerr)
+		}
+		for rows.Next() {
+			var name, levels, def string
+			var rEn int
+			if err := rows.Scan(&name, &rEn, &levels, &def); err != nil {
+				rows.Close()
+				return wrapDB(err)
+			}
+			if rEn == -1 {
+				old[name] = oldReasoning{disabled: true}
+			} else if rEn == 1 {
+				cfg, err := decodeReasoningConfig(levels, def)
+				if err != nil {
+					rows.Close()
+					return err
+				}
+				old[name] = oldReasoning{cfg: cfg}
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return wrapDB(err)
+		}
+
 		if _, err := tx.Exec(`DELETE FROM models WHERE provider_id=?`, providerID); err != nil {
 			return wrapDB(err)
 		}
@@ -499,8 +604,21 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 			if m.Name == "" {
 				return fmt.Errorf("%w: empty model name", ErrInvalid)
 			}
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO models(provider_id,name,enabled) VALUES(?,?,?)`,
-				providerID, m.Name, b2i(m.Enabled)); err != nil {
+			if r, ok := old[m.Name]; ok && m.Reasoning == nil && !m.ReasoningDisabled {
+				m.Reasoning = r.cfg
+				m.ReasoningDisabled = r.disabled
+			}
+			reasoningEnabled, levels, def := 0, "", ""
+			if m.ReasoningDisabled {
+				reasoningEnabled = -1
+			} else if m.Reasoning != nil {
+				if err := m.Reasoning.validate(); err != nil {
+					return err
+				}
+				reasoningEnabled, levels, def = 1, strings.Join(m.Reasoning.Levels, ","), m.Reasoning.Default
+			}
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO models(provider_id,name,enabled,reasoning_enabled,reasoning_levels,reasoning_default) VALUES(?,?,?,?,?,?)`,
+				providerID, m.Name, b2i(m.Enabled), reasoningEnabled, levels, def); err != nil {
 				return wrapDB(err)
 			}
 		}
@@ -510,7 +628,7 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 
 // Models lists all models ordered by provider then name.
 func (s *Store) Models() ([]Model, error) {
-	rows, err := s.db.Query(`SELECT provider_id,name,enabled FROM models ORDER BY provider_id, name`)
+	rows, err := s.db.Query(`SELECT provider_id,name,enabled,reasoning_enabled,reasoning_levels,reasoning_default FROM models ORDER BY provider_id, name`)
 	if err != nil {
 		return nil, wrapDB(err)
 	}
@@ -518,11 +636,17 @@ func (s *Store) Models() ([]Model, error) {
 	var out []Model
 	for rows.Next() {
 		var m Model
-		var en int
-		if err := rows.Scan(&m.ProviderID, &m.Name, &en); err != nil {
+		var en, rEn int
+		var levels, def string
+		if err := rows.Scan(&m.ProviderID, &m.Name, &en, &rEn, &levels, &def); err != nil {
 			return nil, wrapDB(err)
 		}
 		m.Enabled = en != 0
+		if rEn == 1 {
+			m.Reasoning, _ = decodeReasoningConfig(levels, def)
+		} else if rEn == -1 {
+			m.ReasoningDisabled = true
+		}
 		out = append(out, m)
 	}
 	return out, wrapDB(rows.Err())
@@ -531,6 +655,35 @@ func (s *Store) Models() ([]Model, error) {
 // SetModelEnabled toggles one model; ErrNotFound if it does not exist.
 func (s *Store) SetModelEnabled(providerID, name string, enabled bool) error {
 	res, err := s.db.Exec(`UPDATE models SET enabled=? WHERE provider_id=? AND name=?`, b2i(enabled), providerID, name)
+	if err != nil {
+		return wrapDB(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetModelReasoning updates reasoning configuration for one model; ErrNotFound if it does not exist.
+// disabled=true forces the model not to use reasoning.
+// disabled=false and cfg!=nil sets custom reasoning levels.
+// disabled=false and cfg==nil resets the model to auto detection.
+func (s *Store) SetModelReasoning(providerID, name string, cfg *ReasoningConfig, disabled bool) error {
+	if !disabled && cfg != nil {
+		if err := cfg.validate(); err != nil {
+			return err
+		}
+	}
+	enabled, levels, def := 0, "", ""
+	if disabled {
+		enabled = -1
+	} else if cfg != nil {
+		enabled = 1
+		levels = strings.Join(cfg.Levels, ",")
+		def = cfg.Default
+	}
+	res, err := s.db.Exec(`UPDATE models SET reasoning_enabled=?, reasoning_levels=?, reasoning_default=? WHERE provider_id=? AND name=?`,
+		enabled, levels, def, providerID, name)
 	if err != nil {
 		return wrapDB(err)
 	}

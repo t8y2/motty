@@ -79,8 +79,9 @@ type Config struct {
 	MaxSteps int
 	// StepTimeout is the deadline of one tool call, approval time included
 	// (default 90s).
-	StepTimeout time.Duration
-	MaxTokens   int
+	StepTimeout     time.Duration
+	MaxTokens       int
+	ReasoningEffort string
 	// MaxToolResultBytes cuts longer tool output, keeping head and tail
 	// (default 32 KiB).
 	MaxToolResultBytes int
@@ -241,7 +242,14 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 
 	for turn := 1; ; turn++ {
 		final := toolSteps >= cfg.MaxSteps
-		req := llm.Request{Model: cfg.Model, System: cfg.System, Messages: msgs, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature}
+		req := llm.Request{
+			Model:           cfg.Model,
+			System:          cfg.System,
+			Messages:        msgs,
+			MaxTokens:       cfg.MaxTokens,
+			Temperature:     cfg.Temperature,
+			ReasoningEffort: cfg.ReasoningEffort,
+		}
 		switch {
 		case final:
 			req.System += summariseNote
@@ -253,7 +261,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		default:
 			req.Tools = specs
 		}
-		text, calls, u, stop, err := stream(ctx, cfg.Provider, req, turn, emit)
+		text, calls, thinking, u, stop, err := stream(ctx, cfg.Provider, req, turn, emit)
 		usage = usage.Add(u)
 		usageIncomplete = usageIncomplete || u == (llm.Usage{})
 		if ctx.Err() != nil {
@@ -295,7 +303,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), err
 			}
-			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text})
+			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, Thinking: thinking})
 			safe = len(msgs)
 			emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop, UsageIncomplete: usageIncomplete})
 			return newMsgs(), nil
@@ -322,7 +330,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			}
 			seen[calls[i].ID] = true
 		}
-		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, ToolCalls: calls})
+		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, ToolCalls: calls, Thinking: thinking})
 
 		stuck := false
 		for _, call := range calls {
@@ -373,23 +381,24 @@ func fail(emit func(Event), _ []llm.Message, step int, u llm.Usage, err error) (
 }
 
 // stream runs one model turn. On context cancellation it returns promptly.
-func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit func(Event)) (string, []llm.ToolCall, llm.Usage, string, error) {
+func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit func(Event)) (string, []llm.ToolCall, []llm.ThinkingBlock, llm.Usage, string, error) {
 	var (
-		sb    strings.Builder
-		calls []llm.ToolCall
-		usage llm.Usage
+		sb       strings.Builder
+		calls    []llm.ToolCall
+		thinking []llm.ThinkingBlock
+		usage    llm.Usage
 	)
 	ch, err := p.Stream(ctx, req)
 	if err != nil {
-		return "", nil, usage, "", err
+		return "", nil, nil, usage, "", err
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return "", nil, usage, "", ctx.Err()
+			return "", nil, nil, usage, "", ctx.Err()
 		case ev, ok := <-ch:
 			if !ok {
-				return "", nil, usage, "", errors.New("agent: the model stream ended unexpectedly")
+				return "", nil, nil, usage, "", errors.New("agent: the model stream ended unexpectedly")
 			}
 			switch ev.Kind {
 			case llm.EventText:
@@ -397,18 +406,22 @@ func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit
 				emit(Event{Kind: EventText, Text: ev.Text, Step: turn})
 			case llm.EventReasoning:
 				emit(Event{Kind: EventReasoning, Text: ev.Text, Step: turn})
+			case llm.EventThinking:
+				if ev.Thinking != nil {
+					thinking = append(thinking, *ev.Thinking)
+				}
 			case llm.EventToolCall:
 				if ev.ToolCall != nil {
 					calls = append(calls, *ev.ToolCall)
 				}
 			case llm.EventDone:
 				usage = ev.Usage
-				return sb.String(), calls, usage, ev.StopReason, nil
+				return sb.String(), calls, thinking, usage, ev.StopReason, nil
 			case llm.EventError:
 				if ev.Err == nil {
-					return "", nil, usage, "", errors.New("agent: model error")
+					return "", nil, nil, usage, "", errors.New("agent: model error")
 				}
-				return "", nil, usage, "", ev.Err
+				return "", nil, nil, usage, "", ev.Err
 			}
 		}
 	}

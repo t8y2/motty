@@ -153,6 +153,18 @@ type AIPanelMessages struct {
 	AutoScopeMediumDesc string
 	AutoScopeHighDesc   string
 
+	ReasoningEffort     string
+	ReasoningEffortHint string
+	ReasoningNone       string
+	ReasoningMinimal    string
+	ReasoningLow        string
+	ReasoningMedium     string
+	ReasoningHigh       string
+	ReasoningXHigh      string
+	ReasoningMax        string
+	ReasoningDefault    string
+	ReasoningAuto       string
+
 	ApprovalTitle       string
 	ApprovalMoreFmt     string // takes how many more are waiting
 	ConfirmFmt          string

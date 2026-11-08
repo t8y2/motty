@@ -328,7 +328,6 @@ func (state *State) paintAIModels(page *settingsPage) {
 			if !model.Enabled {
 				nameColor = pal.muted
 			}
-			cat := probe.ClassifyModel(model.Name)
 			res, hasRes := state.aiGetProbeResult(provider.ID, model.Name)
 			isProbing := state.aiIsProbing(provider.ID, model.Name)
 
@@ -337,14 +336,40 @@ func (state *State) paintAIModels(page *settingsPage) {
 				if store.IsCLIKind(provider.Kind) && model.Name == "default" {
 					label = m.CLIDefaultModel
 				}
-				// Name and reasoning tag (left-aligned)
+				// Name and reasoning chip (left-aligned, clickable to configure reasoning effort)
 				f.Row().Grow(1).Gap(8).Items(flex.Center).Children(func() {
 					f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
-					if cat == probe.CategoryReasoning {
-						f.Row().Height(18).PadX(6).Radius(4).Background(pal.surfaceSoft).Center().Children(func() {
-							f.Text(m.ModelTagReasoning).FontSize(metrics.FontSizeS).Color(pal.muted)
-						})
+					_, _, isReasoning, isOverride, isDisabled := state.aiModelReasoningInfo(&model)
+					var (
+						chipText      string
+						chipBg        ui.Color
+						chipTextColor ui.Color
+						chipWeight    float32 = ui.WeightRegular
+					)
+					if isDisabled {
+						chipText = m.ModelReasoningTagOff
+						chipBg = pal.surfaceSoft
+						chipTextColor = pal.muted
+					} else if isOverride {
+						chipText = m.ModelReasoningTagManual
+						chipBg = pal.accentSoft
+						chipTextColor = pal.accent
+						chipWeight = ui.WeightMedium
+					} else if isReasoning {
+						chipText = m.ModelReasoningTagAuto
+						chipBg = pal.surfaceSoft
+						chipTextColor = pal.accent
+						chipWeight = ui.WeightMedium
+					} else {
+						chipText = m.ModelReasoningTagAuto
+						chipBg = pal.surfaceSoft
+						chipTextColor = pal.muted
 					}
+					reasoningBox := f.Row().Height(20).PadX(8).Center().Radius(10).Background(chipBg)
+					page.hitOn(reasoningBox, hitAISetModelReasoning.At(row), chipText, ui.HitOptions{Role: ui.RoleButton})
+					reasoningBox.Children(func() {
+						f.Text(chipText).FontSize(metrics.FontSizeS).Color(chipTextColor).Weight(chipWeight)
+					})
 				})
 
 				// Probe badge or button (fixed-width column for neat vertical alignment)
@@ -594,6 +619,8 @@ func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintAIImport(canvas, viewport)
 	case aiDialogProbe:
 		state.paintAIProbeDialog(canvas, viewport)
+	case aiDialogModelReasoning:
+		state.paintAIModelReasoningDialog(canvas, viewport)
 	}
 }
 
@@ -654,6 +681,77 @@ func (state *State) paintAIProbeDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAISetProbeStart, Label: m.ProbeStartAction},
+	)
+	dialog.End()
+}
+
+func (state *State) paintAIModelReasoningDialog(canvas *ui.Canvas, viewport ui.Rect) {
+	m, theme := state.messages.AISettings, state.Theme()
+	cfg := &state.ai.cfg
+
+	modeHeight := float32(84)
+	presetHeight := float32(0)
+	if cfg.reasoningMode == 1 {
+		presetHeight = 84
+	}
+	bodyHeight := modeHeight + 4
+	if presetHeight > 0 {
+		bodyHeight += presetHeight + 10
+	}
+
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+		Layer: dialogLayer, Scope: dialogScope,
+		CloseID: hitAISetFormClose, InitialFocusID: hitAISetReasoningSave,
+		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
+	})
+	desc := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
+	layout := dialog.Begin(m.ModelReasoningTitle, desc)
+
+	var modeSlot, presetSlot flex.Box
+	f := state.settingsRow.Begin(canvas, theme, layout.Body)
+	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+		modeSlot = f.Slot().Height(modeHeight)
+		if presetHeight > 0 {
+			presetSlot = f.Slot().Height(presetHeight)
+		}
+	})
+	f.End()
+
+	// 1. 模式选择 (Auto / Enable / Disable)
+	modeDesc := m.ModelReasoningAutoDesc
+	selectedMode := hitAISetReasoningAuto
+	switch cfg.reasoningMode {
+	case 1:
+		selectedMode = hitAISetReasoningEnable
+		modeDesc = m.ModelReasoningEnableDesc
+	case 2:
+		selectedMode = hitAISetReasoningDisable
+		modeDesc = m.ModelReasoningDisableDesc
+	}
+	modeContent := components.BeginField(canvas, theme, modeSlot.Rect()).Paint(m.ModelReasoningMode, modeDesc, "")
+	modeOptions := state.aiReasoningModeOptions()
+	components.BeginSegmentedControl(canvas, theme, modeContent, modeOptions[:], selectedMode).Paint()
+
+	// 2. 如果是手动开启模式，选择档位预设
+	if presetHeight > 0 {
+		presetDesc := m.ModelReasoningPresetDesc0
+		selectedPreset := hitAISetReasoningPreset0
+		switch cfg.reasoningPreset {
+		case 1:
+			selectedPreset = hitAISetReasoningPreset1
+			presetDesc = m.ModelReasoningPresetDesc1
+		case 2:
+			selectedPreset = hitAISetReasoningPreset2
+			presetDesc = m.ModelReasoningPresetDesc2
+		}
+		presetContent := components.BeginField(canvas, theme, presetSlot.Rect()).Paint(m.ModelReasoningPreset, presetDesc, "")
+		presetOptions := state.aiReasoningPresetOptions()
+		components.BeginSegmentedControl(canvas, theme, presetContent, presetOptions[:], selectedPreset).Paint()
+	}
+
+	dialog.Actions(layout,
+		components.ButtonAction{ID: hitAISetReasoningCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitAISetReasoningSave, Label: m.ModelReasoningSave},
 	)
 	dialog.End()
 }

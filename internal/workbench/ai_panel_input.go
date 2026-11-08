@@ -317,13 +317,17 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	case canvas.Pressed() == hitAISend, canvas.Hovered() == hitAISend:
 		fill = pal.accentHot
 	}
-	var chip, scopeChip flex.Box
+	var chip, scopeChip, reasoningChip flex.Box
+	_, _, hasReasoning := state.aiCurrentModelReasoning()
 	f := state.aiFlex.send.Begin(canvas, theme, box)
 	f.Column().Fill().Justify(flex.End).Children(func() {
 		f.Row().Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(flex.Center).Children(func() {
 			state.declareAIModePill(f)
 			if hasModel {
 				chip = state.declareAIModelChip(f)
+				if hasReasoning {
+					reasoningChip = state.declareAIReasoningChip(f)
+				}
 				if ai.mode == agent.ModeAgent {
 					scopeChip = state.declareAIAutoScopeChip(f, running || len(ai.approvals) > 0)
 				}
@@ -359,7 +363,34 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 		if ai.mode == agent.ModeAgent {
 			panel.scopeChip = scopeChip.Rect()
 		}
+		if hasReasoning {
+			panel.reasoningChip = reasoningChip.Rect()
+		} else {
+			panel.reasoningChip = ui.Rect{}
+		}
+	} else {
+		panel.reasoningChip = ui.Rect{}
 	}
+}
+
+// declareAIReasoningChip declares the pill in the message box that shows and controls
+// the reasoning effort of the current model.
+func (state *State) declareAIReasoningChip(f *flex.Frame) flex.Box {
+	pal, m := state.pal, state.messages.AIPanel
+	effort := state.aiEffectiveReasoningEffort()
+	label := state.aiReasoningEffortLabel(effort)
+	displayText := m.ReasoningEffort + ": " + label
+
+	fill := pal.surfaceSoft
+	if f.Canvas().Pressed() == hitAIReasoningChip || f.Canvas().Hovered() == hitAIReasoningChip || state.ai.panel.reasoningMenu {
+		fill = pal.surfaceHot
+	}
+	return f.Row().Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(50).Items(flex.Center).Background(fill).Radius((aiSendSize-4)/2).
+		HitWith(hitAIReasoningChip, displayText, ui.HitOptions{Role: ui.RoleButton, Expanded: state.ai.panel.reasoningMenu, Hint: m.ReasoningEffortHint}).Children(func() {
+		f.Icon(lucideIcons[iconSliders]).Size(12, 12).Color(pal.muted).Shrink(0)
+		f.Text(displayText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
+		f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
+	})
 }
 
 // declareAIModePill declares the switch between Ask and Agent in the message box:
@@ -655,6 +686,50 @@ func (state *State) paintAIAutoScopeMenu(canvas *ui.Canvas) {
 	// row holds focus, painting must not take it back.
 	if focused := canvas.Focused(); focused.Scope() != hitAIAutoScopeLevels {
 		canvas.SetInitialFocus(hitAIAutoScopeLevels.At(0))
+	}
+	menu.End()
+}
+
+// paintAIReasoningMenu is the reasoning chip's popup menu, above it: lists the supported levels.
+func (state *State) paintAIReasoningMenu(canvas *ui.Canvas) {
+	panel := &state.ai.panel
+	if !panel.reasoningMenu {
+		return
+	}
+	_, levels, ok := state.aiCurrentModelReasoning()
+	if !ok || len(levels) == 0 {
+		return
+	}
+	theme := state.Theme()
+	currentEffort := state.aiEffectiveReasoningEffort()
+	items := make([]components.ContextMenuItem, 0, len(levels))
+	var width, height float32
+	for index, level := range levels {
+		label := state.aiReasoningEffortLabel(level)
+		item := components.ContextMenuItem{
+			ID:       hitAIReasoningMenu.At(index),
+			Label:    label,
+			Kind:     components.ContextMenuRadio,
+			Selected: currentEffort == level,
+			Value:    level,
+		}
+		items = append(items, item)
+		width = max(width, components.ContextMenuItemWidth(canvas, theme, item))
+		height += components.ContextMenuItemHeight(theme, item, 0)
+	}
+	height += 8
+	bounds := state.aiMenuRect(canvas, width, height, func(popup flex.Box) { popup.Above(panel.reasoningChip, 6, flex.Start) })
+	menu := components.BeginContextMenu(canvas, theme, bounds, components.ContextMenuOptions{
+		Layer:     dialogLayer,
+		Scope:     hitAIReasoningDismiss,
+		DismissID: hitAIReasoningDismiss,
+		Viewport:  panel.window,
+	})
+	for _, item := range items {
+		menu.AddItem(item)
+	}
+	if focused := canvas.Focused(); focused.Scope() != hitAIReasoningMenu {
+		canvas.SetInitialFocus(hitAIReasoningMenu.At(0))
 	}
 	menu.End()
 }
