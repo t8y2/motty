@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/attach"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
@@ -101,6 +102,7 @@ type aiSettings struct {
 	autoUpTo     risk.Level
 	maxSteps     int
 	contextLines int
+	maxTextBytes int
 	redact       bool
 	keepHistory  bool
 	// External access (MCP): whether it is enabled and the shared access level.
@@ -113,7 +115,7 @@ type aiSettings struct {
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -330,6 +332,13 @@ func (state *State) reloadAISettings() {
 		}
 	})
 	read("ai.redact", func(v string) { settings.redact = v != "off" })
+	read("ai.attachment_text_mib", func(v string) {
+		switch v {
+		case "1", "4", "8":
+			settings.maxTextBytes, _ = strconv.Atoi(v)
+			settings.maxTextBytes <<= 20
+		}
+	})
 	read("ai.history", func(v string) { settings.keepHistory = v != "off" })
 	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
@@ -731,6 +740,10 @@ func (state *State) aiSend() bool {
 	if (question == "" && len(ai.attachments) == 0) || ai.attaching > 0 && !ai.retry {
 		return false
 	}
+	if ai.mode != agent.ModeAgent && slices.ContainsFunc(ai.attachments, func(attachment aiAttachment) bool { return attachment.upload }) {
+		ai.notice = state.messages.AIPanel.UploadNeedsAgent
+		return false
+	}
 	provider, model, err := state.aiModel()
 	if err != nil {
 		ai.notice = err.Error()
@@ -812,6 +825,17 @@ func (state *State) aiSend() bool {
 	config.Gate.Target = &target
 	if ai.mode == agent.ModeAgent {
 		config.Tools = tools.Targeted()
+		for index, attachment := range attachments {
+			if attachment.upload {
+				if backend.uploads == nil {
+					backend.uploads = make(map[string]aiUploadFile)
+				}
+				backend.uploads[strconv.Itoa(index+1)] = aiUploadFile{path: attachment.path, name: attachment.file.Name, size: attachment.size, modified: attachment.modified, info: attachment.info}
+			}
+		}
+		if len(backend.uploads) > 0 {
+			config.Tools = append(config.Tools, tools.SelectedUpload())
+		}
 	}
 	config.Gate.References = references
 	config.Gate.Backend = backend
@@ -832,6 +856,7 @@ func (state *State) aiSend() bool {
 		target: target, extras: extras, targetKey: targetKey, attachments: refs,
 	}
 	ai.run = run
+	backend.uploadRun = run
 	ai.lastRun = nil
 	ai.panel.autoMenu = false // the scope is fixed while the request runs
 	if backend.defaultDone != nil && len(backend.bindings) == 1 {

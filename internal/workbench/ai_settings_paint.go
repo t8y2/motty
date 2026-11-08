@@ -469,10 +469,19 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 		description, color = m.ClearHistoryDone, pal.success
 	}
 	riskOptions, stepOptions, contextOptions := state.aiRiskOptions(), state.aiStepsOptions(), state.aiContextOptions()
+	selectedText := hitAISetText4
+	switch settings.maxTextBytes {
+	case 1 << 20:
+		selectedText = hitAISetText1
+	case 8 << 20:
+		selectedText = hitAISetText8
+	}
+	textOptions := state.aiTextLimitOptions()
 	page.group(m.BehaviourTitle, func() {
 		page.aiFrame(settingsRowHeight, m.AutoRun, m.AutoRunDesc, pal.muted, func() { page.segmentSlot(choice, riskOptions[:], selectedRisk) })
 		page.aiFrame(settingsRowHeight, m.MaxSteps, m.MaxStepsDesc, pal.muted, func() { page.segmentSlot(choice, stepOptions[:], selectedSteps) })
 		page.aiFrame(settingsRowHeight, m.ContextLines, m.ContextLinesDesc, pal.muted, func() { page.segmentSlot(choice, contextOptions[:], selectedContext) })
+		page.aiFrame(settingsRowHeight, m.AttachmentTextLimit, m.AttachmentTextLimitDesc, pal.muted, func() { page.segmentSlot(choice, textOptions[:], selectedText) })
 		page.aiFrameFor(hitAISetRedact, settingsRowHeight, m.Redact, m.RedactDesc, pal.muted, func() { page.switchSlot(hitAISetRedact, settings.redact, false, m.Redact) })
 		page.aiFrameFor(hitAISetHistory, settingsRowHeight, m.History, m.HistoryDesc, pal.muted, func() { page.switchSlot(hitAISetHistory, settings.keepHistory, false, m.History) })
 		page.aiFrame(settingsRowHeight, m.ClearHistory, description, color, func() {

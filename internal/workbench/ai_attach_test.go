@@ -308,6 +308,45 @@ func TestPaperclipOpensTheFileDialogAndAttachesWhatIsChosen(t *testing.T) {
 	}
 }
 
+func TestUploadPickerKeepsBinaryFilesOutOfModelContext(t *testing.T) {
+	model := &scriptedModel{turn: func(_ int, request llm.Request) []llm.Event {
+		found := false
+		for _, tool := range request.Tools {
+			found = found || tool.Name == tools.NameUploadSelected
+		}
+		if !found {
+			return textTurn("selected upload tool was not offered")
+		}
+		return textTurn("ready")
+	}}
+	state := openedPanel(t, model)
+	state.ai.mode = agent.ModeAgent
+	content := bytes.Repeat([]byte{0, 255, 0, 5}, 1024)
+	selected := writeTestFile(t, "build.tar.gz", content)
+	state.options.OpenFiles = func(options app.OpenFileOptions) ([]string, error) {
+		if options.Title != state.messages.AIPanel.UploadPickerTitle {
+			t.Fatalf("picker title = %q", options.Title)
+		}
+		return []string{selected}, nil
+	}
+	canvas, _ := paintAt(state, panelWide)
+	state.Click(panelHit(t, canvas, hitAIUpload).ID)
+	attached(t, state, 1)
+	if !state.ai.attachments[0].upload {
+		t.Fatal("binary file was attached as model content")
+	}
+	ask(state, "upload to /tmp/build.tar.gz", agent.ModeAgent)
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	request := model.requests[0]
+	if len(request.Messages) != 1 || !strings.Contains(request.Messages[0].Text, "id 1, name build.tar.gz") ||
+		strings.Contains(request.Messages[0].Text, string(content)) || len(request.Messages[0].Images) != 0 {
+		t.Fatalf("the model received file bytes or no upload reference: %+v", request.Messages)
+	}
+	if got := state.ai.items[len(state.ai.items)-1].text; got != "ready" {
+		t.Fatalf("tool was not available: %q", got)
+	}
+}
+
 func pasteNoText(t *testing.T, state *State) app.TextState {
 	t.Helper()
 	input := state.AIPanelInput(app.TextInputContext{ID: hitAIInput})

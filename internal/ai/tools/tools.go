@@ -277,6 +277,8 @@ func Targeted() []Spec {
 	return out
 }
 
+func SelectedUpload() Spec { return selectedUploadSpec }
+
 // Headless returns the catalog of a server that has no terminal windows to act
 // in: it works on saved hosts over their own connections. The tools and their
 // arguments are the same, so the same decoders and the same gate serve them;
@@ -335,6 +337,9 @@ func isJobTool(name string) bool {
 
 // Lookup finds a tool by name.
 func Lookup(name string) (Spec, bool) {
+	if name == NameUploadSelected {
+		return selectedUploadSpec, true
+	}
 	for _, s := range specs {
 		if s.Name == name {
 			return s, true

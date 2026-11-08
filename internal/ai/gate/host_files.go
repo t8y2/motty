@@ -76,6 +76,11 @@ type FileTransfers interface {
 	CancelTransfer(context.Context, string) (Transfer, error)
 }
 
+type SelectedUploader interface {
+	UploadSelected(context.Context, tools.SelectedUploadArgs) (Transfer, error)
+	SelectedFileName(string) (string, bool)
+}
+
 type CommandResult struct {
 	Stdout     string `json:"stdout"`
 	Stderr     string `json:"stderr"`
@@ -103,6 +108,39 @@ func structured(value any, text string) Result {
 }
 
 func (g Gate) runHostTool(ctx context.Context, name string, raw []byte) (Result, bool) {
+	if name == tools.NameUploadSelected {
+		backend, ok := g.Backend.(SelectedUploader)
+		if !ok || g.Target == nil {
+			return failure(errors.New("selected-file uploads are unavailable")), true
+		}
+		args, err := tools.DecodeSelectedUpload(raw)
+		if err != nil {
+			return failure(err), true
+		}
+		filename, ok := backend.SelectedFileName(args.FileID)
+		if !ok {
+			return failure(errors.New("file was not selected for this request")), true
+		}
+		if args.Session, err = g.targetSession(args.Session); err != nil {
+			return failure(err), true
+		}
+		assessment := risk.Assessment{Level: risk.High, Reasons: []string{"uploads a local file to an SSH host"}}
+		if g.Approver == nil {
+			return failure(errors.New("an explicit upload approval is required")), true
+		}
+		approved, _, err := g.Approver(ctx, Request{Tool: name, Kind: tools.Write, Session: args.Session, SessionLabel: g.sessionLabel(args.Session), Summary: "upload " + filename + " -> " + args.RemotePath, Assessment: assessment})
+		if err != nil {
+			return failure(err), true
+		}
+		if !approved {
+			return Result{Text: "the user declined this upload", IsError: true, Denied: true}, true
+		}
+		result, err := backend.UploadSelected(ctx, args)
+		if err != nil {
+			return failure(err), true
+		}
+		return structured(result, ""), true
+	}
 	if name == tools.NameTerminalExec {
 		backend, ok := g.Backend.(HostCommands)
 		if !ok {

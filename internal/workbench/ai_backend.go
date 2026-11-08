@@ -32,6 +32,8 @@ type aiBackend struct {
 	defaultID   string
 	defaultDone <-chan struct{}
 	bindings    []aiSessionBinding
+	uploads     map[string]aiUploadFile
+	uploadRun   *aiRun
 
 	mu   sync.Mutex
 	sftp map[uint32]sftpclient.Remote // one per session, opened when first needed

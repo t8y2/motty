@@ -14,6 +14,7 @@ const (
 	NameSFTPDownload   = "sftp_download"
 	NameTransferStatus = "transfer_status"
 	NameTransferCancel = "transfer_cancel"
+	NameUploadSelected = "sftp_upload_selected"
 	MaxPageEntries     = 1000
 )
 
@@ -31,6 +32,36 @@ var hostFileSpecs = []Spec{
 	{Name: NameSFTPDownload, Description: "Start a binary-safe download from an authorized host into an allowed local transfer root, using SFTP or SCP. Returns a task id, not completion. Poll transfer_status. Existing destinations fail unless an explicit policy is supplied.", Kind: Write, Schema: transferSchema()},
 	{Name: NameTransferCancel, Description: "Request cancellation of this MCP process's transfer. Poll transfer_status until it settles. SCP uploads can leave a partial destination; cancellation does not undo already committed files.", Kind: Write,
 		Schema: json.RawMessage(`{"type":"object","properties":{"transfer_id":{"type":"string","minLength":1,"maxLength":64}},"required":["transfer_id"],"additionalProperties":false}`)},
+}
+
+var selectedUploadSpec = Spec{
+	Name: NameUploadSelected, Kind: Write,
+	Description: "Upload a file explicitly selected by the user for this request to an authorized SSH host. File contents never enter the model context. The call completes only when the transfer settles. Existing destinations fail by default; replacement requires an explicit policy and user approval.",
+	Schema:      json.RawMessage(`{"type":"object","properties":{"file_id":{"type":"string","minLength":1,"maxLength":16,"description":"ID of a file the user selected for this request."},"session":{"type":"string","maxLength":256},"remote_path":{"type":"string","minLength":1,"maxLength":4096,"description":"Full destination path on the SSH host."},"existing":{"type":"string","enum":["fail","replace","resume"],"default":"fail"}},"required":["file_id","remote_path"],"additionalProperties":false}`),
+}
+
+type SelectedUploadArgs struct {
+	FileID     string `json:"file_id"`
+	Session    string `json:"session,omitempty"`
+	RemotePath string `json:"remote_path"`
+	Existing   string `json:"existing,omitempty"`
+}
+
+func DecodeSelectedUpload(raw []byte) (SelectedUploadArgs, error) {
+	args := SelectedUploadArgs{Existing: "fail"}
+	if err := decode(raw, &args); err != nil {
+		return args, err
+	}
+	if len(args.FileID) == 0 || len(args.FileID) > 16 {
+		return args, errors.New("file_id must identify a selected file")
+	}
+	if err := fileTarget(args.Session, args.RemotePath); err != nil {
+		return args, err
+	}
+	if args.Existing != "fail" && args.Existing != "replace" && args.Existing != "resume" {
+		return args, errors.New("existing must be fail, replace or resume")
+	}
+	return args, nil
 }
 
 func transferSchema() json.RawMessage {

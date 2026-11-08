@@ -84,6 +84,28 @@ func TestBinaryAndOversizeAndEmptyFilesAreTurnedAway(t *testing.T) {
 	}
 }
 
+func TestConfiguredTextLimitCanGrowWithoutAcceptingArbitrarySizes(t *testing.T) {
+	data := bytes.Repeat([]byte("a"), MaxTextBytes+1)
+	if _, err := Decode("artifact.txt", data); !errors.Is(err, ErrTextTooLarge) {
+		t.Fatalf("default limit: %v", err)
+	}
+	if file, err := DecodeWithLimit("artifact.txt", data, 8<<20); err != nil || len(file.Text) != len(data) {
+		t.Fatalf("higher configured limit: %v", err)
+	}
+	if _, err := DecodeWithLimit("artifact.txt", data, 1<<20); !errors.Is(err, ErrTextTooLarge) {
+		t.Fatalf("lower configured limit: %v", err)
+	}
+	if _, err := DecodeWithLimit("artifact.txt", data, MaxConfigurableTextBytes+1); err == nil {
+		t.Fatal("an unbounded text limit was accepted")
+	}
+}
+
+func TestOverTheReadLimitIsNotMistakenForTheConfigurableTextLimit(t *testing.T) {
+	if _, err := DecodeWithLimit("build.bin", make([]byte, MaxReadBytes+1), MaxConfigurableTextBytes); !errors.Is(err, ErrReadTooLarge) {
+		t.Fatalf("read limit: %v", err)
+	}
+}
+
 func TestASupportedPictureGoesAsItIs(t *testing.T) {
 	data := pngBytes(t, solid(40, 30, color.NRGBA{200, 0, 0, 255}))
 	file, err := Decode("shot.png", data)

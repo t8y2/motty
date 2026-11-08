@@ -213,6 +213,8 @@ func aiToolTitle(m i18n.AIPanelMessages, name string) string {
 		return m.ToolSFTPWrite
 	case tools.NameSFTPRemove:
 		return m.ToolSFTPRemove
+	case tools.NameUploadSelected:
+		return m.Upload
 	}
 	return name
 }

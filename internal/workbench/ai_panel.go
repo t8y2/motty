@@ -607,6 +607,8 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 		state.setAIPanelOpen(false)
 	case id == hitAIAttach:
 		state.aiPickAttachments()
+	case id == hitAIUpload:
+		state.aiPickUploads()
 	case id.Scope() == hitAIAttachRemove:
 		if index, ok := id.In(hitAIAttachRemove); ok {
 			state.aiRemoveAttachment(index)

@@ -27,7 +27,7 @@ const (
 var errNotOffice = errors.New("attach: not an Office document")
 
 // officeText returns the text of data when it is a docx, xlsx or pptx.
-func officeText(data []byte) (string, error) {
+func officeText(data []byte, maxTextBytes int) (string, error) {
 	if !bytes.HasPrefix(data, []byte(zipMagic)) {
 		return "", errNotOffice
 	}
@@ -42,18 +42,18 @@ func officeText(data []byte) (string, error) {
 	var text string
 	switch {
 	case parts["word/document.xml"] != nil:
-		text, err = docxText(parts)
+		text, err = docxText(parts, maxTextBytes)
 	case parts["ppt/presentation.xml"] != nil:
-		text, err = pptxText(parts)
+		text, err = pptxText(parts, maxTextBytes)
 	case parts["xl/workbook.xml"] != nil:
-		text, err = xlsxText(parts)
+		text, err = xlsxText(parts, maxTextBytes)
 	default:
 		return "", errNotOffice
 	}
 	if err != nil {
 		return "", err
 	}
-	if len(text) > MaxTextBytes {
+	if len(text) > maxTextBytes {
 		return "", ErrTextTooLarge
 	}
 	if strings.TrimSpace(text) == "" {
@@ -106,19 +106,20 @@ func walk(parts map[string]*zip.File, name string, visit func(token xml.Token) (
 // does not.
 type textCollector struct {
 	b      bytes.Buffer
+	limit  int
 	inText bool
 	cells  int // how many table cells are open: a paragraph in one does not end its line
 }
 
-func (c *textCollector) full() bool { return c.b.Len() > MaxTextBytes }
+func (c *textCollector) full() bool { return c.b.Len() > c.limit }
 
 // trimEnd drops the spaces and tabs at the end of what is collected.
 func (c *textCollector) trimEnd() {
 	c.b.Truncate(len(bytes.TrimRight(c.b.Bytes(), " \t")))
 }
 
-func docxText(parts map[string]*zip.File) (string, error) {
-	var c textCollector
+func docxText(parts map[string]*zip.File, maxTextBytes int) (string, error) {
+	c := textCollector{limit: maxTextBytes}
 	err := walk(parts, "word/document.xml", func(token xml.Token) bool {
 		switch t := token.(type) {
 		case xml.StartElement:
@@ -226,7 +227,7 @@ func attribute(start xml.StartElement, local string) string {
 	return ""
 }
 
-func pptxText(parts map[string]*zip.File) (string, error) {
+func pptxText(parts map[string]*zip.File, maxTextBytes int) (string, error) {
 	targets := relationships(parts, "ppt/_rels/presentation.xml.rels", "ppt")
 	var order []string
 	err := walk(parts, "ppt/presentation.xml", func(token xml.Token) bool {
@@ -240,7 +241,7 @@ func pptxText(parts map[string]*zip.File) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var c textCollector
+	c := textCollector{limit: maxTextBytes}
 	for index, slide := range order {
 		if c.full() {
 			break
@@ -278,7 +279,7 @@ func pptxText(parts map[string]*zip.File) (string, error) {
 
 // sharedStrings is the workbook's table of strings, which cells refer to by
 // index. The pronunciation guide (rPh) inside an entry is not part of it.
-func sharedStrings(parts map[string]*zip.File) ([]string, error) {
+func sharedStrings(parts map[string]*zip.File, maxTextBytes int) ([]string, error) {
 	if parts["xl/sharedStrings.xml"] == nil {
 		return nil, nil
 	}
@@ -311,7 +312,7 @@ func sharedStrings(parts map[string]*zip.File) ([]string, error) {
 				current.Write(t)
 			}
 		}
-		return size > 4*MaxTextBytes
+		return size > 4*maxTextBytes
 	})
 	return table, err
 }
@@ -338,7 +339,7 @@ func columnIndex(ref string) int {
 
 type sheetRef struct{ name, part string }
 
-func xlsxText(parts map[string]*zip.File) (string, error) {
+func xlsxText(parts map[string]*zip.File, maxTextBytes int) (string, error) {
 	targets := relationships(parts, "xl/_rels/workbook.xml.rels", "xl")
 	var sheets []sheetRef
 	err := walk(parts, "xl/workbook.xml", func(token xml.Token) bool {
@@ -355,17 +356,17 @@ func xlsxText(parts map[string]*zip.File) (string, error) {
 	if len(sheets) == 0 {
 		return "", ErrUnsupported
 	}
-	table, err := sharedStrings(parts)
+	table, err := sharedStrings(parts, maxTextBytes)
 	if err != nil {
 		return "", err
 	}
 	var out strings.Builder
 	for _, sheet := range sheets {
-		if out.Len() > MaxTextBytes {
+		if out.Len() > maxTextBytes {
 			break
 		}
 		out.WriteString("## Sheet: " + sheet.name + "\n")
-		if err := sheetRows(parts, sheet.part, table, &out); err != nil {
+		if err := sheetRows(parts, sheet.part, table, &out, maxTextBytes); err != nil {
 			return "", err
 		}
 	}
@@ -374,7 +375,7 @@ func xlsxText(parts map[string]*zip.File) (string, error) {
 
 // sheetRows writes a worksheet as tab-separated rows. Empty rows are left out;
 // empty cells keep their column so that the others stay under their headings.
-func sheetRows(parts map[string]*zip.File, name string, table []string, out *strings.Builder) error {
+func sheetRows(parts map[string]*zip.File, name string, table []string, out *strings.Builder, maxTextBytes int) error {
 	var row []string
 	var kind, value string
 	var column int
@@ -432,6 +433,6 @@ func sheetRows(parts map[string]*zip.File, name string, table []string, out *str
 				value += string(t)
 			}
 		}
-		return out.Len() > MaxTextBytes
+		return out.Len() > maxTextBytes
 	})
 }

@@ -180,28 +180,30 @@ type AISettingsMessages struct {
 	ModelTagReasoning string
 
 	// Behaviour.
-	BehaviourTitle   string
-	AutoRun          string
-	AutoRunDesc      string
-	RiskLow          string
-	RiskMedium       string
-	RiskHigh         string
-	MaxSteps         string
-	MaxStepsDesc     string
-	ContextLines     string
-	ContextLinesDesc string
-	ContextOff       string
-	Redact           string
-	RedactDesc       string
-	History          string
-	HistoryDesc      string
-	ClearHistory     string
-	ClearHistoryDesc string
-	ClearHistoryDone string
-	ClearHistoryBusy string
-	ClearTitle       string
-	ClearBody        string
-	ClearConfirm     string
+	BehaviourTitle          string
+	AutoRun                 string
+	AutoRunDesc             string
+	RiskLow                 string
+	RiskMedium              string
+	RiskHigh                string
+	MaxSteps                string
+	MaxStepsDesc            string
+	ContextLines            string
+	ContextLinesDesc        string
+	ContextOff              string
+	AttachmentTextLimit     string
+	AttachmentTextLimitDesc string
+	Redact                  string
+	RedactDesc              string
+	History                 string
+	HistoryDesc             string
+	ClearHistory            string
+	ClearHistoryDesc        string
+	ClearHistoryDone        string
+	ClearHistoryBusy        string
+	ClearTitle              string
+	ClearBody               string
+	ClearConfirm            string
 
 	// External access.
 	MCPEnable          string

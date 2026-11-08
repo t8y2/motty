@@ -81,6 +81,9 @@ var (
 	hitAISetContext30         = tree.ID(aiSettingsHits, "ai-set-context30")
 	hitAISetContext60         = tree.ID(aiSettingsHits, "ai-set-context60")
 	hitAISetContext120        = tree.ID(aiSettingsHits, "ai-set-context120")
+	hitAISetText1             = tree.ID(aiSettingsHits, "ai-set-text1")
+	hitAISetText4             = tree.ID(aiSettingsHits, "ai-set-text4")
+	hitAISetText8             = tree.ID(aiSettingsHits, "ai-set-text8")
 	hitAISetRedact            = tree.ID(aiSettingsHits, "ai-set-redact")
 	hitAISetHistory           = tree.ID(aiSettingsHits, "ai-set-history")
 	hitAISetClearHistory      = tree.ID(aiSettingsHits, "ai-set-clear-history")
@@ -351,6 +354,12 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 		state.aiPut("ai.context_lines", "60")
 	case id == hitAISetContext120:
 		state.aiPut("ai.context_lines", "120")
+	case id == hitAISetText1:
+		state.aiPut("ai.attachment_text_mib", "1")
+	case id == hitAISetText4:
+		state.aiPut("ai.attachment_text_mib", "4")
+	case id == hitAISetText8:
+		state.aiPut("ai.attachment_text_mib", "8")
 	case id == hitAISetRedact:
 		state.aiPut("ai.redact", onOff(!state.ai.settings.redact))
 	case id == hitAISetHistory:
@@ -654,6 +663,9 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitAISetContext0, hitAISetContext30, hitAISetContext60, hitAISetContext120:
 		lines = state.aiContextOptions()
 		options = lines[:]
+	case hitAISetText1, hitAISetText4, hitAISetText8:
+		textLimits := state.aiTextLimitOptions()
+		options = textLimits[:]
 	case hitAISetMCPObserve, hitAISetMCPAsk, hitAISetMCPAllowAll:
 		modes = state.aiMCPModeOptions()
 		options = modes[:]
@@ -744,6 +756,12 @@ func (state *State) aiContextOptions() [4]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitAISetContext0, Label: state.messages.AISettings.ContextOff},
 		{ID: hitAISetContext30, Label: "30"}, {ID: hitAISetContext60, Label: "60"}, {ID: hitAISetContext120, Label: "120"},
+	}
+}
+
+func (state *State) aiTextLimitOptions() [3]components.SegmentOption {
+	return [...]components.SegmentOption{
+		{ID: hitAISetText1, Label: "1 MiB"}, {ID: hitAISetText4, Label: "4 MiB"}, {ID: hitAISetText8, Label: "8 MiB"},
 	}
 }
 
