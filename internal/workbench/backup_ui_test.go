@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -121,6 +122,57 @@ func TestABackupFileCarriesHostsSettingsKeysAndPasswordsToAnotherComputer(t *tes
 	}
 	if !strings.Contains(target.status, strconv.Itoa(len(sampleHosts))) {
 		t.Fatalf("status %q", target.status)
+	}
+}
+
+func TestBackupRestoresCustomPasteShortcutOnANewDevice(t *testing.T) {
+	source, _, file := backupTestState(t)
+	want := keymap.Chord{Modifiers: ui.ModifierAlt | ui.ModifierShift, Char: 'v'}
+	source.shortcuts.unbind(shortcutPaste)
+	if _, ok := source.shortcuts.bind(shortcutPaste, want); !ok {
+		t.Fatal("cannot configure a custom paste shortcut")
+	}
+	source.save()
+	exportBackup(t, source)
+
+	_, options := newWorld(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	target := newTestState(t, options)
+	target.activeSection, target.settingsCategory = sectionSettings, settingsBackup
+	target.Click(hitBackupRestore)
+	fillForm(target, testBackupPassword)
+	target.Click(hitFormSubmit)
+	if target.modal != modalNone {
+		t.Fatalf("restore refused: %q", target.form.dialogError)
+	}
+	if got := target.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("restored paste shortcut = %+v, want %+v", got, want)
+	}
+	reopened := newTestState(t, options)
+	if got := reopened.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("paste shortcut after restart = %+v, want %+v", got, want)
+	}
+}
+
+func TestOldBackupLeavesDeviceShortcutsUntouched(t *testing.T) {
+	source, _, _ := backupTestState(t)
+	document, err := source.backupDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.ShortcutPreferences = nil
+	target, _, _ := backupTestState(t)
+	want := keymap.Chord{Modifiers: ui.ModifierAlt | ui.ModifierShift, Char: 'v'}
+	target.shortcuts.unbind(shortcutPaste)
+	if _, ok := target.shortcuts.bind(shortcutPaste, want); !ok {
+		t.Fatal("cannot configure a custom paste shortcut")
+	}
+	target.save()
+	if _, err := target.applyBackup(document); err != nil {
+		t.Fatal(err)
+	}
+	if got := target.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("old backup changed this device's paste shortcut: %+v", got)
 	}
 }
 

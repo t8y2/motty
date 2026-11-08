@@ -13,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/backup"
 	"motty/internal/cloudsync"
 	"motty/internal/gist"
@@ -177,8 +178,8 @@ func excludedFromBackup(name string) bool {
 	return false
 }
 
-// backupDocument gathers what a backup holds: every shared record, deleted ones
-// as tombstones, the trusted keys and the saved passwords. A locked vault is
+// backupDocument gathers what a file backup holds: shared records, device-local
+// shortcuts, trusted keys and saved passwords. A locked vault is
 // reported as vault.ErrNeedsConversion, since the passwords cannot be read.
 func (state *State) backupDocument() (backup.Document, error) {
 	if !state.flushNoteDraft() {
@@ -196,6 +197,11 @@ func (state *State) backupDocument() (backup.Document, error) {
 		return backup.Document{}, err
 	}
 	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
+	snapshot := state.snapshot()
+	document.ShortcutPreferences = &backup.ShortcutPreferences{DefaultsGeneration: snapshot.ShortcutDefaultsGeneration, Shortcuts: make([]backup.Shortcut, 0, len(snapshot.Shortcuts))}
+	for _, entry := range snapshot.Shortcuts {
+		document.ShortcutPreferences.Shortcuts = append(document.ShortcutPreferences.Shortcuts, backup.Shortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
+	}
 	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
 		document.KnownHosts = string(data)
 	}
@@ -327,6 +333,19 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 	}
 	if err := state.reloadShared(); err != nil {
 		return 0, &partialRestoreError{fmt.Sprintf(m.BackupFailedFmt, err)}
+	}
+	if preferences := document.ShortcutPreferences; preferences != nil {
+		saved := make([]savedShortcut, 0, len(preferences.Shortcuts))
+		for _, entry := range preferences.Shortcuts {
+			saved = append(saved, savedShortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
+		}
+		state.shortcuts = restoreShortcuts(saved)
+		if preferences.DefaultsGeneration < shortcutDefaultsGeneration && len(saved) > 0 {
+			state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool { return state.snippetNamed(chord) != "" })
+		}
+		if err := state.saveWithResultMode(false); err != nil {
+			return len(state.hosts), &partialRestoreError{fmt.Sprintf(m.BackupFailedFmt, err)}
+		}
 	}
 	state.reloadOtherWindows()
 
