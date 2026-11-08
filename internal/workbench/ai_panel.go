@@ -48,6 +48,9 @@ var (
 	hitAIModelSubDismiss  = tree.ID(aiPanelHits, "ai-model-submenu-dismiss")
 	hitAIAutoScope        = tree.ID(aiPanelHits, "ai-auto-scope")
 	hitAIAutoScopeDismiss = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
+	hitAIReasoningChip    = tree.ID(aiPanelHits, "ai-reasoning-chip")
+	hitAIReasoningDismiss = tree.ID(aiPanelHits, "ai-reasoning-dismiss")
+	hitAIReasoningMenu    = tree.Sub(aiPanelHits, tree.Name("ai-reasoning-menu"))
 	hitAIModelList        = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
 	hitAIModelBar         = tree.ID(aiPanelHits, "ai-model-scroll-bar")
 	hitAIRunStatus        = tree.ID(aiPanelHits, "ai-run-status")
@@ -390,6 +393,11 @@ type aiPanel struct {
 	autoScroll components.MenuScroll
 	scopeChip  ui.Rect // where the chip was painted, for the menu to hang above
 
+	// Reasoning effort chip and menu
+	reasoningMenu   bool
+	reasoningEffort string
+	reasoningChip   ui.Rect
+
 	// mentions is what the @ before the caret can name, from the last layout.
 	mentionBuf       [maxMentionSuggestions]mentionName
 	mentions         []mentionName
@@ -642,6 +650,7 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 	case id == hitAIModelChip:
 		panel.targetOpen = false
 		panel.autoMenu = false
+		panel.reasoningMenu = false
 		panel.modelMenu = !panel.modelMenu
 		panel.modelTypeahead.Reset()
 		panel.modelHover.Reset()
@@ -666,6 +675,7 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 		if !state.aiScopeLocked() {
 			panel.targetOpen = false
 			panel.modelMenu = false
+			panel.reasoningMenu = false
 			panel.autoMenu = !panel.autoMenu
 			panel.autoScroll = components.MenuScroll{}
 		}
@@ -675,6 +685,21 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 		if index, ok := id.In(hitAIAutoScopeLevels); ok && index < len(state.aiScopes()) {
 			state.aiSetAutoUpTo(state.aiScopes()[index].level)
 			panel.autoMenu = false
+		}
+	case id == hitAIReasoningChip:
+		panel.targetOpen = false
+		panel.modelMenu = false
+		panel.autoMenu = false
+		panel.reasoningMenu = !panel.reasoningMenu
+	case id == hitAIReasoningDismiss:
+		panel.reasoningMenu = false
+	case id.Scope() == hitAIReasoningMenu:
+		if index, ok := id.In(hitAIReasoningMenu); ok {
+			_, levels, okLevels := state.aiCurrentModelReasoning()
+			if okLevels && index < len(levels) {
+				panel.reasoningEffort = levels[index]
+			}
+			panel.reasoningMenu = false
 		}
 	case id.Scope() == hitAIModels:
 		if index, ok := id.In(hitAIModels); ok {

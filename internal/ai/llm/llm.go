@@ -91,12 +91,13 @@ type ToolSpec struct {
 
 // Request is one model invocation.
 type Request struct {
-	Model       string
-	System      string
-	Messages    []Message
-	Tools       []ToolSpec
-	MaxTokens   int
-	Temperature *float64
+	Model           string
+	System          string
+	Messages        []Message
+	Tools           []ToolSpec
+	MaxTokens       int
+	Temperature     *float64
+	ReasoningEffort string
 }
 
 // EventKind classifies a streamed Event.

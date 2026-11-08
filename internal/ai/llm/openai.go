@@ -141,16 +141,26 @@ type oaRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	Tools       []oaTool `json:"tools,omitempty"`
-	MaxTokens   int      `json:"max_tokens,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
+	Tools           []oaTool `json:"tools,omitempty"`
+	MaxTokens       int      `json:"max_tokens,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
 }
 
 func (p *openAI) buildBody(req Request) ([]byte, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, err
 	}
-	out := oaRequest{Model: req.Model, Stream: true, MaxTokens: req.MaxTokens, Temperature: req.Temperature}
+	out := oaRequest{
+		Model:           req.Model,
+		Stream:          true,
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		ReasoningEffort: req.ReasoningEffort,
+	}
+	if out.ReasoningEffort == "default" {
+		out.ReasoningEffort = ""
+	}
 	out.StreamOptions = &struct {
 		IncludeUsage bool `json:"include_usage"`
 	}{true}

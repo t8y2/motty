@@ -117,6 +117,11 @@ type anTool struct {
 	CacheControl *anCacheControl `json:"cache_control,omitempty"`
 }
 
+type anThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
 type anRequest struct {
 	Model       string      `json:"model"`
 	MaxTokens   int         `json:"max_tokens"`
@@ -125,6 +130,7 @@ type anRequest struct {
 	Tools       []anTool    `json:"tools,omitempty"`
 	Stream      bool        `json:"stream"`
 	Temperature *float64    `json:"temperature,omitempty"`
+	Thinking    *anThinking `json:"thinking,omitempty"`
 }
 
 const defaultAnthropicMaxTokens = 4096
@@ -136,6 +142,33 @@ func (p *anthropic) buildBody(req Request) ([]byte, error) {
 	out := anRequest{Model: req.Model, MaxTokens: req.MaxTokens, Stream: true, Temperature: req.Temperature}
 	if out.MaxTokens <= 0 {
 		out.MaxTokens = defaultAnthropicMaxTokens
+	}
+
+	if req.ReasoningEffort != "" && req.ReasoningEffort != "none" {
+		budget := 4096
+		switch req.ReasoningEffort {
+		case "minimal":
+			budget = 1024
+		case "low":
+			budget = 2048
+		case "medium", "default":
+			budget = 4096
+		case "high":
+			budget = 8192
+		case "xhigh":
+			budget = 16384
+		case "max":
+			budget = 32768
+		}
+		out.Thinking = &anThinking{
+			Type:         "enabled",
+			BudgetTokens: budget,
+		}
+		if out.MaxTokens <= budget {
+			out.MaxTokens = budget + 4096
+		}
+		// Anthropic requires temperature to be unset or 1.0 when thinking is enabled
+		out.Temperature = nil
 	}
 	system := []string{}
 	if req.System != "" {

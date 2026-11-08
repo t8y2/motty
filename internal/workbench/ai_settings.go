@@ -20,6 +20,7 @@ import (
 	"motty/internal/ai/gate"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/probe"
+	"motty/internal/ai/reasoning"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/vault"
@@ -127,6 +128,17 @@ var (
 	hitAISetProbeTimeout10 = tree.ID(aiSettingsHits, "ai-set-probe-to-10")
 	hitAISetProbeTimeout15 = tree.ID(aiSettingsHits, "ai-set-probe-to-15")
 	hitAISetProbeTimeout30 = tree.ID(aiSettingsHits, "ai-set-probe-to-30")
+
+	hitAISetModelReasoning   = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-reasoning"))
+	hitAISetReasoningAuto    = tree.ID(aiSettingsHits, "ai-set-reasoning-auto")
+	hitAISetReasoningEnable  = tree.ID(aiSettingsHits, "ai-set-reasoning-enable")
+	hitAISetReasoningDisable = tree.ID(aiSettingsHits, "ai-set-reasoning-disable")
+	hitAISetReasoningPreset0 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-0")
+	hitAISetReasoningPreset1 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-1")
+	hitAISetReasoningPreset2 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-2")
+	hitAISetReasoningSave    = tree.ID(aiSettingsHits, "ai-set-reasoning-save")
+	hitAISetReasoningCancel  = tree.ID(aiSettingsHits, "ai-set-reasoning-cancel")
+	hitAISetReasoningClose   = tree.ID(aiSettingsHits, "ai-set-reasoning-close")
 )
 
 // aiDialogKind is which of the section's dialogs is up.
@@ -142,6 +154,7 @@ const (
 	aiDialogMCPAllowAll
 	aiDialogAgentAllowAll
 	aiDialogProbe
+	aiDialogModelReasoning
 )
 
 // aiCopyState is what the "copy client configuration" button last did.
@@ -233,6 +246,12 @@ type aiSettingsUI struct {
 	importSelected   map[int]bool
 	importErr        string
 	importResult     aiImportResult
+
+	// The reasoning configuration dialog for a model.
+	reasoningModelName  string
+	reasoningProviderID string
+	reasoningMode       int // 0: Auto, 1: Enabled, 2: Disabled
+	reasoningPreset     int // 0: 3档(low,medium,high), 1: 6档(minimal..max), 2: 2档(default,high)
 }
 
 func (state *State) aiSettingsVisible() bool {
@@ -334,6 +353,9 @@ func (state *State) aiSettingsClick(id ui.ID) bool {
 	case id.Scope() == hitAISetModelSwitch:
 		index, _ := id.In(hitAISetModelSwitch)
 		state.aiToggleModel(index)
+	case id.Scope() == hitAISetModelReasoning:
+		row, _ := id.In(hitAISetModelReasoning)
+		state.aiOpenModelReasoning(row)
 	case id == hitAISetRiskLow:
 		state.aiPut("ai.auto_up_to", "low")
 	case id == hitAISetRiskMedium:
@@ -529,6 +551,25 @@ func (state *State) aiDialogClick(id ui.ID) {
 		case hitAISetProbeTimeout30:
 			cfg.probeTimeout = 30 * time.Second
 		}
+	case aiDialogModelReasoning:
+		switch id {
+		case hitAISetFormClose, hitAISetReasoningClose, hitAISetReasoningCancel:
+			state.aiCloseDialog()
+		case hitAISetReasoningAuto:
+			cfg.reasoningMode = 0
+		case hitAISetReasoningEnable:
+			cfg.reasoningMode = 1
+		case hitAISetReasoningDisable:
+			cfg.reasoningMode = 2
+		case hitAISetReasoningPreset0:
+			cfg.reasoningPreset = 0
+		case hitAISetReasoningPreset1:
+			cfg.reasoningPreset = 1
+		case hitAISetReasoningPreset2:
+			cfg.reasoningPreset = 2
+		case hitAISetReasoningSave:
+			state.aiSaveModelReasoning()
+		}
 	case aiDialogImport:
 		state.aiImportDialogClick(id)
 	}
@@ -583,6 +624,8 @@ func (state *State) aiCloseDialog() {
 	cfg.importStep, cfg.importErr = aiImportSources, ""
 	cfg.importSources, cfg.importCandidates, cfg.importSelected = nil, nil, nil
 	cfg.importResult = aiImportResult{}
+	cfg.reasoningModelName, cfg.reasoningProviderID = "", ""
+	cfg.reasoningMode, cfg.reasoningPreset = 0, 0
 }
 
 func (state *State) aiSettingsPointer(event ui.PointerEvent) (ui.EventResult, bool) {
@@ -1597,4 +1640,103 @@ func (state *State) aiProbeAllModels() {
 			s.aiSettingsChanged()
 		})
 	}()
+}
+
+// aiOpenModelReasoning 打开指定行模型的思考/推理努力配置对话框。
+func (state *State) aiOpenModelReasoning(row int) {
+	provider, model, ok := state.aiModelOnPage(row)
+	if !ok {
+		return
+	}
+	cfg := &state.ai.cfg
+	cfg.reasoningProviderID = provider.ID
+	cfg.reasoningModelName = model.Name
+
+	if model.ReasoningDisabled {
+		cfg.reasoningMode = 2 // Disabled
+		cfg.reasoningPreset = 0
+	} else if model.Reasoning != nil && len(model.Reasoning.Levels) > 0 {
+		cfg.reasoningMode = 1 // Enabled
+		switch len(model.Reasoning.Levels) {
+		case 6:
+			cfg.reasoningPreset = 1
+		case 2:
+			cfg.reasoningPreset = 2
+		default:
+			cfg.reasoningPreset = 0
+		}
+	} else {
+		cfg.reasoningMode = 0 // Auto
+		cfg.reasoningPreset = 0
+	}
+	cfg.dialog = aiDialogModelReasoning
+}
+
+// aiSaveModelReasoning 保存当前模型的思考配置至数据库并重载状态。
+func (state *State) aiSaveModelReasoning() {
+	cfg := &state.ai.cfg
+	if cfg.reasoningProviderID == "" || cfg.reasoningModelName == "" {
+		state.aiCloseDialog()
+		return
+	}
+	var (
+		reasoningCfg *store.ReasoningConfig
+		disabled     bool
+	)
+	switch cfg.reasoningMode {
+	case 0: // Auto (清除覆写，恢复代际与命名自动推断)
+		reasoningCfg = nil
+		disabled = false
+	case 1: // Enabled (手动强制开启)
+		disabled = false
+		switch cfg.reasoningPreset {
+		case 1:
+			reasoningCfg = &store.ReasoningConfig{
+				Levels:  []string{reasoning.LevelMinimal, reasoning.LevelLow, reasoning.LevelMedium, reasoning.LevelHigh, reasoning.LevelXHigh, reasoning.LevelMax},
+				Default: reasoning.LevelMedium,
+			}
+		case 2:
+			reasoningCfg = &store.ReasoningConfig{
+				Levels:  []string{reasoning.LevelDefault, reasoning.LevelHigh},
+				Default: reasoning.LevelHigh,
+			}
+		default:
+			reasoningCfg = &store.ReasoningConfig{
+				Levels:  []string{reasoning.LevelLow, reasoning.LevelMedium, reasoning.LevelHigh},
+				Default: reasoning.LevelMedium,
+			}
+		}
+	case 2: // Disabled (强制禁用)
+		reasoningCfg = nil
+		disabled = true
+	}
+
+	db, err := state.aiStore()
+	if err == nil {
+		err = db.SetModelReasoning(cfg.reasoningProviderID, cfg.reasoningModelName, reasoningCfg, disabled)
+	}
+	if err != nil {
+		cfg.formErr = err.Error()
+		return
+	}
+	state.aiWrote()
+	state.aiCloseDialog()
+}
+
+func (state *State) aiReasoningModeOptions() [3]components.SegmentOption {
+	m := state.messages.AISettings
+	return [...]components.SegmentOption{
+		{ID: hitAISetReasoningAuto, Label: m.ModelReasoningAuto},
+		{ID: hitAISetReasoningEnable, Label: m.ModelReasoningEnable},
+		{ID: hitAISetReasoningDisable, Label: m.ModelReasoningDisable},
+	}
+}
+
+func (state *State) aiReasoningPresetOptions() [3]components.SegmentOption {
+	m := state.messages.AISettings
+	return [...]components.SegmentOption{
+		{ID: hitAISetReasoningPreset0, Label: m.ModelReasoningPreset3},
+		{ID: hitAISetReasoningPreset1, Label: m.ModelReasoningPreset6},
+		{ID: hitAISetReasoningPreset2, Label: m.ModelReasoningPreset2},
+	}
 }

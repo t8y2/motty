@@ -512,6 +512,7 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 // the body's clip and layer must not cut them or their dismiss backdrop.
 func (state *State) paintAIMenuOverlay(canvas *ui.Canvas) {
 	state.paintAIAutoScopeMenu(canvas)
+	state.paintAIReasoningMenu(canvas)
 	if !state.ai.panel.modelMenu {
 		return
 	}

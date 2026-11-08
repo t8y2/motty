@@ -179,6 +179,28 @@ type AISettingsMessages struct {
 	ModelProbeFailed  string
 	ModelTagReasoning string
 
+	// Model Reasoning configuration dialog
+	ModelReasoningTitle       string
+	ModelReasoningDesc        string
+	ModelReasoningMode        string
+	ModelReasoningAuto        string
+	ModelReasoningAutoDesc    string
+	ModelReasoningEnable      string
+	ModelReasoningEnableDesc  string
+	ModelReasoningDisable     string
+	ModelReasoningDisableDesc string
+	ModelReasoningPreset      string
+	ModelReasoningPresetDesc0 string
+	ModelReasoningPresetDesc1 string
+	ModelReasoningPresetDesc2 string
+	ModelReasoningPreset3     string
+	ModelReasoningPreset6     string
+	ModelReasoningPreset2     string
+	ModelReasoningSave        string
+	ModelReasoningTagAuto     string
+	ModelReasoningTagManual   string
+	ModelReasoningTagOff      string
+
 	// Behaviour.
 	BehaviourTitle          string
 	AutoRun                 string

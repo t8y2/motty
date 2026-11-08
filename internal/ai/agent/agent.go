@@ -79,8 +79,9 @@ type Config struct {
 	MaxSteps int
 	// StepTimeout is the deadline of one tool call, approval time included
 	// (default 90s).
-	StepTimeout time.Duration
-	MaxTokens   int
+	StepTimeout     time.Duration
+	MaxTokens       int
+	ReasoningEffort string
 	// MaxToolResultBytes cuts longer tool output, keeping head and tail
 	// (default 32 KiB).
 	MaxToolResultBytes int
@@ -241,7 +242,14 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 
 	for turn := 1; ; turn++ {
 		final := toolSteps >= cfg.MaxSteps
-		req := llm.Request{Model: cfg.Model, System: cfg.System, Messages: msgs, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature}
+		req := llm.Request{
+			Model:           cfg.Model,
+			System:          cfg.System,
+			Messages:        msgs,
+			MaxTokens:       cfg.MaxTokens,
+			Temperature:     cfg.Temperature,
+			ReasoningEffort: cfg.ReasoningEffort,
+		}
 		switch {
 		case final:
 			req.System += summariseNote

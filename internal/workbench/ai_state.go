@@ -19,6 +19,7 @@ import (
 	"motty/internal/ai/cli"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/reasoning"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
@@ -206,6 +207,13 @@ type aiState struct {
 	authChecks map[string]*aiCLIAuthCheck
 	// panel is the assistant panel's own state (ai_panel.go).
 	panel aiPanel
+
+	// Cached reasoning effort state for current model to avoid per-frame allocations during paint.
+	reasoningCachedModel    string
+	reasoningCachedConfig   *store.ReasoningConfig
+	reasoningCachedDisabled bool
+	reasoningCachedLevels   []string
+	reasoningCachedOK       bool
 }
 
 func (state *State) initAI() {
@@ -821,6 +829,7 @@ func (state *State) aiSend() bool {
 		MaxSteps:          ai.settings.maxSteps,
 		StepTimeout:       15 * time.Minute, // includes the time a person takes to answer
 		RedactToolResults: ai.settings.redact,
+		ReasoningEffort:   state.aiEffectiveReasoningEffort(),
 	}
 	config.Gate.Target = &target
 	if ai.mode == agent.ModeAgent {
@@ -1256,4 +1265,112 @@ func stripContext(text string) string {
 		}
 	}
 	return text[:end]
+}
+
+// aiCurrentModel 返回当前选中的模型（从已常驻内存的模型列表与设置中获取，避免在绘制循环中触发数据库查询）。
+func (state *State) aiCurrentModel() *store.Model {
+	ai := &state.ai
+	if ai.settings.defaultModel == "" || ai.settings.defaultProvider == "" {
+		return nil
+	}
+	for i := range ai.models {
+		if ai.models[i].ProviderID == ai.settings.defaultProvider && ai.models[i].Name == ai.settings.defaultModel {
+			return &ai.models[i]
+		}
+	}
+	return nil
+}
+
+// aiCurrentModelReasoning 返回当前模型及其支持的思考档位列表，以及是否支持思考控制。
+func (state *State) aiCurrentModelReasoning() (*store.Model, []string, bool) {
+	m := state.aiCurrentModel()
+	if m == nil {
+		return nil, nil, false
+	}
+	if state.ai.reasoningCachedModel == m.Name &&
+		state.ai.reasoningCachedConfig == m.Reasoning &&
+		state.ai.reasoningCachedDisabled == m.ReasoningDisabled {
+		return m, state.ai.reasoningCachedLevels, state.ai.reasoningCachedOK
+	}
+
+	state.ai.reasoningCachedModel = m.Name
+	state.ai.reasoningCachedConfig = m.Reasoning
+	state.ai.reasoningCachedDisabled = m.ReasoningDisabled
+
+	if m.ReasoningDisabled {
+		state.ai.reasoningCachedLevels, state.ai.reasoningCachedOK = nil, false
+		return m, nil, false
+	}
+	if m.Reasoning != nil && len(m.Reasoning.Levels) > 0 {
+		state.ai.reasoningCachedLevels, state.ai.reasoningCachedOK = m.Reasoning.Levels, true
+		return m, m.Reasoning.Levels, true
+	}
+	if inferred := reasoning.InferReasoning(m.Name); inferred != nil && len(inferred.Levels) > 0 {
+		state.ai.reasoningCachedLevels, state.ai.reasoningCachedOK = inferred.Levels, true
+		return m, inferred.Levels, true
+	}
+	state.ai.reasoningCachedLevels, state.ai.reasoningCachedOK = nil, false
+	return m, nil, false
+}
+
+// aiModelReasoningInfo 返回任意模型的思考水平状态：档位列表、默认档位、是否支持思考、是否为用户覆写、是否被用户强制禁用。
+func (state *State) aiModelReasoningInfo(m *store.Model) (levels []string, def string, isReasoning bool, isOverride bool, isDisabled bool) {
+	if m == nil {
+		return nil, "", false, false, false
+	}
+	if m.ReasoningDisabled {
+		return nil, "", false, true, true
+	}
+	if m.Reasoning != nil && len(m.Reasoning.Levels) > 0 {
+		return m.Reasoning.Levels, m.Reasoning.Default, true, true, false
+	}
+	if inferred := reasoning.InferReasoning(m.Name); inferred != nil && len(inferred.Levels) > 0 {
+		return inferred.Levels, inferred.Default, true, false, false
+	}
+	return nil, "", false, false, false
+}
+
+// aiEffectiveReasoningEffort 计算当前请求应该发送给 LLM 的具体思考档位。
+func (state *State) aiEffectiveReasoningEffort() string {
+	m, levels, ok := state.aiCurrentModelReasoning()
+	if !ok || len(levels) == 0 {
+		return ""
+	}
+	override := state.ai.panel.reasoningEffort
+	if override != "" && slices.Contains(levels, override) {
+		return override
+	}
+	if m.Reasoning != nil {
+		if eff, ok := m.Reasoning.EffectiveLevel(override); ok {
+			return eff
+		}
+	} else if inferred := reasoning.InferReasoning(m.Name); inferred != nil {
+		return inferred.Default
+	}
+	return ""
+}
+
+// aiReasoningEffortLabel 返回指定档位的国际化展示名称。
+func (state *State) aiReasoningEffortLabel(effort string) string {
+	m := state.messages.AIPanel
+	switch effort {
+	case reasoning.LevelNone:
+		return m.ReasoningNone
+	case reasoning.LevelMinimal:
+		return m.ReasoningMinimal
+	case reasoning.LevelLow:
+		return m.ReasoningLow
+	case reasoning.LevelMedium:
+		return m.ReasoningMedium
+	case reasoning.LevelHigh:
+		return m.ReasoningHigh
+	case reasoning.LevelXHigh:
+		return m.ReasoningXHigh
+	case reasoning.LevelMax:
+		return m.ReasoningMax
+	case reasoning.LevelDefault:
+		return m.ReasoningDefault
+	default:
+		return m.ReasoningAuto
+	}
 }
