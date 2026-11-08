@@ -14,7 +14,9 @@ func canForgetServerIdentity(session *Session) bool {
 	if session == nil || session.role == sshconn.EndpointProxyJump || len(session.hostKey.Known) == 0 {
 		return false
 	}
-	if session.hostKey.Address != net.JoinHostPort(session.host.Address, strconv.Itoa(int(session.host.Port))) {
+	address, port, err := net.SplitHostPort(session.hostKey.Address)
+	var portBuffer [5]byte
+	if err != nil || address != session.host.Address || port != string(strconv.AppendUint(portBuffer[:0], uint64(session.host.Port), 10)) {
 		return false
 	}
 	return session.host.Protocol == protocolVNC && session.hostKey.Type == vncServerKeyType || session.host.Protocol == protocolRDP && session.hostKey.Type == rdpCertificateType
@@ -39,6 +41,11 @@ func (state *State) forgetServerIdentity(session *Session) bool {
 		state.fileNotices.show(state.messages.HostKeyForget, state.status, components.ToastError)
 		return false
 	}
+	conn.mu.Lock()
+	if conn.status.HostKey.Address == session.hostKey.Address && conn.status.HostKey.Type == session.hostKey.Type {
+		conn.status.HostKey.Known = nil
+	}
+	conn.mu.Unlock()
 	session.hostKey.Known = nil
 	return true
 }

@@ -1068,10 +1068,24 @@ func (state *State) restoreShared(saved savedState) {
 		folded, err := state.foldMergedHosts(saved, merges)
 		if err != nil {
 			state.hosts = unmerged
+			// VNC accounts must remain with their original hosts when the
+			// vault cannot carry them over. Unrelated SSH/RDP merges retain
+			// their existing best-effort password migration behavior.
+			merges = slices.DeleteFunc(merges, func(merge hostMerge) bool {
+				return merge.dropped.Protocol == protocolVNC
+			})
+			if len(merges) > 0 {
+				aliases := mergeAliases(merges)
+				state.hosts = slices.DeleteFunc(slices.Clone(unmerged), func(host Host) bool {
+					_, dropped := aliases[host.CatalogID]
+					return dropped
+				})
+				// Non-VNC secret migration ignores Vault errors.
+				folded, _ = state.foldMergedHosts(saved, merges)
+			}
 			state.showActionFailure(state.messages.SettingsVault, err, state.hostPasswordSaveError(err))
-		} else {
-			saved = folded
 		}
+		saved = folded
 	}
 	state.templates = state.templates[:0]
 	for _, template := range saved.WorkspaceTemplates {

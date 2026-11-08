@@ -258,7 +258,11 @@ func (conn *desktopConn) verifyIdentity(endpoint pins.Endpoint, keyType string, 
 	}
 	conn.mu.Lock()
 	conn.certAsking = false
+	rejectedKey := conn.status.HostKey
 	conn.status = sshconn.Status{Version: conn.status.Version, Phase: sshconn.PhaseConnecting, Endpoint: conn.endpoint()}
+	if !reply.accept {
+		conn.status.HostKey = rejectedKey
+	}
 	conn.publish()
 	if !reply.accept {
 		return sshconn.ErrHostKeyRejected

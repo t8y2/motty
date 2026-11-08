@@ -1012,7 +1012,7 @@ func formatEndpoint(endpoint sshconn.Endpoint) string {
 func (state *State) tellFailure(session *Session, status sshconn.Status) {
 	t, m := session.term, state.messages
 	switch {
-	case errors.Is(status.Err, sshconn.ErrHostKeyChanged):
+	case errors.Is(status.Err, sshconn.ErrHostKeyChanged) || errors.Is(status.Err, sshconn.ErrHostKeyRejected) && status.HostKey.Type == rdpCertificateType && len(status.HostKey.Known) > 0:
 		t.say(sgrFail, m.ConnChangedTitle)
 		t.say("", "")
 		if status.HostKey.Type == vncServerKeyType {

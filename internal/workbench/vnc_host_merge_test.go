@@ -177,8 +177,18 @@ func TestVNCMergeFailureShowsMissingVaultKeyAndKeepsHostsForRetry(t *testing.T) 
 				t.Fatal(err)
 			}
 			failed := newTestState(t, options)
-			if len(failed.hosts) != len(hosts) || failed.mergedHosts || len(failed.merged) != 0 {
-				t.Fatal("failed password migration discarded hosts or kept aliases to a merge that did not finish")
+			wantHosts, wantAliases := len(hosts), 0
+			if mixed {
+				wantHosts, wantAliases = len(hosts)-1, 1
+			}
+			if len(failed.hosts) != wantHosts || failed.mergedHosts != mixed || len(failed.merged) != wantAliases {
+				t.Fatal("failed VNC migration did not preserve VNC hosts while allowing unrelated SSH merges")
+			}
+			if _, found := failed.hostByCatalogID("host_b"); !found {
+				t.Fatal("failed VNC migration discarded its source host")
+			}
+			if mixed && failed.merged["host_ssh_b"] != "host_ssh_a" {
+				t.Fatal("failed VNC migration blocked an unrelated SSH merge")
 			}
 			if len(failed.fileNotices.items) != 1 {
 				t.Fatalf("missing-key failure did not leave a visible notice: %+v", failed.fileNotices.items)
@@ -225,8 +235,8 @@ func TestVNCMergeFailureShowsMissingVaultKeyAndKeepsHostsForRetry(t *testing.T) 
 				t.Fatal("retry did not migrate the saved system account")
 			}
 			if mixed {
-				if got, found := vaultValue(t, retried, sshTargetName); !found || got != "saved SSH password" {
-					t.Fatal("retry did not migrate the saved SSH password")
+				if _, found := vaultValue(t, retried, sshTargetName); found {
+					t.Fatal("a completed SSH merge was retried after the vault key returned")
 				}
 			}
 		})

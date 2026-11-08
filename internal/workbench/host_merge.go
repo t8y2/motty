@@ -99,9 +99,9 @@ func (state *State) foldMergedHosts(saved savedState, merges []hostMerge) (saved
 }
 
 // moveMergedSecrets carries passwords, VNC system accounts and one-time codes
-// to the surviving host without replacing its own secrets. A batch involving
-// VNC must preserve all hosts if its accounts cannot be carried over; other
-// protocols keep merging while the vault is unavailable, as they did before.
+// to the surviving host without replacing its own secrets. VNC merges fail if
+// their accounts cannot be carried over. Other protocols keep merging while
+// the vault is unavailable, as they did before.
 func (state *State) moveMergedSecrets(merges []hostMerge) error {
 	hasVNC := false
 	for _, merge := range merges {
@@ -139,7 +139,7 @@ func (state *State) moveMergedSecrets(merges []hostMerge) error {
 		for _, part := range parts {
 			value, found, err := state.secrets.vault.Get(hostSecretName(merge.dropped.CatalogID, part))
 			if err != nil {
-				if hasVNC {
+				if merge.dropped.Protocol == protocolVNC {
 					return err
 				}
 				continue

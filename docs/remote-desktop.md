@@ -141,8 +141,10 @@ DesktopSize; pointer, key and cut-text messages.
   asks for both fields. A tunneled host's saved username continues to name the
   SSH account; the VNC system account is asked for separately.
   A new key raises a trust question; a changed saved key stops the connection.
-  VNC pins live in the host configuration record and follow its backup, sync,
-  copy and deletion lifecycle, separately from RDP certificates. RSA-AES rejection
+  VNC and RDP pins share a local endpoint store, keyed by protocol, the typed
+  address, and port. Deleting or merging a host preserves its server pin;
+  **Forget this server** removes the pin so the next connection asks again.
+  RSA-AES rejection
   never retries with a weaker security type. See [RealVNC support](vnc-realvnc.md).
 
 * **VNC Authentication is weak**: DES with at most eight password characters and a
@@ -262,8 +264,11 @@ in `SHA256:` base64 as `ssh-keygen` prints a key's) with Trust and save, This
 connection only, or Reject; a pinned certificate that changed opens it again with a
 louder text that shows the old fingerprint; rejecting or dismissing ends the
 connection without trying other TLS versions. Pins are in `rdp_certificates` next to
-`known_hosts`, one `address SHA256:...` line per server, written atomically with
-mode 0600 (`internal/desktop/rdp/pins.go`). For a host reached through SSH the pin is
+`known_hosts`, one `rdp:host:port SHA256:...` or `vnc:host:port SHA256:...` line per
+server, written atomically with mode 0600 (`internal/desktop/pins/pins.go`). Legacy
+untyped RDP entries remain readable. **Forget this server** is available in the
+changed-certificate prompt and on the failure page after rejection; it removes
+the pin without granting trust. For a host reached through SSH the pin is
 kept under the name typed in the host, not the loopback address that is dialed.
 Nothing is trusted silently: `InsecureSkipVerify` stays on only because Go's chain
 check cannot succeed, and `VerifyConnection` does the real check.
