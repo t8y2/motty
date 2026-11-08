@@ -164,7 +164,7 @@ in-app assistant. Replies retain text `content` and add machine-readable
 | `sftp_read` | Byte `offset` or `tail: true`, up to 256 KiB per call; returns byte counts, next offset, EOF and truncation. Use `encoding: "base64"` for arbitrary bytes. |
 | `sftp_stat` | Size, type, permissions and modification time, without following the final symlink. |
 | `sftp_checksum` | Stream a regular file through `sha256` or `sha512` without returning its content. |
-| `sftp_upload`, `sftp_download` | Binary-safe file/directory transfers returning task IDs; poll for completion. |
+| `sftp_upload`, `sftp_download` | Binary-safe file/directory transfers returning task IDs; poll for completion. Offered only with full access and `--transfer-root` (see below). |
 | `transfer_status` | Query `transfer_id`, or omit it to list this process's retained history. |
 | `transfer_cancel` | Request cancellation; poll until the task settles. |
 

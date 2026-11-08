@@ -143,9 +143,9 @@ claude mcp add motty-hosts -- /path/to/motty mcp-serve
 | `sftp_read` | 按字节 `offset` 或 `tail: true` 读取，单次最多 256 KiB；返回实际字节数、下一偏移、EOF 和截断标记。 |
 | `sftp_stat` | 查询大小、类型、权限及修改时间，不跟随最后一级符号链接。 |
 | `sftp_checksum` | 流式计算普通文件的 `sha256` 或 `sha512`，不把文件内容放进模型上下文。 |
-| `sftp_upload`、`sftp_download` | 二进制安全的文件/目录传输；立即返回任务 ID，通过状态工具确认完成。 |
+| `sftp_upload`、`sftp_download` | 二进制安全的文件/目录传输；立即返回任务 ID，通过状态工具确认完成。需“全部允许”并配置 `--transfer-root` 后才会出现（见下文）。 |
 | `transfer_status` | 指定 `transfer_id` 查询，省略则列出本进程保留的任务。 |
-| `transfer_cancel` | 请求取消任务；继续查询，直到任务结束。 |
+| `transfer_cancel` | 请求取消任务；继续查询，直到任务结束。同样需要 `--transfer-root`。 |
 
 命令输出合计保持现有大小限制。非零退出码是真实结果；断线、取消或超时没有可确认的退出码时
 `exit_code` 为 `null`，并返回错误，而不是伪装成退出码 0。`cwd` 需要远端使用 POSIX shell；

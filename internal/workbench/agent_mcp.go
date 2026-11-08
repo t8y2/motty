@@ -137,6 +137,9 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. "
 	if mode == gate.ModeAllowAll {
 		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval."
+		if len(backend.transferRoots) == 0 {
+			instructions += " File transfer tools (sftp_upload, sftp_download, transfer_cancel) are off: start the server with --transfer-root <local directory> to offer them."
+		}
 	} else {
 		instructions += "Nobody can approve anything here, so a call that would need approval is refused."
 	}

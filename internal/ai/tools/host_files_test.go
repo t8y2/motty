@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,9 @@ func TestTransfersRequireBothFullAccessAndLocalFileAuthorization(t *testing.T) {
 			}
 			if _, found := Lookup(spec.Name); !found {
 				t.Fatalf("missing lookup %s", spec.Name)
+			}
+			if spec.Name == NameSFTPRead && strings.Contains(spec.Description, NameSFTPDownload) != (test.full && test.local) {
+				t.Fatalf("sftp_read description must mention sftp_download only when it is offered (%+v): %s", test, spec.Description)
 			}
 		}
 		if names[NameSFTPUpload] != (test.full && test.local) || names[NameSFTPDownload] != (test.full && test.local) {

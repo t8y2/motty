@@ -218,7 +218,10 @@ func fileTarget(host, remote string) error {
 	return err
 }
 
-func hostSchema(spec Spec) Spec {
+// hostSchema adapts a shared tool to the headless server. transfers reports
+// whether the transfer tools are offered, so descriptions never point at a
+// tool the client cannot call.
+func hostSchema(spec Spec, transfers bool) Spec {
 	switch spec.Name {
 	case NameTerminalExec:
 		spec.Schema = json.RawMessage(`{"type":"object","properties":{` + hostSessionProperty + `,"command":{"type":"string","minLength":1,"maxLength":8192},"timeout_seconds":{"type":"integer","minimum":1,"maximum":600,"default":60},"cwd":{"type":"string","minLength":1,"maxLength":4096,"description":"Optional absolute POSIX working directory for this command only."}},"required":["command"],"additionalProperties":false}`)
@@ -228,7 +231,10 @@ func hostSchema(spec Spec) Spec {
 		spec.Description = "List a name-sorted page of a remote directory using SFTP or SCP. Returns entries, total, next_offset and has_more. Pages are live, not a snapshot; restart pagination if the directory changes."
 	case NameSFTPRead:
 		spec.Schema = json.RawMessage(`{"type":"object","properties":{` + hostSessionProperty + `,` + remotePathProperty + `,"max_bytes":{"type":"integer","minimum":1,"maximum":262144,"default":262144},"offset":{"type":"integer","minimum":0,"maximum":9007199254740991,"default":0},"tail":{"type":"boolean","default":false,"description":"Read the last max_bytes; cannot combine with nonzero offset."},"encoding":{"type":"string","enum":["utf8","base64"],"default":"utf8"}},"required":["path"],"additionalProperties":false}`)
-		spec.Description = "Read a bounded range of a regular remote file, or its tail. Returns byte offsets, bytes_read, eof and truncated. Choose base64 to preserve arbitrary bytes; utf8 replaces invalid sequences. Use sftp_download for a complete local copy."
+		spec.Description = "Read a bounded range of a regular remote file, or its tail. Returns byte offsets, bytes_read, eof and truncated. Choose base64 to preserve arbitrary bytes; utf8 replaces invalid sequences."
+		if transfers {
+			spec.Description += " Use sftp_download for a complete local copy."
+		}
 	}
 	return spec
 }

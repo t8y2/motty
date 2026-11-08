@@ -317,7 +317,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 		case NameSFTPRemove:
 			spec.Description = "Delete one remote file or empty directory on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Deletion cannot be undone."
 		}
-		out = append(out, hostSchema(spec))
+		out = append(out, hostSchema(spec, writeFiles && localFiles))
 	}
 	for _, spec := range hostFileSpecs {
 		if spec.Kind == Write && (!writeFiles || !localFiles) {
