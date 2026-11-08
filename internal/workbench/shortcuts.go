@@ -440,6 +440,19 @@ func (state *State) shortcut(event ui.KeyEvent, chord keymap.Chord) ui.EventResu
 		return ui.EventResult{Handled: true}
 	}
 	if action == shortcutFind {
+		// Control+F accepts a terminal's inline suggestion before the default
+		// Find action. Other bindings, text fields and negotiated program keys
+		// keep their own meaning; with no suggestion Find still opens.
+		if chord.Modifiers == ui.ModifierControl && chord.Key == 'f' {
+			_, target, embedded := state.decodePaneHit(event.Target)
+			if !embedded {
+				target = event.Target
+			}
+			if session := state.terminalSession(target); session != nil && session.term != nil &&
+				session.term.screen.KeyboardFlags() == 0 && !session.term.screen.Modes().Win32Input && state.ghostKey(session, event) {
+				return ui.EventResult{Handled: true, Repaint: true}
+			}
+		}
 		if result, handled := state.sftpFilterShortcut(event.Target); handled {
 			return result
 		}
