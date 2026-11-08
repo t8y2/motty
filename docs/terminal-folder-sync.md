@@ -44,6 +44,22 @@ Local panes, standalone file windows and container command sessions do not
 control terminals. Refreshing a list or following a terminal report never sends
 another `cd` back. Both preferences use the existing shared-settings storage.
 
+## Local Terminal Folder
+
+Local shells report their folder the same way. **Settings > Terminal > Local
+terminal folder** chooses what that is used for:
+
+- **Last folder** is the default. Reopening Motty starts each restored local tab
+  in the folder it was last in, even when **Settings > Connection > On restore**
+  is Off, because starting a local shell connects to nothing. A new local
+  terminal starts in the folder of the local tab in front, or else in the last
+  folder any local shell reported; that folder outlives the tab and the app.
+- **Home folder** starts every local tab at home: restored local tabs forget
+  their folder and follow the restore setting like remote tabs.
+
+A split always starts in its pane's folder, whichever is chosen. The choice and
+the last folder stay on this device rather than in synced settings.
+
 ## Startup Compatibility
 
 - Bash uses a private runtime rc file that sources `/etc/profile` and the first

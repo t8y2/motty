@@ -559,6 +559,11 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	}
 	session.established = false
 	session.disconnected = false
+	if session.restored && session.isLocal() && state.localStart == localStartHome {
+		// The folder a restored tab was left in is what the home choice
+		// forgets; a tab that ends and starts again in this run keeps its own.
+		session.localDirectory = ""
+	}
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
@@ -722,6 +727,9 @@ func (state *State) Wake() {
 	}
 	if state.restorePending {
 		state.restorePending = false
+		// Local shells first: they dial nothing, so they need not share the
+		// bound on how many connections one restore opens.
+		state.startRestoredLocalSessions()
 		state.connectRestoredSessions()
 		state.openStartupSessions()
 	}

@@ -48,6 +48,8 @@ type savedState struct {
 	NetworkProxy               string             `json:"network_proxy,omitempty"`
 	TerminalOption             string             `json:"terminalOption,omitempty"`
 	LocalShell                 string             `json:"local_shell,omitempty"`
+	LocalStart                 string             `json:"local_start,omitempty"`
+	LastLocalDirectory         string             `json:"last_local_directory,omitempty"`
 	SSHAgent                   string             `json:"ssh_agent,omitempty"`
 	SSHAgentPath               string             `json:"ssh_agent_path,omitempty"`
 	TerminalFontSize           int                `json:"terminal_font_size,omitempty"`
@@ -471,6 +473,8 @@ func (state *State) snapshot() savedState {
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		LocalStart:                 state.localStart.String(),
+		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
 		RecentConnections:          maps.Clone(state.recentConnections),
 		SSHAgent:                   savedAgent,
@@ -984,6 +988,11 @@ func (state *State) restoreLocal(saved savedState) {
 	state.fonts.fallbacks = cleanFallbackFonts(saved.TerminalFontFallbacks, state.fonts.family)
 	state.applyTerminalFace()
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
+	state.localStart = localStartPolicyFromString(saved.LocalStart)
+	state.lastLocalDirectory = ""
+	if validLocalDirectory(saved.LastLocalDirectory) {
+		state.lastLocalDirectory = filepath.Clean(saved.LastLocalDirectory)
+	}
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
 	state.startupLocal = saved.StartupLocal
 	state.startupShell = saved.StartupShell

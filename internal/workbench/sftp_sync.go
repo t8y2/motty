@@ -31,9 +31,12 @@ func (state *State) recordTerminalDirectory(sessionID uint32, cwd term.Cwd, repl
 		if !localDirectoryHost(cwd.Host) || !validLocalDirectory(cwd.Path) {
 			return
 		}
-		if directory := filepath.Clean(cwd.Path); session.term.folderIntegrationSeen && session.term.promptStarted && directory != session.localDirectory {
-			session.localDirectory = directory
-			state.terminalDirectoryDirty = true
+		if directory := filepath.Clean(cwd.Path); session.term.folderIntegrationSeen && session.term.promptStarted {
+			if directory != session.localDirectory {
+				session.localDirectory = directory
+				state.terminalDirectoryDirty = true
+			}
+			state.noteLocalDirectory(directory)
 		}
 	} else {
 		if !validSyncDirectory(cwd.Path) {

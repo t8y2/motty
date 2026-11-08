@@ -373,6 +373,10 @@ type Messages struct {
 	SettingsRestoreOff                     string
 	SettingsRestoreActive                  string
 	SettingsRestoreAll                     string
+	SettingsLocalStart                     string
+	SettingsLocalStartDescription          string
+	SettingsLocalStartRemember             string
+	SettingsLocalStartHome                 string
 	SessionRestoreNeedsYou                 string
 	TipSFTPClose                           string
 	TipFiles                               string

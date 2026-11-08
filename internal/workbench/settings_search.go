@@ -182,6 +182,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, state.messages.History.SuggestRow, state.messages.History.SuggestDescription)
 	row(settingsTerminal, state.messages.History.SettingsRow, state.messages.History.SettingsDescription)
 	row(settingsTerminal, state.messages.History.ClearRow, state.messages.History.ClearDescription)
+	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
 	if localShellSettingVisible() {
 		row(settingsTerminal, m.SettingsLocalShell, m.SettingsLocalShellDescription)
 	}
