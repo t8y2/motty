@@ -31,7 +31,6 @@ var (
 	hitDevelopmentImport  = tree.ID(developmentImportHits, "import")
 	hitDevelopmentEmpty   = tree.ID(developmentImportHits, "empty")
 	hitDevelopmentClose   = tree.ID(developmentImportHits, "close")
-	hitDevelopmentKeys    = tree.ID(developmentImportHits, "passwords")
 )
 
 type developmentImport struct {
@@ -40,6 +39,8 @@ type developmentImport struct {
 	recordsImported bool
 	hosts           int
 	err             string
+	// body declares the dialog's body: its checkbox writes passwords itself.
+	body *flex.Screen
 }
 
 func developmentImportPhase(local map[string][]byte) (string, error) {
@@ -250,8 +251,6 @@ func (state *State) clickDevelopmentImport(id ui.ID) {
 	switch id {
 	case hitDevelopmentClose:
 		state.closeModal()
-	case hitDevelopmentKeys:
-		state.developmentImport.passwords = !state.developmentImport.passwords
 	case hitDevelopmentEmpty:
 		if _, err := state.config.Commit(configstore.Change{
 			Local: map[string][]byte{developmentImportKey: []byte(`"empty"`)},
@@ -292,18 +291,18 @@ func (state *State) paintDevelopmentImport(canvas *ui.Canvas, viewport ui.Rect) 
 		InitialFocusID: hitDevelopmentImport, ContentSize: ui.Size{Width: width}, FitBody: true, BodyHeight: height,
 	})
 	layout := dialog.Begin(m.DevelopmentImportTitle, "")
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Paragraph(body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
-		f.Row().Items(flex.Center).Children(func() {
-			f.Checkbox(hitDevelopmentKeys, view.passwords).Label(m.DevelopmentImportPasswords)
-			f.Text(m.DevelopmentImportPasswords).FontSize(metrics.FontSizeM).Color(state.pal.text)
+	if view.body == nil {
+		view.body = flex.NewScreen(flex.ScreenConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
+	}
+	view.body.Draw(canvas, layout.Body, func(s flex.Screen) {
+		s.Column().Fill().Children(func() {
+			s.Paragraph(body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			s.Checkbox(&view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
+			if errorLines != 0 {
+				s.Paragraph(errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			}
 		})
-		if errorLines != 0 {
-			f.Paragraph(errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
-		}
 	})
-	f.End()
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitDevelopmentEmpty, Label: skip, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitDevelopmentImport, Label: m.DevelopmentImportAction},

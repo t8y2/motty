@@ -163,7 +163,13 @@ func TestDevelopmentImportSourceFailureCanBeRetriedWithoutPasswords(t *testing.T
 	if state.developmentImport.err == "" || len(state.hosts) != 0 || state.modal != modalDevelopmentImport {
 		t.Fatal("source key failure was hidden or caused a partial config import")
 	}
-	state.Click(hitDevelopmentKeys)
+	// The user leaves the passwords behind by clicking the checkbox's caption, as in
+	// the window: the checkbox writes the choice into the dialog's state itself.
+	driver := modalEventDriver(t, state)
+	clickCaption(t, driver, state.messages.DevelopmentImportPasswords)
+	if state.developmentImport.passwords {
+		t.Fatal("the caption did not clear the passwords choice")
+	}
 	state.Click(hitDevelopmentImport)
 	if state.modal != modalNone || len(state.hosts) != 1 || state.secrets.vault.Len() != 0 {
 		t.Fatalf("explicit no-password import failed: %s", state.developmentImport.err)
@@ -365,4 +371,18 @@ func TestDevelopmentImportLoopbackSSH(t *testing.T) {
 	if password, found, err := opened.Get(hostSecretName("release-host", hostPasswordPart)); err != nil || !found || password != "secret" {
 		t.Fatalf("imported password not durable: found=%t err=%v", found, err)
 	}
+}
+
+// clickCaption presses the text beside a checkbox or switch, which is a label of it.
+func clickCaption(t *testing.T, driver *app.Driver, caption string) {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.IsLabel && hit.Label == caption {
+			if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("no caption %q on screen", caption)
 }
