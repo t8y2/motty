@@ -35,11 +35,15 @@ type trayFixture struct {
 func newTrayFixture(t *testing.T) *trayFixture {
 	t.Helper()
 	fixture := &trayFixture{firstView: &fakeTrayWindow{}, secondView: &fakeTrayWindow{}}
-	fixture.first = newTestState(t, testOptions(t))
+	firstOptions := testOptions(t)
+	firstOptions.WindowID = 1
+	fixture.first = newTestState(t, firstOptions)
 	fixture.first.options.Invalidate = func() { fixture.invalidated.Add(1) }
 	openHost(fixture.first)
 	openHostInSplit(t, fixture.first, 2, layoutcore.Horizontal)
-	fixture.second = newTestState(t, testOptions(t))
+	secondOptions := testOptions(t)
+	secondOptions.WindowID = 2
+	fixture.second = newTestState(t, secondOptions)
 	fixture.second.options.Invalidate = func() { fixture.invalidated.Add(1) }
 	fixture.second.Click(hitHostList.At(3))
 	openHost(fixture.second)
@@ -102,6 +106,62 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 	}
 	if fixture.tray.SessionCount() != 3 {
 		t.Fatalf("SessionCount = %d", fixture.tray.SessionCount())
+	}
+}
+
+func TestTrayMenuNamesEveryEntryUniquely(t *testing.T) {
+	fixture := newTrayFixture(t)
+	seen := map[string]string{}
+	var walk func([]app.MenuItem)
+	walk = func(items []app.MenuItem) {
+		for _, item := range items {
+			if item.Separator {
+				continue
+			}
+			if item.ID == "" {
+				t.Fatalf("entry %q has no id", item.Title)
+			}
+			if title, duplicate := seen[item.ID]; duplicate {
+				t.Fatalf("id %q names both %q and %q", item.ID, title, item.Title)
+			}
+			seen[item.ID] = item.Title
+			walk(item.Submenu)
+		}
+	}
+	walk(fixture.tray.Menu())
+	// Both windows number their sessions from 1, so a session's id carries its
+	// window's number to name it alone.
+	if len(seen) != 9 {
+		t.Fatalf("named %d entries, want 9: %v", len(seen), seen)
+	}
+}
+
+func TestTrayEntryIDsSurviveTitlesAndClosedWindows(t *testing.T) {
+	fixture := newTrayFixture(t)
+	heading := fixture.tray.Menu()[0].ID
+	router := findItem(fixture.tray.Menu(), "Router · ")
+	if router == nil {
+		t.Fatal("no Router entry")
+	}
+	routerID := router.ID
+	// The heading says how many sessions there are; its name must not move with
+	// the number.
+	fixture.first.closeSession(fixture.first.sessions[0].ID)
+	if got := fixture.tray.Menu()[0]; got.ID != heading || !strings.HasPrefix(got.Title, "Sessions · 2") {
+		t.Fatalf("heading = %+v, want id %q counting two", got, heading)
+	}
+	// A session's title carries its name and how it is doing; neither is its
+	// name to a host that kept the menu.
+	fixture.second.sessions[0].Title = "Renamed"
+	renamed := findItem(fixture.tray.Menu(), "Renamed · ")
+	if renamed == nil || renamed.ID != routerID {
+		t.Fatalf("renamed entry = %+v, want id %q", renamed, routerID)
+	}
+	// A window that closes leaves the entries of the others where they were.
+	fixture.tray.Remove(fixture.first)
+	last := findItem(fixture.tray.Menu(), "Renamed · ")
+	if last == nil || last.ID != routerID {
+		t.Fatalf("entry after a window closed = %+v, want id %q", last, routerID)
 	}
 }
 
