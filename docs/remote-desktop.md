@@ -49,16 +49,23 @@ type Session interface {
   page's paint. Nothing polls and an idle desktop schedules no frame.
 * Keys go down and up as the keyboard does it (Viva's `TextInput.KeyReleases`):
   a key is down on the remote while it is down here, modifiers are keys of their
-  own, so Shift-click and a held Ctrl work, and a key's auto-repeat is not sent
-  again (the remote repeats a key it sees held). Whatever is still down when the
+  own, so Shift-click and a held Ctrl work, and a key's auto-repeat reaches the
+  remote: an RDP server does not repeat a held key by itself, so each repeat is
+  sent with the key marked already down (`KBD_FLAGS_DOWN`), while a VNC server
+  repeats the key itself and is sent it once. Whatever is still down when the
   window loses focus, the tab is hidden, the keyboard is released with
   `Ctrl+Alt+G` or the connection ends is released first. A backend maps `Key`/`Rune` to its own vocabulary (VNC: X11
   keysyms, `internal/desktop/vnc/keysym.go`; RDP: scancodes or Unicode events).
   `SendText` types characters that are not keys.
+* A backend that can receive files through the clipboard implements
+  `desktop.FileReceiver`. The workbench puts the received paths on the system
+  clipboard and remembers them as what the clipboard holds, so the next sync
+  does not offer the remote's own files back to it.
 * Passwords are asked through `Options.AskPassword` during the handshake, on the
-  same connection. The workbench answers it with the ordinary password dialog,
-  the vault autofill (name `password:vnc@host:port`), and "save password" which
-  writes to the vault. A password never reaches the settings file.
+  same connection. RealVNC system accounts use `Options.AskCredentials` after
+  server-key verification. The ordinary password dialog supports vault autofill
+  and saving; system-account passwords are kept separately from a host's
+  traditional VNC password. A password never reaches the settings file.
 * `Dialer` is the byte stream: direct TCP, an HTTP/SOCKS proxy, or a channel of
   an SSH connection. A backend never dials by itself.
 
@@ -124,10 +131,25 @@ and return it from `openDesktopSession`. The host editor's VNC rows
 
 ## VNC specifics
 
-Spoken: RFB 3.3/3.7/3.8; security None and VNC Authentication; a 32-bit true
+Spoken: RFB 3.3/3.7/3.8, including negotiating RealVNC's 5.0 banner down to 3.8;
+security None, VNC Authentication, and RealVNC RA2 (type 5); a 32-bit true
 colour pixel format asked from the server, so no pixel is converted; encodings
 Raw, CopyRect, RRE, Hextile and ZRLE (one zlib stream for the connection);
 DesktopSize; pointer, key and cut-text messages.
+
+* **RealVNC RA2** authenticates the server's RSA public key before asking
+  for credentials and keeps authentication, framebuffer, input, and clipboard
+  messages encrypted with AES-128-EAX. A server using **Always on** encryption
+  and **UNIX password** authentication asks for its system username/password.
+  Direct VNC hosts have an optional username field; if omitted, the connection
+  asks for both fields. A tunneled host's saved username continues to name the
+  SSH account; the VNC system account is asked for separately.
+  A new key raises a trust question; a changed saved key stops the connection.
+  VNC and RDP pins share a local endpoint store, keyed by protocol, the typed
+  address, and port. Deleting or merging a host preserves its server pin;
+  **Forget this server** removes the pin so the next connection asks again.
+  RSA-AES rejection
+  never retries with a weaker security type. See [RealVNC support](vnc-realvnc.md).
 
 * **VNC Authentication is weak**: DES with at most eight password characters and a
   challenge that crosses the network in the clear, so a captured exchange can be
@@ -148,8 +170,9 @@ DesktopSize; pointer, key and cut-text messages.
   once; local to remote is sent when the pointer is pressed or a paste chord is
   typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
   with the system paste shortcut types the clipboard on the remote instead.
-* Not supported: VeNCrypt/TLS, Apple Remote Desktop authentication (macOS Screen
-  Sharing needs "VNC viewers may control screen with password"), Tight/JPEG,
+* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Apple Remote Desktop
+  authentication (macOS Screen Sharing needs "VNC viewers may control screen with
+  password"), Tight/JPEG,
   extended clipboard, images in the clipboard, audio, file transfer, changing the
   remote resolution, multiple screens.
 * Key releases reach the remote on macOS, Windows and X11; they were exercised
@@ -172,8 +195,16 @@ machine (None and VNC Authentication, every encoding, window moves drawn,
 DesktopSize, key events seen by `xev`) and TigerVNC in Docker (the same, plus
 the headless application: password dialog, picture, pointer position, typed text,
 through an SSH tunnel to the e2e SSH fixture). `tools/e2e/vnc_e2e.txt` drives the
-headless application. Not exercised: a real window, physical keyboards, IME
-composition, hidden or covered windows, macOS Screen Sharing, a Windows server.
+headless application.
+
+Windows testing against a Raspberry Pi also verified system-account login,
+desktop display, and clipboard sharing. See
+[RealVNC support](vnc-realvnc.md) for the protocol probe and test coverage.
+The latest password and server-key persistence changes still need a real-server
+retest.
+Physical keyboard and pointer interaction in a native window, IME composition,
+hidden or covered windows, macOS Screen Sharing, and a Windows server still need
+manual testing.
 
 ## RDP
 
@@ -220,8 +251,9 @@ remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
 pastes as Unicode events (UTF-16 pairs; a server application that ignores Unicode
 events, such as a terminal in xrdp, shows only some of them), pointer with three
-buttons and horizontal/vertical wheel. Clipboard text (CLIPRDR), per host, off by
-default. Suppress Output while the tab is hidden. The initial desktop matches
+buttons and horizontal/vertical wheel. Clipboard text and images, and files in
+both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
+by default. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
@@ -236,8 +268,11 @@ in `SHA256:` base64 as `ssh-keygen` prints a key's) with Trust and save, This
 connection only, or Reject; a pinned certificate that changed opens it again with a
 louder text that shows the old fingerprint; rejecting or dismissing ends the
 connection without trying other TLS versions. Pins are in `rdp_certificates` next to
-`known_hosts`, one `address SHA256:...` line per server, written atomically with
-mode 0600 (`internal/desktop/rdp/pins.go`). For a host reached through SSH the pin is
+`known_hosts`, one `rdp:host:port SHA256:...` or `vnc:host:port SHA256:...` line per
+server, written atomically with mode 0600 (`internal/desktop/pins/pins.go`). Legacy
+untyped RDP entries remain readable. **Forget this server** is available in the
+changed-certificate prompt and on the failure page after rejection; it removes
+the pin without granting trust. For a host reached through SSH the pin is
 kept under the name typed in the host, not the loopback address that is dialed.
 Nothing is trusted silently: `InsecureSkipVerify` stays on only because Go's chain
 check cannot succeed, and `VerifyConnection` does the real check.
@@ -265,12 +300,72 @@ Windows' decision, not the client's. Only Windows has a console session; xrdp
 ignores the field and always starts a new session, so the switch does nothing
 there.
 
+### Copying files to the server
+
+Files go from this computer to the server through the clipboard, the way
+`mstsc` does it (MS-RDPECLIP file transfer, `internal/rdpcore/protocol/cliprdr/files.go`).
+Copy files in Finder, Explorer or a Linux file manager and paste in the remote
+system, or drop them on the picture and paste. The paste shortcut of this computer
+(Command+V on macOS, Ctrl+V elsewhere) pastes them by pressing the remote's own
+Ctrl+V; a file manager also leaves the files' names on the clipboard as text, and
+those are not typed instead. The files dropped stay the remote clipboard until
+something new is copied here. The host's clipboard
+sharing must be on and the server must negotiate file transfer; a drop on a
+connection that cannot take files says why in a notice.
+
+Nothing is sent when the files are copied. Motty announces `FileGroupDescriptorW`
+and `FileContents`; when the remote user pastes, the server asks for the list
+(names relative to the copied entries, sizes, times, folders before what is in
+them) and then for each file's size and byte ranges, which are read from this
+computer on demand. So a paste of a large folder needs this window open until it
+ends, and a file that was changed after it was copied is refused when it is
+read (its size or modification time no longer matches the list) instead of
+arriving half old, half new. No file is held open between requests, so a copied
+file can still be moved or deleted here meanwhile.
+
+The server only reaches what was copied: it asks by index into the list, never by
+path. Limits: 20000 files and folders per copy (a larger selection is refused,
+not cut), paths of at most 259 characters inside the copied folder, folders
+nested at most 32 deep; symbolic links inside a copied folder are left out (one
+that was itself copied is followed), as are devices and sockets, and a file of 4
+GiB or more when the server did not announce support for it. What was left out is
+counted in the notice. Characters Windows forbids in a name (`\ : * ? " < > |` and
+control characters) become `_`. The list is made on a goroutine of its own, since
+it walks folders; a second copy made meanwhile replaces a waiting one.
+
+### Copying files from the server
+
+Files copied on the server come back through the same protocol: the server
+announces `FileGroupDescriptorW` and `FileContents`, and Motty reads the list and
+each file's bytes into a private directory under the system temporary
+directory. The top-level entries are then put on this computer's clipboard as a
+file list (`CF_HDROP` on Windows, file URLs on macOS, `text/uri-list` and
+`x-special/gnome-copied-files` on Linux), so they paste in Finder, Explorer, a
+Linux file manager or any application that takes files.
+
+The server's clipboard data is locked (`CB_LOCK_CLIPDATA`) while it is read, as
+`mstsc` does, and unlocked when the read ends; a copy made on the server
+meanwhile therefore cannot change the list under the read. A new remote
+clipboard cancels an older read and releases its lock, so an old selection never
+replaces a newer one. The lock is taken before the list request; the size and
+64 KiB byte-range requests carry its id, which is what makes Windows serve the
+contents after the lock.
+
+The clipboard holds paths, not copies: the staging directory has to stay while
+a paste may still read it, and the system's temporary-directory cleanup or the
+user removes it afterwards. Names that could leave the staging directory
+(`..`, absolute paths, empty components) are refused and counted; Windows'
+forbidden characters and device names (`CON`, `COM1`, …) are made safe the same
+way as in the other direction; paths are limited to 32 levels and the list to
+20000 entries. An entry that cannot be written is counted in the notice rather
+than leaving a paste that looks complete.
+
 ### Limits
 
 No audio, drive/printer/smartcard/USB redirection, multiple monitors, dynamic
 resolution change from the client, RD Gateway, Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
-H.264, clipboard formats other than text, or file transfer. A fresh Windows logon
+H.264, clipboard formats other than text, images and files. A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
@@ -288,7 +383,18 @@ localhost:3389 with a throwaway local user): NLA off and NLA on; TLS 1.2 handsha
 certificate pinned, logon, the "other user is signed in" question answered by a
 click, the profile build, the desktop (non-uniform, 1000+ colours), the Start menu
 opened by the Windows key, the taskbar hover, a wrong password (one attempt,
-`STATUS_LOGON_FAILURE`), a refused certificate (one connection), a clean close. On
+`STATUS_LOGON_FAILURE`), a refused certificate (one connection), a clean close, and
+files copied to the server: four files and two folders (one file of 3 MiB, so many
+requests, one folder two levels deep, a name outside ASCII) copied by the test and pasted
+by the remote Explorer, every file compared by SHA-256
+(`TestLiveFilesCopiedHereArePastedInExplorer`, `MOTTY_RDP_PASTE_DIR`); files
+copied on the server (a `CF_HDROP` list, the same form Explorer's Copy leaves)
+locked, read back into the client and compared by SHA-256
+(`TestLiveFilesCopiedOnTheServerArriveHere`); text copied on the server arriving
+on this computer (`TestLiveTextCopiedOnTheServerArrivesHere`); and the Windows
+file-list writer's result read back by PowerShell's
+`Get-Clipboard -Format FileDropList` as the same paths
+(`TestSetClipboardFilesRoundTrip` in `../viva`). On
 **xrdp** in Docker (amd64 under Rosetta): TLS without NLA, pixels via the RDPGFX
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,
@@ -297,7 +403,9 @@ certificate dialog, password dialog, the picture, click and typing, status line
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the
-window, resizing, clipboard against a real server, reconnect after a network loss.
+window, resizing, the image clipboard against a real server, a real Windows or
+Linux desktop pasting the file list the other way, reconnect after a
+network loss.
 The console session switch was not exercised either: it needs a Windows host with
 a console session, and xrdp ignores the field.
 

@@ -53,7 +53,7 @@ func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *t
 		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
 	}
 	host := state.hosts[len(state.hosts)-1]
-	if host.Label != "Web" || host.Group != "Clients / Acme" || host.Address != "web.acme.test" || host.User != "root" || host.Port != 2222 {
+	if host.Label != "Web" || host.Group != "Clients/Acme" || host.Address != "web.acme.test" || host.User != "root" || host.Port != 2222 {
 		t.Fatalf("host = %+v", host)
 	}
 	result := state.hostImportResult
@@ -240,7 +240,7 @@ func TestImportingElectermBookmarksAddsHostsWithTheirNestedGroups(t *testing.T) 
 	if len(state.hosts) != 1 {
 		t.Fatalf("hosts %+v", state.hosts)
 	}
-	if host := state.hosts[0]; host.Label != "Pi" || host.Group != "Lab / Prod" || host.Address != "pi.local" || host.User != "me" {
+	if host := state.hosts[0]; host.Label != "Pi" || host.Group != "Lab/Prod" || host.Address != "pi.local" || host.User != "me" {
 		t.Fatalf("host = %+v", host)
 	}
 	result := state.hostImportResult
@@ -298,7 +298,7 @@ func TestImportingNetcattyHostsAddsHostsWithTheirGroups(t *testing.T) {
 	if len(state.hosts) != 1 {
 		t.Fatalf("hosts %+v", state.hosts)
 	}
-	if host := state.hosts[0]; host.Label != "Pi" || host.Group != "Lab / Pi" || host.Address != "pi.local" || host.User != "me" {
+	if host := state.hosts[0]; host.Label != "Pi" || host.Group != "Lab/Pi" || host.Address != "pi.local" || host.User != "me" {
 		t.Fatalf("host = %+v", host)
 	}
 	result := state.hostImportResult
@@ -526,5 +526,86 @@ func TestImportingWindTermSessionsAddsHostsWithTheirGroups(t *testing.T) {
 	state.Click(hitImportWindTerm)
 	if len(state.hosts) != 1 || state.hosts[0].Label != "Pi" || state.hosts[0].Group != "Lab" || !strings.Contains(state.hostImportResult.summary, "WindTerm") {
 		t.Fatalf("hosts %+v, summary %q", state.hosts, state.hostImportResult.summary)
+	}
+}
+
+// A MobaXterm folder that holds both sessions and subfolders must arrive as one
+// group: the folder's own sessions and its children share that folder's path.
+func TestImportingMobaXtermFolderWithSessionsAndSubfoldersKeepsOneGroup(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sessions.mxtsessions")
+	content := "[Bookmarks]\nSubRep=65-Uyghur\\Kashgar\n" +
+		"Report=#109#0%report.kashgar.test%22%root%\n" +
+		"[Bookmarks_1]\nSubRep=65-Uyghur\\Kashgar\\3.0\n" +
+		"Oracle=#109#0%oracle.kashgar.test%22%root%\n"
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportMobaXterm)
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d hosts %d", state.modal, len(state.hosts))
+	}
+	groups := map[string]string{}
+	for _, host := range state.hosts {
+		groups[host.Label] = host.Group
+	}
+	if got := groups["Report"]; got != "65-Uyghur/Kashgar" {
+		t.Fatalf("folder's own session is in %q, want the folder's path", got)
+	}
+	if got := groups["Oracle"]; got != "65-Uyghur/Kashgar/3.0" {
+		t.Fatalf("subfolder's session is in %q", got)
+	}
+	// The folder is one group, and the only one an empty-named parent leads to.
+	var kashgar []string
+	for _, group := range state.hostGroups {
+		if hostGroupLeaf(group.Name) == "Kashgar" {
+			kashgar = append(kashgar, group.Name)
+		}
+	}
+	if len(kashgar) != 1 || kashgar[0] != "65-Uyghur/Kashgar" {
+		t.Fatalf("Kashgar appears as %q, want one group", kashgar)
+	}
+}
+
+// A catalog an earlier version imported with " / " between folder names reads
+// back as one group per folder, not as a second group beside the folder.
+func TestSavedSpacedGroupPathReadsBackAsOneGroup(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	saved := savedState{
+		Hosts: []savedHost{
+			{ID: "host_report", Label: "Report", Group: "65-Uyghur / Kashgar", Address: "report.kashgar.test", User: "root", Port: 22},
+			{ID: "host_oracle", Label: "Oracle", Group: "65-Uyghur / Kashgar / 3.0", Address: "oracle.kashgar.test", User: "root", Port: 22},
+		},
+		HostGroups: []savedHostGroup{{Name: "65-Uyghur / Kashgar", Explicit: true}},
+	}
+	if err := saveState(options.StatePath, saved); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	groups := map[string]string{}
+	for _, host := range state.hosts {
+		groups[host.Label] = host.Group
+	}
+	if got := groups["Report"]; got != "65-Uyghur/Kashgar" {
+		t.Fatalf("the folder's own session is in %q", got)
+	}
+	if got := groups["Oracle"]; got != "65-Uyghur/Kashgar/3.0" {
+		t.Fatalf("the subfolder's session is in %q", got)
+	}
+	var kashgar []string
+	for _, group := range state.hostGroups {
+		if hostGroupLeaf(group.Name) == "Kashgar" {
+			kashgar = append(kashgar, group.Name)
+		}
+	}
+	if len(kashgar) != 1 {
+		t.Fatalf("Kashgar is listed as %q, want one group", kashgar)
+	}
+	if index := state.hostGroupIndex("65-Uyghur/Kashgar"); index < 0 || !state.hostGroups[index].Explicit {
+		t.Fatalf("the folder lost its explicit group: %+v", state.hostGroups[index])
 	}
 }

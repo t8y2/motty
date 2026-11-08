@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	layoutcore "motty/internal/workspace"
 	"reflect"
 	"slices"
 	"testing"
@@ -58,7 +59,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		}
 		template := state.templates[0]
 		wantHosts := []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}
-		if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || template.Columns != 2 {
+		if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || !isGrid(template.Layout, 2) {
 			t.Fatalf("template = %+v, want hosts %v", template, wantHosts)
 		}
 		if state.modal != modalNone || state.activeSection != sectionWorkspaces ||
@@ -79,7 +80,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	state.workspaceDraft.name.Insert("Production pair")
 	state.Click(workspaceDraftHostID(1))
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.Click(hitWorkspaceDraftSubmit)
 
 	if len(world.configs) != 0 {
@@ -90,7 +91,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	}
 	template := state.templates[0]
 	wantHosts := []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}
-	if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || template.Columns != 3 {
+	if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || !isGrid(template.Layout, 3) {
 		t.Fatalf("template = %+v, want hosts %v", template, wantHosts)
 	}
 
@@ -102,7 +103,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "columns": true}
+	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "layout": true}
 	for field := range fields {
 		if !allowed[field] {
 			t.Fatalf("the saved template carries unexpected field %q: %s", field, raw)
@@ -133,23 +134,23 @@ func TestWorkspaceDraftSwitchingModesKeepsTheSharedSelection(t *testing.T) {
 	state.Click(hitWorkspaceNew)
 	state.Click(workspaceDraftHostID(1))
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	want := hostCatalogIDs(state.hosts[:2])
 
 	state.Click(hitWorkspaceDraftFixed)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("fixed mode selection = %v, want %v", got, want)
 	}
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("fixed mode columns = %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("fixed mode columns = %+v", state.workspaceDraft.layout)
 	}
 
 	state.Click(hitWorkspaceDraftTemporary)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("temporary mode selection = %v, want %v", got, want)
 	}
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("temporary mode columns = %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("temporary mode columns = %+v", state.workspaceDraft.layout)
 	}
 }
 
@@ -217,11 +218,11 @@ func TestWorkspaceDraftOffersThisComputerAndOnlyEligibleSSHHosts(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
+func TestWorkspaceDraftEnforcesTheTwelveHostLimitAndCatalogOrder(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 	state.hosts = nil
-	for index := 0; index < 9; index++ {
+	for index := 0; index <= maxWorkspaceTemplateHosts; index++ {
 		host := Host{
 			ID: uint32(index + 1), CatalogID: "host_" + string(rune('a'+index)),
 			Label: "Host " + string(rune('A'+index)), Address: "host-" + string(rune('a'+index)) + ".example.com", Port: 22,
@@ -230,17 +231,17 @@ func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
 		state.hosts = append(state.hosts, host)
 	}
 	state.Click(hitWorkspaceNew)
-	for index := 0; index < 8; index++ {
+	for index := 0; index < maxWorkspaceTemplateHosts; index++ {
 		state.Click(workspaceDraftHostID(index))
 	}
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
 	state.workspaceDraftScroll(ui.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
 	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	if !panelHit(t, canvas, workspaceDraftHostID(8)).Disabled {
-		t.Fatal("the ninth unselected host is not disabled")
+	if !panelHit(t, canvas, workspaceDraftHostID(maxWorkspaceTemplateHosts)).Disabled {
+		t.Fatal("the first host past the limit is not disabled")
 	}
-	state.Click(workspaceDraftHostID(8))
-	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:8])) {
+	state.Click(workspaceDraftHostID(maxWorkspaceTemplateHosts))
+	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:maxWorkspaceTemplateHosts])) {
 		t.Fatalf("selection = %v", state.workspaceDraftSelectedCatalogIDs())
 	}
 }
@@ -273,7 +274,7 @@ func TestWorkspaceDraftEditCopiesTemplateAndPreservesMissingReferences(t *testin
 		t.Fatalf("edit opened modal=%d mode=%d", state.modal, state.workspaceDraft.mode)
 	}
 	if state.workspaceDraft.editID != template.ID || state.workspaceDraft.name.String() != template.Name ||
-		state.workspaceDraft.columns != template.Columns || !slices.Equal(state.workspaceDraft.order, template.HostIDs) {
+		!state.workspaceDraft.layout.Equal(template.Layout) || !slices.Equal(state.workspaceDraft.order, template.HostIDs) {
 		t.Fatalf("edit draft = %+v, want template %+v", state.workspaceDraft, template)
 	}
 
@@ -307,7 +308,7 @@ func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t 
 		{name: "duplicate members", setup: func() { state.workspaceDraft.order = append(state.workspaceDraft.order, state.workspaceDraft.order[0]) }},
 		{name: "too many members", setup: func() {
 			state.workspaceDraft.order = []string{
-				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9",
+				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9", "host_10", "host_11", "host_12", "host_13",
 			}
 		}},
 		{name: "zero columns", setup: func() {}, column: &zero},
@@ -319,7 +320,7 @@ func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t 
 			state.openWorkspaceDraftEdit(template.ID)
 			test.setup()
 			if test.column != nil {
-				state.workspaceDraft.columns = *test.column
+				state.workspaceDraft.layout = columnsSpec(*test.column)
 			}
 			state.submitWorkspaceDraft()
 			if state.modal != modalWorkspaceDraft || state.workspaceDraft.error == "" {
@@ -343,20 +344,20 @@ func TestWorkspaceDraftEditUpdatesTheSameTemplateAndPersists(t *testing.T) {
 	state.openWorkspaceDraftEdit(template.ID)
 	state.workspaceDraft.name = *text.NewEditor("Critical")
 	state.workspaceDraftRemoveItem(1)
-	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftColumns2,
+	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftPresets.At(1),
 		[]components.SegmentOption{
-			{ID: hitWorkspaceDraftColumns1}, {ID: hitWorkspaceDraftColumns2}, {ID: hitWorkspaceDraftColumns3},
-		}, components.DirectionLTR, ui.KeyRight); !ok || next != hitWorkspaceDraftColumns3 {
+			{ID: hitWorkspaceDraftPresets.At(0)}, {ID: hitWorkspaceDraftPresets.At(1)}, {ID: hitWorkspaceDraftPresets.At(2)},
+		}, components.DirectionLTR, ui.KeyRight); !ok || next != hitWorkspaceDraftPresets.At(2) {
 		t.Fatalf("columns test setup = %v, %v", next, ok)
 	}
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.submitWorkspaceDraft()
 
 	if state.modal != modalNone || len(state.templates) != 1 {
 		t.Fatalf("edit closed modal=%d templates=%+v", state.modal, state.templates)
 	}
 	got := state.templates[0]
-	if got.ID != template.ID || got.Name != "Critical" || got.Columns != 3 ||
+	if got.ID != template.ID || got.Name != "Critical" || !isGrid(got.Layout, 3) ||
 		!slices.Equal(got.HostIDs, []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
 		t.Fatalf("edited template = %+v", got)
 	}
@@ -379,7 +380,7 @@ func TestWorkspaceDraftFailedEditRestoresTemplateContents(t *testing.T) {
 	state.openWorkspaceDraftEdit(template.ID)
 	state.workspaceDraft.name = *text.NewEditor("Critical")
 	state.workspaceDraft.order = []string{state.hosts[1].CatalogID}
-	state.workspaceDraft.columns = 3
+	state.workspaceDraft.layout = layoutcore.GridSpec(3)
 	before := cloneWorkspaceTemplates(state.templates)
 	beforeSelected := state.selectedWorkspaceTemplateID
 	beforeExpanded := state.workspaceLibraryExpanded
@@ -523,19 +524,19 @@ func TestWorkspaceDraftDefaultColumnsFollowSelectionUntilChosen(t *testing.T) {
 	state.Click(hitWorkspaceNew)
 	for index := 0; index < 4; index++ {
 		state.Click(workspaceDraftHostID(index))
-		want := DefaultWorkspaceColumns(index + 1)
-		if got := state.workspaceDraft.columns; got != want {
-			t.Fatalf("%d hosts selected gave %d columns, want %d", index+1, got, want)
+		want := DefaultWorkspaceLayout(index + 1)
+		if got := state.workspaceDraft.layout; !got.Equal(want) {
+			t.Fatalf("%d hosts selected gave %+v, want %+v", index+1, got, want)
 		}
 	}
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.Click(workspaceDraftHostID(4))
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("explicit columns changed to %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("explicit columns changed to %+v", state.workspaceDraft.layout)
 	}
 	state.Click(workspaceDraftHostID(4))
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("explicit columns changed after deselecting to %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("explicit columns changed after deselecting to %+v", state.workspaceDraft.layout)
 	}
 }
 

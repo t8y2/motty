@@ -19,6 +19,7 @@ func TestSecondaryLaunchOnlyAnnouncesAnUnstartedDevelopmentBuild(t *testing.T) {
 	}{
 		{language: "en", unstarted: "this development build did not start"},
 		{language: "zh-CN", unstarted: "本次开发构建未启动"},
+		{language: "zh-TW", unstarted: "本次開發建置未啟動"},
 	}
 	for _, test := range tests {
 		t.Run(test.language, func(t *testing.T) {

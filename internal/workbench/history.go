@@ -116,7 +116,7 @@ func (state *State) attachHistory(session *Session) {
 	t.onCommand = func(command string) { state.rememberCommand(sessionID, command) }
 	t.takeOutput = func() {
 		if session, ok := state.sessionByIDPointer(sessionID); ok {
-			state.pump(session)
+			state.pumpFor(session, 0)
 		}
 	}
 }
@@ -188,10 +188,11 @@ func (state *State) rememberCommand(sessionID uint32, command string) {
 	}
 	if store := state.historyStore(); store != nil {
 		key := historyKey(session)
-		if err := store.Record(key, command, time.Now()); err != nil {
+		now := time.Now()
+		if err := store.Record(key, command, now); err != nil {
 			state.status = fmt.Sprintf(state.messages.History.StatusUnavailableFmt, err)
 		} else {
-			state.historyChanged(key, command)
+			state.historyChanged(key, command, now)
 			if err := store.Error(); err != nil {
 				state.status = fmt.Sprintf(state.messages.History.StatusUnavailableFmt, err)
 			}
@@ -392,8 +393,9 @@ func (state *State) chooseHistory(run bool) {
 		// run from the picker is counted here. It came from the history, which
 		// only holds lines that were already cleared.
 		if store := state.historyStore(); store != nil {
-			if err := store.Record(key, entry.Command, time.Now()); err == nil {
-				state.historyChanged(key, entry.Command)
+			now := time.Now()
+			if err := store.Record(key, entry.Command, now); err == nil {
+				state.historyChanged(key, entry.Command, now)
 			}
 		}
 	}
@@ -420,7 +422,7 @@ func (state *State) deleteHistorySelection() {
 		state.status = fmt.Sprintf(m.StatusRemoveFailedFmt, err)
 		return
 	}
-	state.historyChanged("", "")
+	state.historyChanged("", "", time.Time{})
 	selected, top := h.selected, h.top
 	state.loadHistory()
 	state.rankHistory()

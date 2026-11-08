@@ -15,10 +15,11 @@ import (
 
 // savedAIProvider is a provider as a record.
 type savedAIProvider struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Kind    string `json:"kind"`
-	BaseURL string `json:"base_url,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	BaseURL   string `json:"base_url,omitempty"`
+	ModelsURL string `json:"models_url,omitempty"`
 	// AuthStyle is empty for the kind's default. It stays out of the payload
 	// when it is empty so records written before bearer authentication read
 	// back unchanged.
@@ -58,6 +59,7 @@ func (state *State) savedAIProviderCollection(cli bool) *[]savedAIProvider {
 		}
 		entry := savedAIProvider{
 			ID: provider.ID, Name: provider.Name, Kind: provider.Kind, BaseURL: provider.BaseURL,
+			ModelsURL: provider.ModelsURL,
 			AuthStyle: provider.AuthStyle, APIFormat: provider.APIFormat, Enabled: provider.Enabled, HasKey: provider.HasKey,
 		}
 		for _, model := range ai.models {
@@ -108,7 +110,7 @@ func (state *State) importAIProviderCollections(http, cli *[]savedAIProvider) {
 			continue
 		}
 		wanted[entry.ID] = true
-		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled}
+		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, ModelsURL: entry.ModelsURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled}
 		for _, local := range current {
 			if local.ID == entry.ID && local.Kind == entry.Kind {
 				provider.CLIPath = local.CLIPath

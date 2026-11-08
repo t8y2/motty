@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 	"time"
 )
@@ -211,10 +212,17 @@ func (state *State) paintMonitorIntervalMenu(c *ui.Canvas) {
 	if state.monitorDrawer(state.viewport) {
 		layer = drawerLayer + 1
 	}
-	menu := components.BeginDropdownMenu(c, state.Theme(), ui.Rect{X: b.X, Y: b.Y + b.Height + 4, Width: 112, Height: 104}, components.DropdownMenuOptions{Layer: layer, Scope: hitMonitorMenuDismiss, DismissID: hitMonitorMenuDismiss, Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitMonitorMenuDismiss)})
+	menu := components.BeginDropdownMenu(c, state.Theme(), ui.Rect{X: b.X, Y: b.Y + b.Height + 4, Width: 295, Height: 144}, components.DropdownMenuOptions{Layer: layer, Scope: hitMonitorMenuDismiss, DismissID: hitMonitorMenuDismiss, Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitMonitorMenuDismiss)})
 	ids := [...]ui.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5}
 	for i, seconds := range [...]int{1, 2, 5} {
 		menu.AddItem(components.DropdownMenuItem{ID: ids[i], Label: state.messages.Monitor.IntervalLabels[i], Kind: components.DropdownMenuRadio, Selected: p.interval == seconds})
+	}
+	if session.hasServer() && session.host.System != sshconn.SystemWindows {
+		label := state.messages.SudoCommandsEnable
+		if session.sudoCommands {
+			label = state.messages.SudoCommandsDisable
+		}
+		menu.AddItem(components.DropdownMenuItem{ID: hitMonitorSudo, Label: label})
 	}
 	menu.End()
 }

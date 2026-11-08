@@ -208,27 +208,7 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	kind, shape, version := session.PointerShape()
 	t.Logf("pointer: kind %d, %dx%d, hotspot %d,%d, %d statement(s)", kind, shape.Width, shape.Height, shape.HotX, shape.HotY, version)
 
-	if keys, click := os.Getenv("MOTTY_RDP_PRESS"), os.Getenv("MOTTY_RDP_CLICK"); keys != "" || click != "" {
-		before := view.snapshot()
-		if click != "" {
-			var x, y int
-			if _, err := fmt.Sscanf(click, "%d,%d", &x, &y); err != nil {
-				t.Fatalf("MOTTY_RDP_CLICK %q: %v", click, err)
-			}
-			for _, buttons := range []desktop.Buttons{0, desktop.ButtonLeft, 0} {
-				if err := session.SendPointer(x, y, buttons); err != nil {
-					t.Fatal(err)
-				}
-				time.Sleep(150 * time.Millisecond)
-			}
-		}
-		pressNamed(t, session, keys)
-		// A first sign-in builds the profile and takes a while to show the desktop.
-		pump(t, session, view, 120*time.Second, func() bool { return view.colors(400) >= 400 })
-		pump(t, session, view, 8*time.Second, func() bool { return false })
-		save("answered")
-		t.Logf("after the keys %q: %d pixels changed, %d+ colours", keys, changed(before, view.snapshot()), view.colors(1000))
-	}
+	liveAnswerFirstPrompt(t, session, view, config, save)
 
 	// The pointer and a key must have a visible effect: the Windows key opens the
 	// Start menu of a desktop, and moving over the taskbar highlights it.
@@ -289,6 +269,41 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	if err := session.Err(); err != nil {
 		t.Errorf("a close we asked for reports %v", err)
 	}
+}
+
+// liveAnswerFirstPrompt answers a question the server asks before the desktop
+// (typically "the user is already signed in elsewhere; sign them out?") with
+// MOTTY_RDP_CLICK or MOTTY_RDP_PRESS, then waits for the desktop behind it. It
+// reports whether there was anything to answer; without either variable a
+// server that shows no such question continues unchanged.
+func liveAnswerFirstPrompt(t *testing.T, session *Session, view *screen, config liveConfig, save func(string)) bool {
+	t.Helper()
+	keys, click := os.Getenv("MOTTY_RDP_PRESS"), os.Getenv("MOTTY_RDP_CLICK")
+	if keys == "" && click == "" {
+		return false
+	}
+	before := view.snapshot()
+	if click != "" {
+		var x, y int
+		if _, err := fmt.Sscanf(click, "%d,%d", &x, &y); err != nil {
+			t.Fatalf("MOTTY_RDP_CLICK %q: %v", click, err)
+		}
+		for _, buttons := range []desktop.Buttons{0, desktop.ButtonLeft, 0} {
+			if err := session.SendPointer(x, y, buttons); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+	}
+	pressNamed(t, session, keys)
+	// A first sign-in builds the profile and takes a while to show the desktop.
+	pump(t, session, view, 120*time.Second, func() bool { return view.colors(400) >= 400 })
+	pump(t, session, view, 8*time.Second, func() bool { return false })
+	if save != nil {
+		save("answered")
+	}
+	t.Logf("after the keys %q: %d pixels changed, %d+ colours", keys, changed(before, view.snapshot()), view.colors(1000))
+	return true
 }
 
 func TestLiveRefusedCertificateStopsAtOnce(t *testing.T) {

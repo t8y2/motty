@@ -13,6 +13,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"motty/internal/shellkind"
 )
 
 // Telnet commands (RFC 854) and options.
@@ -251,6 +253,12 @@ func (session *Session) Err() error {
 
 // Close ends the session.
 func (session *Session) Close() { session.finish(nil) }
+
+// Kind reports that this is a raw terminal, not a known shell. A Telnet host may
+// serve a network device CLI or a login shell; without probing the far end (which
+// would type a command the user did not ask for) the only safe assumption is to
+// send a command exactly as typed and wait for the prompt to return.
+func (session *Session) Kind() shellkind.Kind { return shellkind.Console }
 
 type parseState uint8
 

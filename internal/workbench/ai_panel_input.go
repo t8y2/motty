@@ -330,6 +330,9 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 			}
 			f.Spacer()
 			state.declareAIAttachButton(f)
+			if ai.mode == agent.ModeAgent {
+				state.declareAIUploadButton(f)
+			}
 			f.Stack().Size(aiSendSize, aiSendSize).Shrink(0).Children(func() {
 				// The focus ring is two pixels outside the button.
 				if !disabled && canvas.FocusVisible() == hitAISend {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -65,7 +66,7 @@ func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 			if test.flags&2 != 0 {
 				eventType = ":1"
 			}
-			if defaultShortcutModifier() != ui.ModifierMeta {
+			if keymap.Primary != ui.ModifierMeta {
 				want = [3]string{}
 				if test.flags != 0 {
 					want = [3]string{

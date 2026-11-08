@@ -38,6 +38,31 @@ func changedSavedFields(previous, current savedState) []savedFieldChange {
 	return changes
 }
 
+// windowOwnFields are the saved fields a window writes about its own work and
+// place rather than about configuration: where it sits on screen, and when it
+// last dialed a host. The store merges the dials of every window rather than
+// replacing them, so another window has nothing to read back from one.
+var windowOwnFields = map[string]bool{
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"recent_connections": true,
+}
+
+// changesConfiguration reports whether a save changed configuration that every
+// window of the process shows, rather than only this window's own work: the tabs
+// it has open, the deck they fill, and the records of its own place and dials.
+// The other windows read the first kind back from the store, so only it is worth
+// telling them about; opening, closing or moving a tab happens too often to wake
+// them.
+func changesConfiguration(changes []savedFieldChange) bool {
+	for _, change := range changes {
+		if isWorkspaceField(change.name) || windowOwnFields[change.name] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // writeChangedFields stores several changed top-level fields in one commit.
 // Every record and device value that did not change is reused from base; only
 // the changed lists, settings and device keys are encoded. The host group list
@@ -61,7 +86,13 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			return false, true, err
 		}
 	}
-	releaseChanged, developmentChanged := false, false
+	windowLocal := map[string]json.RawMessage{}
+	if base.windowName != "" && len(base.window) > 0 {
+		if err := json.Unmarshal(base.window, &windowLocal); err != nil {
+			return false, true, err
+		}
+	}
+	releaseChanged, developmentChanged, windowChanged := false, false, false
 	nextOrd := base.maxOrd
 	for _, change := range changes {
 		if change.name == "host_groups" {
@@ -104,6 +135,22 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			if err != nil {
 				return false, true, err
 			}
+			// Notes and folders linked to files are this device's own, not shared
+			// records.
+			var linked any
+			switch items := change.value.(type) {
+			case []savedNote:
+				linked = linkedSavedNotes(items)
+			case []savedNoteFolder:
+				linked = linkedSavedFolders(items)
+			}
+			if linked != nil {
+				changed, err := setLocalField(releaseLocal, linkedLocalKey(entity.kind), linked)
+				if err != nil {
+					return false, true, err
+				}
+				releaseChanged = releaseChanged || changed
+			}
 		case syncedSettings[change.name]:
 			entries = withoutSetting(entries, change.name)
 			entries, err = appendSettingEntry(entries, base, defaults, change.name, change.value)
@@ -112,6 +159,12 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			}
 		case stateVersionFields[change.name]:
 			return false, false, nil
+		case windowStateFields[change.name] && base.windowName != "":
+			changed, err := setLocalField(windowLocal, change.name, change.value)
+			if err != nil {
+				return false, true, err
+			}
+			windowChanged = windowChanged || changed
 		default:
 			target := releaseLocal
 			developmentField := buildinfo.Development && isWorkspaceField(change.name)
@@ -129,9 +182,15 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			}
 		}
 	}
-	local := localWrite{state: base.local}
+	local := localWrite{state: base.local, windowName: base.windowName, window: base.window}
 	if releaseChanged {
 		local.state, err = json.Marshal(releaseLocal)
+		if err != nil {
+			return false, true, err
+		}
+	}
+	if windowChanged {
+		local.window, err = json.Marshal(windowLocal)
 		if err != nil {
 			return false, true, err
 		}
@@ -194,6 +253,9 @@ func appendEntityEntries(entries []configstore.Entry, base *configBase, defaults
 		if err := json.Unmarshal(item, &fields); err != nil {
 			return nil, nextOrd, err
 		}
+		if linkedLocalKey(entity.kind) != "" && isLinkedNote(fields) {
+			continue // kept in this device's own state, see linkedNotesKey
+		}
 		id := boundKey(entity.key(fields))
 		if id == "" {
 			continue // nothing names it, so nothing can be synced about it
@@ -235,7 +297,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Protocol == right.Protocol && left.Line == right.Line && left.Flow == right.Flow &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
-		left.Authentication == right.Authentication && left.Identity == right.Identity &&
+		left.Authentication == right.Authentication && left.Identity == right.Identity && left.Credential == right.Credential &&
 		left.ForwardX11 == right.ForwardX11 && left.AgentForward == right.AgentForward &&
 		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
@@ -271,13 +333,59 @@ func uniqueHostIDs(hosts []savedHost) bool {
 // appendHostEntries appends the host records, reusing the record of every host
 // that did not change since the last save. It applies the same id, ordinal,
 // default and skip rules as the generic appendEntityEntries path.
+//
+// hosts is the catalog order the caller means to keep. A slice whose order does
+// not match the ordinals the base holds is taken as a deliberate move and
+// renumbered; a slice in a different order would otherwise rewrite positions the
+// user never changed.
 func appendHostEntries(entries []configstore.Entry, base *configBase, defaults configDefaults, hosts []savedHost, nextOrd int64) ([]configstore.Entry, int64, error) {
 	if base.hostRecords == nil {
 		base.hostRecords = make(map[string]hostRecord, len(hosts))
 	}
+
+	// Existing host ordinals define the catalog order. When the slice still runs
+	// in that order nothing moved, so every ordinal is left as the base holds it
+	// and the cached records are reused as they are. When it does not, the same
+	// set of ordinals is reassigned to the hosts in slice order so the move
+	// persists without renumbering unrelated records. New hosts still receive
+	// fresh ordinals below.
+	// A tie means two records share a position, which is repaired the same way.
+	held := make([]int64, 0, len(hosts))
+	moved := false
+	for _, host := range hosts {
+		ord, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]
+		if !known {
+			continue
+		}
+		if len(held) > 0 && ord <= held[len(held)-1] {
+			moved = true
+		}
+		held = append(held, ord)
+	}
+	desired := map[string]int64{}
+	if moved && len(held) > 0 {
+		sort.Slice(held, func(left, right int) bool { return held[left] < held[right] })
+		for index := 1; index < len(held); index++ {
+			if held[index] <= held[index-1] {
+				held[index] = held[index-1] + 1
+			}
+		}
+		nextOrd = max(nextOrd, held[len(held)-1])
+		at := 0
+		for _, host := range hosts {
+			if _, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]; known {
+				desired[host.ID] = held[at]
+				at++
+			}
+		}
+	}
+
 	for _, host := range hosts {
 		key := configstore.Key{Kind: kindHost, ID: host.ID}
 		ord, known := base.ords[key]
+		if want, reassigned := desired[host.ID]; reassigned {
+			ord = want
+		}
 		if record, cached := base.hostRecords[host.ID]; cached && known && record.ord == ord && sameSavedHost(record.host, host) {
 			entries = append(entries, configstore.Entry{Kind: kindHost, ID: host.ID, Payload: record.payload})
 			continue

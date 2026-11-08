@@ -55,7 +55,7 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 	}
 	click(hitWorkspaceDraftRemoveItem.At(1))
 	click(workspaceDraftHostID(2))
-	click(hitWorkspaceDraftColumns3)
+	click(hitWorkspaceDraftPresets.At(2))
 	for i := 0; i < 80 && view.Snapshot().Focused != hitWorkspaceDraftCards.At(1); i++ {
 		if err := view.Driver().Key(ui.KeyTab, 0); err != nil {
 			t.Fatal(err)
@@ -70,7 +70,7 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 	click(hitWorkspaceDraftSubmit)
 	want := []string{state.hosts[1].CatalogID, state.hosts[0].CatalogID, state.hosts[2].CatalogID}
 	if state.modal != modalNone || len(state.templates) != 1 || state.templates[0].ID != template.ID ||
-		state.templates[0].Name != "Critical" || state.templates[0].Columns != 3 ||
+		state.templates[0].Name != "Critical" || !isGrid(state.templates[0].Layout, 3) ||
 		!slices.Equal(state.templates[0].HostIDs, want) || len(world.configs) != 0 {
 		t.Fatalf("edited templates=%+v modal=%d dials=%d", state.templates, state.modal, len(world.configs))
 	}

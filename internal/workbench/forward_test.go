@@ -555,6 +555,217 @@ func TestForwardWaitsForSSHStartsAndStopsWithSession(t *testing.T) {
 	}
 }
 
+// startedForwardOverReconnectingSession is a forward that resumes after a
+// reconnect, running over an established tab whose automatic reconnect setting
+// is policy.
+func startedForwardOverReconnectingSession(t *testing.T, policy reconnectPolicy) (*State, *world, *fakeConn, *time.Duration, *forwardRecord) {
+	t.Helper()
+	state, world, connection, clock := reconnectingSession(t, policy)
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	forward := &state.forwards[0]
+	state.Click(hitForwardEdit)
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	if state.modal != modalNone || !forward.Resume {
+		t.Fatalf("forward after choosing resume: modal=%d forward=%+v", state.modal, *forward)
+	}
+	state.Click(hitForwardStartStop)
+	if forward.runner == nil || forward.sessionID != state.sessions[0].ID {
+		t.Fatalf("started forward = %+v", *forward)
+	}
+	return state, world, connection, clock, forward
+}
+
+func TestForwardResumesAfterAutomaticReconnect(t *testing.T) {
+	state, world, connection, clock, forward := startedForwardOverReconnectingSession(t, reconnectThree)
+	sessionID := forward.sessionID
+
+	disconnectEstablished(connection, state)
+	if forward.runner != nil || !forward.pending || forward.sessionID != sessionID || forward.lastError != "" {
+		t.Fatalf("waiting forward = %+v", *forward)
+	}
+	if forward.cells[4] != state.messages.ForwardWaiting {
+		t.Fatalf("waiting status = %q", forward.cells[4])
+	}
+
+	*clock += time.Second
+	state.Wake()
+	if len(world.conns) != 2 || !forward.pending || forward.sessionID != sessionID {
+		t.Fatalf("automatic dial conns=%d forward=%+v", len(world.conns), *forward)
+	}
+	world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if forward.runner == nil || forward.pending || forward.sessionID != sessionID || forward.lastError != "" {
+		t.Fatalf("resumed forward = %+v", *forward)
+	}
+	// The listener is bound again on the same port.
+	if got := forward.runner.Status().ListenAddress; got != forward.listenAddress() {
+		t.Fatalf("resumed listener = %q, want %q", got, forward.listenAddress())
+	}
+}
+
+func TestForwardStopsOnLostConnectionWhenAutomaticReconnectIsOff(t *testing.T) {
+	state, _, connection, _, forward := startedForwardOverReconnectingSession(t, reconnectOff)
+	disconnectEstablished(connection, state)
+	if forward.runner != nil || forward.pending || forward.sessionID != 0 || forward.lastError != state.messages.ForwardConnectionClosed {
+		t.Fatalf("forward without automatic reconnect = %+v", *forward)
+	}
+}
+
+func TestForwardStopsWhenAutomaticReconnectGivesUp(t *testing.T) {
+	state, world, connection, clock, forward := startedForwardOverReconnectingSession(t, reconnectThree)
+	disconnectEstablished(connection, state)
+	for _, delay := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		if !forward.pending {
+			t.Fatalf("forward stopped before the retries ran out: %+v", *forward)
+		}
+		*clock += delay
+		state.Wake()
+		world.conns[len(world.conns)-1].set(func(status *sshconn.Status) {
+			status.Phase = sshconn.PhaseFailed
+			status.Err = errors.New("temporary network failure")
+		})
+		state.Wake()
+	}
+	if !state.sessions[0].reconnectExhausted {
+		t.Fatal("retries did not run out")
+	}
+	if forward.runner != nil || forward.pending || forward.lastError != state.messages.ForwardConnectionClosed {
+		t.Fatalf("forward after the last retry = %+v", *forward)
+	}
+	if forward.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("status after the last retry = %q", forward.cells[4])
+	}
+}
+
+func TestForwardWithoutResumeStopsDespiteAutomaticReconnect(t *testing.T) {
+	state, world, connection, clock, forward := startedForwardOverReconnectingSession(t, reconnectForever)
+	state.Click(hitForwardEdit)
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	if state.modal != modalNone || forward.Resume {
+		t.Fatalf("edited forward modal=%d forward=%+v", state.modal, *forward)
+	}
+	// Saving stopped it, as any edit does; start it again before the drop.
+	state.Click(hitForwardStartStop)
+	if forward.runner == nil {
+		t.Fatalf("restarted forward = %+v", *forward)
+	}
+
+	disconnectEstablished(connection, state)
+	if !state.sessions[0].reconnectPending {
+		t.Fatal("the tab did not plan a reconnect")
+	}
+	if forward.runner != nil || forward.pending || forward.lastError != state.messages.ForwardConnectionClosed {
+		t.Fatalf("forward without resume = %+v", *forward)
+	}
+	*clock += time.Second
+	state.Wake()
+	world.conns[len(world.conns)-1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if forward.runner != nil || forward.pending {
+		t.Fatalf("forward without resume started after the reconnect: %+v", *forward)
+	}
+}
+
+func TestForwardResumeChoiceIsOffByDefaultAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+	addForwardRule(t, state, "Database", freePort(t), "db.internal", 5432)
+	if state.forwards[0].Resume || state.forwards[1].Resume {
+		t.Fatalf("new forwards = %+v", state.forwards)
+	}
+
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardEdit)
+	if state.forwardEditor.resume {
+		t.Fatal("edit dialog shows resume on for a forward without it")
+	}
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	if !state.forwards[1].Resume {
+		t.Fatalf("edited forward = %+v", state.forwards[1])
+	}
+
+	restarted := newTestState(t, options)
+	resume := map[string]bool{}
+	for _, forward := range restarted.forwards {
+		resume[forward.Label] = forward.Resume
+	}
+	if len(resume) != 2 || resume["Web"] || !resume["Database"] {
+		t.Fatalf("restored resume choices = %v", resume)
+	}
+	restarted.selectedForwardID = restarted.forwards[1].ID
+	restarted.Click(hitForwardEdit)
+	if !restarted.forwardEditor.resume {
+		t.Fatal("edit dialog did not load the saved resume choice")
+	}
+}
+
+func TestForwardSavedBeforeTheResumeChoiceDoesNotResume(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	state.restoreForwards([]savedForward{{
+		ID: 1, Label: "Old", HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
+		LocalPort: freePort(t), DestinationHost: "db.internal", DestinationPort: 5432,
+	}})
+	if len(state.forwards) != 1 || state.forwards[0].Resume {
+		t.Fatalf("restored forwards = %+v", state.forwards)
+	}
+}
+
+func TestWaitingForwardFollowsTheRetryItWaitsFor(t *testing.T) {
+	stopped := func(t *testing.T, state *State, forward *forwardRecord) {
+		t.Helper()
+		if forward.runner != nil || forward.pending || forward.sessionID != 0 || forward.lastError != state.messages.ForwardConnectionClosed {
+			t.Fatalf("forward = %+v", *forward)
+		}
+	}
+
+	t.Run("cancel button", func(t *testing.T) {
+		state, _, connection, _, forward := startedForwardOverReconnectingSession(t, reconnectForever)
+		disconnectEstablished(connection, state)
+		state.Click(hitConnCancelReconnect)
+		if state.sessions[0].reconnectPending {
+			t.Fatal("cancel did not stop the retry")
+		}
+		stopped(t, state, forward)
+	})
+
+	t.Run("setting turned off", func(t *testing.T) {
+		state, _, connection, _, forward := startedForwardOverReconnectingSession(t, reconnectForever)
+		disconnectEstablished(connection, state)
+		state.setReconnectPolicy(reconnectOff)
+		stopped(t, state, forward)
+	})
+
+	t.Run("tab closed", func(t *testing.T) {
+		state, _, connection, _, forward := startedForwardOverReconnectingSession(t, reconnectForever)
+		disconnectEstablished(connection, state)
+		state.closeSession(state.sessions[0].ID)
+		if forward.runner != nil || forward.pending || forward.sessionID != 0 {
+			t.Fatalf("forward of a closed tab = %+v", *forward)
+		}
+	})
+
+	t.Run("manual reconnect keeps it waiting", func(t *testing.T) {
+		state, world, connection, _, forward := startedForwardOverReconnectingSession(t, reconnectForever)
+		sessionID := forward.sessionID
+		disconnectEstablished(connection, state)
+		state.reconnect(&state.sessions[0])
+		state.Wake()
+		if len(world.conns) != 2 || !forward.pending || forward.sessionID != sessionID {
+			t.Fatalf("manual dial conns=%d forward=%+v", len(world.conns), *forward)
+		}
+		world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+		state.Wake()
+		if forward.runner == nil || forward.pending {
+			t.Fatalf("forward after manual reconnect = %+v", *forward)
+		}
+	})
+}
+
 func TestForwardCanStopRestartAndRemove(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
@@ -844,6 +1055,153 @@ func readForwardTestBytes(t testing.TB, reader io.Reader, want []byte) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("bytes = %v, want %v", got, want)
+	}
+}
+
+func TestForwardEditModifiesAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	port1 := freePort(t)
+	port2 := freePort(t)
+	addForwardRule(t, state, "Web", port1, "web.internal", 8080)
+	addForwardRule(t, state, "Database", port2, "db.internal", 5432)
+
+	// Select first forward and edit
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != state.forwards[0].ID {
+		t.Fatalf("edit forward modal=%d editing=%v forwardID=%d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID)
+	}
+	if state.forwardEditor.value(forwardFieldLabel) != "Web" || state.forwardEditor.value(forwardFieldLocalPort) != fmt.Sprint(port1) {
+		t.Fatalf("editor prefill: label=%q port=%q", state.forwardEditor.value(forwardFieldLabel), state.forwardEditor.value(forwardFieldLocalPort))
+	}
+
+	// Keeping own label and port should be valid
+	if err := state.forwardEditor.validate(state); err != "" {
+		t.Fatalf("validating own unchanged forward failed: %q", err)
+	}
+
+	// Renaming to another existing forward's label should fail validation
+	replaceForwardField(state, hitForwardDialogLabel, "Database")
+	if err := state.forwardEditor.validate(state); err != state.messages.ErrForwardNameTaken {
+		t.Fatalf("expected ErrForwardNameTaken, got %q", err)
+	}
+
+	// Modify to unique values
+	newPort := freePort(t)
+	replaceForwardField(state, hitForwardDialogLabel, "Web Service")
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(newPort))
+	replaceForwardField(state, hitForwardDialogDestination, "web2.internal")
+	replaceForwardField(state, hitForwardDialogDestinationPort, "8443")
+
+	state.Click(hitForwardDialogSubmit)
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("submit edit forward: modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+	if len(state.forwards) != 2 {
+		t.Fatalf("forwards count = %d, want 2", len(state.forwards))
+	}
+	edited := state.forwards[0]
+	if edited.Label != "Web Service" || edited.LocalPort != newPort || edited.DestinationHost != "web2.internal" || edited.DestinationPort != 8443 {
+		t.Fatalf("edited forward = %+v", edited)
+	}
+	if !strings.HasPrefix(state.status, state.messages.ForwardUpdated) {
+		t.Fatalf("status = %q, want prefix %q", state.status, state.messages.ForwardUpdated)
+	}
+
+	// Verify persistence
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 2 {
+		t.Fatalf("restored forwards count = %d, want 2: %+v", len(restarted.forwards), restarted.forwards)
+	}
+	var restored forwardRecord
+	for _, f := range restarted.forwards {
+		if f.Label == "Web Service" {
+			restored = f
+			break
+		}
+	}
+	if restored.Label != "Web Service" || restored.LocalPort != newPort || restored.DestinationHost != "web2.internal" || restored.DestinationPort != 8443 {
+		t.Fatalf("restored forward = %+v", restored)
+	}
+}
+
+// A forward keeps the number it was saved with, so a window that reloads the
+// catalog does not re-point a dialog that was opened on it at another forward.
+func TestAForwardKeepsItsSavedNumberAcrossAReload(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	saved := func(id uint32, label string, port uint16) savedForward {
+		return savedForward{
+			ID: id, Label: label, Mode: "local", HostLabel: host.Label, HostAddress: host.Address,
+			HostUser: host.User, HostPort: host.Port, LocalPort: port,
+			DestinationHost: "127.0.0.1", DestinationPort: 80,
+		}
+	}
+	state.restoreForwards([]savedForward{saved(7, "Seven", 9107), saved(3, "Three", 9103)})
+	if got := [2]uint32{state.forwards[0].ID, state.forwards[1].ID}; got != [2]uint32{7, 3} {
+		t.Fatalf("restored numbers = %v, want the saved 7 and 3", got)
+	}
+	if state.nextForwardID != 8 {
+		t.Fatalf("next forward number = %d, want one past the largest saved", state.nextForwardID)
+	}
+
+	// A record older than the number gets the lowest free one, and the numbers
+	// already in use are not handed out again.
+	state.restoreForwards([]savedForward{saved(7, "Seven", 9107), saved(0, "Legacy", 9108)})
+	if got := [2]uint32{state.forwards[0].ID, state.forwards[1].ID}; got != [2]uint32{7, 1} {
+		t.Fatalf("numbers after a legacy record = %v, want 7 and the free 1", got)
+	}
+}
+
+// Saving an edit whose forward is gone reports it instead of quietly adding a
+// second copy under a new number.
+func TestEditingAForwardThatIsGoneReportsItInsteadOfAddingACopy(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	port := freePort(t)
+	addForwardRule(t, state, "Web", port, "web.internal", 8080)
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward || !state.forwardEditor.editing {
+		t.Fatalf("edit dialog = %d editing=%v", state.modal, state.forwardEditor.editing)
+	}
+	// The record goes away under the open dialog, as it does when another window
+	// removes it.
+	state.forwards = nil
+	state.Click(hitForwardDialogSubmit)
+	if state.forwardDialogError != state.messages.ErrForwardEditMissing {
+		t.Fatalf("error = %q, want %q", state.forwardDialogError, state.messages.ErrForwardEditMissing)
+	}
+	if len(state.forwards) != 0 {
+		t.Fatalf("forwards = %+v, want no copy appended", state.forwards)
+	}
+	if state.modal != modalNewForward {
+		t.Fatalf("the dialog closed on a failed save: modal = %d", state.modal)
+	}
+}
+
+// Editing a forward whose SSH host was removed asks for a host rather than
+// moving the tunnel to whichever host happens to be first.
+func TestEditingAForwardWhoseHostIsGoneAsksForAHost(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.modal != modalNewForward {
+		t.Fatalf("edit dialog = %d", state.modal)
+	}
+	// The dialog opens on the host the forward travels through, not on some
+	// other one: another host would move the tunnel as soon as the form is saved.
+	if state.forwardEditor.hostID != state.hosts[0].ID {
+		t.Fatalf("the dialog opened on host %d, want the saved one %d", state.forwardEditor.hostID, state.hosts[0].ID)
+	}
+	// With that host gone, saving reports why instead of picking a replacement.
+	state.hosts = nil
+	state.forwardEditor.hostID = 0
+	if err := state.forwardEditor.validate(state); err != state.messages.ErrForwardHostMissing {
+		t.Fatalf("error = %q, want %q", err, state.messages.ErrForwardHostMissing)
 	}
 }
 

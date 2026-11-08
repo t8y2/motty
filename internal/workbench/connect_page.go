@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"path/filepath"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -192,7 +191,7 @@ func (state *State) describe(session *Session) {
 	case session.phase == sshconn.PhasePasswordPrompt:
 		session.details[stageLogin] = m.ConnDetailPasswordAsk
 	case session.phase == sshconn.PhaseKeyPassphrasePrompt:
-		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, filepath.Base(session.identity))
+		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, state.identityLabel(session.identity))
 	case session.phase == sshconn.PhaseConnected && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	case session.stage == stageLogin:
@@ -448,6 +447,9 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 							sized(f.Button(hitConnExport, m.ConnExportLog).Ghost())
 						}
 						sized(f.Button(hitConnClose, m.ConnClose).Outline())
+						if failed && canForgetServerIdentity(session) {
+							sized(f.Button(hitConnForget, m.HostKeyForget).Outline())
+						}
 						if session.reconnectPending {
 							sized(f.Button(hitConnCancelReconnect, m.ConnCancelReconnect))
 						} else if failed && state.canReconnect(session) {
@@ -703,7 +705,7 @@ func (state *State) paintRestoredSessionPage(canvas *ui.Canvas, size ui.Size, se
 	// Under each button the keys that press it, as wide as their keycaps; they hang
 	// below the button without taking room from the page's centring.
 	var closeKeys, connectKeys [6]string
-	closeHint := state.shortcuts.chords[shortcutCloseTab].keys(closeKeys[:0])
+	closeHint := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(closeKeys[:0])
 	connectHint := append(connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
 	closeHintWidth, connectHintWidth := state.keyHintWidth(canvas, closeHint, hintHeight), state.keyHintWidth(canvas, connectHint, hintHeight)
@@ -807,9 +809,12 @@ func (state *State) clickConnection(id ui.ID) {
 		if state.canReconnect(session) {
 			state.reconnect(session)
 		}
+	case hitConnForget:
+		state.forgetServerIdentity(session)
 	case hitConnCancelReconnect:
 		if session.reconnectPending {
 			state.cancelReconnect(session)
+			state.releaseWaitingForwards()
 			state.recordConnectionEvent(session, connectionEventReconnectCanceled, "")
 			session.term.say(sgrMuted, state.messages.ConnReconnectCanceled)
 			session.showLog = true

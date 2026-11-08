@@ -11,6 +11,7 @@ import (
 	"motty/internal/backup"
 	"motty/internal/cloudsync"
 	"motty/internal/configstore"
+	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
 
@@ -159,7 +160,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		received = append(received, secret)
 		stamps = append(stamps, configstore.Stamp(secret.Stamp))
 	}
-	keysChanged := false
+	keysChanged, storedKeysChanged := false, false
 	if opened != nil && len(received) > 0 {
 		applied, err := opened.Merge(received)
 		if err != nil {
@@ -167,6 +168,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		}
 		for _, secret := range applied {
 			keysChanged = keysChanged || strings.HasPrefix(secret.Name, aiKeySecretName(""))
+			storedKeysChanged = storedKeysChanged || sshconn.IsStoredKey(secret.Name)
 		}
 	}
 	if err := state.config.Observe(stamps...); err != nil {
@@ -174,15 +176,22 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	}
 
 	holdable, _ := holdableRecords(remote.Records)
+	notesChanged, err := state.preserveNoteConflicts(holdable)
+	if err != nil {
+		return nil, err
+	}
 	result, err := state.config.Merge(holdable)
 	if err != nil {
 		return nil, err
 	}
-	if len(result.Applied) > 0 {
+	if len(result.Applied) > 0 || notesChanged {
 		if err := state.reloadShared(); err != nil {
 			return nil, err
 		}
 		state.reloadOtherWindows()
+	}
+	if storedKeysChanged {
+		state.reloadStoredIdentities()
 	}
 	if keysChanged && state.ai.store != nil {
 		// A key was changed on another computer: the providers keep it in memory.
@@ -300,6 +309,9 @@ func (state *State) refreshShared() error {
 		return err
 	}
 	base.development = development
+	// This window's own value is nobody else's to rewrite: it is carried over so
+	// the next save patches its own record rather than emptying it.
+	base.windowName, base.window = state.configBase.windowName, state.configBase.window
 	if saved.AIProviders == nil && state.recordedProviders(kindAIProvider) > 0 {
 		saved.AIProviders = &[]savedAIProvider{} // all it had recorded are gone
 	}

@@ -20,7 +20,7 @@ func TestWorkspaceConnectionStateCountsPromptsPendingAndFailuresSettled(t *testi
 			testWorkspaceHost("edge", "edge.example.com"),
 			testWorkspaceHost("worker", "worker.example.com"),
 		},
-		Columns: 2,
+		Layout: layoutcore.GridSpec(2),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "State")
 	if err != nil {
@@ -91,8 +91,8 @@ func TestWorkspaceConnectionStateTreatsShellWaitAsPending(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	plan := WorkspaceLaunchPlan{
-		Hosts:   []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
-		Columns: 2,
+		Hosts:  []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
+		Layout: layoutcore.GridSpec(2),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Shells")
 	if err != nil {

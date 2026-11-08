@@ -38,12 +38,15 @@ type agentServer struct {
 	root     string
 	port     uint16
 
-	mu          sync.Mutex
-	connections int // authenticated connections accepted so far
-	active      int // and how many are open now
-	commands    []string
-	conns       []*ssh.ServerConn
-	group       sync.WaitGroup
+	mu             sync.Mutex
+	connections    int // authenticated connections accepted so far
+	active         int // and how many are open now
+	commands       []string
+	conns          []*ssh.ServerConn
+	group          sync.WaitGroup
+	stallSFTP      chan struct{}
+	commandHandler func(ssh.Channel, string, <-chan struct{})
+	refuseSFTP     bool
 }
 
 func startAgentServer(t *testing.T) *agentServer {
@@ -159,7 +162,7 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 			}()
 		case "subsystem":
 			var payload struct{ Name string }
-			if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Name != "sftp" {
+			if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Name != "sftp" || server.refuseSFTP {
 				request.Reply(false, nil)
 				continue
 			}
@@ -167,6 +170,14 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 			running.Add(1)
 			go func() {
 				defer running.Done()
+				if server.stallSFTP != nil {
+					select {
+					case server.stallSFTP <- struct{}{}:
+					default:
+					}
+					<-closed
+					return
+				}
 				files, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(server.root))
 				if err == nil {
 					_ = files.Serve()
@@ -182,6 +193,10 @@ func (server *agentServer) session(channel ssh.Channel, requests <-chan *ssh.Req
 }
 
 func (server *agentServer) run(channel ssh.Channel, command string, closed <-chan struct{}) {
+	if server.commandHandler != nil && !strings.HasPrefix(command, "printf 'kernel=") {
+		server.commandHandler(channel, command, closed)
+		return
+	}
 	status := uint32(0)
 	switch command {
 	case "echo hello":
@@ -300,6 +315,13 @@ func TestAgentHostsAreOnlyTheOnesOpenedToAgents(t *testing.T) {
 	other.ID, other.CatalogID, other.Label = 2, "host_db", "db"
 	world.catalog.hosts = append(world.catalog.hosts, other)
 	backend := world.backend()
+	hosts, err := backend.Hosts(context.Background())
+	if err != nil || len(hosts) != 1 || hosts[0].ID != "host_web" || hosts[0].Title != "web" {
+		t.Fatalf("authorized hosts = %+v, %v", hosts, err)
+	}
+	if connections, _ := world.server.counts(); connections != 0 {
+		t.Fatalf("listing hosts opened %d SSH connections", connections)
+	}
 
 	sessions, _ := backend.Sessions(context.Background())
 	if len(sessions) != 1 || sessions[0].ID != "host_web" || sessions[0].Title != "web" || !sessions[0].Ready {
@@ -317,6 +339,19 @@ func TestAgentHostsAreOnlyTheOnesOpenedToAgents(t *testing.T) {
 	}
 	if result, err := backend.Exec(context.Background(), tools.TerminalExecArgs{Command: "echo hello"}); err != nil || result.Output != "hello\n" {
 		t.Fatalf("by default: %+v, %v", result, err)
+	}
+}
+
+func TestAgentHostListEmptyWithoutPermission(t *testing.T) {
+	world := newAgentWorld(t)
+	world.catalog.agentHosts = nil
+	backend := world.backend()
+	result := (gate.Gate{Backend: backend}).Run(context.Background(), tools.NameListHosts, []byte(`{}`))
+	if result.IsError || result.Text != "no hosts are open to agents" {
+		t.Fatalf("list_hosts = %+v", result)
+	}
+	if connections, _ := world.server.counts(); connections != 0 {
+		t.Fatalf("listing hosts opened %d SSH connections", connections)
 	}
 }
 
@@ -565,7 +600,7 @@ func saveAgentState(t *testing.T, world *agentWorld, open bool) {
 	if open {
 		saved.AgentHosts = []string{"host_web"}
 	}
-	entries, local, err := splitState(saved, newConfigBase(), nil)
+	entries, local, _, err := splitState(saved, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,8 +621,9 @@ func TestServeAgentMCPOffersReadingUntilTheUserAllowsCommands(t *testing.T) {
 	list := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
 	hosts := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_sessions","arguments":{}}}`
 	run := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"terminal_exec","arguments":{"command":"echo hello"}}}`
+	listHosts := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"list_hosts","arguments":{}}}`
 
-	replies := serveAgent(t, world.options, initialize, list, hosts, run)
+	replies := serveAgent(t, world.options, initialize, list, hosts, run, listHosts)
 	if strings.Contains(replies[2], "terminal_exec") || strings.Contains(replies[2], "terminal_read") || strings.Contains(replies[2], "sftp_write") || !strings.Contains(replies[2], "sftp_list") {
 		t.Errorf("the read-only catalog = %s", replies[2])
 	}
@@ -596,6 +632,9 @@ func TestServeAgentMCPOffersReadingUntilTheUserAllowsCommands(t *testing.T) {
 	}
 	if !strings.Contains(replies[4], "unknown tool") {
 		t.Errorf("a command on a read-only server = %s", replies[4])
+	}
+	if !strings.Contains(replies[5], "host_web") || !strings.Contains(replies[5], "ops@127.0.0.1") {
+		t.Errorf("list_hosts = %s", replies[5])
 	}
 	if got := world.server.ran(); len(got) != 0 {
 		t.Fatalf("the read-only server ran %q", got)
@@ -633,9 +672,13 @@ func TestServeAgentMCPServesNoHostThatWasNotOpened(t *testing.T) {
 	world := newAgentWorld(t)
 	saveAgentState(t, world, false)
 	replies := serveAgent(t, world.options,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_sessions","arguments":{}}}`)
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_sessions","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_hosts","arguments":{}}}`)
 	if strings.Contains(replies[1], "host_web") {
 		t.Fatalf("a host that was not opened to agents is listed: %s", replies[1])
+	}
+	if !strings.Contains(replies[2], "no hosts are open to agents") || strings.Contains(replies[2], "host_web") {
+		t.Fatalf("list_hosts exposed an unauthorized host: %s", replies[2])
 	}
 }
 

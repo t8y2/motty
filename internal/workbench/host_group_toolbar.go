@@ -7,7 +7,7 @@ var (
 )
 
 func (state *State) hostGroupsExpansionActions() (expand, collapse bool) {
-	if state.hostsFlat() {
+	if state.hostFilterOn || state.hostsFlat() {
 		return false, false
 	}
 	for _, group := range state.hostGroups {
@@ -18,7 +18,7 @@ func (state *State) hostGroupsExpansionActions() (expand, collapse bool) {
 }
 
 func (state *State) setHostGroupsExpanded(expanded bool) {
-	if state.hostsFlat() {
+	if state.hostFilterOn || state.hostsFlat() {
 		return
 	}
 	changed := false

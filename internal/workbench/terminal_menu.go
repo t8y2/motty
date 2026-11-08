@@ -193,7 +193,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	// so painting the menu allocates nothing.
 	var keys [shortcutActionCount][5]string
 	caps := func(action shortcutAction) []string {
-		return state.shortcuts.chords[action].keys(keys[action][:0])
+		return state.shortcuts.chords.Chord(action).Keycaps(keys[action][:0])
 	}
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
@@ -329,7 +329,7 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 	case hitTerminalMenuClosePane:
 		// The session the menu was opened on, not whichever pane has the
 		// keyboard: a right click does not move focus.
-		state.closeSession(session.ID)
+		state.requestCloseSession(session.ID)
 	case hitTerminalMenuFiles:
 		state.Click(hitSFTPOpen)
 	case hitTerminalMenuAsk:

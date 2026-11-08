@@ -1,0 +1,44 @@
+# End to end: the same host added on two computers before they have synced becomes one host
+# (issue #567). A host's ID is random, so the two computers give the same host two IDs; when
+# their records meet, the host with the smaller ID stays. This is computer A: it adds
+# "Target X" behind a bastion and sets up the service. cloudsync_samehost_b.txt is computer B,
+# which adds the same host *before* it sets up the service and must end with one. A host
+# shows as two controls, so one host is a count of 2. Start tools/fakes3 fresh for each run.
+#
+#   go build -o /tmp/fakes3 ./tools/fakes3 && /tmp/fakes3 19001 &
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   export MOTTY_LANG=en
+#   MOTTY_DATA_DIR=/tmp/sh-a python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/cloudsync_samehost_a.txt
+#   MOTTY_DATA_DIR=/tmp/sh-b python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/cloudsync_samehost_b.txt
+# lang: en
+click "New Host"
+settle 500
+type Target X
+click textfield:Address
+type bastion.example.com
+click textfield:User
+type ops
+click "Add Host"
+settle 400
+click "Settings"
+click "Backup & sync"
+settle 300
+click "S3"
+settle 300
+type http://127.0.0.1:19001
+key tab
+key tab
+type e2e
+click "Save"
+settle 300
+click "textfield:Access key ID"
+type AKIAE2E
+click "textfield:Secret access key"
+type e2e-secret-key
+click "textfield:Backup password"
+type correct horse battery
+click "Save"
+settle 6500
+click "Hosts"
+settle 300
+expect count "Target X" 2

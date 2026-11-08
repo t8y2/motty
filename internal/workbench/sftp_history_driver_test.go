@@ -250,7 +250,10 @@ func TestSFTPHistorySteadyPaintBudget(t *testing.T) {
 	w.paint(&canvas, ui.Size{Width: 900, Height: 640})
 	// Isolate the added menu: existing pane fmt pools are randomly dropped by
 	// race builds, so the whole-window allocation count has no fixed ceiling.
-	allocs := testing.AllocsPerRun(30, func() { canvas.Reset(); w.paintHeaderMenu(&canvas, 0) })
+	allocs := testing.AllocsPerRun(30, func() {
+		canvas.Reset()
+		w.paintHeaderMenu(&canvas, 0, ui.Point{}, 0, ui.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
+	})
 	if allocs != 0 {
 		t.Fatalf("detached history menu allocations=%v, want zero", allocs)
 	}

@@ -54,7 +54,7 @@ func TestHostGroupRenameUpdatesSubtreeFilterExpansionAndPersistence(t *testing.T
 	for index, host := range state.hosts {
 		old := before[index]
 		old.Group = host.Group
-		if host != old {
+		if !reflect.DeepEqual(host, old) {
 			t.Fatalf("rename changed connection fields: got %+v, want %+v", host, old)
 		}
 	}
@@ -150,6 +150,11 @@ func TestExplicitHostGroupsRemainUsableWithoutHosts(t *testing.T) {
 	if len(state.hostTreeRows) != 2 {
 		t.Fatal("search omitted the empty group and its ancestor")
 	}
+	state.search = text.Editor{}
+	typeSearch(state, "TEAM  EMPTY")
+	if len(state.hostTreeRows) != 2 {
+		t.Fatal("multi-word search omitted the empty group and its ancestor")
+	}
 }
 
 func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
@@ -227,8 +232,52 @@ func TestNestedHostGroupCollapseSearchAndParentFilter(t *testing.T) {
 	state.syncVisible()
 	state.setHostFilter(true, "Team")
 	state.syncVisible()
-	if len(state.hostTreeRows) != 2 || !state.inHostFilter(state.hosts[0]) || state.inHostFilter(state.hosts[2]) {
-		t.Fatalf("parent filter visible=%v, leaked sibling prefix or omitted descendant", state.visible)
+	if len(state.hostTreeRows) != 5 || !state.inHostFilter(state.hosts[0]) || state.inHostFilter(state.hosts[2]) {
+		t.Fatalf("parent filter visible=%v rows=%+v, leaked sibling prefix or omitted descendant", state.visible, state.hostTreeRows)
+	}
+}
+
+func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
+	for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
+		state := nestedHostGroupState(t)
+		state.hostView = mode
+		state.hosts[1].Group = "Team"
+		state.hostDataChanged()
+		state.toggleHostGroup(state.hostGroupIndex("Team"))
+		state.setHostFilter(true, "Team")
+		if state.hostsFlat() {
+			t.Fatalf("view %d flattened a parent group", mode)
+		}
+		checkRows := func(want []hostTreeRow) {
+			t.Helper()
+			if !reflect.DeepEqual(state.hostTreeRows, want) {
+				t.Fatalf("view %d filtered rows = %+v, want %+v", mode, state.hostTreeRows, want)
+			}
+		}
+		prod := state.hostGroupIndex("Team/Prod")
+		eu := state.hostGroupIndex("Team/Prod/EU")
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 1},
+			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 2},
+		})
+		canvas, _ := paintedTexts(state)
+		if _, ok := hitByID(canvas, hitHostGroupOpenList.At(prod)); !ok {
+			t.Fatalf("view %d did not render the filtered child group", mode)
+		}
+		state.toggleHostGroup(prod)
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
+		})
+		state.setHostFilter(true, "Team/Prod")
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 0},
+			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 1},
+		})
+		state.setHostFilter(true, "Team/Prod/EU")
+		checkRows([]hostTreeRow{{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 0}})
 	}
 }
 

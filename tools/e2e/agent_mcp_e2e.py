@@ -64,11 +64,14 @@ server.process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notification
 
 names = {tool["name"] for tool in server.rpc("tools/list")["result"]["tools"]}
 check("tools: commands and reading, no screen, no writing",
-      names == {"list_sessions", "terminal_exec", "terminal_exec_many", "sftp_list", "sftp_read"}, names)
+      names == {"list_sessions", "list_hosts", "terminal_exec", "terminal_exec_many", "sftp_list", "sftp_read",
+                "sftp_stat", "sftp_checksum", "transfer_status"}, names)
 
 error, text = server.call("list_sessions", {})
 check("only the host opened to agents is listed", not error and "agent-host" in text and "closed-host" not in text, text)
 host_id = text.split(":")[0].strip()
+error, text = server.call("list_hosts", {})
+check("saved hosts expose only authorized ids without connecting", not error and text.startswith(host_id + ":") and "agent-host" in text and "closed-host" not in text, text)
 
 error, text = server.call("terminal_exec", {"command": "echo hello-from-agent"})
 check("a command runs on the only host", not error and "hello-from-agent" in text and "[exit status 0]" in text, text)

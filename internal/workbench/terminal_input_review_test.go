@@ -25,8 +25,8 @@ func TestTerminalInputPublicPasteRoutesRequireChoice(t *testing.T) {
 				state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
 				state.Click(hitTerminalMenuPaste)
 			} else {
-				chord := state.shortcuts.chords[shortcutPaste]
-				result := state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+				chord := state.shortcuts.chords.Chord(shortcutPaste)
+				result := state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 				if !result.Handled {
 					t.Fatal("paste shortcut was not handled")
 				}
@@ -143,8 +143,8 @@ func TestTerminalInputPublicPastePreservesTransparentCases(t *testing.T) {
 			}
 			before := shell.typed()
 			state.options.ClipboardText = func() (string, error) { return value, nil }
-			chord := state.shortcuts.chords[shortcutPaste]
-			state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+			chord := state.shortcuts.chords.Chord(shortcutPaste)
+			state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 			if shell.typed() != before+want || state.modal != modalNone {
 				t.Fatalf("public paste %s changed: got=%q want=%q modal=%v", mode, shell.typed(), before+want, state.modal)
 			}
@@ -159,8 +159,8 @@ func TestTerminalInputBracketedPasteRetainsAppendOnlyProtection(t *testing.T) {
 	shell.say("\x1b[?2004h")
 	state.Wake()
 	state.options.ClipboardText = func() (string, error) { return "tail ", nil }
-	chord := state.shortcuts.chords[shortcutPaste]
-	state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+	chord := state.shortcuts.chords.Chord(shortcutPaste)
+	state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 	if shell.typed() != "\x1b[200~tail \x1b[201~" {
 		t.Fatalf("native bracketed paste wrapper changed: %q", shell.typed())
 	}
@@ -187,7 +187,8 @@ func TestTerminalInputUnparsedReceivedBacklogCannotAuthorizeActions(t *testing.T
 				state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "\u3000"})
 			}
 			state.options.Invalidate = func() {}
-			shell.say(strings.Repeat("x", 2*pumpBudget+16) + "\x1b]133;C;motty=" + session.term.folderToken + "\x07Password: ")
+			session.term.pumpBudget = 0
+			shell.say(strings.Repeat("x", 2*pumpSlice+16) + "\x1b]133;C;motty=" + session.term.folderToken + "\x07Password: ")
 			want := ""
 			switch action {
 			case "open-glyph":

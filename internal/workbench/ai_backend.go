@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"motty/internal/ai/gate"
 	"motty/internal/ai/tools"
@@ -31,6 +32,8 @@ type aiBackend struct {
 	defaultID   string
 	defaultDone <-chan struct{}
 	bindings    []aiSessionBinding
+	uploads     map[string]aiUploadFile
+	uploadRun   *aiRun
 
 	mu   sync.Mutex
 	sftp map[uint32]sftpclient.Remote // one per session, opened when first needed
@@ -116,6 +119,60 @@ func (b *aiBackend) Exec(ctx context.Context, args tools.TerminalExecArgs) (gate
 		return gate.ExecResult{}, err
 	}
 	return b.state.aiExecWait(exec, execTimeout(args.TimeoutSeconds), ctx.Done()), nil
+}
+
+func (b *aiBackend) JobStart(ctx context.Context, args tools.TerminalStartArgs) (gate.JobStatus, error) {
+	owner := gate.OutputOwner(ctx)
+	return aiCall(b.state, ctx, func() (gate.JobStatus, error) {
+		session, err := b.session(args.Session)
+		if err != nil {
+			return gate.JobStatus{}, err
+		}
+		return b.state.startJob(owner, tools.TerminalExecArgs{Session: sessionHandle(session.ID), Command: args.Command})
+	})
+}
+
+func (b *aiBackend) JobPoll(ctx context.Context, args tools.TerminalPollArgs) (gate.JobStatus, error) {
+	owner := gate.OutputOwner(ctx)
+	return aiCall(b.state, ctx, func() (gate.JobStatus, error) {
+		job, err := b.state.job(owner, args.JobID)
+		if err != nil {
+			return gate.JobStatus{}, err
+		}
+		return job.status(args.Offset, args.MaxBytes), nil
+	})
+}
+
+// JobStop interrupts the job, then waits briefly for the shell to show its
+// prompt so the result can say whether the terminal is usable again.
+func (b *aiBackend) JobStop(ctx context.Context, args tools.TerminalStopArgs) (gate.JobStatus, error) {
+	owner := gate.OutputOwner(ctx)
+	type stopped struct {
+		status gate.JobStatus
+		wait   <-chan struct{}
+	}
+	first, err := aiCall(b.state, ctx, func() (stopped, error) {
+		status, wait, err := b.state.stopJob(owner, args.JobID)
+		return stopped{status, wait}, err
+	})
+	if err != nil || first.wait == nil {
+		return first.status, err
+	}
+	timer := time.NewTimer(stopPromptWait)
+	defer timer.Stop()
+	select {
+	case <-first.wait:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	return aiCall(b.state, ctx, func() (gate.JobStatus, error) {
+		job, err := b.state.job(owner, args.JobID)
+		if err != nil {
+			return gate.JobStatus{}, err
+		}
+		status := job.stopped(first.status.Interrupted)
+		return status, nil
+	})
 }
 
 // remote returns the session's SFTP client, opening it on first use.

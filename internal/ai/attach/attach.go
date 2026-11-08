@@ -31,8 +31,9 @@ import (
 // Limits. A text file is refused rather than cut: a model told it read a file
 // that was silently truncated gives answers about a file that does not exist.
 const (
-	// MaxTextBytes is the largest text file taken, about 32k tokens.
-	MaxTextBytes = 128 << 10
+	// MaxTextBytes is the default text file limit.
+	MaxTextBytes             = 4 << 20
+	MaxConfigurableTextBytes = 8 << 20
 	// MaxImageBytes is the most one picture sends. The Anthropic API refuses a
 	// picture over 5 MiB once it is base64, which adds a third.
 	MaxImageBytes = 3584 << 10
@@ -43,12 +44,14 @@ const (
 	resizeEdge = 2048
 	// maxReadBytes bounds what is read of a file before it is known to be either.
 	maxReadBytes = 32 << 20
+	MaxReadBytes = maxReadBytes
 )
 
 var (
-	ErrFolder      = errors.New("attach: a folder cannot be attached")
-	ErrEmpty       = errors.New("attach: the file is empty")
-	ErrUnsupported = errors.New("attach: neither a text file nor a picture")
+	ErrFolder       = errors.New("attach: a folder cannot be attached")
+	ErrEmpty        = errors.New("attach: the file is empty")
+	ErrUnsupported  = errors.New("attach: neither a text file nor a picture")
+	ErrReadTooLarge = errors.New("attach: file exceeds the read limit")
 	// ErrTooLarge is a picture that cannot be brought under the limit, or a file
 	// too big to read at all. ErrTextTooLarge is a text file over MaxTextBytes.
 	ErrTooLarge     = errors.New("attach: the file is too large")
@@ -74,6 +77,13 @@ type File struct {
 
 // Load reads path and classifies it by what its bytes are, never by its name.
 func Load(path string) (File, error) {
+	return LoadWithLimit(path, MaxTextBytes)
+}
+
+func LoadWithLimit(path string, maxTextBytes int) (File, error) {
+	if maxTextBytes < 1 || maxTextBytes > MaxConfigurableTextBytes {
+		return File{}, errors.New("attach: invalid text limit")
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return File{}, err
@@ -85,7 +95,7 @@ func Load(path string) (File, error) {
 		return File{}, ErrUnsupported
 	}
 	if info.Size() > maxReadBytes {
-		return File{}, ErrTooLarge
+		return File{}, ErrReadTooLarge
 	}
 	handle, err := os.Open(path)
 	if err != nil {
@@ -96,32 +106,39 @@ func Load(path string) (File, error) {
 	if err != nil {
 		return File{}, err
 	}
-	return Decode(filepath.Base(path), data)
+	return DecodeWithLimit(filepath.Base(path), data, maxTextBytes)
 }
 
 // Decode classifies the bytes of a file called name.
 func Decode(name string, data []byte) (File, error) {
-	if len(data) == 0 {
-		return File{}, ErrEmpty
-	}
-	if len(data) > maxReadBytes {
-		return File{}, ErrTooLarge
+	return DecodeWithLimit(name, data, MaxTextBytes)
+}
+
+func DecodeWithLimit(name string, data []byte, maxTextBytes int) (File, error) {
+	if maxTextBytes < 1 || maxTextBytes > MaxConfigurableTextBytes {
+		return File{}, errors.New("attach: invalid text limit")
 	}
 	file := File{Name: name}
+	if len(data) == 0 {
+		return file, ErrEmpty
+	}
+	if len(data) > maxReadBytes {
+		return file, ErrReadTooLarge
+	}
 	picture, isPicture, err := preparePicture(data)
 	if isPicture {
 		if err != nil {
-			return File{}, err
+			return file, err
 		}
 		file.Kind, file.Image = KindImage, picture
 		return file, nil
 	}
-	text, err := officeText(data)
+	text, err := officeText(data, maxTextBytes)
 	if errors.Is(err, errNotOffice) {
-		text, err = decodeText(data)
+		text, err = decodeTextWithLimit(data, maxTextBytes)
 	}
 	if err != nil {
-		return File{}, err
+		return file, err
 	}
 	file.Text, file.Lines = text, strings.Count(text, "\n")+1
 	if strings.HasSuffix(text, "\n") {
@@ -135,7 +152,11 @@ func Decode(name string, data []byte) (File, error) {
 // tools still write. filecontent turns away anything that does not decode back to
 // the same bytes or holds control characters, so a binary file is not mistaken.
 func decodeText(data []byte) (string, error) {
-	if len(data) > MaxTextBytes {
+	return decodeTextWithLimit(data, MaxTextBytes)
+}
+
+func decodeTextWithLimit(data []byte, maxTextBytes int) (string, error) {
+	if len(data) > maxTextBytes {
 		// Say it is too long only of a file that is text; a big archive is not.
 		if sniffText(data[:min(len(data), 8<<10)]) {
 			return "", ErrTextTooLarge

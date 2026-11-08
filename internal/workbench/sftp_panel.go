@@ -30,6 +30,14 @@ func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring boo
 		return // an empty tab can initialize when a file-capable host is bound
 	}
 	context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, capable && state.sftpPanelAutoOpen, state.sftpPanelSide
+	if !restoring {
+		if state.sftpPanelWidth > 0 {
+			context.Width = state.sftpPanelWidth
+		}
+		if state.monitorWidth > 0 {
+			context.MonitorWidth = state.monitorWidth
+		}
+	}
 	_ = state.deck.SetContext(id, context)
 }
 

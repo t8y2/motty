@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	layoutcore "motty/internal/workspace"
 	"slices"
 	"strings"
 	"testing"
@@ -9,14 +10,14 @@ import (
 
 func TestNewWorkspaceTemplateValidatesAndStabilizesInput(t *testing.T) {
 	hostIDs := []string{" host_a ", "host_b"}
-	template, err := NewWorkspaceTemplate(" Production ", hostIDs, 2)
+	template, err := NewWorkspaceTemplate(" Production ", hostIDs, layoutcore.GridSpec(2))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !validWorkspaceTemplateID(template.ID) {
 		t.Fatalf("template id = %q", template.ID)
 	}
-	if template.Name != "Production" || !slices.Equal(template.HostIDs, []string{"host_a", "host_b"}) || template.Columns != 2 {
+	if template.Name != "Production" || !slices.Equal(template.HostIDs, []string{"host_a", "host_b"}) || !isGrid(template.Layout, 2) {
 		t.Fatalf("template = %+v", template)
 	}
 	if err := template.Validate(); err != nil {
@@ -35,7 +36,7 @@ func TestNewWorkspaceTemplateAcceptsBoundaryCounts(t *testing.T) {
 			for index := range hostIDs {
 				hostIDs[index] = "host_" + strings.Repeat("x", index+1)
 			}
-			template, err := NewWorkspaceTemplate("Boundary", hostIDs, uint8(columns))
+			template, err := NewWorkspaceTemplate("Boundary", hostIDs, columnsSpec(uint8(columns)))
 			if err != nil {
 				t.Fatalf("%d hosts in %d columns: %v", count, columns, err)
 			}
@@ -47,11 +48,11 @@ func TestNewWorkspaceTemplateAcceptsBoundaryCounts(t *testing.T) {
 }
 
 func TestNewWorkspaceTemplateIDsAreStableAndUnique(t *testing.T) {
-	first, err := NewWorkspaceTemplate("Production", []string{"host_a"}, 1)
+	first, err := NewWorkspaceTemplate("Production", []string{"host_a"}, layoutcore.GridSpec(1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewWorkspaceTemplate("Production", []string{"host_a"}, 1)
+	second, err := NewWorkspaceTemplate("Production", []string{"host_a"}, layoutcore.GridSpec(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,20 +78,20 @@ func TestNewWorkspaceTemplateRejectsMalformedInput(t *testing.T) {
 		{"long name", strings.Repeat("a", maxWorkspaceTemplateNameRunes+1), []string{"host_a"}, 1, ErrWorkspaceTemplateName},
 		{"control name", "line\nbreak", []string{"host_a"}, 1, ErrWorkspaceTemplateName},
 		{"no hosts", "Name", nil, 1, ErrWorkspaceTemplateHosts},
-		{"too many hosts", "Name", hostIDs(9), 2, ErrWorkspaceTemplateHosts},
+		{"too many hosts", "Name", hostIDs(13), 2, ErrWorkspaceTemplateHosts},
 		{"empty host", "Name", []string{""}, 1, ErrWorkspaceTemplateHostID},
 		{"control host", "Name", []string{"host\n_a"}, 1, ErrWorkspaceTemplateHostID},
 		{"duplicate host", "Name", []string{"host_a", "host_a"}, 2, ErrWorkspaceTemplateDupID},
-		{"zero columns", "Name", []string{"host_a"}, 0, ErrWorkspaceTemplateCols},
-		{"four columns", "Name", []string{"host_a"}, 4, ErrWorkspaceTemplateCols},
+		{"zero columns", "Name", []string{"host_a"}, 0, ErrWorkspaceTemplateLayout},
+		{"four columns", "Name", []string{"host_a"}, 4, ErrWorkspaceTemplateLayout},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			template, err := NewWorkspaceTemplate(test.title, test.hostIDs, test.columns)
+			template, err := NewWorkspaceTemplate(test.title, test.hostIDs, columnsSpec(test.columns))
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
-			if template.ID != "" || template.Name != "" || len(template.HostIDs) != 0 || template.Columns != 0 {
+			if template.ID != "" || template.Name != "" || len(template.HostIDs) != 0 || template.Layout.Kind != 0 {
 				t.Fatalf("invalid input returned %+v", template)
 			}
 		})
@@ -98,7 +99,7 @@ func TestNewWorkspaceTemplateRejectsMalformedInput(t *testing.T) {
 }
 
 func TestWorkspaceTemplateValidateRejectsMalformedStoredValues(t *testing.T) {
-	valid, err := NewWorkspaceTemplate("Production", []string{"host_a", "host_b"}, 2)
+	valid, err := NewWorkspaceTemplate("Production", []string{"host_a", "host_b"}, layoutcore.GridSpec(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestWorkspaceTemplateValidateRejectsMalformedStoredValues(t *testing.T) {
 			}
 		})
 	}
-	if err := (WorkspaceTemplate{ID: valid.ID, Name: "Name", HostIDs: []string{"host_a", "host_a"}, Columns: 1}).Validate(); !errors.Is(err, ErrWorkspaceTemplateDupID) {
+	if err := (WorkspaceTemplate{ID: valid.ID, Name: "Name", HostIDs: []string{"host_a", "host_a"}, Layout: layoutcore.GridSpec(1)}).Validate(); !errors.Is(err, ErrWorkspaceTemplateDupID) {
 		t.Fatalf("stored duplicate = %v", err)
 	}
 }
@@ -129,7 +130,7 @@ func TestNormalizeWorkspaceTemplateReturnsTheValidatedValue(t *testing.T) {
 		ID:      "ws_0123456789abcdef0123456789abcdef",
 		Name:    " Production ",
 		HostIDs: []string{" host_a ", " host_b "},
-		Columns: 2,
+		Layout:  layoutcore.GridSpec(2),
 	}
 	normalized, err := normalizeWorkspaceTemplate(template)
 	if err != nil {

@@ -55,7 +55,8 @@ const (
 )
 
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
-	"Call list_sessions first to get a session id. Commands and file changes may need the user's approval " +
+	"Call list_sessions first to get a session id. list_hosts lists saved SSH hosts explicitly opened to agents, " +
+	"including hosts without a session; its host ids are not terminal session ids. Commands and file changes may need the user's approval " +
 	"in the Motty window; such a call waits for the answer and is refused if the user declines."
 
 // Config configures a Server.
@@ -94,9 +95,10 @@ type Server struct {
 	base   context.Context
 	cancel context.CancelFunc
 
-	mu     sync.Mutex // guards http and closed: Serve and Shutdown may race
-	http   *http.Server
-	closed bool
+	mu       sync.Mutex // guards http and closed: Serve and Shutdown may race
+	http     *http.Server
+	closed   bool
+	sessions map[string]time.Time
 }
 
 // New validates cfg and builds a Server.
@@ -121,6 +123,7 @@ func New(cfg Config) (*Server, error) {
 		timeout:   cfg.CallTimeout,
 		dispatch:  cfg.Dispatch,
 		allowed:   make(map[string]bool),
+		sessions:  make(map[string]time.Time),
 	}
 	s.guidance = cfg.Instructions
 	if s.guidance == "" {
@@ -271,7 +274,49 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	out := s.handleBody(r.Context(), body)
+	ctx := r.Context()
+	if id := r.Header.Get("Mcp-Session-Id"); id != "" {
+		s.mu.Lock()
+		expires, ok := s.sessions[id]
+		if ok && time.Now().Before(expires) {
+			s.sessions[id] = time.Now().Add(30 * time.Minute)
+		} else {
+			ok = false
+			delete(s.sessions, id)
+		}
+		s.mu.Unlock()
+		if !ok {
+			http.Error(w, "MCP session not found", http.StatusNotFound)
+			return
+		}
+		ctx = gate.WithOutputOwner(ctx, id)
+	} else {
+		var request rpcRequest
+		if json.Unmarshal(body, &request) == nil && request.JSONRPC == "2.0" && request.Method == "initialize" && len(request.ID) > 0 && validID(request.ID) {
+			var random [24]byte
+			if _, err := rand.Read(random[:]); err != nil {
+				http.Error(w, "cannot create MCP session", http.StatusInternalServerError)
+				return
+			}
+			id := base64.RawURLEncoding.EncodeToString(random[:])
+			s.mu.Lock()
+			for key, expires := range s.sessions {
+				if time.Now().After(expires) {
+					delete(s.sessions, key)
+				}
+			}
+			if len(s.sessions) >= 128 {
+				s.mu.Unlock()
+				http.Error(w, "too many MCP sessions", http.StatusServiceUnavailable)
+				return
+			}
+			s.sessions[id] = time.Now().Add(30 * time.Minute)
+			s.mu.Unlock()
+			w.Header().Set("Mcp-Session-Id", id)
+			ctx = gate.WithOutputOwner(ctx, id)
+		}
+	}
+	out := s.handleBody(ctx, body)
 	if r.Context().Err() != nil {
 		return // the client left; nobody to answer
 	}
@@ -508,8 +553,9 @@ type textContent struct {
 }
 
 type callResult struct {
-	Content []textContent `json:"content"`
-	IsError bool          `json:"isError"`
+	Content           []textContent   `json:"content"`
+	IsError           bool            `json:"isError"`
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 }
 
 func toolResult(text string, isErr bool) json.RawMessage {
@@ -563,7 +609,11 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (json.Raw
 	}()
 	select {
 	case res := <-done:
-		return toolResult(res.Text, res.IsError), nil
+		encoded, err := json.Marshal(callResult{Content: []textContent{{"text", res.Text}}, IsError: res.IsError, StructuredContent: res.Structured})
+		if err != nil {
+			return toolResult("cannot encode tool result: "+err.Error(), true), nil
+		}
+		return encoded, nil
 	case <-ctx.Done():
 		// The goroutine ends when the backend honours ctx; it never blocks on done.
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

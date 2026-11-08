@@ -6,6 +6,8 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
 	"github.com/vivaui/viva/ui"
+
+	"motty/internal/i18n"
 )
 
 // Settings are laid out as titled groups: one card per group, its rows
@@ -16,6 +18,9 @@ const (
 	settingsRowHeight = float32(64)
 	settingsGroupGap  = float32(24)
 	settingsDescLines = 2
+	// settingsValueMax caps how wide the value a row names is drawn before it is
+	// cut: a long font family must not push the row's own name out of the card.
+	settingsValueMax = float32(180)
 )
 
 // settingsControlKind is how a recorded control is painted.
@@ -29,6 +34,7 @@ const (
 	controlHit                                         // the slot is a pointer target
 	controlSearch                                      // the search box
 	controlModelInput                                  // the assistant's model-name field
+	controlWordSeparators                              // the terminal's word-selection separators
 	controlSwatches                                    // a strip of round color dots
 	controlLabel                                       // the words of a row, which label the control beside them
 	controlMCPSelect                                   // client configuration select
@@ -36,6 +42,7 @@ const (
 	controlAgentSelect                                 // independent stdio client configuration
 	controlLocalShellSelect                            // detected Windows shells
 	controlEditorSelect                                // installed editors
+	controlStartupHosts                                // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -168,6 +175,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.localShellMenu.bounds = rect
 		case controlEditorSelect:
 			state.editorMenu.bounds = rect
+		case controlStartupHosts:
+			state.startupPicker.bounds = rect
 		case controlSwitch:
 			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
 		case controlButtons:
@@ -186,6 +195,8 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
+		case controlWordSeparators:
+			state.paintWordSeparatorsInput(canvas, rect)
 		case controlSwatches:
 			// The dots are the drawing: a strip of circles a pitch apart.
 			for slot, color := range state.settings.colors[control.first : control.first+control.count] {
@@ -252,8 +263,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	messages := state.messages
 	language := state.settingsLanguageOptions()
 	selectedLanguage := hitSettingsLanguageEnglish
-	if state.language.String() == "zh-CN" {
+	switch state.language {
+	case i18n.Chinese:
 		selectedLanguage = hitSettingsLanguageChinese
+	case i18n.TraditionalChinese:
+		selectedLanguage = hitSettingsLanguageTraditional
 	}
 	appearance := state.settingsAppearanceOptions()
 	selectedAppearance := hitSettingsAppearanceSystem
@@ -288,13 +302,18 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				selectedTabs = hitSettingsTabsVertical
 			}
 			page.row(messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], selectedTabs)
+			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
+			if state.tabNumbers {
+				numberKeys := state.tabNumberOptions()
+				page.row(messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, numberKeys[:], state.tabNumberModifierID())
+			}
 			page.toggleRow(messages.SettingsOutputAlerts, messages.SettingsOutputAlertsDescription, state.backgroundOutputAlerts, hitSettingsOutputAlerts)
 			if state.tabOrientation == tabsVertical {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
 				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
 			if state.interfaceFontRowVisible() {
-				page.actionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), !state.uiFont.supported,
+				page.valueActionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), state.interfaceFontInEffect(), !state.uiFont.supported,
 					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			}
 			if state.options.StartAtLogin != nil {
@@ -307,6 +326,14 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 					selected = hitSettingsCloseQuit
 				}
 				page.row(messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, options[:], selected)
+			}
+			if state.options.NewWindow != nil {
+				options := state.settingsRelaunchOptions()
+				selected := hitSettingsRelaunchRaise
+				if state.relaunchAction == relaunchNewWindow {
+					selected = hitSettingsRelaunchNewWindow
+				}
+				page.row(messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, options[:], selected)
 			}
 			state.paintToolbarSettingsRows(page)
 		})
@@ -329,6 +356,14 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	case padRoomy:
 		selectedPadding = hitSettingsPadRoomy
 	}
+	lineHeight := state.settingsLineHeightOptions()
+	selectedLineHeight := hitSettingsLineHeightNormal
+	switch state.terminalLineHeight {
+	case lineHeightCompact:
+		selectedLineHeight = hitSettingsLineHeightCompact
+	case lineHeightRoomy:
+		selectedLineHeight = hitSettingsLineHeightRoomy
+	}
 	gutter := state.settingsGutterOptions()
 	selectedGutter := [...]ui.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
 	intense := state.settingsIntenseOptions()
@@ -349,6 +384,15 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	case terminalClipboardAsk:
 		selectedClipboard = hitSettingsClipboardAsk
 	}
+	selectedCursorStyle := hitSettingsCursorBlock
+	switch state.terminalCursorStyle {
+	case cursorBar:
+		selectedCursorStyle = hitSettingsCursorBar
+	case cursorUnderline:
+		selectedCursorStyle = hitSettingsCursorUnderline
+	}
+	thickness := state.settingsCursorThicknessOptions()
+	selectedThickness := [...]ui.ID{hitSettingsCursorNormal, hitSettingsCursorThin, hitSettingsCursorThick}[state.terminalCursorThickness]
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
@@ -366,17 +410,22 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsFontSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsFontSizeReset, Label: state.fontSizeLabel(), Variant: components.ButtonGhost},
 				components.ButtonAction{ID: hitSettingsFontSizeUp, Label: "+", Variant: components.ButtonOutline})
+			page.row(state.messages.Tools.LineHeightRow, "", lineHeight[:], selectedLineHeight)
 			page.actionRow(messages.SettingsTerminalFontFamily, state.fontDescription(), false,
 				components.ButtonAction{ID: hitSettingsFontPick, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			page.actionRow(state.messages.Tools.FontFallbackRow, state.fallbackDescription(), false, state.fallbackActions()...)
 			page.row(state.messages.Tools.PaddingRow, "", padding[:], selectedPadding)
 			page.row(state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], selectedGutter)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
+			page.row(state.messages.Tools.CursorShapeRow, state.messages.Tools.CursorShapeDescription, state.settingsCursorStyleOptions(), selectedCursorStyle)
+			page.row(state.messages.Tools.CursorThicknessRow, "", thickness[:], selectedThickness)
 			page.row(state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], selectedIntense)
 			page.row(messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], selectedScrollback)
 			page.row(messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], selectedClipboard)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
+			page.wordSeparatorsRow()
 			page.toggleRow(state.messages.Tools.RightClickPasteRow, state.messages.Tools.RightClickPasteDescription, state.terminalRightClickPaste, hitSettingsRightClickPaste)
+			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)
 			page.toggleRow(state.messages.Tools.BellRow, state.messages.Tools.BellDescription, !state.terminalBellOff, hitSettingsBellToggle)
 			tabTitles := []components.SegmentOption{
@@ -394,6 +443,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.row(state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, tabTitles, selectedTabTitle)
 			page.toggleRow(state.messages.Tools.LatencyRow, state.messages.Tools.LatencyDescription, state.terminalShowLatency, hitSettingsLatencyToggle)
 			page.toggleRow(state.messages.Tools.PasteImageRow, state.messages.Tools.PasteImageDescription, !state.pasteImageOff, hitSettingsPasteImageToggle)
+			page.toggleRow(state.messages.Tools.CloseConfirmRow, state.messages.Tools.CloseConfirmDescription, !state.closeConfirmOff, hitSettingsCloseConfirmToggle)
+			page.toggleRow(state.messages.Tools.PasswordHintRow, state.messages.Tools.PasswordHintDescription, !state.passwordHintOff, hitSettingsPasswordHintToggle)
 			page.toggleRow(state.messages.Tools.NotifyRow, state.messages.Tools.NotifyDescription, !state.notifyOff, hitSettingsNotifyToggle)
 			state.paintLocalShellSetting(page)
 		})
@@ -450,6 +501,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			page.row(messages.SettingsConnectionReconnect, messages.SettingsConnectionReconnectDescription, reconnect[:], selectedReconnect)
 			page.toggleRow(messages.SettingsShare, messages.SettingsShareDescription, state.shareConnections != shareConnectionsOff, hitSettingsShareToggle)
 			page.row(messages.SettingsRestore, messages.SettingsRestoreDescription, restore[:], selectedRestore)
+			state.paintStartupSettings(page)
 			state.paintSSHAgentRow(page)
 			page.row(messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, networkProxy[:], selectedNetworkProxy)
 			state.paintOutboundProxyRow(page)
@@ -591,6 +643,36 @@ func (page *settingsPage) actionRow(label, description string, disabled bool, ac
 		controlWidth = page.controlWidth
 	}
 	page.buttons(page.line(label, description, controlWidth), disabled, actions...)
+}
+
+// valueActionRow is actionRow for a setting whose current value the row names
+// beside the buttons, so the value is read without pressing them: the choice of
+// interface font is the one setting whose buttons say nothing about what is in
+// effect now. The value takes room from the buttons' side of the row, so the
+// setting's own name keeps the same room whatever the value is; a value too long
+// for that room ends in an ellipsis.
+func (page *settingsPage) valueActionRow(label, description, value string, disabled bool, actions ...components.ButtonAction) {
+	theme, canvas := page.state.Theme(), page.f.Canvas()
+	gap := theme.Metrics.GapItem
+	buttonsWidth := gap * float32(len(actions)-1)
+	for _, action := range actions {
+		buttonsWidth += components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+	}
+	// The value is set in the buttons' own size, not a step under it: it stands
+	// beside them on the same line, and a size down read as something else
+	// entirely. Its quieter colour is what makes it secondary.
+	valueWidth := min(canvas.TextWidthWeight(value, metrics.FontSizeM, ui.WeightMedium), settingsValueMax)
+	controlWidth := min(buttonsWidth+gap+valueWidth, page.width*0.6)
+	if page.controlWidth > 0 {
+		controlWidth = page.controlWidth
+	}
+	var buttons flex.Box
+	page.lineWith(label, description, controlWidth, func() {
+		page.f.Text(value).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.muted).
+			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
+		buttons = page.f.Slot().Size(buttonsWidth, 34).Shrink(0)
+	})
+	page.buttons(buttons, disabled, actions...)
 }
 
 // labels records that the words in the box are the label of the control, when

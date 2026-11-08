@@ -3,15 +3,18 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
 
-// The Debug entry is a sidebar page like the host list: it shows the showcase
-// button group, and pressing an action of the Viva control is remembered by the
-// page.
-func TestDebugPageShowsTheButtonGroupAndRemembersTheLastAction(t *testing.T) {
+// The Debug entry is a sidebar page like the host list. Its page is the
+// framework's code editor, filled with sample text, so the editor can be tried
+// against the real theme, layout and input.
+func TestDebugPageShowsTheCodeEditor(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
 	state.Click(hitDebug)
@@ -24,26 +27,15 @@ func TestDebugPageShowsTheButtonGroupAndRemembersTheLastAction(t *testing.T) {
 	if !ok || !navigation.Selected {
 		t.Fatalf("Debug navigation item = %+v, ok=%v", navigation, ok)
 	}
-	if !contains(texts, state.messages.DebugComponents) || !contains(texts, state.messages.DebugButtonGroupTitle) {
-		t.Fatalf("the component gallery is not painted: %v", texts)
+	if !contains(texts, state.messages.DebugTitle) {
+		t.Fatalf("the page heading is not painted: %v", texts)
 	}
-	for index, label := range []string{state.messages.DebugAlignLeft, state.messages.DebugAlignCenter, state.messages.DebugAlignRight} {
-		hit, ok := hitByID(canvas, hitDebugActionList.At(index))
-		if !ok || hit.Role != ui.RoleButton || hit.Label != label {
-			t.Fatalf("action %d = %+v, ok=%v; want a button labelled %q", index, hit, ok, label)
-		}
+	editor, hasEditor := hitByID(canvas, hitDebugEditor)
+	if !hasEditor || editor.Role != ui.RoleTextField || !editor.Multiline {
+		t.Fatalf("the code editor = %+v, found=%v", editor, hasEditor)
 	}
-
-	state.Click(hitDebugActionList.At(2))
-	canvas, texts = paintedTexts(state)
-	if state.dev.action != 2 {
-		t.Fatalf("last action = %d, want the third", state.dev.action)
-	}
-	if countText(texts, state.messages.DebugAlignRight) != 2 {
-		t.Fatalf("the chosen action is not named beside %q: %v", state.messages.DebugButtonGroupChoice, texts)
-	}
-	if hit, ok := hitByID(canvas, hitDebugActionList.At(2)); !ok || hit.Label != state.messages.DebugAlignRight {
-		t.Fatalf("the chosen action is no longer painted: %+v, ok=%v", hit, ok)
+	if !strings.Contains(editor.Value, "func main()") {
+		t.Fatalf("the editor does not hold the sample text: %q", editor.Value)
 	}
 
 	// Opening the Debug page is a workspace choice, so it comes back the way the
@@ -54,83 +46,43 @@ func TestDebugPageShowsTheButtonGroupAndRemembersTheLastAction(t *testing.T) {
 	}
 }
 
-// The selector is the Viva Select again: its trigger shows the page's value, its
-// list is a real popup with options, and choosing one is remembered.
-func TestDebugSelectOpensChoosesAndTypesAhead(t *testing.T) {
+// Typing reaches the editor through the text system, and the editing commands
+// change the same text: the page keeps the text and Viva keeps the grid, the
+// caret and the scroll position.
+func TestDebugEditorTakesTypedTextAndCommands(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitDebug)
+	paintedTexts(state)
 
-	canvas, texts := paintedTexts(state)
-	trigger, ok := hitByID(canvas, hitDebugSelect)
-	if !ok || trigger.Role != ui.RoleCombobox || trigger.Label != state.messages.DebugSelectTitle ||
-		trigger.Value != state.messages.DebugEnvironmentDevelopment || trigger.Expanded {
-		t.Fatalf("select trigger = %+v, ok=%v", trigger, ok)
+	input := state.EditorFor(hitDebugEditor)
+	if input == nil {
+		t.Fatal("the page does not offer its editor to the text system")
 	}
-	if !contains(texts, state.messages.DebugSelectTitle) {
-		t.Fatalf("the selector card is not painted: %v", texts)
-	}
-
-	state.Click(hitDebugSelect)
-	canvas, _ = paintedTexts(state)
-	if !state.dev.selectOpen {
-		t.Fatal("pressing the trigger did not open the list")
-	}
-	if trigger, _ := hitByID(canvas, hitDebugSelect); !trigger.Expanded {
-		t.Fatalf("the open trigger is not expanded: %+v", trigger)
-	}
-	for index, label := range state.debugSelectLabels() {
-		hit, ok := hitByID(canvas, hitDebugSelectItemList.At(index))
-		if !ok || hit.Role != ui.RoleOption || hit.Label != label {
-			t.Fatalf("option %d = %+v, ok=%v; want %q", index, hit, ok, label)
-		}
+	if got := input.String(); !strings.Contains(got, "package main") {
+		t.Fatalf("editor text = %q, want the sample program", got)
 	}
 
-	state.Click(hitDebugSelectItemList.At(2))
-	canvas, texts = paintedTexts(state)
-	if state.dev.selectOpen || state.dev.selectOption != 2 {
-		t.Fatalf("after choosing Production: open=%v option=%d", state.dev.selectOpen, state.dev.selectOption)
+	input.MoveTo(0, false)
+	if got := input.Caret(); got != 0 {
+		t.Fatalf("caret = %d, want the start after moving there", got)
 	}
-	if trigger, _ := hitByID(canvas, hitDebugSelect); trigger.Value != state.messages.DebugEnvironmentProduction {
-		t.Fatalf("trigger value = %q", trigger.Value)
-	}
-	if countText(texts, state.messages.DebugEnvironmentProduction) != 2 {
-		t.Fatalf("the chosen value is not named beside %q: %v", state.messages.DebugSelectChoice, texts)
-	}
-
-	// Typing a letter on the closed trigger chooses its option without opening.
-	result := state.Key(ui.KeyEvent{Target: hitDebugSelect, Text: "s"})
-	if !result.Handled || state.dev.selectOpen || state.dev.selectOption != 1 {
-		t.Fatalf("type-ahead result=%+v open=%v option=%d", result, state.dev.selectOpen, state.dev.selectOption)
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitDebugEditor); !ok || hit.Value == "" {
+		t.Fatalf("the editor stopped painting: %+v, ok=%v", hit, ok)
 	}
 }
 
-// The open list is the frame's menu: arrow keys move through its rows, and Tab
-// closes it and leaves. That needs the select painted inside the frame's menu
-// pass, not before it.
-func TestDebugSelectKeyboardTakesTheOpenList(t *testing.T) {
+// The page only answers for its own editor while it is the page on show, so the
+// sidebar entry of another section never receives the gallery's text.
+func TestDebugEditorIsClaimedOnlyOnItsOwnPage(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitDebug)
-	state.Click(hitDebugSelect)
-	paintedTexts(state)
-	if !state.dev.selectOpen {
-		t.Fatal("the list did not open")
+	if state.EditorFor(hitDebugEditor) == nil {
+		t.Fatal("the Debug page does not claim its editor")
 	}
-
-	result := state.Key(ui.KeyEvent{Target: hitDebugSelect, Key: ui.KeyDown})
-	if !result.Handled || result.Focus != hitDebugSelectItemList.At(0) {
-		t.Fatalf("Down result=%+v, want focus on the first option", result)
-	}
-	// The runtime delivers Enter on the focused row as its click.
-	state.Click(result.Focus)
-	if state.dev.selectOpen || state.dev.selectOption != 0 {
-		t.Fatalf("after choosing with the keyboard: open=%v option=%d", state.dev.selectOpen, state.dev.selectOption)
-	}
-
-	state.Click(hitDebugSelect)
-	paintedTexts(state)
-	result = state.Key(ui.KeyEvent{Target: hitDebugSelect, Key: ui.KeyTab})
-	if !result.Handled || !result.ContinueTraversal || state.dev.selectOpen {
-		t.Fatalf("Tab result=%+v, want the list closed and traversal continuing", result)
+	state.activeSection = sectionHosts
+	if state.EditorFor(hitDebugEditor) != nil {
+		t.Fatal("the editor is still claimed after leaving the page")
 	}
 }
 
@@ -139,65 +91,67 @@ func TestDebugPagePaintDoesNotAllocateOnceWarm(t *testing.T) {
 	state.Click(hitDebug)
 	var canvas ui.Canvas
 	size := ui.Size{Width: 1400, Height: 900}
-	for _, open := range []bool{false, true} {
-		state.dev.selectOpen = open
+	state.Paint(&canvas, size)
+	if allocations := testing.AllocsPerRun(50, func() {
+		canvas.Reset()
 		state.Paint(&canvas, size)
-		if allocations := testing.AllocsPerRun(50, func() {
-			canvas.Reset()
-			state.Paint(&canvas, size)
-		}); allocations != 0 {
-			t.Fatalf("Debug page paint with select open=%v allocated %v times", open, allocations)
-		}
+	}); allocations != 0 {
+		t.Fatalf("Debug page paint allocated %v times", allocations)
 	}
 }
 
-// The palette is Viva's ColorSwatch: each color is a radio choice with its own
-// ring, pointer selection is remembered, the disabled choice cannot be chosen,
-// and the arrow keys move through the enabled colors.
-func TestDebugPaletteChoosesAndMovesBetweenColors(t *testing.T) {
+// The page's caret blinks on the framework's clock: lit when it first gets the
+// keyboard and after moving, dark a half period later, and lit again a full
+// period later. A window left alone must stop asking for frames.
+func TestDebugCaretBlinksAndThenRests(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitDebug)
+	paintDebug := func(canvas *ui.Canvas, now time.Duration) bool {
+		canvas.SetClock(func() time.Duration { return now })
+		canvas.SetInteraction(ui.ID{}, ui.ID{}, hitDebugEditor, false)
+		canvas.Reset()
+		canvas.BeginFrame()
+		state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
+		canvas.EndFrame()
+		return caretPainted(canvas, state)
+	}
 
-	canvas, texts := paintedTexts(state)
-	labels := state.debugSwatchLabels()
-	for index, label := range labels {
-		hit, ok := hitByID(canvas, hitDebugSwatchList.At(index))
-		if !ok || hit.Role != ui.RoleRadio || hit.Label != label ||
-			hit.Checked != (index == 0) || hit.Disabled != (index == debugSwatches-1) {
-			t.Fatalf("swatch %d = %+v, ok=%v; want %q", index, hit, ok, label)
+	var canvas ui.Canvas
+	if !paintDebug(&canvas, 0) {
+		t.Fatal("the caret is dark on the first focused frame")
+	}
+	if !paintDebug(&canvas, components.CaretBlinkHalf/2) {
+		t.Fatal("the caret went dark inside the first half period")
+	}
+	if paintDebug(&canvas, components.CaretBlinkHalf+time.Millisecond) {
+		t.Fatal("the caret is still lit a half period after it was drawn")
+	}
+	if !paintDebug(&canvas, 2*components.CaretBlinkHalf+time.Millisecond) {
+		t.Fatal("the caret did not come back a full period after it was drawn")
+	}
+
+	// Left alone past the span the caret stays lit and the canvas comes to rest.
+	if !paintDebug(&canvas, components.CaretBlinkSpan+time.Hour) {
+		t.Fatal("the idle caret is dark")
+	}
+	if _, ok := canvas.NextFrame(); ok {
+		t.Fatal("the idle caret still asks for a frame")
+	}
+}
+
+// caretPainted reports whether one of this frame's rectangles is the caret: a
+// fill in the theme's cursor color, as thick as the editor draws it.
+func caretPainted(canvas *ui.Canvas, state *State) bool {
+	caret, shown := state.dev.code.CaretBounds()
+	if !shown {
+		return false
+	}
+	for _, rect := range canvas.Rectangles() {
+		if rect.Color == state.pal.cursor && rect.Bounds.Width == caret.Width && rect.Bounds.Height > caret.Width {
+			return true
 		}
 	}
-	if !contains(texts, state.messages.DebugColorSwatchTitle) {
-		t.Fatalf("the palette card is not painted: %v", texts)
-	}
-
-	state.Click(hitDebugSwatchList.At(1))
-	canvas, texts = paintedTexts(state)
-	if state.dev.swatch != 1 {
-		t.Fatalf("selected swatch = %d, want green", state.dev.swatch)
-	}
-	if hit, ok := hitByID(canvas, hitDebugSwatchList.At(1)); !ok || !hit.Checked {
-		t.Fatalf("the chosen color is not checked: %+v, ok=%v", hit, ok)
-	}
-	if countText(texts, labels[1]) != 1 {
-		t.Fatalf("the chosen color is not named beside %q: %v", state.messages.DebugColorSwatchChoice, texts)
-	}
-
-	// A disabled swatch is a hit for accessibility but chooses nothing.
-	state.Click(hitDebugSwatchList.At(debugSwatches - 1))
-	if state.dev.swatch != 1 {
-		t.Fatalf("pressing the disabled swatch chose %d, want green", state.dev.swatch)
-	}
-
-	// Right from blue skips the disabled red and wraps to no color.
-	result := state.Key(ui.KeyEvent{Target: hitDebugSwatchList.At(2), Key: ui.KeyRight})
-	if !result.Handled || !result.Repaint || result.Focus != hitDebugSwatchList.At(0) || state.dev.swatch != 0 {
-		t.Fatalf("Right from blue: result=%+v swatch=%d", result, state.dev.swatch)
-	}
-	result = state.Key(ui.KeyEvent{Target: hitDebugSwatchList.At(0), Key: ui.KeyLeft})
-	if !result.Handled || result.Focus != hitDebugSwatchList.At(2) || state.dev.swatch != 2 {
-		t.Fatalf("Left from no color: result=%+v swatch=%d", result, state.dev.swatch)
-	}
+	return false
 }
 
 func countText(texts []string, value string) int {
@@ -208,4 +162,40 @@ func countText(texts []string, value string) int {
 		}
 	}
 	return count
+}
+
+// The inspector names the control the pointer is over, so a person building a
+// page can see in the real window what a headless tree lists. Its chord cycles
+// it off, to the hovered control, to every control, and off again.
+func TestDevInspectorNamesTheHoveredControl(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	cycle := ui.KeyEvent{Modifiers: devInspectorChord.Modifiers, Text: string(rune(devInspectorChord.Char))}
+	if result := state.Shortcut(cycle); !result.Handled {
+		t.Fatalf("the inspector chord was not taken: %+v", result)
+	}
+	var canvas ui.Canvas
+	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	entry, found := hitByID(&canvas, hitDebug)
+	if !found {
+		t.Fatal("the Debug entry is not on the page")
+	}
+	described := entry.Role.String() + "  " + tree.Text(hitDebug)
+	var texts []string
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	if !contains(texts, described) {
+		t.Fatalf("the hovered control is not named: %v", texts)
+	}
+	state.Shortcut(cycle)
+	state.Shortcut(cycle)
+	canvas.Reset()
+	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for _, text := range canvas.Texts() {
+		if strings.Contains(text.Value, described) {
+			t.Fatalf("the inspector is still on: %q", text.Value)
+		}
+	}
 }

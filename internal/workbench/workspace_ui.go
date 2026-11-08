@@ -70,9 +70,16 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	}
 	bounds.Width = max(0, bounds.Width-monitor)
 	bounds.Width = max(0, bounds.Width-state.aiReserve(workspaceID, size))
+	if state.notes.panel && workspaceID == state.deck.ActiveWorkspace() {
+		bounds.Width = max(0, bounds.Width-state.notesPanelWidth(size))
+	}
 	if state.workspaceManaged(workspaceID) {
-		bounds.Y += workspaceHeaderHeight
-		bounds.Height = max(0, bounds.Height-workspaceHeaderHeight)
+		reserve := workspaceHeaderHeight
+		if state.workspaceTabbed(workspaceID) {
+			reserve += workspacePaneTabsHeight
+		}
+		bounds.Y += reserve
+		bounds.Height = max(0, bounds.Height-reserve)
 	}
 	return bounds
 }
@@ -127,6 +134,7 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 	if !headerOpen {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	}
+	state.paintWorkspacePaneTabs(canvas, frame)
 	if len(state.panes) == 0 {
 		state.paintEmptyWorkspace(canvas, frame)
 		state.paintContextPanel(canvas, size, frame)
@@ -156,6 +164,9 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 
 	for index := range state.panes {
 		pane := state.panes[index]
+		if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
+			continue // a tab that is not showing
+		}
 		bounds := pixelBounds(frame, pane.Bounds)
 		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
 		session, ok := state.sessionByIDPointer(pane.SessionID)
@@ -175,7 +186,9 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 		}
 	}
 	state.paintPaneDividers(canvas, frame)
-	state.paintActivePaneGlow(canvas, frame, size)
+	if !state.workspaceTabbed(state.deck.ActiveWorkspace()) {
+		state.paintActivePaneGlow(canvas, frame, size)
+	}
 	state.paintTerminalDrop(canvas)
 	state.paintContextPanel(canvas, size, frame)
 }
@@ -535,6 +548,7 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 		return ui.EventResult{Handled: true}
 	}
 	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidth)
+	state.sftpPanelWidth = context.Width
 	if state.deck.SetContext(workspaceID, context) != nil {
 		return ui.EventResult{Handled: true}
 	}
@@ -748,14 +762,18 @@ func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (ui.Rect, bool) 
 }
 
 // splitWithCurrentHost splits the active pane and opens the same host in the
-// new one: a split is most often a second shell on the machine already at hand.
+// new one, in the directory the shell was last reported in: a split is most
+// often a second shell on the machine already at hand, to run something beside
+// the first in the same place.
 // From an empty pane there is no host to repeat, so the new pane stays empty and
 // offers the host list.
 func (state *State) splitWithCurrentHost(axis layoutcore.Axis) {
 	var host Host
+	var directory string
 	repeat := false
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.activeSection == sectionTerminal && session.host.Address != "" {
 		host, repeat = session.host, true
+		directory = session.splitDirectory()
 	}
 	if !state.splitActivePane(axis) {
 		return
@@ -763,6 +781,7 @@ func (state *State) splitWithCurrentHost(axis layoutcore.Axis) {
 	if repeat {
 		workspaceID := state.deck.ActiveWorkspace()
 		state.pendingWorkspace, state.pendingPane = workspaceID, state.deck.ActivePane(workspaceID)
+		state.pendingDirectory = directory
 		state.newHostSession(host)
 	}
 	state.save()
@@ -868,6 +887,11 @@ func (state *State) paneFractionBounds(workspaceID layoutcore.WorkspaceID, paneI
 	layout, ok := state.deck.Layout(workspaceID)
 	if !ok || layout.Root() == 0 {
 		return FractionBounds{}, 0, false
+	}
+	if state.workspaceTabbed(workspaceID) {
+		// Every tab is sized for the whole area, so showing one needs no resize.
+		_, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
+		return FractionBounds{Width: 1, Height: 1}, (layout.Len() + 1) / 2, found
 	}
 	bounds, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
 	return bounds, (layout.Len() + 1) / 2, found

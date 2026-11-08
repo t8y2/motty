@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
@@ -49,6 +50,7 @@ var (
 	hitAIAutoScopeDismiss = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
 	hitAIModelList        = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
 	hitAIModelBar         = tree.ID(aiPanelHits, "ai-model-scroll-bar")
+	hitAIRunStatus        = tree.ID(aiPanelHits, "ai-run-status")
 )
 
 const (
@@ -126,48 +128,147 @@ type aiTextLayout interface {
 	OffsetAt(ui.Point) (int, bool)
 }
 
-// aiTextSelection is conversation text selected with the pointer. It is
-// ephemeral, belongs to one block of one row, and is never saved. Source byte
-// offsets survive repainting and streamed appends that preserve the prefix.
-type aiTextSelection struct {
-	row      int
-	part     aiTextPart
-	sel      components.MarkdownSelection
-	dragging bool
+// aiTextSurface numbers a block of conversation text in reading order, which is
+// how a selection spans several: the rows from the top, and in a row its blocks
+// in the order of aiTextPart. A row without a block still has its numbers.
+func aiTextSurface(row int, part aiTextPart) int { return row*int(aiTextPartCount) + int(part) }
+
+// aiTextSurfaceRow is the row and block a number stands for.
+func aiTextSurfaceRow(surface int) (row int, part aiTextPart) {
+	return surface / int(aiTextPartCount), aiTextPart(surface % int(aiTextPartCount))
+}
+
+// textSurfaces is how many numbers the conversation's blocks use.
+func (panel *aiPanel) textSurfaces() int { return len(panel.rows) * int(aiTextPartCount) }
+
+// textLength is the length of one block's selectable text, 0 for a block a row
+// does not have.
+func (panel *aiPanel) textLength(surface int) int {
+	row, part := aiTextSurfaceRow(surface)
+	if row < 0 || row >= len(panel.rows) {
+		return 0
+	}
+	if layout := panel.rows[row].textLayout(part); layout != nil {
+		return layout.TextLen()
+	}
+	return 0
 }
 
 // clearAITextSelection drops the selection, a drag in progress included.
 func (panel *aiPanel) clearAITextSelection() {
-	panel.textSelect = aiTextSelection{row: -1}
+	panel.textSelect.Clear()
 }
 
 // selectionFor is the Markdown highlight to paint for one row, empty for every
 // other row and for plain-text blocks, which have their own painter.
 func (panel *aiPanel) selectionFor(index int) components.MarkdownSelection {
-	if panel.textSelect.row != index || panel.textSelect.part != aiTextPrimary {
-		return components.MarkdownSelection{}
-	}
-	return panel.textSelect.sel
+	return panel.textSelect.In(aiTextSurface(index, aiTextPrimary))
 }
 
 // hasAITextSelection reports whether there is text to copy.
 func (panel *aiPanel) hasAITextSelection() bool {
-	row := panel.textSelect.row
-	return row >= 0 && panel.textSelect.sel.Anchor != panel.textSelect.sel.Focus
+	return !panel.textSelect.Empty()
 }
 
-// aiTextSelectionText is the selected source text, when it is still there.
+// aiTextSelectionText is the selected source text, when it is still there. A
+// selection that runs through several messages copies each one's part, a blank
+// line between them.
 func (panel *aiPanel) aiTextSelectionText() (string, bool) {
-	if !panel.hasAITextSelection() || panel.textSelect.row >= len(panel.rows) {
+	if !panel.hasAITextSelection() {
 		return "", false
 	}
-	view := &panel.rows[panel.textSelect.row]
-	layout := view.textLayout(panel.textSelect.part)
-	if layout == nil {
-		return "", false
-	}
-	text := layout.SelectedText(panel.textSelect.sel)
+	text := panel.textSelect.Text(panel.textSurfaces(), "\n\n", func(surface int, part components.MarkdownSelection) string {
+		row, block := aiTextSurfaceRow(surface)
+		if layout := panel.rows[row].textLayout(block); layout != nil {
+			return layout.SelectedText(part)
+		}
+		return ""
+	})
 	return text, text != ""
+}
+
+// aiSelectionEnds is the text of the blocks of one row that hold an end of the
+// selection, taken before the row is rebuilt.
+type aiSelectionEnds [2]struct {
+	held bool
+	text string
+}
+
+// selectionEnds records the blocks of row that hold the selection's ends. A
+// selection indexes source text, so an end survives a rebuild only when the new
+// block still begins with the old one.
+func (panel *aiPanel) selectionEnds(row int) (ends aiSelectionEnds) {
+	if panel.textSelect.Empty() {
+		return ends
+	}
+	for end, point := range [2]components.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
+		if pointRow, part := aiTextSurfaceRow(point.Surface); pointRow == row && row < len(panel.rows) {
+			if layout := panel.rows[row].textLayout(part); layout != nil {
+				ends[end].held = true
+				ends[end].text = layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()})
+			}
+		}
+	}
+	return ends
+}
+
+// keepSelectionEnds clears the selection when a rebuilt row no longer begins
+// with the text an end of the selection pointed into.
+func (panel *aiPanel) keepSelectionEnds(row int, ends aiSelectionEnds) {
+	for end, point := range [2]components.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
+		if !ends[end].held {
+			continue
+		}
+		_, part := aiTextSurfaceRow(point.Surface)
+		layout := panel.rows[row].textLayout(part)
+		if layout == nil || !strings.HasPrefix(layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()}), ends[end].text) {
+			panel.clearAITextSelection()
+			return
+		}
+	}
+}
+
+// textPointAt is where a window point lies in the conversation's text, for a
+// selection that is being dragged: the block under it, or else the nearest
+// painted block, so a drag that leaves a message or crosses the gap between two
+// goes on into the next. Above a block it is the block's start and below it its
+// end.
+func (panel *aiPanel) textPointAt(point ui.Point) (components.TextPoint, bool) {
+	var (
+		best     components.TextPoint
+		found    bool
+		bestDist float32
+	)
+	for row := panel.textFirst; row >= 0 && row <= panel.textLast && row < len(panel.rows); row++ {
+		view := &panel.rows[row]
+		for part := aiTextPart(0); part < aiTextPartCount; part++ {
+			bounds, painted := view.textBounds(part)
+			layout := view.textLayout(part)
+			if !painted || layout == nil {
+				continue
+			}
+			dy := max(bounds.Y-point.Y, point.Y-(bounds.Y+bounds.Height), 0)
+			dx := max(bounds.X-point.X, point.X-(bounds.X+bounds.Width), 0)
+			dist := dy*1_000_000 + dx
+			if found && dist >= bestDist {
+				continue
+			}
+			offset := 0
+			switch {
+			case point.Y < bounds.Y:
+			case point.Y > bounds.Y+bounds.Height:
+				offset = layout.TextLen()
+			default:
+				at, ok := layout.OffsetAt(point)
+				if !ok {
+					continue
+				}
+				offset = at
+			}
+			best, bestDist, found = components.TextPoint{Surface: aiTextSurface(row, part), Offset: offset}, dist, true
+		}
+	}
+	return best, found
 }
 
 // aiScrollbarState is the active list's painted geometry, accessible value and
@@ -197,6 +298,11 @@ type aiPanel struct {
 	history      bool
 	historyDates []string
 	historyTop   float32
+
+	// focusBack asks the next paint to put the keyboard back in the terminal
+	// after the panel closed from inside itself, which a trapped drawer used to
+	// do for the user.
+	focusBack bool
 
 	// Geometry of the last paint, for the wheel and the text input.
 	rect      ui.Rect // the whole panel; empty when it was not painted
@@ -233,7 +339,9 @@ type aiPanel struct {
 	linkBase  int
 
 	// Scratch space reused by every layout so a paint allocates nothing.
-	wrapped []string
+	wrapped     []string
+	statusLines []string
+	usageLines  []string
 
 	// inputLayout is the message box's rows and scroll, and composer where the box
 	// was painted, for the wheel.
@@ -248,8 +356,11 @@ type aiPanel struct {
 	answerOver bool
 
 	// textSelect is the conversation text selected with the pointer, and the drag
-	// that is extending it. It belongs to one block and is never saved.
-	textSelect aiTextSelection
+	// that is extending it. It may run through several messages and is never
+	// saved. textFirst and textLast are the rows the last paint put on screen,
+	// the ones a drag can reach; -1 when none was painted.
+	textSelect          components.TextSelection
+	textFirst, textLast int
 
 	// The active message or history scrollbar's geometry and pointer drag.
 	scrollbar aiScrollbarState
@@ -365,7 +476,11 @@ func (state *State) aiPanelLimits(size ui.Size) (least, most float32) {
 	if !state.terminalPage() {
 		workspaceID = 0
 	}
-	return aiPanelMin, max(state.aiSharedWidth(workspaceID, size)-aiMinTerminal-1, aiPanelMin)
+	shared := state.aiSharedWidth(workspaceID, size) - aiMinTerminal - 1
+	if size.Width < aiDockAt || shared < aiPanelMin {
+		return aiPanelMin, max(size.Width*0.92, aiPanelMin)
+	}
+	return aiPanelMin, max(shared, aiPanelMin)
 }
 
 // aiPanelSync resizes the terminals when the panel's claim on the window
@@ -384,7 +499,16 @@ func (state *State) aiPanelSync() {
 // setAIPanelOpen shows or hides the panel.
 func (state *State) setAIPanelOpen(open bool) {
 	ai := &state.ai
+	if ai.open == open {
+		return
+	}
 	if open {
+		id := state.deck.ActiveWorkspace()
+		if state.monitorShown(id) && !state.monitorAndAICanCoexist(id, state.viewport) {
+			state.closeMonitor()
+		}
+		// A stale hand-back from an earlier close must not fire after a reopen.
+		ai.panel.focusBack = false
 		// The model line reads what the database holds, so open it now rather
 		// than during a paint.
 		_, _ = state.aiStore()
@@ -399,6 +523,24 @@ func (state *State) setAIPanelOpen(open bool) {
 		ai.panel.clearAITextSelection()
 	}
 	state.aiPanelSync()
+}
+
+// reconcileAIPanelWithMonitor keeps the assistant and the monitor from being
+// left as two drawers at once: when both are open and the window cannot dock
+// them side by side, the monitor keeps the space and the assistant closes, its
+// conversation preserved, as showMonitor already decides for the reverse order.
+// The window must never hold two drawers, and never a scope-less assistant
+// drawer under the monitor's trapped one. Resize and a question the assistant
+// raises on its own call this.
+func (state *State) reconcileAIPanelWithMonitor(size ui.Size) {
+	if !state.ai.open {
+		return
+	}
+	workspace := state.deck.ActiveWorkspace()
+	if !state.monitorShown(workspace) || state.monitorAndAICanCoexist(workspace, size) {
+		return
+	}
+	state.setAIPanelOpen(false)
 }
 
 // toggleAIPanel is the window-bar button, the shortcut and the palette entry:
@@ -459,9 +601,14 @@ func (state *State) aiPanelClick(id ui.ID) bool {
 	case id == hitAIToggle:
 		state.toggleAIPanel()
 	case id == hitAIClose || id == hitAIDrawerDismiss:
+		// Closing from inside the panel takes the keyboard with it; hand it back
+		// to the terminal the panel covered.
+		state.ai.panel.focusBack = true
 		state.setAIPanelOpen(false)
 	case id == hitAIAttach:
 		state.aiPickAttachments()
+	case id == hitAIUpload:
+		state.aiPickUploads()
 	case id.Scope() == hitAIAttachRemove:
 		if index, ok := id.In(hitAIAttachRemove); ok {
 			state.aiRemoveAttachment(index)
@@ -785,45 +932,17 @@ func (state *State) aiPanelPointer(event ui.PointerEvent) (ui.EventResult, bool)
 	}
 	primary := event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone
 	if event.Kind == ui.PointerDown && primary {
-		if index, part, ok := aiTextTarget(event.Target); ok && index < len(panel.rows) {
-			if layout := panel.rows[index].textLayout(part); layout != nil {
-				if offset, painted := layout.OffsetAt(ui.Point{X: event.X, Y: event.Y}); painted {
-					panel.textSelect = aiTextSelection{
-						row: index, part: part, sel: components.MarkdownSelection{Anchor: offset, Focus: offset}, dragging: true,
-					}
-					return ui.EventResult{Handled: true, Repaint: true, Focus: event.Target}, true
-				}
+		if _, _, ok := aiTextTarget(event.Target); ok {
+			if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
+				return ui.EventResult{Handled: true, Repaint: result.Changed, Focus: event.Target}, true
 			}
 		}
-	}
-	if panel.textSelect.dragging && event.Kind == ui.PointerMove && !event.Captured {
-		// A hovered move that does not belong to the press must not extend the
-		// selection, matching the terminal's drag.
-		return ui.EventResult{}, false
-	}
-	if panel.textSelect.dragging && event.Kind == ui.PointerExit {
-		// Leaving the window may mean no Up ever arrives; end the drag and keep
-		// what was selected.
-		panel.textSelect.dragging = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
-	}
-	if panel.textSelect.dragging && (event.Kind == ui.PointerMove || event.Kind == ui.PointerUp) {
-		index := panel.textSelect.row
-		if index >= 0 && index < len(panel.rows) {
-			if layout := panel.rows[index].textLayout(panel.textSelect.part); layout != nil {
-				if offset, painted := layout.OffsetAt(ui.Point{X: event.X, Y: event.Y}); painted {
-					changed := offset != panel.textSelect.sel.Focus
-					panel.textSelect.sel.Focus = offset
-					if event.Kind == ui.PointerUp {
-						panel.textSelect.dragging = false
-						if panel.textSelect.sel.Anchor == panel.textSelect.sel.Focus {
-							panel.clearAITextSelection()
-						}
-						return ui.EventResult{Handled: true, Repaint: true}, true
-					}
-					return ui.EventResult{Handled: true, Repaint: changed}, true
-				}
-			}
+	} else if panel.textSelect.Dragging() {
+		// A hovered move does not belong to the press and does not extend the
+		// selection, matching the terminal's drag; leaving the window ends the
+		// drag and keeps what was selected.
+		if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
+			return ui.EventResult{Handled: true, Repaint: result.Changed}, true
 		}
 	}
 	if event.Kind == ui.PointerMove {
@@ -1139,7 +1258,7 @@ func (state *State) aiPanelEnter() {
 // falls through to the terminal's copy.
 func (state *State) aiPanelShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 	if _, _, onText := aiTextTarget(event.Target); onText {
-		if chord, ok := shortcutChordFromEvent(event); ok && state.shortcuts.actionFor(chord) == shortcutCopy {
+		if chord, ok := keymap.FromEvent(event); ok && state.shortcuts.actionFor(chord) == shortcutCopy {
 			if !event.Repeat {
 				state.aiCopyTextSelection()
 			}
@@ -1205,6 +1324,14 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 		state.aiPasteImage()
 		result := app.TextStateOf(&ai.input)
 		result.Redraw = true // the chips changed, not the editor
+		return result
+	}
+	if (event.Kind == app.TextPaste || event.Kind == app.TextInsert) && isLongAIText(event.Text) {
+		// Long text is attached as a file rather than dumped into the message box,
+		// keeping the composer responsive and preventing renderer overflow.
+		state.aiPasteText(event.Text)
+		result := app.TextStateOf(&ai.input)
+		result.Redraw = true
 		return result
 	}
 	_, composing := ai.input.Composition()

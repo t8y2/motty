@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -160,8 +161,9 @@ func catalogIDFor(host Host) string {
 }
 
 // uniqueCatalogID chooses a catalog ID no host in used holds, and records it
-// there. used is the set of IDs already taken; a caller adding a batch of hosts
-// builds it once instead of scanning a growing slice for every host.
+// there. It is for a host that has none yet, as when a file written before IDs
+// existed is read: the ID is then made from where the host connects, so the same
+// file gives the same ID every time. A host created now takes freshCatalogID.
 func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) string {
 	base := strings.TrimSpace(preferred)
 	if base == "" {
@@ -175,6 +177,89 @@ func uniqueCatalogID(preferred string, host Host, used map[string]struct{}) stri
 		}
 		candidate = fmt.Sprintf("%s_%d", base, suffix)
 	}
+}
+
+// freshCatalogID is the ID of a host that is being created: random, and recorded
+// in used. It says nothing about the host, so it cannot collide with the ID that
+// another device gives a different host with the same address, and it stays the
+// host's own however the host is edited. Two devices that each add the same host
+// end up with two IDs; mergeSameHosts brings them back to one.
+func freshCatalogID(used map[string]struct{}) string {
+	for {
+		var random [12]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			panic("workbench: no randomness for a catalog id: " + err.Error())
+		}
+		id := "host_" + hex.EncodeToString(random[:])
+		if _, taken := used[id]; !taken {
+			used[id] = struct{}{}
+			return id
+		}
+	}
+}
+
+// hostMerge says that the host dropped was the same host as kept.
+type hostMerge struct {
+	dropped, kept Host
+}
+
+// mergeKey is what makes two hosts one host for mergeSameHosts: the destination
+// and the name, as in sameHost.
+type mergeKey struct {
+	protocol uint8
+	address  string
+	user     string
+	port     uint16
+	viaSSH   bool
+	label    string
+}
+
+func mergeKeyOf(host Host) mergeKey {
+	key := mergeKey{protocol: uint8(host.Protocol), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
+	if host.Protocol != protocolSerial {
+		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
+	}
+	return key
+}
+
+// mergeSameHosts folds hosts that are the same host (see sameHost) but have
+// different IDs into one, and returns what it did. A host has no ID that two
+// devices agree on before they have synced, so a host added on both appears
+// twice when their records meet. The host with the smallest ID stays, which every
+// device chooses alike, so each ends with the same one without talking to the
+// other. The caller carries secrets and references to the host that stays.
+func mergeSameHosts(hosts []Host) ([]Host, []hostMerge) {
+	first := make(map[mergeKey]int, len(hosts))
+	var merges []hostMerge
+	drop := make([]bool, len(hosts))
+	for index, host := range hosts {
+		key := mergeKeyOf(host)
+		other, seen := first[key]
+		if !seen {
+			first[key] = index
+			continue
+		}
+		if hosts[other].CatalogID == host.CatalogID {
+			continue // one record twice is not two hosts to fold
+		}
+		if host.CatalogID < hosts[other].CatalogID {
+			merges = append(merges, hostMerge{dropped: hosts[other], kept: host})
+			drop[other], first[key] = true, index
+		} else {
+			merges = append(merges, hostMerge{dropped: host, kept: hosts[other]})
+			drop[index] = true
+		}
+	}
+	if len(merges) == 0 {
+		return hosts, nil
+	}
+	kept := hosts[:0:0]
+	for index, host := range hosts {
+		if !drop[index] {
+			kept = append(kept, host)
+		}
+	}
+	return kept, merges
 }
 
 type hostGroup struct {
@@ -244,6 +329,9 @@ func (state *State) refreshHostGroups() {
 		byName[group.Name] = group
 	}
 	sort.Slice(state.hostGroups, func(left, right int) bool {
+		if state.hostOrder != hostOrderManual {
+			return hostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name)
+		}
 		return orderedHostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name, byName)
 	})
 	for index := range state.hostGroups {
@@ -264,10 +352,29 @@ func (state *State) refreshHostGroups() {
 		state.hostFilterOn = false
 	}
 	state.rebuildHostTreeRows()
+	state.refreshHostSelection()
 }
 
 func hostGroupLeaf(path string) string {
 	return path[strings.LastIndex(path, "/")+1:]
+}
+
+// normalizeHostGroupPath is the one form a group path is kept in: its folder
+// names, in order, joined with "/". A path written with spaces around the
+// separators names the same folders, so it reads as one group rather than as a
+// second group beside it — which is what an import that spelled the separator
+// " / " left behind.
+func normalizeHostGroupPath(path string) string {
+	if !strings.Contains(path, "/") {
+		return strings.TrimSpace(path)
+	}
+	segments := make([]string, 0, 4)
+	for _, segment := range strings.Split(path, "/") {
+		if segment = strings.TrimSpace(segment); segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 func hostGroupWithin(path, parent string) bool {
@@ -317,9 +424,19 @@ func (state *State) namedHostGroups() int {
 // is a group to choose.
 func (state *State) hasHostFilter() bool { return state.namedHostGroups() > 0 }
 
-// hostsFlat is whether the list has no group headers: with no named group there
-// is nothing to head, and with one group chosen its name is on the chip.
-func (state *State) hostsFlat() bool { return state.hostFilterOn || state.namedHostGroups() == 0 }
+// hostsFlat is whether the list has no group headers: a selected leaf group's
+// name is already on its chip, but its child groups still need their headers.
+func (state *State) hostsFlat() bool {
+	if !state.hostFilterOn {
+		return state.namedHostGroups() == 0
+	}
+	for _, group := range state.hostGroups {
+		if group.Name != state.hostFilter && hostGroupWithin(group.Name, state.hostFilter) {
+			return false
+		}
+	}
+	return true
+}
 
 // setHostFilter shows every group (on false) or only the named one. What was
 // checked is let go, so no action reaches a host that is out of sight.
@@ -339,9 +456,15 @@ func (state *State) inHostFilter(host Host) bool {
 
 func (state *State) rebuildHostTreeRows() {
 	state.hostTreeRows = state.hostTreeRows[:0]
-	filtering := strings.TrimSpace(state.visibleQuery) != ""
-	needle := strings.ToLower(strings.TrimSpace(state.visibleQuery))
+	words := strings.Fields(strings.ToLower(state.visibleQuery))
+	filtering := len(words) != 0
 	flat := state.hostsFlat()
+	filterDepth := 0
+	if state.hostFilterOn {
+		if index := state.hostGroupIndex(state.hostFilter); index >= 0 {
+			filterDepth = int(state.hostGroups[index].Depth) + 1
+		}
+	}
 	hidden := ""
 	for groupIndex, group := range state.hostGroups {
 		if state.hostFilterOn && !hostGroupWithin(group.Name, state.hostFilter) {
@@ -357,10 +480,10 @@ func (state *State) rebuildHostTreeRows() {
 				matched++
 			}
 		}
-		explicit := group.Explicit && (!filtering || strings.Contains(strings.ToLower(group.Name), needle))
+		explicit := group.Explicit && (!filtering || matchesSearchWords(strings.ToLower(group.Name), words))
 		if !explicit {
 			for _, child := range state.hostGroups {
-				if child.Explicit && hostGroupWithin(child.Name, group.Name) && (!filtering || strings.Contains(strings.ToLower(child.Name), needle)) {
+				if child.Explicit && hostGroupWithin(child.Name, group.Name) && (!filtering || matchesSearchWords(strings.ToLower(child.Name), words)) {
 					explicit = true
 					break
 				}
@@ -369,10 +492,11 @@ func (state *State) rebuildHostTreeRows() {
 		if matched == 0 && !explicit {
 			continue
 		}
-		if !flat {
-			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: group.Depth})
+		selected := state.hostFilterOn && group.Name == state.hostFilter
+		if !flat && !selected {
+			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: uint8(max(0, int(group.Depth)-filterDepth))})
 		}
-		if !flat && !group.Expanded && !filtering {
+		if !flat && !selected && !group.Expanded && !filtering {
 			hidden = group.Name
 			continue
 		}
@@ -380,7 +504,7 @@ func (state *State) rebuildHostTreeRows() {
 			if strings.TrimSpace(state.hosts[hostIndex].Group) != group.Name {
 				continue
 			}
-			depth := group.Depth + 1
+			depth := uint8(max(0, int(group.Depth)+1-filterDepth))
 			if flat {
 				depth = 0
 			}

@@ -177,6 +177,15 @@ func canonicalExistingCase(path string) (string, error) {
 				actual = entry.Name()
 				break
 			}
+			// A link has an identity of its own: on Windows a junction is a
+			// reparse point, and Lstat describes that point rather than the
+			// directory it names. The path continues through the target, which
+			// is what wanted already is, so the link matches when its target
+			// does. Scoop installs every version behind such a junction.
+			if target, statErr := os.Stat(filepath.Join(current, entry.Name())); statErr == nil && os.SameFile(target, wanted) {
+				actual = entry.Name()
+				break
+			}
 		}
 		if actual == "" {
 			return "", fmt.Errorf("cannot determine on-disk case for %s", filepath.Join(current, part))
@@ -305,7 +314,7 @@ func launchLanguage() i18n.Language {
 		tag := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
 		switch {
 		case strings.HasPrefix(tag, "zh"):
-			return i18n.Chinese
+			return i18n.ChineseVariant(tag)
 		case strings.HasPrefix(tag, "en"):
 			return i18n.English
 		}
@@ -314,8 +323,11 @@ func launchLanguage() i18n.Language {
 }
 
 func secondaryLaunchText(language i18n.Language, product string) string {
-	if language == i18n.Chinese {
+	switch language {
+	case i18n.Chinese:
 		return fmt.Sprintf("%s：启动请求已转交给正在运行的副本；本次开发构建未启动。请退出正在运行的副本后重试。", product)
+	case i18n.TraditionalChinese:
+		return fmt.Sprintf("%s：啟動要求已轉交給正在執行的副本；本次開發建置未啟動。請結束正在執行的副本後重試。", product)
 	}
 	return fmt.Sprintf("%s: launch handed to the running copy; this development build did not start. Quit the running copy and try again.", product)
 }
@@ -370,6 +382,10 @@ type windowSet struct {
 	mu      sync.Mutex
 	states  []*workbench.State
 	pending [][]string
+	// quitting says the whole program is ending: every window's record stays,
+	// so the next launch reopens the windows that were up. A window the user
+	// closed while the program kept running drops its own instead.
+	quitting bool
 }
 
 var windows windowSet
@@ -385,7 +401,25 @@ func (set *windowSet) quitWithDocuments(allow func()) {
 			return
 		}
 	}
+	set.mu.Lock()
+	set.quitting = true
+	set.mu.Unlock()
 	allow()
+}
+
+// isQuitting reports whether the program is ending rather than one window.
+func (set *windowSet) isQuitting() bool {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return set.quitting
+}
+
+// count is how many windows are open. Zero means the one that just closed was
+// the last, and the program is on its way out.
+func (set *windowSet) count() int {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return len(set.states)
 }
 
 // launch hands a request to the window opened last, or keeps it for the first.

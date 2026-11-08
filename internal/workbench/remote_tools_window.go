@@ -74,6 +74,9 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
 		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
 			w.ui.shortcuts = w.owner.shortcuts
+			if result, handled := w.ui.remoteDetailShortcut(event); handled {
+				return result
+			}
 			return w.ui.remoteSearchShortcut(event)
 		},
 		OnMinimize: func(minimized bool) {
@@ -94,6 +97,9 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 			return ui.EventResult{Handled: true}
 		},
 		TextInput: func(c app.TextInputContext) *app.TextInput {
+			if w.ui.modal == modalSudoSFTP && c.ID == hitSudoSFTPPassword {
+				return &app.TextInput{Editor: &w.ui.sudoSFTP.password}
+			}
 			if input := w.ui.RemoteToolsInput(c); input != nil {
 				return input
 			}
@@ -125,6 +131,7 @@ func (w *remoteToolsWindow) bind(owner *State, source *Session) {
 	}
 	w.session.Title, w.session.Address, w.session.host = source.Title, source.Address, source.host
 	w.session.conn, w.session.term, w.session.phase = w.connection, source.term, source.phase
+	w.session.sudoCommands, w.session.sudoPassword = source.sudoCommands, source.sudoPassword
 }
 
 // Locate the captured connection, including after its tab moves to another
@@ -164,10 +171,15 @@ func (w *remoteToolsWindow) dispose() {
 		return
 	}
 	w.closed, w.ui.closed = true, true
+	w.ui.sudoSFTP = sudoSFTPDialog{}
+	w.ui.modal = modalNone
 	w.ui.remote.auto.enabled, w.ui.remote.auto.open = false, false
 	w.ui.remote.serial++
+	w.ui.cancelRemoteProcessCommand()
 	w.ui.cancelRemoteProcessEnvironment()
+	w.ui.cancelRemoteContainerEnvironment()
 	w.cancel()
+	w.session.sudoCommands, w.session.sudoPassword = false, ""
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
 }
 
@@ -285,7 +297,9 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 	if w.closed {
 		return
 	}
-	if w.ui.modal == modalForm {
+	if w.ui.modal == modalSudoSFTP {
+		w.ui.clickSudoSFTP(id)
+	} else if w.ui.modal == modalForm {
 		w.ui.clickForm(id)
 	} else if id == hitRemoteClose || id == hitRemoteDismiss {
 		w.close()
@@ -295,8 +309,22 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 }
 
 func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
+	if w.ui.modal == modalSudoSFTP {
+		if event.Key == ui.KeyEscape && !event.Repeat {
+			w.ui.clickSudoSFTP(hitSudoSFTPCancel)
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		if event.Key == ui.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
+			w.ui.submitSudoSFTP()
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
+		return ui.EventResult{}
+	}
 	w.ui.shortcuts = w.owner.shortcuts
 	if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
+		return result
+	}
+	if result, handled := w.ui.remoteContainerDetailsKey(event); handled {
 		return result
 	}
 	if result, handled := w.ui.menuKey(event); handled {
@@ -412,4 +440,8 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	}
 	w.ui.paintRemoteProcessDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	w.ui.paintRemoteContainerDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	if w.ui.modal == modalSudoSFTP {
+		w.ui.paintSudoSFTP(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	}
 }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="175" height="28" viewBox="0 0 175 28" role="img" aria-label="LINUX DO: Community">
+  <title>LINUX DO: Community</title>
+  <rect width="175" height="28" rx="4" fill="#3E4249"/>
+  <rect x="88" width="87" height="28" rx="4" fill="#1F6FEB"/>
+  <rect x="88" width="4" height="28" fill="#1F6FEB"/>
+  <text x="44.0" y="14.0" fill="#FFFFFF" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11.0" font-weight="bold" text-anchor="middle" dominant-baseline="central">LINUX DO</text>
+  <text x="131.5" y="14.0" fill="#FFFFFF" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11.0" font-weight="bold" text-anchor="middle" dominant-baseline="central">Community</text>
+</svg>

@@ -48,6 +48,23 @@ func TestStableName(t *testing.T) {
 	}
 }
 
+func TestDebPackageSelection(t *testing.T) {
+	for _, architecture := range []string{"amd64", "arm64"} {
+		if got := StableNamePackage("linux", architecture, PackageDeb); got != "motty_"+architecture+".deb" {
+			t.Fatalf("DEB %s: %s", architecture, got)
+		}
+		server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/t8y2/motty/releases/tag/v1.2.3","files":[{"name":"motty_`+architecture+`.deb","size":100,"sha256":"`+strings.Repeat("a", 64)+`","signature":"c2ln"}]}`)
+		release, err := latestMirrorPackage(context.Background(), server.Client(), server.URL, "linux", architecture, PackageDeb)
+		server.Close()
+		if err != nil || release.Asset.Name != "motty_1.2.3_"+architecture+".deb" || !strings.HasSuffix(release.Asset.URL, "/releases/v1.2.3/"+release.Asset.Name) {
+			t.Fatalf("DEB %s: %+v, %v", architecture, release.Asset, err)
+		}
+	}
+	if StableNamePackage("darwin", "amd64", PackageDeb) != "" || StableNamePackage("linux", "386", PackageDeb) != "" {
+		t.Fatal("off-platform DEB was offered")
+	}
+}
+
 func TestCurrentMatchesTheManifest(t *testing.T) {
 	data, err := os.ReadFile("../../viva.toml")
 	if os.IsNotExist(err) {
@@ -136,14 +153,37 @@ func TestTheMirrorNamesThePackageOfThePlatformAndWhereToGetIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := server.URL + "/releases/v1.2.3/motty-1.2.3-darwin-arm64.zip"
-	if release.Version != "1.2.3" || release.Notes != "## Fixed" || release.Asset.URL != want || release.Asset.SHA256 != goodHash || release.Asset.Size != 100 {
+	if release.Version != "1.2.3" || release.Notes != "## Fixed" || !release.PlatformPackageChecked ||
+		release.Asset.URL != want || release.Asset.SHA256 != goodHash || release.Asset.Size != 100 {
 		t.Fatalf("release %+v, want asset at %s", release, want)
 	}
 
 	// A platform the release has no package for still gets the page.
 	release, err = LatestMirror(context.Background(), server.Client(), server.URL+"/latest.json", "darwin", "amd64")
-	if err != nil || release.Asset.Has() || release.URL == "" {
+	if err != nil || !release.PlatformPackageChecked || release.Asset.Has() || release.URL == "" {
 		t.Fatalf("release %+v, err %v", release, err)
+	}
+}
+
+func TestGitHubFallbackDoesNotClaimThePackageListWasChecked(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mirror":
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		case "/github":
+			w.Write([]byte(`{"tag_name":"v1.2.3","html_url":"https://github.com/t8y2/motty/releases/tag/v1.2.3"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	release, err := checkFeeds(context.Background(), server.Client(), server.URL+"/mirror", server.URL+"/github", "windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "1.2.3" || release.PlatformPackageChecked || release.Asset.Has() {
+		t.Fatalf("fallback release = %+v", release)
 	}
 }
 
@@ -182,6 +222,9 @@ func TestAMirrorAnswerThatCannotBeTrustedGivesNoPackage(t *testing.T) {
 		if err != nil || release.Asset.Has() {
 			t.Errorf("%s: %+v %v", name, release, err)
 		}
+		if release.PlatformPackageChecked {
+			t.Errorf("%s: a file the feed cannot hold a download to was reported as a checked package list: %+v", name, release)
+		}
 	}
 	for name, body := range map[string]string{
 		"tag and version differ": `{"version":"1.2.3","tag":"v9.9.9","source":"https://x","files":[]}`,
@@ -192,5 +235,13 @@ func TestAMirrorAnswerThatCannotBeTrustedGivesNoPackage(t *testing.T) {
 		if _, err := LatestMirror(context.Background(), server.Client(), server.URL, "darwin", "arm64"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestAMirrorThatNamesNoPackageForThisPlatformWasChecked(t *testing.T) {
+	server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/o/r","files":[{"name":"motty-darwin-arm64.zip","size":100,"sha256":"`+goodHash+`"}]}`)
+	release, err := LatestMirror(context.Background(), server.Client(), server.URL, "linux", "amd64")
+	if err != nil || release.Asset.Has() || !release.PlatformPackageChecked {
+		t.Fatalf("release %+v, err %v", release, err)
 	}
 }

@@ -53,7 +53,7 @@ var (
 
 // Limits.
 const (
-	MaxTextBytes  = 1 << 20 // per message text, reasoning and tool JSON
+	MaxTextBytes  = 16 << 20 // per message text, reasoning and tool JSON
 	MaxTitleBytes = 256
 	// DefaultListLimit applies when Conversations gets limit <= 0.
 	DefaultListLimit = 200
@@ -75,7 +75,7 @@ func (e *LimitError) Error() string {
 // Is makes errors.Is(err, ErrTooLarge) true.
 func (e *LimitError) Is(target error) bool { return target == ErrTooLarge }
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 var migrations = [...]string{
 	// version 1
@@ -139,6 +139,9 @@ var migrations = [...]string{
 	// version 6: an OpenAI-compatible provider may speak the Responses API
 	// instead of Chat Completions. The empty value keeps Chat Completions.
 	`ALTER TABLE providers ADD COLUMN api_format TEXT NOT NULL DEFAULT '';`,
+	// version 7: an optional models_url for providers where model listing is at
+	// a different path than completion requests.
+	`ALTER TABLE providers ADD COLUMN models_url TEXT NOT NULL DEFAULT '';`,
 }
 
 const sqliteMagic = "SQLite format 3\x00"
@@ -353,14 +356,15 @@ func ValidProviderKind(kind string) bool {
 // the store: HasKey says a key exists in the vault, and APIKey is an in-memory
 // field the caller fills from the vault (Providers always leaves it empty).
 type Provider struct {
-	ID      string
-	Name    string
-	Kind    string
-	BaseURL string
-	CLIPath string // Machine-local; never included in provider sync records.
-	APIKey  string
-	HasKey  bool
-	Enabled bool
+	ID        string
+	Name      string
+	Kind      string
+	BaseURL   string
+	ModelsURL string
+	CLIPath   string // Machine-local; never included in provider sync records.
+	APIKey    string
+	HasKey    bool
+	Enabled   bool
 	// AuthStyle selects the Anthropic request header. Empty has the historical
 	// meaning: x-api-key for Anthropic, bearer for OpenAI-compatible endpoints.
 	AuthStyle string
@@ -374,8 +378,8 @@ func (p Provider) redacted() string {
 	if p.APIKey != "" {
 		key = "<redacted>"
 	}
-	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q AuthStyle:%q APIFormat:%q APIKey:%q HasKey:%t Enabled:%t}",
-		p.ID, p.Name, p.Kind, p.BaseURL, p.AuthStyle, p.APIFormat, key, p.HasKey, p.Enabled)
+	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q ModelsURL:%q AuthStyle:%q APIFormat:%q APIKey:%q HasKey:%t Enabled:%t}",
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, p.AuthStyle, p.APIFormat, key, p.HasKey, p.Enabled)
 }
 
 // String implements fmt.Stringer and hides the API key.
@@ -390,7 +394,7 @@ func (s *Store) SaveProvider(p Provider) error {
 	if p.ID == "" || !ValidProviderKind(p.Kind) {
 		return fmt.Errorf("%w: provider needs an id and a supported kind", ErrInvalid)
 	}
-	if IsCLIKind(p.Kind) && (p.BaseURL != "" || p.APIKey != "" || p.HasKey || p.AuthStyle != "" || p.APIFormat != "") {
+	if IsCLIKind(p.Kind) && (p.BaseURL != "" || p.ModelsURL != "" || p.APIKey != "" || p.HasKey || p.AuthStyle != "" || p.APIFormat != "") {
 		return fmt.Errorf("%w: CLI providers use their own authentication", ErrInvalid)
 	}
 	if !ValidAuthStyle(p.AuthStyle) {
@@ -411,17 +415,17 @@ func (s *Store) SaveProvider(p Provider) error {
 	if p.Kind != KindOpenAI || apiFormat == APIFormatChat {
 		apiFormat = ""
 	}
-	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,api_key,has_key,enabled,cli_path,auth_style,api_format) VALUES(?,?,?,?,'',?,?,?,?,?)
+	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,models_url,api_key,has_key,enabled,cli_path,auth_style,api_format) VALUES(?,?,?,?,?,'',?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind,
-		base_url=excluded.base_url, has_key=excluded.has_key, enabled=excluded.enabled,
+		base_url=excluded.base_url, models_url=excluded.models_url, has_key=excluded.has_key, enabled=excluded.enabled,
 		cli_path=excluded.cli_path, auth_style=excluded.auth_style, api_format=excluded.api_format`,
-		p.ID, p.Name, p.Kind, p.BaseURL, b2i(p.HasKey), b2i(p.Enabled), p.CLIPath, authStyle, apiFormat)
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, b2i(p.HasKey), b2i(p.Enabled), p.CLIPath, authStyle, apiFormat)
 	return wrapDB(err)
 }
 
 // Providers lists all providers ordered by name then ID.
 func (s *Store) Providers() ([]Provider, error) {
-	rows, err := s.db.Query(`SELECT id,name,kind,base_url,has_key,enabled,cli_path,auth_style,api_format FROM providers ORDER BY name, id`)
+	rows, err := s.db.Query(`SELECT id,name,kind,base_url,models_url,has_key,enabled,cli_path,auth_style,api_format FROM providers ORDER BY name, id`)
 	if err != nil {
 		return nil, wrapDB(err)
 	}
@@ -430,7 +434,7 @@ func (s *Store) Providers() ([]Provider, error) {
 	for rows.Next() {
 		var p Provider
 		var hk, en int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &hk, &en, &p.CLIPath, &p.AuthStyle, &p.APIFormat); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.ModelsURL, &hk, &en, &p.CLIPath, &p.AuthStyle, &p.APIFormat); err != nil {
 			return nil, wrapDB(err)
 		}
 		p.HasKey = hk != 0

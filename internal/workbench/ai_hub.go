@@ -29,7 +29,8 @@ import (
 // requests arrive on other goroutines and reach a window only by posting to its
 // inbox.
 type AIHub struct {
-	path string // the AI database
+	path    string // the AI database
+	outputs gate.OutputStore
 
 	mu      sync.Mutex
 	windows []*hubWindow
@@ -189,12 +190,14 @@ func (hub *AIHub) stop() {
 	hub.server, hub.done, hub.addr, hub.token = nil, nil, "", ""
 	hub.mu.Unlock()
 	if server == nil {
+		hub.outputs.Clear()
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = server.Shutdown(ctx)
 	<-done
+	hub.outputs.Clear()
 }
 
 // Close stops the server.
@@ -221,6 +224,7 @@ func (hub *AIHub) gate() gate.Gate {
 	hub.mu.Unlock()
 	return gate.Gate{
 		Backend:  hubBackend{hub},
+		Outputs:  &hub.outputs,
 		Policy:   risk.Policy{Enabled: true, AutoUpTo: risk.Low},
 		Mode:     mode,
 		Approver: hub.approve,
@@ -318,6 +322,36 @@ func (b hubBackend) Sessions(ctx context.Context) ([]gate.SessionInfo, error) {
 	return all, nil
 }
 
+func (b hubBackend) Hosts(ctx context.Context) ([]gate.HostInfo, error) {
+	b.hub.mu.Lock()
+	windows := append([]*hubWindow(nil), b.hub.windows...)
+	b.hub.mu.Unlock()
+	var hosts []gate.HostInfo
+	seen := make(map[string]bool)
+	for _, window := range windows {
+		listed, err := aiCall(window.state, ctx, func() ([]gate.HostInfo, error) {
+			var result []gate.HostInfo
+			for _, host := range window.state.agentHostList() {
+				result = append(result, gate.HostInfo{
+					ID: host.CatalogID, Title: host.Label,
+					Address: window.state.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),
+				})
+			}
+			return result, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, host := range listed {
+			if !seen[host.ID] {
+				hosts = append(hosts, host)
+				seen[host.ID] = true
+			}
+		}
+	}
+	return hosts, nil
+}
+
 // target resolves a handle to a window's backend and the local handle.
 func (b hubBackend) target(ctx context.Context, handle string) (*aiBackend, string, error) {
 	window, local, err := b.hub.resolve(ctx, handle)
@@ -343,6 +377,61 @@ func (b hubBackend) Exec(ctx context.Context, args tools.TerminalExecArgs) (gate
 	}
 	args.Session = local
 	return backend.Exec(ctx, args)
+}
+
+func (b hubBackend) JobStart(ctx context.Context, args tools.TerminalStartArgs) (gate.JobStatus, error) {
+	window, local, err := b.hub.resolve(ctx, args.Session)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.Session = local
+	status, err := window.state.ai.backend.JobStart(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
+}
+
+// hubJob names a job and its session across windows, like hubHandle.
+func hubJob(window int, status gate.JobStatus) gate.JobStatus {
+	status.ID = hubHandle(window, status.ID)
+	status.Session = hubHandle(window, status.Session)
+	return status
+}
+
+// jobWindow finds the window a hub job id ("w2:<id>") belongs to.
+func (b hubBackend) jobWindow(ctx context.Context, id string) (*hubWindow, string, error) {
+	window, local, err := b.hub.resolve(ctx, id)
+	if err != nil || local == "" {
+		return nil, "", gate.ErrNoJob
+	}
+	return window, local, nil
+}
+
+func (b hubBackend) JobPoll(ctx context.Context, args tools.TerminalPollArgs) (gate.JobStatus, error) {
+	window, local, err := b.jobWindow(ctx, args.JobID)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.JobID = local
+	status, err := window.state.ai.backend.JobPoll(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
+}
+
+func (b hubBackend) JobStop(ctx context.Context, args tools.TerminalStopArgs) (gate.JobStatus, error) {
+	window, local, err := b.jobWindow(ctx, args.JobID)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	args.JobID = local
+	status, err := window.state.ai.backend.JobStop(ctx, args)
+	if err != nil {
+		return gate.JobStatus{}, err
+	}
+	return hubJob(window.id, status), nil
 }
 
 func (b hubBackend) ListDir(ctx context.Context, args tools.SFTPListArgs) ([]gate.FileEntry, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -51,6 +52,15 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 		}
 	}
 	return gate.ExecResult{Output: "out", ExitCode: 3}, nil
+}
+func (b *fakeBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
 }
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	return []gate.FileEntry{{Name: "a", Size: 1}}, nil
@@ -682,6 +692,26 @@ func BenchmarkToolsList(b *testing.B) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+}
+
+func TestHTTPSessionsAreIndependentAndUnknownSessionsAreRejected(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+	first, _ := post(t, server.URL, initialize, nil)
+	second, _ := post(t, server.URL, initialize, nil)
+	firstID, secondID := first.Header.Get("Mcp-Session-Id"), second.Header.Get("Mcp-Session-Id")
+	if firstID == "" || secondID == "" || firstID == secondID {
+		t.Fatal("initialize did not establish separate HTTP sessions")
+	}
+	request := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	valid, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", firstID) })
+	if valid.StatusCode != http.StatusOK {
+		t.Fatalf("initialized session returned %d", valid.StatusCode)
+	}
+	unknown, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", "not-a-session") })
+	if unknown.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown session returned %d", unknown.StatusCode)
 	}
 }
 

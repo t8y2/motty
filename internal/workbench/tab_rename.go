@@ -19,6 +19,10 @@ type tabRename struct {
 	editor  text.Editor
 }
 
+// hitPaneRename renames the terminal that has the keyboard, from the command
+// palette. Double clicking a split pane's bar reaches the same dialog.
+var hitPaneRename = tree.ID(shellHits, "pane-rename")
+
 // openTerminalRename asks for a new name for one terminal of a split tab.
 func (state *State) openTerminalRename(session *Session) {
 	state.tabRename = tabRename{session: session.ID}
@@ -26,6 +30,13 @@ func (state *State) openTerminalRename(session *Session) {
 	state.tabRename.editor.SetSelection(text.Range{End: state.tabRename.editor.RuneCount()})
 	state.dialogError = ""
 	state.modal = modalRenameTab
+}
+
+// renameActiveTerminal asks for a new name for the terminal that has the keyboard.
+func (state *State) renameActiveTerminal() {
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+		state.openTerminalRename(session)
+	}
 }
 
 // openTabRename asks for a new name for a tab, starting from its current one.

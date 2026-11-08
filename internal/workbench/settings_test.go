@@ -27,11 +27,12 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
 			}, []ui.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
-				hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
+				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsCursorThin, hitSettingsCursorThick, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
 			{settingsConnection, []string{
 				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
 			}, []ui.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
-				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect}},
+				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect,
+				hitSettingsStartupHosts}},
 		} {
 			state.selectSettingsCategory(category.category)
 			// Tall enough for the whole category; a short window scrolls instead.
@@ -183,6 +184,27 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	if second.activeSection != sectionSettings || second.language != i18n.Chinese ||
 		second.appearance != appearanceLight || second.networkProxy != networkProxySystem || second.terminalOption != terminalOptionMeta || second.terminalFontSize != 15 || second.terminalFontFace != ui.MonoClassic || second.terminalScrollback != 10000 || second.connectionTimeout != 5*time.Second || second.connectionKeepAlive != 30*time.Second || second.connectionReconnect != reconnectThree || second.terminalClipboard != terminalClipboardBlock {
 		t.Fatalf("restored section=%d language=%v appearance=%v option=%v size=%v face=%v scrollback=%d timeout=%v keepalive=%v", second.activeSection, second.language, second.appearance, second.terminalOption, second.terminalFontSize, second.terminalFontFace, second.terminalScrollback, second.connectionTimeout, second.connectionKeepAlive)
+	}
+}
+
+func TestWordSeparatorsInputPersistsAcrossRestart(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
+	input := state.TerminalWordInput(app.TextInputContext{ID: hitSettingsWordSeparators})
+	if input == nil || state.EditorFor(hitSettingsWordSeparators) == nil {
+		t.Fatal("word separators field is not editable")
+	}
+	if _, err := input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "-/"}); err != nil {
+		t.Fatal(err)
+	}
+	if state.terminalWordSeparators != "-/" {
+		t.Fatalf("configured separators = %q", state.terminalWordSeparators)
+	}
+	reopened := newTestState(t, options)
+	if reopened.terminalWordSeparators != "-/" || reopened.terminalWordEditor.String() != "-/" {
+		t.Fatalf("restored separators = %q, editor = %q", reopened.terminalWordSeparators, reopened.terminalWordEditor.String())
 	}
 }
 

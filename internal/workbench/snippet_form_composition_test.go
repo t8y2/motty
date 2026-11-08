@@ -120,7 +120,7 @@ func TestSnippetFormSavesAfterAnInterruptedComposition(t *testing.T) {
 	if _, composing := state.snippets.name.Composition(); composing {
 		t.Fatal("the abandoned field still composes")
 	}
-	state.Key(ui.KeyEvent{Target: hitSnippetCommand, Key: ui.KeyEnter})
+	state.Key(ui.KeyEvent{Target: hitSnippetName, Key: ui.KeyEnter})
 	if state.modal != modalNone || len(state.snippets.list) != 1 {
 		t.Fatal("an interrupted composition blocked the save")
 	}

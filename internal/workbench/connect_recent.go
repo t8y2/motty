@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	hitConnectSortDefault = tree.ID(commandPaletteHits, "connect-sort-default")
-	hitConnectSortRecent  = tree.ID(commandPaletteHits, "connect-sort-recent")
+	hitConnectSortDefault    = tree.ID(commandPaletteHits, "connect-sort-default")
+	hitConnectSortWorkspaces = tree.ID(commandPaletteHits, "connect-sort-workspaces")
+	hitConnectSortRecent     = tree.ID(commandPaletteHits, "connect-sort-recent")
 )
 
 // rememberRecentConnection consumes the user dial once, never a status refresh
@@ -38,9 +39,10 @@ func (state *State) rememberRecentConnection(session *Session) {
 
 // connectSortOptions is the default/recent switch of the new-tab picker. It is
 // one list for painting and for the keyboard, so the two cannot drift.
-func (state *State) connectSortOptions() [2]components.SegmentOption {
-	return [2]components.SegmentOption{
+func (state *State) connectSortOptions() [3]components.SegmentOption {
+	return [3]components.SegmentOption{
 		{ID: hitConnectSortDefault, Label: state.messages.NewTabSortDefault},
+		{ID: hitConnectSortWorkspaces, Label: state.messages.WorkspaceLibraryTitle},
 		{ID: hitConnectSortRecent, Label: state.messages.NewTabSortRecent},
 	}
 }
@@ -48,10 +50,12 @@ func (state *State) connectSortOptions() [2]components.SegmentOption {
 func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
 	options := state.connectSortOptions()
 	selected := hitConnectSortDefault
-	if state.recentConnectSort {
+	if state.commandPalette.workspaces {
+		selected = hitConnectSortWorkspaces
+	} else if state.recentConnectSort {
 		selected = hitConnectSortRecent
 	}
-	width := float32(184)
+	width := float32(270)
 	rect := ui.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
 	components.BeginSegmentedControl(canvas, state.Theme(), rect, options[:], selected).Paint()
 }
@@ -61,6 +65,7 @@ func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.Dialog
 func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	palette := &state.commandPalette
 	query := strings.ToLower(rawQuery)
+	keywords := strings.Fields(query)
 	type candidate struct {
 		entry commandPaletteEntry
 		group string
@@ -68,8 +73,11 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	}
 	var candidates []candidate
 	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
+		if item.searchOnly && query == "" && !state.commandPalette.localShells {
+			return
+		}
 		search := strings.ToLower(item.label + " " + item.detail)
-		if query != "" && !strings.Contains(search, query) {
+		if !matchesSearchWords(search, keywords) {
 			return
 		}
 		group := ""
@@ -77,12 +85,12 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 			group = state.hostGroupLabel(*item.group)
 		}
 		candidates = append(candidates, candidate{
-			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target},
+			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target, searchOnly: item.searchOnly},
 			group: group, at: state.recentConnections[item.key],
 		})
 	})
 	slices.SortStableFunc(candidates, func(a, b candidate) int { return -a.at.Compare(b.at) })
-	palette.entryCount, palette.visibleCount = 0, 0
+	palette.entries, palette.visible = palette.entries[:0], palette.visible[:0]
 	previousGroup := ""
 	now := state.wallNow()
 	for _, item := range candidates {
@@ -95,17 +103,13 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 		if !item.at.IsZero() {
 			entry.recencyHint = item.at.Local().Format("2006-01-02 15:04:05 MST")
 		}
-		if int(palette.entryCount) < len(palette.entries) {
-			palette.entries[palette.entryCount] = entry
-			palette.entryCount++
-		}
+		palette.entries = append(palette.entries, entry)
 	}
-	for index := uint8(0); index < palette.entryCount; index++ {
-		palette.visible[palette.visibleCount] = index
-		palette.visibleCount++
+	for index := range palette.entries {
+		palette.visible = append(palette.visible, index)
 	}
 	palette.rawQuery, palette.query, palette.filtered = rawQuery, query, true
-	palette.selected, palette.top = uint8(max(palette.choiceAt(0, 1), 0)), 0
+	palette.selected, palette.scroll = max(palette.choiceAt(0, 1), 0), 0
 }
 
 func (state *State) connectionRecency(at, now time.Time) string {

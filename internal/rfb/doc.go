@@ -4,8 +4,10 @@
 // internal/desktop/vnc connects the two to the workbench.
 //
 // What it speaks: protocol versions 3.3, 3.7 and 3.8; the security types None
-// and VNC Authentication; a 32-bit true-colour pixel format that it asks the
-// server for, so no pixel is ever converted; the encodings Raw, CopyRect, RRE,
+// and VNC Authentication, plus RSA-AES (type 5) with server-key verification
+// and AES-128-EAX session encryption. A RealVNC 5.0 banner is negotiated down
+// to 3.8. A 32-bit true-colour pixel format is requested from the
+// server, so no pixel is ever converted; supported encodings are Raw, CopyRect, RRE,
 // Hextile and ZRLE; the DesktopSize pseudo-encoding; pointer, key and
 // clipboard (Latin-1 text) messages. What it does not: VeNCrypt and other TLS
 // security types, Apple Remote Desktop authentication, the cursor shape

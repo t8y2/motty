@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/flex"
@@ -13,6 +16,7 @@ import (
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 )
 
 // Files and pictures dropped on the assistant, or chosen with its paperclip, wait
@@ -24,6 +28,7 @@ import (
 
 var (
 	hitAIAttach       = tree.ID(aiPanelHits, "ai-attach")
+	hitAIUpload       = tree.ID(aiPanelHits, "ai-upload")
 	hitAIAttachRemove = tree.Sub(aiPanelHits, tree.Name("ai-attach-remove"))
 )
 
@@ -31,9 +36,8 @@ const (
 	// aiMaxAttachments is how many files one message takes, which is also how
 	// many remove buttons the panel can hit.
 	aiMaxAttachments = 6
-	// aiMaxAttachedText is all the text of one message, the size of the history
-	// the assistant sends in one request.
-	aiMaxAttachedText = 256 << 10
+	// aiMaxAttachedText includes the serialized headings around attached text.
+	aiMaxAttachedText = store.MaxTextBytes
 	aiChipHeight      = float32(24)
 	aiChipGap         = float32(6)
 	aiChipTextMax     = float32(150)
@@ -44,8 +48,12 @@ const (
 
 // aiAttachment is a file waiting in the message box.
 type aiAttachment struct {
-	path string
-	file attach.File
+	path     string
+	file     attach.File
+	upload   bool
+	size     int64
+	modified time.Time
+	info     os.FileInfo
 }
 
 // aiAttachmentRef is what a sent message remembers of an attachment.
@@ -64,9 +72,13 @@ type aiChip struct {
 
 // aiLoaded is what reading one path came to.
 type aiLoaded struct {
-	path string
-	file attach.File
-	err  error
+	path     string
+	file     attach.File
+	err      error
+	upload   bool
+	size     int64
+	modified time.Time
+	info     os.FileInfo
 }
 
 // aiAttachPaths starts reading the files at paths so they can be attached. The
@@ -77,12 +89,13 @@ func (state *State) aiAttachPaths(paths []string) {
 		return
 	}
 	paths = append([]string(nil), paths...)
+	maxTextBytes := state.ai.settings.maxTextBytes
 	state.ai.attaching += len(paths)
 	go func() {
 		loaded := make([]aiLoaded, len(paths))
 		for index, path := range paths {
 			loaded[index].path = path
-			loaded[index].file, loaded[index].err = attach.Load(path)
+			loaded[index].file, loaded[index].err = attach.LoadWithLimit(path, maxTextBytes)
 		}
 		state.aiPost(func(state *State) { state.aiAttached(loaded) })
 	}()
@@ -124,8 +137,53 @@ func (state *State) aiPasteImage() {
 	state.ai.attaching++
 	go func() {
 		file, err := attach.Decode(name, data)
+		file.Name = name
 		state.aiPost(func(state *State) { state.aiAttached([]aiLoaded{{file: file, err: err}}) })
 	}()
+}
+
+const (
+	// aiLongTextChars is the character count at which pasted text is turned into
+	// a file attachment to keep the composer responsive and within renderer limits.
+	aiLongTextChars = 2000
+	// aiLongTextLines is the line count at which pasted text is turned into
+	// a file attachment.
+	aiLongTextLines = 20
+)
+
+// isLongAIText reports whether text pasted into the assistant is large enough to
+// attach as a file rather than inserting into the message box.
+func isLongAIText(text string) bool {
+	lines := strings.Count(text, "\n") + 1
+	if strings.HasSuffix(text, "\n") {
+		lines--
+	}
+	return utf8.RuneCountInString(text) >= aiLongTextChars || lines >= aiLongTextLines
+}
+
+// aiPasteText attaches text as a file waiting in the message box.
+func (state *State) aiPasteText(text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	m := state.messages.AIPanel
+	if state.aiAttachRoom(1) == 0 {
+		return
+	}
+	state.ai.pastedText++
+	name := fmt.Sprintf("%s-%d.txt", m.PastedTextName, state.ai.pastedText)
+	const suffix = "\n\n... [truncated] ...\n"
+	if len(text) > state.ai.settings.maxTextBytes {
+		cut := state.ai.settings.maxTextBytes - len(suffix)
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + suffix
+		state.ai.notice = fmt.Sprintf(m.AttachPastedTruncatedFmt, name, formatBytes(int64(state.ai.settings.maxTextBytes)), formatBytes(int64(state.ai.settings.maxTextBytes)))
+	}
+	file, err := attach.DecodeWithLimit(name, []byte(text), state.ai.settings.maxTextBytes)
+	file.Name = name
+	state.aiAttached([]aiLoaded{{file: file, err: err}})
 }
 
 // aiAttached takes what was read. The files that cannot be attached are named in
@@ -136,7 +194,9 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 	var problems []string
 	text := 0
 	for _, existing := range ai.attachments {
-		text += len(existing.file.Text)
+		if !existing.upload {
+			text += aiAttachmentContextBytes(existing.file)
+		}
 	}
 	for _, item := range loaded {
 		name := filepath.Base(item.path)
@@ -150,11 +210,13 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 			// The same file twice is one attachment.
 		case len(ai.attachments) >= aiMaxAttachments:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTooManyFmt, aiMaxAttachments))
-		case text+len(item.file.Text) > aiMaxAttachedText:
+		case !item.upload && text+aiAttachmentContextBytes(item.file) > aiMaxAttachedText:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTotalTextFmt, name, formatBytes(aiMaxAttachedText)))
 		default:
-			text += len(item.file.Text)
-			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file})
+			if !item.upload {
+				text += aiAttachmentContextBytes(item.file)
+			}
+			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file, upload: item.upload, size: item.size, modified: item.modified, info: item.info})
 		}
 	}
 	if len(problems) > 0 {
@@ -180,7 +242,9 @@ func (state *State) aiAttachProblem(name string, err error) string {
 	case errors.Is(err, attach.ErrEmpty):
 		return fmt.Sprintf(m.AttachEmptyFmt, name)
 	case errors.Is(err, attach.ErrTextTooLarge):
-		return fmt.Sprintf(m.AttachTextTooBigFmt, name, formatBytes(attach.MaxTextBytes))
+		return fmt.Sprintf(m.AttachTextTooBigFmt, name, formatBytes(int64(state.ai.settings.maxTextBytes)))
+	case errors.Is(err, attach.ErrReadTooLarge):
+		return fmt.Sprintf(m.AttachReadTooLargeFmt, name, formatBytes(attach.MaxReadBytes))
 	case errors.Is(err, attach.ErrTooLarge):
 		return fmt.Sprintf(m.AttachTooLargeFmt, name)
 	case errors.Is(err, attach.ErrUnsupported):
@@ -219,14 +283,16 @@ func (state *State) aiRemoveAttachment(index int) {
 func (state *State) aiClearAttachments() {
 	clear(state.ai.attachments)
 	state.ai.attachments = state.ai.attachments[:0]
+	state.ai.pasted = 0
+	state.ai.pastedText = 0
 }
 
 // aiCanSend reports whether the message box holds a question to send. Files are
-// asked about, not sent alone, and files still being read are waited for: the
+// asked about or sent by themselves, and files still being read are waited for: the
 // question would otherwise go out without them.
 func (state *State) aiCanSend() bool {
 	ai := &state.ai
-	return ai.attaching == 0 && strings.TrimSpace(ai.input.String()) != ""
+	return ai.attaching == 0 && (strings.TrimSpace(ai.input.String()) != "" || len(ai.attachments) > 0)
 }
 
 // aiAttachmentName is a file name safe to put in the bracketed heading that names
@@ -247,16 +313,31 @@ func aiAttachmentName(name string) string {
 	return b.String()
 }
 
+// aiAttachmentContextBytes is the exact serialized size the attachment adds to
+// the user message without allocating its potentially large text.
+func aiAttachmentContextBytes(file attach.File) int {
+	name := aiAttachmentName(file.Name)
+	if file.Kind == attach.KindImage {
+		return len(attachedMarker) + len("image ") + len(name) + len("]")
+	}
+	return len(attachedMarker) + len("file ") + len(name) + len(" (") +
+		len(strconv.Itoa(file.Lines)) + len(" lines):]\n") + len(file.Text)
+}
+
 // aiAttachmentContext is what the attachments add to a question: a heading and
 // the text of every text file, the pictures themselves, and what the message
 // remembers of each. A secret in a text file is masked as it is in a terminal's
 // text when the setting is on.
 func aiAttachmentContext(attachments []aiAttachment, redact bool) (text string, images []llm.Image, refs []aiAttachmentRef) {
 	var b strings.Builder
-	for _, attachment := range attachments {
+	for index, attachment := range attachments {
 		name := aiAttachmentName(attachment.file.Name)
-		refs = append(refs, aiAttachmentRef{Name: name, Image: attachment.file.Kind == attach.KindImage})
-		if attachment.file.Kind == attach.KindImage {
+		refs = append(refs, aiAttachmentRef{Name: name, Image: !attachment.upload && attachment.file.Kind == attach.KindImage})
+		if attachment.upload {
+			fmt.Fprintf(&b, "\n\n[File selected for SSH upload: id %d, name %s, size %d bytes. The bytes are not in the model context. Use sftp_upload_selected to upload it only when requested.]", index+1, name, attachment.size)
+			continue
+		}
+		if !attachment.upload && attachment.file.Kind == attach.KindImage {
 			images = append(images, attachment.file.Image)
 			fmt.Fprintf(&b, "%simage %s]", attachedMarker, name)
 			continue
@@ -362,7 +443,9 @@ func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
 	attachment := &state.ai.attachments[chip.index]
 	name := aiAttachmentName(attachment.file.Name)
 	icon := iconPaperclip
-	if attachment.file.Kind == attach.KindImage {
+	if attachment.upload {
+		icon = iconUpload
+	} else if attachment.file.Kind == attach.KindImage {
 		icon = iconImage
 	}
 	remove := hitAIAttachRemove.At(chip.index)
@@ -397,6 +480,19 @@ func (state *State) declareAIAttachButton(f *flex.Frame) {
 	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
 		HitWith(hitAIAttach, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
 		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
+	})
+}
+
+func (state *State) declareAIUploadButton(f *flex.Frame) {
+	pal, label := state.pal, state.messages.AIPanel.Upload
+	foreground := pal.muted
+	var fill ui.Color
+	if f.Canvas().Pressed() == hitAIUpload || f.Canvas().Hovered() == hitAIUpload {
+		fill, foreground = pal.surfaceSoft, pal.text
+	}
+	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
+		HitWith(hitAIUpload, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
+		f.Icon(lucideIcons[iconUpload]).Size(16, 16).Color(foreground)
 	})
 }
 

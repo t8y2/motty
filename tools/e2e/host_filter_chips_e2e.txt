@@ -1,0 +1,67 @@
+# End to end: the host list's chips are the top-level groups (issue #542 follow-up). A group
+# with nested groups has a chevron on its chip that opens a menu of them, one level per
+# fly-out; choosing a nested group filters to it and the chip names it ("School › Tianshui").
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_filter_chips_e2e.txt
+# lang: en
+# The click coordinates are the headless window's logical pixels at its default size.
+click "New Host"
+settle 400
+type h1
+click textfield:Address
+type 10.0.0.1
+click combobox:Group
+type School/Gansu/Lanzhou
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h2
+click textfield:Address
+type 10.0.0.2
+click combobox:Group
+type School/Gansu/Tianshui
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h3
+click textfield:Address
+type 10.0.0.3
+click combobox:Group
+type School/Xinjiang/Kashgar
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h4
+click textfield:Address
+type 10.0.0.4
+click combobox:Group
+type Office
+key enter
+settle 300
+click "Add Host"
+settle 400
+expect text "School" within 1000
+shot /tmp/host-chips-top.png
+click 440 113
+settle 300
+shot /tmp/host-chips-menu.png
+move 395 153
+settle 300
+shot /tmp/host-chips-flyout.png
+move 540 185
+settle 200
+click 540 185
+settle 300
+expect text "School › Tianshui" within 1000
+shot /tmp/host-chips-chosen.png
+layout

@@ -139,7 +139,8 @@ type screen struct {
 
 // Terminal is the emulator. Create it with New.
 type Terminal struct {
-	cols, rows int
+	cols, rows     int
+	wordSeparators string
 
 	main, alt screen
 	scr       *screen // the active one
@@ -161,15 +162,21 @@ type Terminal struct {
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
 	clock      func() int64 // stamps lines on first write; nil records nothing
 
-	cx, cy            int
-	pend              bool // a character was written in the last column; wrap on the next
-	pen               pen
-	top, bot          int // scroll region, inclusive
-	tabs              []bool
-	charsets          [4]charset
-	gl                uint8
-	modes             Modes
-	cursor            CursorStyle
+	cx, cy   int
+	pend     bool // a character was written in the last column; wrap on the next
+	pen      pen
+	top, bot int // scroll region, inclusive
+	tabs     []bool
+	charsets [4]charset
+	gl       uint8
+	modes    Modes
+	cursor   CursorStyle
+	// defaultCursor is the shape the cursor takes until a program asks for its
+	// own with DECSCUSR; SetDefaultCursor sets it from the user's settings.
+	defaultCursor CursorStyle
+	// cursorStyled says a program has styled the cursor, so the default no
+	// longer applies to it.
+	cursorStyled      bool
 	cursorSteady      bool
 	title             string
 	hyperlinks        []hyperlinkRecord // allocated only after the first accepted OSC 8 target
@@ -192,6 +199,8 @@ type Terminal struct {
 	promptReadyFn      func()
 	promptStartFn      func()
 	promptToken        string
+	inputStart         Point // where the shell's editable line begins; see InputMove
+	inputStartSet      bool
 	inputEnvironmentFn func(InputEnvironment)
 	homeDirectoryFn    func(string)
 	commandStartFn     func()
@@ -469,6 +478,20 @@ func (t *Terminal) trimHistory() {
 	t.view = min(t.view, t.histCount)
 }
 
+// SetDefaultCursor sets the shape the cursor takes until a program asks for
+// its own with DECSCUSR: at construction, and after a reset. A cursor a program
+// has styled keeps its shape. The change reaches the screen when it repaints.
+func (t *Terminal) SetDefaultCursor(style CursorStyle) {
+	if t.defaultCursor == style {
+		return
+	}
+	t.defaultCursor = style
+	if !t.cursorStyled {
+		t.cursor = style
+	}
+	t.version++
+}
+
 // Reset restores the power-on state and clears the screen. History stays.
 func (t *Terminal) Reset() {
 	t.parser = parser{}
@@ -492,11 +515,13 @@ func (t *Terminal) Reset() {
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
+	t.inputStartSet = false
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false
 	t.top, t.bot = 0, t.rows-1
 	t.charsets, t.gl = [4]charset{}, 0
-	t.cursor, t.cursorSteady = CursorBlock, false
+	t.cursor, t.cursorSteady = t.defaultCursor, false
+	t.cursorStyled = false
 	// Alternate scroll starts on, as in VTE, kitty and Windows Terminal: a pager
 	// or editor that did not ask for the mouse still scrolls with the wheel. A
 	// program turns it off with 1007 reset.
@@ -746,6 +771,9 @@ func (t *Terminal) Resize(cols, rows int) {
 	}
 	oldCols := t.cols
 	t.cols = cols
+	if cols != oldCols {
+		t.inputStartSet = false // reflow moves the line the shell is editing
+	}
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
 	if cols != oldCols {
 		t.reflowMain()
@@ -825,14 +853,20 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 
 // fitCols makes l exactly as wide as the terminal.
 func (t *Terminal) fitCols(l *line) {
+	changed := false
 	switch {
 	case len(l.cells) > t.cols:
+		if l.used > t.cols {
+			changed = true
+		}
 		l.cells = l.cells[:t.cols]
 		for len(l.marks) > 0 && int(l.marks[len(l.marks)-1].Col) >= t.cols {
 			l.marks = l.marks[:len(l.marks)-1]
+			changed = true
 		}
 		if l.cells[t.cols-1].Attr&WideHead != 0 { // its tail was cut off
 			l.orphan(t.cols - 1)
+			changed = true
 		}
 	case len(l.cells) < t.cols:
 		if cap(l.cells) >= t.cols {
@@ -850,7 +884,9 @@ func (t *Terminal) fitCols(l *line) {
 	}
 	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
-	l.version++
+	if changed {
+		l.version++
+	}
 }
 
 // eraseRange blanks cells a..b-1 of l with the current background, repairing
@@ -944,6 +980,44 @@ func (l *line) text(cols int) string {
 
 // RowText is the text of view row i with trailing spaces removed.
 func (t *Terminal) RowText(i int) string { return t.lineAt(i).text(t.cols) }
+
+// AppendCellText appends the text of cells [from, to) of view row y to dst, the
+// way RowText writes a row but over an exact range and without trimming: an
+// empty cell reads as a space, the tail of a wide character adds nothing and
+// combining marks follow the cell they belong to. ok is false when the range
+// lies outside the row or starts or ends inside a wide character.
+func (t *Terminal) AppendCellText(dst []byte, y, from, to int) ([]byte, bool) {
+	if y < 0 || y >= t.rows || from < 0 || from > to || to > t.cols {
+		return dst, false
+	}
+	l := t.lineAt(y)
+	cell := func(x int) Cell {
+		if x < len(l.cells) {
+			return l.cells[x]
+		}
+		return Cell{}
+	}
+	if from < to && cell(from).Attr&WideTail != 0 || to < t.cols && from < to && cell(to).Attr&WideTail != 0 {
+		return dst, false
+	}
+	for x := from; x < to; x++ {
+		c := cell(x)
+		if c.Attr&WideTail != 0 {
+			continue
+		}
+		r := c.R
+		if r == 0 {
+			r = ' '
+		}
+		dst = utf8.AppendRune(dst, r)
+		for _, mark := range l.marks {
+			if int(mark.Col) == x {
+				dst = utf8.AppendRune(dst, mark.R)
+			}
+		}
+	}
+	return dst, true
+}
 
 // Text is the whole view as lines of text, trailing empty lines removed.
 func (t *Terminal) Text() string {

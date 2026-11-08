@@ -35,6 +35,9 @@ var (
 	ErrSymbolicLink = errors.New("sftp: symbolic links are not transferred")
 	// ErrResumeMismatch reports that an existing partial file is not a prefix of the source.
 	ErrResumeMismatch = errors.New("sftp: partial file does not match source")
+	// ErrUploadFinalizeTimeout reports that the server stopped answering while
+	// an upload was being committed. The partial file is kept for a resume.
+	ErrUploadFinalizeTimeout = errors.New("sftp: upload finalization timed out")
 )
 
 type ConflictError struct {
@@ -289,8 +292,8 @@ type remoteChtimes interface {
 // Worker runs SFTP operations on one explicitly opened subsystem. Everything but
 // transfers goes through one goroutine and one fixed-capacity request queue, in
 // order. A transfer runs on a goroutine of its own, at most Parallel of them at a
-// time, which exists only while the transfer does; there is no timer. The
-// subsystem is opened only after an explicit request.
+// time, which exists only while the transfer does; an idle worker has no timer.
+// The subsystem is opened only after an explicit request.
 type Worker struct {
 	open     func() (Remote, error)
 	notify   func()
@@ -319,6 +322,10 @@ type Worker struct {
 	// cancelGrace is how long a canceled upload may take to stop on its own
 	// before the connection is dropped (uploadCancelGrace).
 	cancelGrace time.Duration
+	// finalizeTimeout bounds each request that commits an upload: flush, close,
+	// chmod, times and rename. A server that never answers one of them must not
+	// leave the transfer at "finishing" forever.
+	finalizeTimeout time.Duration
 	// ids are the user and group names the server's account files gave, read
 	// once, on the first listing.
 	ids       IDNames
@@ -333,7 +340,7 @@ func NewWorker(open func() (Remote, error), notify func()) *Worker {
 		results:  make(chan Result, maxQueuedRequests),
 		done:     make(chan struct{}), finished: make(chan struct{}),
 		parallel: DefaultParallel, resume: make(chan struct{}), clock: time.Now,
-		cancelGrace: uploadCancelGrace,
+		cancelGrace: uploadCancelGrace, finalizeTimeout: uploadFinalizeTimeout,
 	}
 	liveWorkers.Acquire()
 	go worker.run()
@@ -1066,7 +1073,12 @@ func (worker *Worker) execute(next request) Result {
 		result.Err = fmt.Errorf("sftp: unknown operation %d", next.operation)
 	}
 	if worker.canceled(generation) {
-		result.Err = ErrCanceled
+		// A finalization timeout invalidates the subsystem itself; that must not
+		// turn the reason the user saw into a user cancellation. An explicit
+		// cancellation still wins over the timeout.
+		if !errors.Is(result.Err, ErrUploadFinalizeTimeout) || worker.canceledByUser(result.TransferID) {
+			result.Err = ErrCanceled
+		}
 	}
 	return result
 }
@@ -1398,10 +1410,12 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	discard := false
 	defer func() {
 		// An abandoned upload has requests in flight on the handle, and closing
-		// it would wait for them; it goes with the connection.
+		// it would wait for them; it goes with the connection. The same is true
+		// when a finalization request timed out: the goroutine inside it still
+		// owns the handle until the discarded subsystem releases it.
 		if errors.Is(err, errUploadAbandoned) {
 			err = ErrCanceled
-		} else if !closed {
+		} else if !closed && !errors.Is(err, ErrUploadFinalizeTimeout) {
 			err = errors.Join(err, destination.Close())
 		}
 		if discard {
@@ -1441,23 +1455,57 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		}
 		return written, resumed, err
 	}
-	if err := destination.Sync(); err != nil && !isUnsupportedSFTP(err) {
+	if err := worker.finalizeUpload(generation, transferID, "flush", destination.Sync); err != nil && !isUnsupportedSFTP(err) {
 		return written, resumed, err
 	}
-	if err := destination.Close(); err != nil {
+	if err := worker.finalizeUpload(generation, transferID, "close", destination.Close); err != nil {
 		return written, resumed, err
 	}
 	closed = true
-	if err := client.Chmod(partial, sourceInfo.Mode().Perm()); err != nil {
+	if err := worker.finalizeUpload(generation, transferID, "chmod", func() error {
+		return client.Chmod(partial, sourceInfo.Mode().Perm())
+	}); err != nil {
 		return written, resumed, err
 	}
 	if timer, ok := client.(remoteChtimes); ok && worker.preserveTimes() {
-		_ = timer.Chtimes(partial, sourceInfo.ModTime(), sourceInfo.ModTime()) // best effort: some servers refuse
+		// Best effort: some servers refuse SetStat. Keep the wait bounded so a
+		// server that ignores the request cannot hold up the commit; a timeout
+		// is fatal because the subsystem was discarded to end the request.
+		if err := worker.finalizeUpload(generation, transferID, "times", func() error {
+			return timer.Chtimes(partial, sourceInfo.ModTime(), sourceInfo.ModTime())
+		}); errors.Is(err, ErrUploadFinalizeTimeout) {
+			return written, resumed, err
+		}
 	}
-	if err := commitRemote(client, partial, remotePath, finalExists); err != nil {
+	if err := worker.finalizeUpload(generation, transferID, "rename", func() error {
+		return commitRemote(client, partial, remotePath, finalExists)
+	}); err != nil {
 		return written, resumed, err
 	}
 	return written, resumed, nil
+}
+
+// finalizeUpload bounds one request of the upload commit. pkg/sftp waits for a
+// reply without a deadline, so an extension the server silently ignores would
+// otherwise keep the copy at "finishing" for the life of the connection. When
+// the upload is the only user of the subsystem it is discarded so the blocked
+// request can end; a shared subsystem is left to the other transfers.
+func (worker *Worker) finalizeUpload(generation, transferID uint64, stage string, action func() error) error {
+	timeout := worker.finalizeTimeout
+	if timeout <= 0 {
+		timeout = uploadFinalizeTimeout
+	}
+	done := make(chan error, 1)
+	go func() { done <- action() }()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		worker.interruptIfAlone(generation, transferID)
+		return fmt.Errorf("%w: %s did not answer within %s", ErrUploadFinalizeTimeout, stage, timeout)
+	}
 }
 
 func (worker *Worker) download(client Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {
@@ -1736,6 +1784,15 @@ const uploadWindow = 64
 // subsystem usable to remove the partial file; writes on a link that no longer
 // answers would hold the transfer for as long as the link takes to give up.
 const uploadCancelGrace = 3 * time.Second
+
+// uploadFinalizeTimeout bounds every request that turns a completed partial
+// file into the final one. The requests carry tiny payloads after the data was
+// acknowledged, so a server that needs longer than this is not making progress;
+// without the bound an unadvertised or ignored rename extension holds the
+// transfer at "finishing" indefinitely.
+const uploadFinalizeTimeout = 30 * time.Second
+
+const posixRenameExtension = "posix-rename@openssh.com"
 
 // errUploadAbandoned accompanies ErrCanceled when an upload was left with
 // writes still in flight: the file handle cannot be used or closed safely.
@@ -2303,12 +2360,31 @@ func ensureLocalDirectory(localPath string, mode os.FileMode) error {
 }
 
 func commitRemote(client transferRemote, partial, final string, finalExists bool) error {
-	if err := client.PosixRename(partial, final); err == nil {
-		return nil
-	} else if finalExists {
-		return fmt.Errorf("sftp: atomic remote replacement is unavailable: %w", err)
+	if supportsPosixRename(client) {
+		if err := client.PosixRename(partial, final); err == nil {
+			return nil
+		} else if finalExists {
+			return fmt.Errorf("sftp: atomic remote replacement is unavailable: %w", err)
+		}
 	}
 	return client.Rename(partial, final)
+}
+
+// supportsPosixRename reports whether the server announced the OpenSSH
+// extension. Sending it to a server that does not announce it makes some
+// servers ignore the packet instead of answering with an error, which leaves
+// the upload waiting forever.
+func supportsPosixRename(client transferRemote) bool {
+	extended, ok := client.(interface {
+		HasExtension(string) (string, bool)
+	})
+	if !ok {
+		// Minimal test and legacy remotes do not expose the negotiated map;
+		// preserve their previous behavior.
+		return true
+	}
+	version, ok := extended.HasExtension(posixRenameExtension)
+	return ok && version == "1"
 }
 
 // removeRemotePartial deletes the partial file of an upload that was given up.

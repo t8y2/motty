@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
+	"motty/internal/sshconn"
 )
 
 // The second column belongs to each host. Mixed views can share one compact
@@ -24,6 +25,9 @@ func (s *State) paintDashboardSimpleRow(c *ui.Canvas, p *monitoring.Panel, h Hos
 	}
 	if h.ID != 0 {
 		components.BeginButton(c, s.Theme(), hitDashboardTerminalList.At(int(h.ID)), ui.Rect{X: b.X + b.Width - 38, Y: b.Y + 24, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().Ghost(s.messages.Dashboard.Terminal)
+		if source := s.dashboard.sources[h.CatalogID]; source != nil && source.session.phase == sshconn.PhaseConnected && source.session.host.System != sshconn.SystemWindows {
+			s.paintDashboardSudo(c, h.ID, source, ui.Rect{X: b.X + b.Width - 74, Y: b.Y + 24, Width: 32})
+		}
 	}
 	c.Fill(ui.Rect{X: b.X, Y: b.Y + b.Height - 1, Width: b.Width, Height: 1}, s.pal.line)
 }

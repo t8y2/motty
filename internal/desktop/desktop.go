@@ -7,6 +7,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"net"
 	"time"
 )
@@ -107,11 +108,17 @@ const (
 // system cannot say. A backend that names characters (VNC) sends it instead of
 // the Rune; a backend that names keys (RDP) ignores it, the remote applies the
 // modifiers itself.
+//
+// Repeat marks a press that repeats a key the remote already has down: the
+// local system's auto-repeat. A backend whose server repeats a held key by
+// itself ignores it; one whose server waits for the client (RDP) sends the key
+// down again and says that it was already down.
 type KeyEvent struct {
-	Key   Key
-	Rune  rune
-	Typed rune
-	Down  bool
+	Key    Key
+	Rune   rune
+	Typed  rune
+	Down   bool
+	Repeat bool
 }
 
 // Info describes a connection for display.
@@ -181,6 +188,75 @@ type Session interface {
 	Close() error
 }
 
+// FileClipboard is a Session that can give files from this computer to the
+// remote system's clipboard, so that the remote user pastes them: RDP does, as
+// a clipboard file transfer; VNC has no such transfer and does not implement it.
+type FileClipboard interface {
+	Session
+	// SetClipboardFiles makes the files and folders at paths what the remote
+	// clipboard holds. The list is made before it returns, which walks folders, so
+	// a caller does not call it from a goroutine that paints. What the remote then
+	// pastes is read from this computer when it does. The error is one of the
+	// Err values below or a failure of the connection; the FileOffer comes back
+	// with it so the path that caused it can be named.
+	SetClipboardFiles(paths []string) (FileOffer, error)
+}
+
+// FileReceiver is a Session that can take files the remote system put on its
+// clipboard. The files are saved beside this computer's own clipboard, so the
+// user can paste them where they are working.
+type FileReceiver interface {
+	Session
+	// RemoteFiles returns the files the remote clipboard delivered since the
+	// previous call, if any. Paths names the top-level entries to put on the
+	// local clipboard; Err says why none or only some arrived.
+	RemoteFiles() (ReceivedFiles, bool)
+}
+
+// ReceivedFiles is a remote file list saved on this computer.
+type ReceivedFiles struct {
+	// Paths are the top-level files and folders, absolute and local.
+	Paths []string
+	// Files and Folders count what arrived; Bytes is their total size.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts entries that could not be saved.
+	Skipped int
+	// Err reports a failure, including one that left only some entries saved.
+	Err error
+}
+
+// FileOffer says what SetClipboardFiles put on the remote clipboard.
+type FileOffer struct {
+	// Files and Folders count what is offered; Bytes is the total size of the files.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts what could not be offered (links, devices, files the server
+	// cannot take, unreadable entries) and FirstSkipped names the first. With an
+	// error, FirstSkipped names the path that caused it.
+	Skipped      int
+	FirstSkipped string
+}
+
+// Why SetClipboardFiles refuses.
+var (
+	// ErrFilesUnsupported: the server does not take files through the clipboard.
+	ErrFilesUnsupported = errors.New("the remote system does not take files through the clipboard")
+	// ErrClipboardOff: the host shares no clipboard.
+	ErrClipboardOff = errors.New("clipboard sharing is off for this host")
+	// ErrClipboardNotReady: the clipboard channel is still starting.
+	ErrClipboardNotReady = errors.New("the clipboard channel is not ready")
+	// ErrNothingToOffer: none of the paths can be offered.
+	ErrNothingToOffer = errors.New("there is nothing to offer")
+	// ErrTooManyFiles: the selection is larger than one offer holds (MaxOfferFiles).
+	ErrTooManyFiles = errors.New("the selection holds too many files")
+	// ErrPathTooLong: a path inside the selection does not fit what the remote can name.
+	ErrPathTooLong = errors.New("a path in the selection is too long")
+)
+
+// MaxOfferFiles is the most files and folders one offer holds, as RDP counts them.
+const MaxOfferFiles = 20000
+
 // Resizer is a Session whose server changes the desktop's size while the
 // session runs, so that the picture can be kept the size of the pane and shown
 // pixel for pixel, as a window of the remote machine would be.
@@ -245,6 +321,9 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
+	// AskCredentials obtains a VNC RSA-AES account and its password, separately
+	// from a legacy VNC password.
+	AskCredentials func() (username, password string, err error)
 	// Notify is called, from any goroutine, when the session has something new:
 	// a changed picture, a clipboard, the end of the connection. It must not
 	// block.
@@ -261,8 +340,8 @@ type Options struct {
 	// happens when someone is already at the console is its decision, not the
 	// client's. VNC has no such session.
 	Console bool
-	// Username and Domain are the account a protocol with accounts (RDP) signs
-	// in as; VNC has none.
+	// Username and Domain are the account a protocol with accounts signs in as.
+	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string
 	// Width and Height are the size, in device pixels, of the desktop to ask for
 	// when the protocol lets the client choose it (RDP); zero lets the backend
@@ -273,13 +352,13 @@ type Options struct {
 	// its interface at that scale (RDP), so that text and controls come out the
 	// size the user's own display makes them; zero is 1.
 	Scale float32
-	// VerifyCertificate is called with the DER certificate a server presents over
-	// TLS (RDP), after the handshake and before any secret is sent. A server's
-	// self-signed certificate cannot be checked against an authority, so the
-	// caller decides, typically by pinning: an error ends the attempt. address is
-	// what the user typed (the name the pin is kept under), not necessarily where
-	// the bytes went. Nil accepts any certificate, which only tests do.
+	// VerifyCertificate checks an RDP server's DER certificate before any
+	// secret is sent. address is the user-entered name used for pinning.
+	// A callback error ends the connection. Nil is only used by tests.
 	VerifyCertificate func(address string, der []byte) error
+	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
+	// before the client sends credentials. Nil does not trust an RSA-AES server.
+	VerifyServerKey func(address string, publicKeyDER []byte) error
 }
 
 // Dialer opens the byte stream to the server: a direct TCP connection, or a

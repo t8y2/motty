@@ -18,23 +18,31 @@ import (
 // other, so each must be named here or in the record tables.
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
-		"recent_connect_sort": true, "recent_connections": true,
+		"notes_view": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
 		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
-		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true,
+		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
+		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
 		"terminal_toolbar_size":     true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
-		"host_view": true, "background": true, "snippet_shortcuts": true,
+		// The generation of default chords this computer's table was reconciled
+		// against: which defaults a build ships is not another device's business.
+		"shortcut_defaults_generation": true,
+		"host_view":                    true, "background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
+		"tab_numbers":            true,
 		"vertical_tabs_grouping": true,
 		"workspace_layouts":      true,
 		"sftp_local_bookmarks":   true,
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
-		"sftp_window_order": true, "sftp_open_mode": true, "custom_editor_path": true,
+		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"toolbars":    true,
-		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true,
+		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// What a launch opens is chosen per computer: the shells and hosts of
+		// this machine, not a preference to carry across devices.
+		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_no_reuse": true,
 		"window_x": true, "window_y": true, "window_width": true, "window_height": true,
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.
@@ -62,7 +70,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/",
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{
@@ -116,7 +124,7 @@ func TestFormatNineUpgradePreservesHostsAndMonitoringAndBlocksOlderWriters(t *te
 				want.MonitorPanels = []monitoring.Panel{{ID: "panel", Name: "Production", Hosts: []string{"host_a"}, Interval: 5, Retention: 60}}
 				want.MonitorActive = "panel"
 			}
-			entries, local, err := splitState(want, newConfigBase(), nil)
+			entries, local, _, err := splitState(want, newConfigBase(), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,7 +157,7 @@ func TestFormatTenUpgradeKeepsTheLocalSessionLogSwitchAndBlocksOlderWriters(t *t
 	path := filepath.Join(t.TempDir(), "config.db")
 	want := richState()
 	want.SessionLogsOff = true
-	entries, local, err := splitState(want, newConfigBase(), nil)
+	entries, local, _, err := splitState(want, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +204,7 @@ func TestFormatSixteenKeepsTheInterfaceFontAndBlocksOlderWriters(t *testing.T) {
 	// A store a format-15 build wrote has no font: it opens with the default.
 	older := filepath.Join(t.TempDir(), "config.db")
 	state := richState()
-	entries, local, err := splitState(state, newConfigBase(), nil)
+	entries, local, _, err := splitState(state, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +249,7 @@ func TestFormatSeventeenKeepsInterfaceFontAndToolbarPositionAndBlocksOlderWriter
 	older := filepath.Join(t.TempDir(), "config.db")
 	state := richState()
 	state.InterfaceFont = "Noto Sans"
-	entries, local, err := splitState(state, newConfigBase(), nil)
+	entries, local, _, err := splitState(state, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +274,7 @@ func TestSessionLogCaptureDefaultsOnForAStateThatPredatesIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.db")
 	// A format-10 state never wrote the switch: absent must mean capture on.
 	want := richState()
-	entries, local, err := splitState(want, newConfigBase(), nil)
+	entries, local, _, err := splitState(want, newConfigBase(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

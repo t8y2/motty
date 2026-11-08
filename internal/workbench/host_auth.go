@@ -160,7 +160,7 @@ func (state *State) clickHostAuthentication(id ui.ID) bool {
 	switch {
 	case id == hitDialogAuth:
 		editor.authOpen = !editor.authOpen
-		editor.identityOpen = false
+		editor.identityOpen, editor.credentialOpen = false, false
 	case id == hitDialogAuthDismiss:
 		editor.authOpen = false
 	case id.Scope() == hitDialogAuthItemList:
@@ -173,7 +173,7 @@ func (state *State) clickHostAuthentication(id ui.ID) bool {
 		editor.identityOpen = false
 	case id == hitDialogIdentity:
 		editor.identityOpen = !editor.identityOpen
-		editor.authOpen = false
+		editor.authOpen, editor.credentialOpen = false, false
 	case id == hitDialogIdentityDismiss:
 		editor.identityOpen = false
 	case id == hitDialogIdentityAll:

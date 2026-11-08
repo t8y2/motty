@@ -890,8 +890,13 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
-	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "/home/test/notes.txt" {
+	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {
 		t.Fatalf("rename dialog = %+v", view)
+	}
+	replaceSFTPDialogText(t, state, "docs/renamed.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogRename || view.dialogError != state.messages.SFTPErrRenameInvalid {
+		t.Fatalf("rename accepted a path: dialog=%d error=%q", view.dialog, view.dialogError)
 	}
 	replaceSFTPDialogText(t, state, "renamed.txt")
 	state.Click(hitSFTPDialogSubmit)
@@ -924,6 +929,124 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	})
 	if !strings.Contains(view.status, "600") {
 		t.Fatalf("chmod completion status = %q", view.status)
+	}
+
+	// The permission grid mirrors the octal field in both directions
+	// (issue #392): nine boxes, a tap flips one bit, and a typed value moves
+	// the boxes.
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("chmod reopen value = %q", view.dialogEditor.String())
+	}
+	var canvas ui.Canvas
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var boxes [9]ui.Rect
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok {
+			t.Fatalf("permission checkbox %d is not painted", index)
+		}
+		// 600 checks owner read and write only: the boxes are drawn from the
+		// field, not from a state of their own.
+		if want := index < 2; hit.Checked != want {
+			t.Fatalf("permission checkbox %d checked = %v, want %v for 600", index, hit.Checked, want)
+		}
+		boxes[index] = hit.Bounds
+	}
+	// Tapping the gap between two boxes must not reach a neighbour.
+	for first := 0; first < 9; first++ {
+		for second := first + 1; second < 9; second++ {
+			a, b := boxes[first], boxes[second]
+			if a.X < b.X+b.Width && b.X < a.X+a.Width && a.Y < b.Y+b.Height && b.Y < a.Y+a.Height {
+				t.Fatalf("permission checkboxes %d and %d overlap: %+v %+v", first, second, a, b)
+			}
+		}
+	}
+	// An empty field is not a mode: every box stands down instead of showing
+	// stale bits.
+	replaceSFTPDialogText(t, state, "")
+	canvas = ui.Canvas{}
+	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok || !hit.Disabled {
+			t.Fatalf("permission checkbox %d enabled with an empty field: %+v %t", index, hit, ok)
+		}
+	}
+	replaceSFTPDialogText(t, state, "600")
+	// 600: owner rw. Tapping group write (index 4) sets that one bit: 620.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "620" {
+		t.Fatalf("after group-write tap = %q, want 620", view.dialogEditor.String())
+	}
+	// Tapping it again takes the bit back.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after second tap = %q, want 600", view.dialogEditor.String())
+	}
+	// Typing in the field moves the boxes: 700 has owner execute; tapping it
+	// clears the bit back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	state.Click(hitSFTPChmodBits.At(2))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after owner-exec tap on 700 = %q, want 600", view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		index := sftpRowIndexOrNegative(view, "renamed.txt")
+		return !view.busy && index >= 0 && view.rows[index].entry.Mode.Perm() == 0o600
+	})
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPMove)
+	if view.dialog != sftpDialogMove || view.dialogEditor.String() != "/home/test" {
+		t.Fatalf("move dialog = dialog %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveSame {
+		t.Fatalf("move to the current folder was accepted: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "renamed.txt") < 0
+	})
+	remote.mu.Lock()
+	_, moved := remote.files["/home/test/docs/renamed.txt"]
+	_, oldLocation := remote.files["/home/test/renamed.txt"]
+	remote.mu.Unlock()
+	if !moved || oldLocation {
+		t.Fatalf("move state: moved=%v old=%v", moved, oldLocation)
+	}
+}
+
+func TestRemoteRenameAcceptsOnlyBaseNames(t *testing.T) {
+	for _, value := range []string{"renamed.txt", "配置.yaml", ".env", "with space"} {
+		if !validRemoteBaseName(value) {
+			t.Errorf("valid base name %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", ".", "..", "folder/file", `folder\file`, "nul\x00name"} {
+		if validRemoteBaseName(value) {
+			t.Errorf("path-like name %q was accepted", value)
+		}
+	}
+}
+
+func TestRemoteMoveRejectsItsOwnDirectory(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPMove)
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into itself = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "/home/test/docs/deep")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into its descendant = dialog %d, error %q", view.dialog, view.dialogError)
 	}
 }
 
@@ -1382,53 +1505,144 @@ func TestSFTPDoubleClickEntersFoldersAndOpensFiles(t *testing.T) {
 // done or under way instead of starting it; a folder seen before comes back at
 // once, and refresh reads again.
 func TestSFTPEnteringAFolderUsesWhatTheFirstClickStarted(t *testing.T) {
-	state, session, _, remote := openTestSFTP(t)
-	view := session.files
-	remote.mu.Lock()
-	remote.readDelay = 80 * time.Millisecond
-	remote.mu.Unlock()
-	docs := sftpRowIndex(t, view, "docs")
-	target := contextID(hitSFTPEntryList.At(docs - view.first))
-	press := func(clicks int) {
-		// As the runtime delivers a click: the press, then the click on release.
-		result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks, Target: target})
-		if !result.Handled {
-			state.Click(target)
+	for _, completed := range []bool{false, true} {
+		name := "prefetch_in_flight"
+		if completed {
+			name = "prefetch_completed"
 		}
-	}
+		t.Run(name, func(t *testing.T) {
+			const directory = "/home/test/docs"
+			state, session, _, remote := openTestSFTP(t)
+			view := session.files
+			reads := make(chan chan struct{}, 1)
+			stop := make(chan struct{})
+			// Registered after openTestSFTP: release every blocked read before
+			// its cleanup closes the worker, including when an assertion fails.
+			t.Cleanup(func() { close(stop) })
+			remote.mu.Lock()
+			remote.onRead = func(dir string) {
+				if dir != directory {
+					return
+				}
+				release := make(chan struct{})
+				select {
+				case reads <- release:
+				case <-stop:
+					return
+				}
+				select {
+				case <-release:
+				case <-stop:
+				}
+			}
+			remote.mu.Unlock()
+			nextRead := func() chan struct{} {
+				t.Helper()
+				var release chan struct{}
+				waitSFTP(t, state, session, func(*sftpView) bool {
+					select {
+					case release = <-reads:
+						return true
+					default:
+						return false
+					}
+				})
+				return release
+			}
+			assertShown := func() {
+				t.Helper()
+				if view.path != directory || view.busy || view.waiting != "" {
+					t.Fatalf("folder not shown: path=%q busy=%v waiting=%q", view.path, view.busy, view.waiting)
+				}
+				if len(view.rows) != 1 || view.rows[0].entry.Name != "guide.md" {
+					t.Fatalf("folder rows = %+v, want guide.md", view.rows)
+				}
+			}
+			waitAccepted := func(id uint64) {
+				t.Helper()
+				waitSFTP(t, state, session, func(view *sftpView) bool {
+					_, inFlight := view.prefetching[directory]
+					return !inFlight && view.acceptedListID == id && !view.busy && view.path == directory
+				})
+				assertShown()
+			}
+			docs := sftpRowIndex(t, view, "docs")
+			target := contextID(hitSFTPEntryList.At(docs - view.first))
+			press := func(clicks int) {
+				// As the runtime delivers a click: the press, then the click on release.
+				result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks, Target: target})
+				if !result.Handled {
+					state.Click(target)
+				}
+			}
 
-	press(1)
-	time.Sleep(100 * time.Millisecond) // the gap between the two presses of a double-click
-	started := time.Now()
-	press(2)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
-	if waited := time.Since(started); waited > 30*time.Millisecond {
-		t.Fatalf("entering the folder took %v after the double-click; the first click should have started the read", waited)
-	}
-	if got := remote.readCount("/home/test/docs"); got != 1 {
-		t.Fatalf("the folder was listed %d times, want once", got)
-	}
+			press(1)
+			firstRead := nextRead()
+			firstID := view.prefetching[directory]
+			if firstID == 0 || view.path != "/home/test" || view.busy || remote.readCount(directory) != 1 {
+				t.Fatalf("single click did not prefetch without entering: id=%d path=%q busy=%v reads=%d", firstID, view.path, view.busy, remote.readCount(directory))
+			}
+			if completed {
+				close(firstRead)
+				waitSFTP(t, state, session, func(view *sftpView) bool {
+					_, inFlight := view.prefetching[directory]
+					_, remembered := view.listing(directory)
+					return !inFlight && remembered
+				})
+				press(2)
+				assertShown() // The completed prefetch is shown before the new read returns.
+				reread := nextRead()
+				id := view.prefetching[directory]
+				assertShown()
+				if remote.readCount(directory) != 2 {
+					t.Fatal("entering the prefetched folder did not start exactly one background reread")
+				}
+				close(reread)
+				waitAccepted(id)
+			} else {
+				press(2)
+				if !view.busy || view.waiting != directory || view.waitingID != firstID || view.prefetching[directory] != firstID {
+					t.Fatalf("double-click did not join the first read: busy=%v waiting=%q id=%d, want %d", view.busy, view.waiting, view.waitingID, firstID)
+				}
+				close(firstRead)
+				waitAccepted(firstID)
+				if remote.readCount(directory) != 1 {
+					t.Fatal("double-click listed the folder again instead of joining the first read")
+				}
+			}
 
-	// Back up, and in again: the folder is remembered, so it shows without
-	// waiting, and is read once more behind the scenes to stay true.
-	state.Click(hitSFTPUp)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
-	started = time.Now()
-	press(2)
-	if view.path != "/home/test/docs" || view.busy {
-		t.Fatalf("a remembered folder did not open at once: path=%q busy=%v", view.path, view.busy)
-	}
-	if time.Since(started) > 20*time.Millisecond {
-		t.Fatalf("a remembered folder took %v to show", time.Since(started))
-	}
-	waitSFTP(t, state, session, func(view *sftpView) bool { return remote.readCount("/home/test/docs") == 2 })
+			// A remembered folder is shown while its background reread is held.
+			state.Click(hitSFTPUp)
+			waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
+			before := remote.readCount(directory)
+			press(2)
+			assertShown()
+			reread := nextRead()
+			rereadID := view.prefetching[directory]
+			assertShown()
+			if remote.readCount(directory) != before+1 {
+				t.Fatal("entering a remembered folder did not start exactly one background reread")
+			}
+			close(reread)
+			waitAccepted(rereadID)
 
-	// Refresh trusts nothing remembered.
-	before := remote.readCount("/home/test/docs")
-	state.Click(hitSFTPRefresh)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
-	if remote.readCount("/home/test/docs") != before+1 {
-		t.Fatal("refresh did not list the folder again")
+			// Refresh waits for a new server result instead of using the cache.
+			before = remote.readCount(directory)
+			state.Click(hitSFTPRefresh)
+			if !view.busy {
+				t.Fatal("refresh did not wait for a new listing")
+			}
+			refreshID := view.navigation.id
+			refresh := nextRead()
+			if !view.busy || remote.readCount(directory) != before+1 {
+				t.Fatal("refresh did not start exactly one new listing")
+			}
+			close(refresh)
+			waitAccepted(refreshID)
+			if remote.readCount(directory) != before+1 {
+				t.Fatal("refresh listed the folder more than once")
+			}
+		})
 	}
 }
 

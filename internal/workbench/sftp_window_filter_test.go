@@ -12,6 +12,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
@@ -30,7 +31,7 @@ func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) u
 	if len(folder.rows) > 0 {
 		dualClickID(t, view, sftpWindowRows[sideIndex(local)].At(0))
 	}
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'f'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'f'); err != nil {
 		t.Fatal(err)
 	}
 	focused := view.Snapshot().Focused
@@ -42,7 +43,7 @@ func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) u
 }
 func dualReplaceFilter(t *testing.T, view *headless.Session, value string) {
 	t.Helper()
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'a'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'a'); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Type(value); err != nil {
@@ -123,7 +124,7 @@ func TestSFTPWindowNativeFiltersIndependentAndVisibilitySafe(t *testing.T) {
 		t.Fatal("second Esc did not dismiss only filter")
 	}
 	dualClickID(t, view, localInput)
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'l'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'l'); err != nil {
 		t.Fatal(err)
 	}
 	if view.Snapshot().Focused != sftpWindowPath[0] {
@@ -224,31 +225,29 @@ func TestSFTPPanelMoreSortPreservesAnchorAndRefresh(t *testing.T) {
 	entries := []sftpclient.Entry{{Name: "z.txt", Size: 10, ModTime: time.Unix(1, 0)}, {Name: "a.txt", Size: 30, ModTime: time.Unix(3, 0)}, {Name: "m.txt", Size: 20, ModTime: time.Unix(2, 0)}, {Name: "folder", Mode: os.ModeDir | 0755}}
 	state.showSFTPListing(view, view.path, entries)
 	pressSFTPRow(state, view, sftpRowIndex(t, view, "m.txt"), 0)
-	sortBy := func(label string) {
+	// The menu's sort rows are identified by column, exactly as the panel paints
+	// them: its labels also name the column headers, which are painted before it.
+	sortBy := func(column int, label string) {
 		t.Helper()
 		state.Click(contextID(hitSFTPHeaderMore))
-		canvas, _ := paintedTexts(state)
-		for _, hit := range canvas.Hits() {
-			if hit.Label == label && !hit.Block {
-				state.Click(hit.ID)
-				return
-			}
+		state.Click(contextID(sftpHeaderSortHits.At(column)))
+		if view.active().headerMenuOpen {
+			t.Fatalf("panel More did not take sort %q", label)
 		}
-		t.Fatalf("panel More has no sort %q", label)
 	}
-	sortBy(state.messages.SFTPWindow.Size)
+	sortBy(int(sftpColumnSize), state.messages.SFTPWindow.Size)
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder z.txt m.txt a.txt]" {
 		t.Fatalf("size order=%s", got)
 	}
 	if view.anchor < 0 || view.selected < 0 || view.rows[view.anchor].entry.Name != "m.txt" || view.rows[view.selected].entry.Name != "m.txt" || !view.rows[view.selected].selected {
 		t.Fatal("sort lost selection anchor")
 	}
-	sortBy(state.messages.SFTPWindow.Modified)
+	sortBy(int(sftpColumnModified), state.messages.SFTPWindow.Modified)
 	state.showSFTPListing(view, view.path, entries)
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder z.txt m.txt a.txt]" {
 		t.Fatalf("refresh lost modified order=%s", got)
 	}
-	sortBy(state.messages.SFTPWindow.Name)
+	sortBy(int(sftpColumnName), state.messages.SFTPWindow.Name)
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder a.txt m.txt z.txt]" {
 		t.Fatalf("name order=%s", got)
 	}
@@ -395,7 +394,7 @@ func TestSFTPWindowFilterShortcutUsesFocusedSideToolbar(t *testing.T) {
 	for side := range 2 {
 		for _, id := range []ui.ID{sftpWindowRefresh[side], sftpWindowUp[side], sftpWindowActions[side].At(0)} {
 			w.activeLocal, w.view.local = side != 0, side != 0
-			got := w.shortcut(ui.KeyEvent{Target: id, Modifiers: defaultShortcutModifier(), Text: "f"})
+			got := w.shortcut(ui.KeyEvent{Target: id, Modifiers: keymap.Primary, Text: "f"})
 			if !got.Handled || got.Focus != sftpWindowFilter[side] {
 				t.Fatalf("toolbar %v opened wrong side filter: %+v", id, got)
 			}
@@ -429,7 +428,7 @@ func TestSFTPWindowNativeFindFromRemoteToolbarAfterTab(t *testing.T) {
 			if !w.activeLocal {
 				t.Fatal("fixture passed remote path editor instead of exercising toolbar focus")
 			}
-			if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'f'); err != nil {
+			if _, err := view.Driver().ShortcutChord(keymap.Primary, 'f'); err != nil {
 				t.Fatal(err)
 			}
 			if view.Snapshot().Focused != sftpWindowFilter[1] || !w.view.filterOpen || w.view.lfolder.filterOpen {

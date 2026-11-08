@@ -34,7 +34,7 @@ func monitorRunnerFor(session *Session) monitorRunner {
 	if session.isLocal() {
 		return remotestats.Local{}
 	}
-	return session.conn
+	return commandRunnerFor(session)
 }
 
 func startMonitorWorker(runner remotestats.Runner, notify func(), system sshconn.RemoteSystem, seconds int) *remotestats.Worker {

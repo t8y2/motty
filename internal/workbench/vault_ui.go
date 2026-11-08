@@ -68,7 +68,18 @@ func hostSecretName(catalogID, part string) string { return "host:" + catalogID 
 // passwordName and otpSecretName are the secrets of the host the prompt of a
 // session is about (see hostCatalog.secretOwner).
 func (state *State) passwordName(session *Session) string {
-	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), hostPasswordPart)
+	return state.passwordSecret(session.host, session.endpoint, session.role)
+}
+
+func vncSystemPasswordPart(username string) string { return "vnc-system-password:" + username }
+
+func passwordPart(host Host, endpoint sshconn.Endpoint) string {
+	if host.Protocol == protocolVNC {
+		if username, ok := strings.CutPrefix(endpoint.User, vncAccountPrefix); ok {
+			return vncSystemPasswordPart(username)
+		}
+	}
+	return hostPasswordPart
 }
 
 func (state *State) otpSecretName(session *Session) string {
@@ -201,7 +212,7 @@ func (state *State) canAutofill(session *Session, status sshconn.Status) bool {
 	var name string
 	switch {
 	case status.Phase == sshconn.PhasePasswordPrompt && isPasswordQuestion(status.Questions):
-		name = hostSecretName(owner, hostPasswordPart)
+		name = state.passwordSecret(session.host, status.Endpoint, status.EndpointRole)
 	case status.Phase == sshconn.PhaseKeyPassphrasePrompt && status.IdentityPath != "":
 		name = passphraseSecretName(status.IdentityPath)
 	default:
@@ -218,6 +229,12 @@ func (state *State) forgetRefusedSecret(session *Session, name string) bool {
 		return false
 	}
 	session.filledSecret = ""
+	if strings.HasPrefix(name, credentialSecretName("")) {
+		// Other hosts use it too, and one host that refuses it says nothing about
+		// the rest. The user changes it in Settings.
+		state.status = state.messages.Credentials.StatusRefused
+		return false
+	}
 	_ = state.secrets.vault.Delete(name)
 	return true
 }
@@ -306,6 +323,7 @@ func (state *State) submitVaultUnlock() {
 	}
 	state.secrets.declined = false
 	state.migrateSecretsToHosts(false)
+	state.reloadStoredIdentities() // keys that came by sync while it was locked
 	if state.sync.waitingForVault {
 		state.sync.waitingForVault = false
 		state.scheduleSync()
@@ -362,6 +380,7 @@ func (state *State) clickVaultForget(id ui.ID) {
 			} else {
 				state.status = state.messages.VaultCleared
 			}
+			state.reloadStoredIdentities()
 		}
 		state.closeModal()
 		state.showNextPrompt()
@@ -374,8 +393,12 @@ func (state *State) clickVaultForget(id ui.ID) {
 func (state *State) paintVaultForgetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	m := state.messages
 	// The text is wrapped to the body's width: 540 less the dialog's padding.
-	var wrapped [3]string
-	lines := canvas.WrapLines(wrapped[:0], m.VaultForgetDescription, metrics.FontSizeM, ui.WeightRegular, 500, 3)
+	description := m.VaultForgetDescription
+	if stored := state.storedKeyCount(); stored > 0 {
+		description += " " + fmt.Sprintf(m.VaultForgetKeysFmt, stored)
+	}
+	var wrapped [5]string
+	lines := canvas.WrapLines(wrapped[:0], description, metrics.FontSizeM, ui.WeightRegular, 500, len(wrapped))
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitVaultForgetDismiss, CloseID: hitVaultForgetClose, InitialFocusID: hitVaultForgetCancel,
@@ -383,7 +406,7 @@ func (state *State) paintVaultForgetDialog(canvas *ui.Canvas, viewport ui.Rect) 
 	})
 	layout := dialog.Begin(m.VaultForgetTitle, "")
 	f := state.secrets.layout.Begin(canvas, state.Theme(), layout.Body)
-	f.Paragraph(m.VaultForgetDescription, len(wrapped)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
+	f.Paragraph(description, len(wrapped)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
 	f.End()
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitVaultForgetCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
@@ -419,6 +442,7 @@ func (state *State) clickVaultSettings(id ui.ID) bool {
 func (state *State) paintSecuritySettings(page *settingsPage) {
 	m := state.messages
 	page.groups(func() {
+		state.paintCredentialSettings(page)
 		state.paintSessionLogSettingsGroup(page)
 		vaultFile := state.secrets.vault
 		if vaultFile == nil {

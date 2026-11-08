@@ -24,6 +24,9 @@ func settleImages(t testing.TB, state *State) {
 }
 
 func TestTerminalImagesReachVifBitmapCanvasAndSteadyPaintAllocatesNothing(t *testing.T) {
+	if raceDetector {
+		t.Skip("allocation counts are not comparable under the race detector")
+	}
 	state, _, _, shell := liveSession(t)
 	picture := image.NewNRGBA(image.Rect(0, 0, 2, 1))
 	picture.SetNRGBA(0, 0, stdcolor.NRGBA{R: 255, A: 255})

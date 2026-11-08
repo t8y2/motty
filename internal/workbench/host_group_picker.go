@@ -37,6 +37,9 @@ func (state *State) hostGroupPicker() *hostGroupPicker {
 		// A group has one name: typing "servers" over "Servers" must select the
 		// existing group rather than create a case-different twin.
 		p.control.MatchCaseInsensitive = true
+		// Groups nest by "/": browse one level at a time, with typing as the
+		// flat search over full paths.
+		p.control.Separator = "/"
 		p.control.SetValidateCreate(validHostGroup)
 		options := make([]components.SingleSelectOption, 0, len(state.hostGroups))
 		for _, group := range state.hostGroups {
@@ -156,9 +159,7 @@ func (state *State) paintHostGroupPicker(canvas *ui.Canvas, bounds ui.Rect) {
 		Viewport: viewport, Layer: dialogLayer + 2, Invalid: query != "" && !validHostGroup(query),
 	})
 	p.popup = layout.Popup
-	for _, hit := range canvas.Hits() {
-		if hit.ID == hitHostGroupClear {
-			state.rememberHostControl(hit.ID, hit.Bounds)
-		}
+	if bounds, ok := canvas.HitBounds(hitHostGroupClear); ok {
+		state.rememberHostControl(hitHostGroupClear, bounds)
 	}
 }

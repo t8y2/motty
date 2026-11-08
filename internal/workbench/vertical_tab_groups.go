@@ -58,14 +58,16 @@ type verticalTabRow struct {
 	group    int
 	tab      int // -1 is a group header
 	indented bool
+	number   int // the tab's place in the number row, zero for a header
 }
 
 type verticalTabGrouping struct {
 	groups    []verticalTabGroup
 	rows      []verticalTabRow
-	order     []layoutcore.WorkspaceInfo // all tabs, in grouped visual order
-	layout    []layoutcore.WorkspaceInfo // visible rows for the scroll strip
-	options   []components.TabOption     // visible keyboard targets, including headers
+	order     []layoutcore.WorkspaceInfo      // all tabs, in grouped visual order
+	layout    []layoutcore.WorkspaceInfo      // visible rows for the scroll strip
+	options   []components.TabOption          // visible keyboard targets, including headers
+	tree      []components.TreeNavigationItem // the same rows as a tree, for the arrow keys
 	collapsed map[verticalTabKey]bool
 	revealed  layoutcore.WorkspaceID
 	compact   bool
@@ -224,7 +226,7 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 			previousActiveRow = index
 		}
 	}
-	view.order, view.rows, view.layout, view.options = view.order[:0], view.rows[:0], view.layout[:0], view.options[:0]
+	view.order, view.rows, view.layout, view.options, view.tree = view.order[:0], view.rows[:0], view.layout[:0], view.options[:0], view.tree[:0]
 	for index := range view.groups {
 		group := &view.groups[index]
 		if group.label == "" || group.labelCount != group.count || group.labelFormat != state.messages.VerticalTabGroupCountFmt {
@@ -236,6 +238,7 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 			id := group.id()
 			view.rows = append(view.rows, verticalTabRow{group: index, tab: -1})
 			view.options = append(view.options, components.TabOption{ID: id, Label: group.label})
+			view.tree = append(view.tree, components.TreeNavigationItem{Branch: true, Expanded: !view.collapsed[group.key]})
 			row := layoutcore.WorkspaceInfo{}
 			if group.active && view.collapsed[group.key] {
 				row.ID = active
@@ -244,13 +247,22 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 		}
 		for _, tabIndex := range group.members[:group.count] {
 			tab := state.workspaceTabs[tabIndex]
+			// A collapsed group keeps the numbers of the tabs it hides: they
+			// still occupy their places in the row the shortcuts count.
+			number := len(view.order) + 1
 			view.order = append(view.order, tab)
 			if group.count > 1 && view.collapsed[group.key] && !compact {
 				continue
 			}
-			view.rows = append(view.rows, verticalTabRow{group: index, tab: tabIndex, indented: group.count > 1 && !compact})
+			indented := group.count > 1 && !compact
+			view.rows = append(view.rows, verticalTabRow{group: index, tab: tabIndex, indented: indented, number: number})
 			view.layout = append(view.layout, tab)
 			view.options = append(view.options, components.TabOption{ID: hitTabList.At(int(tab.ID)), Label: state.tabLabel(tab)})
+			item := components.TreeNavigationItem{}
+			if indented {
+				item.Depth = 1
+			}
+			view.tree = append(view.tree, item)
 		}
 	}
 	if previousActiveRow >= 0 {
@@ -280,7 +292,7 @@ func (state *State) declareGroupedVerticalTabs(f *flex.Frame, width float32, com
 			if indent > 0 {
 				f.Slot().Width(indent).Shrink(0)
 			}
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact))
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
 		})
 	}
 }
@@ -347,31 +359,30 @@ func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed b
 	view.collapsed[key] = true
 }
 
+// verticalTabGroupKey moves the keyboard through the grouped rows as a tree: the arrows step
+// through the visible rows without wrapping, Right opens a group or goes into it, Left closes it
+// or goes back to its header, and Home, End and the page keys jump. The rows are the ones on
+// screen, so the children of a collapsed group are skipped. It owns every key in the list.
 func (state *State) verticalTabGroupKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if !state.verticalTabsGrouped() || event.Target.Scope() != hitTabList && event.Target.Scope() != hitVerticalTabGroups {
 		return ui.EventResult{}, false
 	}
 	view := &state.verticalTabs.grouped
-	for _, row := range view.rows {
-		group := &view.groups[row.group]
-		if row.tab < 0 && group.id() == event.Target {
-			switch event.Key {
-			case ui.KeyLeft, ui.KeyRight:
-				collapse := event.Key == ui.KeyLeft
-				if !collapse && !view.collapsed[group.key] {
-					tab := state.workspaceTabs[group.members[0]]
-					return state.focusVerticalTabRow(hitTabList.At(int(tab.ID))), true
-				}
-				state.setVerticalTabGroupCollapsed(group.key, collapse)
-				return ui.EventResult{Focus: event.Target, FocusVisible: true, Handled: true, Repaint: true}, true
-			}
-		} else if row.tab >= 0 && hitTabList.At(int(state.workspaceTabs[row.tab].ID)) == event.Target && row.indented && event.Key == ui.KeyLeft {
-			return state.focusVerticalTabRow(group.id()), true
-		}
+	current := slices.IndexFunc(view.options, func(option components.TabOption) bool { return option.ID == event.Target })
+	pageRows := 1
+	if pitch := state.tabStrip.pitch; pitch > 0 {
+		pageRows = max(int(state.tabStrip.area.Height/pitch), 1)
 	}
-	next, handled := components.TabsKeyDown(event.Target, view.options, components.TabsVertical, components.DirectionLTR, event.Key)
-	if handled {
-		return state.focusVerticalTabRow(next), true
+	next, action, handled := components.NavigateTree(view.tree, current, event.Key, pageRows)
+	if !handled {
+		return ui.EventResult{}, true
+	}
+	switch action {
+	case components.TreeNavigationExpand, components.TreeNavigationCollapse:
+		state.setVerticalTabGroupCollapsed(view.groups[view.rows[current].group].key, action == components.TreeNavigationCollapse)
+		return ui.EventResult{Focus: event.Target, FocusVisible: true, Handled: true, Repaint: true}, true
+	case components.TreeNavigationMove:
+		return state.focusVerticalTabRow(view.options[next].ID), true
 	}
 	return ui.EventResult{}, true
 }

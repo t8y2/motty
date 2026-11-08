@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/app"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -25,12 +26,21 @@ func newTwoWindows(t *testing.T) *twoWindows {
 	t.Helper()
 	pair := &twoWindows{}
 	group := NewGroup()
+	// One process reads and writes one store, so a save in one window is what
+	// the others have to pick up.
+	dir := t.TempDir()
+	statePath, knownHosts := filepath.Join(dir, "state.json"), filepath.Join(dir, "known_hosts")
+	if err := saveState(statePath, savedState{Hosts: sampleHosts}); err != nil {
+		t.Fatal(err)
+	}
 	make1 := func(wakes *atomic.Int32, x float32) (*State, *world) {
 		world, options := newWorld(t)
+		options.StatePath, options.KnownHostsPath = statePath, knownHosts
 		options.Group = group
 		options.Invalidate = func() { wakes.Add(1) }
 		options.TearOff = func(origin ui.Point, adopt func(*State)) error {
 			_, fresh := newWorld(t)
+			fresh.StatePath, fresh.KnownHostsPath = statePath, knownHosts
 			fresh.Group, fresh.Blank = group, true
 			fresh.Invalidate = func() {}
 			window := newTestState(t, fresh)
@@ -159,21 +169,21 @@ func TestDockingATemporaryTabKeepsItsSavedTemplateAction(t *testing.T) {
 	liveTab(t, pair.first, pair.firstW, 0)
 	liveTab(t, pair.second, pair.secondW, 1)
 	moving := tabOrder(pair.first)[0]
-	pair.first.managedWorkspaceColumns[moving] = 2
-	pair.first.temporaryWorkspaceColumns[moving] = 2
+	pair.first.managedWorkspaceLayouts[moving] = layoutcore.GridSpec(2)
+	pair.first.temporaryWorkspaceLayouts[moving] = layoutcore.GridSpec(2)
 	frame := pair.second.workspacePixelBounds(pair.second.viewport)
 
 	dragAcross(pair.first, moving, ui.Point{X: 1500 + frame.X + frame.Width*0.95, Y: frame.Y + frame.Height/2}, ui.Point{})
 
 	destination := tabOrder(pair.second)[0]
-	if columns, ok := pair.second.managedWorkspaceColumns[destination]; !ok || columns != 2 {
-		t.Fatalf("destination managed columns = %d, present=%t", columns, ok)
+	if columns, ok := pair.second.managedWorkspaceLayouts[destination]; !ok || !isGrid(columns, 2) {
+		t.Fatalf("destination managed layout = %+v, present=%t", columns, ok)
 	}
-	if columns, ok := pair.second.temporaryWorkspaceColumns[destination]; !ok || columns != 2 {
-		t.Fatalf("destination temporary columns = %d, present=%t", columns, ok)
+	if columns, ok := pair.second.temporaryWorkspaceLayouts[destination]; !ok || !isGrid(columns, 2) {
+		t.Fatalf("destination temporary layout = %+v, present=%t", columns, ok)
 	}
-	if len(pair.second.managedWorkspaceColumns) != 1 || len(pair.second.temporaryWorkspaceColumns) != 1 {
-		t.Fatalf("identity maps = managed %+v temporary %+v", pair.second.managedWorkspaceColumns, pair.second.temporaryWorkspaceColumns)
+	if len(pair.second.managedWorkspaceLayouts) != 1 || len(pair.second.temporaryWorkspaceLayouts) != 1 {
+		t.Fatalf("identity maps = managed %+v temporary %+v", pair.second.managedWorkspaceLayouts, pair.second.temporaryWorkspaceLayouts)
 	}
 }
 
@@ -181,23 +191,23 @@ func TestDockingAtemporaryTabPreservesDestinationManagedColumns(t *testing.T) {
 	state, ids := threeTabs(t)
 	source := ids[0]
 	destination := ids[2]
-	state.managedWorkspaceColumns[destination] = 3
-	state.managedWorkspaceColumns[source] = 1
-	state.temporaryWorkspaceColumns[source] = 2
+	state.managedWorkspaceLayouts[destination] = layoutcore.GridSpec(3)
+	state.managedWorkspaceLayouts[source] = layoutcore.GridSpec(1)
+	state.temporaryWorkspaceLayouts[source] = layoutcore.GridSpec(2)
 	state.deck.ActivateWorkspace(destination)
 	if !state.dockWorkspace(source, state.deck.Panes(destination, nil)[0].ID, dockLeft) {
 		t.Fatal("dock failed")
 	}
-	if state.managedWorkspaceColumns[destination] != 3 {
-		t.Fatalf("destination columns = %d, want 3", state.managedWorkspaceColumns[destination])
+	if !isGrid(state.managedWorkspaceLayouts[destination], 3) {
+		t.Fatalf("destination columns = %+v, want 3", state.managedWorkspaceLayouts[destination])
 	}
-	if state.temporaryWorkspaceColumns[destination] != 3 {
-		t.Fatalf("temporary columns = %d, want the destination's managed 3", state.temporaryWorkspaceColumns[destination])
+	if !isGrid(state.temporaryWorkspaceLayouts[destination], 3) {
+		t.Fatalf("temporary columns = %+v, want the destination's managed 3", state.temporaryWorkspaceLayouts[destination])
 	}
-	if _, ok := state.managedWorkspaceColumns[source]; ok {
+	if _, ok := state.managedWorkspaceLayouts[source]; ok {
 		t.Fatal("the docked source id kept managed metadata")
 	}
-	if _, ok := state.temporaryWorkspaceColumns[source]; ok {
+	if _, ok := state.temporaryWorkspaceLayouts[source]; ok {
 		t.Fatal("the docked source id kept temporary metadata")
 	}
 }

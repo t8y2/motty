@@ -47,9 +47,6 @@ func (state *State) selectTypeaheadKey(event ui.KeyEvent) (ui.EventResult, bool)
 // that commits one. It reports false when the target is not a select trigger
 // currently showing its value rather than its list.
 func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
-	if items, commit, ok := state.devSelectTypeahead(target); ok {
-		return items, commit, ok
-	}
 	switch {
 	case localShellSettingVisible() && state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && target == hitSettingsLocalShell && !state.localShellMenu.open:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.localShellMenu.choices))
@@ -109,7 +106,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 		for _, host := range state.hosts {
 			items = append(items, components.MenuTypeaheadItem{
 				ID: hitProxyTargetItemList.At(int(host.ID)), Label: host.Label,
-				Disabled: !host.isSSH() || state.proxyTargetConfigured(host.ID),
+				Disabled: !host.isSSH() || state.proxyTargetConfiguredExcluding(host.ID, state.proxyEditor.routeID),
 			})
 		}
 		return items, func(id ui.ID) bool {
@@ -196,7 +193,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 // is SSH and not already the target of another route.
 func (state *State) proxyTargetSelectable(id uint32) bool {
 	host, ok := state.hostByID(id)
-	return ok && host.isSSH() && !state.proxyTargetConfigured(id)
+	return ok && host.isSSH() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
 }
 
 // chooseProxyTarget and chooseProxyJump apply the same choices as the open

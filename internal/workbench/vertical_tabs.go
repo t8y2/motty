@@ -95,7 +95,18 @@ func (state *State) setVerticalTabsAutoHide(autoHide bool) bool {
 
 // Hover expansion overlays the workspace; it must never resize a running PTY.
 func (state *State) verticalTabsReserve(size ui.Size) float32 {
-	if state.tabOrientation != tabsVertical || state.deck.ActiveWorkspace() == 0 {
+	if state.deck.ActiveWorkspace() == 0 {
+		return 0
+	}
+	return state.verticalTabsColumn(size)
+}
+
+// verticalTabsColumn is the width the sidebar takes from the window's own
+// content, whether or not a session is open: a page without a deck still keeps
+// it beside the workspace. The window bar centres the session's name over what
+// is left of the bar, so it needs the column even before a session exists.
+func (state *State) verticalTabsColumn(size ui.Size) float32 {
+	if state.tabOrientation != tabsVertical {
 		return 0
 	}
 	width := verticalTabsWidth
@@ -258,8 +269,8 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 			state.declareGroupedVerticalTabs(f, tabWidth, compact)
 			return
 		}
-		for _, workspace := range state.workspaceTabs {
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact))
+		for index, workspace := range state.workspaceTabs {
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact, index+1))
 		}
 	})
 	f.End()

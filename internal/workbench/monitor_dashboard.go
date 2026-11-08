@@ -54,6 +54,7 @@ var (
 )
 var hitDashboardViewList = tree.Sub(dashboardHits, tree.Name("host-view"))
 var hitDashboardSimpleViewList = tree.Sub(dashboardHits, tree.Name("simple-view"))
+var hitDashboardSudoList = tree.Sub(dashboardHits, tree.Name("sudo"))
 var dashboardIntervals = [...]int{2, 5, 10, 30, 60}
 var dashboardRetentions = [...]int{15, 60, 360, 1440}
 
@@ -187,6 +188,7 @@ func (s *State) reconcileDashboard() {
 }
 
 func (s *State) connectDashboardSource(source *dashboardSource) {
+	source.session.sudoCommands, source.session.sudoPassword = false, ""
 	s.dashboard.engine.BeginSource(source.session.host.CatalogID)
 	if source.cancel != nil {
 		source.cancel()
@@ -242,6 +244,7 @@ func (s *State) connectDashboardSource(source *dashboardSource) {
 	s.dashboard.engine.SetStatus(v.host.CatalogID, monitoring.Connecting)
 }
 func (s *State) closeDashboardSource(source *dashboardSource) {
+	source.session.sudoCommands, source.session.sudoPassword = false, ""
 	s.dashboard.engine.BeginSource(source.session.host.CatalogID)
 	source.collecting = 0
 	source.errors = nil
@@ -254,6 +257,9 @@ func (s *State) closeDashboardSource(source *dashboardSource) {
 		source.timer = nil
 	}
 	if s.modalSession == source.session.ID {
+		s.closeModal()
+	}
+	if s.modal == modalSudoSFTP && s.sudoSFTP.dashboard && s.sudoSFTP.sessionID == source.session.ID {
 		s.closeModal()
 	}
 	if source.session.conn != nil {
@@ -312,6 +318,7 @@ func (s *State) pumpDashboard() {
 				s.rememberSecret(v)
 			}
 			if v.phase == sshconn.PhaseClosed || v.phase == sshconn.PhaseFailed {
+				v.sudoCommands, v.sudoPassword = false, ""
 				s.dashboard.engine.BeginSource(id)
 				if source.cancel != nil {
 					source.cancel()
@@ -372,8 +379,9 @@ func (s *State) startDashboardCollector(id string, source *dashboardSource) {
 	// Disks and interfaces change slowly; their details keep the sidebar's
 	// five-second floor even when the sample cadence is faster, so a fast
 	// panel does not run df and interface counters every two seconds.
-	worker := startMonitorWorker(source.session.conn, nil, system, source.interval)
-	details := startMonitorDetails(source.session.conn, nil, system, max(source.interval, 5))
+	runner := commandRunnerFor(&source.session)
+	worker := startMonitorWorker(runner, nil, system, source.interval)
+	details := startMonitorDetails(runner, nil, system, max(source.interval, 5))
 	var detailResults <-chan remotestats.DetailResult
 	if details != nil {
 		detailResults = details.Results()
@@ -603,6 +611,12 @@ func (s *State) clickDashboard(id ui.ID) bool {
 	}
 	p := s.dashboardPanel()
 	switch {
+	case id.Scope() == hitDashboardSudoList && p != nil:
+		if h, ok := s.hostByID(uint32(item(id))); ok {
+			if source := d.sources[h.CatalogID]; source != nil && source.session.phase == sshconn.PhaseConnected {
+				s.toggleSudoCommands(&source.session, false)
+			}
+		}
 	case id.Scope() == hitDashboardSimpleViewList && p != nil:
 		n := item(id)
 		if h, ok := s.hostByID(uint32(n / 3)); ok {

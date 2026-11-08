@@ -4,23 +4,25 @@ package workbench
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
 func TestTerminalCommandKeysNegotiation(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	// Bind explicitly so the same shortcut contract is checked on every OS.
-	if _, ok := state.shortcuts.bind(shortcutCopy, shortcutChord{Modifiers: ui.ModifierMeta, Key: 'c'}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutCopy, keymap.Chord{Modifiers: ui.ModifierMeta, Char: 'c'}); !ok {
 		t.Fatal("could not bind Command+C")
 	}
 	// The files path default is the platform's primary modifier; bind it to
 	// Command here too, so the bound-chord rule is checked on every OS.
-	if _, ok := state.shortcuts.bind(shortcutFilesPath, shortcutChord{Modifiers: ui.ModifierMeta, Key: 'l'}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutFilesPath, keymap.Chord{Modifiers: ui.ModifierMeta, Char: 'l'}); !ok {
 		t.Fatal("could not bind Command+L")
 	}
 	session, err := headless.Open(app.Config{
@@ -36,6 +38,10 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 	if err := session.ClickLabel(fmt.Sprintf(state.messages.LabelTerminalFmt, state.sessions[0].Address)); err != nil {
 		t.Fatal(err)
 	}
+	optionRight, optionLeft := "\x1b[1;3C", "\x1b[1;3D"
+	if runtime.GOOS == "darwin" {
+		optionRight, optionLeft = "\x1bf", "\x1bb"
+	}
 	for _, test := range []struct {
 		name  string
 		flags uint32
@@ -43,6 +49,10 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 		want  string
 	}{
 		{"legacy", 0, "cmd+shift+left", ""},
+		{"legacy option right", 0, "alt+right", optionRight},
+		{"legacy option left", 0, "alt+left", optionLeft},
+		{"kitty option right", 1, "alt+right", "\x1b[1;3C"},
+		{"kitty option left", 1, "alt+left", "\x1b[1;3D"},
 		{"kitty", 1, "cmd+shift+left", "\x1b[1;10D"},
 		{"all keys", 8, "cmd+shift+right", "\x1b[1;10C"},
 		{"printable", 1, "cmd+j", "\x1b[106;9u"},

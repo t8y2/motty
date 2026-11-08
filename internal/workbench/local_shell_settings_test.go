@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -18,9 +17,16 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		state.selectSettingsCategory(settingsTerminal)
 		var canvas ui.Canvas
 		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
+			// The terminal page has grown past this canvas, so reach the row
+			// the way a user does; both rows sit together at the page's end.
+			state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+			canvas.Reset()
+			state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		}
 		hit, visible := hitByID(&canvas, hitSettingsLocalShell)
-		if visible != (runtime.GOOS == "windows") {
-			t.Fatalf("local shell visible=%v on %s", visible, runtime.GOOS)
+		if !visible {
+			t.Fatal("the local shell setting is not visible")
 		}
 		if visible {
 			notify, _ := hitByID(&canvas, hitSettingsNotifyToggle)
@@ -29,12 +35,8 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 			}
 		}
 		searchSettings(t, state, state.messages.SettingsLocalShell)
-		want := 0
-		if runtime.GOOS == "windows" {
-			want = 1
-		}
-		if state.settings.count != want {
-			t.Fatalf("shell search returned %d results, want %d", state.settings.count, want)
+		if state.settings.count != 1 {
+			t.Fatalf("shell search returned %d results, want 1", state.settings.count)
 		}
 	}
 }

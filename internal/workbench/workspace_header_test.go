@@ -86,12 +86,12 @@ func TestWorkspaceHeaderLayoutAndOrderPreserveSessionsAndTemplate(t *testing.T) 
 	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceHeaderLayout)
 	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
-	panelHit(t, canvas, hitWorkspaceHeaderColumnsList.At(2))
-	state.Click(hitWorkspaceHeaderColumnsList.At(2))
+	panelHit(t, canvas, hitWorkspaceHeaderPresets.At(1))
+	state.Click(hitWorkspaceHeaderPresets.At(1))
 
-	if state.managedWorkspaceColumns[workspaceID] != 2 || state.activeSessionID != active {
-		t.Fatalf("layout changed columns=%d active=%d/%d",
-			state.managedWorkspaceColumns[workspaceID], state.activeSessionID, active)
+	if !isGrid(state.managedWorkspaceLayouts[workspaceID], 2) || state.activeSessionID != active {
+		t.Fatalf("layout changed columns=%+v active=%+v/%+v",
+			state.managedWorkspaceLayouts[workspaceID], state.activeSessionID, active)
 	}
 	if !state.templateUnchanged(template) {
 		t.Fatalf("layout changed template: %+v", state.templates[0])
@@ -137,7 +137,7 @@ func TestWorkspaceHeaderReapplyRestoresSavedOrderAndColumns(t *testing.T) {
 	}
 	state.Click(hitWorkspaceHeaderLayout)
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	state.Click(hitWorkspaceHeaderColumnsList.At(1))
+	state.Click(hitWorkspaceHeaderPresets.At(0))
 	state.moveWorkspaceCard(workspaceCardRegion{view: workspaceCardsRuntime, index: 0}, 1)
 
 	world.configs = nil
@@ -145,8 +145,8 @@ func TestWorkspaceHeaderReapplyRestoresSavedOrderAndColumns(t *testing.T) {
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	reapplied := state.deck.ActiveWorkspace()
-	if reapplied == workspaceID || state.managedWorkspaceColumns[reapplied] != 2 {
-		t.Fatalf("reapplied workspace=%d columns=%d", reapplied, state.managedWorkspaceColumns[reapplied])
+	if reapplied == workspaceID || !isGrid(state.managedWorkspaceLayouts[reapplied], 2) {
+		t.Fatalf("reapplied workspace=%+v columns=%+v", reapplied, state.managedWorkspaceLayouts[reapplied])
 	}
 	if got, want := paneHostAddresses(state, reapplied), []string{
 		"192.168.1.1", "prod.example.com", "staging.example.com",

@@ -86,9 +86,16 @@ func DecodeRequestAgentMode(raw []byte) (RequestAgentModeArgs, error) {
 
 // Tool names.
 const (
-	NameListSessions = "list_sessions"
-	NameTerminalRead = "terminal_read"
-	NameTerminalExec = "terminal_exec"
+	NameListSessions   = "list_sessions"
+	NameListHosts      = "list_hosts"
+	NameTerminalRead   = "terminal_read"
+	NameTerminalExec   = "terminal_exec"
+	NameToolOutputRead = "tool_output_read"
+	// The terminal job tools run a command without waiting for it: start returns
+	// a job id, poll reads what it printed since an offset, stop interrupts it.
+	NameTerminalStart = "terminal_start"
+	NameTerminalPoll  = "terminal_poll"
+	NameTerminalStop  = "terminal_stop"
 	// NameTerminalExecMany runs one command on several sessions at once.
 	NameTerminalExecMany = "terminal_exec_many"
 	NameSFTPList         = "sftp_list"
@@ -113,6 +120,8 @@ const (
 	MaxReadLines          = 500
 	DefaultTimeoutSeconds = 60
 	MaxTimeoutSeconds     = 600
+	MaxJobIDLen           = 128
+	MaxPollBytes          = 65536
 	MaxEscalationReason   = 512
 	MaxEscalationCommand  = 8192
 	ScopeScreen           = "screen"
@@ -123,6 +132,12 @@ var specs = []Spec{
 	{
 		Name:        NameListSessions,
 		Description: "List the open terminal sessions with their ids, titles, hosts and connection state, and say which one is active. Call this first when you need a session id.",
+		Schema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		Kind:        Read,
+	},
+	{
+		Name:        NameListHosts,
+		Description: "List saved SSH hosts explicitly opened to agents, including hosts without an open session. Returns stable host ids, names and addresses without connecting. A host id is not an open terminal session id.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Kind:        Read,
 	},
@@ -138,7 +153,7 @@ var specs = []Spec{
 	},
 	{
 		Name:        NameTerminalExec,
-		Description: "Run one shell command in the user's visible terminal session and return its output and exit status. The user sees it run and may refuse it. Use it for a single non-interactive command; it must finish within the timeout. Do not start interactive programs.",
+		Description: "Run one command in the user's visible terminal session and return its output and, in a shell, its exit status. The user sees it run and may refuse it. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. Use it for a single non-interactive command; it must finish within the timeout. Do not start interactive programs.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"session":{"type":"string","maxLength":256,"description":"Session id from list_sessions. Defaults to the active session."},` +
 			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run."},` +
@@ -147,8 +162,45 @@ var specs = []Spec{
 		Kind: Exec,
 	},
 	{
+		Name:        NameTerminalStart,
+		Description: "Start one non-interactive shell command in the user's visible terminal without waiting, and return a job_id at once. For builds, installs and log watching that outlive a tool call. The user may refuse it. Read progress with terminal_poll, interrupt with terminal_stop. One job per terminal; it is never re-run automatically.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"session":{"type":"string","maxLength":256,"description":"Session id from list_sessions. Defaults to the active session."},` +
+			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run."}` +
+			`},"required":["command"],"additionalProperties":false}`),
+		Kind: Exec,
+	},
+	{
+		Name:        NameTerminalPoll,
+		Description: "Read what a terminal_start job printed since offset (pass the previous next_offset) and its state: running, completed (exit_code), cancelled, interrupted or disconnected. pending_line is a line still being written. skipped_bytes counts output dropped unread. terminal_ready: ready, busy, unconfirmed or closed. Finished jobs stay readable for ten minutes.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"job_id":{"type":"string","minLength":1,"maxLength":128},` +
+			`"offset":{"type":"integer","minimum":0,"default":0,"description":"UTF-8 byte offset into the job's output; 0 starts at the beginning."},` +
+			`"max_bytes":{"type":"integer","minimum":4,"maximum":65536,"default":65536}` +
+			`},"required":["job_id"],"additionalProperties":false}`),
+		Kind: Read,
+	},
+	{
+		Name:        NameTerminalStop,
+		Description: "Interrupt a running terminal_start job with Ctrl-C, then wait briefly for the shell prompt. The job becomes cancelled once the interrupt is delivered; terminal_ready says whether the prompt returned (ready) or not (busy, unconfirmed). Sends nothing if the job already finished.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"job_id":{"type":"string","minLength":1,"maxLength":128}` +
+			`},"required":["job_id"],"additionalProperties":false}`),
+		Kind: Exec,
+	},
+	{
+		Name:        NameToolOutputRead,
+		Description: "Read a byte range of a retained terminal_exec result without running the command again. Offsets are UTF-8 byte positions; the result expires after ten minutes.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"output_id":{"type":"string","minLength":1,"maxLength":128},` +
+			`"offset":{"type":"integer","minimum":0},` +
+			`"max_bytes":{"type":"integer","minimum":4,"maximum":65536}` +
+			`},"required":["output_id","offset"],"additionalProperties":false}`),
+		Kind: Read,
+	},
+	{
 		Name:        NameTerminalExecMany,
-		Description: "Run the same shell command on several terminal sessions at once and return each session's output and exit status, labelled by session. The user approves the command once, seeing every target. Use it to check or change the same thing across hosts; use terminal_exec for one host. It must finish within the timeout on every host. Do not start interactive programs.",
+		Description: "Run the same command on several terminal sessions at once and return each session's output and, in a shell, exit status, labelled by session. Device consoles have none. The user approves the command once, seeing every target. Use it to check or change the same thing across hosts; use terminal_exec for one host. It must finish within the timeout on every host. Do not start interactive programs.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"sessions":{"type":"array","minItems":2,"maxItems":8,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":256},"description":"Session ids from list_sessions, two to eight, each a host that is ready."},` +
 			`"command":{"type":"string","minLength":1,"maxLength":8192,"description":"The shell command line to run on every listed session."},` +
@@ -206,8 +258,11 @@ func All() []Spec { return append([]Spec(nil), specs...) }
 func Targeted() []Spec {
 	const activeHint = "Session id from list_sessions. Defaults to the active session."
 	const targetHint = "Session id from list_sessions. If omitted, uses this request's locked primary session. Always specify the id when operating on an explicitly @referenced session."
-	out := make([]Spec, len(specs))
-	for index, spec := range specs {
+	out := make([]Spec, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Name == NameListHosts || spec.Name == NameToolOutputRead || isJobTool(spec.Name) {
+			continue
+		}
 		if schema := string(spec.Schema); strings.Contains(schema, activeHint) {
 			spec.Schema = json.RawMessage(strings.ReplaceAll(schema, activeHint, targetHint))
 		}
@@ -215,12 +270,14 @@ func Targeted() []Spec {
 		case NameListSessions:
 			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id."
 		case NameTerminalExec:
-			spec.Description = "Run one non-interactive shell command in the addressed terminal session and return its output and exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
+			spec.Description = "Run one command in the addressed terminal session and return its output and, in a shell, its exit status. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
 		}
-		out[index] = spec
+		out = append(out, spec)
 	}
 	return out
 }
+
+func SelectedUpload() Spec { return selectedUploadSpec }
 
 // Headless returns the catalog of a server that has no terminal windows to act
 // in: it works on saved hosts over their own connections. The tools and their
@@ -230,8 +287,9 @@ func Targeted() []Spec {
 // an SSH exec channel, with no terminal and no shell state kept between calls,
 // and the user does not watch it run; the command tools are offered only when
 // commands is true. File writes are offered only when writeFiles is true, for
-// the separately confirmed full-access mode. The slice is a copy.
-func Headless(commands, writeFiles bool) []Spec {
+// the separately confirmed full-access mode. Local transfers also require
+// localFiles, granted through explicit transfer roots. The slice is a copy.
+func Headless(commands, writeFiles, localFiles bool) []Spec {
 	const (
 		sessionHint = "Session id from list_sessions. Defaults to the active session."
 		hostHint    = "Host id from list_sessions. May be left out when only one host is available."
@@ -240,7 +298,7 @@ func Headless(commands, writeFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -248,6 +306,8 @@ func Headless(commands, writeFiles bool) []Spec {
 		switch spec.Name {
 		case NameListSessions:
 			spec.Description = "List the saved hosts the user allowed you to use, with their ids. A host connects when you first use it. Call this first when you need a host id."
+		case NameListHosts:
+			spec.Description = "List saved SSH hosts the user opened to agents, with stable host ids, names and addresses, without connecting. In this server list_sessions lists the same authorized hosts; those ids can be used in tool calls."
 		case NameTerminalExec:
 			spec.Description = "Run one shell command on a saved host over a fresh SSH exec channel and return its combined output and exit status. There is no terminal: nothing interactive works, and the working directory and environment do not carry over to the next call. The user does not watch it run. It must finish within the timeout."
 		case NameTerminalExecMany:
@@ -257,16 +317,37 @@ func Headless(commands, writeFiles bool) []Spec {
 		case NameSFTPRemove:
 			spec.Description = "Delete one remote file or empty directory on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Deletion cannot be undone."
 		}
+		out = append(out, hostSchema(spec))
+	}
+	for _, spec := range hostFileSpecs {
+		if spec.Kind == Write && (!writeFiles || !localFiles) {
+			continue
+		}
 		out = append(out, spec)
 	}
 	return out
 }
 
+// isJobTool reports whether name is one of the terminal job tools, which need
+// an MCP client session to own the job and so are offered to external clients
+// only.
+func isJobTool(name string) bool {
+	return name == NameTerminalStart || name == NameTerminalPoll || name == NameTerminalStop
+}
+
 // Lookup finds a tool by name.
 func Lookup(name string) (Spec, bool) {
+	if name == NameUploadSelected {
+		return selectedUploadSpec, true
+	}
 	for _, s := range specs {
 		if s.Name == name {
 			return s, true
+		}
+	}
+	for _, spec := range hostFileSpecs {
+		if spec.Name == name {
+			return spec, true
 		}
 	}
 	return Spec{}, false
@@ -276,6 +357,8 @@ func Lookup(name string) (Spec, bool) {
 // for external MCP, or the locked primary of an in-app request.
 
 type ListSessionsArgs struct{}
+
+type ListHostsArgs struct{}
 
 type TerminalReadArgs struct {
 	Session string `json:"session,omitempty"`
@@ -287,6 +370,100 @@ type TerminalExecArgs struct {
 	Session        string `json:"session,omitempty"`
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	RetainOutput   bool   `json:"-"`
+	// Background types the command and returns without waiting; the output is
+	// kept as a window for paging instead.
+	Background bool `json:"-"`
+}
+
+type TerminalStartArgs struct {
+	Session string `json:"session,omitempty"`
+	Command string `json:"command"`
+}
+
+type TerminalPollArgs struct {
+	JobID    string `json:"job_id"`
+	Offset   int    `json:"offset,omitempty"`
+	MaxBytes int    `json:"max_bytes,omitempty"`
+}
+
+type TerminalStopArgs struct {
+	JobID string `json:"job_id"`
+}
+
+func DecodeTerminalStart(raw []byte) (TerminalStartArgs, error) {
+	var w struct {
+		Session *string `json:"session"`
+		Command *string `json:"command"`
+	}
+	if err := decode(raw, &w); err != nil {
+		return TerminalStartArgs{}, err
+	}
+	var a TerminalStartArgs
+	var err error
+	if a.Session, err = session(w.Session); err != nil {
+		return a, err
+	}
+	a.Command, _, err = commandAndTimeout(w.Command, nil)
+	return a, err
+}
+
+func jobID(id string) error {
+	if id == "" || len(id) > MaxJobIDLen {
+		return fmt.Errorf("job_id is required and at most %d bytes", MaxJobIDLen)
+	}
+	return text("job_id", id, false)
+}
+
+func DecodeTerminalPoll(raw []byte) (TerminalPollArgs, error) {
+	var a TerminalPollArgs
+	if err := decode(raw, &a); err != nil {
+		return a, err
+	}
+	if err := jobID(a.JobID); err != nil {
+		return a, err
+	}
+	if a.Offset < 0 {
+		return a, errors.New("offset must not be negative")
+	}
+	if a.MaxBytes == 0 {
+		a.MaxBytes = MaxPollBytes
+	}
+	if a.MaxBytes < 4 || a.MaxBytes > MaxPollBytes {
+		return a, fmt.Errorf("max_bytes must be between 4 and %d", MaxPollBytes)
+	}
+	return a, nil
+}
+
+func DecodeTerminalStop(raw []byte) (TerminalStopArgs, error) {
+	var a TerminalStopArgs
+	if err := decode(raw, &a); err != nil {
+		return a, err
+	}
+	return a, jobID(a.JobID)
+}
+
+type ToolOutputReadArgs struct {
+	OutputID string `json:"output_id"`
+	Offset   int    `json:"offset"`
+	MaxBytes int    `json:"max_bytes,omitempty"`
+}
+
+func DecodeToolOutputRead(raw []byte) (ToolOutputReadArgs, error) {
+	var args ToolOutputReadArgs
+	if err := decode(raw, &args); err != nil {
+		return args, err
+	}
+	if len(args.OutputID) == 0 || len(args.OutputID) > 128 || args.Offset < 0 || args.MaxBytes < 0 || args.MaxBytes > 65536 {
+		return args, errors.New("invalid output_id, offset or max_bytes")
+	}
+	if args.MaxBytes == 0 {
+		args.MaxBytes = 65536
+	}
+	if args.MaxBytes < 4 {
+		return args, errors.New("max_bytes must be at least 4")
+	}
+	return args, nil
 }
 
 type TerminalExecManyArgs struct {
@@ -324,6 +501,11 @@ type SFTPRemoveArgs struct {
 func DecodeListSessions(raw []byte) (ListSessionsArgs, error) {
 	var w struct{}
 	return ListSessionsArgs{}, decode(raw, &w)
+}
+
+func DecodeListHosts(raw []byte) (ListHostsArgs, error) {
+	var args ListHostsArgs
+	return args, decode(raw, &args)
 }
 
 func DecodeTerminalRead(raw []byte) (TerminalReadArgs, error) {

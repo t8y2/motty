@@ -300,6 +300,10 @@ func (w *sftpWindow) openPairedBookmark(bookmark sftpBookmark) {
 		return
 	}
 	if bookmark.local == "" {
+		// A remote-only profile cannot establish a synchronized pair. Clear a
+		// previous pair before opening it so the toolbar reflects the profile.
+		w.browse.enabled = false
+		w.browse.pending = nil
 		w.navigate(false, bookmark.path)
 		return
 	}
@@ -308,7 +312,7 @@ func (w *sftpWindow) openPairedBookmark(bookmark sftpBookmark) {
 		return
 	}
 	w.cancelDrag()
-	enabled := w.browse.enabled
+	enabled := bookmark.sync
 	w.browse.enabled = false
 	w.browse.pending = &sftpBrowseRequest{paths: [2]string{filepath.Clean(bookmark.local), path.Clean(bookmark.path)}, side: 1, rebase: true, enable: enabled}
 	w.readBrowseDirectory(false, bookmark.path)

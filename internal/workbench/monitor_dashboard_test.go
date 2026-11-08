@@ -30,6 +30,70 @@ func dashboardTestState(t *testing.T) (*State, *fakeConn, *int) {
 	s.activeSection = sectionDashboard
 	return s, f, &dialed
 }
+
+func TestDashboardHostSudoRequiresOwnConfirmationAndStopsOnDisconnect(t *testing.T) {
+	state, fake, _ := dashboardTestState(t)
+	createDashboard(t, state, "Production")
+	state.Click(hitDashboardToggle)
+	waitDashboard(t, state, state.dashboard.active)
+	source := state.dashboard.sources["host"]
+	if source == nil || source.session.sudoCommands {
+		t.Fatal("dashboard was privileged before confirmation")
+	}
+	connection := &sudoRunnerTestConn{fakeConn: fake}
+	connection.stream = fake.StreamCommand
+	connection.run = fake.RunCommand
+	source.session.conn = connection
+	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
+		var canvas ui.Canvas
+		state.Paint(&canvas, size)
+		sudo, found := hitByID(&canvas, hitDashboardSudoList.At(1))
+		terminal, terminalFound := hitByID(&canvas, hitDashboardTerminalList.At(1))
+		if !found || !terminalFound || sudo.Bounds.Width <= 0 || sudo.Bounds.X+sudo.Bounds.Width > terminal.Bounds.X {
+			t.Fatalf("dashboard sudo control overlaps the terminal at %+v", size)
+		}
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	if state.modal != modalSudoSFTP || !state.sudoSFTP.dashboard || source.session.sudoCommands {
+		t.Fatal("dashboard did not request independent consent")
+	}
+	state.Click(hitSudoSFTPCancel)
+	if source.session.sudoCommands {
+		t.Fatal("canceled dashboard authorization took effect")
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	state.sudoSFTP.password.Insert("dashboard-secret")
+	state.Click(hitSudoSFTPEnable)
+	if !source.session.sudoCommands || source.session.sudoPassword != "dashboard-secret" {
+		t.Fatal("dashboard authorization was not applied to its source")
+	}
+	state.Wake()
+	waitFor(t, state, func() bool {
+		connection.mu.Lock()
+		defer connection.mu.Unlock()
+		return len(connection.commands) != 0
+	})
+	connection.mu.Lock()
+	password := connection.password
+	connection.mu.Unlock()
+	if password != "dashboard-secret" {
+		t.Fatal("dashboard collector did not use its own authorization")
+	}
+	source.blocked = true
+	state.Click(hitDashboardSudoList.At(1))
+	if source.blocked || source.session.sudoCommands || source.session.sudoPassword != "" {
+		t.Fatal("disabling sudo did not restore ordinary monitoring after an authorization failure")
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	state.sudoSFTP.password.Insert("dashboard-secret")
+	state.Click(hitSudoSFTPEnable)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
+	state.Wake()
+	if source.session.sudoCommands || source.session.sudoPassword != "" {
+		t.Fatal("dashboard disconnect retained authorization")
+	}
+	state.closeDashboard()
+}
 func createDashboard(t *testing.T, s *State, name string) string {
 	t.Helper()
 	s.Click(hitDashboardNew)
@@ -87,7 +151,7 @@ func TestDashboardCreateValidatePersistAndRestoreWithoutConnecting(t *testing.T)
 	if len(restored.dashboard.panels) != 1 || restored.dashboard.active != id || len(restored.dashboard.engine.Wanted()) != 0 {
 		t.Fatal("panel definition did not restore stopped")
 	}
-	_, local, err := splitState(saved, &configBase{}, s.configDefaults)
+	_, local, _, err := splitState(saved, &configBase{}, s.configDefaults)
 	if err != nil {
 		t.Fatal(err)
 	}

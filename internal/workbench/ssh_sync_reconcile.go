@@ -783,7 +783,7 @@ func (r *sshReconciler) applyPull(pull sshHostPull) {
 	}
 	updated.normalizeEndpoint()
 	updated.finish()
-	if other := state.hostIndexByEndpoint(updated); other >= 0 && other != index {
+	if other := state.hostIndexSame(updated); other >= 0 && other != index {
 		r.warn(r.m.WarnEndpointFmt, link.Alias)
 		return
 	}
@@ -805,7 +805,7 @@ func (r *sshReconciler) newCatalogID(host Host) string {
 			}
 		}
 	}
-	return uniqueCatalogID("", host, r.usedIDs)
+	return freshCatalogID(r.usedIDs)
 }
 
 func (r *sshReconciler) addHost(host Host) Host {

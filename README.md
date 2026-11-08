@@ -1,55 +1,158 @@
 <div align="center">
-  <img src="assets/readme-lockup.png" width="340" alt="Motty" />
-
-  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
-
-  <p><strong>Motty: SSH, SFTP, port forwarding, VNC/RDP and an AI assistant in one native window.</strong></p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a></p>
 
   <p>
-    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
-    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="https://img.shields.io/badge/微信群-扫码加入-07C160?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iIzA3YzE2MCIgZD0iTTguNjkxIDIuMTg4QzMuODkxIDIuMTg4IDAgNS40NzYgMCA5LjUzYzAgMi4yMTIgMS4xNyA0LjIwMyAzLjAwMiA1LjU1YS41OS41OSAwIDAgMSAuMjEzLjY2NWwtLjM5IDEuNDhjLS4wMTkuMDctLjA0OC4xNDEtLjA0OC4yMTNjMCAuMTYzLjEzLjI5NS4yOS4yOTVhLjMzLjMzIDAgMCAwIC4xNjctLjA1NGwxLjkwMy0xLjExNGEuODYuODYgMCAwIDEgLjcxNy0uMDk4YTEwLjIgMTAuMiAwIDAgMCAyLjgzNy40MDNjLjI3NiAwIC41NDMtLjAyNy44MTEtLjA1Yy0uODU3LTIuNTc4LjE1Ny00Ljk3MiAxLjkzMi02LjQ0NmMxLjcwMy0xLjQxNSAzLjg4Mi0xLjk4IDUuODUzLTEuODM4Yy0uNTc2LTMuNTgzLTQuMTk2LTYuMzQ4LTguNTk2LTYuMzQ4TTUuNzg1IDUuOTkxYy42NDIgMCAxLjE2Mi41MjkgMS4xNjIgMS4xOGExLjE3IDEuMTcgMCAwIDEtMS4xNjIgMS4xNzhBMS4xNyAxLjE3IDAgMCAxIDQuNjIzIDcuMTdjMC0uNjUxLjUyLTEuMTggMS4xNjItMS4xOHptNS44MTMgMGMuNjQyIDAgMS4xNjIuNTI5IDEuMTYyIDEuMThhMS4xNyAxLjE3IDAgMCAxLTEuMTYyIDEuMTc4YTEuMTcgMS4xNyAwIDAgMS0xLjE2Mi0xLjE3OGMwLS42NTEuNTItMS4xOCAxLjE2Mi0xLjE4bTUuMzQgMi44NjdjLTEuNzk3LS4wNTItMy43NDYuNTEyLTUuMjggMS43ODZjLTEuNzIgMS40MjgtMi42ODcgMy43Mi0xLjc4IDYuMjJjLjk0MiAyLjQ1MyAzLjY2NiA0LjIyOSA2Ljg4NCA0LjIyOWMuODI2IDAgMS42MjItLjEyIDIuMzYxLS4zMzZhLjcyLjcyIDAgMCAxIC41OTguMDgybDEuNTg0LjkyNmEuMy4zIDAgMCAwIC4xNC4wNDdjLjEzNCAwIC4yNC0uMTExLjI0LS4yNDdjMC0uMDYtLjAyMy0uMTItLjAzOC0uMTc3bC0uMzI3LTEuMjMzYS42LjYgMCAwIDEtLjAyMy0uMTU2YS40OS40OSAwIDAgMSAuMjAxLS4zOThDMjMuMDI0IDE4LjQ4IDI0IDE2LjgyIDI0IDE0Ljk4YzAtMy4yMS0yLjkzMS01LjgzNy02LjY1Ni02LjA4OFY4Ljg5Yy0uMTM1LS4wMS0uMjctLjAyNy0uNDA3LS4wM3ptLTIuNTMgMy4yNzRjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk3LS45ODJ6bTQuODQ0IDBjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk2OS0uOTgyIi8%2BPC9zdmc%2B" alt="微信群" /></a>
-    <a href="https://discord.gg/6s5tn9H4p2"><img src="https://img.shields.io/badge/Motty-JOIN-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
-    <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
+    <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty — a desktop SSH client: shell, files, tunnels, screens and an assistant in one window" /></a>
   </p>
 
   <p>
-    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="820" alt="Motty with a file panel, a terminal and the AI assistant" /></a>
+    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
+    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
+    <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
+    <a href="https://linux.do/t/topic/3086528/1"><img src="assets/badge-linuxdo.svg" alt="LINUX DO Community" /></a>
   </p>
+
+  <p>
+    <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty running a real session: the SFTP panel, a shell tailing a log, and the AI assistant's answer" /></a>
+  </p>
+  <p><sub>A real session: the file panel, a shell following a deploy log, and the assistant reading the same terminal.</sub></p>
 </div>
 
-> Motty is a native desktop SSH workspace. It is built in Go on
-> [Viva](https://github.com/vivaui/viva), so it has no Electron runtime, no embedded
-> browser and no JavaScript layer. One window holds the terminal, files, tunnels,
-> remote desktops and the assistant.
+Motty is a desktop SSH client. The terminal, the SFTP panel, port forwards,
+remote desktops and an AI assistant share one window, so a session does not
+need a second app for files or a browser tab for a screen.
+
+The full documentation lives at <https://motty.page/en/docs>; this file covers
+the project, the packages and how to build it.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="Host list with groups, tags and colours" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-sftp-light.png"><img src="assets/readme-sftp-light.png" alt="The SFTP file panel beside the shell, in the light appearance" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward-light.png"><img src="assets/readme-forward-light.png" alt="Port forwards as a table of rules, in the light appearance" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="A split terminal beside the resource monitor" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-settings-colors.png"><img src="assets/readme-settings-colors.png" alt="Terminal color schemes in Settings, in the light appearance" /></a>
+    </td>
+  </tr>
+</table>
 
 ## Why Motty?
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🪶 Native by construction</h3>
-      <p>Viva talks to Metal, Direct3D and Vulkan directly. Motty starts fast, idles without frame churn, and ships without a browser engine.</p>
+      <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
+      OpenSSH config, PuTTY, MobaXterm and four more. Passwords go to an
+      AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🗂 One window for the session</h3>
-      <p>Terminal, SFTP, forwarding, VNC/RDP and the assistant share one workspace. No second app for files, no browser tab for a desktop.</p>
+      <p><strong>A session you can watch.</strong> Split the pane, then read the host's
+      CPU, memory, disk and network beside the shell that is using them.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⌨️ Built for the keyboard</h3>
-      <p>Tabs, splits, SFTP, forwarding and the assistant are commands in the palette. The mouse is optional.</p>
+      <p><strong>Screens too, when you need them.</strong> VNC and RDP connect, and both can
+      ride an SSH host when the server only listens on its own loopback.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🔎 Honest about limits</h3>
-      <p>The repository says what has been verified on real hardware and what has not. The remote-desktop note lists the protocol gaps instead of hiding them.</p>
+      <p><strong>Tunnels you can see.</strong> Local, remote, SOCKS5 and HTTP CONNECT
+      rules bind to loopback only, are saved, and start when you say so. A tunnel
+      stops with the SSH tab that owns it.</p>
     </td>
   </tr>
 </table>
 
-## ✨ Features
+**Keyboard first.** Tabs, splits, SFTP, forwarding and the assistant are
+commands in the palette; the mouse is optional. **Honest about limits:**
+[docs/remote-desktop.md](docs/remote-desktop.md) lists what the VNC and RDP
+implementations do not do, and the release notes say which platforms were
+tested on real hardware. **Nothing phones home:** no analytics, and the update
+check is off by default and asks GitHub Releases when you turn it on.
 
-### 🖥 A terminal that keeps up
+## Install
+
+Download the package for your platform from the
+[releases page](https://github.com/t8y2/motty/releases):
+
+| Platform | Packages |
+| --- | --- |
+| macOS (arm64, amd64) | `.dmg`, `.zip` |
+| Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
+| Linux (amd64, arm64) | `.deb`, `.tar.gz` |
+
+macOS builds are signed and notarized when the release has the credentials.
+Windows builds are signed when a certificate is configured. Linux packages are
+not signed. AUR and `.AppImage` are not available yet.
+
+Through a package manager:
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+The cask installs the notarized disk image and is marked as self-updating, so an
+installed copy updates itself. Scoop installs the portable copy: its
+`motty-data` folder is persisted across versions and `scoop update motty` is how
+it updates.
+
+## Quick start
+
+1. Open **Hosts** and choose **New host**.
+2. Enter a name, address and account name.
+3. Pick authentication: the running agent, a private-key file or the password.
+4. Connect and compare the host-key fingerprint with the server. Trust it once or
+   save it.
+5. The tab opens on the login shell. A server that asks for a one-time code gets
+   the extra field automatically.
+
+The command palette is **Command+Shift+P** on macOS and **Control+Shift+P**
+elsewhere. Default shortcuts use Command on macOS and Control on Windows/Linux;
+all of them are configurable.
+
+| Action | macOS | Windows / Linux |
+| --- | --- | --- |
+| Command palette | Command+Shift+P | Control+Shift+P |
+| Find in terminal | Command+F | Control+F |
+| Command history | Command+Shift+H | Control+Shift+H |
+| File panel | Command+Shift+S | Control+Shift+S |
+| New window | Command+Shift+N | Control+Shift+N |
+
+On Windows, choose the local shell from the dropdown in **Settings → Terminal
+→ Local shell**, below **Inline suggestions**. Motty detects installed shells
+such as PowerShell, CMD and Git Bash from PATH and common installation folders,
+and lists each installed WSL distribution as its own entry. The file panel
+follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
+share. Choose the distribution here, rather than typing `wsl` into PowerShell:
+only a shell Motty starts itself can report its folder. The choice stays on this
+computer and applies to new or reconnected local terminals.
+
+## Features
+
+### The terminal
 
 Real PTY sessions, 256-colour and true-colour output, the alternate screen, 5,000
 lines of scrollback, wide and combining characters, mouse reporting, input
@@ -92,7 +195,7 @@ Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
 record a session explicitly. The terminal has eleven colour schemes, keyword
 highlighting and optional inline command suggestions.
 
-### 🔑 Hosts and authentication
+### Hosts and authentication
 
 Host keys are verified against Motty's own `known_hosts` before credentials are
 sent. Authentication covers agent keys, identity files, OpenSSH user
@@ -115,11 +218,7 @@ in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
 consent; re-import only fills missing passwords.
 
-<p align="center">
-  <a href="assets/readme-hosts.webp"><img src="assets/readme-hosts.webp" width="720" alt="Host list with tags and a remote-desktop host" /></a>
-</p>
-
-### 🗂 Files without another app
+### Files
 
 SFTP browsing with multi-select, recursive upload/download, a bounded transfer
 queue, resume, cancel/retry, rename, delete, permissions and bookmarks.
@@ -129,7 +228,25 @@ failure.
 
 A native editor opens UTF-8 files up to 1 MiB, hashes the remote file before and
 after staging, and preserves permissions. Servers without SFTP can use the
-built-in SCP fallback.
+built-in SCP fallback. It edits code in a fixed-pitch grid with line numbers,
+syntax colors, bracket matching, soft wrap, auto-indent that follows the file's
+own tabs or spaces, paired brackets and quotes, Tab/Shift+Tab block indent,
+line comment toggling (Cmd/Ctrl+/), line move/copy/delete (Alt+Up/Down,
+Shift+Alt+Up/Down, Cmd/Ctrl+Shift+K), find and replace (Cmd/Ctrl+F, Ctrl+H) with
+case, whole-word and regular-expression options, and go to line (Ctrl+G).
+
+For files that the SSH account can read but cannot change (such as root-owned
+configuration), switch on the **sudo** toggle beside the remote pane title (or
+choose **Use sudo for remote files** in the file context menu) and confirm the
+password. The same toggle stays selected while sudo is active; click it again
+to return to normal mode. This switches the current file browser, its
+transfers and open documents to a privileged SFTP server. Remote tools and the
+terminal's resource monitor have a separate sudo control, while each dashboard
+host requires its own confirmation. Sudo is off by default, never elevates the
+terminal, and passwords are held only for the connection, not saved. The remote
+host needs `sudo` and an OpenSSH
+`sftp-server` executable; Windows servers and SCP-only servers cannot use
+privileged SFTP. Server sudo policies may deny the required shell command.
 
 The panel's more menu can hand the folder it shows to VS Code or Zed through the
 editor's own URL scheme. Pick the editor under **Settings > Files**, which lists
@@ -145,7 +262,7 @@ the terminal to follow file navigation at a ready, empty prompt. See
 [folder synchronization](docs/terminal-folder-sync.md) for safety and startup
 compatibility details.
 
-### 🔀 Forwarding and jump chains
+### Forwarding and jump chains
 
 Local, remote, SOCKS5 and HTTP CONNECT rules are loopback-only, persisted and
 started explicitly. Tunnels stop with the SSH tab that owns them. Jump routes
@@ -156,45 +273,50 @@ proxy command such as `cloudflared access ssh` (OpenSSH's `ProxyCommand`). X11
 forwarding validates a per-session fake cookie before replacing it with the local
 Xauthority cookie.
 
-<p align="center">
-  <a href="assets/readme-forward.png"><img src="assets/readme-forward.png" width="620" alt="New port forward dialog" /></a>
-</p>
+### Remote desktops
 
-### 🖥 Remote desktops
-
-VNC supports RFB 3.3/3.7/3.8, None and VNC Authentication, Raw/CopyRect/RRE/
+VNC supports RFB 3.3/3.7/3.8 (including RealVNC's 5.0 banner), None, VNC
+Authentication and RealVNC RA2 system-account login, Raw/CopyRect/RRE/
 Hextile/ZRLE, desktop resize, pointer, keyboard and text clipboard. RDP uses TLS
 with NLA preferred and pins the server certificate after an explicit trust
-decision. Both can connect through an SSH host when the server only listens on
+decision; it also copies files to the server (paste them in the remote or drop
+them on the picture). Both can connect through an SSH host when the server only listens on
 its own loopback. See [docs/remote-desktop.md](docs/remote-desktop.md) for the
 exact limits.
 
-### 🤖 Assistant and MCP
+### Assistant and MCP
 
 **Ask** answers questions with the visible terminal as context. **Agent** can
 also run commands in that terminal, with a risk classification and an approval
 gate. In Ask mode the assistant can ask to switch to Agent when a request needs
 a tool; approving the switch retries the request in Agent mode, and the choice
-is remembered. A run command is shown as the command itself with an accent mark in the
-terminal's left margin; Motty hides its capture wrapper and marker from the
-screen and from its own command history, though the remote shell's own history
-is outside Motty's control. Secrets are redacted
-before terminal text reaches a model — key files, assignments, embedded URL
-credentials and well-known token formats — and provider keys stay in the vault.
-Long conversations send their newest rounds within a fixed budget, so a session
-cannot outgrow the model's context. Hovering the last answer shows its token usage
-and a copy button, and saved conversations can be renamed.
+is remembered. A run command is shown as the command itself with an accent mark
+in the terminal's left margin; Motty hides its capture wrapper and marker from
+the screen and from its own command history, though the remote shell's own
+history is outside Motty's control.
+
+Secrets are redacted before terminal text reaches a model — key files,
+assignments, embedded URL credentials and well-known token formats — and
+provider keys stay in the vault. Long conversations send their newest rounds
+within a fixed budget, so a session cannot outgrow the model's context.
+Hovering the last answer shows its token usage and a copy button, and saved
+conversations can be renamed.
 
 An optional MCP server exposes the same tools to external agents. It is off by
 default, loopback-only, bearer-token protected, and supports observe and ask
 modes. `motty mcp-serve` is the same idea without the window: an agent starts it
 over stdio and it works on the hosts you opened to agents, with no port and no
 token.
+`list_hosts` lists saved SSH hosts explicitly opened to agents, without connecting,
+and returns stable host IDs, names and addresses. Both HTTP and stdio MCP omit
+unauthorized hosts. In windowed HTTP MCP, `list_sessions` lists only open terminals
+and uses different session IDs; in `mcp-serve` it lists authorized hosts by host ID
+for use with its command and file tools.
 
-### ☁️ Backup and sync
+### Backup and sync
 
 Encrypted `.mottybak` export, plus record-level sync through WebDAV,
-S3-compatible storage or a GitHub Gist. Records carry hybrid logical clocks and
+S3-compatible storage, a GitHub Gist or a Gitee snippet. Records carry hybrid logical clocks and
 90-day deletion tombstones, so computers converge without one overwriting the
 other. Tabs, window layout, shortcuts, fonts, key paths and cloud credentials
 stay local.
@@ -205,90 +327,7 @@ configuration form. The connection is unencrypted and authentication details may
 be intercepted; the backup file is still encrypted before upload. This choice
 stays on this computer.
 
-## 🚀 Quick start
-
-1. Open **Hosts** and choose **New host**.
-2. Enter a name, address and account name.
-3. Pick authentication: the running agent, a private-key file or the password.
-4. Connect and compare the host-key fingerprint with the server. Trust it once or
-   save it.
-5. The tab opens on the login shell. A server that asks for a one-time code gets
-   the extra field automatically.
-
-The command palette is **Command+Shift+P** on macOS and **Control+Shift+P**
-elsewhere. Default shortcuts use Command on macOS and Control on Windows/Linux;
-all of them are configurable.
-
-On Windows, choose the local shell from the dropdown in **Settings → Terminal
-→ Local shell**, below **Inline suggestions**. Motty detects installed shells
-such as PowerShell, CMD and Git Bash from PATH and common installation folders,
-and lists each installed WSL distribution as its own entry. The file panel
-follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
-share. Choose the distribution here, rather than typing `wsl` into PowerShell:
-only a shell Motty starts itself can report its folder. The choice stays on this
-computer and applies to new or reconnected local terminals.
-
-| Action | macOS | Windows / Linux |
-| --- | --- | --- |
-| Command palette | Command+Shift+P | Control+Shift+P |
-| Find in terminal | Command+F | Control+F |
-| Command history | Command+Shift+H | Control+Shift+H |
-| File panel | Command+Shift+S | Control+Shift+S |
-| New window | Command+Shift+N | Control+Shift+N |
-
-## 📦 Install
-
-Download the package for your platform from the
-[releases page](https://github.com/t8y2/motty/releases):
-
-| Platform | Packages |
-| --- | --- |
-| macOS (arm64, amd64) | `.dmg`, `.zip` |
-| Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
-| Linux (amd64, arm64) | `.deb`, `.tar.gz` |
-
-macOS builds are signed and notarized when the release has the credentials.
-Windows builds are signed when a certificate is configured. Linux packages are
-not signed. AUR and `.AppImage` are not available yet.
-
-Through a package manager:
-
-```sh
-brew install --cask t8y2/tap/motty
-```
-
-If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
-
-```powershell
-scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
-scoop install t8y2/motty
-```
-
-The cask installs the notarized disk image and is marked as self-updating, so an
-installed copy updates itself. Scoop installs the portable copy: its
-`motty-data` folder is persisted across versions and `scoop update motty` is how
-it updates.
-
-### If Motty closes unexpectedly
-
-Motty keeps a log and, after an abnormal exit, a crash report in the `logs`
-folder of its data directory: `%APPDATA%\motty\logs` on Windows,
-`~/Library/Application Support/motty/logs` on macOS, `~/.config/motty/logs` on
-Linux (`motty-data\logs` beside the program in a portable copy). Attach
-`motty.log` and the newest `crash-*.log` to a bug report. When the program
-cannot start at all, it says why in a message box and writes the reason to the
-log.
-
-If the program disappears and `crash.log` stays empty, the process was ended by
-a native fault (a graphics driver, for instance) before Go could write
-anything. On Windows 11 22H2 or later Motty then asks Windows Error Reporting for
-a dump in `%LOCALAPPDATA%\Motty\CrashDumps`; the Application Error event in
-Event Viewer (Windows Logs → Application) names the faulting module. To tell
-the usual suspects apart, start Motty with `VIVA_SOFTWARE_RENDERING=1` (no
-graphics driver) or `VIVA_ACCESSIBILITY=0` (no UI Automation tree) set. A dump
-is a copy of the program's memory: look before you share it.
-
-## 🛠 Build from source
+## Build from source
 
 Requirements:
 
@@ -328,64 +367,16 @@ go run ./cmd/viva package -C ../motty --target linux --arch amd64 --format tar.g
 
 ### Development builds
 
-Build and launch one development binary with:
+`make run` builds and launches one development binary: the window and tray say
+`Motty Dev` and its Dock icon carries a red `DEV` badge, while the interface
+itself looks like what ships. `make dev` rebuilds and restarts on change and
+needs `fswatch`. Development data lives in `motty-dev` with its own
+system-secret namespace, so a development build and a release build run side by
+side without touching each other. See
+[docs/development.md](docs/development.md) for the macOS development signing
+identity, `MOTTY_DATA_DIR`, profile import, and the storage epoch 23 rules.
 
-```sh
-make run
-```
-
-The binary is built with `-tags dev`, so its window and tray say `Motty Dev`
-and its Dock icon carries a red `DEV` badge. The logo and wordmark inside the
-window are the release ones, so the interface itself looks like what ships and
-the running copy is still told apart at a glance. Use `make dev` to rebuild and
-restart when a Go file in this repository or `../viva` changes; watch mode needs
-`fswatch`. One-shot mode does not. `tools/dev.sh --once` is the same entry
-point as `make run`.
-
-Development builds use `motty-dev` under the platform's configuration directory,
-separate from the release build's unchanged `motty` directory. Their vault keys
-also use a separate system-secret namespace. The default copies can run side by
-side without upgrading each other's databases. When an unused default development
-profile finds release data, its first-run dialog offers **Import copy** or
-**Start empty**. Import reads the release profile without changing it, copies
-hosts, shared settings and trusted keys, and optionally re-encrypts saved
-passwords under the development key. It never copies open sessions or cloud
-logins. Closing the dialog postpones the choice; failures stay visible and
-unfinished imports can resume without replacing current hosts or passwords.
-Existing profiles and explicit `MOTTY_DATA_DIR` profiles are not auto-imported;
-they can still restore an encrypted backup through Backup & sync.
-
-On macOS the standard entry creates or reuses a private local development
-signing identity under `~/Library/Application Support/motty/development-signing`.
-The first access may require one system Keychain authorization. Subsequent
-content-different rebuilds reuse that authorization while the same identity and
-unlocked Keychain remain available. This does not bypass a locked Keychain, a
-changed ACL or an explicit identity change. A signing or verification failure
-stops the launch instead of silently running an unsigned build.
-
-Use an explicit certificate without creating the default identity with
-`MOTTY_DEV_SIGN_IDENTITY='Developer ID Application: …' make run`. Use
-`MOTTY_DEV_SIGN_IDENTITY=none make run` only for an intentional unsigned run;
-the entry warns that Keychain authorization may repeat. `go run ./cmd/motty`
-is release behaviour, while `go run -tags dev ./cmd/motty` bypasses the signing
-helper and is intended only for diagnosis.
-
-`MOTTY_DATA_DIR` still overrides the directory. Use disposable data and test
-credentials for destructive tests: profiles within one build variant still
-share its system-secret namespace. Never point a development build at production
-data or configure production cloud sync unless that shared access is intentional.
-Portable development builds use `motty-dev-data`, not `motty-data`.
-
-Configuration epoch 23 introduces lossless field updates. Compatible additions
-to JSON objects no longer require a format bump; unknown fields and records
-survive saves, sync and backup restoration. Conflicting edits fail rather than
-overwrite unread data. Arrays remain atomic, so incompatible element changes
-still require a new epoch. Application writer versions are diagnostic only.
-Older epochs (including 19–22) upgrade once; already released older binaries
-cannot read epoch 23. Do not edit the database's format number to bypass this
-protection. See [storage compatibility](tools/README.md#storage-compatibility).
-
-## 🔐 Security
+## Security
 
 - Host-key verification happens before any credential is sent.
 - Saved passwords and passphrases are stored in an AES-256-GCM vault; its key is
@@ -404,7 +395,12 @@ To report a vulnerability, use GitHub's private vulnerability reporting on the
 repository. Please keep credentials, host names and terminal output out of public
 issues.
 
-## 🧱 Architecture
+## Architecture
+
+Motty is written in Go on [Viva](https://github.com/vivaui/viva), which draws
+through Metal, Direct3D and Vulkan. There is no Electron runtime, no embedded
+browser and no JavaScript layer, and a window that is not being touched does
+not paint.
 
 Motty owns SSH, authentication, SFTP, terminal emulation, forwarding,
 remote-desktop protocols, persistence and product workflows. Viva owns windowing,
@@ -425,10 +421,19 @@ capabilities go into Viva rather than being duplicated here.
 | `assets`, `docs`, `tools` | branding, technical notes and development tooling |
 | `website` | static documentation site published to motty.page — [docs/website.md](docs/website.md) |
 
-## 💬 Community
+## Troubleshooting
 
-The QQ group, the WeChat group in its Tencent Doc and the Discord server are all
-live.
+Motty keeps `motty.log` and, after an abnormal exit, a `crash-*.log` in the
+`logs` folder of its data directory (`%APPDATA%\motty\logs` on Windows,
+`~/Library/Application Support/motty/logs` on macOS, `~/.config/motty/logs` on
+Linux). Attach both to a bug report. When a crash leaves `crash.log` empty, the
+process died before Go could write anything — see
+[docs/troubleshooting.md](docs/troubleshooting.md) for Windows Error Reporting
+dumps and the `VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` bisection.
+
+## Community
+
+Questions and bug reports are welcome in any of these places.
 
 - QQ 群: [1131573299](https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299)
 - 微信群: [scan the QR code in the Tencent Doc](https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP)
@@ -437,7 +442,7 @@ live.
   [GitHub Issues](https://github.com/t8y2/motty/issues)
 - Security reports: GitHub private vulnerability reporting
 
-## 🤝 Contributing
+## Contributing
 
 Issues and pull requests are welcome. Start with an issue for a large change so
 the approach can be discussed before the code is written.
@@ -459,20 +464,20 @@ go test -race ./...
 Keep SSH, protocol and product logic in this repository. A capability that
 belongs to the desktop framework should be proposed in Viva instead.
 
-## 👥 Contributors
+## Contributors
 
 <a href="https://github.com/t8y2/motty/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=t8y2/motty&max=300&columns=15" alt="Contributors" />
 </a>
 
-## 📄 License
+## License
 
 Motty is released under the [Apache License, Version 2.0](LICENSE). See
 [NOTICE](NOTICE) for the copyright and third-party notice. The Motty name and
 logo are not licensed under Apache-2.0. Third-party assets and code retain their
 own licences.
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 Motty is built on [Viva](https://github.com/vivaui/viva). Its RDP core is a modified
 copy of [gopher-rdp](https://github.com/bouncyball-git/gopher-rdp), MIT licensed;

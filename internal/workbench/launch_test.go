@@ -273,7 +273,54 @@ func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
 	newer := New(options)
 	newer.update.firstDelay = time.Millisecond
 	defer newer.Close()
-	waitUpdate(t, newer, func() bool { return newer.modal == modalUpdate })
+	waitUpdate(t, newer, func() bool { return newer.update.available })
+	// A check nobody asked for announces the version without a dialog, which
+	// would land on whatever the user is typing; the notice's button opens it.
+	if newer.modal != modalNone || newer.update.offer {
+		t.Fatal("a background check opened a dialog")
+	}
+	if len(newer.fileNotices.items) != 1 || newer.fileNotices.items[0].action != hitUpdateNoticeAction {
+		t.Fatalf("the new version was not announced: %+v", newer.fileNotices.items)
+	}
+	newer.Click(hitUpdateNoticeAction)
+	if newer.modal != modalUpdate || len(newer.fileNotices.items) != 0 {
+		t.Fatalf("the notice's button did not open the offer and clear the notice: modal %d, notices %d", newer.modal, len(newer.fileNotices.items))
+	}
+}
+
+func TestAnAvailableUpdateStaysInTheBarUntilThereIsNone(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		return update.Release{Version: "99.0.0", URL: "https://example.com/r"}, nil
+	}
+	state := newTestState(t, options)
+	inBar := func() bool {
+		var tools [maxBarTools]barTool
+		for _, tool := range state.toolbarDockTools(state.defaultToolbarDockZone(toolbarWindow), &tools) {
+			if tool.id == hitUpdateToolbar {
+				return true
+			}
+		}
+		return false
+	}
+	if inBar() {
+		t.Fatal("an update button before any update is known")
+	}
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	state.Click(hitUpdateLater)
+	if !inBar() {
+		t.Fatal("the bar lost the update button after Later")
+	}
+	state.Click(hitUpdateToolbar)
+	if state.modal != modalUpdate {
+		t.Fatalf("the bar button did not reopen the offer: modal %d", state.modal)
+	}
+	state.Click(hitUpdateSkip)
+	if inBar() {
+		t.Fatal("a skipped version still has a button in the bar")
+	}
 }
 
 func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
@@ -432,6 +479,74 @@ func TestAStartAtLoginDoesNotBringTheWindowForward(t *testing.T) {
 	state.Wake()
 	if *raised != 0 {
 		t.Fatalf("the window was raised %d times", *raised)
+	}
+}
+
+func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
+	options := freshOptions(t)
+	options.Invalidate = func() {}
+	opened, raised := 0, 0
+	options.NewWindow = func() error { opened++; return nil }
+	options.Raise = func() { raised++ }
+	first := newTestState(t, options)
+	openGeneralSettings(first)
+	_, texts := paintedTexts(first)
+	if !contains(texts, first.messages.Tools.GeneralRelaunch) {
+		t.Fatal("the relaunch choice is missing from General settings")
+	}
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 0 {
+		t.Fatalf("default relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Click(hitSettingsRelaunchNewWindow)
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("configured relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"--background"})
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("background launch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"-unknown"})
+	first.Wake()
+	if opened != 1 {
+		t.Fatal("a launch with arguments opened a new window")
+	}
+	first.Launch([]string{"ssh://bob@link.example.com/"})
+	first.Wake()
+	if first.modal != modalOpenLink || raised != 3 || opened != 1 {
+		t.Fatalf("link launch: modal %v, raised %d, opened %d", first.modal, raised, opened)
+	}
+	first.Close()
+
+	second := newTestState(t, options)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 {
+		t.Fatal("the new-window choice did not survive a restart")
+	}
+	openGeneralSettings(second)
+	second.Click(hitSettingsRelaunchRaise)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 || raised != 4 {
+		t.Fatalf("restored default: raised %d, opened %d", raised, opened)
+	}
+}
+
+func TestRelaunchUsesChoiceChangedInAnotherWindow(t *testing.T) {
+	pair := newTwoWindows(t)
+	opened := 0
+	pair.second.options.NewWindow = func() error { opened++; return nil }
+	openGeneralSettings(pair.first)
+	pair.first.Click(hitSettingsRelaunchNewWindow)
+	pair.second.Launch(nil)
+	pair.second.Wake()
+	if opened != 1 {
+		t.Fatal("the last window did not pick up the relaunch choice from the other window")
 	}
 }
 

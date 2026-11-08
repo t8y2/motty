@@ -22,6 +22,8 @@ type hostCatalog struct {
 	templates  []WorkspaceTemplate
 	proxies    []proxyRecord
 	identities []identityRecord
+	// credentials are the saved passwords hosts can share; the secrets are in the vault.
+	credentials []credential
 	// proxy is the outbound proxy every host inherits unless it names its own.
 	proxy             outboundProxy
 	connectionTimeout time.Duration
@@ -33,6 +35,12 @@ type hostCatalog struct {
 	// agentHosts holds the catalog ids of the hosts an agent may use without a
 	// window (see savedState.AgentHosts).
 	agentHosts map[string]bool
+	// merged maps the catalog ID of each host that was folded into another when
+	// the hosts were last read (see mergeSameHosts) to the ID that stayed, for
+	// what still refers to the old one. mergedHosts says the read changed the
+	// catalog, so the store still holds what was folded away.
+	merged      map[string]string
+	mergedHosts bool
 }
 
 // connectEnv is what resolving a connection needs beyond the catalog.
@@ -91,6 +99,22 @@ func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) 
 	}
 	for _, host := range catalog.hosts {
 		if host.isSSH() && host.Address == address && host.User == user && host.Port == port {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
+// hostByRouteEnd is the host one end of a saved route names: the host with that
+// catalog ID, or, for a route saved without one, the host at that destination.
+// An ID that no host holds names nothing: another host at the same destination
+// is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
+	if id == "" {
+		return catalog.hostByConnection(address, user, port)
+	}
+	for _, host := range catalog.hosts {
+		if host.CatalogID == id && host.isSSH() {
 			return host, true
 		}
 	}
@@ -181,10 +205,15 @@ func (catalog *hostCatalog) algorithmsFor(target Host, jumps []Host) map[string]
 }
 
 func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
+	return catalog.proxyTargetConfiguredExcluding(hostID, 0)
+}
+
+func (catalog *hostCatalog) proxyTargetConfiguredExcluding(hostID, excludeRouteID uint32) bool {
 	for _, route := range catalog.proxies {
-		if route.TargetID == hostID {
-			return true
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != hostID {
+			continue
 		}
+		return true
 	}
 	return false
 }
@@ -224,8 +253,12 @@ func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, b
 }
 
 func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
+	return catalog.proxyJumpExcluding(targetID, runningOnly, 0)
+}
+
+func (catalog *hostCatalog) proxyJumpExcluding(targetID uint32, runningOnly bool, excludeRouteID uint32) (Host, bool, bool) {
 	for _, route := range catalog.proxies {
-		if route.TargetID != targetID {
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != targetID {
 			continue
 		}
 		if runningOnly && route.Stopped {
@@ -238,12 +271,16 @@ func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, 
 }
 
 func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
+	return catalog.proxyWouldCycleExcluding(targetID, jumpID, 0)
+}
+
+func (catalog *hostCatalog) proxyWouldCycleExcluding(targetID, jumpID, excludeRouteID uint32) bool {
 	current := jumpID
 	for range len(catalog.proxies) + 1 {
 		if current == targetID {
 			return true
 		}
-		jump, routed, valid := catalog.proxyJump(current, false)
+		jump, routed, valid := catalog.proxyJumpExcluding(current, false, excludeRouteID)
 		if !routed {
 			return false
 		}
@@ -323,6 +360,9 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		Authentication:          make(map[sshconn.Endpoint]sshconn.Authentication, 1),
 		Notify:                  env.Notify,
 		Proxy:                   proxy,
+	}
+	if env.Passwords != nil {
+		config.StoredKey = storedKeyReader(env.Passwords)
 	}
 	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
 	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
@@ -433,19 +473,27 @@ func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts
 	return hosts, next
 }
 
-// decodeProxies turns saved jump routes into routes between hosts, numbered
-// from 1. A route whose ends are unknown, that jumps a host through itself, that
-// gives a target a second route, or that would close a loop, is dropped.
+// decodeProxies turns saved jump routes into routes between hosts. A route keeps
+// the number it was saved with, so a window that reloads the catalog does not
+// re-point an open dialog at another route. A record saved before the number was
+// written, and a second record claiming a number already taken, are given the
+// lowest free one. A route whose ends are unknown, that jumps a host through
+// itself, that gives a target a second route, or that would close a loop, is
+// dropped.
 func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	catalog := hostCatalog{hosts: hosts}
+	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
-	for _, entry := range saved {
-		target, targetOK := catalog.hostByConnection(entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByConnection(entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+	for index, entry := range saved {
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
-		route := proxyRecord{ID: next, TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
+		if ids[index] == 0 {
+			ids[index] = freeRecordNumber(ids, &next)
+		}
+		route := proxyRecord{ID: ids[index], TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
 		if entry.ViaShell {
 			route.ViaShell = true
 			// A saved command that could not have come from the form is no command:
@@ -455,9 +503,47 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 			}
 		}
 		catalog.proxies = append(catalog.proxies, route)
-		next++
 	}
 	return catalog.proxies
+}
+
+// proxyNumbersBySavedID is the number each saved route keeps, by its index.
+func proxyNumbersBySavedID(saved []savedProxy) []uint32 {
+	wanted := make([]uint32, len(saved))
+	for index, entry := range saved {
+		wanted[index] = entry.ID
+	}
+	return recordNumbers(wanted)
+}
+
+// recordNumbers is the number each record keeps, by its index, with zero where
+// the record has none. A number counts as kept only where exactly one record
+// asks for it: two records cannot answer to the same one.
+func recordNumbers(wanted []uint32) []uint32 {
+	numbers := make([]uint32, len(wanted))
+	count := make(map[uint32]int, len(wanted))
+	for _, number := range wanted {
+		if number != 0 {
+			count[number]++
+		}
+	}
+	for index, number := range wanted {
+		if number != 0 && count[number] == 1 {
+			numbers[index] = number
+		}
+	}
+	return numbers
+}
+
+// freeRecordNumber is the lowest number no record keeps or has been given yet.
+func freeRecordNumber(numbers []uint32, next *uint32) uint32 {
+	for {
+		number := *next
+		*next++
+		if !slices.Contains(numbers, number) {
+			return number
+		}
+	}
 }
 
 // decodeOutboundProxy reads the saved outbound proxy. A damaged address means
@@ -533,12 +619,13 @@ func connectionTimes(saved savedState) (timeout, keepAlive time.Duration) {
 func catalogFromSaved(saved savedState, systemUser string, messages keyMessages) hostCatalog {
 	hosts, _ := decodeHosts(saved.Hosts, nil, 1)
 	catalog := hostCatalog{
-		hosts:      hosts,
-		proxies:    decodeProxies(saved.Proxies, hosts),
-		identities: decodeIdentities(saved.IdentityFiles, messages),
-		proxy:      decodeOutboundProxy(saved.OutboundProxy),
-		systemUser: systemUser,
-		agentHosts: agentHostSet(saved.AgentHosts),
+		hosts:       hosts,
+		proxies:     decodeProxies(saved.Proxies, hosts),
+		identities:  decodeIdentities(saved.IdentityFiles, messages),
+		credentials: decodeCredentials(saved.Credentials),
+		proxy:       decodeOutboundProxy(saved.OutboundProxy),
+		systemUser:  systemUser,
+		agentHosts:  agentHostSet(saved.AgentHosts),
 	}
 	catalog.connectionTimeout, catalog.connectionKeepAlive = connectionTimes(saved)
 	catalog.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)

@@ -34,8 +34,9 @@ var releaseKey = updatesign.ReleaseKey
 
 // Staged is a downloaded and checked version, ready to replace the running one.
 type Staged struct {
-	Install Install
-	Version string
+	Install   Install
+	Version   string
+	Signature string
 	// Path is the new .app, the installer, or the directory of the unpacked
 	// archive, depending on the installation's Kind.
 	Path string
@@ -68,6 +69,9 @@ func New(dir string) *Updater {
 
 // Support says whether this installation can be updated in place, and if not why.
 func (updater *Updater) Support() Reason { return updater.reason }
+
+// Package selects the release asset for the detected installation.
+func (updater *Updater) Package() update.Package { return updater.install.Package() }
 
 // TakeFailure is why the last update failed, if it did.
 func (updater *Updater) TakeFailure() string { return TakeFailure(updater.Dir) }
@@ -119,12 +123,17 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 		return Staged{}, err
 	}
 
-	updater.clean()
+	if install.Kind != KindLinuxDeb {
+		updater.clean()
+	}
 	dir := filepath.Join(updater.Dir, release.Version)
 	if phase != nil {
 		phase(PhaseDownloading)
 	}
-	archive, err := Download(ctx, updater.Client, release.Asset, dir, progress)
+	archive := filepath.Join(dir, release.Asset.Name)
+	if install.Kind != KindLinuxDeb || ctx.Err() != nil || verifyCachedPackage(archive, release) != nil {
+		archive, err = Download(ctx, updater.Client, release.Asset, dir, progress)
+	}
 	if err != nil {
 		return Staged{}, err
 	}
@@ -134,7 +143,7 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 	if err := verifyReleasePackage(archive, release); err != nil {
 		return Staged{}, err
 	}
-	staged := Staged{Install: install, Version: release.Version}
+	staged := Staged{Install: install, Version: release.Version, Signature: release.Asset.Signature}
 	switch install.Kind {
 	case KindMacApp:
 		unpacked := filepath.Join(dir, "unpacked")
@@ -169,6 +178,8 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 			return Staged{}, fmt.Errorf("selfupdate: the package does not hold %s", filepath.Base(install.Exe))
 		}
 		staged.Path = script
+	case KindLinuxDeb:
+		staged.Path = archive
 	}
 	return staged, nil
 }
@@ -219,6 +230,7 @@ func (updater *Updater) Launch(staged Staged) error {
 	}
 	job := Job{
 		Kind: staged.Install.Kind, PID: os.Getpid(), Staged: staged.Path,
+		Version: staged.Version, Signature: staged.Signature,
 		Root: staged.Install.Root, Exe: exe, Dir: updater.Dir,
 	}
 	cmd := exec.Command(helper, job.Arguments()...)

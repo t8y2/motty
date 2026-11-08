@@ -2,12 +2,72 @@ package workbench
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
+
+func TestSelectedHostsOpenPreselectedTemporaryWorkspace(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
+	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || hit.Disabled {
+		t.Fatalf("batch connect control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftTemporary ||
+		!state.workspaceDraft.selected[state.hosts[0].CatalogID] || !state.workspaceDraft.selected[state.hosts[1].CatalogID] || !isGrid(state.workspaceDraft.layout, 2) {
+		t.Fatalf("draft = %+v", state.workspaceDraft)
+	}
+	state.Click(hitWorkspaceDraftSubmit)
+	if len(world.configs) != 2 || len(state.deck.Panes(state.deck.ActiveWorkspace(), nil)) != 2 {
+		t.Fatalf("dials=%d panes=%d", len(world.configs), len(state.deck.Panes(state.deck.ActiveWorkspace(), nil)))
+	}
+}
+
+func TestSelectedHostsBeyondPaneLimitCannotOpenWorkspace(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for index := len(state.hosts); index <= layoutcore.MaxPanes; index++ {
+		host := testWorkspaceHost(fmt.Sprintf("extra-%d", index), fmt.Sprintf("extra-%d.example.com", index))
+		host.ID = uint32(index + 1)
+		state.hosts = append(state.hosts, host)
+	}
+	for _, host := range state.hosts {
+		state.Click(hitHostCheckList.At(int(host.ID)))
+	}
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || !hit.Disabled {
+		t.Fatalf("over-limit control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal == modalWorkspaceDraft {
+		t.Fatal("over-limit selection opened a workspace")
+	}
+}
+
+func TestSelectedHostsDoesNotSilentlyDropNonSSHHosts(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := testWorkspaceHost("desktop", "127.0.0.1")
+	host.ID = uint32(len(state.hosts) + 1)
+	host.Protocol = protocolVNC
+	state.hosts = append(state.hosts, host)
+	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
+	state.Click(hitHostCheckList.At(int(host.ID)))
+	canvas, _ := paintedTexts(state)
+	if hit, ok := hitByID(canvas, hitConnectSelectedHosts); !ok || !hit.Disabled {
+		t.Fatalf("mixed selection control = %+v found=%v", hit, ok)
+	}
+	state.Click(hitConnectSelectedHosts)
+	if state.modal == modalWorkspaceDraft {
+		t.Fatal("mixed selection opened a partial SSH workspace")
+	}
+}
 
 func fillNewHost(state *State, label, address, user, password string) {
 	state.Click(hitAddHost)
@@ -290,7 +350,7 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	state.Click(hitDialogSubmit)
 
 	updated := state.hosts[0]
-	if state.sessions[0].host != updated || state.sessions[0].Title != updated.Label || !strings.Contains(state.sessions[0].Address, updated.Address) {
+	if !reflect.DeepEqual(state.sessions[0].host, updated) || state.sessions[0].Title != updated.Label || !strings.Contains(state.sessions[0].Address, updated.Address) {
 		t.Fatalf("session reference = %+v", state.sessions[0])
 	}
 	forward := state.forwards[0]
@@ -302,25 +362,36 @@ func TestEditHostUpdatesSessionForwardAndProxyReferences(t *testing.T) {
 	}
 }
 
-func TestCopyHostRequiresAnEditedUniqueDestination(t *testing.T) {
+// A copy keeps the destination and takes a new name: that is how a second
+// target behind one bastion host is added, so it saves as it stands and is its
+// own host. Giving the copy back the original's name is the accidental repeat.
+func TestCopyHostSavesAsADistinctHostAtTheSameDestination(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
+	original := state.hosts[0]
 	clickHostAction(state, hitCopyHost)
 	if state.modal != modalNewHost || state.hostDialogMode != hostDialogCopy || state.editor.value(fieldLabel) != "Production Copy" {
 		t.Fatalf("copy dialog mode=%d label=%q", state.hostDialogMode, state.editor.value(fieldLabel))
 	}
+	state.editor.label = text.Editor{}
+	typeInto(state, hitDialogLabel, original.Label)
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.ErrAddressTaken || len(state.hosts) != 3 {
-		t.Fatalf("unchanged copy silently saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
+		t.Fatalf("a copy with the original's name silently saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 	}
-	state.editor.address = text.Editor{}
-	typeInto(state, hitDialogAddress, "prod-copy.example.com")
+	state.editor.label = text.Editor{}
+	typeInto(state, hitDialogLabel, "Production Copy")
 	state.Click(hitDialogSubmit)
-	if len(state.hosts) != 4 || state.hosts[3].Label != "Production Copy" || state.hosts[3].Address != "prod-copy.example.com" {
-		t.Fatalf("copy = %+v", state.hosts)
+	if state.modal != modalNone || len(state.hosts) != 4 {
+		t.Fatalf("copy not saved: modal=%d error=%q hosts=%d", state.modal, state.dialogError, len(state.hosts))
 	}
-	if restarted := newTestState(t, options); len(restarted.hosts) != 4 || restarted.hosts[3].Address != "prod-copy.example.com" {
-		t.Fatalf("copy was not persisted: %+v", restarted.hosts)
+	copied := state.hosts[3]
+	if copied.Label != "Production Copy" || !sameEndpoint(copied, original) || copied.CatalogID == original.CatalogID {
+		t.Fatalf("copy = %+v, original = %+v", copied, original)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.hosts) != 4 || restarted.hosts[3].CatalogID != copied.CatalogID || restarted.hosts[0].CatalogID != original.CatalogID {
+		t.Fatalf("hosts at one destination were not persisted apart: %+v", restarted.hosts)
 	}
 }
 

@@ -37,6 +37,9 @@ var (
 	ErrAuthRequired = errors.New("rfb: the server asks for a password")
 	// ErrAuthFailed means the server refused the password.
 	ErrAuthFailed = errors.New("rfb: authentication failed")
+	// ErrServerKeyRequired means RSA-AES was offered without a way to verify
+	// the server's identity. Credentials must not be sent to an unverified key.
+	ErrServerKeyRequired = errors.New("rfb: the server's RSA key must be verified")
 	// ErrUnsupported means the server offers nothing this client can speak.
 	ErrUnsupported = errors.New("rfb: no supported security type")
 	// ErrProtocol means the server broke the protocol or exceeded a limit.
@@ -84,6 +87,9 @@ type Sink interface {
 
 // Config describes how to connect.
 type Config struct {
+	// Username is the system account for RSA-AES UserPass authentication.
+	// Traditional VNC Authentication ignores it.
+	Username string
 	// Password is the VNC password. Empty means none: a server that asks for one
 	// then fails the connection with ErrAuthRequired.
 	Password string
@@ -93,6 +99,16 @@ type Config struct {
 	// same connection goes on with the answer, as a viewer's password dialog does.
 	// Returning an error ends the connection with it.
 	AskPassword func() (string, error)
+	// AskCredentials supplies the system account and password after RSA-AES
+	// has authenticated the server key. When present, it takes precedence over
+	// Username/Password for UserPass, keeping system and VNC passwords separate.
+	// The handshake timeout is paused while the callback waits for the user.
+	AskCredentials func() (username, password string, err error)
+	// VerifyServerKey decides whether the RSA-AES server's canonical PKIX DER
+	// public key belongs to the intended host, before any credentials are sent.
+	// Nil rejects RSA-AES; a callback error ends the connection without falling
+	// back to a weaker security type. The user may take time to answer.
+	VerifyServerKey func(publicKeyDER []byte) error
 	// Exclusive asks the server to disconnect other clients. The default is a
 	// shared session, so connecting does not throw out whoever is already there.
 	Exclusive bool
@@ -113,8 +129,12 @@ type Client struct {
 	Name string
 	// Version is the protocol minor version used: 3, 7 or 8.
 	Version int
-	// Security is the security type used: 1 (None) or 2 (VNC Authentication).
+	// Security is the security type used: 1 (None), 2 (VNC Authentication),
+	// or 5 (RSA-AES, with authentication and session encryption).
 	Security int
+	// Encrypted reports protocol encryption; it does not describe an external
+	// SSH tunnel used by the caller. RSA-AES keeps all subsequent RFB encrypted.
+	Encrypted bool
 
 	width, height int
 	timeout       time.Duration
@@ -164,16 +184,21 @@ func (client *Client) handshake(config Config) error {
 	if !ok {
 		return fmt.Errorf("%w: not an RFB server (%q)", ErrProtocol, printable(banner[:]))
 	}
-	if major != 3 {
-		return fmt.Errorf("%w: protocol version %d.%d", ErrUnsupported, major, minor)
-	}
-	switch {
-	case minor >= 8:
+	if major == 5 && minor == 0 {
+		// RealVNC announces its proprietary 5.0 version but accepts client 3.8.
+		// Only this known banner is downgraded; other major versions are refused.
 		client.Version = 8
-	case minor == 7:
-		client.Version = 7
-	default:
-		client.Version = 3
+	} else if major != 3 {
+		return fmt.Errorf("%w: protocol version %d.%d", ErrUnsupported, major, minor)
+	} else {
+		switch {
+		case minor >= 8:
+			client.Version = 8
+		case minor == 7:
+			client.Version = 7
+		default:
+			client.Version = 3
+		}
 	}
 	if _, err := fmt.Fprintf(client.conn, "RFB 003.%03d\n", client.Version); err != nil {
 		return err
@@ -215,6 +240,8 @@ func (client *Client) handshake(config Config) error {
 	}
 	client.Security = int(security)
 	switch security {
+	case 5:
+		return client.authenticateRA2(config)
 	case 1:
 		if client.Version == 8 {
 			return client.securityResult()
@@ -250,9 +277,8 @@ func (client *Client) handshake(config Config) error {
 	return fmt.Errorf("%w: security type %d", ErrUnsupported, security)
 }
 
-// chooseSecurity picks from what the server offers: VNC Authentication when a
-// password is at hand and offered, otherwise None, otherwise VNC
-// Authentication to ask for the password.
+// chooseSecurity prefers RSA-AES, then VNC Authentication when a password is
+// available, then None, then VNC Authentication to ask for the password.
 func chooseSecurity(offered []byte, havePassword bool) uint8 {
 	has := func(want byte) bool {
 		for _, value := range offered {
@@ -263,6 +289,10 @@ func chooseSecurity(offered []byte, havePassword bool) uint8 {
 		return false
 	}
 	switch {
+	case has(5):
+		// Choose authenticated encryption before any unencrypted scheme. A
+		// rejected RSA key never causes a fallback on this or a new connection.
+		return 5
 	case havePassword && has(2):
 		return 2
 	case has(1):

@@ -225,19 +225,19 @@ func readMobaFile(path string, encoding MobaEncoding) (string, error) {
 			return "", problem
 		}
 		if encoding == MobaAuto {
-			if other, ok := decodeMobaGB18030(data); ok && other != string(data) {
+			if other, ok := decodeGB18030Verified(data); ok && other != string(data) {
 				return "", ErrAmbiguousMobaEncoding
 			}
 		}
 		return string(data), nil
 	}
-	if decoded, ok := decodeMobaGB18030(data); ok {
+	if decoded, ok := decodeGB18030Verified(data); ok {
 		return decoded, nil
 	}
 	return "", problem
 }
 
-func decodeMobaGB18030(data []byte) (string, bool) {
+func decodeGB18030Verified(data []byte) (string, bool) {
 	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data)
 	if err == nil {
 		var encoded []byte
@@ -250,8 +250,11 @@ func decodeMobaGB18030(data []byte) (string, bool) {
 }
 
 // decode turns a file's bytes into text: UTF-16 with a byte-order mark (what
-// Windows tools write), or UTF-8 with or without one. Anything that is neither
-// is read as UTF-8 with its bad bytes dropped.
+// Windows tools write), or UTF-8 with or without one. Bytes that are neither
+// get one more chance — the round-trip-verified GB18030 the MobaXterm reader
+// uses, since ANSI exports from a Chinese Windows (Xshell's among them) keep
+// their text in that encoding — and only what survives none of those is read
+// as UTF-8 with its bad bytes dropped (issue #332).
 func decode(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
@@ -263,6 +266,9 @@ func decode(data []byte) string {
 	}
 	if utf8.Valid(data) {
 		return string(data)
+	}
+	if decoded, ok := decodeGB18030Verified(data); ok {
+		return decoded
 	}
 	return strings.ToValidUTF8(string(data), "")
 }
@@ -664,6 +670,15 @@ func parseXshellArchive(path string) (Result, error) {
 		if member.FileInfo().IsDir() || !strings.EqualFold(filepath.Ext(member.Name), ".xsh") {
 			continue
 		}
+		name := member.Name
+		if !utf8.ValidString(name) {
+			decoded, ok := decodeGB18030Verified([]byte(name))
+			if !ok {
+				result.warn("%s: unsupported member name encoding", filepath.Base(path))
+				continue
+			}
+			name = decoded
+		}
 		total += member.UncompressedSize64
 		if member.UncompressedSize64 > MaxFileSize || total > maxArchiveSize {
 			result.warn("%s: too large; the rest of the archive was not read", filepath.Base(path))
@@ -680,13 +695,13 @@ func parseXshellArchive(path string) (Result, error) {
 			result.warn("%s: unreadable", member.Name)
 			continue
 		}
-		slashed := strings.ReplaceAll(member.Name, `\`, "/")
+		slashed := strings.ReplaceAll(name, `\`, "/")
 		group, base := "", slashed
 		if at := strings.LastIndexByte(slashed, '/'); at >= 0 {
 			group, base = strings.Trim(slashed[:at], "/"), slashed[at+1:]
 		}
-		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, member.Name); err != nil {
-			result.warn("%s: %v", member.Name, err)
+		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, name); err != nil {
+			result.warn("%s: %v", name, err)
 		}
 	}
 	return result, nil

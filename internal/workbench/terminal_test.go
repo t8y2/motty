@@ -2,10 +2,13 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
@@ -147,7 +150,16 @@ func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 			t.Fatalf("%+v was not taken", event)
 		}
 	}
-	if got, want := shell.typed(), "\r\x1b[A\t\x1b\x7f\x03\x1b[1;3D\x1b[15~\x1b[5~\x1b[3~"; got != want {
+	// Option+Left is the protocol's CSI 1;3D, except on macOS where a shell that
+	// negotiated nothing gets macOS Terminal's word movement instead. The product
+	// decides which (see terminal.go), so the expectation follows the platform
+	// rather than pinning one convention: CI's Linux and Windows shards take the
+	// first form, a Mac the second.
+	optionLeft := "\x1b[1;3D"
+	if runtime.GOOS == "darwin" {
+		optionLeft = "\x1bb"
+	}
+	if got, want := shell.typed(), "\r\x1b[A\t\x1b\x7f\x03"+optionLeft+"\x1b[15~\x1b[5~\x1b[3~"; got != want {
 		t.Fatalf("sent %q, want %q", got, want)
 	}
 
@@ -358,6 +370,7 @@ func TestClosingATabReleasesItsConnectionAndPicksANeighbour(t *testing.T) {
 
 	// Closing the first tab, which is not active, keeps the active one.
 	state.Click(hitTabCloseList.At(int(ids[0])))
+	confirmRunningClose(state)
 	if !shell.closed || fake.canceled == 0 {
 		t.Fatal("the closed tab's shell and connection were not released")
 	}
@@ -376,39 +389,40 @@ func TestClosingATabReleasesItsConnectionAndPicksANeighbour(t *testing.T) {
 	state.Click(hitTabCloseList.At(999)) // unknown: ignored
 }
 
-func TestCommandChordsDriveTheTabs(t *testing.T) {
+func TestDigitChordsDriveTheTabs(t *testing.T) {
 	state, world, _, _ := liveSession(t)
 	state.Click(hitHosts)
 	state.Click(hitHostList.At(2))
 	connect(t, state, world)
 	first, second := state.sessions[0].ID, state.sessions[1].ID
+	state.setTabNumbers(true)
 
-	if defaultShortcutModifier() == ui.ModifierMeta {
-		// A tab is a workspace on the tab bar: selecting one has to move the bar,
-		// not only the session the keyboard goes to.
-		workspaces := state.deck.Workspaces(nil)
-		digit := func(text string) {
-			state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: ui.ModifierMeta, Text: text})
-		}
-		digit("1")
-		if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
-			t.Fatal("Command+1 did not select the first tab")
-		}
-		digit("2")
-		if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
-			t.Fatal("Command+2 did not select the second tab")
-		}
-		digit("9") // no ninth tab
-		if state.activeSessionID != second {
-			t.Fatal("a missing tab changed the selection")
-		}
+	// A tab is a workspace on the tab bar: selecting one has to move the bar,
+	// not only the session the keyboard goes to.
+	workspaces := state.deck.Workspaces(nil)
+	digit := func(text string) ui.EventResult {
+		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text})
 	}
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "t"})
+	digit("1")
+	if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
+		t.Fatal("the first digit did not select the first tab")
+	}
+	digit("2")
+	if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
+		t.Fatal("the second digit did not select the second tab")
+	}
+	if result := digit("9"); result.Handled != (keymap.Primary == ui.ModifierMeta) {
+		t.Fatalf("a digit with no tab behind it: handled=%v", result.Handled)
+	}
+	if state.activeSessionID != second {
+		t.Fatal("a missing tab changed the selection")
+	}
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "t"})
 	if state.modal != modalCommandPalette || !state.commandPalette.connect {
 		t.Fatal("new-tab shortcut did not open the connection picker")
 	}
 	state.Click(hitCommandPaletteClose)
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "w"})
+	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "w"})
 	if len(state.sessions) != 1 || state.activeSessionID != first {
 		t.Fatalf("close-tab shortcut left sessions=%d active=%d", len(state.sessions), state.activeSessionID)
 	}
@@ -548,12 +562,15 @@ func TestALargeFloodIsParsedOverSeveralWakes(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	invalidations := 0
 	state.options.Invalidate = func() { invalidations++ }
-	// The escape sequence starts exactly on the budget boundary, so the parser
+	session := &state.sessions[0]
+	// No time to spare: a Wake parses one slice and no more, whatever the speed
+	// of the machine running the test.
+	session.term.pumpBudget = 0
+	// The escape sequence starts exactly on a slice boundary, so the parser
 	// has to carry its state into the next pump.
-	payload := strings.Repeat("a", pumpBudget-1) + "\x1b[31mred\x1b[0m\r\n"
+	payload := strings.Repeat("a", pumpSlice-1) + "\x1b[31mred\x1b[0m\r\n"
 	shell.say(payload)
 	state.Wake()
-	session := &state.sessions[0]
 	if session.term.rx == nil || len(session.term.rx) == 0 {
 		t.Fatal("the whole flood was parsed in one Wake")
 	}
@@ -574,11 +591,18 @@ func TestALargeFloodIsParsedOverSeveralWakes(t *testing.T) {
 func TestALargeFloodIsParsedInOneWakeWithoutAnInvalidator(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	state.options.Invalidate = nil
-	shell.say(strings.Repeat("x", 2*pumpBudget))
+	shell.say(strings.Repeat("x", 2*pumpSlice))
 	state.Wake()
 	if session := &state.sessions[0]; len(session.term.rx) != 0 {
 		t.Fatalf("%d bytes remained without an Invalidator", len(session.term.rx))
 	}
+}
+
+// oscRGB spells a color the way an OSC 10/11 reply does: sixteen bits a channel,
+// each 8-bit value repeated.
+func oscRGB(c ui.Color) string {
+	channel := func(v float32) string { return fmt.Sprintf("%02x%02x", uint8(v*255+0.5), uint8(v*255+0.5)) }
+	return channel(c.Red) + "/" + channel(c.Green) + "/" + channel(c.Blue)
 }
 
 // A program that asks the terminal for its colors with OSC 10 and 11 (Codex,
@@ -597,8 +621,8 @@ func TestTerminalAnswersColorQueriesWithItsLook(t *testing.T) {
 		return "\x1b]10;rgb:" + foreground + "\x1b\\\x1b]11;rgb:" + background + "\x1b\\"
 	}
 	answers := map[appearance]string{
-		appearanceLight: reply("1d1d/1d1d/1f1f", "fafa/fafa/fcfc"),
-		appearanceDark:  reply("e2e2/e7e7/eeee", "0b0b/0e0e/1313"),
+		appearanceLight: reply(oscRGB(lightPalette.termFG), oscRGB(lightPalette.terminal)),
+		appearanceDark:  reply(oscRGB(darkPalette.termFG), oscRGB(darkPalette.terminal)),
 	}
 	if got, want := ask(), answers[state.appearance]; got != want {
 		t.Fatalf("a new session answered %q, want %q", got, want)
@@ -630,11 +654,11 @@ func TestLoginTerminalAnswersColorQueries(t *testing.T) {
 		return strings.Join(replies, "")
 	}
 	state.setAppearance(appearanceLight)
-	if got, want := ask(), "\x1b]11;rgb:fafa/fafa/fcfc\x1b\\"; got != want {
+	if got, want := ask(), "\x1b]11;rgb:"+oscRGB(lightPalette.terminal)+"\x1b\\"; got != want {
 		t.Fatalf("light: the login terminal answered %q, want %q", got, want)
 	}
 	state.setAppearance(appearanceDark)
-	if got, want := ask(), "\x1b]11;rgb:0b0b/0e0e/1313\x1b\\"; got != want {
+	if got, want := ask(), "\x1b]11;rgb:"+oscRGB(darkPalette.terminal)+"\x1b\\"; got != want {
 		t.Fatalf("dark: the login terminal answered %q, want %q", got, want)
 	}
 }

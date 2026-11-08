@@ -1,11 +1,47 @@
 package cloudsync
 
 import (
+	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
+
+func TestHTTPClientUsesCallerDeadlineThroughResponseBody(t *testing.T) {
+	client := HTTPClient(nil, false)
+	if client.Timeout != 0 {
+		t.Fatalf("default HTTP timeout cuts short the caller's context: %v", client.Timeout)
+	}
+	custom := &http.Client{Timeout: time.Second}
+	if HTTPClient(custom, false).Timeout != custom.Timeout {
+		t.Fatal("the supplied HTTP client timeout was changed")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(http.StatusOK)
+		response.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	cancel()
+	if _, err := io.ReadAll(response.Body); !errors.Is(err, context.Canceled) {
+		t.Fatalf("body read did not obey caller cancellation: %v", err)
+	}
+}
 
 func TestRemoteHTTPRequiresExplicitConsent(t *testing.T) {
 	for _, raw := range []string{"http://192.168.1.20:8080/dav", "http://backup.lan/dav", "http://[fd00::20]/dav"} {

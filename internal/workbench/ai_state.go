@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/attach"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
@@ -75,8 +76,11 @@ type aiAnswer struct {
 	text     string
 }
 
-// aiRun is one request to the model in flight.
+// aiRun is one model leg in flight. An Ask escalation and its retry share
+// request-level statistics across two legs.
 type aiRun struct {
+	stats      aiRunStats
+	usageBase  llm.Usage
 	target     gate.SessionInfo
 	extras     []gate.SessionInfo
 	targetKey  string
@@ -98,6 +102,7 @@ type aiSettings struct {
 	autoUpTo     risk.Level
 	maxSteps     int
 	contextLines int
+	maxTextBytes int
 	redact       bool
 	keepHistory  bool
 	// External access (MCP): whether it is enabled and the shared access level.
@@ -110,7 +115,7 @@ type aiSettings struct {
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -125,6 +130,7 @@ type aiState struct {
 	inbox     *aiInbox
 	drained   []func(*State)
 	backend   *aiBackend
+	jobs      map[string]*aiJob // background terminal commands, by id
 
 	open bool
 	mode agent.Mode
@@ -156,6 +162,7 @@ type aiState struct {
 	attachments []aiAttachment
 	attaching   int
 	pasted      int         // pictures pasted so far, which numbers their names
+	pastedText  int         // text snippets pasted so far, which numbers their names
 	confirm     text.Editor // the word a critical action asks to be typed
 	run         *aiRun
 	approvals   []*aiApproval
@@ -169,6 +176,10 @@ type aiState struct {
 	// provider does not always report usage, so zeros mean unknown.
 	lastUsage  llm.Usage
 	totalUsage llm.Usage
+	lastRun    *aiRunStats
+	// pendingRun is the request-level state retained after an Ask leg requests
+	// Agent mode. The approval wait and either retry remain one timed request.
+	pendingRun *aiRunStats
 	// rename is the conversation-rename dialog's state.
 	rename aiRenameDialog
 
@@ -263,39 +274,12 @@ func (state *State) reloadAI() {
 	ai.providers, _ = ai.store.Providers()
 	state.aiAdoptKeys()
 	ai.models, _ = ai.store.Models()
-	ai.settings = defaultAISettings()
+	state.reloadAISettings()
 	read := func(key string, apply func(string)) {
 		if value, ok, err := ai.store.Setting(key); err == nil && ok {
 			apply(value)
 		}
 	}
-	read("ai.auto_up_to", func(v string) {
-		switch v {
-		case "medium":
-			ai.settings.autoUpTo = risk.Medium
-		case "high":
-			ai.settings.autoUpTo = risk.High
-		default:
-			ai.settings.autoUpTo = risk.Low
-		}
-	})
-	read("ai.max_steps", func(v string) {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 50 {
-			ai.settings.maxSteps = n
-		}
-	})
-	read("ai.context_lines", func(v string) {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 500 {
-			ai.settings.contextLines = n
-		}
-	})
-	read("ai.redact", func(v string) { ai.settings.redact = v != "off" })
-	read("ai.history", func(v string) { ai.settings.keepHistory = v != "off" })
-	read("ai.mcp.enabled", func(v string) { ai.settings.mcpEnabled = v == "on" })
-	read("ai.mcp.mode", func(v string) { ai.settings.mcpMode = mcpModeFromSetting(v) })
-	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
-	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
-	read(agentModeSetting, func(v string) { ai.settings.agentMode = mcpModeFromSetting(v) })
 	ai.agentAudit, _ = ai.store.Audit(agentAuditShown)
 	ai.agentSummary.lines = nil
 	read("ai.mode", func(v string) {
@@ -305,11 +289,73 @@ func (state *State) reloadAI() {
 			ai.mode = agent.ModeAsk
 		}
 	})
-	if provider, model, ok, err := ai.store.DefaultModel(); err == nil && ok {
-		ai.settings.defaultProvider, ai.settings.defaultModel = provider, model
-	}
 	// The providers changed, or were just read: the records follow.
 	state.save()
+}
+
+// reloadAISettings refreshes choices shared by already-open windows. It reads
+// only an opened store and never saves or changes a conversation, a running
+// request, or a settings dialog's draft.
+func (state *State) reloadAISettings() {
+	ai := &state.ai
+	if ai.store == nil {
+		return
+	}
+	settings := defaultAISettings()
+	failed := false
+	read := func(key string, apply func(string)) {
+		value, ok, err := ai.store.Setting(key)
+		if err != nil {
+			failed = true
+		} else if ok {
+			apply(value)
+		}
+	}
+	read("ai.auto_up_to", func(v string) {
+		switch v {
+		case "medium":
+			settings.autoUpTo = risk.Medium
+		case "high":
+			settings.autoUpTo = risk.High
+		default:
+			settings.autoUpTo = risk.Low
+		}
+	})
+	read("ai.max_steps", func(v string) {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 50 {
+			settings.maxSteps = n
+		}
+	})
+	read("ai.context_lines", func(v string) {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 500 {
+			settings.contextLines = n
+		}
+	})
+	read("ai.redact", func(v string) { settings.redact = v != "off" })
+	read("ai.attachment_text_mib", func(v string) {
+		switch v {
+		case "1", "4", "8":
+			settings.maxTextBytes, _ = strconv.Atoi(v)
+			settings.maxTextBytes <<= 20
+		}
+	})
+	read("ai.history", func(v string) { settings.keepHistory = v != "off" })
+	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
+	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
+	read(agentModeSetting, func(v string) { settings.agentMode = mcpModeFromSetting(v) })
+	// Export client choices live beside the settings in ai.db but not in
+	// aiSettings: they change which configuration the page shows, not what the
+	// assistant or the MCP servers do.
+	read(aiMCPClientSetting, func(v string) { ai.cfg.mcpClient = aiMCPClientFromKey(v) })
+	read(aiAgentClientSetting, func(v string) { ai.cfg.agentClient = aiMCPClientFromKey(v) })
+	if provider, model, ok, err := ai.store.DefaultModel(); err != nil {
+		failed = true
+	} else if ok {
+		settings.defaultProvider, settings.defaultModel = provider, model
+	}
+	if !failed {
+		ai.settings = settings
+	}
 }
 
 // aiVaultUsable reports whether the vault can be read and written right now: it
@@ -402,7 +448,7 @@ func (state *State) aiProvider(provider store.Provider) llm.Provider {
 	if store.IsCLIKind(provider.Kind) || !store.ValidProviderKind(provider.Kind) {
 		return cli.New(provider.Kind, provider.CLIPath)
 	}
-	config := llm.Config{BaseURL: provider.BaseURL, APIKey: provider.APIKey, AuthStyle: provider.AuthStyle}
+	config := llm.Config{BaseURL: provider.BaseURL, ModelsURL: provider.ModelsURL, APIKey: provider.APIKey, AuthStyle: provider.AuthStyle}
 	if provider.Kind == store.KindAnthropic {
 		return llm.NewAnthropic(config)
 	}
@@ -451,7 +497,7 @@ func (state *State) aiSetAutoUpTo(level risk.Level) {
 // request in flight was started under it, and an approval waiting for an answer
 // belongs to one.
 func (state *State) aiScopeLocked() bool {
-	return state.ai.run != nil || len(state.ai.approvals) > 0
+	return state.ai.run != nil || state.ai.pendingRun != nil || len(state.ai.approvals) > 0
 }
 
 // aiApprover is called from the agent's goroutine. It shows the question in the
@@ -460,7 +506,9 @@ func (state *State) aiApprover(ctx context.Context, request gate.Request) (bool,
 	approval := &aiApproval{request: request, reply: make(chan aiAnswer, 1)}
 	if !state.aiPost(func(s *State) {
 		s.ai.approvals = append(s.ai.approvals, approval)
-		s.ai.open = true
+		// Opening the panel through its own path also reconciles with an open
+		// monitor: a narrow window shows one panel, not two stacked drawers.
+		s.setAIPanelOpen(true)
 		s.markToolWaiting()
 	}) {
 		return false, "", errAIClosed
@@ -540,14 +588,21 @@ func (state *State) aiApproveEscalation() {
 	}
 	if question == "" {
 		ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.EscalationMissing})
+		state.aiFinishPendingRun(aiRunCompleted)
 		return
 	}
 	state.setAIMode(agent.ModeAgent)
+	if ai.pendingRun != nil {
+		ai.pendingRun.phase = aiRunWaitingModel
+		ai.pendingRun.tool = ""
+	}
 	ai.retry = true
 	ai.answerOnly = false
 	ai.input = text.Editor{}
 	ai.input.Insert(question)
-	state.aiSend()
+	if !state.aiSend() {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiAnswerAfterDecline retries the same Ask question with no tools, so declining
@@ -563,13 +618,20 @@ func (state *State) aiAnswerAfterDecline() {
 	}
 	if question == "" {
 		ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.EscalationMissing})
+		state.aiFinishPendingRun(aiRunCompleted)
 		return
+	}
+	if ai.pendingRun != nil {
+		ai.pendingRun.phase = aiRunWaitingModel
+		ai.pendingRun.tool = ""
 	}
 	ai.retry = true
 	ai.answerOnly = true
 	ai.input = text.Editor{}
 	ai.input.Insert(question)
-	state.aiSend()
+	if !state.aiSend() {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiContext attaches the locked default session's recent text in Ask mode.
@@ -653,29 +715,39 @@ func (state *State) setAIMode(mode agent.Mode) {
 // or a new conversation makes them stale; normal gate approvals are left alone.
 func (state *State) dropEscalationApprovals() {
 	kept := state.ai.approvals[:0]
+	removed := false
 	for _, approval := range state.ai.approvals {
 		if !approval.escalation {
 			kept = append(kept, approval)
+		} else {
+			removed = true
 		}
 	}
 	clear(state.ai.approvals[len(kept):])
 	state.ai.approvals = kept
+	if removed {
+		state.aiFinishPendingRun(aiRunCompleted)
+	}
 }
 
 // aiSend starts a request with the text in the input box.
-func (state *State) aiSend() {
+func (state *State) aiSend() bool {
 	ai := &state.ai
 	if ai.run != nil {
-		return
+		return false
 	}
 	question := strings.TrimSpace(ai.input.String())
-	if question == "" || ai.attaching > 0 && !ai.retry {
-		return
+	if (question == "" && len(ai.attachments) == 0) || ai.attaching > 0 && !ai.retry {
+		return false
+	}
+	if ai.mode != agent.ModeAgent && slices.ContainsFunc(ai.attachments, func(attachment aiAttachment) bool { return attachment.upload }) {
+		ai.notice = state.messages.AIPanel.UploadNeedsAgent
+		return false
 	}
 	provider, model, err := state.aiModel()
 	if err != nil {
 		ai.notice = err.Error()
-		return
+		return false
 	}
 	target := state.aiTarget()
 	extras := state.aiExtraTargets()
@@ -683,23 +755,18 @@ func (state *State) aiSend() {
 	backend, err := state.aiTargetBackend(target, references...)
 	if err != nil {
 		ai.notice = state.messages.AIPanel.TargetUnavailable
-		return
+		return false
 	}
 	ai.target, ai.extras, ai.targetSet = target, extras, true
-	provider, ready := state.aiKeyedProvider(provider, state.aiSend)
+	provider, ready := state.aiKeyedProvider(provider, func() { state.aiSend() })
 	if !ready {
-		return // keep both the question and target while the vault is unlocked
+		return true // keep both the question and target while the vault is unlocked
 	}
-	ai.notice = ""
-	ai.needLogin = ""
 	retry := ai.retry
 	answerOnly := ai.answerOnly
-	ai.retry = false
-	ai.answerOnly = false
-	ai.input = text.Editor{}
 	var attachments []aiAttachment // a retry continues a question that already has its own
 	if !retry {
-		attachments, ai.attachments = ai.attachments, nil
+		attachments = ai.attachments
 	}
 	attachedText, images, refs := aiAttachmentContext(attachments, ai.settings.redact)
 	targetKey := ""
@@ -712,13 +779,6 @@ func (state *State) aiSend() {
 			targetKey += "," + extra.ID
 		}
 	}
-	if !retry {
-		state.dropEscalationApprovals()
-		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
-		ai.items[len(ai.items)-1].attachments = refs
-	}
-	ai.scroll.ScrollToEnd()
-
 	sent := question + attachedText
 	var attached uint32 // the session whose text already went with the question
 	if !retry && ai.mode == agent.ModeAsk {
@@ -732,6 +792,23 @@ func (state *State) aiSend() {
 	if !retry {
 		sent += state.aiMentionContext(question, attached)
 	}
+	if !retry && ai.settings.keepHistory && ai.store != nil && len(sent) > store.MaxTextBytes {
+		ai.notice = fmt.Sprintf(state.messages.AIPanel.MessageTooLargeFmt, formatBytes(store.MaxTextBytes))
+		return false
+	}
+	ai.notice = ""
+	ai.needLogin = ""
+	ai.retry = false
+	ai.answerOnly = false
+	ai.input = text.Editor{}
+	if !retry {
+		ai.attachments = nil
+		state.dropEscalationApprovals()
+		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
+		ai.items[len(ai.items)-1].attachments = refs
+	}
+	ai.scroll.ScrollToEnd()
+
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
 		Model:             model,
@@ -748,13 +825,39 @@ func (state *State) aiSend() {
 	config.Gate.Target = &target
 	if ai.mode == agent.ModeAgent {
 		config.Tools = tools.Targeted()
+		for index, attachment := range attachments {
+			if attachment.upload {
+				if backend.uploads == nil {
+					backend.uploads = make(map[string]aiUploadFile)
+				}
+				backend.uploads[strconv.Itoa(index+1)] = aiUploadFile{path: attachment.path, name: attachment.file.Name, size: attachment.size, modified: attachment.modified, info: attachment.info}
+			}
+		}
+		if len(backend.uploads) > 0 {
+			config.Tools = append(config.Tools, tools.SelectedUpload())
+		}
 	}
 	config.Gate.References = references
 	config.Gate.Backend = backend
 	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default, the other connections the user selected and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &aiRun{cancel: cancel, open: -1, providerID: provider.ID, target: target, extras: extras, targetKey: targetKey, attachments: refs}
+	stats := aiRunStats{startedAt: state.now()}
+	var usageBase llm.Usage
+	if retry && ai.pendingRun != nil {
+		stats = *ai.pendingRun
+		stats.duration = 0
+		stats.phase = aiRunWaitingModel
+		stats.tool = ""
+		usageBase = stats.usage
+		ai.pendingRun = nil
+	}
+	run := &aiRun{
+		stats: stats, usageBase: usageBase, cancel: cancel, open: -1, providerID: provider.ID,
+		target: target, extras: extras, targetKey: targetKey, attachments: refs,
+	}
 	ai.run = run
+	backend.uploadRun = run
+	ai.lastRun = nil
 	ai.panel.autoMenu = false // the scope is fixed while the request runs
 	if backend.defaultDone != nil && len(backend.bindings) == 1 {
 		go state.aiWatchTarget(ctx, run, backend.defaultDone)
@@ -770,11 +873,13 @@ func (state *State) aiSend() {
 		})
 		state.aiPost(func(s *State) { s.aiFinished(run, messages, err) })
 	}()
+	return true
 }
 
 // aiStop cancels the request in flight.
 func (state *State) aiStop() {
 	if run := state.ai.run; run != nil {
+		run.stats.phase = aiRunStopping
 		run.cancel()
 	}
 }
@@ -790,6 +895,10 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 	if ai.run != run {
 		return
 	}
+	if event.Usage != (llm.Usage{}) {
+		run.stats.usage = run.usageBase.Add(event.Usage)
+	}
+	run.stats.usageIncomplete = run.stats.usageIncomplete || event.UsageIncomplete
 	appendText := func(kind aiItemKind, delta string) {
 		if run.open >= 0 && run.open < len(ai.items) && ai.items[run.open].kind == kind {
 			item := &ai.items[run.open]
@@ -812,10 +921,19 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 	}
 	switch event.Kind {
 	case agent.EventText:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunAnswering
+		}
 		appendText(aiAssistant, event.Text)
 	case agent.EventReasoning:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunAnalyzing
+		}
 		appendText(aiReasoning, event.Text)
 	case agent.EventToolStart:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase, run.stats.tool = aiRunUsingTool, event.Call.Name
+		}
 		run.open = -1
 		item := aiItem{kind: aiTool, call: event.Call, status: aiToolRunning}
 		if event.Call.Name == "terminal_exec" || event.Call.Name == "terminal_exec_many" {
@@ -828,6 +946,9 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		}
 		ai.items = append(ai.items, item)
 	case agent.EventToolDone:
+		if run.stats.phase != aiRunStopping {
+			run.stats.phase = aiRunWaitingModel
+		}
 		run.open = -1
 		for index := len(ai.items) - 1; index >= 0; index-- {
 			item := &ai.items[index]
@@ -867,8 +988,6 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 		ai.approvals = append(ai.approvals, &aiApproval{request: request, escalation: true})
 		ai.scroll.ScrollToEnd()
 	case agent.EventDone:
-		ai.lastUsage = event.Usage
-		ai.totalUsage = ai.totalUsage.Add(event.Usage)
 		if llm.StopsAtLimit(event.StopReason) {
 			// Half an answer must not look like the whole of it.
 			ai.items = append(ai.items, aiItem{kind: aiNotice, text: state.messages.AIPanel.AnswerTruncated})
@@ -919,8 +1038,44 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 	if ai.run != run {
 		return
 	}
+	run.stats.duration = max(state.now()-run.stats.startedAt, 0)
+	run.stats.usageIncomplete = run.stats.usageIncomplete || err != nil
+	pendingApproval := false
+	switch {
+	case errors.Is(err, context.Canceled):
+		run.stats.phase = aiRunStopped
+	case err != nil:
+		run.stats.phase = aiRunFailed
+	default:
+		run.stats.phase = aiRunCompleted
+		for _, approval := range ai.approvals {
+			if approval.escalation {
+				run.stats.phase = aiRunNeedsApproval
+				pendingApproval = true
+				break
+			}
+		}
+	}
+	stats := run.stats
+	if pendingApproval {
+		ai.pendingRun = &stats
+		ai.lastRun = ai.pendingRun
+	} else {
+		state.aiRecordFinishedRun(&stats)
+	}
 	ai.run = nil
 	run.cancel()
+	if err != nil {
+		for index := range ai.items {
+			item := &ai.items[index]
+			if item.kind == aiTool && (item.status == aiToolRunning || item.status == aiToolWaiting) {
+				item.status = aiToolFailed
+				if item.result == "" && errors.Is(err, context.Canceled) {
+					item.result = state.messages.AIPanel.RunStopped
+				}
+			}
+		}
+	}
 	kept := ai.approvals[:0]
 	for _, approval := range ai.approvals {
 		if approval.escalation {
@@ -959,6 +1114,7 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 		}
 		conversation, err := ai.store.CreateConversation(strings.TrimSpace(title), label)
 		if err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
 			return
 		}
 		ai.conv = conversation.ID
@@ -975,7 +1131,10 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 			}
 			stored.ToolJSON, _ = json.Marshal(metadata)
 		}
-		_, _ = ai.store.AppendMessage(ai.conv, stored)
+		if _, err := ai.store.AppendMessage(ai.conv, stored); err != nil {
+			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
+			return
+		}
 	}
 }
 
@@ -1025,6 +1184,8 @@ func (state *State) aiNewConversation() {
 	ai.retry = false
 	ai.answerOnly = false
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
+	ai.lastRun = nil
+	ai.pendingRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 }
@@ -1053,6 +1214,8 @@ func (state *State) aiOpenConversation(id int64) {
 	ai.retry, ai.answerOnly = false, false
 	state.dropEscalationApprovals()
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
+	ai.lastRun = nil
+	ai.pendingRun = nil
 	ai.scroll.ScrollToEnd()
 	ai.panel.clearAITextSelection()
 	for _, row := range stored {

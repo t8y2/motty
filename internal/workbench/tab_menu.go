@@ -17,6 +17,7 @@ var (
 	hitTabMenuCloseOthers   = tree.ID(tabMenuHits, "tab-menu-close-others")
 	hitTabMenuCloseRight    = tree.ID(tabMenuHits, "tab-menu-close-right")
 	hitTabMenuDuplicate     = tree.ID(tabMenuHits, "tab-menu-duplicate")
+	hitTabMenuNewWindow     = tree.ID(tabMenuHits, "tab-menu-new-window")
 	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
 	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
 	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
@@ -52,6 +53,9 @@ var (
 	hitTabsCloseClose   = tree.ID(tabMenuHits, "tabs-close-close")
 	hitTabsCloseCancel  = tree.ID(tabMenuHits, "tabs-close-cancel")
 	hitTabsCloseConfirm = tree.ID(tabMenuHits, "tabs-close-confirm")
+	hitTabsCloseQuiet   = tree.ID(tabMenuHits, "tabs-close-quiet")
+
+	hitSettingsCloseConfirmToggle = tree.ID(tabMenuHits, "settings-close-confirm")
 )
 
 // tabMenu is the right-click menu of a tab: which tab, and where it was asked for.
@@ -128,7 +132,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	restart := hasSession && state.canReconnectLive(session)
 	disconnect := hasSession && state.canDisconnect(session)
 	var keys [6]string
-	closeKeys := state.shortcuts.chords[shortcutCloseTab].keys(keys[:0])
+	closeKeys := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(keys[:0])
 	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	address, name := "", ""
@@ -142,6 +146,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	rows.add(components.ContextMenuItem{ID: hitTabMenuLock, Label: lockLabel, Icon: icon(iconLock)})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuDuplicate, Label: messages.MenuDuplicateTab, Icon: icon(iconCopy), Disabled: !hasSession})
+	rows.add(components.ContextMenuItem{ID: hitTabMenuNewWindow, Label: messages.MenuMoveTabToNewWindow, Icon: icon(iconExternal), Disabled: !state.canTearOffTab()})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
@@ -181,7 +186,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if disconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
-	if _, temporary := state.temporaryWorkspaceColumns[state.tabMenu.workspace]; temporary {
+	if _, temporary := state.temporaryWorkspaceLayouts[state.tabMenu.workspace]; temporary {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}
@@ -208,6 +213,10 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 		return true
 	}
 	switch id {
+	case hitTabMenuNewWindow:
+		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {
+			state.tearOffTab(workspace, ui.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
+		}
 	case hitTabMenuCopyAddress:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			state.copyConnectionText(connectionAddressAndPort(session.host))

@@ -58,6 +58,17 @@ func TestAPackageMustCarryTheReleaseSignature(t *testing.T) {
 	if err := verifyReleasePackage(path, good); err != nil {
 		t.Fatalf("a signed package was refused: %v", err)
 	}
+	sum := sha256.Sum256(body)
+	good.Asset.SHA256 = hex.EncodeToString(sum[:])
+	good.Asset.Size = int64(len(body))
+	if err := verifyCachedPackage(path, good); err != nil {
+		t.Fatalf("a verified package was not reusable: %v", err)
+	}
+	wrongChecksum := good
+	wrongChecksum.Asset.SHA256 = strings.Repeat("0", 64)
+	if err := verifyCachedPackage(path, wrongChecksum); err == nil {
+		t.Error("a package with a different feed checksum was reused")
+	}
 
 	for name, release := range map[string]update.Release{
 		"no signature":  {Version: "1.0.0", Asset: update.Asset{Name: "motty-1.0.0-test.zip"}},
@@ -75,6 +86,9 @@ func TestAPackageMustCarryTheReleaseSignature(t *testing.T) {
 	}
 	if err := verifyReleasePackage(path, good); err == nil {
 		t.Error("a changed package was accepted")
+	}
+	if err := verifyCachedPackage(path, good); err == nil {
+		t.Error("an altered cached package was reused")
 	}
 }
 
@@ -211,6 +225,9 @@ func TestOnlyAStandardUserInstallationReplacesItself(t *testing.T) {
 		{"mac translocated", "/private/var/folders/x/AppTranslocation/ABC/d/Motty.app/Contents/MacOS/motty", Env{GOOS: "darwin", Writable: writable}, KindNone, ReasonTranslocated},
 		{"linux user prefix", "/home/me/.local/bin/motty", Env{GOOS: "linux", Writable: writable, Exists: existing("/home/me/.local/share/applications/motty.desktop")}, KindLinuxPrefix, ReasonNone},
 		{"linux deb", "/usr/bin/motty", Env{GOOS: "linux", Writable: func(string) bool { return false }, Exists: existing()}, KindNone, ReasonSystemInstall},
+		{"registered deb", "/usr/bin/motty", Env{GOOS: "linux", DebInstalled: func(string) bool { return true }, PolkitAvailable: func() bool { return true }}, KindLinuxDeb, ReasonNone},
+		{"deb without polkit", "/usr/bin/motty", Env{GOOS: "linux", DebInstalled: func(string) bool { return true }, PolkitAvailable: func() bool { return false }}, KindLinuxDeb, ReasonAuthorizationUnavailable},
+		{"other dpkg path", "/opt/motty/bin/motty", Env{GOOS: "linux", DebInstalled: func(string) bool { return true }, PolkitAvailable: func() bool { return true }}, KindNone, ReasonSystemInstall},
 		{"linux prefix with a space", "/home/my user/.local/bin/motty", Env{GOOS: "linux", Writable: writable, Exists: existing("/home/my user/.local/share/applications/motty.desktop")}, KindNone, ReasonNotUserInstall},
 		{"linux system package", "/usr/bin/motty", Env{GOOS: "linux", Writable: writable}, KindNone, ReasonSystemInstall},
 		{"other system", "/x/motty", Env{GOOS: "plan9"}, KindNone, ReasonNotUserInstall},
@@ -388,6 +405,23 @@ func TestAFailedUpdateIsRememberedOnceAndTheOldProgramIsStarted(t *testing.T) {
 	}
 	if reason := TakeFailure(dir); reason != "" {
 		t.Fatalf("the failure came back: %q", reason)
+	}
+	(&Updater{Dir: dir}).clean()
+}
+
+func TestFailedDebInstallationKeepsTheDownloadAndRestartsAsTheUser(t *testing.T) {
+	dir := t.TempDir()
+	packageFile := filepath.Join(dir, "motty_1.2.3_amd64.deb")
+	if err := os.WriteFile(packageFile, []byte("download"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := false
+	job := Job{Kind: KindLinuxDeb, Dir: dir, Staged: packageFile, starter: func() error { started = true; return nil }}
+	if err := job.fail(errors.New("authorization cancelled"), true); err == nil || !started {
+		t.Fatalf("failed installation did not restart: %v, %v", err, started)
+	}
+	if _, err := os.Stat(packageFile); err != nil || TakeFailure(dir) != "authorization cancelled" {
+		t.Fatalf("download or failure reason lost: %v", err)
 	}
 }
 

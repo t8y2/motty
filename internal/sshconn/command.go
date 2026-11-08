@@ -34,6 +34,8 @@ type ExecResult struct {
 	// Output is what the command wrote to stdout and stderr, in the order the
 	// server delivered it, cut at the limit given to Exec.
 	Output []byte
+	Stdout []byte
+	Stderr []byte
 	// Truncated reports that the command wrote more than the limit.
 	Truncated bool
 	// ExitCode is the remote exit status. It is meaningful only when Exec
@@ -50,8 +52,9 @@ type ExecResult struct {
 // and what the command had printed by then is still returned. Canceling ctx
 // closes only this command session, not the SSH connection.
 func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) (ExecResult, error) {
-	data, exceeded, err := conn.runCommand(ctx, command, maxOutputBytes, true)
-	result := ExecResult{Output: data, Truncated: exceeded}
+	output := &commandOutput{limit: maxOutputBytes, separate: true}
+	_, _, err := conn.captureCommand(ctx, command, maxOutputBytes, true, output)
+	result := output.execResult()
 	var exit *ssh.ExitError
 	if errors.As(err, &exit) && exit.Signal() == "" {
 		result.ExitCode = exit.ExitStatus()
@@ -63,6 +66,10 @@ func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) 
 // runCommand starts command and waits for it. The output is stdout, plus
 // stderr when withStderr, and is returned even when the command did not finish.
 func (conn *Conn) runCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool) (data []byte, exceeded bool, err error) {
+	return conn.captureCommand(ctx, command, maxOutputBytes, withStderr, &commandOutput{limit: maxOutputBytes})
+}
+
+func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool, output *commandOutput) (data []byte, exceeded bool, err error) {
 	if command == "" {
 		return nil, false, errors.New("sshconn: empty command")
 	}
@@ -110,10 +117,9 @@ func (conn *Conn) runCommand(ctx context.Context, command string, maxOutputBytes
 		}
 	}()
 
-	output := commandOutput{limit: maxOutputBytes}
-	session.Stdout = &output
+	session.Stdout = output
 	if withStderr {
-		session.Stderr = &output
+		session.Stderr = commandErrorOutput{output}
 	}
 	if operationCtx.Err() != nil {
 		return nil, false, cancelError()
@@ -179,16 +185,37 @@ func openCommandSession(ctx context.Context, client *ssh.Client) (*ssh.Session, 
 type commandOutput struct {
 	mu       sync.Mutex
 	data     []byte
+	stdout   []byte
+	stderr   []byte
+	separate bool
 	limit    int
 	exceeded bool
 }
 
 func (output *commandOutput) Write(data []byte) (int, error) {
+	return output.write(data, false)
+}
+
+type commandErrorOutput struct{ output *commandOutput }
+
+func (output commandErrorOutput) Write(data []byte) (int, error) {
+	return output.output.write(data, true)
+}
+
+func (output *commandOutput) write(data []byte, stderr bool) (int, error) {
 	written := len(data)
 	output.mu.Lock()
 	remaining := output.limit - len(output.data)
 	if remaining > 0 {
-		output.data = append(output.data, data[:min(remaining, len(data))]...)
+		retained := data[:min(remaining, len(data))]
+		output.data = append(output.data, retained...)
+		if output.separate {
+			if stderr {
+				output.stderr = append(output.stderr, retained...)
+			} else {
+				output.stdout = append(output.stdout, retained...)
+			}
+		}
 	}
 	if len(data) > remaining {
 		output.exceeded = true
@@ -200,7 +227,13 @@ func (output *commandOutput) Write(data []byte) (int, error) {
 func (output *commandOutput) result() ([]byte, bool) {
 	output.mu.Lock()
 	defer output.mu.Unlock()
-	return output.data, output.exceeded
+	return append([]byte(nil), output.data...), output.exceeded
+}
+
+func (output *commandOutput) execResult() ExecResult {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return ExecResult{Output: append([]byte(nil), output.data...), Stdout: append([]byte(nil), output.stdout...), Stderr: append([]byte(nil), output.stderr...), Truncated: output.exceeded}
 }
 
 // StreamCommand runs one long-lived command on the authenticated server and

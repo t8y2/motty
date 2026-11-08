@@ -164,7 +164,7 @@ func TestCompatibleBackupRestoreAndSyncPreserveRawRecords(t *testing.T) {
 }
 
 func TestCompatibilityEpochMigratesLegacyAndRejectsIncompatibleData(t *testing.T) {
-	for _, format := range []int{19, 20, 21, 22} {
+	for _, format := range []int{19, 20, 21, 22, 23, 24} {
 		t.Run(fmt.Sprint(format), func(t *testing.T) {
 			state := futureConfigState(t, format)
 			if state.saveBlocked || len(state.hosts) != 1 {
@@ -196,12 +196,12 @@ func TestCompatibilityEpochMigratesLegacyAndRejectsIncompatibleData(t *testing.T
 
 func TestCompatibleWindowsPatchOnlyTheirChangedFields(t *testing.T) {
 	state := futureConfigState(t, configFormat)
-	store, first, firstBase, _, err := openConfig(state.options.StatePath)
+	store, first, firstBase, _, err := openConfig(state.options.StatePath, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	secondStore, second, secondBase, _, err := openConfig(state.options.StatePath)
+	secondStore, second, secondBase, _, err := openConfig(state.options.StatePath, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

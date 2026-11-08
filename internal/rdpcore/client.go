@@ -271,9 +271,10 @@ type Client struct {
 	onDisconnect      func(error)
 	onReconnecting    func()
 	onReconnected     func()
-	onClipboardUpdate func(hasText, hasImage bool)
+	onClipboardUpdate func(hasText, hasImage, hasFiles bool)
 	onClipboardText   func(text string)
 	onClipboardImage  func(pngData []byte)
+	onClipboardFiles  func(files cliprdr.RemoteFiles, err error)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
@@ -1141,9 +1142,9 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler = cliprdr.NewHandler(func(data []byte) error {
 			return c.sendChannelData("cliprdr", data)
 		}, c.log.With("component", "CLIPRDR"))
-		c.clipHandler.OnRemoteCopy(func(hasText, hasImage bool) {
+		c.clipHandler.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 			if fn := c.loadOnClipboardUpdate(); fn != nil {
-				fn(hasText, hasImage)
+				fn(hasText, hasImage, hasFiles)
 			}
 		})
 		c.clipHandler.OnTextData(func(text string) {
@@ -1154,6 +1155,11 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler.OnImageData(func(pngData []byte) {
 			if fn := c.loadOnClipboardImage(); fn != nil {
 				fn(pngData)
+			}
+		})
+		c.clipHandler.OnRemoteFiles(func(files cliprdr.RemoteFiles, err error) {
+			if fn := c.loadOnClipboardFiles(); fn != nil {
+				fn(files, err)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -2204,6 +2210,9 @@ func (c *Client) resetForReconnect() {
 		c.egfxHandler.Close()
 	}
 	c.egfxHandler = nil
+	if c.clipHandler != nil {
+		c.clipHandler.Close()
+	}
 	c.clipHandler = nil
 	c.dispHandler = nil
 	c.dispReady.Store(false)
@@ -4917,9 +4926,16 @@ func (c *Client) loadOnReconnected() func() {
 	return fn
 }
 
-func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage bool) {
+func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage, hasFiles bool) {
 	c.cbMu.RLock()
 	fn := c.onClipboardUpdate
+	c.cbMu.RUnlock()
+	return fn
+}
+
+func (c *Client) loadOnClipboardFiles() func(cliprdr.RemoteFiles, error) {
+	c.cbMu.RLock()
+	fn := c.onClipboardFiles
 	c.cbMu.RUnlock()
 	return fn
 }
@@ -5057,9 +5073,10 @@ func (c *Client) GetOnReconnected() func() { return c.loadOnReconnected() }
 
 // OnClipboardUpdate sets the callback invoked when the remote clipboard changes.
 // hasText is true if the server advertises CF_UNICODETEXT; hasImage is true if
-// the server advertises CF_DIB. Call RequestClipboard / RequestClipboardImage
-// to fetch the data.
-func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage bool)) {
+// the server advertises CF_DIB; hasFiles is true if it advertises file transfer.
+// Call RequestClipboard, RequestClipboardImage or RequestClipboardFiles to
+// fetch the data.
+func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage, hasFiles bool)) {
 	c.cbMu.Lock()
 	c.onClipboardUpdate = fn
 	c.cbMu.Unlock()
@@ -5078,6 +5095,15 @@ func (c *Client) OnClipboardText(fn func(text string)) {
 func (c *Client) OnClipboardImage(fn func(pngData []byte)) {
 	c.cbMu.Lock()
 	c.onClipboardImage = fn
+	c.cbMu.Unlock()
+}
+
+// OnClipboardFiles sets the callback invoked when the files the server put on
+// its clipboard have arrived, or could not be read. The paths are in files.Dir;
+// the callback runs on a goroutine of its own.
+func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error)) {
+	c.cbMu.Lock()
+	c.onClipboardFiles = fn
 	c.cbMu.Unlock()
 }
 
@@ -5110,6 +5136,42 @@ func (c *Client) SetClipboardImage(pngData []byte) error {
 	return c.clipHandler.SetLocalImage(pngData)
 }
 
+// ClipboardFileOffer says what SetClipboardFiles put on the clipboard.
+type ClipboardFileOffer = cliprdr.Offer
+
+// ClipboardFiles are files the server put on its clipboard, saved on this
+// computer (see OnClipboardFiles).
+type ClipboardFiles = cliprdr.RemoteFiles
+
+// Why SetClipboardFiles may refuse; a caller tells the user which.
+var (
+	ErrClipboardFilesUnsupported = cliprdr.ErrFileClipUnsupported
+	ErrClipboardNotReady         = cliprdr.ErrNotReady
+	ErrClipboardOff              = cliprdr.ErrClipboardDisabled
+	ErrNothingToOffer            = cliprdr.ErrNothingToOffer
+	ErrTooManyFiles              = cliprdr.ErrTooManyFiles
+	ErrFileNameTooLong           = cliprdr.ErrNameTooLong
+)
+
+// SetClipboardFiles makes the files and folders at paths what this side's
+// clipboard holds, and tells the server, which pastes them when its user does
+// and reads their contents from this computer then. The list is made before it
+// returns and walks the folders, so a caller does not call it from its UI
+// goroutine. It fails when the server did not negotiate file transfer.
+func (c *Client) SetClipboardFiles(paths []string) (ClipboardFileOffer, error) {
+	handler := c.clipHandler
+	if handler == nil {
+		return ClipboardFileOffer{}, ErrNotConnected
+	}
+	return handler.SetLocalFiles(paths)
+}
+
+// ClipboardFilesInForce reports whether the server negotiated file transfer.
+func (c *Client) ClipboardFilesInForce() bool {
+	handler := c.clipHandler
+	return handler != nil && handler.FileClipboardInForce()
+}
+
 // RequestClipboard sends a request to the server for its clipboard text.
 // The result is delivered asynchronously via the OnClipboardText callback.
 func (c *Client) RequestClipboard() error {
@@ -5128,6 +5190,15 @@ func (c *Client) RequestClipboardImage() error {
 	return c.clipHandler.RequestRemoteImage()
 }
 
+// RequestClipboardFiles asks the server for its clipboard's file list, then
+// reads the files. OnClipboardFiles receives the result.
+func (c *Client) RequestClipboardFiles() error {
+	if c.clipHandler == nil {
+		return ErrNotConnected
+	}
+	return c.clipHandler.RequestRemoteFiles()
+}
+
 // Done returns a channel that is closed when the connection ends,
 // whether by explicit Close() or unexpected disconnect.
 func (c *Client) Done() <-chan struct{} {
@@ -5137,14 +5208,18 @@ func (c *Client) Done() <-chan struct{} {
 	return done
 }
 
-// SendKeyboard sends a keyboard event
-func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
+// SendKeyboard sends a keyboard event. repeat marks a press of a key the server
+// already has down, the client's auto-repeat: a server does not repeat a held
+// key by itself, so every repeat is sent again with that flag.
+func (c *Client) SendKeyboard(scancode uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	// Motty divergence: a scancode of the form 0xE0xx is the extended key xx
 	// (arrows, Home, the Windows key); upstream dropped the extended flag.
@@ -5161,14 +5236,17 @@ func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
 
 // SendUnicode sends a Unicode keyboard event (TS_UNICODE_KEYBOARD_EVENT,
 // MS-RDPBCGR 2.2.8.1.1.3.1.1.1). Use this for characters that don't map
-// to a physical scancode (e.g. accented characters, CJK, emoji).
-func (c *Client) SendUnicode(codepoint uint16, pressed bool) error {
+// to a physical scancode (e.g. accented characters, CJK, emoji). repeat marks a
+// press of a character the server already has down.
+func (c *Client) SendUnicode(codepoint uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	var buf [pdu.InputPDUHeaderSize + pdu.UnicodeEventSize]byte
 	payload := pdu.AppendInputPDUHeader(buf[:0], 1)

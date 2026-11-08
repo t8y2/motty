@@ -57,11 +57,13 @@ type Session struct {
 
 	done chan struct{}
 
-	mu      sync.Mutex
-	err     error
-	closed  bool
-	remote  string
-	hasText bool
+	mu          sync.Mutex
+	err         error
+	closed      bool
+	remote      string
+	hasText     bool
+	remoteFiles desktop.ReceivedFiles
+	hasFiles    bool
 	// pointerKind is what the server last said about its pointer,
 	// pointerShape its pixels when the kind is PointerBitmap, and
 	// pointerVersion how many statements it has made. Guarded by mu.
@@ -78,6 +80,7 @@ type Session struct {
 }
 
 var _ desktop.Session = (*Session)(nil)
+var _ desktop.FileReceiver = (*Session)(nil)
 
 func (session *Session) NetworkRTT() (time.Duration, time.Time) {
 	return session.client.NetworkRTT()
@@ -191,14 +194,26 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	client.OnNetworkRTTChanged(session.wake)
 	client.OnDisconnect(func(err error) { session.finish(err) })
 	if opts.Clipboard {
-		client.OnClipboardUpdate(func(hasText, _ bool) {
-			if hasText {
+		client.OnClipboardUpdate(func(hasText, _, hasFiles bool) {
+			if hasFiles {
+				_ = client.RequestClipboardFiles()
+			} else if hasText {
 				_ = client.RequestClipboard()
 			}
 		})
 		client.OnClipboardText(func(text string) {
 			session.mu.Lock()
 			session.remote, session.hasText = text, true
+			session.mu.Unlock()
+			session.wake()
+		})
+		client.OnClipboardFiles(func(files rdpcore.ClipboardFiles, err error) {
+			session.mu.Lock()
+			session.remoteFiles = desktop.ReceivedFiles{
+				Paths: files.Paths, Files: files.Files, Folders: files.Folders,
+				Bytes: files.Bytes, Skipped: files.Skipped, Err: err,
+			}
+			session.hasFiles = true
 			session.mu.Unlock()
 			session.wake()
 		})
@@ -386,6 +401,16 @@ func (session *Session) RemoteClipboard() (string, bool) {
 	return text, ok
 }
 
+// RemoteFiles returns the files the server's clipboard delivered since the
+// previous call (see desktop.FileReceiver).
+func (session *Session) RemoteFiles() (desktop.ReceivedFiles, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	files, ok := session.remoteFiles, session.hasFiles
+	session.remoteFiles, session.hasFiles = desktop.ReceivedFiles{}, false
+	return files, ok
+}
+
 // Bells: RDP has no bell the client hears.
 func (session *Session) Bells() int { return 0 }
 
@@ -394,6 +419,33 @@ func (session *Session) SetClipboard(text string) error {
 		return nil
 	}
 	return session.client.SetClipboard(text)
+}
+
+// SetClipboardFiles offers files of this computer to the server's clipboard, as a
+// clipboard file transfer (see desktop.FileClipboard).
+func (session *Session) SetClipboardFiles(paths []string) (desktop.FileOffer, error) {
+	if !session.opts.Clipboard {
+		return desktop.FileOffer{}, desktop.ErrClipboardOff
+	}
+	offer, err := session.client.SetClipboardFiles(paths)
+	result := desktop.FileOffer{Files: offer.Files, Folders: offer.Folders, Bytes: offer.Bytes, Skipped: offer.Skipped, FirstSkipped: offer.FirstSkipped}
+	switch {
+	case err == nil:
+		return result, nil
+	case errors.Is(err, rdpcore.ErrClipboardFilesUnsupported):
+		return result, desktop.ErrFilesUnsupported
+	case errors.Is(err, rdpcore.ErrClipboardOff):
+		return result, desktop.ErrClipboardOff
+	case errors.Is(err, rdpcore.ErrClipboardNotReady):
+		return result, desktop.ErrClipboardNotReady
+	case errors.Is(err, rdpcore.ErrNothingToOffer):
+		return result, desktop.ErrNothingToOffer
+	case errors.Is(err, rdpcore.ErrTooManyFiles):
+		return result, desktop.ErrTooManyFiles
+	case errors.Is(err, rdpcore.ErrFileNameTooLong):
+		return result, desktop.ErrPathTooLong
+	}
+	return result, err
 }
 
 // onPointer records what the server last said about its pointer. It runs on
@@ -513,7 +565,8 @@ func (session *Session) SendWheel(x, y int, wheel desktop.Wheel, _ desktop.Butto
 }
 
 // SendKey sends a key as a scancode. A character that has no key on a US
-// keyboard is sent as a Unicode event instead.
+// keyboard is sent as a Unicode event instead. The server does not repeat a key
+// it sees held, so a repeat of a key that is still down is sent again as such.
 func (session *Session) SendKey(event desktop.KeyEvent) error {
 	if event.Rune == 0 {
 		code := keyCode(event.Key)
@@ -525,7 +578,7 @@ func (session *Session) SendKey(event desktop.KeyEvent) error {
 			session.shift = event.Down
 			session.mu.Unlock()
 		}
-		return session.client.SendKeyboard(code, event.Down)
+		return session.client.SendKeyboard(code, event.Down, event.Repeat)
 	}
 	if code, ok := runeCode(event.Rune); ok {
 		session.mu.Lock()
@@ -535,35 +588,35 @@ func (session *Session) SendKey(event desktop.KeyEvent) error {
 		// way (a layout where it is unshifted) Shift is not, and is added.
 		addShift := code.shift && !shift
 		if addShift && event.Down {
-			if err := session.client.SendKeyboard(0x2A, true); err != nil {
+			if err := session.client.SendKeyboard(0x2A, true, event.Repeat); err != nil {
 				return err
 			}
 		}
-		err := session.client.SendKeyboard(code.code, event.Down)
+		err := session.client.SendKeyboard(code.code, event.Down, event.Repeat)
 		if addShift && !event.Down {
-			if releaseErr := session.client.SendKeyboard(0x2A, false); err == nil {
+			if releaseErr := session.client.SendKeyboard(0x2A, false, false); err == nil {
 				err = releaseErr
 			}
 		}
 		return err
 	}
-	return session.typeRune(event.Rune, event.Down)
+	return session.typeRune(event.Rune, event.Down, event.Repeat)
 }
 
 // typeRune sends one character as Unicode events (a surrogate pair above the
 // Basic Multilingual Plane), a press or a release.
-func (session *Session) typeRune(r rune, down bool) error {
+func (session *Session) typeRune(r rune, down, repeat bool) error {
 	if r < 0x20 || r == 0x7f || r > 0x10ffff {
 		return nil
 	}
 	high, low := utf16.EncodeRune(r)
 	if high == 0xFFFD && low == 0xFFFD { // in the BMP
-		return session.client.SendUnicode(uint16(r), down)
+		return session.client.SendUnicode(uint16(r), down, repeat)
 	}
-	if err := session.client.SendUnicode(uint16(high), down); err != nil {
+	if err := session.client.SendUnicode(uint16(high), down, repeat); err != nil {
 		return err
 	}
-	return session.client.SendUnicode(uint16(low), down)
+	return session.client.SendUnicode(uint16(low), down, repeat)
 }
 
 func (session *Session) SendText(text string) error {
@@ -573,18 +626,18 @@ func (session *Session) SendText(text string) error {
 			return errors.New("rdp: text too long to type")
 		}
 		if r == '\n' {
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), true); err != nil {
+			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), true, false); err != nil {
 				return err
 			}
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), false); err != nil {
+			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), false, false); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := session.typeRune(r, true); err != nil {
+		if err := session.typeRune(r, true, false); err != nil {
 			return err
 		}
-		if err := session.typeRune(r, false); err != nil {
+		if err := session.typeRune(r, false, false); err != nil {
 			return err
 		}
 	}

@@ -3,7 +3,6 @@ package workbench
 import (
 	"context"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -37,8 +36,8 @@ type localShellSelect struct {
 const wslListTimeout = 10 * time.Second
 
 // localShellsSupported is whether this computer lists its shells for the user
-// to choose from. Only Windows does: elsewhere the login shell is the one.
-var localShellsSupported = runtime.GOOS == "windows"
+// to choose from. All platforms do: Windows has pwsh/cmd, Unix has zsh/bash/sh.
+var localShellsSupported = true
 
 func localShellSettingVisible() bool { return localShellsSupported }
 
@@ -55,6 +54,38 @@ func (state *State) refreshLocalShells() {
 
 func (menu *localShellSelect) rebuild() {
 	menu.choices = append(slices.Clone(menu.shells), menu.distros...)
+}
+
+// defaultShellChoice is the shell the shell setting shows as the default: the
+// detected one marked Default, or the first found, so what the setting displays
+// is what a terminal without a choice of its own runs.
+func (state *State) defaultShellChoice() localshell.Choice {
+	for _, choice := range state.localShellMenu.choices {
+		if choice.Default {
+			return choice
+		}
+	}
+	if len(state.localShellMenu.choices) > 0 {
+		return state.localShellMenu.choices[0]
+	}
+	return localshell.Choice{}
+}
+
+// resolveLocalShell names the program a local terminal runs: the tab's own
+// shell, the settings' default, then this machine's detected default. Without
+// the last step a shell that was never picked would fall to a PATH lookup,
+// which can land on another program than the setting shows.
+func (state *State) resolveLocalShell(host Host) string {
+	if host.localShell != "" {
+		return host.localShell
+	}
+	if state.localShell != "" {
+		return state.localShell
+	}
+	if !state.localShellMenu.loaded {
+		state.refreshLocalShells()
+	}
+	return state.defaultShellChoice().Path
 }
 
 // listWSLDistros asks for the installed distributions without waiting: the

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,6 +108,9 @@ type savedTransport struct {
 	// one imported key fingerprint for the key policy.
 	Authentication string `json:"authentication,omitempty"`
 	Identity       string `json:"identity,omitempty"`
+	// Credential is the id of the saved password an SSH, VNC or RDP host takes
+	// its password from (see credentials.go).
+	Credential string `json:"credential,omitempty"`
 	// ForwardX11 is set for an SSH host that forwards X11.
 	ForwardX11 bool `json:"forward_x11,omitempty"`
 	// AgentForward is set for an SSH host whose shells may use the local
@@ -133,7 +137,7 @@ type savedTransport struct {
 }
 
 func (host Host) transport() savedTransport {
-	transport := savedTransport{Proxy: savedHostProxy(host.Proxy)}
+	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
 	switch host.Protocol {
 	case protocolTelnet:
 		transport.Protocol = "telnet"
@@ -168,6 +172,7 @@ func (host Host) transport() savedTransport {
 // opened with a guess.
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
+	host.Credential = strings.TrimSpace(transport.Credential)
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
@@ -185,14 +190,14 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":
-		host.Protocol = protocolTelnet
+		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 	case "serial":
-		host.Proxy = nil
+		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
 		switch transport.Flow {
 		case "rtscts":
@@ -381,8 +386,16 @@ func (conn *streamConn) DialContext(context.Context, string, string) (net.Conn, 
 
 func (conn *streamConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
 
+func (conn *streamConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {
+	return nil, errNoServer
+}
+
 func (conn *streamConn) RunCommand(context.Context, string, int) ([]byte, error) {
 	return nil, errNoServer
+}
+
+func (conn *streamConn) Exec(context.Context, string, int) (sshconn.ExecResult, error) {
+	return sshconn.ExecResult{}, errNoServer
 }
 
 func (conn *streamConn) StreamCommand(context.Context, string, int, func([]byte) bool) error {
@@ -450,16 +463,25 @@ func (host *Host) normalizeEndpoint() {
 		host.User, host.Port = "", 0
 		return
 	}
-	if host.Protocol == protocolVNC && !host.ViaSSH {
-		host.User = "" // the account is the SSH tunnel's
-	}
 	if host.Port == 0 {
 		host.Port = host.defaultPort()
 	}
 }
 
+// sameHost reports whether two hosts are one entry as the user sees it: the same
+// destination under the same name. A host is identified by its catalog ID, not
+// by where it connects, so several hosts may share a destination as long as they
+// are named apart: a bastion host is reached at one address, and each target
+// behind it is its own host. This is only the test for an accidental repeat, such
+// as adding or importing the same entry twice.
+func sameHost(a Host, b Host) bool {
+	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label))
+}
+
 // hostIndexByEndpoint is where the list has a host that is the same destination
-// as host, or -1.
+// as host, or -1. It is what an import from another program is checked against:
+// an entry that is only a name for a server already saved is not worth a second
+// host, and a program's own names say little about it.
 func (state *State) hostIndexByEndpoint(host Host) int {
 	for index, saved := range state.hosts {
 		if sameEndpoint(saved, host) {
@@ -467,6 +489,27 @@ func (state *State) hostIndexByEndpoint(host Host) int {
 		}
 	}
 	return -1
+}
+
+// hostIndexSame is where the list has the same host as host (see sameHost), or -1.
+func (state *State) hostIndexSame(host Host) int {
+	for index, saved := range state.hosts {
+		if sameHost(saved, host) {
+			return index
+		}
+	}
+	return -1
+}
+
+// endpointShared reports whether a host of the list other than those with the
+// given IDs connects to the destination of host.
+func (state *State) endpointShared(host Host, except ...uint32) bool {
+	for _, other := range state.hosts {
+		if !slices.Contains(except, other.ID) && sameEndpoint(other, host) {
+			return true
+		}
+	}
+	return false
 }
 
 // sayStreamOpened writes the one line a Telnet or serial tab starts with: that
@@ -477,7 +520,11 @@ func (state *State) sayStreamOpened(session *Session) {
 	case protocolTelnet:
 		session.term.say(sgrWarn, m.TelnetPlaintext)
 	case protocolVNC:
-		if !session.host.tunneled() {
+		protected := session.host.tunneled()
+		if source, ok := session.conn.(desktopSource); ok && source.Desktop() != nil {
+			protected = protected || source.Desktop().Info().Encrypted
+		}
+		if !protected {
 			session.term.say(sgrWarn, state.messages.Desktop.VNCPlaintext)
 		}
 	case protocolSerial:

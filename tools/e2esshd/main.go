@@ -169,7 +169,8 @@ func main() {
 						newChannel.Reject(ssh.Prohibited, "administratively prohibited")
 						continue
 					}
-					target, err := allowedDirectTarget(newChannel.ExtraData(), allowedTargets...)
+					targets := append(remoteForwards.directTargets(), allowedTargets...)
+					target, err := allowedDirectTarget(newChannel.ExtraData(), targets...)
 					if err != nil {
 						newChannel.Reject(ssh.Prohibited, err.Error())
 						continue
@@ -392,6 +393,14 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				return
 			}
 			ok := isStatsCommand(payload.Command)
+			if !ok && os.Getenv("E2E_HANG_EXEC") == "1" {
+				// A server whose commands are accepted and never answered, for
+				// watching a client give up on a probe of its own: the session
+				// must be left open rather than closed while the command runs.
+				request.Reply(true, nil)
+				log.Printf("hang-exec %q", payload.Command)
+				select {}
+			}
 			if !ok && os.Getenv("E2E_ALLOW_EXEC") == "1" {
 				// Opt-in, for checks of features that run a command on the server (such as
 				// extracting an archive). The fixture already hands out a full shell on

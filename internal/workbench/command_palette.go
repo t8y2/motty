@@ -2,18 +2,12 @@ package workbench
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
-
-// maxCommandPaletteEntries is what the palette can list: its commands and
-// sessions, or, as the new-tab picker, this computer, the host groups and as
-// many saved hosts as fit. Counts are bytes, so it cannot pass 255.
-const maxCommandPaletteEntries = 255
 
 // commandPaletteHits is the place of the controls this file paints.
 var commandPaletteHits = tree.Feature("command-palette")
@@ -24,6 +18,7 @@ var (
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
 	hitCommandPaletteSearch  = tree.ID(commandPaletteHits, "command-palette-search")
 	hitCommandPaletteItems   = tree.Sub(commandPaletteHits, tree.Name("command-palette-items"))
+	hitCommandPaletteBar     = tree.ID(commandPaletteHits, "command-palette-scrollbar")
 	// The group headings of the new-tab picker are places too: the pointer over
 	// one shows no choice lit, and a press on one chooses nothing.
 	hitCommandPaletteHeaders = tree.Sub(commandPaletteHits, tree.Name("command-palette-group"))
@@ -36,31 +31,48 @@ type commandPaletteEntry struct {
 	detail      string // shown after the label, muted (a host's address)
 	search      string
 	target      ui.ID
+	// searchOnly rows answer the search without appearing in the unfiltered
+	// list. The shells behind the Local Terminal row use this: one line until
+	// the user expands it, but typing "bash" still finds the shell.
+	searchOnly bool
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
 }
 
 type commandPalette struct {
-	search       text.Editor
-	rawQuery     string
-	query        string
-	filtered     bool
-	entries      [maxCommandPaletteEntries]commandPaletteEntry
-	visible      [maxCommandPaletteEntries]uint8
-	entryCount   uint8
-	visibleCount uint8
-	selected     uint8
-	// top is the first of the visible entries the list shows; it keeps the
-	// selected one in view and the wheel moves it.
-	top uint8
+	search   text.Editor
+	rawQuery string
+	query    string
+	filtered bool
+	// entries is everything the palette offers and visible the indexes of those
+	// the search keeps. They are kept only while the palette is open: a list as
+	// long as the saved snippets or hosts costs nothing once it is closed.
+	entries []commandPaletteEntry
+	visible []int
+	// selected is a logical row in visible; scroll is the pixel offset.
+	selected int
+	scroll   float32
+	listRect ui.Rect
+	// bar is the scrollbar as last painted, and barGrab where on its thumb a
+	// drag took hold; dragging is set from the press on the bar to its release.
+	bar      components.ScrollAreaGeometry
+	barGrab  float32
+	dragging bool
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
-	connect bool
+	connect    bool
+	workspaces bool
+	// localShells expands the Local Terminal row into the shells this computer
+	// can run, inside the same searchable new-tab list.
+	localShells bool
+	// snippets makes the list a picker of the saved snippets to send to the
+	// active terminal, opened from the terminal toolbar.
+	snippets bool
 }
 
 func (state *State) openCommandPalette() {
-	state.commandPalette.connect = false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -70,26 +82,31 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.connect = false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
 	state.commandPalette.rawQuery = ""
 	state.commandPalette.filtered = false
-	state.commandPalette.entryCount = 0
-	state.commandPalette.visibleCount = 0
+	state.commandPalette.entries = nil
+	state.commandPalette.visible = nil
+	state.commandPalette.dragging = false
 	state.commandPalette.selected = 0
-	state.commandPalette.top = 0
+	state.commandPalette.scroll = 0
 }
 
 func (state *State) rebuildCommandPalette() {
 	state.ensureWorkspaceDeck()
 	palette := &state.commandPalette
-	palette.entryCount = 0
-	palette.selected, palette.top = 0, 0
+	palette.entries = palette.entries[:0]
+	palette.selected, palette.scroll = 0, 0
 	messages := state.messages
 	if palette.connect {
 		state.rebuildConnectPicker()
+		return
+	}
+	if palette.snippets {
+		state.rebuildSnippetPicker()
 		return
 	}
 	palette.add(messages.NavHosts, hitHosts)
@@ -100,6 +117,7 @@ func (state *State) rebuildCommandPalette() {
 	palette.add(messages.NavKnownHosts, hitKnownHosts)
 	palette.add(messages.NavSettings, hitSettings)
 	palette.add(messages.NavSnippets, hitSnippets)
+	palette.add(state.noteText("Notes", "笔记"), hitNotes)
 	palette.add(messages.SessionLogs.Title, hitSessionLogs)
 	state.devAddPaletteCommands(palette)
 	if state.options.NewWindow != nil {
@@ -118,7 +136,13 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.PaneSplitHorizontal, hitPaneSplitHorizontal)
 		palette.add(messages.PaneSplitVertical, hitPaneSplitVertical)
 		palette.add(messages.PaneClose, hitPaneClose)
+		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
+		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
+				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
+			}
+		}
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil && state.remoteToolsOffered(session) {
 			palette.add(messages.Tools.RemoteMenu, hitRemoteToolsOpen)
 		}
@@ -134,11 +158,7 @@ func (state *State) rebuildCommandPalette() {
 			palette.add(label, hitBroadcast)
 		}
 		for index, entry := range state.snippets.list {
-			detail := ""
-			if entry.Shortcut.valid() {
-				detail = entry.Shortcut.label()
-			}
-			palette.addDetailed(fmt.Sprintf(messages.Tools.SnippetPaletteFmt, entry.Name), detail, hitSnippetSendList.At(index))
+			palette.addDetailed(fmt.Sprintf(messages.Tools.SnippetPaletteFmt, entry.Name), snippetDetail(&entry), hitSnippetSendList.At(index))
 		}
 	}
 	for index := range state.sessions {
@@ -156,22 +176,23 @@ func (palette *commandPalette) add(label string, target ui.ID) {
 }
 
 func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
-	if palette.entryCount >= uint8(len(palette.entries)) {
-		return
-	}
-	palette.entries[palette.entryCount] = commandPaletteEntry{
+	palette.entries = append(palette.entries, commandPaletteEntry{
 		label: label, detail: detail, search: strings.ToLower(label + " " + detail), target: target,
-	}
-	palette.entryCount++
+	})
+}
+
+// addCandidate adds a row of the new-tab picker, keeping whether a search is
+// the only way it reaches the list.
+func (palette *commandPalette) addCandidate(item connectPickerCandidate) {
+	palette.entries = append(palette.entries, commandPaletteEntry{
+		label: item.label, detail: item.detail, search: strings.ToLower(item.label + " " + item.detail),
+		target: item.target, searchOnly: item.searchOnly,
+	})
 }
 
 // addHeader names a group in the new-tab picker: a row to read, not to choose.
 func (palette *commandPalette) addHeader(label, detail string) {
-	if palette.entryCount >= uint8(len(palette.entries)) {
-		return
-	}
-	palette.entries[palette.entryCount] = commandPaletteEntry{label: label, detail: detail, header: true}
-	palette.entryCount++
+	palette.entries = append(palette.entries, commandPaletteEntry{label: label, detail: detail, header: true})
 }
 
 func (state *State) refreshCommandPalette() {
@@ -180,44 +201,52 @@ func (state *State) refreshCommandPalette() {
 	if palette.filtered && rawQuery == palette.rawQuery {
 		return
 	}
-	if palette.connect && state.recentConnectSort {
+	if palette.connect && !palette.workspaces && state.recentConnectSort {
 		state.rebuildRecentConnectPicker(rawQuery)
 		return
 	}
 	query := strings.ToLower(rawQuery)
+	var keywords []string
+	if palette.connect {
+		keywords = strings.Fields(query)
+	}
 	palette.rawQuery = rawQuery
 	palette.query = query
 	palette.filtered = true
-	palette.visibleCount = 0
-	for index := uint8(0); index < palette.entryCount; index++ {
-		if palette.entries[index].header {
+	palette.visible = palette.visible[:0]
+	for index := range palette.entries {
+		entry := &palette.entries[index]
+		if entry.header {
 			// Group names only head the unfiltered list: a search shows what
 			// matches, not the folders the matches came from.
 			if query == "" {
-				palette.visible[palette.visibleCount] = index
-				palette.visibleCount++
+				palette.visible = append(palette.visible, index)
 			}
 			continue
 		}
-		if query != "" && !strings.Contains(palette.entries[index].search, query) {
+		if entry.searchOnly && query == "" && !palette.localShells {
 			continue
 		}
-		palette.visible[palette.visibleCount] = index
-		palette.visibleCount++
+		if query != "" {
+			search := entry.search
+			if palette.connect {
+				if !matchesSearchWords(search, keywords) {
+					continue
+				}
+			} else if !strings.Contains(search, query) {
+				continue
+			}
+		}
+		palette.visible = append(palette.visible, index)
 	}
-	choice := palette.choiceAt(0, 1)
-	if choice >= 0 {
-		palette.selected = uint8(choice)
-	} else {
-		palette.selected = 0
-	}
-	palette.top = 0
+	palette.selected = max(palette.choiceAt(0, 1), 0)
+	palette.scroll = 0
 }
 
 // choiceAt returns the first choice from index and in direction, stepping over
 // headings. It returns -1 when the direction runs out of choices.
 func (palette *commandPalette) choiceAt(index, direction int) int {
-	for index >= 0 && index < int(palette.visibleCount) {
+	for index >= 0 && index < len(palette.visible) {
 		if !palette.entries[palette.visible[index]].header {
 			return index
 		}
@@ -226,70 +255,83 @@ func (palette *commandPalette) choiceAt(index, direction int) int {
 	return -1
 }
 
-// followCommandPalette moves the window of rows so that the selected one shows.
-func (palette *commandPalette) follow() {
-	if palette.selected < palette.top {
-		palette.top = palette.selected
-	}
-	if palette.selected >= palette.top+commandPaletteVisibleRows {
-		palette.top = palette.selected - commandPaletteVisibleRows + 1
-	}
+const commandPaletteRowStep float32 = commandPaletteRowPitch
+const commandPaletteListHeight float32 = commandPaletteVisibleRows*commandPaletteRowStep - 4
+
+func (palette *commandPalette) contentHeight() float32 {
+	return max(0, float32(len(palette.visible))*commandPaletteRowStep-4)
 }
 
-// scrollCommandPalette is the wheel over the open palette: the list moves by a row.
+func (palette *commandPalette) maxScroll() float32 {
+	return max(0, palette.contentHeight()-commandPaletteListHeight)
+}
+
+// follow reveals the selected row only when keyboard navigation asks for it.
+func (palette *commandPalette) follow() {
+	top := float32(palette.selected) * commandPaletteRowStep
+	palette.scroll = min(max(palette.scroll, top+30-commandPaletteListHeight), top)
+	palette.scroll = min(max(palette.scroll, 0), palette.maxScroll())
+}
+
 func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	beforeTop, beforeSelected := palette.top, palette.selected
-	last := max(int(palette.visibleCount)-commandPaletteVisibleRows, 0)
-	// A notch moves one row; a long gesture moves as many rows as it spans.
-	rows := max(int(math.Abs(float64(event.DeltaY))/34), 1)
-	switch {
-	case event.DeltaY > 0:
-		palette.top = uint8(min(int(palette.top)+rows, last))
-	case event.DeltaY < 0:
-		palette.top = uint8(max(int(palette.top)-rows, 0))
-	}
-	target := event.Target
-	if visible, ok := target.In(hitCommandPaletteItems); ok {
-		row := int(palette.top) + visible
-		if row < int(palette.visibleCount) && !palette.entries[palette.visible[row]].header {
-			palette.selected = uint8(row)
+	before, selected := palette.scroll, palette.selected
+	palette.scroll = min(max(palette.scroll+event.StepY(commandPaletteRowStep), 0), palette.maxScroll())
+	// The new-tab picker keeps its selection while scrolling, like the font picker.
+	// Other palettes resolve the row at the pointer after moving content.
+	if !palette.connect && !palette.dragging && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
+		row := int((event.Y - palette.listRect.Y + palette.scroll + 2) / commandPaletteRowStep)
+		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
+			palette.selected = row
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: palette.top != beforeTop || palette.selected != beforeSelected}
+	return ui.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
 }
 
 func (state *State) clickCommandPalette(id ui.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
-	case hitConnectSortDefault, hitConnectSortRecent:
+	case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
 		if !state.commandPalette.connect {
 			return
 		}
-		state.recentConnectSort = id == hitConnectSortRecent
+		state.commandPalette.workspaces = id == hitConnectSortWorkspaces
+		if !state.commandPalette.workspaces {
+			state.recentConnectSort = id == hitConnectSortRecent
+			state.save()
+		}
 		state.rebuildCommandPalette()
-		state.save()
 	case hitCommandPaletteSearch:
 		return
 	default:
+		if id == hitConnectPickShellPicker {
+			state.commandPalette.localShells = !state.commandPalette.localShells
+			state.rebuildCommandPalette()
+			return
+		}
+		// The pencil of a host row opens the host for editing instead of
+		// connecting: the palette closes and the edit dialog takes over.
+		if id.Scope() == hitConnectPickEdit {
+			state.openEditHostID(uint32(item(id)))
+			return
+		}
 		visible, ok := id.In(hitCommandPaletteItems)
 		if !ok {
 			return
 		}
 		state.refreshCommandPalette()
-		visible += int(state.commandPalette.top)
-		if visible >= int(state.commandPalette.visibleCount) {
+		if visible >= len(state.commandPalette.visible) {
 			return
 		}
-		state.executeCommandPalette(uint8(visible))
+		state.executeCommandPalette(visible)
 	}
 }
 
-func (state *State) executeCommandPalette(visible uint8) {
+func (state *State) executeCommandPalette(visible int) {
 	palette := &state.commandPalette
-	if visible >= palette.visibleCount {
+	if visible >= len(palette.visible) {
 		return
 	}
 	target := palette.entries[palette.visible[visible]].target
@@ -302,24 +344,51 @@ func (state *State) executeCommandPalette(visible uint8) {
 	state.click(target, false)
 }
 
+// dragBar keeps scrollbar dragging as precise as trackpad scrolling.
+func (palette *commandPalette) dragBar(y float32) {
+	palette.scroll = min(max(palette.bar.VerticalOffsetForThumb(y-palette.barGrab), 0), palette.maxScroll())
+}
+
 func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
 	if state.modal != modalCommandPalette {
 		return ui.EventResult{}, false
+	}
+	palette := &state.commandPalette
+	// A press on the scrollbar takes the pointer for the drag: until it is
+	// released the rows under it must not take the hover, or the highlight
+	// stays on whichever row the drag started over.
+	switch {
+	case event.Kind == ui.PointerDown && event.Target == hitCommandPaletteBar && event.Button == ui.PointerButtonPrimary:
+		thumb := palette.bar.VerticalThumb
+		palette.barGrab = thumb.Height / 2
+		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
+			palette.barGrab = event.Y - thumb.Y
+		}
+		palette.dragging = true
+		palette.dragBar(event.Y)
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	case palette.dragging:
+		switch event.Kind {
+		case ui.PointerMove:
+			palette.dragBar(event.Y)
+		case ui.PointerUp, ui.PointerExit:
+			palette.dragging = false
+		}
+		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
 		return ui.EventResult{}, false
 	}
-	palette := &state.commandPalette
-	row := int(palette.top) + visible
-	if row >= int(palette.visibleCount) {
+	row := visible
+	if row >= len(palette.visible) {
 		return ui.EventResult{}, false
 	}
 	if palette.entries[palette.visible[row]].header {
 		return ui.EventResult{}, false
 	}
-	if event.Kind == ui.PointerMove && palette.selected != uint8(row) {
-		palette.selected = uint8(row)
+	if event.Kind == ui.PointerMove && palette.selected != row {
+		palette.selected = row
 		return ui.EventResult{Handled: true, Repaint: true}, true
 	}
 	return ui.EventResult{}, false
@@ -337,9 +406,9 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 	}
 	if palette.connect {
 		switch event.Target {
-		case hitConnectSortDefault, hitConnectSortRecent:
+		case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
 			// The switch is a radio group of its own: the arrows move between its
-			// two options, and choosing one puts the keyboard back in the search
+			// options, and choosing one puts the keyboard back in the search
 			// field so typing filters the list at once.
 			options := state.connectSortOptions()
 			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
@@ -364,18 +433,43 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		state.executeCommandPalette(palette.selected)
 		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
-	row := int(palette.selected)
+	row := palette.selected
+	if inItems && palette.connect && !event.Repeat {
+		toggleShells := func(expand bool) (ui.EventResult, bool) {
+			if palette.localShells == expand {
+				return ui.EventResult{}, false
+			}
+			palette.localShells = expand
+			state.rebuildCommandPalette()
+			first := palette.choiceAt(0, 1)
+			if first < 0 {
+				return ui.EventResult{Handled: true, Repaint: true}, true
+			}
+			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+		}
+		switch event.Key {
+		case ui.KeyRight:
+			if row >= 0 && row < len(palette.visible) {
+				entry := palette.entries[palette.visible[row]]
+				if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+					return toggleShells(true)
+				}
+			}
+		case ui.KeyLeft:
+			return toggleShells(false)
+		}
+	}
 	move := func(selected, direction int) (ui.EventResult, bool) {
-		if palette.visibleCount == 0 {
+		if len(palette.visible) == 0 {
 			return ui.EventResult{Handled: true}, true
 		}
-		selected = min(max(selected, 0), int(palette.visibleCount)-1)
+		selected = min(max(selected, 0), len(palette.visible)-1)
 		selected = palette.choiceAt(selected, direction)
 		if selected < 0 {
 			// The move ran past the end of the list: it lands on the last
 			// choice there is, not on nothing.
 			if direction > 0 {
-				selected = palette.choiceAt(int(palette.visibleCount)-1, -1)
+				selected = palette.choiceAt(len(palette.visible)-1, -1)
 			} else {
 				selected = palette.choiceAt(0, 1)
 			}
@@ -383,14 +477,14 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		if selected < 0 {
 			return ui.EventResult{Handled: true}, true
 		}
-		palette.selected = uint8(selected)
+		palette.selected = selected
 		palette.follow()
 		if inSearch {
 			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 		}
 		return ui.EventResult{
 			Handled: true, Repaint: true,
-			Focus: hitCommandPaletteItems.At(int(palette.selected - palette.top)), FocusVisible: true,
+			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {
@@ -408,7 +502,7 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 		case ui.KeyHome:
 			return move(0, 1)
 		case ui.KeyEnd:
-			return move(int(palette.visibleCount)-1, -1)
+			return move(len(palette.visible)-1, -1)
 		}
 	}
 	return ui.EventResult{}, false

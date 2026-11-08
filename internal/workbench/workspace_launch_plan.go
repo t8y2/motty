@@ -10,7 +10,7 @@ import (
 
 var (
 	ErrWorkspaceLaunchEmpty = errors.New("workbench: workspace launch needs at least one host")
-	ErrWorkspaceLaunchFull  = errors.New("workbench: workspace launch supports at most eight hosts")
+	ErrWorkspaceLaunchFull  = errors.New("workbench: workspace launch supports at most twelve hosts")
 )
 
 // WorkspaceLaunchPlan is the resolved, ordered input to one workspace launch.
@@ -19,14 +19,14 @@ var (
 type WorkspaceLaunchPlan struct {
 	Hosts   []Host
 	Missing []string
-	Columns uint8
+	Layout  layoutcore.LayoutSpec
 }
 
 // PlanWorkspaceLaunch resolves host catalog ids in the catalog's display order.
 // Both temporary selections and saved templates go through this function.
-func PlanWorkspaceLaunch(catalog []Host, hostIDs []string, columns uint8) (WorkspaceLaunchPlan, error) {
-	if columns < layoutcore.MinGridColumns || int(columns) > layoutcore.MaxGridColumns {
-		return WorkspaceLaunchPlan{}, ErrWorkspaceTemplateCols
+func PlanWorkspaceLaunch(catalog []Host, hostIDs []string, layout layoutcore.LayoutSpec) (WorkspaceLaunchPlan, error) {
+	if layout.Validate(len(hostIDs)) != nil && len(hostIDs) > 0 && len(hostIDs) <= layoutcore.MaxPanes {
+		return WorkspaceLaunchPlan{}, ErrWorkspaceTemplateLayout
 	}
 	selected := make(map[string]struct{}, len(hostIDs))
 	for _, id := range hostIDs {
@@ -42,7 +42,7 @@ func PlanWorkspaceLaunch(catalog []Host, hostIDs []string, columns uint8) (Works
 		return WorkspaceLaunchPlan{}, ErrWorkspaceLaunchFull
 	}
 	found := make(map[string]struct{}, len(selected))
-	plan := WorkspaceLaunchPlan{Columns: columns}
+	plan := WorkspaceLaunchPlan{Layout: layout}
 	for _, host := range catalog {
 		if _, wanted := selected[host.CatalogID]; !wanted {
 			continue
@@ -63,19 +63,19 @@ func PlanWorkspaceLaunch(catalog []Host, hostIDs []string, columns uint8) (Works
 		}
 	}
 	if len(plan.Hosts) == 0 {
-		return WorkspaceLaunchPlan{Missing: plan.Missing, Columns: columns}, ErrWorkspaceLaunchEmpty
+		return WorkspaceLaunchPlan{Missing: plan.Missing, Layout: layout}, ErrWorkspaceLaunchEmpty
 	}
 	return plan, nil
 }
 
-// DefaultWorkspaceColumns is the layout a launch uses when none was chosen.
-func DefaultWorkspaceColumns(hostCount int) uint8 {
+// DefaultWorkspaceLayout is the layout a launch uses when none was chosen.
+func DefaultWorkspaceLayout(hostCount int) layoutcore.LayoutSpec {
 	switch {
 	case hostCount <= 1:
-		return 1
+		return layoutcore.GridSpec(1)
 	case hostCount <= 3:
-		return uint8(hostCount)
+		return layoutcore.GridSpec(uint8(hostCount))
 	default:
-		return 2
+		return layoutcore.GridSpec(2)
 	}
 }

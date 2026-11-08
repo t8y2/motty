@@ -1,0 +1,33 @@
+# End to end: a large burst of output over a real loopback SSH pty reaches the
+# screen in order, and a key struck while it is still arriving is not held
+# behind it. Needs a headless Viva build and the e2esshd fixture on port 2290:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-flood ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-flood .) && /tmp/e2esshd-flood 2290 &
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-flood \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_flood_e2e.txt
+#
+# What to look for:
+# - `flood-done` appears after the last number: the burst was neither cut nor
+#   reordered. The run's own time is the figure to compare between builds.
+# - The text typed during the burst is on the command line afterwards.
+
+click "Search"
+type tester@127.0.0.1:2290
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+type seq 1 800000; echo flood-done
+key enter
+type typed-during-the-burst
+waitfor "flood-done" 60000
+settle 500
+expect text "800000"
+expect text "typed-during-the-burst"
+texts

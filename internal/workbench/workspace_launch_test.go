@@ -2,11 +2,55 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
+
+func TestLaunchTwelveHostsCreatesOneWorkspaceAndDialsEveryHost(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	hosts := make([]Host, layoutcore.MaxPanes)
+	for index := range hosts {
+		hosts[index] = testWorkspaceHost(fmt.Sprintf("server-%d", index), fmt.Sprintf("server-%d.example.com", index))
+	}
+	workspaceID, sessions, err := state.launchWorkspace(WorkspaceLaunchPlan{Hosts: hosts, Layout: layoutcore.GridSpec(3)}, "Fleet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != layoutcore.MaxPanes || len(state.deck.Panes(workspaceID, nil)) != layoutcore.MaxPanes || len(world.configs) != layoutcore.MaxPanes {
+		t.Fatalf("sessions=%d panes=%d dials=%d", len(sessions), len(state.deck.Panes(workspaceID, nil)), len(world.configs))
+	}
+	if err := state.deck.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := layoutcore.RestoreDeck(state.deck.DTO())
+	if err != nil || len(restored.Panes(workspaceID, nil)) != layoutcore.MaxPanes {
+		t.Fatalf("restored panes=%d err=%v", len(restored.Panes(workspaceID, nil)), err)
+	}
+	size := ui.Size{Width: 1600, Height: 1100}
+	state.Resize(size)
+	canvas, _ := paintAt(state, size)
+	frame := state.workspacePixelBounds(size)
+	for index, pane := range state.Panes(nil) {
+		session, ok := state.sessionByIDPointer(pane.SessionID)
+		if !ok {
+			t.Fatalf("pane %d lost its session", index)
+		}
+		terminalID := tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID)))
+		terminal, ok := hitByID(canvas, terminalID)
+		bounds := pixelBounds(frame, pane.Bounds)
+		if !ok || terminal.Bounds.Width <= 0 || terminal.Bounds.Height <= 0 ||
+			terminal.Bounds.X < bounds.X || terminal.Bounds.Y < bounds.Y ||
+			terminal.Bounds.X+terminal.Bounds.Width > bounds.X+bounds.Width ||
+			terminal.Bounds.Y+terminal.Bounds.Height > bounds.Y+bounds.Height {
+			t.Fatalf("pane %d terminal %+v escapes bounds %+v (found=%v)", index, terminal.Bounds, bounds, ok)
+		}
+	}
+}
 
 func TestLaunchWorkspaceInstallsEveryStructureBeforeDialing(t *testing.T) {
 	world, options := newWorld(t)
@@ -16,7 +60,7 @@ func TestLaunchWorkspaceInstallsEveryStructureBeforeDialing(t *testing.T) {
 		testWorkspaceHost("db", "db.example.com"),
 		testWorkspaceHost("cache", "cache.example.com"),
 	}
-	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_cache", "host_web", "host_db"}, 2)
+	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_cache", "host_web", "host_db"}, layoutcore.GridSpec(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +117,7 @@ func TestFailedWorkspaceStructureDoesNotDial(t *testing.T) {
 	plan := WorkspaceLaunchPlan{Hosts: []Host{
 		testWorkspaceHost("web", "web.example.com"),
 		testWorkspaceHost("db", "db.example.com"),
-	}, Columns: 2}
+	}, Layout: layoutcore.GridSpec(2)}
 	for index := 0; index < layoutcore.MaxWorkspaces; index++ {
 		if _, _, err := state.deck.Create("Filler"); err != nil {
 			t.Fatal(err)
@@ -98,9 +142,9 @@ func TestLaunchWorkspaceRejectsAnInvalidPlanBeforeCreatingAnything(t *testing.T)
 		name string
 		plan WorkspaceLaunchPlan
 	}{
-		{"empty", WorkspaceLaunchPlan{Columns: 1}},
-		{"too many", WorkspaceLaunchPlan{Hosts: make([]Host, layoutcore.MaxPanes+1), Columns: 2}},
-		{"columns", WorkspaceLaunchPlan{Hosts: []Host{testWorkspaceHost("web", "web.example.com")}, Columns: 4}},
+		{"empty", WorkspaceLaunchPlan{Layout: layoutcore.GridSpec(1)}},
+		{"too many", WorkspaceLaunchPlan{Hosts: make([]Host, layoutcore.MaxPanes+1), Layout: layoutcore.GridSpec(2)}},
+		{"columns", WorkspaceLaunchPlan{Hosts: []Host{testWorkspaceHost("web", "web.example.com")}, Layout: layoutcore.GridSpec(4)}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,7 +166,7 @@ func TestLaunchWorkspaceStartsConnectionsInHostOrder(t *testing.T) {
 		testWorkspaceHost("db", "db.example.com"),
 		testWorkspaceHost("cache", "cache.example.com"),
 	}
-	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_cache", "host_web", "host_db"}, 3)
+	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_cache", "host_web", "host_db"}, layoutcore.GridSpec(3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +189,7 @@ func TestLaunchWorkspaceUsesOneDeckTabAndLeavesBroadcastOff(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	catalog := []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")}
-	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_web", "host_db"}, 2)
+	plan, err := PlanWorkspaceLaunch(catalog, []string{"host_web", "host_db"}, layoutcore.GridSpec(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,11 +235,11 @@ func TestLaunchWorkspaceSaveFailureLeavesNoTabSessionOrIdentity(t *testing.T) {
 			testWorkspaceHost("web", "web.example.com"),
 			testWorkspaceHost("db", "db.example.com"),
 		},
-		Columns: 2,
+		Layout: layoutcore.GridSpec(2),
 	}
 	state.config = nil
 	_, _, err = state.launchWorkspaceWithIdentity(plan, "Rollback", workspaceLaunchIdentity{
-		managedColumns: 2, temporary: true, temporaryColumns: 2,
+		managedLayout: layoutcore.GridSpec(2), temporary: true, temporaryLayout: layoutcore.GridSpec(2),
 	})
 	if !errors.Is(err, ErrWorkspaceLaunchSave) {
 		t.Fatalf("launch error = %v", err)
@@ -216,15 +260,15 @@ func TestLaunchWorkspaceSaveFailureLeavesNoTabSessionOrIdentity(t *testing.T) {
 	if state.pauseSave != pauseSaveBefore {
 		t.Fatalf("rollback pauseSave = %d, want %d", state.pauseSave, pauseSaveBefore)
 	}
-	if len(state.managedWorkspaceColumns) != 0 || len(state.temporaryWorkspaceColumns) != 0 {
+	if len(state.managedWorkspaceLayouts) != 0 || len(state.temporaryWorkspaceLayouts) != 0 {
 		t.Fatalf("rollback left identity managed=%v temporary=%v",
-			state.managedWorkspaceColumns, state.temporaryWorkspaceColumns)
+			state.managedWorkspaceLayouts, state.temporaryWorkspaceLayouts)
 	}
 
 	state.config = config
 	retry := WorkspaceLaunchPlan{
-		Hosts:   []Host{testWorkspaceHost("cache", "cache.example.com")},
-		Columns: 1,
+		Hosts:  []Host{testWorkspaceHost("cache", "cache.example.com")},
+		Layout: layoutcore.GridSpec(1),
 	}
 	if _, _, err := state.launchWorkspace(retry, "Retry"); err != nil {
 		t.Fatalf("launch after rollback: %v", err)

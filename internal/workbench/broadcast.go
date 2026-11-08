@@ -132,6 +132,9 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsRightClickPaste:
 		state.terminalRightClickPaste = !state.terminalRightClickPaste
 		state.save()
+	case id == hitSettingsInputClick:
+		state.terminalInputClickOff = !state.terminalInputClickOff
+		state.save()
 	case id == hitSettingsBellToggle:
 		state.terminalBellOff = !state.terminalBellOff
 		state.save()
@@ -146,6 +149,13 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		if state.setPasteImage(state.pasteImageOff) {
 			state.save()
 		}
+	case id == hitSettingsCloseConfirmToggle:
+		state.closeConfirmOff = !state.closeConfirmOff
+		state.save()
+	case id == hitSettingsPasswordHintToggle:
+		if state.setPasswordHint(state.passwordHintOff) {
+			state.save()
+		}
 	case id == hitSettingsProxyConfigure:
 		state.openOutboundProxyDialog()
 	case id == hitSettingsFontPick:
@@ -158,6 +168,7 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		}
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
+	case state.clickCredentialSettings(id):
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:

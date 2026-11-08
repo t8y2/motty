@@ -53,9 +53,9 @@ type Client struct {
 
 const defaultMaxBytes = 64 << 20
 
-// New checks the configuration. A nil http client uses one with a 60 second
-// timeout that does not follow redirects to another host, so the password is
-// not handed to a server the user did not name.
+// New checks the configuration. A nil http client uses one that does not follow
+// redirects to another host, so the password is not handed to a server the user
+// did not name. The caller controls the request deadline through its context.
 func New(config Config, client *http.Client) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(config.URL))
 	if err != nil || base.Host == "" || base.User != nil {

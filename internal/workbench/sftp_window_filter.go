@@ -19,6 +19,9 @@ func (w *sftpWindow) closeHeaderMenu() {
 }
 
 func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
+	if _, ok := id.In(hitSFTPProfileHoverItems); ok {
+		return true, true
+	}
 	for side := range 2 {
 		if _, ok := id.In(sftpWindowRecentHits[side]); ok {
 			return side == 0, true
@@ -28,7 +31,7 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		}
 	}
 	switch id {
-	case hitSFTPLocationProfiles, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
+	case hitSFTPLocationProfiles, hitSFTPProfileQuick, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
 		return true, true
 	case hitSFTPBookmarkList, hitSFTPBookmarkToggle, hitSFTPNewLink, hitSFTPWindowUpload, hitSFTPWindowDownload:
 		return false, true
@@ -37,13 +40,22 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		return local, true
 	}
 	for side := range 2 {
+		if id == sftpWindowTreeToggle[side] {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeRows[side]); ok {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeDisclosures[side]); ok {
+			return side == 0, true
+		}
 		if _, ok := id.In(sftpWindowSortHits[side]); ok {
 			return side == 0, true
 		}
 		if _, ok := id.In(sftpWindowActions[side]); ok {
 			return side == 0, true
 		}
-		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar} {
+		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar, sftpWindowTreeBar} {
 			if id == ids[side] {
 				return side == 0, true
 			}
@@ -131,9 +143,17 @@ func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
 	return ui.EventResult{}, false
 }
 
-func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
+// paintHeaderMenu paints one pane's More menu. origin and mount place it: a file
+// tab paints over the page, so its menu has to as well — the page clips whatever
+// an embedded canvas contributes, which would cut the dismiss backdrop down to
+// the tab and leave the window bar unreachable. A standalone transfer window
+// passes the zero point and scope, since its canvas is the whole window.
+func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int, origin ui.Point, mount ui.Scope, viewport ui.Rect, scroll *components.MenuScroll) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
+	id := func(local ui.ID) ui.ID { return tree.MountID(mount, local) }
+	route := func(local ui.Scope) ui.Scope { return tree.Mount(mount, local) }
 	anchor := w.ui.headerAnchor[side]
+	anchor.X, anchor.Y = anchor.X+origin.X, anchor.Y+origin.Y
 	count := 6 + len(folder.history.recent)
 	if label, _ := w.owner.sftpEditorItem(w.view, folder); label != "" {
 		count++
@@ -146,24 +166,33 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
 		count += 2
 	}
 	bounds := ui.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
-	menu := components.BeginDropdownMenu(canvas, w.owner.Theme(), bounds, components.DropdownMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowHeaderDismiss, DismissID: hitSFTPWindowHeaderDismiss, Viewport: ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.headerScroll})
-	w.owner.paintSFTPHistoryMenu(&menu, w.view, local, sftpWindowHistoryBack[side], sftpWindowHistoryForward[side], sftpWindowRecentHits[side])
-	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowFilterToggle[side], Label: m.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch], Selected: folder.filterOpen || folder.filterInputEditor().String() != ""})
+	dismiss := id(hitSFTPWindowHeaderDismiss)
+	if !mount.IsZero() {
+		// Painted over the page: the menu takes the page's popup state, so the
+		// wheel, the keyboard and Escape reach it as they reach any other menu.
+		scroll = w.owner.menuScrollFor(dismiss)
+	}
+	menu := components.BeginDropdownMenu(canvas, w.owner.Theme(), bounds, components.DropdownMenuOptions{Layer: popupLayer, Scope: dismiss, DismissID: dismiss, Viewport: viewport, Scroll: scroll})
+	if !mount.IsZero() {
+		w.owner.menuPlaced(menu.Bounds())
+	}
+	w.owner.paintSFTPHistoryMenu(&menu, w.view, local, id(sftpWindowHistoryBack[side]), id(sftpWindowHistoryForward[side]), route(sftpWindowRecentHits[side]))
+	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowFilterToggle[side]), Label: m.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch], Selected: folder.filterOpen || folder.filterInputEditor().String() != ""})
 	hiddenIcon, hiddenLabel := uint8(iconEyeOff), m.Tools.FilesShowHidden
 	if folder.showHidden {
 		hiddenIcon, hiddenLabel = iconEye, m.Tools.FilesHideHidden
 	}
-	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderHidden[side], Label: hiddenLabel, Icon: lucideIcons[hiddenIcon], Selected: folder.showHidden})
+	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowHeaderHidden[side]), Label: hiddenLabel, Icon: lucideIcons[hiddenIcon], Selected: folder.showHidden})
 	if label, disabled := w.owner.sftpEditorItem(w.view, folder); label != "" {
-		menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderEditor[side], Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
+		menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowHeaderEditor[side]), Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	busy := w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected())
-	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
+	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowNewFolder[side]), Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {
-		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPNewLink, Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
+		menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPNewLink), Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
 		if narrow {
-			menu.AddItem(components.DropdownMenuItem{ID: hitSFTPWindowUpload, Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconUpload], Disabled: !w.canTransfer(true)})
-			menu.AddItem(components.DropdownMenuItem{ID: hitSFTPWindowDownload, Label: m.SFTPWindow.Download, Icon: lucideIcons[iconDownload], Disabled: !w.canTransfer(false)})
+			menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPWindowUpload), Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconUpload], Disabled: !w.canTransfer(true)})
+			menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPWindowDownload), Label: m.SFTPWindow.Download, Icon: lucideIcons[iconDownload], Disabled: !w.canTransfer(false)})
 		}
 	}
 	menu.End()

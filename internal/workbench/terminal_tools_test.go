@@ -341,8 +341,8 @@ func TestADamagedStateFileCannotInstallAnUnusableRuleOrSnippet(t *testing.T) {
 	if len(state.highlighting.rules) != 1 || state.highlighting.rules[0].Pattern != "ok" {
 		t.Errorf("rules = %+v", state.highlighting.rules)
 	}
-	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "[2Jls" {
-		t.Errorf("snippets = %+v: control characters must not survive into keystrokes", state.snippets.list)
+	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "[2Jls\n" {
+		t.Errorf("snippets = %+v: unsafe control characters must not survive into keystrokes", state.snippets.list)
 	}
 	if state.activeScheme() != defaultSchemeID {
 		t.Errorf("scheme = %q", state.activeScheme())
@@ -378,7 +378,7 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	// It is on the command palette, and choosing it types into the active shell.
 	state.openCommandPalette()
 	found := false
-	for index := 0; index < int(state.commandPalette.entryCount); index++ {
+	for index := 0; index < len(state.commandPalette.entries); index++ {
 		if strings.Contains(state.commandPalette.entries[index].label, "Restart nginx") {
 			found = true
 		}

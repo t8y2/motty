@@ -3,47 +3,80 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/inspector"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
 
-const (
-	// debugPreviewActions is the number of actions in the button group the Debug
-	// page shows.
-	debugPreviewActions = 3
-	// debugSelectOptions is the number of choices in its select.
-	debugSelectOptions = 3
-	// debugSwatches is the number of colors in its palette, the disabled last
-	// choice included.
-	debugSwatches = 4
-)
+// debugSource is the text the gallery's editor starts with: a short program that
+// exercises indentation, strings, numbers, keywords, brackets and comments, so
+// the highlighting, the tab stops and the bracket matching all have something to
+// show.
+const debugSource = `package main
+
+import "fmt"
+
+// greeting returns a line for the named person.
+func greeting(name string) string {
+	return fmt.Sprintf("hello, %s", name)
+}
+
+func main() {
+	values := []int{1, 2, 3}
+	for _, value := range values {
+		if value%2 == 0 {
+			fmt.Println(greeting("even"), value)
+		}
+	}
+}
+`
 
 // The gallery's place in the sidebar and its controls. A release build has none
 // of them: the page exists only with the dev tag (see debug_release.go).
 var (
-	debugHits              = tree.Feature("debug")
-	hitDebug               = tree.ID(shellHits, "debug")
-	hitDebugSelect         = tree.ID(debugHits, "select")
-	hitDebugSelectDismiss  = tree.ID(debugHits, "select-dismiss")
-	hitDebugActionList     = tree.Sub(debugHits, tree.Name("action"))
-	hitDebugSelectItemList = tree.Sub(debugHits, tree.Name("select-item"))
-	hitDebugSwatchList     = tree.Sub(debugHits, tree.Name("swatch"))
+	debugHits       = tree.Feature("debug")
+	hitDebug        = tree.ID(shellHits, "debug")
+	hitDebugEditor  = tree.ID(debugHits, "editor")
+	hitDebugScroll  = tree.ID(debugHits, "scroll")
+	hitDebugScrollX = tree.ID(debugHits, "scroll-x")
 )
 
-// devState is the gallery's own state: the layout of its previews, the button
-// group action pressed last, the select's trigger and popup, and the color
-// chosen in the palette. A release build keeps none of it.
+// devState is the gallery's own state: the layout of the page and the editor it
+// shows. The text, its undo history and its caret live in editor; code holds
+// only what a steady paint would otherwise rebuild. A release build keeps none
+// of it.
 type devState struct {
-	layout flex.View
-	action int
-	// selectRect is where the page reserved the select trigger. The trigger and
-	// its popup are painted after the page, outside the workspace's clip.
-	selectRect   ui.Rect
-	selectOpen   bool
-	selectOption int
-	// swatch is the color chosen in the palette; it indexes debugSwatchColors.
-	swatch int
+	layout  flex.View
+	editor  text.Editor
+	code    components.CodeEditor
+	started bool
+	// inspector names the control under the pointer, and outlines the controls
+	// of the frame, over the whole window. devInspectorChord cycles it.
+	inspector inspector.Inspector
+	// marks is the highlighter's scratch, reused by every line of every paint.
+	marks []components.MarkdownCodeRun
+	// highlight is debugHighlight held as a value: a method value made at paint
+	// time would allocate a closure on every frame.
+	highlight func(language, line string, dst []components.CodeEditorRun) []components.CodeEditorRun
+}
+
+// devEditor prepares the editor on its first frame. It starts with the caret at
+// the beginning and the Go editing rules, the way a file window does.
+func (state *State) devEditor() *text.Editor {
+	if state.dev.started {
+		return &state.dev.editor
+	}
+	state.dev.started = true
+	state.dev.editor = *text.NewEditor(debugSource)
+	state.dev.editor.SetSelection(text.Range{})
+	state.dev.editor.SetCode(codeOptionsFor("debug.go", debugSource))
+	state.dev.code = components.CodeEditor{}
+	state.dev.highlight = state.debugHighlight
+	return &state.dev.editor
 }
 
 // devDeclareNavigation puts the gallery in the sidebar, above Settings.
@@ -63,19 +96,35 @@ func (state *State) devClick(id ui.ID) bool {
 		state.save()
 		return true
 	}
-	if tree.Within(id.Scope(), debugHits) {
-		return state.clickDebug(id)
+	if id == hitDebugEditor {
+		state.devEditor()
+		return true
 	}
 	return false
 }
 
-// devBeginPaint forgets what the last paint occupied and closes the page's
-// popup once the page is no longer on show.
-func (state *State) devBeginPaint() {
-	state.dev.selectRect = ui.Rect{}
-	if state.activeSection != sectionDebug {
-		state.dev.selectOpen = false
+// devBeginPaint forgets what the last paint laid out.
+func (state *State) devBeginPaint() {}
+
+// devInspectorChord is the shortcut that cycles the inspector: off, the control
+// under the pointer, every control. Command or Control with Alt and Shift, so no
+// terminal program or page binding comes near it.
+var devInspectorChord = keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt | ui.ModifierShift, Char: 'i'}
+
+// devEndPaint paints the inspector over the finished frame.
+func (state *State) devEndPaint(canvas *ui.Canvas, size ui.Size) {
+	state.dev.inspector.Paint(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+}
+
+// devShortcut cycles the inspector.
+func (state *State) devShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+	if chord, ok := keymap.FromEvent(event); !ok || chord != devInspectorChord {
+		return ui.EventResult{}, false
 	}
+	if !event.Release && !event.Repeat {
+		state.dev.inspector.Cycle()
+	}
+	return ui.EventResult{Handled: true, Repaint: true}, true
 }
 
 // devPaintPage paints the gallery and reports whether it was the page on show.
@@ -85,14 +134,6 @@ func (state *State) devPaintPage(canvas *ui.Canvas, bounds ui.Rect) bool {
 	}
 	state.paintDebugWorkspace(canvas, bounds)
 	return true
-}
-
-// devPaintOverlay paints the page's select inside the frame's menu pass, so its
-// popup can leave the page and keeps the menu state its keyboard handling needs.
-func (state *State) devPaintOverlay(canvas *ui.Canvas) {
-	if state.activeSection == sectionDebug {
-		state.paintDebugSelect(canvas)
-	}
 }
 
 // devAddPaletteCommands lists the gallery on the command palette.
@@ -117,126 +158,69 @@ func (state *State) devRestoreWorkspace(workspace string) bool {
 	return true
 }
 
-// devSelectTypeahead offers the gallery select's choices to a typed prefix.
-func (state *State) devSelectTypeahead(target ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
-	if state.modal != modalNone || state.activeSection != sectionDebug || target != hitDebugSelect || state.dev.selectOpen {
-		return nil, nil, false
+// devEditorFor hands the gallery's editor to the text system, so typing reaches
+// it the way it reaches a file window: composition, paste and the caret are the
+// framework's, and only the text stays here.
+func (state *State) devEditorFor(hit ui.ID) *text.Editor {
+	if state.activeSection != sectionDebug || state.modal != modalNone || hit != hitDebugEditor {
+		return nil
 	}
-	labels := state.debugSelectLabels()
-	items := make([]components.MenuTypeaheadItem, 0, len(labels))
-	for index, label := range labels {
-		items = append(items, components.MenuTypeaheadItem{ID: hitDebugSelectItemList.At(index), Label: label})
-	}
-	return items, func(id ui.ID) bool {
-		index, ok := id.In(hitDebugSelectItemList)
-		if !ok || index < 0 || index >= len(labels) {
-			return false
-		}
-		state.dev.selectOption = index
-		return true
-	}, true
+	return state.devEditor()
 }
 
-// debugActionLabels names the actions of the preview group in the active
-// language. The array keeps painting allocation-free.
-func (state *State) debugActionLabels() [debugPreviewActions]string {
-	messages := state.messages
-	return [debugPreviewActions]string{messages.DebugAlignLeft, messages.DebugAlignCenter, messages.DebugAlignRight}
-}
-
-// debugButtonOptions builds the preview group's stable actions. Viva owns the
-// control's look and input; this page only says which actions it holds.
-func (state *State) debugButtonOptions() [debugPreviewActions]components.ButtonGroupOption {
-	labels := state.debugActionLabels()
-	var options [debugPreviewActions]components.ButtonGroupOption
-	for index, label := range labels {
-		options[index] = components.ButtonGroupOption{
-			ID: hitDebugActionList.At(index), Label: label, Variant: components.ButtonOutline,
-		}
+// devEditorInput connects the gallery's editor to a native text event.
+func (state *State) devEditorInput() *app.TextInput {
+	editor := state.devEditor()
+	var input app.TextInput
+	input.Editor = nil
+	input.State = app.TextStateOf(editor)
+	input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
+		event.Apply(editor)
+		return app.TextStateOf(editor), nil
 	}
-	return options
+	return &input
 }
 
-// debugSelectLabels names the choices of the preview select in the active
-// language.
-func (state *State) debugSelectLabels() [debugSelectOptions]string {
-	messages := state.messages
-	return [debugSelectOptions]string{
-		messages.DebugEnvironmentDevelopment, messages.DebugEnvironmentStaging, messages.DebugEnvironmentProduction,
-	}
-}
-
-// debugSwatchLabels names the palette's choices in the active language, in the
-// order debugSwatchColors draws them.
-func (state *State) debugSwatchLabels() [debugSwatches]string {
-	messages := state.messages
-	return [debugSwatches]string{
-		messages.ColorNone, messages.ColorGreen, messages.ColorBlue, messages.ColorRed,
-	}
-}
-
-// debugSwatchOptions builds the palette's stable choices for keyboard
-// navigation. The last color is disabled, so arrows and Tab skip it.
-func (state *State) debugSwatchOptions() [debugSwatches]components.RadioOption {
-	labels := state.debugSwatchLabels()
-	var options [debugSwatches]components.RadioOption
-	for index, label := range labels {
-		options[index] = components.RadioOption{
-			ID: hitDebugSwatchList.At(index), Label: label, Disabled: index == debugSwatches-1,
-		}
-	}
-	return options
-}
-
-// devSwatchKey moves through the gallery's palette with the arrow keys, as a
-// radio group does. Tab traversal and the hits themselves are Viva's.
-func (state *State) devSwatchKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalNone || state.activeSection != sectionDebug {
+// devEditorKey is what the keys of the gallery's editor do: the editing commands
+// and the movement keys, exactly as in a file window.
+func (state *State) devEditorKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if state.activeSection != sectionDebug || state.modal != modalNone || event.Target != hitDebugEditor {
 		return ui.EventResult{}, false
 	}
-	if _, ok := event.Target.In(hitDebugSwatchList); !ok {
+	if event.Release {
 		return ui.EventResult{}, false
 	}
-	options := state.debugSwatchOptions()
-	next, handled := components.RadioGroupKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	if !handled {
-		return ui.EventResult{}, false
+	editor := state.devEditor()
+	handled := ui.EventResult{Handled: true, Repaint: true}
+	if command, ok := components.CodeEditorCommandForKey(event); ok && command.Apply(editor) {
+		state.dev.code.Reveal(editor.ByteOffset(editor.Caret()))
+		return handled, true
 	}
-	index, ok := next.In(hitDebugSwatchList)
-	if !ok || index < 0 || index >= debugSwatches {
-		return ui.EventResult{}, false
+	if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
+		value := editor.String()
+		offset := state.dev.code.Move(value, editor.ByteOffset(editor.Caret()), movement)
+		editor.MoveTo(len([]rune(value[:offset])), extend)
+		return handled, true
 	}
-	changed := state.dev.swatch != index
-	state.dev.swatch = index
-	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: changed}, true
+	return ui.EventResult{}, false
 }
 
-// clickDebug handles the Debug page's preview controls. The group's hits and the
-// select's popup are Viva's; the page only keeps the values and the open state.
-func (state *State) clickDebug(id ui.ID) bool {
-	if state.modal != modalNone || state.activeSection != sectionDebug {
-		return false
+// devEditorPointer routes pointer events to the editor, which uses them for its
+// scrollbars. Placing the caret is the text system's job, not the page's.
+func (state *State) devEditorPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	if state.activeSection != sectionDebug || state.modal != modalNone {
+		return ui.EventResult{}, false
 	}
-	switch {
-	case id == hitDebugSelect:
-		state.dev.selectOpen = !state.dev.selectOpen
-		return true
-	case id == hitDebugSelectDismiss:
-		state.dev.selectOpen = false
-		return true
+	if event.Target != hitDebugScroll && event.Target != hitDebugScrollX {
+		return ui.EventResult{}, false
 	}
-	if index, ok := id.In(hitDebugActionList); ok && index < debugPreviewActions {
-		state.dev.action = index
-		return true
+	return state.dev.code.Pointer(event), true
+}
+
+// devEditorScroll scrolls the gallery's editor over it.
+func (state *State) devEditorScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+	if state.activeSection != sectionDebug || state.modal != modalNone {
+		return ui.EventResult{}, false
 	}
-	if index, ok := id.In(hitDebugSelectItemList); ok && index < debugSelectOptions {
-		state.dev.selectOption = index
-		state.dev.selectOpen = false
-		return true
-	}
-	if index, ok := id.In(hitDebugSwatchList); ok && index < debugSwatches-1 {
-		state.dev.swatch = index
-		return true
-	}
-	return false
+	return state.dev.code.Scroll(event), true
 }

@@ -8,10 +8,12 @@ package gate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"motty/internal/ai/risk"
 	"motty/internal/ai/tools"
@@ -26,12 +28,24 @@ type SessionInfo struct {
 	Ready   bool // a shell is open and can take commands
 }
 
+type HostInfo struct {
+	ID      string
+	Title   string
+	Address string
+}
+
+type HostLister interface {
+	Hosts(context.Context) ([]HostInfo, error)
+}
+
 // ExecResult is what a command printed and how it ended.
 type ExecResult struct {
-	Output    string
-	ExitCode  int
-	Truncated bool
-	TimedOut  bool
+	Output     string
+	ExitCode   int
+	Truncated  bool
+	TimedOut   bool
+	Retained   string
+	RetainLost bool
 }
 
 // FileEntry is one SFTP directory entry.
@@ -47,6 +61,11 @@ type Backend interface {
 	Sessions(ctx context.Context) ([]SessionInfo, error)
 	ReadTerminal(ctx context.Context, args tools.TerminalReadArgs) (string, error)
 	Exec(ctx context.Context, args tools.TerminalExecArgs) (ExecResult, error)
+	// JobStart types a command into the session's terminal and returns at once.
+	// The job belongs to OutputOwner(ctx); JobPoll and JobStop refuse any other.
+	JobStart(ctx context.Context, args tools.TerminalStartArgs) (JobStatus, error)
+	JobPoll(ctx context.Context, args tools.TerminalPollArgs) (JobStatus, error)
+	JobStop(ctx context.Context, args tools.TerminalStopArgs) (JobStatus, error)
 	ListDir(ctx context.Context, args tools.SFTPListArgs) ([]FileEntry, error)
 	ReadFile(ctx context.Context, args tools.SFTPReadArgs) (data string, truncated bool, err error)
 	WriteFile(ctx context.Context, args tools.SFTPWriteArgs) error
@@ -93,6 +112,7 @@ type Gate struct {
 	Policy   risk.Policy
 	Mode     Mode
 	Approver Approver // nil means nothing that needs approval can run
+	Outputs  *OutputStore
 	// Target is an in-app request's immutable default. References contains only
 	// sessions explicitly mentioned in this question. Nil Target retains the
 	// external MCP contract; references never change the default.
@@ -126,8 +146,9 @@ const ConfirmWord = "CONFIRM"
 
 // Result is the text sent back to the model and whether it is an error.
 type Result struct {
-	Text    string
-	IsError bool
+	Text       string
+	IsError    bool
+	Structured json.RawMessage
 	// Denied is set when the user (or the mode) refused the action.
 	Denied bool
 }
@@ -144,7 +165,26 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 	if g.Mode == ModeObserve && spec.Kind != tools.Read {
 		return Result{Text: "this connection is read-only: " + name + " is not allowed", IsError: true, Denied: true}
 	}
+	if result, handled := g.runHostTool(ctx, name, raw); handled {
+		return result
+	}
 	switch name {
+	case tools.NameListHosts:
+		if _, err := tools.DecodeListHosts(raw); err != nil {
+			return failure(err)
+		}
+		if g.Target != nil {
+			return Result{Text: "host listing is unavailable in a session-scoped request", IsError: true}
+		}
+		lister, ok := g.Backend.(HostLister)
+		if !ok {
+			return Result{Text: "host listing is unavailable", IsError: true}
+		}
+		hosts, err := lister.Hosts(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		return Result{Text: formatHosts(hosts)}
 	case tools.NameListSessions:
 		if _, err := tools.DecodeListSessions(raw); err != nil {
 			return failure(err)
@@ -177,6 +217,39 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			return failure(err)
 		}
 		return Result{Text: text}
+	case tools.NameToolOutputRead:
+		args, err := tools.DecodeToolOutputRead(raw)
+		if err != nil {
+			return failure(err)
+		}
+		if g.Outputs == nil {
+			return Result{Text: "output paging is unavailable", IsError: true}
+		}
+		item, data, next, err := g.Outputs.read(outputOwner(ctx), args)
+		if err != nil {
+			return failure(err)
+		}
+		sessions, err := g.Backend.Sessions(ctx)
+		if err != nil {
+			return failure(err)
+		}
+		allowed := false
+		for _, session := range sessions {
+			if session.ID == item.session && session.Ready {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return Result{Text: "the original session is no longer available", IsError: true}
+		}
+		page := struct {
+			Data       string `json:"data"`
+			NextOffset int    `json:"next_offset"`
+			EOF        bool   `json:"eof"`
+		}{data, next, next == len(item.data)}
+		structured, _ := json.Marshal(page)
+		return Result{Text: string(structured), Structured: structured}
 	case tools.NameSFTPList:
 		args, err := tools.DecodeSFTPList(raw)
 		if err != nil {
@@ -217,6 +290,12 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if err != nil {
 			return failure(err)
 		}
+		owner := outputOwner(ctx)
+		if g.Outputs != nil && owner != "" && args.Session == "" {
+			if args.Session, err = g.readySession(ctx); err != nil {
+				return failure(err)
+			}
+		}
 		if args.Session, err = g.targetSession(args.Session); err != nil {
 			return failure(err)
 		}
@@ -224,11 +303,52 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		if denied := g.ask(ctx, name, tools.Exec, args.Session, args.Command, assessment); denied != nil {
 			return *denied
 		}
+		args.RetainOutput = g.Outputs != nil && owner != ""
 		result, err := g.Backend.Exec(ctx, args)
 		if err != nil {
 			return failure(err)
 		}
-		return Result{Text: formatExec(result), IsError: result.TimedOut}
+		text := formatExec(result)
+		var outputID string
+		if args.RetainOutput && result.Truncated && ctx.Err() == nil {
+			if result.RetainLost {
+				text += "\n[full output unavailable: capture incomplete or retention limit exceeded]"
+			} else {
+				if !utf8.ValidString(result.Retained) {
+					result.Retained = strings.ToValidUTF8(result.Retained, "�")
+				}
+				id, err := g.Outputs.save(owner, args.Session, result.Retained)
+				if err == nil {
+					outputID = id
+					text += "\n[full output available via tool_output_read; output_id: " + id + "; total_bytes: " + fmt.Sprint(len(result.Retained)) + "]"
+				} else {
+					text += "\n[full output unavailable: retention failed]"
+				}
+			}
+		}
+		response := Result{Text: text, IsError: result.TimedOut}
+		if args.RetainOutput {
+			fields := struct {
+				Preview          string `json:"preview"`
+				OutputID         string `json:"output_id,omitempty"`
+				ExitCode         int    `json:"exit_code"`
+				Truncated        bool   `json:"truncated"`
+				TimedOut         bool   `json:"timed_out"`
+				SourceOutputLost bool   `json:"source_output_lost"`
+				TotalBytes       *int   `json:"total_bytes,omitempty"`
+			}{Preview: result.Output, OutputID: outputID, ExitCode: result.ExitCode, Truncated: result.Truncated, TimedOut: result.TimedOut, SourceOutputLost: result.Truncated && outputID == ""}
+			if !result.Truncated {
+				total := len(result.Output)
+				fields.TotalBytes = &total
+			} else if outputID != "" {
+				total := len(result.Retained)
+				fields.TotalBytes = &total
+			}
+			response.Structured, _ = json.Marshal(fields)
+		}
+		return response
+	case tools.NameTerminalStart, tools.NameTerminalPoll, tools.NameTerminalStop:
+		return g.runJob(ctx, name, raw)
 	case tools.NameTerminalExecMany:
 		args, err := tools.DecodeTerminalExecMany(raw)
 		if err != nil {
@@ -285,6 +405,25 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 		return Result{Text: "removed " + args.Path}
 	}
 	return Result{Text: "tool not implemented: " + name, IsError: true}
+}
+
+// readySession picks the session an exec without an explicit one runs in: the
+// active session if it is ready, else the first ready one.
+func (g Gate) readySession(ctx context.Context) (string, error) {
+	sessions, err := g.Backend.Sessions(ctx)
+	if err != nil {
+		return "", err
+	}
+	var chosen string
+	for _, session := range sessions {
+		if session.Ready && (chosen == "" || session.Active) {
+			chosen = session.ID
+			if session.Active {
+				break
+			}
+		}
+	}
+	return chosen, nil
 }
 
 // execMany runs one command on several sessions. The user is asked once, with
@@ -495,6 +634,17 @@ func formatSessions(sessions []SessionInfo) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func formatHosts(hosts []HostInfo) string {
+	if len(hosts) == 0 {
+		return "no hosts are open to agents"
+	}
+	var output strings.Builder
+	for _, host := range hosts {
+		fmt.Fprintf(&output, "%s: %s %s\n", host.ID, host.Title, host.Address)
+	}
+	return strings.TrimRight(output.String(), "\n")
+}
+
 func formatEntries(entries []FileEntry) string {
 	if len(entries) == 0 {
 		return "(empty)"
@@ -519,6 +669,10 @@ func formatExec(r ExecResult) string {
 	switch {
 	case r.TimedOut:
 		b.WriteString("[timed out; the command may still be running on the host]")
+	case r.ExitCode < 0 && r.Truncated:
+		b.WriteString("[output truncated] [exit status unknown: the command returned to the prompt]")
+	case r.ExitCode < 0:
+		b.WriteString("[exit status unknown: the command returned to the prompt]")
 	case r.Truncated:
 		fmt.Fprintf(&b, "[output truncated] [exit status %d]", r.ExitCode)
 	default:

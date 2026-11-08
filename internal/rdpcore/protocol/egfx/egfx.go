@@ -1238,7 +1238,10 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	// monitorCount := binary.LittleEndian.Uint32(data[8:12])
 	// followed by monitor definitions, pad to 340 bytes
 
-	// Clear all surfaces, output maps, and progressive tile state.
+	// Clear all surfaces and output maps. The progressive decoder is kept:
+	// its tile context is not part of the graphics output, and Windows keeps
+	// sending UPGRADE tiles for a surface that it recreates after the reset
+	// without repeating the first pass's SYNC and CONTEXT blocks.
 	// NOTE: bitmap cache (h.cache) is NOT cleared — the server expects
 	// cached bitmaps to survive ResetGraphics and uses CacheToSurface
 	// immediately after creating the new surface.
@@ -1247,7 +1250,6 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	}
 	clear(h.surfaces)
 	clear(h.outputMap)
-	h.progressive = rfx.NewDecoder(h.log)
 	h.frameDirtyRects = h.frameDirtyRects[:0]
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]

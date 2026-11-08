@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/attach"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
@@ -444,6 +445,45 @@ func TestAIProviderFormValidates(t *testing.T) {
 	}
 }
 
+func TestAIProviderFormModelsURL(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	m := state.messages.AISettings
+
+	state.Click(hitAISetProviderAdd)
+	world.typeInto(t, hitAISetFormName, "OpenCode")
+	world.typeInto(t, hitAISetFormURL, "https://opencode.ai/inference/go/openai/v1")
+	world.typeInto(t, hitAISetFormModelsURL, "ftp://invalid-models-url")
+	world.typeInto(t, hitAISetFormKey, testSecretKey)
+	state.Click(hitAISetFormSubmit)
+	if state.ai.cfg.formErr != m.ErrFormModelsURL {
+		t.Fatalf("formErr = %q; want %q", state.ai.cfg.formErr, m.ErrFormModelsURL)
+	}
+
+	for range "ftp://invalid-models-url" {
+		state.EditorFor(hitAISetFormModelsURL).DeleteBackward()
+	}
+	world.typeInto(t, hitAISetFormModelsURL, "https://opencode.ai/inference/go/v1")
+	state.Click(hitAISetFormSubmit)
+	if len(state.ai.providers) != 1 {
+		t.Fatalf("providers len = %d; want 1", len(state.ai.providers))
+	}
+	p := state.ai.providers[0]
+	if p.BaseURL != "https://opencode.ai/inference/go/openai/v1" {
+		t.Errorf("BaseURL = %q", p.BaseURL)
+	}
+	if p.ModelsURL != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("ModelsURL = %q, want https://opencode.ai/inference/go/v1", p.ModelsURL)
+	}
+
+	// Reopen form for edit and verify ModelsURL is populated
+	state.aiOpenProviderForm(p.ID)
+	if got := state.ai.cfg.modelsURL.String(); got != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("cfg.modelsURL = %q; want https://opencode.ai/inference/go/v1", got)
+	}
+	state.Click(hitAISetFormCancel)
+}
+
 func TestAIEditKeepsTheOldKeyUnlessReplaced(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
@@ -749,25 +789,25 @@ func TestAIModelsCanBeAddedByNameAndPaged(t *testing.T) {
 func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
-	for _, hit := range []ui.ID{hitAISetRiskHigh, hitAISetSteps24, hitAISetContext120} {
+	for _, hit := range []ui.ID{hitAISetRiskHigh, hitAISetSteps24, hitAISetContext120, hitAISetText8} {
 		state.Click(hit)
 	}
 	state.Click(hitAISetRedact)
 	state.Click(hitAISetHistory)
 	db := world.db(t)
 	for key, want := range map[string]string{
-		"ai.auto_up_to": "high", "ai.max_steps": "24", "ai.context_lines": "120", "ai.redact": "off", "ai.history": "off",
+		"ai.auto_up_to": "high", "ai.max_steps": "24", "ai.context_lines": "120", "ai.attachment_text_mib": "8", "ai.redact": "off", "ai.history": "off",
 	} {
 		if got := settingValue(t, db, key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
 	}
-	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, maxTextBytes: 8 << 20, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 	if state.ai.settings != want {
 		t.Fatalf("settings = %+v, want %+v", state.ai.settings, want)
 	}
-	if world.changed != 5 {
-		t.Fatalf("the application was told %d times, want 5", world.changed)
+	if world.changed != 6 {
+		t.Fatalf("the application was told %d times, want 6", world.changed)
 	}
 	state.Close()
 	again := world.open(t)
@@ -784,9 +824,10 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	again.Click(hitAISetRiskLow)
 	again.Click(hitAISetSteps6)
 	again.Click(hitAISetContext0)
+	again.Click(hitAISetText4)
 	again.Click(hitAISetRedact)
 	again.Click(hitAISetHistory)
-	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
+	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
 		t.Fatalf("settings = %+v, want %+v", got, want)
 	}
 }

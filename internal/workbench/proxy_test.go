@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
@@ -247,6 +248,120 @@ func TestJumpRouteRejectsSelfAndDuplicateTargets(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	if state.proxyDialogError != state.messages.ErrProxyTargetTaken || len(state.proxies) != 1 {
 		t.Fatalf("duplicate target error=%q routes=%+v", state.proxyDialogError, state.proxies)
+	}
+}
+
+func TestProxyEditModifiesAndPersists(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	target := state.hosts[0]
+	jump1 := state.hosts[1]
+	jump2 := state.hosts[2]
+	addProxyRoute(t, state, target.ID, jump1.ID)
+
+	state.selectedProxyID = state.proxies[0].ID
+	state.Click(hitProxyEdit)
+	if state.modal != modalNewProxy || !state.proxyEditor.editing || state.proxyEditor.routeID != state.proxies[0].ID {
+		t.Fatalf("proxy edit modal=%d editing=%v routeID=%d", state.modal, state.proxyEditor.editing, state.proxyEditor.routeID)
+	}
+	if state.proxyEditor.targetID != target.ID || state.proxyEditor.jumpID != jump1.ID {
+		t.Fatalf("proxy editor prefill: target=%d jump=%d", state.proxyEditor.targetID, state.proxyEditor.jumpID)
+	}
+
+	// Keeping own target should be valid
+	if err := state.proxyEditor.validate(state); err != "" {
+		t.Fatalf("validating unchanged proxy route failed: %q", err)
+	}
+
+	// Change jump host to jump2, enable viaShell
+	state.proxyEditor.jumpID = jump2.ID
+	state.Click(hitProxyDialogViaShell)
+	if !state.proxyEditor.viaShell {
+		t.Fatal("viaShell should be enabled")
+	}
+	state.proxyEditor.relay = text.Editor{}
+	state.proxyEditor.relay.Insert("ssh %r@%h")
+
+	state.Click(hitProxyDialogSubmit)
+	if state.modal != modalNone || state.proxyDialogError != "" {
+		t.Fatalf("submit edit proxy: modal=%d error=%q", state.modal, state.proxyDialogError)
+	}
+	if len(state.proxies) != 1 {
+		t.Fatalf("proxies count = %d, want 1", len(state.proxies))
+	}
+	edited := state.proxies[0]
+	if edited.TargetID != target.ID || edited.JumpID != jump2.ID || !edited.ViaShell || edited.Relay != "ssh %r@%h" {
+		t.Fatalf("edited route = %+v", edited)
+	}
+	if !strings.HasPrefix(state.status, state.messages.ProxyUpdated) {
+		t.Fatalf("status = %q, want prefix %q", state.status, state.messages.ProxyUpdated)
+	}
+
+	// Verify persistence
+	restarted := newTestState(t, options)
+	if len(restarted.proxies) != 1 {
+		t.Fatalf("restored proxies count = %d, want 1", len(restarted.proxies))
+	}
+	restored := restarted.proxies[0]
+	if restored.TargetID != target.ID || restored.JumpID != jump2.ID || !restored.ViaShell || restored.Relay != "ssh %r@%h" {
+		t.Fatalf("restored route = %+v", restored)
+	}
+}
+
+// A route keeps the number it was saved with, so a window that reloads the
+// catalog does not re-point a dialog that was opened on it at another route.
+func TestAJumpRouteKeepsItsSavedNumberAcrossAReload(t *testing.T) {
+	hosts := decodeHostsForTest(t)
+	target, jump := hosts[0], hosts[1]
+	saved := func(id uint32, target Host, jump Host) savedProxy {
+		return savedProxy{
+			ID: id, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port,
+		}
+	}
+	routes := decodeProxies([]savedProxy{saved(4, target, jump), saved(2, hosts[2], hosts[1])}, hosts)
+	if len(routes) != 2 {
+		t.Fatalf("routes = %+v", routes)
+	}
+	if got := [2]uint32{routes[0].ID, routes[1].ID}; got != [2]uint32{4, 2} {
+		t.Fatalf("restored numbers = %v, want the saved 4 and 2", got)
+	}
+
+	// A record older than the number, and a second record claiming one already
+	// taken, both take the lowest free number instead of colliding.
+	routes = decodeProxies([]savedProxy{saved(4, target, jump), saved(0, hosts[2], hosts[1])}, hosts)
+	if got := [2]uint32{routes[0].ID, routes[1].ID}; got != [2]uint32{4, 1} {
+		t.Fatalf("numbers after a legacy record = %v, want 4 and the free 1", got)
+	}
+	routes = decodeProxies([]savedProxy{saved(4, target, jump), saved(4, hosts[2], hosts[1])}, hosts)
+	if routes[0].ID == routes[1].ID {
+		t.Fatalf("two routes answer to the same number: %+v", routes)
+	}
+}
+
+// Saving an edit whose route is gone reports it instead of quietly adding a
+// second copy under a new number.
+func TestEditingAJumpRouteThatIsGoneReportsItInsteadOfAddingACopy(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
+
+	state.selectedProxyID = state.proxies[0].ID
+	state.Click(hitProxyEdit)
+	if state.modal != modalNewProxy || !state.proxyEditor.editing {
+		t.Fatalf("edit dialog = %d editing=%v", state.modal, state.proxyEditor.editing)
+	}
+	// The route goes away under the open dialog, as it does when another window
+	// removes it.
+	state.proxies = nil
+	state.Click(hitProxyDialogSubmit)
+	if state.proxyDialogError != state.messages.ErrProxyEditMissing {
+		t.Fatalf("error = %q, want %q", state.proxyDialogError, state.messages.ErrProxyEditMissing)
+	}
+	if len(state.proxies) != 0 {
+		t.Fatalf("routes = %+v, want no copy appended", state.proxies)
+	}
+	if state.modal != modalNewProxy {
+		t.Fatalf("the dialog closed on a failed save: modal = %d", state.modal)
 	}
 }
 

@@ -94,6 +94,12 @@ In Ask mode the assistant can request a switch to Agent when a request needs a
 tool. If you approve, the request is retried in Agent mode and the choice is
 remembered. If you decline, the assistant answers without the tool.
 
+### Attachments and SSH uploads
+
+The paperclip sends text, extracted Office text or images to the model for reading; it is not a binary transfer. Assistant settings offer 1, 4 (default), or 8 MiB per text file. Conversation history and provider context limits still apply.
+
+To upload a local build artifact, switch to Agent mode, use the upload button beside the paperclip, select a regular file and specify its full remote destination. The model sees only its name, size and request-scoped ID, never its bytes or absolute local path. The file streams over SFTP/SCP without an attachment-size limit. Every upload asks for approval naming the file, SSH host and destination; existing files are not overwritten by default. Stopping the request cancels the transfer. Success is reported only after completion.
+
 ## Risk and approval
 
 Every command is classified before it runs:

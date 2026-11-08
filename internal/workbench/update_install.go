@@ -18,6 +18,7 @@ import (
 type Updater interface {
 	// Support says whether this installation can update itself, and if not why.
 	Support() selfupdate.Reason
+	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
 	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
 	// Launch starts what replaces the program once it has quit.
@@ -39,8 +40,12 @@ const (
 type updateInstall struct {
 	phase    installPhase
 	progress selfupdate.Progress
-	failure  string
-	cancel   context.CancelFunc
+	// failure is what to show the user: the system's refusal is explained
+	// rather than quoted, since the same sentence covers a missing ticket and
+	// a machine that cannot reach Apple.
+	failure string
+	err     error
+	cancel  context.CancelFunc
 	// serial tells an answer from a cancelled attempt from the current one.
 	serial int
 	text   struct {
@@ -80,9 +85,14 @@ func (state *State) whyNoInstall() string {
 		return m.UpdateWhyTranslocated
 	case selfupdate.ReasonSystemInstall:
 		return m.UpdateWhySystemInstall
+	case selfupdate.ReasonAuthorizationUnavailable:
+		return m.UpdateWhyNoPolkit
 	}
 	if !state.update.release.Asset.Has() {
-		return m.UpdateWhyNoPackage
+		if state.update.release.PlatformPackageChecked {
+			return m.UpdateWhyNoPackage
+		}
+		return m.UpdateWhyPackageUnknown
 	}
 	if !state.update.release.Asset.Signed() {
 		return m.UpdateWhyUnsigned
@@ -162,7 +172,11 @@ func (state *State) finishInstall(serial int, staged selfupdate.Staged, err erro
 		err = state.options.Updater.Launch(staged)
 	}
 	if err != nil {
-		install.phase, install.failure = installFailed, strings.TrimPrefix(err.Error(), "selfupdate: ")
+		install.phase, install.err = installFailed, err
+		install.failure = strings.TrimPrefix(err.Error(), "selfupdate: ")
+		if errors.Is(err, selfupdate.ErrNotAccepted) {
+			install.failure = state.messages.Tools.UpdateBlockedBySystem
+		}
 		return
 	}
 	install.phase = installRestarting

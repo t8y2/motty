@@ -14,6 +14,10 @@
 #                               live-*.png. A first sign-in builds the profile and
 #                               takes a minute; a user already signed in on the
 #                               console is asked first, MOTTY_RDP_CLICK answers it.
+#                               MOTTY_RDP_PASTE_DIR (a folder on the machine the
+#                               account may write to) also runs the file test:
+#                               files copied by the test are pasted in Explorer
+#                               and compared by SHA-256.
 #
 # DOCKER_BUILD_PROXY sets the proxy apt uses inside the Docker build.
 set -eu
@@ -32,7 +36,7 @@ windows)
 	user=${2:?user} password=${3:?password}
 	GOOS=windows GOARCH=amd64 go test -c -o /tmp/rdp-live.exe ./internal/desktop/rdp
 	$env/upload.sh windows /tmp/rdp-live.exe 'C:\Users\Docker\Desktop\rdplive.exe'
-	$env/exec.sh windows "\$env:MOTTY_RDP_ADDR='127.0.0.1:3389'; \$env:MOTTY_RDP_USER='$user'; \$env:MOTTY_RDP_PASSWORD='$password'; \$env:MOTTY_RDP_PNG='C:\\Users\\Docker\\Desktop\\live'; \$env:MOTTY_RDP_CLICK='${MOTTY_RDP_CLICK:-}'; Start-Process -FilePath cmd.exe -ArgumentList '/c','cd /d C:\\Users\\Docker\\Desktop && rdplive.exe -test.v -test.run Live -test.count=1 > live.log 2>&1' -WindowStyle Hidden"
+	$env/exec.sh windows "\$env:MOTTY_RDP_ADDR='127.0.0.1:3389'; \$env:MOTTY_RDP_USER='$user'; \$env:MOTTY_RDP_PASSWORD='$password'; \$env:MOTTY_RDP_PNG='C:\\Users\\Docker\\Desktop\\live'; \$env:MOTTY_RDP_CLICK='${MOTTY_RDP_CLICK:-}'; \$env:MOTTY_RDP_PASTE_DIR='${MOTTY_RDP_PASTE_DIR:-}'; Start-Process -FilePath cmd.exe -ArgumentList '/c','cd /d C:\\Users\\Docker\\Desktop && rdplive.exe -test.v -test.run Live -test.count=1 > live.log 2>&1' -WindowStyle Hidden"
 	echo "started; read C:\\Users\\Docker\\Desktop\\live.log on the machine"
 	;;
 *)

@@ -149,9 +149,25 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	if w.view.rows[w.view.selected].entry.Mode.Perm() != 0600 {
 		t.Fatal("permissions did not change")
 	}
+	w.fileAction(false, hitSFTPMove)
+	view.Driver().Pump()
+	view.Rest()
+	field = dualHit(t, view, hitSFTPDialogField)
+	view.Click(field.X+20, field.Y+10)
+	view.Driver().ShortcutChord(modifier, 'a')
+	view.Type("docs")
+	view.Keys("enter")
+	dualWait(t, state, w, view, func() bool {
+		return !w.view.busy && remoteText(remote, "/home/test/docs/renamed.yml") == "hello world"
+	})
+	w.navigate(false, "/home/test/docs")
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test/docs" })
+	selectRemote("renamed.yml")
 	w.fileAction(false, hitSFTPDelete)
 	w.click(hitSFTPDialogSubmit)
-	dualWait(t, state, w, view, func() bool { return !w.view.busy && remoteText(remote, "/home/test/renamed.yml") == "" })
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && remoteText(remote, "/home/test/docs/renamed.yml") == "" })
+	w.navigate(false, "/home/test")
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test" })
 	w.session.host.CatalogID = "dual-window-host"
 	w.click(hitSFTPBookmarkToggle)
 	// The directory star saves only this server path, independently of profiles.

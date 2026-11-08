@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"motty/internal/gist"
 )
 
 // fakeBucket is one S3 bucket in memory (path-style, ETag per content, If-Match
@@ -308,5 +310,128 @@ func TestChoosingAnotherServiceReplacesTheFirstAndForgetsItsPassword(t *testing.
 		if !secret.Deleted {
 			t.Fatalf("a login reached the backup: %v", document.Secrets)
 		}
+	}
+}
+
+// fakeGiteeAPI is the Gitee snippet API as the application uses it: the token
+// is a query parameter, creation answers with an array, and files are a
+// JSON-encoded string.
+type fakeGiteeAPI struct {
+	mu      sync.Mutex
+	content string
+	exists  bool
+}
+
+func newFakeGiteeAPI(t *testing.T) (*httptest.Server, *fakeGiteeAPI) {
+	t.Helper()
+	api := &fakeGiteeAPI{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.mu.Lock()
+		defer api.mu.Unlock()
+		if r.URL.Query().Get("access_token") != "gitee_token" || r.Header.Get("Authorization") != "" {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"message":"Bad credentials"}`))
+			return
+		}
+		view := func(status int, asArray bool) {
+			files, _ := json.Marshal(map[string]any{gist.DefaultFile: map[string]any{"content": api.content, "truncated": false}})
+			object := map[string]any{"id": "gitee-123", "history": "", "updated_at": "2026-01-01T00:00:00Z", "files": string(files)}
+			w.WriteHeader(status)
+			if asArray {
+				json.NewEncoder(w).Encode([]any{object})
+				return
+			}
+			json.NewEncoder(w).Encode(object)
+		}
+		var body struct {
+			Description string `json:"description"`
+			Public      *bool  `json:"public"`
+			Files       map[string]struct {
+				Content string `json:"content"`
+			} `json:"files"`
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/gists":
+			w.Write([]byte("[]"))
+		case r.Method == http.MethodPost && r.URL.Path == "/gists":
+			json.NewDecoder(r.Body).Decode(&body)
+			if body.Public == nil || *body.Public || body.Description == "" {
+				w.WriteHeader(422)
+				w.Write([]byte(`{"message":"Validation Failed"}`))
+				return
+			}
+			api.content, api.exists = body.Files[gist.DefaultFile].Content, true
+			view(201, true)
+		case r.URL.Path == "/gists/gitee-123" && api.exists && r.Method == http.MethodGet:
+			view(200, false)
+		case r.URL.Path == "/gists/gitee-123" && api.exists && r.Method == http.MethodPatch:
+			json.NewDecoder(r.Body).Decode(&body)
+			api.content = body.Files[gist.DefaultFile].Content
+			view(200, false)
+		default:
+			w.WriteHeader(404)
+			w.Write([]byte(`{"message":"Not Found"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, api
+}
+
+func configureGitee(t *testing.T, state *State, server *httptest.Server, id string) {
+	t.Helper()
+	state.Click(hitSyncConfigureGitee)
+	if state.modal != modalForm {
+		t.Fatal("the Gitee form did not open")
+	}
+	fillForm(state, "gitee_token", id, "", server.URL, testBackupPassword)
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the Gitee settings were refused: %q", state.form.dialogError)
+	}
+	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
+}
+
+func TestGiteeSyncCreatesAndRemembersTheSnippet(t *testing.T) {
+	server, api := newFakeGiteeAPI(t)
+	state, _, _ := backupTestState(t)
+	configureGitee(t, state, server, "")
+	if state.sync.kind != syncGist || state.sync.gist.provider != gist.Gitee {
+		t.Fatalf("sync %+v", state.sync)
+	}
+	syncAndWait(t, state, hitSyncNow, state.messages.Tools.SyncDone)
+	if state.sync.gist.id != "gitee-123" || !api.exists {
+		t.Fatalf("the snippet id was not remembered: %+v", state.sync.gist)
+	}
+	saved, _, _ := loadState(state.options.StatePath)
+	if saved.Sync == nil || saved.Sync.Kind != savedKindGist || saved.Sync.Gist == nil ||
+		saved.Sync.Gist.Provider != savedProviderGitee || saved.Sync.Gist.ID != "gitee-123" {
+		t.Fatalf("the Gitee snippet was not saved: %+v", saved.Sync)
+	}
+	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); !found {
+		t.Fatal("the Gitee token was not kept")
+	}
+	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); found {
+		t.Fatal("a stale GitHub token stayed after switching to Gitee")
+	}
+}
+
+func TestSwitchingBetweenGitHubAndGiteeForgetsTheOtherToken(t *testing.T) {
+	github, _ := newFakeGistAPI(t)
+	gitee, _ := newFakeGiteeAPI(t)
+	state, _, _ := backupTestState(t)
+	configureGist(t, state, github, "")
+	configureGitee(t, state, gitee, "")
+	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); found {
+		t.Fatal("the GitHub token stayed after switching to Gitee")
+	}
+	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); !found {
+		t.Fatal("the Gitee token was not kept")
+	}
+	configureGist(t, state, github, "")
+	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); found {
+		t.Fatal("the Gitee token stayed after switching to GitHub")
+	}
+	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); !found {
+		t.Fatal("the GitHub token was not kept")
 	}
 }

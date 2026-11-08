@@ -1,6 +1,6 @@
 ---
 title: Backup and sync
-description: Encrypted export and record-level sync through WebDAV, S3 or a GitHub Gist.
+description: Encrypted export and record-level sync through WebDAV, S3, GitHub Gist or Gitee.
 ---
 ## Backup
 
@@ -13,6 +13,7 @@ Record-level sync works through:
 - WebDAV
 - S3-compatible storage
 - a GitHub Gist
+- a Gitee snippet
 
 Records carry hybrid logical clocks, and deletions are kept as 90-day tombstones, so
 several computers converge without one overwriting the other. The WebDAV form can
@@ -29,6 +30,15 @@ in its web page or client, then set the file to `that-folder/backup.mottybak` (t
 default, `motty/backup.mottybak`, works once a folder named `motty` exists there). The
 password is the third-party app password from the Jianguoyun account's security
 settings, not the login password.
+
+### Gitee snippets
+
+Create a personal access token at
+[Gitee → Settings → Personal Access Tokens](https://gitee.com/profile/personal_access_tokens)
+with the `gists` scope, choose **Gitee** in the sync settings, and leave the snippet
+ID empty to create a private snippet on the first upload. The token is kept in the
+saved-passwords vault, and the snippet holds the same encrypted backup as the other
+services.
 
 ## What stays local
 

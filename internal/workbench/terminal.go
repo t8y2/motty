@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"time"
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
@@ -57,11 +59,17 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
+	// pumpBudget is the window-thread time a Wake may spend parsing this
+	// terminal's output; see pumpBudget.
+	pumpBudget time.Duration
 	// zmodemTail is the last bytes of output, in case a transfer header is cut
 	// between two reads.
 	zmodemTail []byte
 
-	told                  announcement
+	told announcement
+	// noShellTold records that a keystroke into a tab with no shell has already
+	// been explained, so the status line is not rewritten on every key.
+	noShellTold           bool
 	skippedEndpoint       sshconn.Endpoint
 	skippedRole           sshconn.EndpointRole
 	skipsTold             int
@@ -128,15 +136,24 @@ type terminal struct {
 	integrated bool
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
+	// inputLine is set between the end of this shell's prompt and the next
+	// command start or control key: the cursor is on the line being typed, which
+	// is what lets typed text be shown before its echo (see terminalPrediction).
+	inputLine bool
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
+	// passwordHint is the sudo prompt line the saved password is on offer at: set
+	// while that line is still under the cursor and nothing was sent since.
+	passwordHint string
 	// recorder decides which typed lines the command history may keep; it is
 	// only fed while historyOn says the history is wanted for this terminal.
 	recorder  cmdhistory.Recorder
 	historyOn func() bool
 	onCommand func(string)
 	// takeOutput brings in what the shell has already echoed, so the screen is
-	// read after the echo of the keys that came before an Enter.
+	// read after the echo of the keys that came before an Enter. It parses one
+	// slice at most: a key is never made to wait for a backlog, whose echo of it
+	// would queue behind the backlog anyway, and a frame takes the rest.
 	takeOutput func()
 	// completionFeed says whether the recorder must follow typing for command
 	// completion even when the history itself is not wanted: the built-in
@@ -149,6 +166,9 @@ type terminal struct {
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
+	// promptWait is closed when the shell next shows a prompt, for a stop that
+	// reports whether the terminal came back.
+	promptWait chan struct{}
 	// aiRows holds the screen line IDs whose command was started by the
 	// assistant. The line ID survives scrolling and resizing, so its gutter mark
 	// stays with the command in scrollback.
@@ -188,7 +208,7 @@ func newTerminal(cols, rows int) *terminal {
 }
 
 func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
-	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind()}
+	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind(), pumpBudget: pumpBudget}
 }
 
 // holdSync takes or releases the presentation snapshot at a DECSET 2026
@@ -279,6 +299,7 @@ func (state *State) configureTerminal(session *Session) {
 		session.term.resetFolderSync()
 	}
 	session.term.screen.SetPromptToken(session.term.folderToken)
+	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
 	// An image decoded off the window thread asks for the frame that shows it.
@@ -318,6 +339,7 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
+			current.term.inputLine = false
 			current.outputAlert.promptSeen = true
 		}
 	})
@@ -326,6 +348,11 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			t.promptReady = t.promptStarted && !t.promptDirty && t.commandReporting && t.submittedLines == 0
 			t.inputGuard.active = t.promptReady
+			if t.promptReady {
+				t.releasePromptWait()
+			}
+			t.inputLine = true
+			t.prediction.newPrompt()
 		}
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
@@ -340,6 +367,7 @@ func (state *State) configureTerminal(session *Session) {
 			t.commandReporting = true
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false
+			t.inputLine = false
 			t.promptVersion++
 			if t.submittedLines > 0 {
 				t.submittedLines--
@@ -357,6 +385,7 @@ func (t *terminal) resetFolderSync() {
 	t.folderToken = rand.Text()
 	t.screen.SetPromptToken(t.folderToken)
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
+	t.inputLine = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
@@ -408,13 +437,13 @@ func (t *terminal) write(p []byte) {
 	t.screen.Write(p)
 }
 
-// writeRemote commits the shell's output. Unlike write it first lets the
-// prediction see the bytes, so an echo of what was typed confirms the overlay
-// instead of dropping it.
+// writeRemote commits the shell's output. Unlike write it then lets the
+// prediction compare the screen with what was typed, so an echo of it confirms
+// the overlay instead of dropping it.
 func (t *terminal) writeRemote(p []byte, now time.Duration) {
 	t.selection.clear()
-	t.prediction.observe(p, now)
 	t.screen.Write(p)
+	t.prediction.reconcile(t.screen, now)
 	if t.inputGuard.active && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
 		t.inputGuard.start()
 	}
@@ -438,7 +467,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 		}
 	}
 	if t.exec != nil && userInterrupts(p) {
-		t.finishExec(false, false) // the user took the terminal back; the keys go on to the shell
+		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	t.selection.clear()
 	t.screen.ScrollToBottom()
@@ -504,6 +533,10 @@ func (t *terminal) sendSecret(p []byte) bool {
 }
 
 func (t *terminal) noteShellInput(p []byte) {
+	t.passwordHint = ""
+	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
+	}
 	t.inputGuard.observe(p)
 	atPrompt := t.promptReady
 	t.promptReady, t.promptStarted = false, false
@@ -569,6 +602,9 @@ func (state *State) openShell(session *Session) {
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory))
 	config.IntegrationToken = t.folderToken
+	if !session.isLocal() {
+		config.StartDirectory = session.startDirectory
+	}
 	t.integrated = config.IntegrateShell
 	if session.host.ForwardX11 && session.host.isSSH() {
 		environ := x11fwd.CurrentEnviron()
@@ -671,10 +707,15 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
-	// A program negotiates the kitty keyboard protocol for its own shell, but the
-	// screen keeps those flags across a reconnect, so a new shell would inherit
-	// modes it never asked for and start receiving Super chords as escape codes.
-	t.screen.ResetKeyboard()
+	t.noShellTold = false
+	// A connection that drops takes the running program's teardown with it, so
+	// the modes it had armed on this screen (the alternate screen, mouse
+	// reporting, the kitty keyboard flags) are still on when the next shell
+	// arrives. That shell is a process which never asked for any of them, so the
+	// screen is handed over clean. Unlike the prompt marker this needs no shell
+	// integration and no prompt: a session that hands the terminal straight to a
+	// full-screen program is covered too.
+	t.screen.ReclaimApplicationModes()
 	state.submitSessionLogEvent(session, sessionlog.EventShellOpened, 0)
 	session.logStatus = sessionlog.StatusActive
 	forwardNotes := 0
@@ -721,15 +762,30 @@ func (state *State) goLive(session *Session) {
 	}
 }
 
-// pumpBudget bounds how much output one Wake parses. A flood can leave a
-// megabyte waiting, and parsing it in one go costs several milliseconds on the
-// window thread; the rest stays queued and the next frame takes it. The shell
+// A Wake parses output for at most pumpBudget of window-thread time, in slices
+// of pumpSlice bytes, and leaves the rest queued for the next frame. Parsing
+// costs from a few hundred to a few thousand nanoseconds per hundred bytes
+// depending on what the bytes are, so a byte limit is either far under what a
+// frame can afford or far over it; the time a frame can spare is what is
+// bounded. The budget is half a frame at the 120 Hz wake spacing, which leaves
+// the rest to input, painting and everything else on the thread. A slice is
+// always parsed, so a Wake makes progress however slow the thread is. The shell
 // ending, an exec capture and a caller without an Invalidator keep the old
 // "all at once" behavior.
-const pumpBudget = 128 << 10
+const (
+	pumpBudget = time.Second / 240
+	pumpSlice  = 32 << 10
+)
 
 // pump moves the shell's output into the screen and notices the shell's end.
 func (state *State) pump(session *Session) {
+	if t := session.term; t != nil {
+		state.pumpFor(session, t.pumpBudget)
+	}
+}
+
+// pumpFor is pump with the time it may spend parsing; see pumpBudget.
+func (state *State) pumpFor(session *Session, budget time.Duration) {
 	state.collectShell(session)
 	t := session.term
 	if t == nil {
@@ -750,40 +806,32 @@ func (state *State) pump(session *Session) {
 	default:
 	}
 	data := t.rx
-	pending := false
-	if len(data) > pumpBudget && !finished && t.exec == nil && state.options.Invalidate != nil {
-		data, pending = data[:pumpBudget], true
-	}
 	wasExec := t.exec != nil
-	if wasExec && len(data) > 0 {
-		data = append(data[:0], t.feedExec(data)...)
-	}
-	if len(data) > 0 {
-		data = state.scanTransfer(session, data)
-	}
-	if len(data) > 0 {
-		state.receiveBackgroundOutput(session)
-		t.recording.append(state.now(), terminalRecordingOutput, data)
-		t.writeRemote(data, state.now())
-		if wasExec {
-			t.markAIBlock(t.exec == nil)
+	sliced := !finished && !wasExec && state.options.Invalidate != nil
+	started := time.Now()
+	consumed := 0
+	for consumed < len(data) {
+		chunk := data[consumed:]
+		if sliced && len(chunk) > pumpSlice {
+			// The capacity is cut too: the stages below may append to the chunk
+			// and must not write over the output behind it.
+			chunk = chunk[:pumpSlice:pumpSlice]
 		}
-		t.recorder.Output(state.now())
-		if state.autofillRules.armed {
-			t.autofill.Output(state.now())
+		consumed += len(chunk)
+		state.applyOutput(session, chunk, wasExec)
+		if !sliced || time.Since(started) >= budget {
+			break
 		}
-		t.login.output(state.now())
-		state.goLive(session)
 	}
 	if state.autofillRules.armed {
 		state.scanAutofill(session)
 	}
 	switch {
-	case pending:
+	case consumed < len(data):
 		// Move the unparsed suffix to the front of the buffer. The next frame
 		// appends new output after it, so order is kept.
-		copy(t.rx, t.rx[pumpBudget:])
-		t.rx = t.rx[:len(t.rx)-pumpBudget]
+		copy(t.rx, t.rx[consumed:])
+		t.rx = t.rx[:len(t.rx)-consumed]
 		state.options.Invalidate()
 	case !finished:
 		t.rx = t.rx[:0]
@@ -804,6 +852,35 @@ func (state *State) pump(session *Session) {
 	}
 }
 
+// applyOutput feeds one slice of the shell's output to the transfer scanner,
+// the screen and whatever watches the output.
+func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
+	t := session.term
+	if wasExec && len(data) > 0 {
+		data = append(data[:0], t.feedExec(data)...)
+	}
+	if len(data) > 0 {
+		data = state.scanTransfer(session, data)
+	}
+	if len(data) == 0 {
+		return
+	}
+	state.receiveBackgroundOutput(session)
+	t.recording.append(state.now(), terminalRecordingOutput, data)
+	t.writeRemote(data, state.now())
+	if wasExec {
+		t.finishConsoleExec()
+		t.markAIBlock(t.exec == nil)
+	}
+	t.recorder.Output(state.now())
+	if state.autofillRules.armed {
+		t.autofill.Output(state.now())
+	}
+	state.notePasswordPrompt(session)
+	t.login.output(state.now())
+	state.goLive(session)
+}
+
 // shellEnded tells the screen the session is over and lets the connection go.
 func (state *State) shellEnded(session *Session) {
 	session.outputAlert.commandRunning = false
@@ -815,7 +892,8 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
-	t.finishExec(false, false)
+	t.finishExec(endShell)
+	t.releasePromptWait()
 	t.recording.stop()
 	t.ended = true
 	t.prediction.reset()
@@ -923,7 +1001,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	var chrome terminalChrome
 	// Every pane in a split keeps the same top chrome whether it owns focus or
 	// not. The active pane leaves that strip blank, but reserving it here keeps
-	// switching panes from resizing either PTY or clearing a selection.
+	// switching panes from resizing either PTY or clearing a selection. The
+	// shared rail keeps its width in find mode: the search bar takes this strip
+	// and nothing else.
 	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
@@ -961,16 +1041,16 @@ func (state *State) terminalInputNoticeVisibleInWorkspace(session *Session) bool
 // rail while settings or another page covers them.
 func (state *State) terminalToolbarSession() (*Session, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || session.term == nil || session.restored || session.desk != nil ||
-		session.term.find.open {
+	if !ok || session.term == nil || session.restored || session.desk != nil {
 		return nil, false
 	}
 	return session, true
 }
 
 // terminalSideRailSession reports the terminal whose shared rail is visible.
-// Connection, restored and desktop pages use their own chrome, and find mode
-// temporarily replaces the rail with its top search bar.
+// Connection, restored and desktop pages use their own chrome. Find mode keeps
+// the rail: its bar floats over the pane rather than taking the rail's room, so
+// searching never resizes a PTY or clears a selection.
 func (state *State) terminalSideRailSession() (*Session, bool) {
 	if state.activeSection != sectionTerminal {
 		return nil, false
@@ -1071,6 +1151,9 @@ func (state *State) Resize(size ui.Size) {
 	state.viewport = size
 	state.fitTerminals()
 	state.fitSFTP(size)
+	// Both panels stay open when the window docks them, but a window that grew
+	// too narrow for both must not leave the assistant under the monitor.
+	state.reconcileAIPanelWithMonitor(size)
 }
 
 // terminalSession finds the session whose terminal owns a hit.
@@ -1101,6 +1184,12 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		session = state.terminalSession(context.ID)
 	}
 	if session == nil || session.term == nil || state.activeSessionID != 0 && session.ID != state.activeSessionID {
+		// Typing goes nowhere from here, and the page cannot show it: the text
+		// system simply gets no surface. Saying why, once per cause rather than
+		// once per paint, is what turns "the keyboard stopped working" in a bug
+		// report into a diagnosis. The reason is a fixed string, so nothing that
+		// could identify a host or an account reaches the log.
+		state.noteTerminalInputGap(session)
 		return nil
 	}
 	if session.desk != nil {
@@ -1109,7 +1198,7 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	t := session.term
 	geometry := state.layoutForSession(session.ID)
 	cursor := t.screen.Cursor()
-	if _, _, cells, ok := t.prediction.overlay(); ok {
+	if _, _, cells, ok := t.prediction.overlay(state.now()); ok {
 		cursor.X += cells
 	}
 	cells := 1
@@ -1141,6 +1230,33 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	return &t.input
 }
 
+// noteTerminalInputGap records why a terminal the shell cannot reach got no
+// text surface. It is called from the paint path, so it reports a given cause
+// once: the same gap repainted every frame would flood the log, and the
+// diagnostics report keeps only the last few hundred lines. The key is the
+// reason and the session it concerns, both stable across frames; the hit that
+// asked is not, because the pane it names is re-derived on every paint.
+func (state *State) noteTerminalInputGap(session *Session) {
+	var note string
+	var id uint32
+	switch {
+	case session == nil:
+		note = "no session for the focused terminal"
+	case session.term == nil:
+		note, id = "session has no terminal", session.ID
+	case session.ID != state.activeSessionID:
+		note, id = "session is not the active one", session.ID
+	default:
+		return
+	}
+	key := fmt.Sprintf("%s %d", note, id)
+	if key == state.inputGapNote {
+		return
+	}
+	state.inputGapNote = key
+	log.Printf("motty: terminal input has no surface: %s", note)
+}
+
 // terminalText applies a text-system event to a session's terminal.
 func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.TextState {
 	var session *Session
@@ -1167,7 +1283,7 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			// The typed text is drawn at once, ahead of the server's echo; the
 			// event asks for that frame, which committed terminal text otherwise
 			// never gets.
-			redraw = t.prediction.input(t.screen, input, state.now())
+			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal())
 		}
 	case app.TextPaste:
 		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {
@@ -1175,6 +1291,13 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		}
 		redraw = t.prediction.reset()
 		state.typed(session, term.EncodePaste(event.Text, t.screen.Modes().BracketedPaste))
+	case app.TextPasteNoText:
+		if state.modal != modalTerminalInput && state.pasteClipboardImage(session) {
+			return app.TextState{}
+		}
+		if state.modal != modalTerminalInput && t.screen.Modes().BracketedPaste {
+			state.typed(session, term.EncodePaste("", true))
+		}
 	case app.TextSetMarked:
 		redraw = t.prediction.reset()
 		runes := utf8.RuneCountInString(event.Text)
@@ -1210,7 +1333,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		return handled
 	}
 	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
-		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && defaultShortcutModifier() == ui.ModifierMeta {
+		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == ui.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
 			// A chord the application has bound belongs to it even where the
@@ -1229,6 +1352,14 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 			state.reconnect(session)
 			return ui.EventResult{Handled: true, Repaint: true}
 		}
+		// Every other key is swallowed, which looks exactly like a frozen window.
+		// A shell that ended has already said so on the screen, so the status is
+		// only needed when that message never ran: a tab restored locally, or a
+		// shell that never opened.
+		if t.told < toldEnded && !event.Release {
+			state.status = state.messages.SessionNoShellInput
+			return ui.EventResult{Handled: true, Repaint: true}
+		}
 		return handled
 	}
 	if event.Modifiers&ui.ModifierShift != 0 && event.Modifiers&ui.ModifierMeta == 0 && !t.screen.Modes().AltScreen {
@@ -1243,12 +1374,32 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && state.ghostKey(session, event) {
+	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
 		return handled
 	}
 	var bytes []byte
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
+		event.Modifiers == ui.ModifierAlt && !event.Release {
+		// Match macOS Terminal's word movement when the shell owns the key.
+		// Alternate-screen programs and negotiated keyboard modes keep their keys.
+		//
+		// This stays in the application on purpose: which bytes a Mac viewer
+		// sends for Option+arrow is terminal-emulation behaviour, which belongs
+		// here rather than in the framework's key encoder. Viva keeps encoding
+		// what the protocol defines; this is the platform convention layered on
+		// top of a shell that negotiated nothing.
+		//
+		// Modifiers must be exactly Alt: Shift+Option is macOS's "select a whole
+		// word", a different intent that the default encoding serves, so it is
+		// deliberately left to fall through.
+		switch event.Key {
+		case ui.KeyRight:
+			bytes = []byte("\x1bf")
+		case ui.KeyLeft:
+			bytes = []byte("\x1bb")
+		}
 	}
 	if len(bytes) == 0 {
 		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
@@ -1321,8 +1472,8 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 // shortcutBound reports whether the shortcut table binds the chord of event,
 // whether or not its action applies to the focused target.
 func (state *State) shortcutBound(event ui.KeyEvent) bool {
-	chord, ok := shortcutChordFromEvent(event)
-	return ok && state.shortcuts.actionFor(chord) != shortcutNone
+	chord, ok := keymap.FromEvent(event)
+	return ok && state.shortcutActionFor(chord) != shortcutNone
 }
 
 func (state *State) copySelection(session *Session) ui.EventResult {
@@ -1339,6 +1490,12 @@ func (state *State) copySelection(session *Session) ui.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
+	if state.noteExit != nil {
+		return ui.EventResult{Handled: true}
+	}
+	if result := state.notesScroll(event); result.Handled {
+		return result
+	}
 	if state.modal == modalFileProperties {
 		return ui.EventResult{Handled: true}
 	}
@@ -1346,6 +1503,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		if result, handled := state.workspaceArrangementScroll(event); handled {
 			return result
 		}
+	}
+	if state.modal == modalLocalProxy {
+		return state.scrollLocalProxy(event)
 	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
@@ -1355,6 +1515,13 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if result := state.scrollWorkspaceLibrary(event); result.Handled {
 		return result
+	}
+	if result, handled := state.devEditorScroll(event); handled {
+		return result
+	}
+	if state.chipMenu.open {
+		// The menu is modal: only its own panels scroll.
+		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
@@ -1387,6 +1554,9 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	if state.modal == modalForm {
+		return state.scrollForm(event)
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)

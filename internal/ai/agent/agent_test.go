@@ -96,6 +96,15 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 	}
 	return gate.ExecResult{Output: out}, nil
 }
+func (b *fakeBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	return nil, nil
 }
@@ -152,6 +161,31 @@ func TestPlainAnswer(t *testing.T) {
 	}
 	if len(p.reqs[0].Messages) != 3 || len(p.reqs[0].Tools) == 0 {
 		t.Fatalf("req %+v", p.reqs[0])
+	}
+}
+
+func TestToolEventsCarryReportedUsageBeforeTheNextModelTurn(t *testing.T) {
+	provider := &fakeProvider{turns: []turn{
+		{events: []llm.Event{call("tool", tools.NameTerminalExec, lsArgs), done(40, 6)}},
+		{events: []llm.Event{text("finished"), done(20, 4)}},
+	}}
+	events, emit := collect()
+	_, err := Run(context.Background(), newCfg(provider, &fakeBackend{}, true), nil, "inspect", emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range *events {
+		if event.Kind != EventToolStart && event.Kind != EventToolDone {
+			continue
+		}
+		count++
+		if event.Usage != (llm.Usage{InputTokens: 40, OutputTokens: 6}) {
+			t.Fatalf("tool event %v lost reported usage: %+v", event.Kind, event.Usage)
+		}
+	}
+	if count != 2 {
+		t.Fatalf("tool events = %d, want 2", count)
 	}
 }
 

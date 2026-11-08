@@ -350,3 +350,25 @@ func TestClosingAnEmptyWindowDoesNotAsk(t *testing.T) {
 		t.Fatalf("an empty window asked: modal %d", state.modal)
 	}
 }
+
+func TestHidingToTrayIsExplainedOnce(t *testing.T) {
+	w := newNotifyWorld(t)
+	state := newTestState(t, w.options)
+	w.session(t, state)
+	state.NoteHiddenToTray()
+	if len(w.shown) != 1 {
+		t.Fatalf("shown = %+v, want one explanation", w.shown)
+	}
+	// The notification names the running product, which a development build
+	// spells differently, so compare through the same substitution it uses.
+	if w.shown[0].Title != productText(state.messages.TrayHintTitle) || w.shown[0].Body != productText(state.messages.TrayHintBody) {
+		t.Fatalf("shown = %+v", w.shown[0])
+	}
+	state.NoteHiddenToTray()
+	if len(w.shown) != 1 {
+		t.Fatalf("shown = %+v, want the second hide to stay silent", w.shown)
+	}
+	if again := newTestState(t, w.options); !again.trayHintShown {
+		t.Fatal("the explanation was not remembered on this device")
+	}
+}

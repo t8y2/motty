@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"regexp/syntax"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/highlight"
@@ -410,8 +412,17 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	slices.SortStableFunc(saved.Snippets, func(left, right savedSnippet) int {
+		switch {
+		case left.Order < right.Order:
+			return -1
+		case left.Order > right.Order:
+			return 1
+		}
+		return 0
+	})
 	for _, entry := range saved.Snippets {
-		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetText(entry.Command, maxSnippetCommand), Run: entry.Run}
+		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group)}
 		if clean.Name == "" || clean.Command == "" || len(state.snippets.list) == maxSnippets {
 			continue
 		}
@@ -421,12 +432,12 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		if len(entry.Key) != 1 {
 			continue
 		}
-		chord := shortcutChord{Modifiers: ui.Modifiers(entry.Modifiers), Key: entry.Key[0]}
+		chord := keymap.Chord{Modifiers: ui.Modifiers(entry.Modifiers), Char: entry.Key[0]}
 		for index := range state.snippets.list {
 			// The first snippet of that name without a shortcut takes it; a chord
 			// that a built-in action or an earlier snippet has is not given twice.
-			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.valid() {
-				if chord.validForSnippet() && state.chordOwner(chord, index) == "" {
+			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.Valid() {
+				if validForSnippet(chord) && state.chordOwner(chord, index) == "" {
 					snippet.Shortcut = chord
 				}
 				break

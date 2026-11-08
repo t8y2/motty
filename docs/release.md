@@ -287,8 +287,9 @@ anything and refuses a release without a signature.
 
 What the app downloads is chosen by name, so these must stay as they are:
 
-- the stable asset names in `update.StableName` (`motty-darwin-<arch>.zip`,
-  `motty-linux-<arch>.tar.gz`, `motty-windows-amd64-setup.exe`) match what
+- the stable asset names in `update.StableNamePackage` (`motty-darwin-<arch>.zip`,
+  `motty-linux-<arch>.tar.gz`, `motty_<arch>.deb`,
+  `motty-windows-<arch>-setup.exe`) match what
   `viva package` produces, after the mirror takes the version out;
 - `latest.json` keeps `version`, `tag` (`v` plus the version) and, per file, `name`,
   `size`, `sha256` and `signature`;
@@ -302,18 +303,32 @@ copy. An unsigned Windows installer is accepted on the strength of the update
 signature alone, which is what lets Windows update without a code-signing
 certificate.
 
-Only a user-owned installation replaces itself (an app bundle in a writable folder,
+Only a user-owned installation replaces its own files (an app bundle in a writable folder,
 the per-user Windows installer, a Linux `install.sh` prefix). On Windows, custom
 directories are recognised from the application's per-user uninstall registration
 and still require the uninstaller and write access. The helper passes that exact
-directory to the installer. An installation the
-system owns — a distribution package or an all-users Windows installation — is never
-replaced by the app: the dialog says to update it with the package manager or to run
-the new installer, and a portable copy is sent to the release page. No update path
-asks for administrator rights.
+directory to the installer. A dpkg-registered `/usr/bin/motty` selects the signed
+DEB for the installed architecture. After checksum and release-signature checks,
+Motty quits and its unprivileged helper requests administrator authorization via
+`pkexec /usr/bin/motty install-deb`. The privileged entrypoint copies the user-owned
+package to a private root-owned directory and verifies the copy against the embedded
+release key before invoking `dpkg --install`. The helper starts Motty again as the
+original user, even after authorization is cancelled or installation fails. Failed
+attempts keep the downloaded package for a checked retry. This does not make dpkg
+transactional: a failure during package unpacking or maintainer scripts may require
+repair with the system package manager. Missing Polkit, unregistered system installs,
+Snap, Flatpak, and all-users Windows installations use the manual update path.
 
-The replacement is made by a helper that outlives the app, so it never touches a
-file the running app holds. On macOS the helper is a copy of the whole bundle,
+The replacement is made by a helper that outlives the app and waits for the
+desktop process to exit. On Windows, stdio MCP servers may still be using the
+installed executable. The helper first renames that image into a private backup
+directory on the installation's volume, then runs the installer at the original
+path. Existing MCP connections continue on the retired image; later launches use
+the new version. A failed installation restores the previous executable (not a
+transactional rollback of every installer change). Retired images still held by
+processes are left in place and cleaned on a later successful update.
+
+On macOS the helper is a copy of the whole bundle,
 not of the executable: a Developer ID signature covers the bundle's `Info.plist`,
 and the executable on its own no longer verifies, so the system kills it as it
 starts (exit 137, `amfid` logs `Code=-420`) and nothing is replaced. The app
@@ -333,8 +348,12 @@ Every release carries the packages below for every platform and architecture:
 
 The macOS `.zip` holds the same signed bundle; it is what the
 in-app updater downloads, so a release without it would leave macOS unable to
-update in place. `viva package` staples the ticket to the `.dmg`, not to a
-bundle it also zips, so the zip's first launch checks the signature online.
+update in place. `viva package` notarizes the bundle and staples its ticket
+before the zip is written, so the app that comes out of the zip is accepted
+without asking Apple, which is what the updater's Gatekeeper check needs on a
+machine that is offline or cannot reach the notarization service; the `.dmg` is
+notarized and stapled separately, because the system judges the image itself
+when it is opened.
 
 The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
 signed program the installer carries: `motty.exe` beside a `motty-data` folder, which

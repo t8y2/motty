@@ -267,6 +267,155 @@ func TestRemoteReplacementNeverFallsBackAfterExistingDestination(t *testing.T) {
 	}
 }
 
+type extensionRenameRemote struct {
+	*traversalRemote
+	advertised  bool
+	posixCalls  int
+	renameCalls int
+}
+
+func (remote *extensionRenameRemote) HasExtension(name string) (string, bool) {
+	if name == posixRenameExtension && remote.advertised {
+		return "1", true
+	}
+	return "", false
+}
+
+func (remote *extensionRenameRemote) PosixRename(string, string) error {
+	remote.posixCalls++
+	return nil
+}
+
+func (remote *extensionRenameRemote) Rename(string, string) error {
+	remote.renameCalls++
+	return nil
+}
+
+func TestRemoteCommitUsesPosixRenameOnlyWhenAdvertised(t *testing.T) {
+	plain := &extensionRenameRemote{traversalRemote: &traversalRemote{}}
+	if err := commitRemote(plain, ".part", "new", false); err != nil {
+		t.Fatal(err)
+	}
+	if plain.posixCalls != 0 || plain.renameCalls != 1 {
+		t.Fatalf("unadvertised commit: posix = %d, rename = %d", plain.posixCalls, plain.renameCalls)
+	}
+
+	advertised := &extensionRenameRemote{traversalRemote: &traversalRemote{}, advertised: true}
+	if err := commitRemote(advertised, ".part", "final", true); err != nil {
+		t.Fatal(err)
+	}
+	if advertised.posixCalls != 1 || advertised.renameCalls != 0 {
+		t.Fatalf("advertised commit: posix = %d, rename = %d", advertised.posixCalls, advertised.renameCalls)
+	}
+}
+
+type stalledRenameRemote struct {
+	remote
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+type noPosixRenameRemote struct {
+	remote
+	posixCalls  int
+	renameCalls int
+}
+
+func (remote *noPosixRenameRemote) HasExtension(name string) (string, bool) {
+	if name == posixRenameExtension {
+		return "", false
+	}
+	return remote.remote.HasExtension(name)
+}
+
+func (remote *noPosixRenameRemote) PosixRename(string, string) error {
+	remote.posixCalls++
+	return errors.New("posix rename was sent without an announcement")
+}
+
+func (remote *noPosixRenameRemote) Rename(oldPath, newPath string) error {
+	remote.renameCalls++
+	return remote.remote.Rename(oldPath, newPath)
+}
+
+func TestUploadCompletesWhenServerDoesNotAdvertisePosixRename(t *testing.T) {
+	noPosix := &noPosixRenameRemote{}
+	worker, root := newProtocolWorkerOn(t, nil, func(base remote) Remote {
+		noPosix.remote = base
+		return noPosix
+	})
+	content := []byte("upload without the renaming extension\n")
+	source := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(source, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, queued := worker.QueueUpload(source, "payload.txt", false, ExistingFail)
+	if !queued {
+		t.Fatal("upload was not queued")
+	}
+	result := resultWithin(t, worker, 10*time.Second)
+	if result.TransferID != id || result.Err != nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if noPosix.posixCalls != 0 || noPosix.renameCalls != 1 {
+		t.Fatalf("posix calls = %d, rename calls = %d", noPosix.posixCalls, noPosix.renameCalls)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "payload.txt")); err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("uploaded content = %q, err %v", got, err)
+	}
+	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt")), false)
+}
+
+func (remote *stalledRenameRemote) PosixRename(string, string) error {
+	remote.once.Do(func() { close(remote.entered) })
+	<-remote.release
+	return os.ErrClosed
+}
+
+func (remote *stalledRenameRemote) Close() error {
+	remote.once.Do(func() { close(remote.release) })
+	return remote.remote.Close()
+}
+
+func TestStalledUploadRenameTimesOutAndKeepsPartial(t *testing.T) {
+	stalled := &stalledRenameRemote{entered: make(chan struct{}), release: make(chan struct{})}
+	worker, root := newProtocolWorkerOn(t, nil, func(base remote) Remote {
+		stalled.remote = base
+		return stalled
+	})
+	worker.finalizeTimeout = 50 * time.Millisecond
+	content := []byte("payload that must survive a stalled rename\n")
+	source := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(source, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	id, queued := worker.QueueUpload(source, "payload.txt", false, ExistingFail)
+	if !queued {
+		t.Fatal("upload was not queued")
+	}
+	result := resultWithin(t, worker, 10*time.Second)
+	if result.TransferID != id || !errors.Is(result.Err, ErrUploadFinalizeTimeout) {
+		t.Fatalf("result = %+v, want finalization timeout", result)
+	}
+	if errors.Is(result.Err, ErrCanceled) {
+		t.Fatalf("timeout was reported as cancellation: %v", result.Err)
+	}
+	select {
+	case <-stalled.entered:
+	default:
+		t.Fatal("posix rename was not attempted")
+	}
+
+	requireExists(t, filepath.Join(root, "payload.txt"), false)
+	partial := filepath.Join(root, remotePartialPath("payload.txt"))
+	requireExists(t, partial, true)
+	if kept, err := os.ReadFile(partial); err != nil || !bytes.Equal(kept, content) {
+		t.Fatalf("partial = %q, err %v", kept, err)
+	}
+}
+
 type progressFile struct {
 	data   []byte
 	offset int64

@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/i18n"
 )
 
 // Command completion: the offline command/option catalog next to the command
@@ -110,6 +111,9 @@ const (
 	// completionRows is how many candidates the popover lists at once; the rest
 	// scroll with the arrow keys.
 	completionRows = 10
+	// completionHistoryRows caps how many history matches join the host's
+	// commands in the popover.
+	completionHistoryRows = 5
 	// completionRowHeight is one candidate row.
 	completionRowHeight = float32(24)
 	completionMinWidth  = float32(240)
@@ -237,8 +241,8 @@ func (state *State) completionStore() *completion.CatalogStore {
 // adoptCompletion runs only on the UI thread. Every window reads the same
 // per-directory store; a late load result cannot publish over a newer install.
 func (state *State) adoptCompletion() {
-	// With completion off nothing needs the catalog, so it is not decoded: it
-	// costs about ten megabytes of heap per process.
+	// With completion off nothing needs the catalog, so it is not decoded. A
+	// decoded catalog keeps only its root commands until one is used.
 	if state.history.suggestOff && !state.completion.updatePending {
 		state.adoptCompletionUpdate()
 		state.adoptCompletionHistory()
@@ -676,8 +680,30 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 		candidates = append(candidates, candidate)
 	}
 	if state.history.on && state.historyAvailable(session) && !session.host.NoHistory {
-		if rest, ok := cmdhistory.Suggest(state.completionHistory(session), line); ok {
-			add(completion.Candidate{Text: line + rest, Insert: rest, Kind: completion.KindCommand})
+		// Get full commands entries from history
+		fullEntries := cmdhistory.SuggestAllFull(state.completionHistory(session), line, completionHistoryRows)
+
+		// If we have 2+ matches, calculate common prefix and add it first.
+		// Exclude commands that are a prefix of another command, so the
+		// common prefix is not dragged down by shorter partial commands
+		// (e.g. "ip" and "ip route" should not shorten the prefix of
+		// "ip route get 8.8.8.8" and "ip route get 9.9.9.9").
+		if len(fullEntries) >= 2 {
+			filtered := filterPrefixEntries(fullEntries)
+			if len(filtered) >= 2 {
+				commonPrefix := prefixWordEnd(cmdhistory.CommonPrefix(entryCommands(filtered)))
+				if len(commonPrefix) > len(line) {
+					insertText := commonPrefix[len(line):]
+					add(completion.Candidate{Text: commonPrefix, Insert: insertText, Desc: state.messages.Completion.PrefixRow, Kind: completion.KindCommand})
+				}
+			}
+		}
+
+		// Add individual matches
+		now := time.Now()
+		for _, entry := range fullEntries {
+			insertText := entry.Command[len(line):]
+			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used, state.messages.Completion), Kind: completion.KindCommand})
 		}
 	}
 	if catalog := state.completionCatalog(); catalog != nil {
@@ -916,6 +942,72 @@ func (state *State) completionWidth(canvas *ui.Canvas) float32 {
 		width = max(width, measured)
 	}
 	return min(width, completionMaxWidth)
+}
+
+// filterPrefixEntries removes entries whose command is a prefix of another
+// entry's command.
+func filterPrefixEntries(entries []cmdhistory.Entry) []cmdhistory.Entry {
+	filtered := make([]cmdhistory.Entry, 0, len(entries))
+	for i, e := range entries {
+		isPrefix := false
+		for j, other := range entries {
+			if i != j && strings.HasPrefix(other.Command, e.Command) && len(other.Command) > len(e.Command) {
+				isPrefix = true
+				break
+			}
+		}
+		if !isPrefix {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// prefixWordEnd cuts a shared prefix back to its last whole word, the way zsh
+// and fish complete: the fragment before a half-typed word is what the user can
+// accept without leaving something unrunnable on the line.
+func prefixWordEnd(prefix string) string {
+	end := strings.LastIndexAny(prefix, " \t")
+	if end < 0 {
+		return prefix
+	}
+	return prefix[:end+1]
+}
+
+// entryCommands extracts the command strings from entries.
+func entryCommands(entries []cmdhistory.Entry) []string {
+	commands := make([]string, len(entries))
+	for i, e := range entries {
+		commands[i] = e.Command
+	}
+	return commands
+}
+
+// humanRelativeTime says how long ago a history match was used, in the words
+// the interface already uses for time. The month bucket runs to a year so no
+// age renders as a zero year: 360 days is twelve months, not "0y ago".
+func humanRelativeTime(now, t time.Time, m i18n.CompletionMessages) string {
+	if t.IsZero() {
+		return m.TimeJustNow
+	}
+	d := now.Sub(t)
+	if d < 0 {
+		return m.TimeJustNow
+	}
+	switch {
+	case d < time.Minute:
+		return m.TimeJustNow
+	case d < time.Hour:
+		return fmt.Sprintf(m.TimeMinutesFmt, int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf(m.TimeHoursFmt, int(d/time.Hour))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf(m.TimeDaysFmt, int(d/(24*time.Hour)))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf(m.TimeMonthsFmt, int(d/(30*24*time.Hour)))
+	default:
+		return fmt.Sprintf(m.TimeYearsFmt, int(d/(365*24*time.Hour)))
+	}
 }
 
 // staticGhost is the inline suggestion the catalog adds when history has none:

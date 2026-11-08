@@ -417,6 +417,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 		return
 	}
 	t.onAlt, t.scr, t.modes.AltScreen = true, &t.alt, true
+	t.inputStartSet = false
 	t.view = 0
 	if clearScreen {
 		if t.images != nil {
@@ -459,12 +460,14 @@ func (t *Terminal) softReset() {
 	t.top, t.bot = 0, t.rows-1
 	t.pen = pen{}
 	t.charsets, t.gl = [4]charset{}, 0
-	t.cursor, t.cursorSteady = CursorBlock, false
+	t.cursor, t.cursorSteady = t.defaultCursor, false
+	t.cursorStyled = false
 	t.scr.saved = savedCursor{}
 }
 
 func (t *Terminal) setCursorStyle(n int) {
 	t.cursorSteady = n == 2 || n == 4 || n == 6
+	t.cursorStyled = true
 	switch n {
 	case 3, 4:
 		t.cursor = CursorUnderline

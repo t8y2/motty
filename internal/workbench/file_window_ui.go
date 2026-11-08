@@ -17,6 +17,9 @@ import (
 
 var documentHits = tree.Feature("document-window")
 var (
+	hitDocumentTabList         = tree.Sub(documentHits, tree.Name("tabs"))
+	hitDocumentTabCloseList    = tree.Sub(documentHits, tree.Name("tab-close"))
+	hitDocumentTabBar          = tree.ID(documentHits, "tabs-scroll")
 	hitDocumentSave            = tree.ID(documentHits, "save")
 	hitDocumentReload          = tree.ID(documentHits, "reload")
 	hitDocumentInput           = tree.ID(documentHits, "editor")
@@ -65,9 +68,18 @@ type fileDocumentUI struct {
 	pan                                       ui.Point
 	imageGeometry                             components.ImageViewGeometry
 	tooltip                                   components.HoverTooltip
+	// caret is the phase of the caret both views draw: the one in the editor and
+	// the one in the comparison, which never shows together.
+	caret components.CaretBlink
 }
 
 func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
+	defer d.owner.paintNoteExit(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	if d.note != nil {
+		d.paintNoteWindow(canvas, size)
+		return
+	}
+
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { d.click(id) })
@@ -82,8 +94,10 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	var content, encoding, save flex.Box
 	f := d.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
-			HitWith(hitDocumentLocation, d.name, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+		if d.owner.fileWindows.painting {
+			d.owner.fileWindows.paintTabs(f, size)
+			f.Divider().Background(theme.Border)
+		}
 		if d.problem != "" {
 			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
 		}
@@ -101,6 +115,13 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 				f.Button(hitDocumentZoomOut, "−").Small().Outline()
 				f.Button(hitDocumentZoomIn, "+").Small().Outline()
 			}
+			if d.image == nil && d.ready {
+				wrap := d.owner.messages.CodeEditor.WrapOn
+				if d.edit.noWrap {
+					wrap = d.owner.messages.CodeEditor.WrapOff
+				}
+				f.Button(hitDocumentWrap, wrap).Small().Outline()
+			}
 			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
 			if d.image == nil {
 				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
@@ -113,6 +134,9 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 		})
 	})
 	f.End()
+	if d.owner.fileWindows.painting {
+		d.owner.fileWindows.paintTabsScrollbar(canvas)
+	}
 	d.ui.saveAnchor = ui.Rect{}
 	if d.image == nil && !d.local {
 		d.ui.saveAnchor = save.Rect()
@@ -125,19 +149,7 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	} else {
 		d.ui.encodingBounds = encoding.Rect()
 		d.ui.editorBounds = content.Rect()
-		value := d.editor.String()
-		selection := d.editor.Selection()
-		focused := canvas.Focused() == hitDocumentInput
-		snapshot := components.CodeEditorSnapshot{TextareaSnapshot: components.TextareaSnapshot{
-			ID: hitDocumentInput, Label: m.Title, Value: value, Placeholder: m.ChooseEncoding, ReadOnly: d.busy || !d.ready, Focused: focused,
-			HideEditorText: true, ShowCaret: selection.Start == selection.End, Layout: &d.ui.code.Layout,
-			SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End), Caret: aiByteOffset(value, d.editor.Caret()),
-		}, Language: documentLanguage(d.name), Highlight: d.ui.highlighter, ScrollbarID: hitDocumentScroll}
-		if marked, ok := d.editor.Composition(); ok {
-			snapshot.CompositionStart = aiByteOffset(value, marked.Start)
-			snapshot.CompositionEnd = aiByteOffset(value, marked.End)
-		}
-		d.ui.code.Paint(canvas, theme, content.Rect(), snapshot)
+		d.paintCodeEditor(canvas, theme, content.Rect())
 		d.paintEncoding(canvas)
 	}
 	if d.image == nil && !d.local {
@@ -198,21 +210,30 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 	uiState.editorBounds = content.Rect()
 	value := d.editor.String()
 	selection := d.editor.Selection()
+	caret := d.editor.ByteOffset(d.editor.Caret())
 	focused := canvas.Focused() == hitDocumentInput
+	showCaret := false
+	if focused && selection.Start == selection.End {
+		showCaret = uiState.caret.Lit(canvas, caret)
+	} else {
+		uiState.caret.Rest()
+	}
 	snapshot := components.CodeDiffSnapshot{
 		Result: d.comparison.result, ID: hitDocumentInput, Label: m.DiffLabel,
 		Value: value, Language: documentLanguage(d.name), Highlight: uiState.highlighter,
 		AddedColor: theme.Success, RemovedColor: theme.Danger,
+		FontSize: d.owner.terminalFontSize, MonoFace: d.owner.terminalFontFace, TabWidth: d.edit.options.TabWidth,
 		Disabled: d.busy || d.comparison.loading || d.comparison.confirm, Focused: focused,
-		ShowCaret:      selection.Start == selection.End,
-		Caret:          aiByteOffset(value, d.editor.Caret()),
-		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
+		ShowCaret:      showCaret,
+		Caret:          caret,
+		SelectionStart: d.editor.ByteOffset(selection.Start), SelectionEnd: d.editor.ByteOffset(selection.End),
+		CaretColor:          d.owner.pal.cursor,
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
 	}
 	if marked, ok := d.editor.Composition(); ok {
-		snapshot.CompositionStart = aiByteOffset(value, marked.Start)
-		snapshot.CompositionEnd = aiByteOffset(value, marked.End)
+		snapshot.CompositionStart = d.editor.ByteOffset(marked.Start)
+		snapshot.CompositionEnd = d.editor.ByteOffset(marked.End)
 	}
 	uiState.diff.Paint(canvas, theme, content.Rect(), snapshot)
 	if d.comparison.confirm {
@@ -243,10 +264,11 @@ func (d *fileDocument) footerStatus() string {
 	if d.format.LineEnding == "\r" {
 		ending = "CR"
 	}
+	position := d.positionStatus() + " · " + ending
 	if status == "" {
-		return ending
+		return position
 	}
-	return ending + " · " + status
+	return position + " · " + status
 }
 
 func (d *fileDocument) comparisonStatus() string {
@@ -369,6 +391,16 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 	dialog.End()
 }
 func (d *fileDocument) click(id ui.ID) {
+	if d.owner.clickNoteExit(id) {
+		return
+	}
+	if d.owner.fileWindows.clickTab(id) {
+		return
+	}
+	if d.note != nil {
+		d.clickNoteWindow(id)
+		return
+	}
 	if d.notices.click(id) {
 		return
 	}
@@ -385,11 +417,18 @@ func (d *fileDocument) click(id ui.ID) {
 	if d.confirm != "" {
 		switch id {
 		case hitDocumentCancel:
+			cancelClose := d.closeCanceled
+			if d.confirm == "close" {
+				d.closeCanceled = nil
+			}
 			d.confirm = ""
 			d.confirmCloseAfter = false
 			d.allowClose = nil
 			d.afterClosed = nil
 			d.closeAfter = false
+			if cancelClose != nil {
+				cancelClose()
+			}
 		case hitDocumentSaveClose:
 			d.saveDirect(true)
 		case hitDocumentSaveDirect:
@@ -404,6 +443,9 @@ func (d *fileDocument) click(id ui.ID) {
 				d.closeAllowed()
 			}
 		}
+		return
+	}
+	if d.clickCode(id) {
 		return
 	}
 	switch {
@@ -524,6 +566,16 @@ func (view *fileDocumentUI) pixelScale() float32 {
 }
 
 func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
+	if d.owner.noteExit != nil {
+		return nil
+	}
+	if d.note != nil {
+		return d.noteWindowTextInput(context)
+	}
+
+	if input := d.barTextInput(context.ID); input != nil {
+		return input
+	}
 	if context.ID != hitDocumentInput || !d.ready || d.busy || d.confirm != "" || d.comparison.confirm {
 		return nil
 	}
@@ -569,6 +621,13 @@ func (d *fileDocument) comparisonTextInput(context app.TextInputContext) *app.Te
 }
 
 func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return d.owner.noteExitKey(event)
+	}
+	if d.note != nil {
+		return d.noteWindowKey(event)
+	}
+
 	if event.Release {
 		return ui.EventResult{}
 	}
@@ -618,13 +677,8 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 		d.encodingOpen = true
 		return handled
 	}
-	if event.Target == hitDocumentInput {
-		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
-			value := d.editor.String()
-			offset := d.ui.code.Layout.Move(value, aiByteOffset(value, d.editor.Caret()), movement)
-			d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
-			return handled
-		}
+	if result, ok := d.codeKey(event); ok {
+		return result
 	}
 	return ui.EventResult{}
 }
@@ -642,9 +696,14 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 		return ui.EventResult{}
 	}
 	if event.Target == hitDocumentInput {
+		if command, ok := components.CodeEditorCommandForKey(event); ok && d.ready && !d.busy && command.Apply(&d.editor) {
+			d.scheduleDiff()
+			d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+			return handled
+		}
 		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
 			value := d.editor.String()
-			offset := d.comparison.ui.diff.Move(value, aiByteOffset(value, d.editor.Caret()), movement)
+			offset := d.comparison.ui.diff.Move(value, d.editor.ByteOffset(d.editor.Caret()), movement)
 			d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
 			d.comparison.ui.diff.RevealCaret(value, offset)
 			return handled
@@ -659,8 +718,18 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 }
 
 func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowShortcut(event)
+	}
+
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release {
 		return ui.EventResult{}
+	}
+	if result, ok := d.codeShortcut(event); ok {
+		return result
 	}
 	switch strings.ToLower(event.Text) {
 	case "s":
@@ -679,6 +748,11 @@ func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
 	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release || !d.comparison.active {
 		return ui.EventResult{}
 	}
+	if command, ok := components.CodeEditorCommandForKey(event); ok && event.Target == hitDocumentInput && d.ready && !d.busy && !d.comparison.confirm && command.Apply(&d.editor) {
+		d.scheduleDiff()
+		d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
 	switch strings.ToLower(event.Text) {
 	case "s":
 		if !d.comparison.confirm {
@@ -695,6 +769,13 @@ func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
 }
 
 func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowScroll(event)
+	}
+
 	if d.confirm != "" {
 		return ui.EventResult{Handled: true}
 	}
@@ -719,12 +800,19 @@ func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
 			d.ui.pan.Y = max(-y, min(y, d.ui.pan.Y))
 		}
 	} else {
-		d.ui.code.Layout.ScrollBy(event.DeltaY)
+		return d.ui.code.Scroll(event)
 	}
 	return ui.EventResult{Handled: true, Repaint: true}
 }
 
 func (d *fileDocument) pointer(event ui.PointerEvent) ui.EventResult {
+	if d.owner.noteExit != nil {
+		return ui.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowPointer(event)
+	}
+
 	if d.confirm != "" {
 		return ui.EventResult{}
 	}
@@ -750,7 +838,11 @@ func (d *fileDocument) comparisonPointer(event ui.PointerEvent) ui.EventResult {
 }
 
 func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]ui.Color {
-	pal := d.owner.pal
+	return d.owner.codeColors()
+}
+
+func (s *State) codeColors() [components.MarkdownCodeClasses]ui.Color {
+	pal := s.pal
 	ansi := func(index int) ui.Color { return ui.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
 	return [components.MarkdownCodeClasses]ui.Color{components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3), components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6), components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1)}
 }

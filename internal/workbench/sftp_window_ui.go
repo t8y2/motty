@@ -18,12 +18,18 @@ var (
 	sftpWindowRows               = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("rows")), tree.Sub(sftpWindowRemote, tree.Name("rows"))}
 	sftpWindowFilter             = [2]ui.ID{tree.ID(sftpWindowLocal, "filter"), tree.ID(sftpWindowRemote, "filter")}
 	sftpWindowFilterClear        = [2]ui.ID{tree.ID(sftpWindowLocal, "filter-clear"), tree.ID(sftpWindowRemote, "filter-clear")}
+	sftpWindowTreeToggle         = [2]ui.ID{tree.ID(sftpWindowLocal, "tree-toggle"), tree.ID(sftpWindowRemote, "tree-toggle")}
+	sftpWindowTreeRows           = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-rows")), tree.Sub(sftpWindowRemote, tree.Name("tree-rows"))}
+	sftpWindowTreeDisclosures    = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-disclosures")), tree.Sub(sftpWindowRemote, tree.Name("tree-disclosures"))}
+	sftpWindowTreeViewport       = [2]ui.ID{tree.ID(sftpWindowLocal, "tree"), tree.ID(sftpWindowRemote, "tree")}
+	sftpWindowTreeBar            = [2]ui.ID{tree.ID(sftpWindowLocal, "tree-scroll"), tree.ID(sftpWindowRemote, "tree-scroll")}
 	hitSFTPWindowCoverage        = tree.ID(sftpWindowLocal, "coverage")
 	sftpWindowHeaderHidden       = [2]ui.ID{tree.ID(sftpWindowLocal, "header-hidden"), tree.ID(sftpWindowRemote, "header-hidden")}
 	sftpWindowHeaderEditor       = [2]ui.ID{tree.ID(sftpWindowLocal, "header-editor"), tree.ID(sftpWindowRemote, "header-editor")}
 	sftpWindowHidden             = [2]ui.ID{tree.ID(sftpWindowLocal, "hidden"), tree.ID(sftpWindowRemote, "hidden")}
 	sftpWindowMore               = [2]ui.ID{tree.ID(sftpWindowLocal, "more"), tree.ID(sftpWindowRemote, "more")}
 	sftpWindowFilterToggle       = [2]ui.ID{tree.ID(sftpWindowLocal, "filter-toggle"), tree.ID(sftpWindowRemote, "filter-toggle")}
+	hitSFTPWindowSudoMode        = tree.ID(sftpWindowRemote, "sudo-mode")
 	hitSFTPWindowHeaderDismiss   = tree.ID(sftpWindowHits, "header-dismiss")
 	sftpWindowPath               = [2]ui.ID{tree.ID(sftpWindowLocal, "path"), tree.ID(sftpWindowRemote, "path")}
 	sftpWindowList               = [2]ui.ID{tree.ID(sftpWindowLocal, "list"), tree.ID(sftpWindowRemote, "list")}
@@ -51,29 +57,38 @@ var (
 )
 
 type sftpWindowUI struct {
-	frame        flex.View
-	panes        [2]flex.View
-	rows         [2]flex.View
-	size         ui.Size
-	list         [2]ui.Rect
-	offset       [2]float32
-	bars         [2]components.ScrollAreaGeometry
-	barDrag      int // 1: local, 2: remote, 3: queue; zero when idle
-	barGrab      float32
-	fraction     float32
-	split        components.Resizable
-	splitting    bool
-	tooltip      components.HoverTooltip
-	menuOpen     bool
-	menuAt       ui.Point
-	queueBounds  ui.Rect
-	queueOffset  float32
-	queueBar     components.ScrollAreaGeometry
-	sort         [2]sftpWindowSort
-	menuScroll   components.MenuScroll
-	headerAnchor [2]ui.Rect
-	headerScroll components.MenuScroll
-	selection    [2]sftpWindowSelection
+	frame               flex.View
+	panes               [2]flex.View
+	rows                [2]flex.View
+	size                ui.Size
+	list                [2]ui.Rect
+	offset              [2]float32
+	bars                [2]components.ScrollAreaGeometry
+	barDrag             int // 1: local, 2: remote, 3: queue; zero when idle
+	barGrab             float32
+	treeBarDrag         int // 1: local tree, 2: remote tree; zero when idle
+	treeBarGrab         float32
+	fraction            float32
+	split               components.Resizable
+	splitting           bool
+	tooltip             components.HoverTooltip
+	menuOpen            bool
+	menuAt              ui.Point
+	queueBounds         ui.Rect
+	queueOffset         float32
+	queueBar            components.ScrollAreaGeometry
+	sort                [2]sftpWindowSort
+	menuScroll          components.MenuScroll
+	headerAnchor        [2]ui.Rect
+	headerScroll        components.MenuScroll
+	selection           [2]sftpWindowSelection
+	profileQuickOpen    bool
+	profileQuickFocus   bool
+	profileQuickScroll  components.MenuScroll
+	profileQuickAnchor  ui.Rect
+	profileHoverOpen    bool
+	profileHoverAnchor  ui.Rect
+	profileHoverTrigger ui.ID
 }
 
 func sideIndex(local bool) int {
@@ -163,16 +178,32 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		w.paintMenu(canvas)
 	}
 	if side, ok := w.headerMenu(); ok {
-		w.paintHeaderMenu(canvas, side)
+		if w.window == nil {
+			// Hosted by a main-window tab: the page paints the menu, so its
+			// backdrop covers the window bar instead of only the tab.
+			w.owner.requestSFTPWindowHeaderMenu(w, side, w.ui.headerAnchor[side])
+		} else {
+			// A standalone window is its own canvas, so its own viewport is the
+			// whole window.
+			w.paintHeaderMenu(canvas, side, ui.Point{}, 0, ui.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
+		}
 	}
 	if w.bookmark.open {
 		w.paintBookmarkDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	}
+	if w.ui.profileQuickOpen && !w.bookmark.open {
+		w.paintProfileQuickMenu(canvas)
+	}
+	if !w.bookmark.open && !w.ui.profileQuickOpen {
+		w.paintProfileQuickPreview(canvas, ui.Rect{Width: size.Width, Height: size.Height})
 	}
 	if w.drag.active {
 		w.paintDrag(canvas)
 	}
 	w.notices.paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
-	w.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	if !w.ui.profileHoverOpen {
+		w.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	}
 }
 
 func (w *sftpWindow) canTransfer(local bool) bool {
@@ -187,8 +218,9 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
 	var address, list, filter flex.Box
+	var sudoMode flex.Box
 	compact := bounds.Height < 230
-	var buttons [18]sftpIconButton
+	var buttons [20]sftpIconButton
 	buttonCount := 0
 	f := w.ui.panes[side].Begin(canvas, theme, bounds)
 	icon := func(id ui.ID, glyph uint8, hint string, disabled bool) {
@@ -202,18 +234,36 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 				title = m.SFTPWindow.Local
 			}
 			f.Text(title).Bold().Color(theme.Foreground).Ellipsis().Grow(1)
+			if !local && sudoSFTPAvailable(&w.session, w.view) {
+				sudoMode = f.Slot().Width(64).Height(28).Shrink(0)
+			}
+			treeHint := m.SFTPWindow.ShowDirectoryTree
+			if w.directoryTree[side].enabled {
+				treeHint = m.SFTPWindow.HideDirectoryTree
+			}
+			treeDisabled := directoryTreeToggleDisabled(w.directoryTree[side].enabled, max(bounds.Width-16, 0))
+			if treeDisabled {
+				treeHint = m.SFTPWindow.DirectoryTreeNeedsWidth
+			}
+			icon(sftpWindowTreeToggle[side], iconDirectoryTree, treeHint, treeDisabled)
+			if w.directoryTree[side].enabled {
+				buttons[buttonCount-1].style = iconButtonActive
+			}
 			if !local && bounds.Width >= 420 {
 				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
 				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
 			}
-			icon(sftpWindowUp[side], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
-			icon(sftpWindowRefresh[side], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+			if local || bounds.Width >= 340 {
+				icon(sftpWindowUp[side], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
+				icon(sftpWindowRefresh[side], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+			}
 			if folder.showHidden {
 				icon(sftpWindowHidden[side], iconEye, m.Tools.FilesHideHidden, false)
 				buttons[buttonCount-1].style = iconButtonActive
 			}
 			if local {
 				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil)
+				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0)
 				hint := m.SFTPWindow.BrowseSync
 				if w.browse.enabled {
 					hint = w.browseDescription()
@@ -318,10 +368,19 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 		}
 	})
 	f.End()
+	if !local && sudoSFTPAvailable(&w.session, w.view) {
+		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
+	}
 	w.owner.paintSFTPIconButtons(canvas, buttons[:buttonCount])
 	for _, button := range buttons[:buttonCount] {
 		if button.id == sftpWindowMore[side] {
 			w.ui.headerAnchor[side] = button.box.Rect()
+		}
+		if button.id == hitSFTPLocationProfiles {
+			w.ui.profileHoverAnchor = button.box.Rect()
+		}
+		if button.id == hitSFTPProfileQuick {
+			w.ui.profileQuickAnchor = button.box.Rect()
 		}
 	}
 	if folder.filterOpen {
@@ -334,7 +393,20 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	}
 	value := folder.pathInput().String()
 	components.PaintInput(canvas, theme, address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
-	frameBounds := list.Rect()
+	paneContent := list.Rect()
+	frameBounds := paneContent
+	if treeWidth, show := directoryTreePaneWidths(paneContent.Width); w.directoryTree[side].enabled && show {
+		treeBounds := ui.Rect{X: paneContent.X, Y: paneContent.Y, Width: treeWidth, Height: paneContent.Height}
+		w.paintDirectoryTree(canvas, treeBounds, local)
+		frameBounds = ui.Rect{
+			X:      treeBounds.X + treeBounds.Width + directoryTreeGap,
+			Y:      paneContent.Y,
+			Width:  max(paneContent.Width-treeBounds.Width-directoryTreeGap, 0),
+			Height: paneContent.Height,
+		}
+	} else {
+		w.directoryTree[side].bounds = ui.Rect{}
+	}
 	canvas.RoundedBorder(frameBounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .4), theme.Background)
 	// Keep scrolling rows and scrollbars inside the frame, so neither can
 	// paint over its top or bottom edge.

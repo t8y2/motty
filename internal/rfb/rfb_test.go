@@ -5,8 +5,10 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -125,11 +127,16 @@ func serverInit(width, height int, name string) []byte {
 // SetEncodings messages.
 func (s *server) handshake(version string, security byte, password string, width, height int) (encodings []int32) {
 	announced := version
-	if version == "009" {
+	switch version {
+	case "009", "889":
 		version = "008" // what the client falls back to
+	case "005":
+		version = "003"
 	}
 	s.write([]byte("RFB 003." + announced + "\n"))
-	s.read(12)
+	if got := s.read(12); string(got) != "RFB 003."+version+"\n" {
+		s.t.Errorf("client version = %q, want RFB 003.%s", got, version)
+	}
 	switch version {
 	case "003":
 		s.write(u32(int(security)))
@@ -247,7 +254,9 @@ func TestHandshakeVersionsAndSecurity(t *testing.T) {
 		password string
 	}{
 		{"008", 1, ""}, {"008", 2, "secret"}, {"007", 1, ""}, {"007", 2, "secret"}, {"003", 1, ""}, {"003", 2, "secret"},
-		{"009", 1, ""}, // a newer server: speak 3.8
+		{"009", 1, ""}, {"009", 2, "secret"}, // a newer server: speak 3.8
+		{"005", 1, ""}, {"005", 2, "secret"}, // an older nonstandard minor: speak 3.3
+		{"889", 1, ""}, {"889", 2, "secret"}, // a vendor minor with standard security: speak 3.8
 	} {
 		offered := make(chan []int32, 1)
 		client, err := connect(t, Config{Password: test.password}, func(s *server) {
@@ -270,11 +279,17 @@ func TestHandshakeVersionsAndSecurity(t *testing.T) {
 }
 
 func TestWrongAndMissingPassword(t *testing.T) {
-	_, err := connect(t, Config{Password: "wrong"}, func(s *server) { s.handshake("008", 2, "right", 10, 10) })
-	if !errors.Is(err, ErrAuthFailed) {
-		t.Fatalf("err = %v, want ErrAuthFailed", err)
+	for _, version := range []string{"003", "007", "008", "009"} {
+		t.Run("wrong password/3."+version, func(t *testing.T) {
+			_, err := connect(t, Config{Password: "wrong"}, func(s *server) {
+				s.handshake(version, 2, "right", 10, 10)
+			})
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("err = %v, want ErrAuthFailed", err)
+			}
+		})
 	}
-	_, err = connect(t, Config{}, func(s *server) {
+	_, err := connect(t, Config{}, func(s *server) {
 		s.write([]byte("RFB 003.008\n"))
 		s.read(12)
 		s.write([]byte{1, 2})
@@ -283,6 +298,31 @@ func TestWrongAndMissingPassword(t *testing.T) {
 	})
 	if !errors.Is(err, ErrAuthRequired) {
 		t.Fatalf("err = %v, want ErrAuthRequired", err)
+	}
+}
+
+func TestHandshake33RejectsExtendedSecurityWithoutRequestingCredentials(t *testing.T) {
+	for _, security := range []int{5, 13, 0x102, -1} {
+		t.Run(fmt.Sprint(security), func(t *testing.T) {
+			_, err := connect(t, Config{
+				Password: "cached password",
+				AskPassword: func() (string, error) {
+					t.Error("password requested for an unsupported 3.3 security type")
+					return "", nil
+				},
+				AskCredentials: func() (string, string, error) {
+					t.Error("credentials requested for an unsupported 3.3 security type")
+					return "", "", nil
+				},
+			}, func(s *server) {
+				s.write([]byte("RFB 003.003\n"))
+				s.read(12)
+				s.write(u32(security))
+			})
+			if !errors.Is(err, ErrUnsupported) {
+				t.Fatalf("error=%v want unsupported security", err)
+			}
+		})
 	}
 }
 
@@ -317,6 +357,58 @@ func TestServerRefusalReasonIsShownWithoutControlCharacters(t *testing.T) {
 	var refusal *ServerError
 	if !errors.As(err, &refusal) || refusal.Reason != "too many[31m clients" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestServerRefusalUsesTheNegotiatedVersionSecurityFormat(t *testing.T) {
+	for _, version := range []struct {
+		banner, clientVersion string
+		security              []byte
+	}{
+		{"RFB 003.003\n", "RFB 003.003\n", u32(0)},
+		{"RFB 003.007\n", "RFB 003.007\n", []byte{0}},
+		{"RFB 003.008\n", "RFB 003.008\n", []byte{0}},
+		{"RFB 005.000\n", "RFB 003.008\n", []byte{0}},
+	} {
+		t.Run(version.banner[:11], func(t *testing.T) {
+			_, err := connect(t, Config{}, func(s *server) {
+				s.write([]byte(version.banner))
+				if got := s.read(12); string(got) != version.clientVersion {
+					t.Errorf("client version=%q want=%q", got, version.clientVersion)
+				}
+				s.write(version.security, u32(len("server unavailable")), []byte("server unavailable"))
+			})
+			var refusal *ServerError
+			if !errors.As(err, &refusal) || refusal.Reason != "server unavailable" || errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("error=%v want server refusal", err)
+			}
+		})
+	}
+}
+
+func TestNoneSecurity38FailureReadsTheReason(t *testing.T) {
+	_, err := connect(t, Config{}, func(s *server) {
+		s.write([]byte("RFB 003.008\n"))
+		s.read(12)
+		s.write([]byte{1, 1})
+		s.read(1)
+		s.write(u32(1), u32(len("access denied")), []byte("access denied"))
+	})
+	if !errors.Is(err, ErrAuthFailed) || !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("error=%v want authentication failure with server reason", err)
+	}
+}
+
+func TestVendorMinorRejectsPrivateSecurity(t *testing.T) {
+	_, err := connect(t, Config{Password: "cached password"}, func(s *server) {
+		s.write([]byte("RFB 003.889\n"))
+		if got := s.read(12); string(got) != "RFB 003.008\n" {
+			t.Errorf("client version=%q want 3.8", got)
+		}
+		s.write([]byte{1, 30})
+	})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error=%v want unsupported security", err)
 	}
 }
 

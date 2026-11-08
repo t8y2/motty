@@ -92,7 +92,7 @@ func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
 					}
 					shot("multiple-selected")
 					// Header controls must remain distinct and within the viewport.
-					ids := []ui.ID{hitHostFilterAll, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll, hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost}
+					ids := []ui.ID{hitHostFilterAll, hitHostViewList, hitHostViewGrid, hitHostSort, hitHostGroupsExpandAll, hitHostGroupsCollapseAll, hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost}
 					for i, id := range ids {
 						h := hit(id)
 						if h.Bounds.X < 0 || h.Bounds.Y < 0 || h.Bounds.X+h.Bounds.Width > size.Width || h.Bounds.Y+h.Bounds.Height > state.chrome.hostList.Y {

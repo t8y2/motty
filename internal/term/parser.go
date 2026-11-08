@@ -504,20 +504,43 @@ func (t *Terminal) endOSC() {
 		if t.promptToken != "" {
 			suffix = ";motty=" + t.promptToken
 		}
-		if string(text) == "A"+suffix && t.promptStartFn != nil {
-			t.promptStartFn()
-		}
-		if string(text) == "B"+suffix && t.promptReadyFn != nil {
-			t.promptReadyFn()
-		}
-		if string(text) == "C"+suffix && t.commandStartFn != nil {
-			t.commandStartFn()
-		}
+		// The owning shell's prompt is drawn after the command it just finished,
+		// so this is where a program that never restored its modes loses them.
+		// A token is required: without one, markers a program echoes are
+		// indistinguishable from the shell's own.
+		own := t.promptToken != ""
 		value := string(text)
-		if t.commandFinishedFn != nil && strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+		if value == "A"+suffix {
+			t.inputStartSet = false
+			if own {
+				t.ReclaimApplicationModes()
+			}
+			if t.promptStartFn != nil {
+				t.promptStartFn()
+			}
+		}
+		if value == "B"+suffix {
+			t.markInputStart(own)
+			if t.promptReadyFn != nil {
+				t.promptReadyFn()
+			}
+		}
+		if value == "C"+suffix {
+			t.inputStartSet = false
+			if t.commandStartFn != nil {
+				t.commandStartFn()
+			}
+		}
+		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+			t.inputStartSet = false
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
-				t.commandFinishedFn(code)
+				if own {
+					t.ReclaimApplicationModes()
+				}
+				if t.commandFinishedFn != nil {
+					t.commandFinishedFn(code)
+				}
 			}
 		}
 	case 777:

@@ -292,8 +292,8 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 			if submit.Label != state.messages.WorkspaceDraftSaveChanges || state.workspaceDraft.bounds.Height < 56 {
 				t.Fatalf("edit footer=%+v host list=%+v", submit, state.workspaceDraft.bounds)
 			}
-			for _, id := range []ui.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftColumns1,
-				hitWorkspaceDraftColumns2, hitWorkspaceDraftColumns3, hitWorkspaceDraftRemoveItem.At(0), hitWorkspaceDraftCancel} {
+			for _, id := range []ui.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftPresets.At(0),
+				hitWorkspaceDraftPresets.At(1), hitWorkspaceDraftPresets.At(2), hitWorkspaceDraftRemoveItem.At(0), hitWorkspaceDraftCancel} {
 				box := panelHit(t, canvas, id).Bounds
 				if box.X < 0 || box.Y < 0 || box.X+box.Width > MinimumWindowWidth || box.Y+box.Height > MinimumWindowHeight {
 					t.Fatalf("edit control %v outside window: %+v", id, box)
@@ -392,7 +392,7 @@ func TestWorkspaceTemplateEditUnchangedRuntimeAndPersistsStableID(t *testing.T) 
 	activePane := state.deck.ActivePane(workspace)
 	panes := state.deck.Panes(workspace, nil)
 	title := state.workspaceTabs[len(state.workspaceTabs)-1].Title
-	columnCount := state.managedWorkspaceColumns[workspace]
+	columnCount := state.managedWorkspaceLayouts[workspace]
 	broadcast := state.broadcast
 
 	state.activeSection = sectionWorkspaces
@@ -400,23 +400,23 @@ func TestWorkspaceTemplateEditUnchangedRuntimeAndPersistsStableID(t *testing.T) 
 	state.Click(hitWorkspaceTemplateMenuEdit)
 	state.workspaceDraft.name = *text.NewEditor("Production Changed")
 	state.Click(workspaceDraftHostID(2))
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.moveWorkspaceDraftItem(2, 0)
 	state.Click(hitWorkspaceDraftSubmit)
 
 	if len(state.templates) != 2 || state.templates[0].ID != template.ID || state.templates[0].Name != "Production Changed" ||
-		state.templates[0].Columns != 3 || !slices.Equal(state.templates[0].HostIDs,
+		!isGrid(state.templates[0].Layout, 3) || !slices.Equal(state.templates[0].HostIDs,
 		[]string{state.hosts[2].CatalogID, state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
 		t.Fatalf("edit did not update the stable template: %+v", state.templates)
 	}
 	if broadcast == 0 || state.activeSessionID != active || state.deck.ActivePane(workspace) != activePane ||
 		!reflect.DeepEqual(state.deck.Panes(workspace, nil), panes) ||
 		state.workspaceTabs[len(state.workspaceTabs)-1].Title != title ||
-		state.managedWorkspaceColumns[workspace] != columnCount || state.broadcast != broadcast {
-		t.Fatalf("edit changed runtime state: active=%d panes=%v title=%q columns=%d broadcast=%d",
+		!state.managedWorkspaceLayouts[workspace].Equal(columnCount) || state.broadcast != broadcast {
+		t.Fatalf("edit changed runtime state: active=%+v panes=%v title=%q columns=%+v broadcast=%+v",
 			state.activeSessionID, state.deck.Panes(workspace, nil),
 			state.workspaceTabs[len(state.workspaceTabs)-1].Title,
-			state.managedWorkspaceColumns[workspace], state.broadcast)
+			state.managedWorkspaceLayouts[workspace], state.broadcast)
 	}
 	if len(world.configs) != 2 {
 		t.Fatalf("edit dialed %d connections", len(world.configs))
@@ -446,7 +446,7 @@ func TestWorkspaceTemplateDeletePersistsTombstoneWithoutChangingRuntime(t *testi
 	active := state.activeSessionID
 	activePane := state.deck.ActivePane(workspace)
 	panes := state.deck.Panes(workspace, nil)
-	columns := state.managedWorkspaceColumns[workspace]
+	columns := state.managedWorkspaceLayouts[workspace]
 	title := state.workspaceTabs[len(state.workspaceTabs)-1].Title
 
 	state.activeSection = sectionWorkspaces
@@ -459,7 +459,7 @@ func TestWorkspaceTemplateDeletePersistsTombstoneWithoutChangingRuntime(t *testi
 	}
 	if broadcast == 0 || state.broadcast != broadcast || state.activeSessionID != active ||
 		state.deck.ActivePane(workspace) != activePane || !reflect.DeepEqual(state.deck.Panes(workspace, nil), panes) ||
-		state.workspaceTabs[len(state.workspaceTabs)-1].Title != title || state.managedWorkspaceColumns[workspace] != columns ||
+		state.workspaceTabs[len(state.workspaceTabs)-1].Title != title || !state.managedWorkspaceLayouts[workspace].Equal(columns) ||
 		len(world.configs) != 2 {
 		t.Fatal("delete changed the open workspace")
 	}

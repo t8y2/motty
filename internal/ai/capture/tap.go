@@ -3,6 +3,8 @@ package capture
 import (
 	"bytes"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 // Result is what a Tap learned about the command so far.
@@ -10,9 +12,13 @@ type Result struct {
 	// Output is the ANSI-stripped plain text the command printed, bounded to the
 	// tap's maxOutput (head and tail kept, the middle replaced by an
 	// "[... N bytes omitted ...]" marker).
-	Output    string
-	Truncated bool
-	// ExitCode is the command's status, or -1 until Done.
+	Output     string
+	Truncated  bool
+	Retained   string
+	RetainLost bool
+	// ExitCode is the command's status, -1 while the command is still running,
+	// and also -1 once a device console has returned to its prompt, which has no
+	// exit status.
 	ExitCode int
 	Done     bool
 }
@@ -22,6 +28,7 @@ type Result struct {
 type Tap struct {
 	nlT   []byte // "\n" + marker prefix + nonce
 	crnlT []byte // "\r\n" + the same
+	plain bool   // a device console: no marker line to find
 
 	hold    []byte // bytes withheld because they might start the marker
 	buf     []byte
@@ -55,6 +62,75 @@ func NewTap(nonce string, maxOutput int) *Tap {
 	}
 }
 
+// NewConsoleTap returns a Tap for a command typed into a device console. There
+// is no completion marker to look for: the caller watches the device's prompt
+// and calls [Tap.FinishConsole] when it returns. Every byte passes through to the
+// terminal unchanged.
+func NewConsoleTap(maxOutput int) *Tap {
+	return &Tap{rec: newRecorder(maxOutput), code: -1, plain: true}
+}
+
+// Retain keeps up to maxBytes of normalized output for later paging. The
+// existing bounded head/tail preview is unchanged. A single overlong line
+// cannot be reconstructed by the recorder and is reported as lost.
+func (t *Tap) Retain(maxBytes int) {
+	t.rec.retainCap = maxBytes
+}
+
+// RetainWindow keeps the newest output of a long-running command for paging by
+// absolute offset. Between maxBytes and twice that much is held; older bytes are
+// dropped and Page reports where the held output begins. Unlike Retain it never
+// gives up, and it does not feed Result.Retained.
+func (t *Tap) RetainWindow(maxBytes int) {
+	t.rec.retainCap = maxBytes
+	t.rec.retainWindow = true
+}
+
+// Page is one slice of the output kept by RetainWindow. Offsets count bytes of
+// the normalized text since the command started.
+type Page struct {
+	Data string
+	// Start is where Data begins. It is later than the requested offset when
+	// older output was dropped or the offset fell inside a UTF-8 character.
+	Start int
+	// Next is the offset to ask for next.
+	Next int
+	// Total is the end of everything committed so far. A line still being
+	// written is not part of it until its newline arrives or the command ends.
+	Total int
+	// Pending is that unfinished line. It is not counted in Next or Total and
+	// will be in Data once complete. The tap also holds back the last newline of
+	// each chunk, since it may be the one before the completion marker, so a line
+	// the command just finished shows up here first.
+	Pending string
+}
+
+const maxPending = 4 << 10
+
+// Page returns up to maxBytes of retained output from offset, ending on a
+// UTF-8 character boundary. An offset past Total yields an empty page at Total.
+func (t *Tap) Page(offset, maxBytes int) Page {
+	r := t.rec
+	base, held := r.retainBase, r.retained
+	total := base + len(held)
+	var pending string
+	if r.echoIdx >= len(r.echo) && len(r.cur) > 0 && !t.done && !t.aborted {
+		pending = strings.ToValidUTF8(string(r.cur[:min(len(r.cur), maxPending)]), "�")
+	}
+	start := max(offset, base)
+	if start >= total {
+		return Page{Start: total, Next: total, Total: total, Pending: pending}
+	}
+	for start < total && !utf8.RuneStart(held[start-base]) {
+		start++
+	}
+	end := min(total, start+maxBytes)
+	for end < total && end > start && !utf8.RuneStart(held[end-base]) {
+		end--
+	}
+	return Page{Data: strings.ToValidUTF8(string(held[start-base:end-base]), "�"), Start: start, Next: end, Total: total, Pending: pending}
+}
+
 // SetEcho tells the tap the exact bytes that were typed (the result of Wrap),
 // so that their terminal echo at the start of the output is left out of
 // Result.Output. It is best effort: the first echoed line that does not match
@@ -62,7 +138,7 @@ func NewTap(nonce string, maxOutput int) *Tap {
 func (t *Tap) SetEcho(sent []byte) {
 	t.rec.setEcho(sent)
 	t.echoLines = t.echoLines[:0]
-	for _, line := range bytes.Split(bytes.TrimRight(sent, "\n"), []byte{'\n'}) {
+	for _, line := range splitEcho(sent) {
 		t.echoLines = append(t.echoLines, bytes.TrimSpace(line))
 	}
 }
@@ -90,6 +166,13 @@ func (t *Tap) SetDisplay(command string) {
 // After completion or Abort everything passes through unchanged.
 func (t *Tap) Feed(p []byte) (display []byte, done bool) {
 	t.out = t.out[:0]
+	if t.plain {
+		if !t.done && !t.aborted {
+			t.rec.write(p)
+		}
+		t.out = append(t.out, p...)
+		return t.out, t.done
+	}
 	if t.done || t.aborted {
 		t.out = append(t.out, p...)
 		return t.out, t.done
@@ -134,6 +217,20 @@ func (t *Tap) Feed(p []byte) (display []byte, done bool) {
 			return t.out, true
 		}
 	}
+}
+
+// FinishConsole ends a console capture when the device's prompt is back. The
+// prompt itself is still the recorder's unfinished line, so it is removed from
+// the captured output before the line is committed. There is no exit status on
+// a console, so code is normally -1.
+func (t *Tap) FinishConsole(prompt string, code int) {
+	if !t.plain || t.done || t.aborted {
+		return
+	}
+	t.rec.dropPendingLine(prompt)
+	t.rec.finish()
+	t.done = true
+	t.code = code
 }
 
 func (t *Tap) emit(b []byte) {
@@ -273,11 +370,19 @@ func (t *Tap) Abort() (display []byte) {
 	display = append(t.flushDisplay(), held...)
 	t.hold = t.hold[:0]
 	t.rec.write(held) // hidden bytes were recorded when emitted
+	t.rec.finish()
 	return display
 }
 
 // Result reports the output captured so far and, once done, the exit status.
 func (t *Tap) Result() Result {
 	out, trunc := t.rec.snapshot(t.done)
-	return Result{Output: out, Truncated: trunc, ExitCode: t.code, Done: t.done}
+	result := Result{Output: out, Truncated: trunc, ExitCode: t.code, Done: t.done}
+	if t.rec.retainCap > 0 {
+		result.RetainLost = t.rec.retainLost || t.rec.truncated || !t.done
+		if !result.RetainLost {
+			result.Retained = string(bytes.TrimSuffix(t.rec.retained, []byte{'\n'}))
+		}
+	}
+	return result
 }

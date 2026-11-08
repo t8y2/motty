@@ -154,6 +154,99 @@ func TestWorkerTreatsRemoteSizeChangesAsConflicts(t *testing.T) {
 	}
 }
 
+// skipUnlessPermissionsApply skips where directory permission bits do not stop
+// the SFTP server's process: Windows has none, and root ignores them.
+func skipUnlessPermissionsApply(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permission bits are not enforced for this user or platform")
+	}
+}
+
+func TestWorkerSavesTextInPlaceWhereDirectoryIsReadOnly(t *testing.T) {
+	skipUnlessPermissionsApply(t)
+	worker, root := newProtocolWorker(t)
+	directory := filepath.Join(root, "etc")
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	remotePath := filepath.Join(directory, "config.yaml")
+	if err := os.WriteFile(remotePath, []byte("before\n"), 0o664); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0o755) })
+	before, err := os.Stat(remotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	worker.OpenText("etc/config.yaml")
+	opened := waitResult(t, worker)
+	if opened.Err != nil {
+		t.Fatal(opened.Err)
+	}
+	worker.SaveText("etc/config.yaml", "after\n", opened.Document.Revision, false)
+	saved := waitResult(t, worker)
+	if saved.Err != nil || saved.Document.Text != "after\n" {
+		t.Fatalf("saved = %+v", saved)
+	}
+	if content, err := os.ReadFile(remotePath); err != nil || string(content) != "after\n" {
+		t.Fatalf("remote = %q, %v", content, err)
+	}
+	after, err := os.Stat(remotePath)
+	if err != nil || !os.SameFile(before, after) || after.Mode().Perm() != before.Mode().Perm() {
+		t.Fatalf("in-place save must keep the file's identity and mode: %v %v, %v", before, after, err)
+	}
+	if matches, _ := filepath.Glob(filepath.Join(directory, ".motty.*.part")); len(matches) != 0 {
+		t.Fatalf("temporary files = %v", matches)
+	}
+
+	// The fallback still refuses to overwrite a change made after the open.
+	if err := os.WriteFile(remotePath, []byte("external change\n"), 0o664); err != nil {
+		t.Fatal(err)
+	}
+	worker.SaveText("etc/config.yaml", "must not win\n", saved.Document.Revision, false)
+	if conflict := waitResult(t, worker); !errors.Is(conflict.Err, ErrRemoteChanged) {
+		t.Fatalf("conflict = %+v", conflict)
+	}
+	if content, err := os.ReadFile(remotePath); err != nil || string(content) != "external change\n" {
+		t.Fatalf("remote changed after conflict = %q, %v", content, err)
+	}
+}
+
+func TestWorkerKeepsPermissionErrorWhereFileAndDirectoryAreReadOnly(t *testing.T) {
+	skipUnlessPermissionsApply(t)
+	worker, root := newProtocolWorker(t)
+	directory := filepath.Join(root, "etc")
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	remotePath := filepath.Join(directory, "config.yaml")
+	if err := os.WriteFile(remotePath, []byte("before\n"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0o755) })
+
+	worker.OpenText("etc/config.yaml")
+	opened := waitResult(t, worker)
+	if opened.Err != nil {
+		t.Fatal(opened.Err)
+	}
+	worker.SaveText("etc/config.yaml", "after\n", opened.Document.Revision, false)
+	if result := waitResult(t, worker); !errors.Is(result.Err, os.ErrPermission) {
+		t.Fatalf("error = %v, want a permission error", result.Err)
+	}
+	if content, err := os.ReadFile(remotePath); err != nil || string(content) != "before\n" {
+		t.Fatalf("remote = %q, %v", content, err)
+	}
+}
+
 func BenchmarkDecodeTextDocument(b *testing.B) {
 	content := bytes.Repeat([]byte("line of UTF-8 中文\n"), 512)
 	b.ReportAllocs()

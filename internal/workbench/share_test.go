@@ -23,7 +23,14 @@ func (l *lender) Share(func()) (Connection, error) {
 		return nil, sshconn.ErrNotShareable
 	}
 	child := &fakeConn{}
-	child.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	l.fakeConn.mu.Lock()
+	generation, fingerprint := l.fakeConn.status.ConnectionGeneration, l.fakeConn.status.HostKey.Fingerprint
+	l.fakeConn.mu.Unlock()
+	child.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseConnected
+		status.ConnectionGeneration = generation
+		status.HostKey.Fingerprint = fingerprint
+	})
 	l.world.shared = append(l.world.shared, child)
 	return &lender{fakeConn: child, world: l.world}, nil
 }
@@ -58,6 +65,8 @@ func (world *sharingWorld) connectFirst(t testing.TB, state *State) *fakeConn {
 	fake.set(func(status *sshconn.Status) {
 		status.Phase = sshconn.PhaseConnected
 		status.ServerVersion = "SSH-2.0-Test"
+		status.ConnectionGeneration = uint64(len(world.conns))
+		status.HostKey.Fingerprint = "SHA256:test"
 	})
 	state.Wake()
 	return fake
@@ -196,6 +205,7 @@ func TestLoneContainerTabRestoresNeitherHostNorEmptyWorkspace(t *testing.T) {
 		t.Fatal("source has no workspace")
 	}
 	first.closeWorkspace(workspace)
+	confirmRunningClose(first)
 	saved := first.snapshot()
 	if len(saved.Sessions) != 0 || saved.Deck == nil || len(saved.Deck.Workspaces) != 0 || saved.Deck.ActiveWorkspace != 0 {
 		t.Fatalf("a command-only workspace persisted: sessions=%+v deck=%+v", saved.Sessions, saved.Deck)
@@ -220,6 +230,7 @@ func TestEndedContainerTabCannotInterceptOpeningItsOriginalHost(t *testing.T) {
 		t.Fatal("source tab lost its workspace")
 	}
 	state.closeWorkspace(workspace)
+	confirmRunningClose(state)
 	if len(state.sessions) != 1 || state.sessions[0].containerCommand == "" {
 		t.Fatalf("command tab did not remain after closing source: %+v", state.sessions)
 	}

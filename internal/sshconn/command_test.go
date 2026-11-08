@@ -192,6 +192,9 @@ func TestExecReturnsBothStreamsAndTheExitStatusAsAResult(t *testing.T) {
 	if got := string(result.Output); got != "out\nerr\n" && got != "err\nout\n" {
 		t.Fatalf("output = %q", got)
 	}
+	if string(result.Stdout) != "out\n" || string(result.Stderr) != "err\n" {
+		t.Fatalf("separate streams: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
 }
 
 func TestExecBoundsOutputAndKeepsWhatWasPrintedWhenCanceled(t *testing.T) {

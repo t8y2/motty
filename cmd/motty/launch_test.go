@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -155,6 +156,52 @@ func TestClaimIdentityCanonicalizesCaseAliases(t *testing.T) {
 	}
 	if aliasID != actualID {
 		t.Fatalf("a case alias has another claim: %q != %q", aliasID, actualID)
+	}
+}
+
+// TestClaimIdentityFollowsALinkedPath covers what a Scoop install looks like:
+// the version directory sits behind a junction (a symlink off Windows) and the
+// data folder is reached through it. Lstat describes the link itself, so a walk
+// that only compared that with the directory it names reported no on-disk case
+// and the app refused to start.
+func TestClaimIdentityFollowsALinkedPath(t *testing.T) {
+	dir := t.TempDir()
+	version := filepath.Join(dir, "0.3.0")
+	if err := os.MkdirAll(filepath.Join(version, "motty-data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "current")
+	if runtime.GOOS == "windows" {
+		// A junction, as Scoop makes it, needs no privilege.
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, version).CombinedOutput(); err != nil {
+			t.Skipf("cannot make a junction: %v: %s", err, out)
+		}
+	} else if err := os.Symlink(version, link); err != nil {
+		t.Skipf("cannot make a symlink: %v", err)
+	}
+
+	// The volume is normalized to lower case on Windows, so the whole path is
+	// compared without regard to case; the component names keep their spelling.
+	if spelled, err := canonicalExistingCase(link); err != nil {
+		t.Fatalf("a link component has no on-disk case: %v", err)
+	} else if !strings.EqualFold(spelled, link) || filepath.Base(spelled) != filepath.Base(link) {
+		t.Fatalf("canonicalExistingCase(%q) = %q", link, spelled)
+	}
+
+	dataDir := filepath.Join(link, "motty-data")
+	first, err := claimInstanceID(dataDir)
+	if err != nil {
+		t.Fatalf("a data folder through a link has no claim: %v", err)
+	}
+	again, err := claimInstanceID(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again {
+		t.Fatalf("the same path claimed %q and then %q", first, again)
+	}
+	if first == applicationID {
+		t.Fatal("a linked data folder used the default claim")
 	}
 }
 

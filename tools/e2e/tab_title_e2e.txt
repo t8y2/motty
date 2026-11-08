@@ -12,6 +12,8 @@
 #   "gallery-web:1:bash".
 # - After switching the setting on, the second `texts` lists "gallery-web:1:bash"
 #   on the tab. Clearing the title with an empty OSC 2 brings the host name back.
+# - This fixture does not advertise OpenSSH, so it cannot enable shell path
+#   reports; Current path falls back to the connection name.
 
 click "Search"
 type tester@127.0.0.1:2249
@@ -34,12 +36,13 @@ click "Settings"
 settle 600
 click "Terminal"
 settle 700
-scroll 1100 650 0 700
+scroll 780 500 0 1400
 settle 500
 click "Terminal title"
 settle 600
 click "gallery-web:1:bash"
 settle 800
+expect text "gallery-web:1:"
 texts
 shot /tmp/tab-title-on.png
 
@@ -47,4 +50,21 @@ type printf '\033]2;\007'; echo title-cleared
 key enter
 waitfor "title-cleared" 5000
 settle 800
+expect text "127.0.0.1:2249"
+texts
+
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+scroll 780 500 0 1400
+settle 500
+click "Current path"
+settle 600
+click "127.0.0.1:2249"
+type cd /tmp; echo path-changed
+key enter
+waitfor "path-changed" 5000
+settle 800
+expect text "127.0.0.1:2249"
 texts

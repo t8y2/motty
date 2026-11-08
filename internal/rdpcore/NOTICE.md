@@ -46,6 +46,16 @@ Changed:
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.
+* A key's auto-repeat is sent instead of left to the server, which does not
+  repeat a held key: `SendKeyboard` and `SendUnicode` take a `repeat` argument
+  and a repeat press carries `KBD_FLAGS_DOWN` (`0x4000`), the flag FreeRDP and
+  mstsc set on a key the server already has down.
+* The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but
+  keeps the progressive-codec decoder. Its tile context (SYNC, CONTEXT and
+  simple tiles) is not part of the graphics output; Windows sends only UPGRADE
+  tiles for a surface it recreates after resizing and does not repeat the first
+  pass. Rebuilding the decoder dropped those base tiles and left the resized
+  desktop black or fragmented.
 * The Bitmap Codecs capability advertises NSCodec only (RemoteFX was advertised
   without being usable by the session's pixel path and made xrdp send surface
   commands that were not drawn).

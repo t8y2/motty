@@ -172,9 +172,9 @@ func shortHostName(name string) string {
 
 // Coalesce reports from one output drain. Terminal callbacks themselves only
 // update memory, without reentering persistence while the parser is running.
-func (state *State) flushLocalDirectories() {
-	if state.localDirectoryDirty {
-		state.localDirectoryDirty = false
+func (state *State) flushTerminalDirectories() {
+	if state.terminalDirectoryDirty {
+		state.terminalDirectoryDirty = false
 		state.save()
 	}
 }
@@ -187,8 +187,16 @@ func (conn *localConn) DialContext(context.Context, string, string) (net.Conn, e
 
 func (conn *localConn) Listen(string, string) (net.Listener, error) { return nil, errLocalOnly }
 
+func (conn *localConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {
+	return nil, errLocalOnly
+}
+
 func (conn *localConn) RunCommand(context.Context, string, int) ([]byte, error) {
 	return nil, errLocalOnly
+}
+
+func (conn *localConn) Exec(context.Context, string, int) (sshconn.ExecResult, error) {
+	return sshconn.ExecResult{}, errLocalOnly
 }
 
 func (conn *localConn) StreamCommand(context.Context, string, int, func([]byte) bool) error {

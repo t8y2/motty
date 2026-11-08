@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -422,13 +421,9 @@ func (state *State) paintSessionImportPreview(canvas *ui.Canvas, viewport ui.Rec
 // user and port a saved host (or an earlier session) already has.
 func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
-	usedIDs := make(map[string]struct{}, len(state.hosts)+len(result.Entries))
-	for _, host := range state.hosts {
-		usedIDs[host.CatalogID] = struct{}{}
-	}
 	for _, entry := range result.Entries {
 		if entry.Protocol != sessionimport.SSH {
-			state.planStreamImport(&builder.plan, entry)
+			state.planStreamImport(&builder.plan, builder.usedIDs, entry)
 			continue
 		}
 		port := uint16(entry.Port)
@@ -441,11 +436,11 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 			continue
 		}
 		host := Host{
-			ID: builder.plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+			ID: builder.plan.nextHostID, Label: entry.Name, Group: entry.Group,
 			Address: entry.Host, User: entry.User, Port: port,
 		}
+		host.CatalogID = freshCatalogID(builder.usedIDs)
 		host.finish()
-		host.CatalogID = uniqueCatalogID("", host, usedIDs)
 		builder.plan.nextHostID++
 		builder.plan.hosts = append(builder.plan.hosts, host)
 		builder.connections[key] = host
@@ -500,9 +495,9 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 
 // planStreamImport turns a Telnet or serial session into a host, unless the
 // saved hosts or an earlier session already have that destination.
-func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.Entry) {
+func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
 	host := Host{
-		ID: plan.nextHostID, Label: entry.Name, Group: strings.ReplaceAll(entry.Group, "/", " / "),
+		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,
 		Address: entry.Host, Port: uint16(entry.Port),
 	}
 	if entry.Protocol == sessionimport.Serial {
@@ -514,6 +509,7 @@ func (state *State) planStreamImport(plan *hostImportPlan, entry sessionimport.E
 		host.Protocol = protocolTelnet
 	}
 	host.normalizeEndpoint()
+	host.CatalogID = freshCatalogID(usedIDs)
 	host.finish()
 	if state.hostIndexByEndpoint(host) >= 0 {
 		plan.duplicateHosts++

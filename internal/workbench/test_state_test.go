@@ -3,6 +3,8 @@ package workbench
 import (
 	"context"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +45,15 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.FontFamilies == nil {
 		options.FontFamilies = func() []string { return nil }
 	}
+	if options.ClipboardText == nil {
+		// The clipboard a test reads is its own: the real one is asked on the
+		// window's main thread, which a test does not have.
+		options.ClipboardText = func() (string, error) { return "", nil }
+	}
+	if options.ClipboardFiles == nil {
+		// Nor does a test read the files the developer last copied.
+		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
+	}
 	if options.Keystore == nil {
 		// Left nil, the vault's key store is the machine's own: a test binary is
 		// not the signed application, so macOS asks for the login keychain's
@@ -54,15 +65,25 @@ func newTestState(t testing.TB, options Options) *State {
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
-	// distributions, the way a computer with only a default shell would.
+	// distributions, the way a computer with only a default shell would. On a
+	// Unix test binary the Windows executable cannot run, so the fixture leaves
+	// detection to the platform default.
 	state.localShellMenu.discover = func() []localshell.Choice {
+		if runtime.GOOS != "windows" {
+			return nil
+		}
 		return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
 	}
 	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
 	// A test never waits for the automatic check; the ones that exercise it set
 	// these back to something short.
 	state.update.firstDelay, state.update.every = time.Hour, time.Hour
-	t.Cleanup(state.Close)
+	t.Cleanup(func() {
+		state.Close()
+		eventCanvasesMu.Lock()
+		delete(eventCanvases, state)
+		eventCanvasesMu.Unlock()
+	})
 	return state
 }
 
@@ -71,6 +92,7 @@ func newTestState(t testing.TB, options Options) *State {
 // helper makes it. It lives in the test, not in State: production code never holds
 // a canvas.
 var eventCanvases = map[*State]*ui.Canvas{}
+var eventCanvasesMu sync.Mutex
 
 // pointer sends a pointer event the way a window does: to the state's Pointer
 // first and, if nothing there took it, to the controls that declared themselves
@@ -80,10 +102,14 @@ func pointer(state *State, event ui.PointerEvent) ui.EventResult {
 	if event.Viewport == (ui.Size{}) {
 		event.Viewport = ui.Size{Width: 1400, Height: 900}
 	}
+	eventCanvasesMu.Lock()
 	canvas, seen := eventCanvases[state]
 	if !seen {
 		canvas = &ui.Canvas{}
 		eventCanvases[state] = canvas
+	}
+	eventCanvasesMu.Unlock()
+	if !seen {
 		canvas.BeginFrame()
 		state.Paint(canvas, event.Viewport)
 		canvas.EndFrame()

@@ -5,6 +5,7 @@
 /.private/
 /.agents/
 /.claude/
+/.atomcode/
 /docs/competitors*.md
 .DS_Store
 /tmp/

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	layoutcore "motty/internal/workspace"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -58,7 +59,7 @@ func TestAMalformedWorkspaceTemplateDoesNotBlockTheOthers(t *testing.T) {
 		t.Fatal(err)
 	}
 	var invalid WorkspaceTemplate
-	invalid = WorkspaceTemplate{ID: invalidID, Name: "Bad", HostIDs: []string{"host_a", "host_a"}, Columns: 1}
+	invalid = WorkspaceTemplate{ID: invalidID, Name: "Bad", HostIDs: []string{"host_a", "host_a"}, Layout: layoutcore.GridSpec(1)}
 	bad, err := json.Marshal(invalid)
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +128,7 @@ func TestAnOlderBuildKeepsWorkspaceTemplateRecords(t *testing.T) {
 		base.payloads[configstore.Key{Kind: entry.Kind, ID: entry.ID}] = entry.Payload
 	}
 	saved.Version, saved.HostCatalogVersion, saved.ShortcutVersion = stateFileVersion, hostCatalogSchemaVersion, shortcutSchemaVersion
-	if _, _, err := splitState(saved, base, nil); err == nil {
+	if _, _, _, err := splitState(saved, base, nil); err == nil {
 		base.local = local[localKey]
 		store, err := configstore.Open(path, configFormat)
 		if err != nil {
@@ -155,7 +156,7 @@ func TestAnOlderBuildKeepsWorkspaceTemplateRecords(t *testing.T) {
 
 func mustWorkspaceTemplate(t testing.TB, name string, hosts []string, columns uint8) WorkspaceTemplate {
 	t.Helper()
-	template, err := NewWorkspaceTemplate(name, hosts, columns)
+	template, err := NewWorkspaceTemplate(name, hosts, columnsSpec(columns))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,6 +23,7 @@ var hostGridHits = tree.Feature("host-grid")
 var (
 	hitHostViewList = tree.ID(hostGridHits, "host-view-list")
 	hitHostViewGrid = tree.ID(hostGridHits, "host-view-grid")
+	hitHostSort     = tree.ID(hostGridHits, "host-sort")
 )
 
 const (
@@ -47,6 +48,10 @@ func (mode hostViewMode) saved() string {
 }
 
 func (state *State) clickHostView(id ui.ID) bool {
+	if id == hitHostSort {
+		state.toggleHostSort()
+		return true
+	}
 	var mode hostViewMode
 	switch id {
 	case hitHostViewList:
@@ -63,9 +68,10 @@ func (state *State) clickHostView(id ui.ID) bool {
 	return true
 }
 
-// paintHostViewToggle draws the two view buttons from x, centred on the line
-// center. The caller is paintHostsHeader, which hands over the line, not a box.
-func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32) {
+// paintHostViewToggle draws the view buttons and the host-sort mode toggle from
+// x, centred on the line. The caller is paintHostsHeader, which hands over the
+// line, not a box.
+func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32, withOrder bool) {
 	m := state.messages.Tools
 	buttons := [...]struct {
 		id    ui.ID
@@ -77,10 +83,21 @@ func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32) {
 		{hitHostViewGrid, iconHome, m.HostViewGrid, hostViewGrid},
 	}
 	var slots [len(buttons)]flex.Box
-	f := state.hostToggleLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: center, Width: 54})
-	f.Row().Fill().Gap(2).Items(flex.Center).Children(func() {
-		for index := range buttons {
-			slots[index] = f.Slot().Size(26, 26)
+	var sort, order flex.Box
+	width := float32(86)
+	if withOrder {
+		width += 32
+	}
+	f := state.hostToggleLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: center, Width: width})
+	f.Row().Fill().Items(flex.Center).Children(func() {
+		f.Row().Width(54).Gap(2).Children(func() {
+			for index := range buttons {
+				slots[index] = f.Slot().Size(26, 26)
+			}
+		})
+		sort = f.Slot().Size(26, 26).MarginSides(0, 0, 0, 6)
+		if withOrder {
+			order = f.Slot().Size(26, 26).MarginSides(0, 0, 0, 6)
 		}
 	})
 	f.End()
@@ -90,6 +107,17 @@ func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32) {
 			style = iconButtonActive
 		}
 		state.paintIconButton(canvas, button.id, button.icon, slots[index].Rect(), button.label, false, style, state.pal.workspace)
+	}
+	label := m.HostSort
+	style := iconButtonQuiet
+	if state.hostSort.enabled {
+		label = m.HostSortDone
+		style = iconButtonActive
+	}
+	disabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
+	state.paintIconButton(canvas, hitHostSort, iconTransfer, sort.Rect(), label, disabled, style, state.pal.workspace)
+	if withOrder {
+		state.paintHostOrderButton(canvas, order.Rect())
 	}
 }
 
@@ -132,6 +160,7 @@ type hostGridItem struct {
 // what is on screen is declared: the rows above the window are skipped by their
 // known height and the layout is shifted up by what is left of the first one.
 func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
+	state.beginHostSortPaint(canvas, bounds)
 	columns := hostGridColumns(bounds.Width)
 	rows := state.hostTreeRows
 	items := state.hostGridItems[:0]
@@ -181,19 +210,21 @@ func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 
 	for _, item := range items {
 		if rows[item.entry].Kind == hostTreeGroup {
-			state.paintHostGridHeader(canvas, item.box.Rect(), rows[item.entry].GroupIndex)
+			state.paintHostGridHeader(canvas, item.box.Rect(), rows[item.entry].GroupIndex, rows[item.entry].Depth)
 		} else {
-			state.paintHostCard(canvas, item.box.Rect(), state.hosts[rows[item.entry].HostIndex])
+			host := state.hosts[rows[item.entry].HostIndex]
+			state.paintHostCard(canvas, item.box.Rect(), host)
 		}
 	}
+	state.endHostSortPaint()
 }
 
 // paintHostGridHeader draws the row that opens or closes a group of cards.
-func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int) {
+func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int, depth uint8) {
 	pal, group := state.pal, state.hostGroups[groupIndex]
 	row := header
-	header.X += float32(group.Depth) * 22
-	header.Width = max(0, header.Width-float32(group.Depth)*22-38)
+	header.X += float32(depth) * 22
+	header.Width = max(0, header.Width-float32(depth)*22-38)
 	label := group.Label
 	if group.Name == "" {
 		label = state.messages.HostGroupDefault
@@ -202,13 +233,14 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 	if group.Expanded || state.visibleQuery != "" {
 		chevron = iconChevronDown
 	}
-	var icon flex.Box
+	var icon, groupCheck flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(flex.Center).
-		Radius(radius.control).HoverBackground(pal.surfaceSoft).
+		Radius(radius.control).Hover(flex.Look{}.Background(pal.surfaceSoft)).
 		HitWith(hitHostGroupOpenList.At(groupIndex), label, ui.HitOptions{Role: ui.RoleButton, Expanded: group.Expanded}).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)
+			groupCheck = f.Slot().Size(40, 28).Shrink(0)
 			f.Row().Grow(1).Basis(0).Gap(6).Items(flex.Center).Children(func() {
 				if group.Pinned {
 					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
@@ -220,6 +252,7 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 	f.End()
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	state.hostGroupRowEvents(canvas, hitHostGroupOpenList.At(groupIndex), groupIndex, row)
+	state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(groupIndex), groupCheck.Rect(), state.hostScopeSelection.groups[groupIndex])
 }
 
 func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
@@ -228,8 +261,14 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	selected := host.ID == state.selectedHostID
 	background, edge, edgeWidth := pal.surface, withAlpha(pal.line, 0.8), float32(1)
 	switch {
+	case state.hostSortDragging(host.ID):
+		background, edge, edgeWidth = pal.surfaceSoft, pal.accent, 1.5
+	case state.hostSortTarget(host.ID):
+		edge, edgeWidth = pal.accent, 2
 	case selected:
 		background, edge, edgeWidth = pal.accentSoft, pal.accent, 1.5
+	case state.hostSortHovered(canvas, host.ID):
+		background, edge, edgeWidth = pal.surfaceSoft, pal.accent, 1.5
 	case canvas.Hovered() == id:
 		background, edge = pal.surfaceSoft, withAlpha(pal.line, 0.9)
 	}
@@ -238,10 +277,15 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	// contrasting badge instead of accentSoft-on-accentSoft.
 	badgeBackground := background
 	background = tintHostSurface(background, host.Color, .10)
+	if state.hostSortDragging(host.ID) {
+		canvas.Elevate(card, radius.surface, ui.ShadowMD)
+	}
 	canvas.RoundedBorder(card, radius.surface, edgeWidth, edge, background)
 	paintHostColorMark(canvas, card, host.Color)
-	canvas.HitWithOptions(id, card, host.Label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
-	state.hostRowEvents(canvas, id, host)
+	if !state.hostSort.enabled {
+		canvas.HitWithOptions(id, card, host.Label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+		state.hostRowEvents(canvas, id, host)
+	}
 	if canvas.FocusVisible() == id {
 		canvas.RoundedBorder(card, radius.surface, 1.5, pal.accent, ui.Color{})
 	}
@@ -254,7 +298,7 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	// show as many whole tag pills as fit before the checkbox's full interaction
 	// region.
 	subtitle := state.hostCardConnection(host)
-	checkWidth, _ := components.CheckboxHitExtent(state.Theme())
+	checkWidth, checkHeight := components.CheckboxHitExtent(state.Theme())
 	textWidth := max(card.Width-14-12-36-12*2-checkWidth, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
@@ -262,7 +306,7 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	if room := textWidth - subtitleWidth - 8; room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
-	var avatar, light flex.Box
+	var grip, avatar, light flex.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), card)
 	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(flex.Center).Children(func() {
 		f.Stack().Size(36, 36).Shrink(0).Children(func() {
@@ -286,9 +330,18 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 				}
 			})
 		})
-		f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label)
+		if state.hostSort.enabled {
+			// Match the card's ordinary checkbox exactly: sorting replaces it in
+			// place, while the six-dot glyph is the same size as the list view.
+			grip = f.Slot().Size(checkWidth, checkHeight).Shrink(0)
+		} else {
+			f.Checkbox(hitHostCheckList.At(int(host.ID)), state.hostSelected(host.ID)).Label(host.Label)
+		}
 	})
 	f.End()
+	if state.hostSort.enabled {
+		state.declareHostSortItem(host, card, grip.Rect())
+	}
 	state.paintHostCatalogIcon(canvas, host, avatar.Rect(), badgeBackground)
 	if kind != lightIdle {
 		corner := light.Rect()

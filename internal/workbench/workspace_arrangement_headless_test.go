@@ -81,12 +81,12 @@ func TestWorkspaceLayoutDragAutoSavesWithoutReconnectAndEscapeReturnsFocus(t *te
 	active, dials := state.activeSessionID, len(world.configs)
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceHeaderLayout)
-	workspaceEditorClick(t, view, hitWorkspaceHeaderColumnsList.At(2))
+	workspaceEditorClick(t, view, hitWorkspaceHeaderPresets.At(1))
 	workspaceEditorDrag(t, view, hitWorkspaceLayoutCards.At(0), hitWorkspaceLayoutCards.At(2))
 	if got := paneSessionIDs(state.deck.Panes(workspace, nil)); !slices.Equal(got, []uint32{before[1], before[2], before[0]}) {
 		t.Fatalf("applied order = %v", got)
 	}
-	if state.activeSessionID != active || len(world.configs) != dials || state.managedWorkspaceColumns[workspace] != 2 {
+	if state.activeSessionID != active || len(world.configs) != dials || !isGrid(state.managedWorkspaceLayouts[workspace], 2) {
 		t.Fatal("layout apply changed sessions or dialed again")
 	}
 	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
@@ -105,7 +105,7 @@ func TestWorkspaceTemplateDragAutoSavesThroughWindow(t *testing.T) {
 	state.templates = []WorkspaceTemplate{template}
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceTemplatePresets.At(0))
-	if state.templates[0].Columns != 1 {
+	if !isGrid(state.templates[0].Layout, 1) {
 		t.Fatal("template preset did not auto-save")
 	}
 	workspaceEditorDrag(t, view, hitWorkspaceTemplateCards.At(0), hitWorkspaceTemplateCards.At(2))
@@ -165,7 +165,7 @@ func TestWorkspaceRestoredTemporaryHeaderSaveThroughWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaceEditorClick(t, view, hitWorkspaceSaveSubmit)
-	if len(state.templates) != 1 || state.templates[0].Name != "Reopened workspace" || state.templates[0].Columns != 2 {
+	if len(state.templates) != 1 || state.templates[0].Name != "Reopened workspace" || !isGrid(state.templates[0].Layout, 2) {
 		t.Fatalf("saved restored workspace = %+v", state.templates)
 	}
 	if len(world.configs) != 2 {

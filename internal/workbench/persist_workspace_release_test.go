@@ -58,7 +58,7 @@ func TestReleaseIncrementalSavePreservesDamagedDevelopmentWorkspace(t *testing.T
 	damaged := []byte(`{"sessions":[`)
 	setLocalConfigValue(t, path, developmentWorkspaceKey, damaged)
 
-	store, _, base, _, err := openConfig(path)
+	store, _, base, _, err := openConfig(path, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

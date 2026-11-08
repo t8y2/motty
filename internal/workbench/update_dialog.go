@@ -117,6 +117,9 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if install {
 		primary = components.ButtonAction{ID: hitUpdateInstall, Label: m.UpdateInstall}
 		description = fmt.Sprintf(m.UpdateInstallDescriptionFmt, update.Current)
+		if state.options.Updater.Package() == update.PackageDeb {
+			description = fmt.Sprintf(m.UpdateDebDescriptionFmt, update.Current)
+		}
 	}
 
 	// The body is as tall as what it holds, up to the cap, so a short note does

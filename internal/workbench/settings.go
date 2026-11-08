@@ -131,8 +131,6 @@ func (state *State) setTerminalFontSize(value float32) bool {
 		return false
 	}
 	state.terminalFontSize = value
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(value, state.terminalFontFace)
-	state.fitTerminals()
 	return true
 }
 
@@ -144,8 +142,6 @@ func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
 		return false
 	}
 	state.terminalFontFace = face
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, face)
-	state.fitTerminals()
 	return true
 }
 
@@ -205,6 +201,27 @@ func closeActionFromString(value string) closeAction {
 		return closeQuits
 	}
 	return closeToTray
+}
+
+type relaunchAction uint8
+
+const (
+	relaunchRaise relaunchAction = iota
+	relaunchNewWindow
+)
+
+func (action relaunchAction) String() string {
+	if action == relaunchNewWindow {
+		return "new-window"
+	}
+	return "raise"
+}
+
+func relaunchActionFromString(value string) relaunchAction {
+	if value == relaunchNewWindow.String() {
+		return relaunchNewWindow
+	}
+	return relaunchRaise
 }
 
 // networkProxyMode is which proxy a local terminal's programs are told to use.
@@ -285,7 +302,7 @@ func (state *State) systemLanguage() i18n.Language {
 		primary, _, _ := strings.Cut(strings.ToLower(tag), "-")
 		switch primary {
 		case "zh":
-			return i18n.Chinese
+			return i18n.ChineseVariant(tag)
 		case "en":
 			return i18n.English
 		}
@@ -331,7 +348,7 @@ func (state *State) clickSettings(id ui.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) {
+	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -346,6 +363,8 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.chooseLanguage(i18n.English)
 	case hitSettingsLanguageChinese:
 		changed = state.chooseLanguage(i18n.Chinese)
+	case hitSettingsLanguageTraditional:
+		changed = state.chooseLanguage(i18n.TraditionalChinese)
 	case hitSettingsAppearanceSystem:
 		changed = state.chooseAppearanceMode(appearanceFollowSystem)
 	case hitSettingsAppearanceDark:
@@ -362,6 +381,10 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTabOrientation(tabsHorizontal)
 	case hitSettingsTabsVertical:
 		changed = state.setTabOrientation(tabsVertical)
+	case hitSettingsTabNumbers:
+		changed = state.setTabNumbers(!state.tabNumbers)
+	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
+		changed = state.setTabNumberModifier(id)
 	case hitSettingsOutputAlerts:
 		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
 		state.clearOutputAlerts()
@@ -386,6 +409,12 @@ func (state *State) clickSettings(id ui.ID) bool {
 	case hitSettingsCloseQuit:
 		changed = state.closeAction != closeQuits
 		state.closeAction = closeQuits
+	case hitSettingsRelaunchRaise:
+		changed = state.relaunchAction != relaunchRaise
+		state.relaunchAction = relaunchRaise
+	case hitSettingsRelaunchNewWindow:
+		changed = state.relaunchAction != relaunchNewWindow
+		state.relaunchAction = relaunchNewWindow
 	case hitSettingsOptionText:
 		changed = state.terminalOption != terminalOptionText
 		state.terminalOption = terminalOptionText
@@ -404,6 +433,18 @@ func (state *State) clickSettings(id ui.ID) bool {
 		changed = state.setTerminalPadding(padNormal)
 	case hitSettingsPadRoomy:
 		changed = state.setTerminalPadding(padRoomy)
+	case hitSettingsLineHeightCompact:
+		changed = state.setTerminalLineHeight(lineHeightCompact)
+	case hitSettingsLineHeightNormal:
+		changed = state.setTerminalLineHeight(lineHeightNormal)
+	case hitSettingsLineHeightRoomy:
+		changed = state.setTerminalLineHeight(lineHeightRoomy)
+	case hitSettingsCursorThin:
+		changed = state.setTerminalCursorThickness(cursorThin)
+	case hitSettingsCursorNormal:
+		changed = state.setTerminalCursorThickness(cursorNormal)
+	case hitSettingsCursorThick:
+		changed = state.setTerminalCursorThickness(cursorThick)
 	case hitSettingsGutterOff:
 		changed = state.setTerminalGutter(gutterOff)
 	case hitSettingsGutterNumbers:
@@ -485,6 +526,14 @@ func (state *State) clickSettings(id ui.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
+	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+		state.clickStartupHosts(id)
+	case hitSettingsCursorBlock:
+		changed = state.setTerminalCursorStyle(cursorBlock)
+	case hitSettingsCursorBar:
+		changed = state.setTerminalCursorStyle(cursorBar)
+	case hitSettingsCursorUnderline:
+		changed = state.setTerminalCursorStyle(cursorUnderline)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
 	case hitSessionLogsSettingsToggle:
@@ -520,10 +569,11 @@ func (state *State) setTerminalScrollback(value int) bool {
 	return true
 }
 
-func (state *State) settingsLanguageOptions() [2]components.SegmentOption {
+func (state *State) settingsLanguageOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
 		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
+		{ID: hitSettingsLanguageTraditional, Label: state.messages.SettingsLanguageTraditionalChinese},
 	}
 }
 
@@ -558,10 +608,27 @@ func (state *State) settingsCloseOptions() [2]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsRelaunchOptions() [2]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsRelaunchRaise, Label: m.GeneralRelaunchRaise},
+		{ID: hitSettingsRelaunchNewWindow, Label: m.GeneralRelaunchNewWindow},
+	}
+}
+
 func (state *State) settingsOptionOptions() [2]components.SegmentOption {
 	return [...]components.SegmentOption{
 		{ID: hitSettingsOptionText, Label: state.messages.SettingsTerminalOptionText},
 		{ID: hitSettingsOptionMeta, Label: state.messages.SettingsTerminalOptionMeta},
+	}
+}
+
+func (state *State) settingsCursorThicknessOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsCursorThin, Label: m.CursorThin},
+		{ID: hitSettingsCursorNormal, Label: m.CursorNormal},
+		{ID: hitSettingsCursorThick, Label: m.CursorThick},
 	}
 }
 
@@ -571,6 +638,15 @@ func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
 		{ID: hitSettingsPadCompact, Label: m.PaddingCompact},
 		{ID: hitSettingsPadNormal, Label: m.PaddingNormal},
 		{ID: hitSettingsPadRoomy, Label: m.PaddingRoomy},
+	}
+}
+
+func (state *State) settingsLineHeightOptions() [3]components.SegmentOption {
+	m := state.messages.Tools
+	return [...]components.SegmentOption{
+		{ID: hitSettingsLineHeightCompact, Label: m.LineHeightCompact},
+		{ID: hitSettingsLineHeightNormal, Label: m.LineHeightNormal},
+		{ID: hitSettingsLineHeightRoomy, Label: m.LineHeightRoomy},
 	}
 }
 
@@ -642,6 +718,14 @@ func (state *State) settingsClipboardOptions() [3]components.SegmentOption {
 	}
 }
 
+func (state *State) settingsCursorStyleOptions() []components.SegmentOption {
+	return []components.SegmentOption{
+		{ID: hitSettingsCursorBlock, Label: state.messages.Tools.CursorShapeBlock},
+		{ID: hitSettingsCursorBar, Label: state.messages.Tools.CursorShapeBar},
+		{ID: hitSettingsCursorUnderline, Label: state.messages.Tools.CursorShapeUnderline},
+	}
+}
+
 func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return ui.EventResult{}, false
@@ -668,7 +752,7 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
 		options := state.settingsPathOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese:
+	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsLanguageTraditional:
 		options := state.settingsLanguageOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
@@ -680,6 +764,9 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsTabsHorizontal, hitSettingsTabsVertical:
 		options := state.settingsTabOrientationOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
+		options := state.tabNumberOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
 		options := state.settingsNetworkProxyOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
@@ -689,11 +776,20 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case hitSettingsCloseTray, hitSettingsCloseQuit:
 		options := state.settingsCloseOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsRelaunchRaise, hitSettingsRelaunchNewWindow:
+		options := state.settingsRelaunchOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsOptionText, hitSettingsOptionMeta:
 		options := state.settingsOptionOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
 		options := state.settingsPaddingOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsLineHeightCompact, hitSettingsLineHeightNormal, hitSettingsLineHeightRoomy:
+		options := state.settingsLineHeightOptions()
+		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
+		options := state.settingsCursorThicknessOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
 		options := state.settingsGutterOptions()

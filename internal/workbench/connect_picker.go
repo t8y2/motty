@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/vivaui/viva/text"
@@ -16,16 +17,24 @@ var connectPickerHits = tree.Feature("connect-picker")
 var (
 	hitConnectPickLocal = tree.ID(connectPickerHits, "connect-pick-local")
 	hitConnectPickList  = tree.Sub(connectPickerHits, tree.Name("connect-pick")) // + the host's ID
+	// hitConnectPickShellPicker expands the list of shells this computer can run.
+	hitConnectPickShellPicker = tree.ID(connectPickerHits, "connect-pick-shell-picker")
 	// hitConnectPickShells is a local terminal running one particular shell, by
 	// its place among the shells this computer lists.
 	hitConnectPickShells = tree.Sub(connectPickerHits, tree.Name("connect-pick-shell"))
+	// hitConnectPickEdit is the pencil of a host row, by the host's ID too: it
+	// opens the host's edit dialog instead of connecting.
+	hitConnectPickEdit         = tree.Sub(connectPickerHits, tree.Name("connect-pick-edit"))
+	hitConnectPickWorkspaceNew = tree.ID(connectPickerHits, "workspace-new")
+	hitConnectPickWorkspaces   = tree.Sub(connectPickerHits, tree.Name("workspace-template"))
 )
 
 func (state *State) openConnectPicker() {
 	if localShellSettingVisible() {
 		state.refreshLocalShells()
 	}
-	state.commandPalette.connect = true
+	state.commandPalette.connect, state.commandPalette.snippets = true, false
+	state.commandPalette.workspaces, state.commandPalette.localShells = false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
@@ -34,6 +43,15 @@ func (state *State) openConnectPicker() {
 
 func (state *State) rebuildConnectPicker() {
 	palette := &state.commandPalette
+	if palette.workspaces {
+		palette.add(state.messages.WorkspaceNew, hitConnectPickWorkspaceNew)
+		for index, template := range state.templates {
+			palette.addDetailed(template.Name, fmt.Sprintf(state.messages.WorkspaceTemplateHostCountFmt, len(template.HostIDs)), hitConnectPickWorkspaces.At(index))
+		}
+		palette.rawQuery, palette.query, palette.filtered = "", "", false
+		state.refreshCommandPalette()
+		return
+	}
 	if state.recentConnectSort {
 		palette.filtered = false
 		state.refreshCommandPalette()
@@ -45,7 +63,7 @@ func (state *State) rebuildConnectPicker() {
 			palette.addHeader(state.hostGroupLabel(*item.group), item.group.Count)
 		}
 		previousGroup = item.group
-		palette.addDetailed(item.label, item.detail, item.target)
+		palette.addCandidate(item)
 	})
 	palette.rawQuery = ""
 	palette.query = ""
@@ -60,6 +78,9 @@ type connectPickerCandidate struct {
 	target        ui.ID
 	group         *hostGroup
 	key           string
+	// searchOnly rows are indexed for the search but stay out of the
+	// unfiltered list until the Local Terminal row is expanded.
+	searchOnly bool
 }
 
 // eachConnectPickerCandidate keeps both modes' labels, targets and default
@@ -69,7 +90,7 @@ func (state *State) eachConnectPickerCandidate(add func(connectPickerCandidate))
 	add(connectPickerCandidate{label: state.messages.LocalTerminal, detail: local.Address, target: hitConnectPickLocal, key: "local-terminal"})
 	if choices := state.localShellMenu.choices; localShellSettingVisible() && len(choices) > 1 {
 		for index, choice := range choices {
-			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal"})
+			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal", searchOnly: true})
 		}
 	}
 	addHost := func(host Host, group *hostGroup) {
@@ -98,17 +119,35 @@ func (state *State) shellsListed() {
 		return
 	}
 	palette := &state.commandPalette
-	selected, top := palette.selected, palette.top
+	selected, scroll := palette.selected, palette.scroll
 	state.rebuildCommandPalette()
-	if palette.visibleCount > 0 {
-		palette.selected = min(selected, palette.visibleCount-1)
-		palette.top = min(top, palette.selected)
+	if len(palette.visible) > 0 {
+		palette.selected = min(selected, len(palette.visible)-1)
+		palette.scroll = min(scroll, palette.maxScroll())
 	}
+}
+
+// connectPickEdit is the pencil of a host row, named by the host: zero for the
+// rows that are not a saved host.
+func connectPickEdit(target ui.ID) ui.ID {
+	if target.Scope() != hitConnectPickList {
+		return ui.ID{}
+	}
+	return hitConnectPickEdit.At(item(target))
 }
 
 // clickConnectPick connects the picker's choice in a tab of its own.
 func (state *State) clickConnectPick(id ui.ID) bool {
 	switch {
+	case id == hitConnectPickWorkspaceNew:
+		state.openWorkspaceDraft(workspaceDraftTemporary)
+	case id.Scope() == hitConnectPickWorkspaces:
+		index, ok := id.In(hitConnectPickWorkspaces)
+		if !ok || index >= len(state.templates) {
+			return true
+		}
+		state.selectedWorkspaceTemplateID = state.templates[index].ID
+		state.applySelectedWorkspaceTemplate()
 	case id == hitConnectPickLocal:
 		state.pendingWorkspace, state.pendingPane = 0, 0
 		state.openLocalTerminal()

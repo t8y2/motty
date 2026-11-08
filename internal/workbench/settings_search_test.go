@@ -164,6 +164,28 @@ func TestCustomEditorSettingAppearsInSearchWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestFilesSettingsPlaceDirectoryTreeAfterOpenMode(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	var labels []string
+	state.eachSettingsEntry(func(entry settingsEntry) {
+		if entry.category == settingsFiles {
+			labels = append(labels, entry.label)
+		}
+	})
+	openMode, directoryTree := -1, -1
+	for index, label := range labels {
+		switch label {
+		case state.messages.Tools.FilesOpenMode:
+			openMode = index
+		case state.messages.Tools.FilesDirectoryTree:
+			directoryTree = index
+		}
+	}
+	if openMode < 0 || directoryTree != openMode+1 {
+		t.Fatalf("files settings order = %q; directory tree must immediately follow open mode", labels)
+	}
+}
+
 func TestSearchingSessionLogSettingsDoesNotShowFormatVerbs(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	searchSettings(t, state, state.messages.SessionLogs.SettingsStorageRow)
@@ -206,5 +228,20 @@ func TestEveryEntryOfTheSearchIndexPointsAtSomethingThePageDraws(t *testing.T) {
 		if strings.TrimSpace(entry.label) == "" {
 			t.Errorf("an entry has no label: %+v", entry)
 		}
+	}
+}
+
+// TestSearchFindsTheLineSpacingSetting keeps the new terminal row in the search
+// index; it paints even when the setting cannot be found by name.
+func TestSearchFindsTheLineSpacingSetting(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
+		t.Run(language.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.setLanguage(language)
+			searchSettings(t, state, state.messages.Tools.LineHeightRow)
+			if state.settings.count == 0 || state.settings.results[0].label != state.messages.Tools.LineHeightRow {
+				t.Fatalf("searching %q returned %+v", state.messages.Tools.LineHeightRow, state.settings.results[:state.settings.count])
+			}
+		})
 	}
 }

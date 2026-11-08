@@ -4,9 +4,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/sshconn"
@@ -75,7 +77,11 @@ func TestExportConnectionLogUsesPickerAndPrivateAtomicFile(t *testing.T) {
 	if !hasHit(canvas, hitConnExport) {
 		t.Fatal("live terminal has no export-log hit")
 	}
+	cursor, screen := state.sessions[0].term.screen.Cursor(), state.sessions[0].term.screen.Text()
 	state.Click(hitConnExport)
+	if got := state.sessions[0].term.screen.Cursor(); got != cursor || state.sessions[0].term.screen.Text() != screen {
+		t.Fatalf("export wrote into the live shell's screen: cursor %v -> %v", cursor, got)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +89,7 @@ func TestExportConnectionLogUsesPickerAndPrivateAtomicFile(t *testing.T) {
 	if !strings.Contains(string(data), "retained output") || !strings.Contains(state.status, path) {
 		t.Fatalf("data=%q status=%q", data, state.status)
 	}
-	if requested.DefaultExtension != "txt" || requested.SuggestedName != "Production-connection-log.txt" || len(requested.Filters) != 1 {
+	if requested.DefaultExtension != "txt" || !suggestedExportName.MatchString(requested.SuggestedName) || len(requested.Filters) != 1 {
 		t.Fatalf("save request = %+v", requested)
 	}
 	if runtime.GOOS != "windows" {
@@ -94,6 +100,21 @@ func TestExportConnectionLogUsesPickerAndPrivateAtomicFile(t *testing.T) {
 		if info.Mode().Perm() != 0o600 {
 			t.Fatalf("mode = %o, want 600", info.Mode().Perm())
 		}
+	}
+}
+
+var suggestedExportName = regexp.MustCompile(`^Production-connection-log-\d{8}-\d{6}\.txt$`)
+
+func TestExportFileNameCarriesTheMomentOfSaving(t *testing.T) {
+	at := time.Date(2026, 11, 5, 15, 30, 12, 0, time.UTC)
+	if got := connectionLogName("My Server", at); got != "My-Server-connection-log-20261105-153012.txt" {
+		t.Fatalf("connection log name = %q", got)
+	}
+	if got := terminalOutputName("", at); !strings.HasPrefix(got, "session-output-") || !strings.HasSuffix(got, ".txt") {
+		t.Fatalf("output name = %q", got)
+	}
+	if got := recordingName("a", at); !strings.HasSuffix(got, ".mottyrec") || !strings.Contains(got, "-terminal-") {
+		t.Fatalf("recording name = %q", got)
 	}
 }
 

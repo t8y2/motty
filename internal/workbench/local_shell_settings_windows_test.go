@@ -40,6 +40,14 @@ func shellSelectState(t *testing.T, choices []localshell.Choice) *State {
 func paintShellSettings(state *State) *ui.Canvas {
 	var canvas ui.Canvas
 	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	// The terminal page grows as settings are added, so the row this file is
+	// about is not always in the first screenful. Reach it the way a user does
+	// rather than assuming the canvas is tall enough.
+	if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
+		state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		canvas.Reset()
+		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	}
 	return &canvas
 }
 

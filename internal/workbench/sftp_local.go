@@ -313,6 +313,10 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	state.loadAppIcons(view, previousRows, listing.rows)
 	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
+	if view.detached != nil {
+		view.detached.observeDirectoryTreeListing(true, listing.dir, listing.entries)
+		view.detached.syncDirectoryTreeToPath(true, listing.dir)
+	}
 	state.applySFTPFilter(view, folder, true)
 	state.finishSFTPNavigation(view, true, place, restore, listing.navigation)
 	state.retireLocalListingStatus(view)

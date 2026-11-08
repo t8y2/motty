@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -98,6 +99,16 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	if w.bookmark.open {
 		return w.profilePointer(event)
 	}
+	if w.ui.profileQuickOpen {
+		if w.ui.profileQuickScroll.Drag(event) {
+			return handled
+		}
+		if event.Kind == ui.PointerDown && event.Target == hitSFTPProfileQuickDismiss {
+			w.closeProfileQuickMenu()
+			return handled
+		}
+		return ui.EventResult{}
+	}
 	if w.headerMenuOpen() {
 		if w.ui.headerScroll.Drag(event) {
 			return handled
@@ -145,6 +156,9 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 			w.ui.splitting = true
 		}
 		return handled
+	}
+	if result, ok := w.directoryTreePointer(event); ok {
+		return result
 	}
 	if w.ui.barDrag > 0 {
 		side := w.ui.barDrag - 1
@@ -335,7 +349,20 @@ func (w *sftpWindow) click(id ui.ID) {
 		}
 		return
 	}
+	if w.clickProfileQuick(id) {
+		return
+	}
 	if w.clickFilterControl(id) {
+		return
+	}
+	for side := range 2 {
+		if id == sftpWindowTreeToggle[side] {
+			w.activeLocal, w.view.local = side == 0, side == 0
+			w.toggleDirectoryTree(side == 0)
+			return
+		}
+	}
+	if w.clickDirectoryTree(id) {
 		return
 	}
 	if id == hitSFTPWindowMenuDismiss {
@@ -344,6 +371,10 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	if w.ui.menuOpen {
 		w.ui.menuOpen = false
+		if id == hitSFTPMenuSudo {
+			w.owner.toggleSudoSFTP(&w.session, w.view)
+			return
+		}
 		if index, ok := id.In(sftpWindowMenuActions); ok && index < len(sftpWindowActionIDs) {
 			w.fileAction(w.activeLocal, sftpWindowActionIDs[index])
 			return
@@ -357,6 +388,10 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	if w.view.bookmarksOpen {
 		w.clickDirectoryPlace(id)
+		return
+	}
+	if id == hitSFTPWindowSudoMode {
+		w.owner.toggleSudoSFTP(&w.session, w.view)
 		return
 	}
 	for side := range 2 {
@@ -519,6 +554,10 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 		if result, handled := w.profileScopeKey(event); handled {
 			return result
 		}
+		if event.Target == hitSFTPBookmarkSync && !event.Repeat && event.Modifiers == 0 && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) {
+			w.clickBookmarkEditor(hitSFTPBookmarkSync)
+			return handled
+		}
 		if index, ok := event.Target.In(hitSFTPBookmarkFields); ok && index < len(w.bookmark.fields) {
 			if _, composing := w.bookmark.fields[index].Composition(); composing {
 				return ui.EventResult{}
@@ -573,6 +612,9 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			return handled
 		}
 		return ui.EventResult{}
+	}
+	if result, handled := w.profileQuickKey(event); handled {
+		return result
 	}
 	if event.Key == ui.KeyEscape {
 		if w.closeConfirm {
@@ -630,6 +672,9 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
 		return ui.EventResult{}
+	}
+	if result, handled := w.directoryTreeKey(event); handled {
+		return result
 	}
 	if delta, ok := sftpHistoryChord(event); ok {
 		isText := false
@@ -761,7 +806,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 	handled := ui.EventResult{Handled: true, Repaint: true}
 	switch strings.ToLower(event.Text) {
 	case "f":
-		if event.Modifiers != defaultShortcutModifier() {
+		if event.Modifiers != keymap.Primary {
 			return ui.EventResult{}
 		}
 		w.cancelDrag()
@@ -811,6 +856,9 @@ func (w *sftpWindow) scroll(event ui.ScrollEvent) ui.EventResult {
 		}
 		return ui.EventResult{Handled: true}
 	}
+	if w.ui.profileQuickOpen {
+		return ui.EventResult{Handled: true, Repaint: w.ui.profileQuickScroll.Wheel(event)}
+	}
 	if w.headerMenuOpen() {
 		return ui.EventResult{Handled: true, Repaint: w.ui.headerScroll.Wheel(event)}
 	}
@@ -822,6 +870,9 @@ func (w *sftpWindow) scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
 		return ui.EventResult{Handled: true}
+	}
+	if result, handled := w.directoryTreeScroll(event); handled {
+		return result
 	}
 	for side, bounds := range w.ui.list {
 		if pointInRect(event.X, event.Y, bounds) {

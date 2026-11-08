@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
 
 func openFindForTest(t testing.TB, state *State) (*Session, *terminalFind) {
 	t.Helper()
-	result := state.Shortcut(ui.KeyEvent{Modifiers: defaultShortcutModifier(), Text: "f"})
+	result := state.Shortcut(ui.KeyEvent{Modifiers: keymap.Primary, Text: "f"})
 	if !result.Handled || !result.Repaint || result.Focus != hitTerminalFindField || !result.FocusVisible {
 		t.Fatalf("find shortcut result = %+v", result)
 	}
@@ -87,8 +88,8 @@ func TestClearingTheScreenRescansAnOpenFind(t *testing.T) {
 	if len(find.matches) != 1 {
 		t.Fatalf("matches = %d, want the line just printed", len(find.matches))
 	}
-	shortcut := state.shortcuts.chords[shortcutClearScreen]
-	state.Shortcut(ui.KeyEvent{Target: hitTerminalFindField, Modifiers: shortcut.Modifiers, Text: string(shortcut.Key)})
+	shortcut := state.shortcuts.chords.Chord(shortcutClearScreen)
+	state.Shortcut(ui.KeyEvent{Target: hitTerminalFindField, Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
 	if len(find.matches) != 0 || find.active != -1 || find.count != state.messages.TerminalFindNoMatches {
 		t.Fatalf("after the clear = %d matches, active %d, count %q", len(find.matches), find.active, find.count)
 	}

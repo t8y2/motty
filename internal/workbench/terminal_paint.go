@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -43,8 +44,9 @@ const (
 // paintTerminalPage draws a session. Active panes get a configurable tool rail
 // with only connection latency and actions. Every split pane reserves the same
 // bar height and identifies its own session there, so switching focus cannot
-// move or resize a PTY. Find mode temporarily replaces the bar with its search
-// controls.
+// move or resize a PTY. Find mode puts its search controls in that strip, as a
+// macOS terminal puts its search bar above the text rather than over it, and
+// leaves the shared rail where it is.
 func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *Session) {
 	state.wantLatencyProbe(session, canvas)
 	chrome, ok := state.terminalChromeForSession(session.ID)
@@ -62,7 +64,7 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
 	status, _ := state.sessionStatus(session)
-	if inactive || finding {
+	if inactive {
 		state.clearTerminalRail(session)
 	}
 	title := session.Title
@@ -74,31 +76,22 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 
 	f := state.terminalPageLayout.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		switch {
-		case inSplit || finding:
+		if inSplit || finding {
 			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
-				switch {
-				case finding:
+				if finding {
 					find = state.declareFindBar(f, session)
-				default:
+				} else {
 					spinner, light = state.declarePaneBar(f, size.Width, title, status, session, !inactive)
 				}
 				f.Row().FillWidth().Height(1).Self(flex.End).Background(barBorder)
 			})
-			f.Column().Grow(1).FillHeight().Children(func() {
-				if showingInputNotice {
-					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
-				}
-				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
-			})
-		default:
-			f.Column().Grow(1).FillHeight().Children(func() {
-				if showingInputNotice {
-					inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
-				}
-				f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
-			})
 		}
+		f.Column().Grow(1).FillHeight().Children(func() {
+			if showingInputNotice {
+				inputNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+			}
+			f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
+		})
 	})
 	f.End()
 
@@ -106,11 +99,12 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 	case finding:
 		state.paintFindBarSlots(canvas, session, find)
 	case inSplit:
-		if session.busy {
+		switch {
+		case session.busy:
 			phase := components.SpinnerPhase(canvas.Now() / spinnerStep)
 			components.PaintSpinner(canvas, state.Theme(), spinner.Rect(), phase)
 			canvas.RequestFrameIn(spinnerStep)
-		} else if !inactive {
+		case !inactive:
 			// Only the active pane declares the status-light slot. Calling Rect on
 			// the empty box used by an inactive pane would dereference nil.
 			spot := light.Rect()
@@ -127,10 +121,15 @@ func (state *State) paintTerminalPage(canvas *ui.Canvas, size ui.Size, session *
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
-	if session == nil || session.term == nil || state.paneIsInactive(session.ID) || session.term.find.open {
+	if session == nil || session.term == nil || state.paneIsInactive(session.ID) {
 		return nil
 	}
 	tools := toolList[:0]
+	notesStyle := iconButtonQuiet
+	if state.notes.panel {
+		notesStyle = iconButtonActive
+	}
+	tools = append(tools, barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: notesStyle})
 	if session.host.isSSH() && !session.isLocal() {
 		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 	}
@@ -143,6 +142,16 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		filesHint = state.messages.TipFilesLocal
 	}
 	tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
+	if state.localProxyActionVisible(session) {
+		tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title}
+		if snapshot := state.localProxySnapshot(session); snapshot.Phase != localProxyDisconnected {
+			tool.style = iconButtonActive
+			if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {
+				tool.hint = fmt.Sprintf(state.messages.LocalProxy.ConnectedFmt, snapshot.RemotePort)
+			}
+		}
+		tools = append(tools, tool)
+	}
 	tools = append(tools, barTool{id: hitConnExport, icon: iconFileDown, hint: state.messages.ConnExportLog, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitTerminalRecordingExport, icon: iconFilm, hint: state.messages.RecordingExport, disabled: len(session.term.recording.events) == 0, style: iconButtonQuiet})
 	recordIcon, recordHint, recordStyle := uint8(iconRecord), state.messages.TipRecordStart, iconButtonQuiet
@@ -162,6 +171,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
 	verticalDisabled := managed && !state.canSplitActivePane(layoutcore.Vertical)
 	horizontalDisabled := managed && !state.canSplitActivePane(layoutcore.Horizontal)
+	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconNote, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
 	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
 	if inSplit && !managed {
@@ -204,6 +214,7 @@ func (state *State) clearTerminalRail(session *Session) {
 		return
 	}
 	session.term.railCount = 0
+	session.term.railIDs = [maxBarTools]ui.ID{}
 	session.term.railEnabled = [maxBarTools]bool{}
 	session.term.railViewport = ui.Rect{}
 	session.term.railBounds = ui.Rect{}
@@ -419,23 +430,37 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	cursor := t.presentedCursor()
 	composing := t.preedit.Composing
-	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay()
+	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay(state.now())
 	predicting = predicting && !composing && cursor.Visible && t.sync == nil
+	if remaining, ok := t.prediction.expiry(state.now()); ok && predicting {
+		// A guess the server never echoes is taken back at its deadline, not at
+		// the next key.
+		canvas.RequestFrameIn(max(remaining, time.Millisecond))
+	}
 	if t.sync != nil && t.clock != nil {
 		canvas.RequestFrameIn(t.syncRemaining())
+	}
+	// caretX is where the next character goes: past the text typed ahead of the
+	// echo, so every cursor shape keeps showing an insertion point while the
+	// server catches up. It is the emulator's own column once nothing is pending.
+	caretX := cursor.X
+	if predicting {
+		caretX += predictionCells
 	}
 	// The cursor blinks while the terminal has the keyboard and something is
 	// happening; it is solid from the moment it moves or the pane is entered.
 	blinkOn := true
 	if cursor.Visible && focused && !composing && !state.terminalCursorSteady && !cursor.Steady {
-		blinkOn = t.blink.on(canvas, cursor.X, cursor.Y)
+		blinkOn = t.blink.on(canvas, caretX, cursor.Y)
 	} else {
-		t.blink.rest(cursor.X, cursor.Y)
+		t.blink.rest(caretX, cursor.Y)
 	}
 	if t.sync != nil {
 		blinkOn = true
 	}
-	block := cursor.Visible && cursor.Style == term.CursorBlock && focused && !composing && !predicting && blinkOn
+	// A block cursor is an inverted cell prepared by the row cache, so it follows
+	// the caret rather than being dropped while a guess is on screen.
+	block := cursor.Visible && cursor.Style == term.CursorBlock && focused && !composing && blinkOn
 	// The input method draws its composition over the cells from the cursor on,
 	// where it replaces whatever the program put there. A program that draws its
 	// own cursor (a prompt with placeholder text) hides the real one, so the
@@ -472,7 +497,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
-			column = cursor.X
+			column = caretX
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
@@ -498,7 +523,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
-			column = cursor.X
+			column = caretX
 		}
 		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
 		y := geometry.top + float32(row)*cellHeight
@@ -517,7 +542,14 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 			}
 		}
 		if len(entry.runs) > 0 {
-			canvas.LabelRuns(entry.text, ui.Rect{X: geometry.left, Y: y, Width: labelWidth, Height: cellHeight}, style, cellWidth, entry.runs)
+			last := entry.runs[len(entry.runs)-1]
+			rowCols := min(int(last.Column+last.Cells)+1, cols)
+			rowWidth := min(float32(math.Ceil(float64(float32(rowCols)*cellWidth)))+1, labelWidth)
+			identity := ui.TextIdentity{}
+			if t.rowIDs[row] != 0 {
+				identity = ui.TextIdentity{Owner: session.ID, Item: t.rowIDs[row]}
+			}
+			canvas.LabelRunsWithIdentity(identity, entry.text, ui.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)
@@ -532,18 +564,17 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 	t.cache.end(rows)
 	if predicting && cursor.Y < rows {
 		// Typed text the server has not echoed yet, drawn at once over the cursor
-		// cell and the cells after it, muted so it reads as provisional. It is not
-		// underlined: on a slow link a held key keeps that mark on screen. It never
-		// enters the terminal's own buffer.
+		// cell and the cells after it in the terminal's own color, so the echo
+		// that replaces it changes nothing a reader could see. The block cursor
+		// stays visible past the text. It never enters the terminal's own buffer.
 		x := geometry.left + float32(cursor.X)*cellWidth
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		width := float32(predictionCells) * cellWidth
 		canvas.Fill(ui.Rect{X: x, Y: y, Width: width, Height: cellHeight}, pal.terminal)
 		for index := range predictionRuns {
-			predictionRuns[index].Color = pal.muted
+			predictionRuns[index].Color = pal.termFG
 		}
 		canvas.LabelRuns(predictionText, ui.Rect{X: x, Y: y, Width: width, Height: cellHeight}, style, cellWidth, predictionRuns)
-		cursor.X += predictionCells
 	}
 
 	if cursor.Visible && cursor.Y < rows {
@@ -551,7 +582,7 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		if inactive {
 			cursorColor.Alpha *= 0.45
 		}
-		x := geometry.left + float32(cursor.X)*cellWidth
+		x := geometry.left + float32(caretX)*cellWidth
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		switch {
 		case !blinkOn:
@@ -559,9 +590,10 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		case composing:
 			// The input method draws over these cells, which the rows left empty.
 		case cursor.Style == term.CursorUnderline:
-			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - 2, Width: cellWidth, Height: 2}, cursorColor)
+			underline := state.terminalCursorThickness.underline()
+			canvas.Fill(ui.Rect{X: x, Y: y + cellHeight - underline, Width: cellWidth, Height: underline}, cursorColor)
 		case cursor.Style == term.CursorBar:
-			canvas.Fill(ui.Rect{X: x, Y: y, Width: 3, Height: cellHeight}, cursorColor)
+			canvas.Fill(ui.Rect{X: x, Y: y, Width: state.terminalCursorThickness.bar(), Height: cellHeight}, cursorColor)
 		case !focused:
 			// A block cursor outlines its cell while the terminal does not have the keyboard.
 			canvas.Fill(ui.Rect{X: x, Y: y, Width: cellWidth, Height: 1}, cursorColor)
@@ -576,7 +608,9 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 		canvas.Fill(ui.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
 	if !sensitive && focused && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.passwordHintGhost(session); ok {
+			state.paintGhost(canvas, t, geometry, cursor, rest, block)
+		} else if rest, ok := state.commandGhost(session); ok {
 			state.paintGhost(canvas, t, geometry, cursor, rest, block)
 		}
 	}

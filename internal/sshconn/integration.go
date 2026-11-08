@@ -5,11 +5,15 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"motty/internal/shellkind"
 )
 
 const shellIntegrationProbe = `printf '\036motty-shell:%s\037' "$SHELL"`
 
-func (conn *Conn) shellIntegrationCommand(token string) string {
+func (conn *Conn) shellIntegrationCommand(token, directory string) string {
 	ctx, cancel := context.WithTimeout(conn.ctx, 2*time.Second)
 	defer cancel()
 	data, err := conn.RunCommand(ctx, shellIntegrationProbe, 4096)
@@ -24,7 +28,27 @@ func (conn *Conn) shellIntegrationCommand(token string) string {
 	if !ok {
 		return ""
 	}
-	return integrationCommand(shell, token)
+	return integrationCommandIn(shell, directory, token)
+}
+
+// defaultShellKind asks the server's default shell what it is, once per client:
+// a command channel runs in the same shell an interactive session starts. A host
+// that does not answer in time stays Unknown, and nothing is cached, so the next
+// shell asks again.
+func (conn *Conn) defaultShellKind(client *ssh.Client) shellkind.Kind {
+	conn.kindMu.Lock()
+	defer conn.kindMu.Unlock()
+	if conn.kindClient == client {
+		return conn.kind
+	}
+	ctx, cancel := context.WithTimeout(conn.ctx, 2*time.Second)
+	defer cancel()
+	data, err := conn.RunCommand(ctx, shellkind.Probe, 4096)
+	if err != nil {
+		return shellkind.Unknown
+	}
+	conn.kindClient, conn.kind = client, shellkind.ParseProbe(string(data))
+	return conn.kind
 }
 
 // IntegrationArgs is how a shell of this machine starts with directory and
@@ -41,12 +65,31 @@ func IntegrationArgs(shell, token string) []string {
 // Only recognized Unix shells opt into the startup shim. The probe and shim
 // never write commands to an already running interactive program.
 func integrationCommand(shell string, tokens ...string) string {
+	return integrationCommandIn(shell, "", tokens...)
+}
+
+// integrationCommandIn is integrationCommand for a shell that starts in
+// directory. The path is the script's second argument, quoted like the shell's,
+// never part of the script: it cannot be taken for code. A directory that is not
+// absolute or holds control characters, or one the server no longer has, leaves
+// the shell where it starts anyway.
+func integrationCommandIn(shell, directory string, tokens ...string) string {
 	script := integrationScript(shell, tokens...)
 	if script == "" {
 		return ""
 	}
-	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
-	return "sh -c " + quote(script) + " sh " + quote(shell)
+	command := "sh -c " + shellQuote(script) + " sh " + shellQuote(shell)
+	if validStartDirectory(directory) {
+		command += " " + shellQuote(directory)
+	}
+	return command
+}
+
+func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+
+func validStartDirectory(directory string) bool {
+	return strings.HasPrefix(directory, "/") && len(directory) <= 4096 &&
+		strings.IndexFunc(directory, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
 }
 
 // integrationScript is the sh program that starts shell, taken as its first
@@ -85,7 +128,8 @@ func validIntegrationToken(token string) bool {
 // startScript starts the shell in $1 ("bash" or "zsh") with a private startup
 // that sources the user's own files and then reports through report.
 func startScript(name, report, suffix string, forceTrap bool) string {
-	script := `_motty_umask=$(umask)
+	script := `if [ -n "${2-}" ]; then cd -- "$2" 2>/dev/null; fi
+_motty_umask=$(umask)
 umask 077
 _motty_dir=$(mktemp -d "${TMPDIR:-/tmp}/motty-shell.XXXXXXXX") || { umask "$_motty_umask"; exec "$1" -l; }
 trap 'rm -rf -- "$_motty_dir"' 0

@@ -54,8 +54,18 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				shot(fmt.Sprintf("toolbar-opened-%d", group))
 				original := state.toolbars.entries(group)[0].Key
 				first := hitToolbarHandles.At(toolbarEntryIndex(group, original))
+				// The editor scrolls, so a long group does not show every entry at
+				// once: the drag ends on the last one in view.
 				lastEntries := state.toolbars.entries(group)
-				last := hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[len(lastEntries)-1].Key))
+				painted := map[ui.ID]bool{}
+				for _, h := range view.Snapshot().Hits {
+					painted[h.ID] = true
+				}
+				lastSlot := len(lastEntries) - 1
+				for lastSlot > 0 && !painted[hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[lastSlot].Key))] {
+					lastSlot--
+				}
+				last := hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[lastSlot].Key))
 				a, b := dualHit(t, view, first), dualHit(t, view, last)
 				x, y := a.X+a.Width/2, a.Y+a.Height/2
 				if err := view.Press(x, y); err != nil {
@@ -64,14 +74,14 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Move(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Driver().Leave(); err != nil {
+				if err := view.Driver().Cancel(); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
 				if state.toolbarEditor.list.Dragging() || state.toolbars.entries(group)[0].Key != original {
-					t.Fatal("losing pointer capture retained or committed an interrupted drag")
+					t.Fatal("a cancelled press retained or committed an interrupted drag")
 				}
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
@@ -86,7 +96,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					t.Fatal(err)
 				}
 				entries := state.toolbars.entries(group)
-				if entries[len(entries)-1].Key != original {
+				if entries[lastSlot].Key != original {
 					t.Fatalf("group %d did not reorder on drop: %+v", group, entries)
 				}
 				if err := view.Keys("Home"); err != nil {

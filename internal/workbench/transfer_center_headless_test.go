@@ -67,6 +67,23 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
 				t.Fatal("End did not reveal the bottom of history")
 			}
+			reveal, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(1))
+			if !ok {
+				t.Fatal("completed download has no reveal control")
+			}
+			if reveal.Role != ui.RoleButton || reveal.Label != state.messages.Transfers.ShowInFolder ||
+				reveal.Hint != state.messages.Transfers.ShowInFolder || !reveal.Focusable {
+				t.Fatalf("reveal control lacks button semantics: %+v", reveal)
+			}
+			remove, ok := findSnapshotHit(view.Snapshot(), hitTransfersRemove.At(1))
+			if !ok || reveal.Bounds.X+reveal.Bounds.Width > remove.Bounds.X {
+				t.Fatalf("reveal control %+v is not left of remove control %+v", reveal.Bounds, remove.Bounds)
+			}
+			for _, id := range []int{2, 3, 4} {
+				if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(id)); ok {
+					t.Fatalf("non-completed-download record %d has a reveal control", id)
+				}
+			}
 			if err := view.Driver().Key(ui.KeyHome, 0); err != nil {
 				t.Fatal(err)
 			}
@@ -109,6 +126,55 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
+	state := transferPreviewState(t)
+	entry := &state.transfers.entries[0]
+	if entry.owner != nil {
+		t.Fatal("fixture is not closed-connection history")
+	}
+	file := filepath.Join(t.TempDir(), "download.sh")
+	if err := os.WriteFile(file, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry.snapshot.Destination = file
+	view, err := headless.Open(app.Config{Title: "Motty", Width: 900, Height: 600,
+		Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll},
+		nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(100 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Driver().Key(ui.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(entry.id))
+	if !ok || hit.Disabled {
+		t.Fatalf("completed download cannot be revealed: %+v", hit)
+	}
+	click := func() {
+		t.Helper()
+		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	click()
+	waitFor(t, state, func() bool {
+		got, ok := view.Driver().LastRevealedPath()
+		return ok && got == file && !state.revealBusy
+	})
+	if _, ok := view.Driver().LastOpenedPath(); ok {
+		t.Fatal("revealing the downloaded script opened it instead")
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	click()
+	waitFor(t, state, func() bool { return state.status == state.messages.Transfers.ShowInFolderMissing })
 }
 
 func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {

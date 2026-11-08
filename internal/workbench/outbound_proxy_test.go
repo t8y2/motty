@@ -555,16 +555,16 @@ func TestStreamHostsUseTheirOwnProxyPolicyAndSerialUsesNone(t *testing.T) {
 		Proxy: &outboundProxy{kind: sshconn.ProxyHTTPConnect, address: "host.proxy:3128"},
 	})
 	openHost(state)
-	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests) == 1 })
-	if proxy := streams.requests[0].Proxy; proxy == nil || proxy.Address != "host.proxy:3128" {
+	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests()) == 1 })
+	if proxy := streams.requests()[0].Proxy; proxy == nil || proxy.Address != "host.proxy:3128" {
 		t.Fatalf("Telnet proxy = %+v", proxy)
 	}
 
 	state.Click(hitHosts)
 	addStreamHost(state, Host{Label: "Console", Address: "/dev/ttyUSB0", Protocol: protocolSerial})
 	openHost(state)
-	waitUntil(t, state, "the serial request", func() bool { return len(streams.requests) == 2 })
-	if proxy := streams.requests[1].Proxy; proxy != nil {
+	waitUntil(t, state, "the serial request", func() bool { return len(streams.requests()) == 2 })
+	if proxy := streams.requests()[1].Proxy; proxy != nil {
 		t.Fatalf("serial proxy = %+v", proxy)
 	}
 }
@@ -574,16 +574,16 @@ func TestDirectAndTunneledDesktopHostsUseTheDesktopHostsProxyPolicy(t *testing.T
 	state := newTestState(t, options)
 	state.options.Invalidate = func() {}
 	state.proxy = outboundProxy{kind: sshconn.ProxySOCKS5, address: "global.proxy:1080"}
-	var requests []desktopRequest
+	requests := make(chan desktopRequest, 1)
 	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
-		requests = append(requests, request)
+		requests <- request
 		return newPictureOnly(), nil
 	}
 	dedicated := &outboundProxy{kind: sshconn.ProxyHTTPConnect, address: "desktop.proxy:3128"}
 	addStreamHost(state, Host{Label: "Direct desktop", Address: "direct.example.com", Protocol: protocolRDP, Proxy: dedicated})
 	openHost(state)
 	waitUntil(t, state, "the direct desktop request", func() bool { return len(requests) == 1 })
-	if proxy := requests[0].Proxy; proxy == nil || proxy.Address != "desktop.proxy:3128" {
+	if proxy := (<-requests).Proxy; proxy == nil || proxy.Address != "desktop.proxy:3128" {
 		t.Fatalf("direct desktop proxy = %+v", proxy)
 	}
 
@@ -671,7 +671,7 @@ func TestCopyingAHostCarriesItsDedicatedProxyPassword(t *testing.T) {
 	}
 }
 
-func TestDeletingAHostRetiresItsProxyPasswordBeforeItsCatalogIDCanBeReused(t *testing.T) {
+func TestDeletingAHostRetiresItsProxyPasswordAndItsIDIsNotReused(t *testing.T) {
 	_, options := proxyWorld(t)
 	state := newTestState(t, options)
 	deleted := state.hosts[0]
@@ -697,8 +697,8 @@ func TestDeletingAHostRetiresItsProxyPasswordBeforeItsCatalogIDCanBeReused(t *te
 	state.Click(hitOutboundProxySubmit)
 	state.Click(hitDialogSubmit)
 	replacement := state.hosts[len(state.hosts)-1]
-	if replacement.CatalogID != deleted.CatalogID {
-		t.Fatalf("replacement catalog id = %q, want reused %q", replacement.CatalogID, deleted.CatalogID)
+	if replacement.CatalogID == deleted.CatalogID {
+		t.Fatalf("a host added at the address of a deleted one took its catalog id %q", deleted.CatalogID)
 	}
 	if proxy := state.proxyForHost(replacement); proxy == nil || proxy.Password != "" {
 		t.Fatalf("replacement inherited deleted password: %+v", proxy)

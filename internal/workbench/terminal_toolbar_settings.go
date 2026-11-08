@@ -144,5 +144,8 @@ func (state *State) resetTerminalToolRails() {
 		terminal.railViewport = ui.Rect{}
 		terminal.railBounds = ui.Rect{}
 		terminal.railContentExtent = 0
+		terminal.railIDs = [maxBarTools]ui.ID{}
+		terminal.railEnabled = [maxBarTools]bool{}
+		terminal.railCount = 0
 	}
 }
