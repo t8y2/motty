@@ -262,7 +262,7 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 		if panel.mentionIndex == index || canvas.FocusVisible() == id {
 			background = pal.surfaceHot
 		}
-		label := "@" + name.title
+		label := "@" + name.name
 		row := state.aiFlex.mention.Begin(canvas, theme, body.mentions[index].Rect())
 		row.Row().Fill().PadX(8).Gap(10).Items(flex.Center).Background(background).Radius(radius.item).
 			HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {

@@ -315,7 +315,8 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 				session.HostID = host.ID
 			}
 		}
-		session.Title = state.uniqueSessionTitle(session.Title, 0)
+		session.Title = cleanSessionTitle(session.Title)
+		session.Mention = state.uniqueMentionName(session.Title, session.ID)
 		state.sessions = append(state.sessions, session)
 		moved := &state.sessions[len(state.sessions)-1]
 		moved.paneSlot = state.claimPaneSlot()

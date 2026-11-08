@@ -98,9 +98,12 @@ func (host *Host) finish() {
 type Session struct {
 	outputAlert terminalOutputAlert // runtime only; connection status stays independent
 
-	ID       uint32
-	HostID   uint32
-	Title    string
+	ID     uint32
+	HostID uint32
+	Title  string
+	// Mention is this session's unique @ name. Titles may repeat; the mention
+	// stays distinct so a message names exactly one terminal.
+	Mention  string
 	Address  string // dialed address; changes to a saved host take effect on reconnect
 	paneSlot uint8
 	// localDirectory is this shell's last reported directory, independent of

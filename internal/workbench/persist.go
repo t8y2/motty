@@ -285,7 +285,10 @@ type savedProxy struct {
 }
 
 type savedSession struct {
-	Label     string `json:"label,omitempty"`
+	Label string `json:"label,omitempty"`
+	// Mention is the session's unique @ name; absent in older files and then
+	// derived from Label when the session is restored.
+	Mention   string `json:"mention,omitempty"`
 	Address   string `json:"address"`
 	User      string `json:"user,omitempty"`
 	Port      uint16 `json:"port,omitempty"`
@@ -656,14 +659,14 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		if session.isLocal() {
-			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
+			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
 			if session.ID == state.activeSessionID {
 				saved.ActiveSession = len(saved.Sessions)
 			}
 			continue
 		}
 		saved.Sessions = append(saved.Sessions, savedSession{
-			Label: session.Title, Address: session.host.Address, User: session.host.User,
+			Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
 			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
 			savedTransport: session.host.transport(),
@@ -1281,14 +1284,21 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		}
 		title := entry.Label
 		if title == "" {
-			title = host.Label
+			// A file without a label predates saved titles: invent a distinct
+			// one, as opening the host would.
+			title = state.uniqueSessionTitle(host.Label)
+		} else {
+			title = cleanSessionTitle(title)
 		}
 		state.sessions = append(state.sessions, Session{
-			ID: state.nextSessionID, HostID: host.ID, Title: state.uniqueSessionTitle(title, 0),
+			ID: state.nextSessionID, HostID: host.ID, Title: title, Mention: entry.Mention,
 			Address: state.sessionAddress(host),
 			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
+		if session.Mention == "" {
+			session.Mention = state.uniqueMentionName(session.Title, session.ID)
+		}
 		if entry.Local {
 			session.setStartDirectory(entry.LocalDirectory)
 		} else {

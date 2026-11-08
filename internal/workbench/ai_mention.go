@@ -14,8 +14,8 @@ import (
 // An @name in a message to the assistant brings that session's recent terminal
 // text along with the question, so the assistant need not be told to go and read
 // it and the user decides which hosts it sees. The name is the tab's title with
-// spaces made into dashes. Duplicate titles are numbered when tabs are created,
-// so the menu and the tab strip never invent different names for a session.
+// spaces made into dashes. Titles may repeat, so a name shared by several tabs
+// is numbered once when the title is assigned; the menu offers that exact token.
 
 const (
 	maxMentionSuggestions = 5
@@ -59,6 +59,19 @@ func mentionEmailPrefix(r rune) bool {
 	return r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("._-+", r))
 }
 
+// sessionMentionName is the @ token assigned to a session. Older states and
+// sessions built directly in tests have none; fall back to the title's slug.
+func sessionMentionName(session *Session) string {
+	if session.Mention != "" {
+		return session.Mention
+	}
+	name := mentionSlug(session.Title)
+	if name == "" {
+		name = "session-" + sessionHandle(session.ID)
+	}
+	return name
+}
+
 // mentionNames is the name of every session a message can mention.
 func (state *State) mentionNames(dst []mentionName) []mentionName {
 	for index := range state.sessions {
@@ -66,11 +79,7 @@ func (state *State) mentionNames(dst []mentionName) []mentionName {
 		if session.term == nil {
 			continue
 		}
-		name := mentionSlug(session.Title)
-		if name == "" {
-			name = "session-" + sessionHandle(session.ID)
-		}
-		dst = append(dst, mentionName{name: name, title: session.Title, session: session.ID, detail: session.Address})
+		dst = append(dst, mentionName{name: sessionMentionName(session), title: session.Title, session: session.ID, detail: session.Address})
 	}
 	return dst
 }

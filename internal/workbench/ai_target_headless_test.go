@@ -101,8 +101,8 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 					t.Fatalf("native input = %q", state.ai.input.String())
 				}
 				mention := find(hitAIMentions.At(1))
-				if mention.Label != "@"+state.sessions[1].Title {
-					t.Fatalf("mention differs from tab: %q", mention.Label)
+				if want := "@" + sessionMentionName(&state.sessions[1]); mention.Label != want {
+					t.Fatalf("mention = %q, want %q", mention.Label, want)
 				}
 				caretBefore := state.ai.input.Selection()
 				must(view.Keys("Down"))
