@@ -85,6 +85,42 @@ func TestUnixShellDiscoveryFindsShellsOutsidePATH(t *testing.T) {
 	}
 }
 
+// TestUnixShellDiscoveryFindsShellsInUserBinDirectories covers the same Finder
+// launch for shells installed below the home directory instead of a system
+// prefix: cargo install, XDG's user bin, a Nix profile and ~/bin.
+func TestUnixShellDiscoveryFindsShellsInUserBinDirectories(t *testing.T) {
+	root := t.TempDir()
+	restoreShellFile := pointShellFileAt(t, filepath.Join(root, "no-shells"))
+	defer restoreShellFile()
+	restorePrefixes := pointShellPrefixesAt(t, filepath.Join(root, "no-standard"))
+	defer restorePrefixes()
+	t.Setenv("HOME", root)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("SHELL", "")
+
+	installed := map[string]string{
+		".cargo/bin":       "nu",
+		".local/bin":       "fish",
+		".nix-profile/bin": "elvish",
+		"bin":              "xonsh",
+	}
+	paths := make([]string, 0, len(installed))
+	for dir, name := range installed {
+		full := filepath.Join(root, filepath.FromSlash(dir))
+		if err := os.MkdirAll(full, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, writeExecutable(t, full, name))
+	}
+
+	choices := InstalledWindowsShells()
+	for _, path := range paths {
+		if !hasShell(choices, path) {
+			t.Fatalf("shells %+v do not include user shell %q", choices, path)
+		}
+	}
+}
+
 // TestUnixShellDiscoveryKeepsOneEntryPerFamily checks the list's shape: two
 // installations of the same shell are one menu entry, because the settings
 // choose a family, not a copy of it.

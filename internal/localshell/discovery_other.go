@@ -21,8 +21,15 @@ var systemShellFile = "/etc/shells"
 // before PATH is consulted. PATH alone is not enough: an application started
 // from the Finder inherits launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:
 // /sbin), which holds neither Homebrew prefix, so a shell installed with brew
-// would be invisible to it. /opt/local is MacPorts, with the same problem.
+// would be invisible to it. /opt/local is MacPorts, with the same problem. The
+// user-level prefixes are appended after these system-wide locations.
 var shellPrefixes = []string{"/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/opt/local/bin"}
+
+// shellUserDirs are relative to the user's home. They are the conventional
+// places a shell installed without root lands: cargo install, XDG's user bin,
+// a Nix profile and the long-standing ~/bin. A Finder launch does not inherit
+// the login shell's PATH, so these must be searched directly as well.
+var shellUserDirs = []string{".cargo/bin", ".local/bin", ".nix-profile/bin", "bin"}
 
 // shellFamilies are the interactive shells worth an entry whether or not the
 // system shell file names them, in the order the settings offer them.
@@ -32,8 +39,23 @@ var shellFamilies = []string{"zsh", "bash", "fish", "nu", "elvish", "xonsh", "tc
 // On non-Windows systems it lists the shells the system shell file accepts,
 // the standard installation prefixes and PATH, keeping one entry per family.
 func InstalledWindowsShells() []Choice {
-	paths := shellPathsByFamily(systemShellFile, shellPrefixes)
+	prefixes := make([]string, 0, len(shellPrefixes)+len(shellUserDirs))
+	prefixes = append(prefixes, shellPrefixes...)
+	prefixes = append(prefixes, userShellPrefixes()...)
+	paths := shellPathsByFamily(systemShellFile, prefixes)
 	return collapseCShellAlias(discoverShells(candidatesFrom(paths), defaultShell(), exec.LookPath))
+}
+
+func userShellPrefixes() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	prefixes := make([]string, 0, len(shellUserDirs))
+	for _, dir := range shellUserDirs {
+		prefixes = append(prefixes, filepath.Join(home, filepath.FromSlash(dir)))
+	}
+	return prefixes
 }
 
 // collapseCShellAlias keeps one entry when csh and tcsh are two names for the
