@@ -1611,8 +1611,11 @@ var chineseTools = ToolsMessages{
 	LinkPlainClickDescription:  "关闭时，需按住 Cmd（Windows 和 Linux 为 Ctrl）再点击才会打开链接，单击只用来选择和复制。",
 	BellRow:                    "终端响铃",
 	BellDescription:            "终端里的程序输出响铃字符（如 printf '\\a'、tput bel）时，在本机播放系统提示音，可用来提醒远程命令已完成。",
-	TabTitleRow:                "标签页跟随终端标题",
-	TabTitleDescription:        "标签页显示程序设置的标题，例如 tmux 的会话与窗口名。手动重命名过的标签页保持原名。",
+	TabTitleConnection:         "连接名称",
+	TabTitleTerminal:           "终端标题",
+	TabTitleDirectory:          "当前路径",
+	TabTitleRow:                "标签名称",
+	TabTitleDescription:        "手动命名优先；部分 SSH 会话重连后显示路径。",
 	LatencyRow:                 "显示延迟",
 	LatencyDescription:         "显示 SSH 终端和 RDP 桌面的网络 RTT 往返延迟（小于100ms绿色，小于200ms黄色，大于等于200ms红色）。RDP 测量值由服务端报告。",
 

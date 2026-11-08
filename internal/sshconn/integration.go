@@ -250,7 +250,12 @@ const wslReportFunction = `__motty_report() {
             *[[:cntrl:]]*) _motty_wsl_dir= ;;
         esac
     fi
+    if [[ ${_motty_wsl_home_source-} != "$HOME" ]]; then
+        _motty_wsl_home_source=$HOME
+        _motty_wsl_home=$(wslpath -w "$HOME" 2>/dev/null)
+    fi
     printf '\033]133;A__MOTTY_SUFFIX__\007'
+    __motty_home_report "${_motty_wsl_home-}"
     if [[ -n ${_motty_wsl_dir-} ]]; then
         printf '\033]9;9;%s\007' "$_motty_wsl_dir"
     fi
@@ -261,20 +266,36 @@ const wslReportFunction = `__motty_report() {
     return "$_motty_status"
 }`
 
-// Encode bytes, not characters: file URI reserved characters and non-ASCII
-// paths must round-trip through the terminal parser without shell evaluation.
-const directoryReportFunction = `__motty_report() {
-    local _motty_status=$?
-    __motty_input_report
-    local LC_ALL=C _motty_path= _motty_char _motty_hex _motty_i
-    for ((_motty_i=0; _motty_i<${#PWD}; _motty_i++)); do
-        _motty_char=${PWD:_motty_i:1}
+// Share the byte encoder between cwd and token-bound home metadata, including
+// Windows paths produced by wslpath. Neither value is evaluated as shell code.
+const homeReportFunction = `__motty_encode_path() {
+    local LC_ALL=C _motty_char _motty_hex _motty_i
+    for ((_motty_i=0; _motty_i<${#1}; _motty_i++)); do
+        _motty_char=${1:_motty_i:1}
         case $_motty_char in
             [a-zA-Z0-9/._~-]) _motty_path=$_motty_path$_motty_char ;;
             *) printf -v _motty_hex '%%%02X' "'$_motty_char"; _motty_path=$_motty_path%${_motty_hex: -2} ;;
         esac
     done
-    printf '\033]133;A__MOTTY_SUFFIX__\007\033]7;file://%s%s\007' "${HOSTNAME:-${HOST:-}}" "$_motty_path"
+}
+__motty_home_report() {
+    [[ -n '__MOTTY_INPUT_TOKEN__' ]] || return 0
+    local _motty_path=
+    __motty_encode_path "$1"
+    printf '\033]777;motty-home;__MOTTY_INPUT_TOKEN__;%s\007' "$_motty_path"
+}
+`
+
+// Encode bytes, not characters: file URI reserved characters and non-ASCII
+// paths must round-trip through the terminal parser without shell evaluation.
+const directoryReportFunction = `__motty_report() {
+    local _motty_status=$?
+    __motty_input_report
+    local _motty_path=
+    __motty_encode_path "$PWD"
+    printf '\033]133;A__MOTTY_SUFFIX__\007'
+    __motty_home_report "$HOME"
+    printf '\033]7;file://%s%s\007' "${HOSTNAME:-${HOST:-}}" "$_motty_path"
     case $PS1 in
         *"$_motty_prompt_marker") ;;
         *) PS1=$PS1$_motty_prompt_marker ;;
@@ -287,7 +308,7 @@ func bashIntegration(report string, forceTrap bool) string {
 	if forceTrap {
 		force = "1"
 	}
-	return bashIntegrationHead + inputEnvironmentFunction + commandFinishedFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
+	return bashIntegrationHead + inputEnvironmentFunction + homeReportFunction + commandFinishedFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
 }
 
 const bashIntegrationHead = `_motty_runtime=$MOTTY_SHELL_DIR
@@ -362,7 +383,7 @@ rm -rf -- "$_motty_runtime"
 unset _motty_runtime _motty_profile`
 
 func zshIntegration(report string) string {
-	return inputEnvironmentFunction + commandFinishedFunction + report + zshIntegrationTail
+	return inputEnvironmentFunction + homeReportFunction + commandFinishedFunction + report + zshIntegrationTail
 }
 
 const zshIntegrationTail = `

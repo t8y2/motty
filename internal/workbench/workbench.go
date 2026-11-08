@@ -269,6 +269,8 @@ var (
 	hitSettingsRightClickPaste     = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsInputClick          = tree.ID(settingsHits, "settings-input-click")
 	hitSettingsTabTitle            = tree.ID(settingsHits, "settings-tab-title")
+	hitSettingsTabConnection       = tree.ID(settingsHits, "settings-tab-connection")
+	hitSettingsTabDirectory        = tree.ID(settingsHits, "settings-tab-directory")
 	hitSettingsLatencyToggle       = tree.ID(settingsHits, "settings-latency")
 	hitSettingsLinkPlainClick      = tree.ID(settingsHits, "settings-link-plain-click")
 	hitSettingsClipboardAsk        = tree.ID(settingsHits, "settings-clipboard-ask")
@@ -773,9 +775,8 @@ type State struct {
 	terminalCopyOnSelect, terminalRightClickPaste bool
 	terminalWordSeparators                        string
 	terminalWordEditor                            text.Editor
-	// terminalTabTitle lets a tab show the title its terminal reports instead
-	// of the host's name (see tabLabel).
-	terminalTabTitle       bool
+	// tabTitleMode selects the dynamic label without changing the stored name.
+	tabTitleMode           tabTitleMode
 	backgroundOutputAlerts bool
 	// terminalShowLatency displays network RTT in SSH terminals and RDP desktops,
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
@@ -1067,6 +1068,7 @@ func New(options Options) *State {
 		viewport:              ui.Size{Width: 1400, Height: 900},
 		terminalFontSize:      termFontSize,
 		terminalScrollback:    scrollbackLines,
+		tabTitleMode:          tabTitleConnection,
 		startupReuse:          true,
 		startupEnabled:        true,
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second},

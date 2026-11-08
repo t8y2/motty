@@ -117,8 +117,14 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsCopyOnSelect:
 		state.terminalCopyOnSelect = !state.terminalCopyOnSelect
 		state.save()
-	case id == hitSettingsTabTitle:
-		state.terminalTabTitle = !state.terminalTabTitle
+	case id == hitSettingsTabTitle || id == hitSettingsTabConnection || id == hitSettingsTabDirectory:
+		state.tabTitleMode = tabTitleTerminal
+		if id == hitSettingsTabConnection {
+			state.tabTitleMode = tabTitleConnection
+		}
+		if id == hitSettingsTabDirectory {
+			state.tabTitleMode = tabTitleDirectory
+		}
 		state.save()
 	case id == hitSettingsLatencyToggle:
 		state.terminalShowLatency = !state.terminalShowLatency

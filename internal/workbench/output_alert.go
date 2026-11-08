@@ -125,6 +125,11 @@ func (state *State) paintOutputAlertTitle(canvas *ui.Canvas, tab *barTab, strip 
 	}
 	style := ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: state.pal.success}
 	label := canvas.FitLine(tab.label, style.Size, style.Weight, bounds.Width)
+	if tab.pathLabel != "" {
+		label = elideTabDirectory(tab.pathLabel, func(value string) bool {
+			return canvas.TextWidthWeight(value, style.Size, style.Weight) <= bounds.Width
+		})
+	}
 	blue, highlight := ui.RGB24(0x75b8ff), ui.RGB24(0xedfaff)
 	if !state.pal.dark {
 		blue, highlight = ui.RGB24(0x2465a8), ui.RGB24(0x659bd4)

@@ -428,7 +428,19 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)
 			page.toggleRow(state.messages.Tools.BellRow, state.messages.Tools.BellDescription, !state.terminalBellOff, hitSettingsBellToggle)
-			page.toggleRow(state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, state.terminalTabTitle, hitSettingsTabTitle)
+			tabTitles := []components.SegmentOption{
+				{ID: hitSettingsTabConnection, Label: state.messages.Tools.TabTitleConnection},
+				{ID: hitSettingsTabTitle, Label: state.messages.Tools.TabTitleTerminal},
+				{ID: hitSettingsTabDirectory, Label: state.messages.Tools.TabTitleDirectory},
+			}
+			selectedTabTitle := hitSettingsTabConnection
+			if state.tabTitleMode == tabTitleTerminal {
+				selectedTabTitle = hitSettingsTabTitle
+			}
+			if state.tabTitleMode == tabTitleDirectory {
+				selectedTabTitle = hitSettingsTabDirectory
+			}
+			page.row(state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, tabTitles, selectedTabTitle)
 			page.toggleRow(state.messages.Tools.LatencyRow, state.messages.Tools.LatencyDescription, state.terminalShowLatency, hitSettingsLatencyToggle)
 			page.toggleRow(state.messages.Tools.PasteImageRow, state.messages.Tools.PasteImageDescription, !state.pasteImageOff, hitSettingsPasteImageToggle)
 			page.toggleRow(state.messages.Tools.CloseConfirmRow, state.messages.Tools.CloseConfirmDescription, !state.closeConfirmOff, hitSettingsCloseConfirmToggle)

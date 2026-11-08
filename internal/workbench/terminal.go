@@ -79,6 +79,7 @@ type terminal struct {
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
 	followPath            string           // latest shell directory awaiting a safe attached file panel
+	reportedHome          string           // home reported by this shell, in the same path form as cwd
 	reportedDirectory     term.Cwd         // last report accepted from this shell, rather than a running program
 	promptReady           bool
 	promptStarted         bool
@@ -323,6 +324,14 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetCwdReport(func(cwd term.Cwd) {
 		state.recordTerminalDirectory(sessionID, cwd, false)
 	})
+	session.term.screen.SetHomeDirectory(func(home string) {
+		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil && current.containerCommand == "" && current.term.promptStarted {
+			if current.isLocal() && !validLocalDirectory(home) || !current.isLocal() && !validSyncDirectory(home) {
+				return
+			}
+			current.term.reportedHome = home
+		}
+	})
 	session.term.screen.SetPromptStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			current.term.inputGuard.start()
@@ -379,6 +388,7 @@ func (t *terminal) resetFolderSync() {
 	t.inputLine = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
+	t.reportedHome = ""
 	t.submittedLines, t.followPath = 0, ""
 	t.promptVersion++
 }
@@ -588,9 +598,9 @@ func (state *State) openShell(session *Session) {
 	cols, rows := t.screen.Size()
 	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
 	// Local directory restoration needs reports even with file-panel following
-	// off. Remote shell integration keeps its existing opt-in conditions.
+	// off. SSH enables integration for either file-panel following or path tabs.
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && session.host.System != sshconn.SystemWindows &&
-		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow))
+		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory))
 	config.IntegrationToken = t.folderToken
 	if !session.isLocal() {
 		config.StartDirectory = session.startDirectory

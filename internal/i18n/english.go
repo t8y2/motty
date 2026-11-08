@@ -1611,8 +1611,11 @@ var englishTools = ToolsMessages{
 	LinkPlainClickDescription:  "When off, hold Cmd (Ctrl on Windows and Linux) while clicking a link to open it; a plain click only selects and copies.",
 	BellRow:                    "Terminal bell",
 	BellDescription:            "Play the system sound on this machine when a program in the terminal rings the bell (printf '\\a', tput bel), to tell you a remote command is done.",
-	TabTitleRow:                "Tab title follows terminal",
-	TabTitleDescription:        "Shows the title a program sets, such as tmux's session and window, on the tab. Tabs you renamed keep their name.",
+	TabTitleConnection:         "Connection name",
+	TabTitleTerminal:           "Terminal title",
+	TabTitleDirectory:          "Current path",
+	TabTitleRow:                "Tab name",
+	TabTitleDescription:        "Manual names win. Some SSH sessions need reconnecting for paths.",
 	LatencyRow:                 "Show latency",
 	LatencyDescription:         "Show network RTT for SSH terminals and RDP desktops (<100ms green, <200ms yellow, >=200ms red). RDP measurements are supplied by the server.",
 

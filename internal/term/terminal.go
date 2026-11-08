@@ -202,6 +202,7 @@ type Terminal struct {
 	inputStart         Point // where the shell's editable line begins; see InputMove
 	inputStartSet      bool
 	inputEnvironmentFn func(InputEnvironment)
+	homeDirectoryFn    func(string)
 	commandStartFn     func()
 	commandFinishedFn  func(int)
 	syncFn             func(bool)
