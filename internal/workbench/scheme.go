@@ -1,7 +1,12 @@
 package workbench
 
 import (
+	"fmt"
+	"strings"
+
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -138,22 +143,32 @@ var colorSchemes = [...]colorScheme{
 	},
 }
 
-// schemeCount is how many choices Settings offers, Default included.
+// schemeCount is how many hand-written built-in choices Settings offers,
+// Default included. The embedded community collection and the user's directory
+// follow these in the card list.
 const schemeCount = len(colorSchemes) + 1
 
-func schemeByID(id string) (*colorScheme, bool) {
+// schemeByID finds a scheme among the built-ins, the embedded collection and
+// the user's directory.
+func (state *State) schemeByID(id string) (*colorScheme, bool) {
 	for index := range colorSchemes {
 		if colorSchemes[index].id == id {
 			return &colorSchemes[index], true
 		}
+	}
+	if index, ok := communitySchemeIndex[id]; ok {
+		return &communitySchemes[index], true
+	}
+	if index, ok := state.dirSchemeIndex[id]; ok {
+		return &state.dirSchemes[index], true
 	}
 	return nil, false
 }
 
 // normalizeSchemeID keeps a saved choice that still exists and falls back to
 // Default for one a later or earlier release does not know.
-func normalizeSchemeID(id string) string {
-	if _, ok := schemeByID(id); ok {
+func (state *State) normalizeSchemeID(id string) string {
+	if _, ok := state.schemeByID(id); ok {
 		return id
 	}
 	return defaultSchemeID
@@ -168,9 +183,9 @@ func (state *State) activeScheme() string {
 // sat in the terminal whatever the window looked like, so it goes to the look
 // its own background suits and the other look keeps Default: nothing changes
 // on screen until the user switches.
-func migrateTerminalScheme(id string) (dark, light string) {
+func (state *State) migrateTerminalScheme(id string) (dark, light string) {
 	dark, light = defaultSchemeID, defaultSchemeID
-	scheme, ok := schemeByID(id)
+	scheme, ok := state.schemeByID(id)
 	switch {
 	case !ok:
 	case luminance(scheme.background) < 0.5:
@@ -187,7 +202,7 @@ func migrateTerminalScheme(id string) (dark, light string) {
 func (state *State) rebuildTerminalLook() {
 	look := *state.pal
 	look.termFG = look.text
-	if scheme, ok := schemeByID(state.activeScheme()); ok {
+	if scheme, ok := state.schemeByID(state.activeScheme()); ok {
 		look.dark = luminance(scheme.background) < 0.5
 		look.terminal = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
 		look.termFG = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
@@ -228,7 +243,7 @@ func luminance(c [3]uint8) float32 {
 }
 
 func (state *State) setTerminalScheme(id string) bool {
-	id = normalizeSchemeID(id)
+	id = state.normalizeSchemeID(id)
 	if state.activeScheme() == id {
 		return false
 	}
@@ -239,9 +254,14 @@ func (state *State) setTerminalScheme(id string) bool {
 
 // Scheme cards in Settings.
 const (
-	schemeCardHeight = float32(54)
-	schemeCardGap    = float32(10)
-	schemeColumns    = 4
+	schemeCardHeight   = float32(54)
+	schemeCardGap      = float32(10)
+	schemeColumns      = 4
+	schemeSearchHeight = float32(38)
+
+	// schemeDrawerNarrow is the body width under which the drawer drops from
+	// three cards a row to two.
+	schemeDrawerNarrow = float32(470)
 
 	// swatchSize and swatchPitch are the dots that show a scheme's four colors, and
 	// the distance from one to the next.
@@ -252,47 +272,352 @@ const (
 // schemeHits is the place of the controls this file paints.
 var schemeHits = tree.Feature("scheme")
 
-// hitSettingsSchemeList starts the ids of the scheme cards: Default is the base
-// itself, the others follow in colorSchemes order.
-var hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+var (
+	// hitSettingsSchemeList starts the ids of the scheme cards: Default is the
+	// base itself, the hand-written built-ins follow, then the embedded
+	// community collection, then the user's directory.
+	hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+	hitSchemeSearch       = tree.ID(schemeHits, "scheme-search")
+	hitSchemeBrowseAll    = tree.ID(schemeHits, "scheme-browse-all")
+	hitSchemeDrawerClose  = tree.ID(schemeHits, "scheme-drawer-close")
+	hitSchemeDrawerScroll = tree.ID(schemeHits, "scheme-drawer-scroll")
+)
 
 func schemeHit(index int) ui.ID { return hitSettingsSchemeList.At(index) }
 
-// schemeAt is the id and name of the card at index, Default first.
-func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
-	if index == 0 {
-		return defaultSchemeID, state.messages.Tools.SchemeDefault, nil
-	}
-	scheme = &colorSchemes[index-1]
-	return scheme.id, scheme.name, scheme
+// schemeTotal is how many cards the browser has: the hand-written built-ins,
+// the embedded community collection and the user's directory.
+func (state *State) schemeTotal() int {
+	return schemeCount + len(communitySchemes) + len(state.dirSchemes)
 }
 
-// paintSchemeSettings is the card grid that picks the terminal's colors.
+// schemeAt is the id and name of the card at index, Default first, then the
+// hand-written built-ins, the embedded collection and the user's directory.
+func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
+	if index < schemeCount {
+		if index == 0 {
+			return defaultSchemeID, state.messages.Tools.SchemeDefault, nil
+		}
+		scheme = &colorSchemes[index-1]
+		return scheme.id, scheme.name, scheme
+	}
+	index -= schemeCount
+	if index < len(communitySchemes) {
+		scheme = &communitySchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
+	index -= len(communitySchemes)
+	if index < len(state.dirSchemes) {
+		scheme = &state.dirSchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
+	return "", "", nil
+}
+
+// paintSchemeSettings is the folded section: quick picks stay on the page and
+// the complete collection opens in a drawer.
 func (state *State) paintSchemeSettings(page *settingsPage) {
+	state.paintSchemePicks(page)
+}
+
+// paintSchemePicks is two rows: seven well-known built-ins, Rose Pine Moon from
+// the bundled collection and the active scheme when it is not one of those.
+func (state *State) paintSchemePicks(page *settingsPage) {
 	m, f, pal := state.messages.Tools, page.f, state.pal
-	rows := (schemeCount + schemeColumns - 1) / schemeColumns
 	page.group(m.SchemeGroup, func() {
 		page.rows++
 		f.Column().PadSides(14, 18, 22, 18).Children(func() {
-			f.Text(m.SchemeDescription).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
+			f.Paragraph(m.SchemeDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
 			look := m.SchemeLookDark
 			if state.appearance == appearanceLight {
 				look = m.SchemeLookLight
 			}
 			f.Text(look).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
-			for row := 0; row < rows; row++ {
-				f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
-					for column := 0; column < schemeColumns; column++ {
-						if index := row*schemeColumns + column; index < schemeCount {
-							state.declareScheme(page, index)
-						} else {
-							f.Spacer().Basis(0) // an incomplete last row keeps its cards the width of the others
-						}
-					}
-				})
-			}
+			f.Row().Items(flex.Center).MarginSides(0, 0, 10, 0).Children(func() {
+				f.Text(m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
+			})
+			state.paintSchemeCards(page, state.schemeQuickPicks())
 		})
 	})
+}
+
+// openSchemeBrowser resets the search and opens the complete collection.
+func (state *State) openSchemeBrowser() {
+	state.schemeBrowserOpen = true
+	state.schemeFilter = *text.NewEditor("")
+	state.schemeDrawerFilter = ""
+	state.schemeDrawerReset = true
+}
+
+// schemeIndexByID finds a card's index by scheme id.
+func (state *State) schemeIndexByID(id string) (int, bool) {
+	for index := 0; index < state.schemeTotal(); index++ {
+		if got, _, _ := state.schemeAt(index); got == id {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+// communitySchemeIndexByName finds a card in the embedded collection by name.
+func (state *State) communitySchemeIndexByName(name string) (int, bool) {
+	for index := range communitySchemes {
+		if communitySchemes[index].name == name {
+			return schemeCount + index, true
+		}
+	}
+	return 0, false
+}
+
+// schemeQuickPicks is seven hand-written built-ins, one community pick and the
+// active scheme when it would otherwise be off the list.
+func (state *State) schemeQuickPicks() []int {
+	preferred := []string{defaultSchemeID, "windows-terminal", "dracula", "nord", "one-dark", "tokyo-night", "gruvbox-dark"}
+	picks := make([]int, 0, schemeColumns*2)
+	seen := map[int]bool{}
+	add := func(index int, ok bool) {
+		if ok && !seen[index] {
+			seen[index] = true
+			picks = append(picks, index)
+		}
+	}
+	for _, id := range preferred {
+		index, ok := state.schemeIndexByID(id)
+		add(index, ok)
+	}
+	if index, ok := state.communitySchemeIndexByName("Rose Pine Moon"); ok {
+		add(index, ok)
+	}
+	if index, ok := state.schemeIndexByID(state.activeScheme()); ok && !seen[index] {
+		if len(picks) >= schemeColumns*2 {
+			picks[len(picks)-2] = index
+		} else {
+			picks = append(picks, index)
+		}
+		seen[index] = true
+	}
+	for index := 0; index < schemeCount && len(picks) < schemeColumns*2; index++ {
+		add(index, true)
+	}
+	return picks
+}
+
+// paintSchemeCards lays cards out four to a row; an incomplete last row keeps
+// its cards the width of the others.
+func (state *State) paintSchemeCards(page *settingsPage, indices []int) {
+	f := page.f
+	for start := 0; start < len(indices); start += schemeColumns {
+		end := min(start+schemeColumns, len(indices))
+		f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+			for _, index := range indices[start:end] {
+				state.declareScheme(page, index)
+			}
+			for pad := end - start; pad < schemeColumns; pad++ {
+				f.Spacer().Basis(0)
+			}
+		})
+	}
+}
+
+// communitySchemeIndices splits the embedded collection into dark and light
+// cards by the depth of their background.
+func (state *State) communitySchemeIndices() (dark, light []int) {
+	for index := range communitySchemes {
+		card := schemeCount + index
+		if luminance(communitySchemes[index].background) < 0.5 {
+			dark = append(dark, card)
+		} else {
+			light = append(light, card)
+		}
+	}
+	return dark, light
+}
+
+// userSchemeIndices lists the cards from the data folder's schemes directory.
+func (state *State) userSchemeIndices() []int {
+	indices := make([]int, len(state.dirSchemes))
+	base := schemeCount + len(communitySchemes)
+	for index := range indices {
+		indices[index] = base + index
+	}
+	return indices
+}
+
+// schemesMatching lists the cards whose name holds every word of the filter.
+func (state *State) schemesMatching(filter string) []int {
+	var matches []int
+	for index := 0; index < state.schemeTotal(); index++ {
+		if _, name, _ := state.schemeAt(index); schemeMatches(name, filter) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
+}
+
+func schemeMatches(name, filter string) bool {
+	name = strings.ToLower(name)
+	for _, word := range strings.Fields(filter) {
+		if !strings.Contains(name, word) {
+			return false
+		}
+	}
+	return true
+}
+
+// paintSchemeSearchBox paints the drawer's search box.
+func (state *State) paintSchemeSearchBox(canvas *ui.Canvas, box ui.Rect) {
+	value := state.schemeFilter.String()
+	placeholder := state.messages.Tools.SchemeSearchPlaceholder
+	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
+		ID: hitSchemeSearch, Label: placeholder, Value: value, Placeholder: placeholder,
+		NativeEditing: canvas.Focused() == hitSchemeSearch && value != "",
+		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
+	})
+}
+
+// schemeDrawerCard is one card declared inside the drawer. Flex paints its
+// text and check before the frame ends; its swatches and click target need the
+// laid-out rectangles, so they are painted after it.
+type schemeDrawerCard struct {
+	index    int
+	id       string
+	name     string
+	card     flex.Box
+	swatch   flex.Box
+	swatches [4]ui.Color
+}
+
+// paintSchemeDrawer is the complete collection in a left-hand drawer. The
+// settings page behind it stays at the height of the quick picks.
+func (state *State) paintSchemeDrawer(canvas *ui.Canvas, viewport ui.Rect) {
+	if viewport.Width <= 0 || viewport.Height <= 0 {
+		return
+	}
+	m, pal := state.messages.Tools, state.pal
+	extent := min(max(viewport.Width*0.40, 420), 560)
+	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
+		Layer: drawerLayer, Scope: dialogScope,
+		DismissID: hitSchemeDrawerClose, CloseID: hitSchemeDrawerClose,
+		Side: components.DrawerLeft, ContentExtent: extent,
+		InitialFocusID: hitSchemeSearch,
+	})
+	layout := drawer.Begin(m.SchemeAll, fmt.Sprintf(m.SchemeCountFmt, state.schemeTotal()))
+	state.schemeDrawerBody = layout.Body
+
+	columns := 3
+	if layout.Body.Width < schemeDrawerNarrow {
+		columns = 2
+	}
+	var search, scroll flex.Box
+	var cards []schemeDrawerCard
+	f := state.schemeDrawerView.Begin(canvas, state.Theme(), layout.Body)
+	f.Column().Fill().Children(func() {
+		search = f.Slot().Height(schemeSearchHeight).FillWidth().MarginSides(0, 0, 10, 0).Shrink(0)
+		f.Paragraph(fmt.Sprintf(m.SchemeDirHintFmt, state.schemesDir()), 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 8, 0)
+		scroll = f.ScrollArea(hitSchemeDrawerScroll).Grow(1).Basis(0).Children(func() {
+			filter := strings.ToLower(strings.TrimSpace(state.schemeFilter.String()))
+			if filter != "" {
+				matches := state.schemesMatching(filter)
+				f.Text(fmt.Sprintf(m.SchemeResultsFmt, len(matches))).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+				if len(matches) == 0 {
+					f.Text(m.SchemeNoMatches).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20)
+					return
+				}
+				state.paintSchemeDrawerCards(f, matches, columns, &cards)
+				f.Spacer().Height(10)
+				return
+			}
+			builtins := make([]int, 0, schemeCount)
+			for index := 0; index < schemeCount; index++ {
+				builtins = append(builtins, index)
+			}
+			state.paintSchemeDrawerGroup(f, fmt.Sprintf("%s (%d)", m.SchemeBuiltin, len(builtins)), builtins, columns, &cards)
+			dark, light := state.communitySchemeIndices()
+			state.paintSchemeDrawerGroup(f, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeDark, len(dark)), dark, columns, &cards)
+			state.paintSchemeDrawerGroup(f, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeLight, len(light)), light, columns, &cards)
+			state.paintSchemeDrawerGroup(f, fmt.Sprintf("%s (%d)", m.SchemeMine, len(state.dirSchemes)), state.userSchemeIndices(), columns, &cards)
+			f.Spacer().Height(10)
+		})
+	})
+	f.End()
+	filter := strings.ToLower(strings.TrimSpace(state.schemeFilter.String()))
+	if state.schemeDrawerReset || filter != state.schemeDrawerFilter {
+		state.schemeDrawerReset = false
+		state.schemeDrawerFilter = filter
+		state.schemeDrawerView.ScrollState(hitSchemeDrawerScroll).ScrollTo(0)
+		canvas.RequestFrame()
+	}
+
+	state.paintSchemeSearchBox(canvas, search.Rect())
+	canvas.Clip(scroll.Rect())
+	for _, entry := range cards {
+		dot := entry.swatch.Rect()
+		for slot, color := range entry.swatches {
+			canvas.Rounded(ui.Rect{X: dot.X + float32(slot)*swatchPitch, Y: dot.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
+		}
+		canvas.HitWithOptions(schemeHit(entry.index), entry.card.Rect(), entry.name, ui.HitOptions{Role: ui.RoleButton, Selected: state.activeScheme() == entry.id})
+	}
+	canvas.Unclip()
+	drawer.End()
+}
+
+// paintSchemeDrawerGroup titles one group of drawer cards and lays it out.
+func (state *State) paintSchemeDrawerGroup(f *flex.Frame, title string, indices []int, columns int, cards *[]schemeDrawerCard) {
+	if len(indices) == 0 {
+		return
+	}
+	f.Text(title).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+	state.paintSchemeDrawerCards(f, indices, columns, cards)
+}
+
+// paintSchemeDrawerCards lays the drawer's cards out in the given number of
+// columns; a partial last row keeps the cards as wide as the others.
+func (state *State) paintSchemeDrawerCards(f *flex.Frame, indices []int, columns int, cards *[]schemeDrawerCard) {
+	for start := 0; start < len(indices); start += columns {
+		end := min(start+columns, len(indices))
+		f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+			for _, index := range indices[start:end] {
+				state.declareSchemeDrawer(f, index, cards)
+			}
+			for pad := end - start; pad < columns; pad++ {
+				f.Spacer().Basis(0)
+			}
+		})
+	}
+}
+
+// declareSchemeDrawer declares one card in the drawer and keeps what it needs
+// painted after the flex frame has laid it out.
+func (state *State) declareSchemeDrawer(f *flex.Frame, index int, cards *[]schemeDrawerCard) {
+	pal := state.pal
+	id, name, scheme := state.schemeAt(index)
+	selected := state.activeScheme() == id
+	background, foreground, swatches := pal.terminal, pal.text, [4]ui.Color{pal.danger, pal.success, pal.warning, pal.accent}
+	if scheme != nil {
+		background = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		foreground = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		for slot, ansi := range [4]int{9, 10, 11, 12} {
+			swatches[slot] = ui.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
+		}
+	}
+	border := withAlpha(pal.line, 0.9)
+	width := float32(1)
+	if selected {
+		border, width = pal.accent, 2
+	}
+	var swatch flex.Box
+	card := f.Column().Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
+	card.Children(func() {
+		f.Row().Items(flex.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			f.Paragraph(name, 1).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+			if selected {
+				f.Icon(lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
+			}
+		})
+		swatch = f.Slot().Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0)
+	})
+	*cards = append(*cards, schemeDrawerCard{index: index, id: id, name: name, card: card, swatch: swatch, swatches: swatches})
 }
 
 // declareScheme declares one color scheme's card: its name and the four colors

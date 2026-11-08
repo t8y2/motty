@@ -192,8 +192,11 @@ monitor headers use neutral backgrounds.
 
 Search the retained history, open HTTP/HTTPS and OSC 8 links, render
 Kitty/iTerm2/SIXEL images, send snippets, broadcast input across a split tab, or
-record a session explicitly. The terminal has eleven colour schemes, keyword
-highlighting and optional inline command suggestions.
+record a session explicitly. The terminal ships with more than two hundred
+colour schemes, keyword highlighting and optional inline command suggestions.
+Settings keeps a short set of quick picks and opens the rest in a left-hand
+drawer; X resources files in the data folder's `schemes` directory join the
+list.
 
 ### Hosts and authentication
 

@@ -8,3 +8,9 @@ changes are in internal/rdpcore/LICENSE and internal/rdpcore/NOTICE.md.
 Interface icons include works from Lucide, Simple Icons, SVG Logos, Skill Icons,
 Devicon, selfh.st/icons, Material Icon Theme and LobeHub Icons. Their licenses
 and trademark notes are in internal/workbench/icons/NOTICE.
+
+Terminal color schemes are from the iTerm2-Color-Schemes collection
+(Copyright 2011 to Present Mark Badolato, MIT License), as distributed by the
+Tabby terminal (Copyright 2017 Tabby Developers, MIT License). The full license
+texts and the note that each individual theme keeps its author's copyright are
+in internal/workbench/schemes/LICENSE.

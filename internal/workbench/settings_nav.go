@@ -103,6 +103,7 @@ func (state *State) selectSettingsCategory(category settingsCategory) bool {
 		return false
 	}
 	state.settingsCategory = category
+	state.schemeBrowserOpen = false
 	state.settingsScroll = 0
 	state.settings.aboutCopied = false
 	state.revealSettingsCategory()
