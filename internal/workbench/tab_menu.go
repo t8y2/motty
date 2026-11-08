@@ -257,6 +257,7 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.toggleDesktopFullscreen(session)
 		case hitTabMenuLatency:
 			state.terminalShowLatency = !state.terminalShowLatency
+			state.syncLatencyToolbarEntry()
 			state.save()
 		}
 	case hitTabMenuClose:

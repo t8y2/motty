@@ -40,7 +40,9 @@ func (state *State) compactWorkspacePaneTools(tools []barTool, session uint32, w
 	var visible [maxBarTools]barTool
 	count := 0
 	for _, tool := range tools {
-		if count < capacity && (tool.id == hitSFTPOpen || tool.id == hitRemoteStats || tool.id == hitPaneClose) {
+		// The latency readout is a status, not an action: it never disappears
+		// into the compact pane-tools menu.
+		if tool.id == hitToolbarLatency || (count < capacity && (tool.id == hitSFTPOpen || tool.id == hitRemoteStats || tool.id == hitPaneClose)) {
 			tool.groupEnd = false
 			visible[count] = tool
 			count++

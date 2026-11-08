@@ -33,6 +33,9 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
 	},
 	toolbarTerminal: {
+		// Latency is a status readout, not an action: it shares the Settings >
+		// Show latency switch and only its dock position and order are saved here.
+		{"latency", hitToolbarLatency, iconActivity},
 		{"notes", hitNotesPanel, iconNotebook},
 		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
 		{"snippets", hitTerminalSnippets, iconNote},
@@ -52,10 +55,17 @@ var toolbarCatalog = [3][]toolbarSpec{
 	},
 }
 
+// toolbarDefaultEnabled reports the untouched visibility of one entry. The
+// latency readout has its own switch under Settings > Show latency, so an
+// untouched layout keeps it out of the rail instead of turning it on.
+func toolbarDefaultEnabled(group toolbarGroup, key string) bool {
+	return !(group == toolbarTerminal && key == "latency")
+}
+
 var toolbarDefaults = func() (defaults [3][]toolbarEntry) {
 	for group, catalog := range toolbarCatalog {
 		for _, spec := range catalog {
-			defaults[group] = append(defaults[group], toolbarEntry{Key: spec.key, Enabled: true})
+			defaults[group] = append(defaults[group], toolbarEntry{Key: spec.key, Enabled: toolbarDefaultEnabled(toolbarGroup(group), spec.key)})
 		}
 	}
 	return
@@ -83,12 +93,28 @@ func (prefs *toolbarPreferences) entries(group toolbarGroup) []toolbarEntry {
 }
 
 func (state *State) toolbarVisible(group toolbarGroup, id ui.ID) bool {
+	// The latency badge belongs to the Show latency preference, not to the
+	// layout: a saved entry can be stale, and RDP desktops share the switch.
+	if group == toolbarTerminal && id == hitToolbarLatency {
+		return state.terminalShowLatency
+	}
 	for _, entry := range state.toolbars.entries(group) {
 		if spec, ok := toolbarSpecFor(group, entry.Key); ok && spec.id == id {
 			return entry.Enabled
 		}
 	}
 	return false
+}
+
+// syncLatencyToolbarEntry keeps the saved toolbar entry's switch equal to the
+// Show latency preference. A layout that was never created stays nil.
+func (state *State) syncLatencyToolbarEntry() {
+	entries := state.toolbars.layouts[toolbarTerminal]
+	for index := range entries {
+		if entries[index].Key == "latency" {
+			entries[index].Enabled = state.terminalShowLatency
+		}
+	}
 }
 
 // windowBarButtons counts the top dock's slots, including its overflow entry.
@@ -111,6 +137,12 @@ func normalizeToolbar(group toolbarGroup, entries []toolbarEntry) []toolbarEntry
 			continue
 		}
 		result = append(result, entry)
+	}
+	// The latency readout used to be pinned above the action rail. A layout saved
+	// before it became an entry keeps that place instead of appending the new
+	// entry below every action.
+	if group == toolbarTerminal && !slices.ContainsFunc(result, func(entry toolbarEntry) bool { return entry.Key == "latency" }) {
+		result = slices.Insert(result, 0, toolbarEntry{Key: "latency", Enabled: toolbarDefaultEnabled(group, "latency")})
 	}
 	// New entries become available after an upgrade; existing hidden entries
 	// remain hidden. Unknown/duplicate IDs cannot create phantom controls.
@@ -187,6 +219,8 @@ func (state *State) toolbarLabel(id ui.ID) string {
 		return m.TipStatsStart
 	case hitRemoteToolsOpen:
 		return m.Tools.RemoteMenu
+	case hitToolbarLatency:
+		return m.Tools.LatencyRow
 	case hitProcessToolsOpen:
 		return m.Tools.RemoteTabProcesses
 	case hitNotesPanel:
@@ -236,10 +270,10 @@ func (state *State) orderToolbarTools(group toolbarGroup, tools []barTool, rever
 		if reverse {
 			i = len(entries) - 1 - pos
 		}
-		if !entries[i].Enabled {
+		spec, ok := toolbarSpecFor(group, entries[i].Key)
+		if !ok || !state.toolbarVisible(group, spec.id) {
 			continue
 		}
-		spec, _ := toolbarSpecFor(group, entries[i].Key)
 		for j := 0; j < count; j++ {
 			if original[j].id == spec.id {
 				tools = append(tools, original[j])

@@ -106,9 +106,10 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					t.Fatal("keyboard could not move the focused entry back")
 				}
 				index := toolbarEntryIndex(group, original)
+				before := state.toolbars.entries(group)[0].Enabled
 				click(hitToolbarToggles.At(index))
-				if state.toolbars.entries(group)[0].Enabled {
-					t.Fatal("switch failed to disable the entry")
+				if state.toolbars.entries(group)[0].Enabled == before {
+					t.Fatal("switch failed to flip the entry")
 				}
 				view.Driver().Advance(250 * time.Millisecond)
 				shot(fmt.Sprintf("toolbar-editor-%d", group))

@@ -31,7 +31,18 @@ func (state *State) paintToolbarDockMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		var buffer [maxBarTools]barTool
 		tools := state.toolbarDockTools(toolbarDockTop, &buffer)
 		for _, tool := range tools[min(len(tools), state.toolbarTopLimit()-1):] {
-			rows.add(components.ContextMenuItem{ID: tool.id, Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled})
+			label, disabled := tool.hint, tool.disabled
+			if tool.id == hitToolbarLatency {
+				// The overflow is a rare narrow-window fallback; format the reading
+				// only when the menu is actually open.
+				disabled = true
+				if session, ok := state.terminalSideRailSession(); ok {
+					if text, _, ok := state.latencyInfo(session); ok {
+						label = text
+					}
+				}
+			}
+			rows.add(components.ContextMenuItem{ID: tool.id, Label: label, Icon: lucideIcons[tool.icon], Disabled: disabled})
 		}
 	} else {
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockTop, Label: m.MoveTop, Icon: lucideIcons[iconRows2]})
@@ -88,6 +99,10 @@ func (state *State) clickToolbarDockMenu(id ui.ID) bool {
 				if state.toolbars.layouts[entry.Group][i].Key == entry.Key {
 					state.toolbars.layouts[entry.Group][i].Enabled = false
 				}
+			}
+			// Hiding the readout means turning off the preference that owns it.
+			if entry.Group == toolbarTerminal && entry.Key == "latency" {
+				state.terminalShowLatency = false
 			}
 			state.toolbarDockChanged()
 		}

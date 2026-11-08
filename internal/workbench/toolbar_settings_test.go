@@ -17,8 +17,10 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 	}
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		for _, entry := range state.toolbars.entries(group) {
-			if !entry.Enabled {
-				t.Fatal("a default entry was hidden")
+			// The latency readout owns its own switch and starts hidden.
+			want := !(group == toolbarTerminal && entry.Key == "latency")
+			if entry.Enabled != want {
+				t.Fatalf("default entry %q enabled=%v, want %v", entry.Key, entry.Enabled, want)
 			}
 		}
 		state.openToolbarSettings(group)
@@ -64,6 +66,27 @@ func TestToolbarRestoreIgnoresUnknownAndDuplicateKeys(t *testing.T) {
 		if !entry.Enabled {
 			t.Fatal("new/missing entries should follow current defaults")
 		}
+	}
+}
+
+func TestToolbarRestoreReturnsTheLatencyReadoutToTheRailTop(t *testing.T) {
+	entries := normalizeToolbar(toolbarTerminal, []toolbarEntry{{Key: "notes", Enabled: true}, {Key: "files", Enabled: false}})
+	if len(entries) != len(toolbarCatalog[toolbarTerminal]) || entries[0].Key != "latency" || entries[0].Enabled {
+		t.Fatalf("migrated terminal layout = %+v", entries)
+	}
+
+	// A saved dock keeps the side the user's own terminal tools use.
+	var prefs toolbarPreferences
+	prefs.restore(&savedToolbars{
+		Terminal: []toolbarEntry{{Key: "notes", Enabled: true}},
+		Dock:     []toolbarDockEntry{{toolbarTerminal, "notes", toolbarDockLeftBottom}},
+	})
+	if prefs.layouts[toolbarTerminal][0].Key != "latency" {
+		t.Fatalf("layout did not lead with the readout: %+v", prefs.layouts[toolbarTerminal])
+	}
+	first := prefs.dock[0]
+	if first.Group != toolbarTerminal || first.Key != "latency" || first.Zone != toolbarDockLeftTop {
+		t.Fatalf("migrated dock = %+v", prefs.dock)
 	}
 }
 

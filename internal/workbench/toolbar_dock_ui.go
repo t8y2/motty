@@ -147,8 +147,15 @@ func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
 		}
 		tool, bounds := slot.tool, slot.box.Rect()
 		entry, _ := toolbarDockIdentity(tool.id)
-		// Titlebar window actions must leave typing focused on the terminal.
-		state.paintIconButtonWithOptions(canvas, tool.id, tool.icon, bounds, tool.hint, tool.disabled, tool.style, state.pal.shell, 16, ui.HitOptions{SkipFocus: entry.Group == toolbarWindow})
+		if tool.id == hitToolbarLatency {
+			session, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, bounds, session) {
+				continue
+			}
+		} else {
+			// Titlebar window actions must leave typing focused on the terminal.
+			state.paintIconButtonWithOptions(canvas, tool.id, tool.icon, bounds, tool.hint, tool.disabled, tool.style, state.pal.shell, 16, ui.HitOptions{SkipFocus: entry.Group == toolbarWindow})
+		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}
 }
@@ -197,14 +204,20 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 	compactMenu := false
 	entries := state.toolbars.entries(toolbarTerminal)
 	for _, preference := range entries {
-		if !preference.Enabled {
-			continue
-		}
 		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
-		if !ok || !state.terminalToolbarOffers(session, spec.id) {
+		if !ok {
 			continue
 		}
-		if managed {
+		visible := preference.Enabled
+		if spec.id == hitToolbarLatency {
+			visible = state.terminalShowLatency
+		}
+		if !visible || !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		// The latency readout is a status, not an action: compaction never moves
+		// it into the pane-tools menu.
+		if managed && spec.id != hitToolbarLatency {
 			if terminalToolbarCompactVisible(spec.id) && compactCount < capacity {
 				compactCount++
 			} else {
@@ -237,9 +250,6 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 			}
 		}
 	}
-	if state.latencyAvailable(session) {
-		return (state.terminalToolbarPosition == terminalToolbarLeft) == left
-	}
 	return false
 }
 
@@ -260,6 +270,8 @@ func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
 	case hitRemoteStats:
 		_, _, offered := state.remoteStatsToggle(session)
 		return offered
+	case hitToolbarLatency:
+		return state.latencyAvailable(session)
 	case hitPaneClose:
 		return state.paneInSplit(session.ID)
 	case hitBroadcast:
@@ -296,15 +308,20 @@ func (state *State) toolbarDockSideBounds(size ui.Size) ui.Rect {
 // Terminal geometry also reserves the bottom while a section covers it, just
 // as it does for the existing side rail. Switching pages must not resize a PTY.
 func (state *State) toolbarDockBottomReserve(includeTerminal bool) float32 {
-	_, hasTerminal := state.terminalToolbarSession()
+	session, hasTerminal := state.terminalToolbarSession()
 	for _, entry := range state.toolbars.dock {
 		if !toolbarDockAtBottom(entry.Zone) || (entry.Group == toolbarTerminal && (!includeTerminal || !hasTerminal)) {
 			continue
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
-		if ok && state.toolbarVisible(entry.Group, spec.id) {
-			return state.terminalToolbarMetrics().railExtent
+		if !ok || !state.toolbarVisible(entry.Group, spec.id) {
+			continue
 		}
+		// A latency entry reserves its strip only while a reading exists.
+		if spec.id == hitToolbarLatency && !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		return state.terminalToolbarMetrics().railExtent
 	}
 	return 0
 }
@@ -390,7 +407,14 @@ func (state *State) paintToolbarDockBottomGroup(canvas *ui.Canvas, tools []barTo
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, metrics.iconSize)
+		if tool.id == hitToolbarLatency {
+			session, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, rect, session) {
+				continue
+			}
+		} else {
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, metrics.iconSize)
+		}
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 	}
 	canvas.Unclip()
@@ -402,7 +426,6 @@ func (state *State) toolbarDockSideReserve() float32 {
 
 func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 	session, terminalVisible := state.terminalSideRailSession()
-	metrics := state.terminalToolbarMetrics()
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
@@ -442,11 +465,6 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 		viewport := bounds.Inset(ui.All(4))
 		if terminalVisible && primary {
 			session.term.railBounds = bounds
-			if text, color, ok := state.latencyInfo(session); ok {
-				state.paintRailLatency(canvas, text, color, ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: metrics.toolSize}, true)
-				viewport.Y += metrics.toolSize + 4
-				viewport.Height = max(viewport.Height-metrics.toolSize-4, 0)
-			}
 		}
 		bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
 		if len(top) == 0 {
@@ -507,7 +525,14 @@ func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
+		if tool.id == hitToolbarLatency {
+			terminal, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, tool.rect, terminal) {
+				continue
+			}
+		} else {
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
+		}
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 		if tool.id == hitWorkspacePaneTools {
 			state.workspacePaneTools.anchor = tool.rect
@@ -715,7 +740,8 @@ func (state *State) toolbarDockKey(event ui.KeyEvent) ui.EventResult {
 				return ui.EventResult{}
 			}
 			for next := at + delta; next >= 0 && next < len(tools); next += delta {
-				if !tools[next].disabled {
+				// The latency readout is a status, not a keyboard stop.
+				if !tools[next].disabled && tools[next].id != hitToolbarLatency {
 					return ui.EventResult{Handled: true, Repaint: true, Focus: tools[next].id, FocusVisible: true}
 				}
 			}
@@ -760,6 +786,14 @@ func (state *State) paintToolbarDockDrag(canvas *ui.Canvas) {
 	box.X = min(box.X, state.viewport.Width-box.Width-4)
 	box.Y = min(box.Y, state.viewport.Height-box.Height-4)
 	canvas.RoundedBorder(box, 7, 1, state.pal.accent, state.pal.workspace)
+	if drag.tool.id == hitToolbarLatency {
+		if session, ok := state.terminalSideRailSession(); ok {
+			if text, color, ok := state.latencyInfo(session); ok {
+				state.paintRailLatencyVisual(canvas, text, color, box, true)
+				return
+			}
+		}
+	}
 	canvas.DrawIcon(lucideIcons[drag.tool.icon], box.Inset(ui.All(9)), state.pal.text)
 }
 

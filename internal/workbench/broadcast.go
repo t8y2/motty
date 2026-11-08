@@ -134,6 +134,7 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		state.save()
 	case id == hitSettingsLatencyToggle:
 		state.terminalShowLatency = !state.terminalShowLatency
+		state.syncLatencyToolbarEntry()
 		state.save()
 	case id == hitSettingsRightClickPaste:
 		state.terminalRightClickPaste = !state.terminalRightClickPaste

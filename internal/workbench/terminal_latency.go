@@ -12,6 +12,12 @@ import (
 	"motty/internal/sshconn"
 )
 
+// hitToolbarLatency is the dockable latency readout. It is a terminal toolbar
+// entry so its position and order travel with the other tools; the value it
+// shows still comes from the connection, not from the layout.
+var latencyHits = tree.Feature("latency")
+var hitToolbarLatency = tree.ID(latencyHits, "toolbar-latency")
+
 const latencyProbeInterval = 3 * time.Second
 
 // latencyProbeTimeout is how long one probe waits. The request queues behind

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -606,6 +607,168 @@ func TestToolbarDockCancelMenuAndOverflow(t *testing.T) {
 	}
 	if state.toolbars.dock != nil {
 		t.Fatal("restore defaults kept custom positions")
+	}
+}
+
+func TestToolbarDockMovesLatencyReadoutAndPersists(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.terminalShowLatency = true
+	state.terminalToolbarPosition = terminalToolbarRight
+	state.activeSection = sectionTerminal
+	atomic.StoreInt64(&session.rttMs, 42)
+	atomic.StoreInt32(&session.rttAvailable, 1)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	var canvas ui.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := hitByID(&canvas, hitToolbarLatency)
+	if !ok {
+		t.Fatal("the latency readout was not painted")
+	}
+	if hit.Bounds.X < size.Width/2 {
+		t.Fatalf("the default readout was not on the configured right rail: %+v", hit.Bounds)
+	}
+	found := false
+	for _, text := range canvas.Texts() {
+		// The titlebar slot may elide the "ms" suffix under a wider fallback
+		// font; the reading itself must still be shown.
+		if strings.Contains(text.Value, "42") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("the readout did not show its compact sample")
+	}
+
+	// It is a dock hit now, so the ordinary toolbar drag moves it.
+	start := ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitToolbarLatency, X: start.X, Y: start.Y, Viewport: size})
+	bottom := state.toolbarDockBottomBounds(size, true)
+	to := ui.Point{X: bottom.X + bottom.Width/4, Y: bottom.Y + bottom.Height/2}
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: to.X, Y: to.Y, Viewport: size})
+	if !state.toolbarDock.drag.active {
+		t.Fatal("pressing the readout did not start a toolbar drag")
+	}
+	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, X: to.X, Y: to.Y, Viewport: size})
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "latency"); zone != toolbarDockBottom {
+		t.Fatalf("dropped readout zone = %s", zone)
+	}
+
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	hit, ok = hitByID(&canvas, hitToolbarLatency)
+	if !ok {
+		t.Fatal("the moved readout was not painted")
+	}
+	if hit.Bounds.Y < size.Height-state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("the readout did not move to the bottom strip: %+v", hit.Bounds)
+	}
+	if reserve := state.toolbarDockBottomReserve(true); reserve != state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("the docked readout did not reserve its strip: %.1f", reserve)
+	}
+	geometry := state.layoutForSession(session.ID)
+	if geometry.area.Y+geometry.area.Height > hit.Bounds.Y {
+		t.Fatalf("terminal %+v overlaps the docked readout %+v", geometry.area, hit.Bounds)
+	}
+
+	state.save()
+	restarted := newTestState(t, state.options)
+	if !restarted.terminalShowLatency {
+		t.Fatal("the Show latency preference did not survive restart")
+	}
+	if zone := restarted.toolbarDockZoneFor(toolbarTerminal, "latency"); zone != toolbarDockBottom {
+		t.Fatalf("restart lost the readout zone: %s", zone)
+	}
+}
+
+func TestToolbarDockLatencyReadoutReachesEveryZone(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.terminalShowLatency = true
+	state.activeSection = sectionTerminal
+	atomic.StoreInt64(&session.rttMs, 42)
+	atomic.StoreInt32(&session.rttAvailable, 1)
+	size := ui.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	for _, test := range []struct {
+		zone  toolbarDockZone
+		check func(ui.Rect) bool
+	}{
+		{toolbarDockTop, func(b ui.Rect) bool { return b.Y < windowBarHeight }},
+		{toolbarDockLeftTop, func(b ui.Rect) bool { return b.X < size.Width/2 }},
+		{toolbarDockBottomRight, func(b ui.Rect) bool {
+			return b.Y >= size.Height-state.terminalToolbarMetrics().railExtent && b.X >= size.Width/2
+		}},
+	} {
+		state.moveToolbarDockTool(hitToolbarLatency, test.zone, ui.ID{})
+		var canvas ui.Canvas
+		state.Paint(&canvas, size)
+		hit, ok := hitByID(&canvas, hitToolbarLatency)
+		if !ok {
+			t.Fatalf("zone %s did not paint the readout", test.zone)
+		}
+		if !test.check(hit.Bounds) {
+			t.Fatalf("zone %s painted the readout at %+v", test.zone, hit.Bounds)
+		}
+		found := false
+		var values []string
+		for _, text := range canvas.Texts() {
+			values = append(values, text.Value)
+			// The slot may elide "ms" under a wider fallback font.
+			if strings.Contains(text.Value, "42") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("zone %s lost the sample text: %q", test.zone, values)
+		}
+	}
+}
+
+func TestToolbarLatencySwitchSharesTheSetting(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if state.terminalShowLatency {
+		t.Fatal("latency should be off by default")
+	}
+	index := toolbarEntryIndex(toolbarTerminal, "latency")
+	state.openToolbarSettings(toolbarTerminal)
+	state.clickToolbarSettings(hitToolbarToggles.At(index))
+	if !state.terminalShowLatency || !state.toolbarVisible(toolbarTerminal, hitToolbarLatency) {
+		t.Fatal("the toolbar switch did not turn latency on")
+	}
+	state.clickToolbarSettings(hitToolbarToggles.At(index))
+	if state.terminalShowLatency || state.toolbarVisible(toolbarTerminal, hitToolbarLatency) {
+		t.Fatal("the toolbar switch did not turn latency off")
+	}
+	state.clickToolbarSettings(hitToolbarDisableAll)
+	if state.terminalShowLatency {
+		t.Fatal("disable all left the shared switch on")
+	}
+	state.clickToolbarSettings(hitToolbarEnableAll)
+	if !state.terminalShowLatency {
+		t.Fatal("enable all did not turn the shared switch on")
+	}
+	state.closeModal()
+
+	// The Settings > Terminal row writes the same preference.
+	state.Click(hitSettingsLatencyToggle)
+	if state.terminalShowLatency || state.toolbarVisible(toolbarTerminal, hitToolbarLatency) {
+		t.Fatal("the settings row did not turn the shared switch off")
+	}
+	if entries := state.toolbars.layouts[toolbarTerminal]; entries != nil {
+		for _, entry := range entries {
+			if entry.Key == "latency" && entry.Enabled {
+				t.Fatal("the layout kept a stale latency switch")
+			}
+		}
+	}
+	state.Click(hitSettingsLatencyToggle)
+	if !state.terminalShowLatency || !state.toolbarVisible(toolbarTerminal, hitToolbarLatency) {
+		t.Fatal("the settings row did not turn the shared switch back on")
 	}
 }
 

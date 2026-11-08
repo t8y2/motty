@@ -85,7 +85,9 @@ import (
 // are array records too.
 // Version 26 adds the saved passwords and the hosts' reference to one: an older
 // writer would drop the records it does not know.
-const configFormat = 26
+// Version 27 preserves the latency readout's docked position and order: older
+// writers would drop the new toolbar key and silently move it back.
+const configFormat = 27
 
 const (
 	kindSetting             = "setting"

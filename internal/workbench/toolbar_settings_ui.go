@@ -62,7 +62,8 @@ func (state *State) paintToolbarSettingsRows(page *settingsPage) {
 		entries := state.toolbars.entries(group)
 		enabled := 0
 		for _, entry := range entries {
-			if entry.Enabled {
+			spec, ok := toolbarSpecFor(group, entry.Key)
+			if ok && state.toolbarVisible(group, spec.id) {
 				enabled++
 			}
 		}
@@ -134,6 +135,10 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 		for i := range entries {
 			entries[i].Enabled = id == hitToolbarEnableAll
 		}
+		// The latency row's switch is the Show latency preference itself.
+		if editor.group == toolbarTerminal {
+			state.terminalShowLatency = id == hitToolbarEnableAll
+		}
 	case id.Scope() == hitToolbarToggles:
 		index := item(id)
 		first := toolbarEntryIndex(editor.group, toolbarCatalog[editor.group][0].key)
@@ -142,6 +147,18 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 		}
 		key := toolbarCatalog[editor.group][index-first].key
 		entries := state.toolbars.customize(editor.group)
+		if editor.group == toolbarTerminal && key == "latency" {
+			// The switch shows the Show latency preference, so it toggles that
+			// preference rather than a possibly stale mirror in the layout.
+			state.terminalShowLatency = !state.terminalShowLatency
+			for i := range entries {
+				if entries[i].Key == key {
+					entries[i].Enabled = state.terminalShowLatency
+					break
+				}
+			}
+			break
+		}
 		for i := range entries {
 			if entries[i].Key == key {
 				entries[i].Enabled = !entries[i].Enabled
@@ -297,7 +314,12 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 		if editor.group <= toolbarTerminal {
 			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
 		}
-		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, entry.Enabled).Label(label).Paint()
+		checked := entry.Enabled
+		if editor.group == toolbarTerminal && entry.Key == "latency" {
+			// This switch is the same preference as Settings > Show latency.
+			checked = state.terminalShowLatency
+		}
+		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, checked).Label(label).Paint()
 	}
 	list.End()
 	area.EndContent()

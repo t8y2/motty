@@ -195,6 +195,13 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	if managed {
 		ordered = state.compactWorkspacePaneTools(ordered, session.ID, state.viewport.Width)
 	}
+	// The latency readout is a status, not an action: it stays on the shared
+	// rail (compaction keeps it visible) and is placed by the toolbar layout.
+	// The value is formatted by the badge's own paint, not here: this list is
+	// rebuilt several times per frame.
+	if state.latencyAvailable(session) {
+		ordered = append(ordered, barTool{id: hitToolbarLatency, icon: iconActivity})
+	}
 	return ordered
 }
 
@@ -205,7 +212,8 @@ func (state *State) setTerminalRailTools(session *Session, tools []barTool) {
 	session.term.railCount = min(len(tools), maxBarTools)
 	for index := 0; index < session.term.railCount; index++ {
 		session.term.railIDs[index] = tools[index].id
-		session.term.railEnabled[index] = !tools[index].disabled
+		// The readout has no action: the keyboard visits only real controls.
+		session.term.railEnabled[index] = !tools[index].disabled && tools[index].id != hitToolbarLatency
 	}
 }
 
@@ -227,23 +235,15 @@ func (state *State) paintWorkspaceSideRail(canvas *ui.Canvas, size ui.Size) {
 	state.paintToolbarDockSide(canvas, size)
 }
 
-// paintTerminalSideRail draws the vertical tool rail. Latency occupies the
-// first compact slot, followed by the scrollable actions.
+// paintTerminalSideRail draws the vertical tool rail. The latency readout is
+// an ordinary layout entry now, so it scrolls and moves with the actions.
 func (state *State) paintTerminalSideRail(canvas *ui.Canvas, bounds ui.Rect, session *Session, tools []barTool, background, border ui.Color, left bool) {
 	if bounds.Width <= 0 || bounds.Height <= 0 || session.term == nil {
 		return
 	}
 	fullBounds := bounds
-	metrics := state.terminalToolbarMetrics()
 	session.term.railBounds = bounds
 	canvas.Fill(fullBounds, background)
-	if text, color, ok := state.latencyInfo(session); ok {
-		latency := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: bounds.Width - 8, Height: metrics.toolSize}
-		state.paintRailLatency(canvas, text, color, latency, true)
-		top := metrics.toolSize + 8
-		bounds.Y += top
-		bounds.Height = max(bounds.Height-top, 0)
-	}
 	viewport := ui.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: max(bounds.Width-8, 0), Height: max(bounds.Height-8, 0)}
 	state.paintTerminalRailTools(canvas, session, viewport, tools, background)
 	x := bounds.X
@@ -286,10 +286,16 @@ func (state *State) paintTerminalRailTools(canvas *ui.Canvas, session *Session, 
 			tool.rect.Y+tool.rect.Height <= viewport.Y || tool.rect.Y >= viewport.Y+viewport.Height {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
 		zone := toolbarDockSideTop
 		if state.terminalToolbarPosition == terminalToolbarLeft {
 			zone = toolbarDockLeftTop
+		}
+		if tool.id == hitToolbarLatency {
+			if !state.paintToolbarLatency(canvas, tool.rect, session) {
+				continue
+			}
+		} else {
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
 		}
 		state.registerToolbarDockTool(canvas, *tool, zone, intersectRect(tool.rect, viewport))
 		if tool.id == hitWorkspacePaneTools {
@@ -318,25 +324,56 @@ func (state *State) terminalRailItemStart(tools []barTool, index int) float32 {
 	return start
 }
 
+// paintRailLatency paints the RTT badge as a dockable status control. The
+// target is the same id the dock uses for its drag and context menu.
 func (state *State) paintRailLatency(canvas *ui.Canvas, text string, color ui.Color, bounds ui.Rect, compact bool) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	accessibilityText := text
+	state.paintRailLatencyVisual(canvas, text, color, bounds, compact)
+	canvas.HitWithOptions(hitToolbarLatency, bounds, text, ui.HitOptions{
+		Role: ui.RoleStatus, SkipFocus: true, Value: text, Hint: text,
+	})
+}
+
+// paintRailLatencyVisual paints only the badge. The drag preview uses it so the
+// floating copy does not declare a second target under the pointer.
+func (state *State) paintRailLatencyVisual(canvas *ui.Canvas, text string, color ui.Color, bounds ui.Rect, compact bool) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	label := text
 	if compact {
-		text = strings.TrimPrefix(text, "RTT ")
+		label = strings.TrimPrefix(text, "RTT ")
 	}
 	canvas.Rounded(bounds, min(radius.control, bounds.Height/2), withAlpha(color, 0.14))
-	state.paintRailLabelCenter(canvas, text, bounds, color, compact)
-	canvas.ContainerWithOptions(bounds, ui.RoleStatus, accessibilityText, ui.HitOptions{Value: accessibilityText})
+	state.paintRailLabelCenter(canvas, label, bounds, color, compact)
+}
+
+// paintToolbarLatency paints a docked latency readout and reports whether a
+// sample existed. A reading that went away between layout and paint leaves no
+// empty slot behind.
+func (state *State) paintToolbarLatency(canvas *ui.Canvas, bounds ui.Rect, session *Session) bool {
+	text, color, ok := state.latencyInfo(session)
+	if !ok {
+		return false
+	}
+	state.paintRailLatency(canvas, text, color, bounds, true)
+	return true
 }
 
 func (state *State) paintRailLabelCenter(canvas *ui.Canvas, text string, bounds ui.Rect, color ui.Color, compact bool) {
 	size := metrics.FontSizeS
+	available := max(bounds.Width-4, 0)
 	if compact {
 		size = 10
+		// The titlebar slot is narrower than a rail's; one step down keeps the
+		// number readable there instead of eliding "42ms" to "42…".
+		if size > 9 && canvas.TextWidthWeight(text, size, ui.WeightMedium) > available {
+			size = 9
+		}
 	}
-	fitted := elide(canvas, text, size, ui.WeightMedium, bounds.Width-4)
+	fitted := elide(canvas, text, size, ui.WeightMedium, available)
 	canvas.LabelCenter(fitted, bounds, ui.TextStyle{Size: size, Weight: ui.WeightMedium, Color: color})
 }
 
