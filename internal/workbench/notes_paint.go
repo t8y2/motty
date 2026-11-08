@@ -79,7 +79,7 @@ func (s *State) paintNoteTree(c *ui.Canvas, b ui.Rect) {
 		label string
 		icon  ui.Icon
 	}{
-		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
+		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link}, {hitNoteLinkFolder, s.noteText("Link Markdown folder", "链接 Markdown 文件夹"), icons.FolderOpen}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
 	}
 	for i, a := range actions {
 		if i == max(0, int((b.Width-16)/30)-1) && i < len(actions)-1 {

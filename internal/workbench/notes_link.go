@@ -284,14 +284,28 @@ func (s *State) noteLinkedTo(path string) string {
 // of the ones that are gone.
 func (s *State) noteLinksRestored() {
 	live := map[string]bool{}
-	for _, n := range s.notes.list {
+	for i := range s.notes.list {
+		n := &s.notes.list[i]
 		if n.Link == nil {
 			continue
+		}
+		if n.Link.Tree != "" && s.noteFolderRoot(n.Link.Tree) == nil {
+			// Its linked folder is gone: it is a file linked on its own now.
+			n.Link.Tree = ""
 		}
 		live[n.ID] = true
 		if _, known := s.noteLinks[n.ID]; !known {
 			s.noteLinkInfo(n.ID).bodyHash = noteHash(n.Body)
-			s.noteLinkRefresh(n.ID)
+			if n.Link.Tree == "" {
+				s.noteLinkRefresh(n.ID)
+			}
+		}
+	}
+	for _, f := range s.notes.folders {
+		// Each linked folder is read once per run; what changes later arrives
+		// through its watch.
+		if f.Link != nil && f.Link.Root && s.noteScans[f.Link.Path] == nil {
+			s.probeNoteFolder(f.Link.Path, nil, true)
 		}
 	}
 	for id := range s.noteLinks {
@@ -632,9 +646,43 @@ func (s *State) noteLinkUnlink(id string) {
 func (s *State) syncNoteWatches() {
 	want := map[string]bool{}
 	for _, n := range s.notes.list {
-		if n.Link != nil {
+		if n.Link != nil && n.Link.Tree == "" {
 			want[filepath.Dir(n.Link.Path)] = true
 		}
+	}
+	roots := map[string]bool{}
+	for _, f := range s.notes.folders {
+		if f.Link != nil && f.Link.Root {
+			roots[f.Link.Path] = true
+		}
+	}
+	for root, watch := range s.noteTreeWatches {
+		if !roots[root] {
+			watch.Close()
+			delete(s.noteTreeWatches, root)
+		}
+	}
+	for root := range roots {
+		if s.noteTreeWatches[root] != nil {
+			continue
+		}
+		watch, err := app.WatchTree(root, noteTreeSkip, func() {
+			if s.options.Invalidate != nil {
+				s.options.Invalidate()
+			}
+		})
+		if err != nil {
+			// Not watchable (missing, too large, unsupported): it is read when the
+			// notes are opened, and the watch is tried again then.
+			if errors.Is(err, app.ErrWatchTooLarge) {
+				s.notes.error = s.noteText("The folder is too large to watch; it is read when you open Notes.", "文件夹过大无法实时监听；打开笔记时会重新读取。")
+			}
+			continue
+		}
+		if s.noteTreeWatches == nil {
+			s.noteTreeWatches = map[string]*app.DirectoryWatch{}
+		}
+		s.noteTreeWatches[root] = watch
 	}
 	for dir, watch := range s.noteWatches {
 		if !want[dir] {
@@ -657,7 +705,7 @@ func (s *State) syncNoteWatches() {
 			// The directory is not there or cannot be watched: what its notes say is
 			// read from the files, and the watch is tried again when notes are used.
 			for _, n := range s.notes.list {
-				if n.Link != nil && filepath.Dir(n.Link.Path) == dir {
+				if n.Link != nil && n.Link.Tree == "" && filepath.Dir(n.Link.Path) == dir {
 					s.noteLinkRefresh(n.ID)
 				}
 			}
@@ -675,10 +723,23 @@ func (s *State) syncNoteWatches() {
 func (s *State) noteLinksRecheck() {
 	s.syncNoteWatches()
 	for id, st := range s.noteLinks {
-		if st.missing || st.problem != "" {
+		if (st.missing || st.problem != "") && s.noteLinkTree(id) == "" {
 			s.noteLinkRefresh(id)
 		}
 	}
+	for _, f := range s.notes.folders {
+		if f.Link != nil && f.Link.Root && s.noteTreeWatches[f.Link.Path] == nil {
+			s.probeNoteFolder(f.Link.Path, nil, true)
+		}
+	}
+}
+
+// noteLinkTree is the linked folder a note's file belongs to, or "".
+func (s *State) noteLinkTree(id string) string {
+	if i := s.noteIndex(id); i >= 0 && s.notes.list[i].Link != nil {
+		return s.notes.list[i].Link.Tree
+	}
+	return ""
 }
 
 // pumpNoteLinks reads what the directory watches gathered. Wake calls it.
@@ -694,12 +755,25 @@ func (s *State) pumpNoteLinks() {
 			s.syncNoteWatches()
 		}
 		for _, n := range s.notes.list {
-			if n.Link == nil || filepath.Dir(n.Link.Path) != dir {
+			if n.Link == nil || n.Link.Tree != "" || filepath.Dir(n.Link.Path) != dir {
 				continue
 			}
 			if changes.Resync || slices.ContainsFunc(changes.Names, func(name string) bool { return sameFileName(name, filepath.Base(n.Link.Path)) }) {
 				s.noteLinkRefresh(n.ID)
 			}
+		}
+	}
+	for root, watch := range s.noteTreeWatches {
+		changes := watch.Changes(s.noteWatchNames)
+		s.noteWatchNames = changes.Names[:0]
+		switch {
+		case changes.Resync:
+			watch.Close()
+			delete(s.noteTreeWatches, root)
+			s.syncNoteWatches()
+			s.probeNoteFolder(root, nil, true)
+		case len(changes.Names) > 0:
+			s.probeNoteFolder(root, slices.Clone(changes.Names), false)
 		}
 	}
 }
@@ -711,6 +785,10 @@ func sameFileName(a, b string) bool {
 }
 
 func (s *State) closeNoteWatches() {
+	for root, watch := range s.noteTreeWatches {
+		watch.Close()
+		delete(s.noteTreeWatches, root)
+	}
 	for dir, watch := range s.noteWatches {
 		watch.Close()
 		delete(s.noteWatches, dir)

@@ -41,8 +41,10 @@ func projectState(raw []byte) ([]byte, error) {
 	if value, present := original[collapsedGroupsKey]; present {
 		projected[collapsedGroupsKey] = value
 	}
-	if value, present := original[linkedNotesKey]; present {
-		projected[linkedNotesKey] = value
+	for _, key := range []string{linkedNotesKey, linkedNoteFoldersKey} {
+		if value, present := original[key]; present {
+			projected[key] = value
+		}
 	}
 	return json.Marshal(projected)
 }

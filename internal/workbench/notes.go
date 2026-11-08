@@ -52,12 +52,29 @@ type savedNote struct {
 // noteLink is where a linked note's text is stored.
 type noteLink struct {
 	Path string `json:"path"`
+	// Tree is the linked folder this note's file belongs to, or empty for a file
+	// linked on its own. The folder's own link follows its files.
+	Tree string `json:"tree,omitempty"`
 }
 type savedNoteFolder struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Parent string `json:"parent,omitempty"`
 	Order  int    `json:"order,omitempty"`
+	// Link ties the folder to a directory on disk. Like a linked note it is kept
+	// in this device's own state, never in shared records.
+	Link *noteFolderLink `json:"link,omitempty"`
+}
+
+// noteFolderLink is the directory a folder mirrors.
+type noteFolderLink struct {
+	Path string `json:"path"`
+	// Root marks the directory the user linked; the folders below it are found by
+	// reading it.
+	Root bool `json:"root,omitempty"`
+	// Hidden are files, as paths below the root, that the user removed from Motty
+	// and that must not come back when the directory is read again.
+	Hidden []string `json:"hidden,omitempty"`
 }
 type notesUI struct {
 	editing       noteEditing
@@ -512,6 +529,7 @@ func (s *State) clickNotes(id ui.ID) bool {
 		}
 		now := s.options.WallNow().UTC().Format(time.RFC3339Nano)
 		entry := savedNote{Revision: noteID(), ID: noteID(), Folder: n.folder, Order: len(n.list), Created: now, Updated: now}
+		s.newLinkedNote(&entry)
 		n.list = append(n.list, entry)
 		s.selectNote(entry.ID)
 		n.view.treeFolderSelection = false
@@ -543,6 +561,10 @@ func (s *State) clickNotes(id ui.ID) bool {
 		s.importNotes()
 	case hitNoteLinkFile:
 		s.linkNotes()
+	case hitNoteLinkFolder:
+		s.linkFolder()
+	case hitNoteFolderUnlink:
+		s.noteFolderUnlink(n.folder)
 	case hitNoteExport:
 		s.exportNotes(false)
 	case hitNoteExportAll:
@@ -573,6 +595,7 @@ func (s *State) deleteNoteSelection(all bool) {
 	}
 	if n.confirm == "note" {
 		id := n.selected
+		s.noteHideMembers(map[string]bool{id: true})
 		n.list = slices.DeleteFunc(n.list, func(v savedNote) bool { return v.ID == id })
 		s.selectNoteWithoutSave("")
 	} else {
@@ -590,6 +613,13 @@ func (s *State) deleteNoteSelection(all bool) {
 					descendants[f.ID] = true
 				}
 			}
+			doomed := map[string]bool{}
+			for _, v := range n.list {
+				if s.noteFolderWithin(v.Folder, folder) {
+					doomed[v.ID] = true
+				}
+			}
+			s.noteHideMembers(doomed)
 			n.list = slices.DeleteFunc(n.list, func(v savedNote) bool { return s.noteFolderWithin(v.Folder, folder) })
 			n.folders = slices.DeleteFunc(n.folders, func(f savedNoteFolder) bool { return descendants[f.ID] })
 			if s.noteIndex(n.selected) < 0 {

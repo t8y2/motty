@@ -286,6 +286,21 @@ const collapsedGroupsKey = "collapsed_groups"
 // of every device-local field, so it needs no format version of its own.
 const linkedNotesKey = "linked_notes"
 
+// linkedNoteFoldersKey is the same for the folders that mirror a directory.
+const linkedNoteFoldersKey = "linked_note_folders"
+
+// linkedLocalKey names the device-local field holding the linked items of a
+// record kind, or "" for a kind that has none.
+func linkedLocalKey(kind string) string {
+	switch kind {
+	case "note":
+		return linkedNotesKey
+	case "note-folder":
+		return linkedNoteFoldersKey
+	}
+	return ""
+}
+
 func fieldText(fields map[string]json.RawMessage, name string) string {
 	raw := fields[name]
 	var text string
@@ -533,7 +548,7 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			if err := json.Unmarshal(item, &itemFields); err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
 			}
-			if entity.kind == "note" && isLinkedNote(itemFields) {
+			if linkedLocalKey(entity.kind) != "" && isLinkedNote(itemFields) {
 				linked = append(linked, item)
 				continue
 			}
@@ -563,7 +578,7 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			entries = append(entries, configstore.Entry{Kind: entity.kind, ID: id, Payload: payload})
 		}
 		if len(linked) > 0 {
-			own[linkedNotesKey], _ = json.Marshal(linked)
+			own[linkedLocalKey(entity.kind)], _ = json.Marshal(linked)
 		}
 	}
 	local, err = json.Marshal(own)
@@ -584,6 +599,17 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 func isLinkedNote(fields map[string]json.RawMessage) bool {
 	raw := fields["link"]
 	return len(raw) > 0 && !bytes.Equal(raw, []byte("null"))
+}
+
+// linkedSavedFolders is the folders of a list that mirror a directory.
+func linkedSavedFolders(folders []savedNoteFolder) []savedNoteFolder {
+	var linked []savedNoteFolder
+	for _, folder := range folders {
+		if folder.Link != nil {
+			linked = append(linked, folder)
+		}
+	}
+	return linked
 }
 
 // linkedSavedNotes is the notes of a list that live in a file.
@@ -698,6 +724,10 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 	if raw, ok := fields[linkedNotesKey]; ok {
 		fields["notes"] = mergeLinkedNotes(fields["notes"], raw)
 		delete(fields, linkedNotesKey)
+	}
+	if raw, ok := fields[linkedNoteFoldersKey]; ok {
+		fields["note_folders"] = mergeLinkedNotes(fields["note_folders"], raw)
+		delete(fields, linkedNoteFoldersKey)
 	}
 	var collapsed []string
 	if raw, ok := fields[collapsedGroupsKey]; ok {
@@ -872,6 +902,7 @@ func savedStateFieldNames() map[string]bool {
 	}
 	names[collapsedGroupsKey] = true
 	names[linkedNotesKey] = true
+	names[linkedNoteFoldersKey] = true
 	return names
 }
 

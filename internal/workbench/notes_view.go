@@ -245,7 +245,7 @@ func (s *State) noteViewClick(id ui.ID) bool {
 	}
 	if v.menu == "note" || v.menu == "folder" {
 		switch id {
-		case hitNoteRename, hitNotePin, hitNoteDelete, hitNoteExport, hitNoteFolderRemove, hitNoteAdd, hitNoteFolderAdd, hitNoteImport, hitNoteLinkFile, hitNoteLinkUnlink:
+		case hitNoteRename, hitNotePin, hitNoteDelete, hitNoteExport, hitNoteFolderRemove, hitNoteAdd, hitNoteFolderAdd, hitNoteImport, hitNoteLinkFile, hitNoteLinkUnlink, hitNoteLinkFolder, hitNoteFolderUnlink:
 			if v.menuFolder {
 				n.folder = v.menuID
 

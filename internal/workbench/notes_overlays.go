@@ -24,6 +24,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"))
 			add(hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"))
 			add(hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"))
+			add(hitNoteLinkFolder, s.noteText("Link Markdown folder", "链接 Markdown 文件夹"))
 			add(hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"))
 			actions = append(actions, components.ContextMenuItem{ID: hitNoteExpandAll, Label: s.noteExpandLabel(), Disabled: len(n.folders) == 0})
 		case "folder":
@@ -32,6 +33,10 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteRename, s.noteText("Rename", "重命名"))
 			add(hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"))
 			add(hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"))
+			add(hitNoteLinkFolder, s.noteText("Link Markdown folder", "链接 Markdown 文件夹"))
+			if s.noteFolderRoot2(v.menuID) != "" {
+				add(hitNoteFolderUnlink, s.noteText("Unlink folder (keep as notes)", "取消文件夹链接（保留为笔记）"))
+			}
 			add(hitNoteFolderRemove, s.noteText("Delete folder", "删除文件夹"))
 		default:
 			if s.activeSection == sectionTerminal {
@@ -67,6 +72,9 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 		description := s.noteText("Delete this note?", "确认删除这篇笔记？")
 		if n.confirm == "folder" {
 			description = s.noteText("Contents move to the parent folder unless you choose Delete all contents.", "默认将内容移至上一级；也可选择删除全部内容。")
+		}
+		if s.noteConfirmTouchesFiles() {
+			description += s.noteText(" Files on disk are not deleted.", "磁盘上的文件不会被删除。")
 		}
 		layout := dialog.Begin(s.noteText("Confirm deletion", "确认删除"), description)
 		actions := []components.ButtonAction{{ID: hitNoteCancel, Label: s.noteText("Cancel", "取消"), Variant: components.ButtonSecondary}, {ID: hitNoteConfirm, Label: s.noteText("Confirm", "确认"), Variant: components.ButtonDestructive}}

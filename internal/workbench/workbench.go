@@ -859,12 +859,15 @@ type State struct {
 	noteLinks      map[string]*noteLinkState
 	noteWatches    map[string]*app.DirectoryWatch
 	noteWatchNames []string
-	noteExit       *noteExitRequest
-	noteTarget     *notesUI
-	snippets       snippetsUI
-	history        historyUI
-	historyLayout  flex.View
-	completion     completionUI
+	// noteTreeWatches follows each linked folder, noteScans reads them.
+	noteTreeWatches map[string]*app.DirectoryWatch
+	noteScans       map[string]*noteFolderScanState
+	noteExit        *noteExitRequest
+	noteTarget      *notesUI
+	snippets        snippetsUI
+	history         historyUI
+	historyLayout   flex.View
+	completion      completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
 
