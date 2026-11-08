@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +100,52 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 	fresh.paintGrid(&canvas, freshSession, freshGeometry)
 	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(freshSession.ID))); ok {
 		t.Fatal("a scrollbar with nothing to scroll")
+	}
+}
+
+func TestTerminalRowsKeepTheirTextIdentityAcrossScrolling(t *testing.T) {
+	state, session, geometry := historyState()
+	// Move off the live screen so every terminal row holds a written line; the
+	// blank row under the cursor paints no label.
+	session.term.screen.Scroll(2)
+	var canvas ui.Canvas
+	paint := func() []ui.TextIdentity {
+		canvas.Reset()
+		state.paintGrid(&canvas, session, geometry)
+		identities := make([]ui.TextIdentity, 0, geometry.rows)
+		for _, text := range canvas.Texts() {
+			if text.Identity.Owner == session.ID && text.Identity.Item != 0 {
+				identities = append(identities, text.Identity)
+			}
+		}
+		return identities
+	}
+	before := paint()
+	_, rows := session.term.presentedSize()
+	visible := 0
+	for row := 0; row < rows; row++ {
+		if session.term.screen.Row(row).ID != 0 {
+			visible++
+		}
+	}
+	if len(before) != visible {
+		t.Fatalf("grid labels = %d, want one per visible row (%d)", len(before), visible)
+	}
+	for row, identity := range before {
+		if want := session.term.screen.Row(row).ID; identity != (ui.TextIdentity{Owner: session.ID, Item: want}) {
+			t.Fatalf("row %d identity = %+v, want owner %d item %d", row, identity, session.ID, want)
+		}
+	}
+
+	// One line of wheel scrolling moves every row up: the rows that remain
+	// visible must keep their identities so the backend can reuse their textures.
+	session.term.screen.Scroll(1)
+	after := paint()
+	if len(after) != len(before) {
+		t.Fatalf("labels after scrolling = %d, want %d", len(after), len(before))
+	}
+	if !slices.Equal(after[1:], before[:len(before)-1]) {
+		t.Fatalf("identities after scrolling = %+v, want moved %+v", after, before)
 	}
 }
 

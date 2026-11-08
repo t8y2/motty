@@ -545,7 +545,11 @@ func (state *State) paintGridWithID(canvas *ui.Canvas, session *Session, geometr
 			last := entry.runs[len(entry.runs)-1]
 			rowCols := min(int(last.Column+last.Cells)+1, cols)
 			rowWidth := min(float32(math.Ceil(float64(float32(rowCols)*cellWidth)))+1, labelWidth)
-			canvas.LabelRuns(entry.text, ui.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
+			identity := ui.TextIdentity{}
+			if t.rowIDs[row] != 0 {
+				identity = ui.TextIdentity{Owner: session.ID, Item: t.rowIDs[row]}
+			}
+			canvas.LabelRunsWithIdentity(identity, entry.text, ui.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)
