@@ -2246,7 +2246,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	ssh := sshHost
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
 	var vncRows flex.Box
-	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, advanced flex.Box
+	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, jump, advanced flex.Box
 	form := &state.editor.form
 	form.count = 0
 	if form.lastError != state.dialogError {
@@ -2290,6 +2290,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			proxy = f.Slot().Height(rowHeight)
 		}
 		if ssh {
+			jump = f.Slot().Height(rowHeight)
 			advanced = f.Slot().Height(state.advancedSectionHeight())
 		}
 		if vncHost {
@@ -2315,6 +2316,7 @@ func (state *State) paintHostDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		state.paintVNCRows(canvas, vncRows.Rect())
 	}
 	if ssh {
+		state.paintHostJumpRow(canvas, jump.Rect())
 		state.paintTransferChoice(canvas, transfer.Rect())
 		state.paintAdvancedSection(canvas, advanced.Rect())
 	}

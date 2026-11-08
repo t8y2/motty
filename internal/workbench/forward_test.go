@@ -812,32 +812,35 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	}
 	state.Click(hitForwardDialogHost)
 	canvas, texts = paintedTexts(state)
-	if !contains(texts, state.messages.ForwardDialogTitle) || !hasHit(canvas, hitForwardHostItemList.At(int(state.hosts[0].ID))) || !hasHit(canvas, hitForwardHostDismiss) {
+	if !contains(texts, state.messages.ForwardDialogTitle) || !hasHit(canvas, hitForwardHostItemList.At(0)) || !hasHit(canvas, hitForwardHostDismiss) {
 		t.Fatalf("forward dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }
 
-func TestForwardHostSelectScrollsAndChoosesStableHostID(t *testing.T) {
+// The host picker filters by what identifies a host, not only its label:
+// typing an address or an account narrows the list to the host that has it.
+func TestForwardHostSelectFiltersByAddressAndChoosesStableHostID(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	for index := len(state.hosts); index < forwardHostPageSize+2; index++ {
-		host := Host{ID: state.nextHostID, Label: fmt.Sprintf("Host %d", index), Address: fmt.Sprintf("host-%d.example", index), Port: 22}
+	for index := len(state.hosts); index < 9; index++ {
+		host := Host{ID: state.nextHostID, Label: fmt.Sprintf("Host %d", index), Address: fmt.Sprintf("host-%d.example", index), User: "deploy", Port: 22}
 		host.finish()
 		state.hosts = append(state.hosts, host)
 		state.nextHostID++
 	}
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	state.Click(hitForwardHostScrollDown)
-	if state.forwardEditor.hostOffset != 1 {
-		t.Fatalf("host offset = %d", state.forwardEditor.hostOffset)
+	state.forwardEditor.hostSelect.Query.Insert("host-8")
+	choices := state.forwardEditor.hostSelect.Choices()
+	if len(choices) != 1 || choices[0].Label != "Host 8" {
+		t.Fatalf("address filter = %+v", choices)
 	}
+	state.Click(hitForwardHostItemList.At(0))
 	last := state.hosts[len(state.hosts)-1]
-	for state.forwardEditor.hostOffset+forwardHostPageSize < len(state.hosts) {
-		state.Click(hitForwardHostScrollDown)
+	if state.forwardEditor.hostID != last.ID || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("selected host=%d open=%v, want %d closed", state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open, last.ID)
 	}
-	state.Click(hitForwardHostItemList.At(int(last.ID)))
-	if state.forwardEditor.hostID != last.ID || state.forwardEditor.hostOpen {
-		t.Fatalf("selected host=%d open=%v", state.forwardEditor.hostID, state.forwardEditor.hostOpen)
+	if state.forwardEditor.hostSelect.Query.String() != "" {
+		t.Fatalf("the query survived choosing a host: %q", state.forwardEditor.hostSelect.Query.String())
 	}
 }
 
@@ -1265,70 +1268,56 @@ func (listener *delayedCloseListener) Close() error {
 	return listener.Listener.Close()
 }
 
-// An open host select is a list for the keyboard too: arrows move focus through
-// its visible rows, End reaches the last, and Enter's generic activation then
-// chooses it.
+// The open host list belongs to the keyboard too: arrows move the highlighted
+// row past disabled hosts, and Enter chooses it.
 func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	paintAt(state, ui.Size{Width: 1400, Height: 900}) // list the visible hosts for the keyboard
-	first := hitForwardHostItemList.At(int(state.hosts[0].ID))
-	result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitForwardDialogHost})
-	if !result.Handled || result.Focus != first {
-		t.Fatalf("Down = %+v, want the first host %v", result, first)
+	if result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
+		t.Fatalf("Down was not taken: %+v", result)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: first})
-	if !result.Handled {
-		t.Fatalf("End was not taken: %+v", result)
-	}
-	last := result.Focus
-	hostID, ok := last.In(hitForwardHostItemList)
-	if !ok {
-		t.Fatalf("End focused %v, not a host row", last)
-	}
-	state.Click(last)
-	if state.forwardEditor.hostID != uint32(hostID) || state.forwardEditor.hostOpen {
-		t.Fatalf("chosen host=%d open=%v, want %d closed", state.forwardEditor.hostID, state.forwardEditor.hostOpen, hostID)
+	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogHost})
+	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("Enter = %+v host=%d open=%v, want the second host closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
 }
 
-// Typing on a closed host select commits the matching host without opening the
-// list, as Base UI's closed-trigger typeahead does.
-func TestForwardHostSelectCommitsATypedMatch(t *testing.T) {
+// Typing filters the open list instead of closing it: only the hosts whose
+// name, address or account match stay, and Enter chooses the one left.
+func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
-	if state.forwardEditor.hostOpen {
-		t.Fatal("the host list is already open")
-	}
+	state.Click(hitForwardDialogHost)
 	var staging uint32
 	for _, host := range state.hosts {
 		if host.Label == "Staging" {
 			staging = host.ID
 		}
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyUnknown, Text: "s", Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostOpen || state.forwardEditor.hostID != staging {
-		t.Fatalf("typed s: %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostOpen)
+	state.forwardEditor.hostSelect.Query.Insert("stag")
+	choices := state.forwardEditor.hostSelect.Choices()
+	if len(choices) != 1 || choices[0].Label != "Staging" {
+		t.Fatalf("filter = %+v, want only Staging", choices)
 	}
-	// A committed match keeps the session for a longer query, as Base UI does;
-	// start a new one to type another first letter.
-	state.selectTypeahead.state.Reset()
-	result = state.Key(ui.KeyEvent{Key: ui.KeyUnknown, Text: "r", Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostID == staging {
-		t.Fatalf("typed r: %+v host=%d, want Router", result, state.forwardEditor.hostID)
+	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogHost})
+	if !result.Handled || state.forwardEditor.hostSelect.Open || state.forwardEditor.hostID != staging {
+		t.Fatalf("Enter = %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
+	}
+	if query := state.forwardEditor.hostSelect.Query.String(); query != "" {
+		t.Fatalf("the chosen host kept its query %q", query)
 	}
 }
 
-// Tab leaves an open select: the menu handler asks the runtime to settle the
-// close first, then traverse the page, instead of cycling through the options.
+// Tab leaves an open host list: the picker asks the runtime to settle the close
+// first, then traverse the page, instead of cycling through the options.
 func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
 	paintAt(state, ui.Size{Width: 1400, Height: 900})
 	result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Target: hitForwardDialogHost})
-	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostOpen {
-		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostOpen)
+	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
 	}
 }

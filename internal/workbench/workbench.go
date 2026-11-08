@@ -196,8 +196,9 @@ var (
 	hitForwardDialogResume          = tree.ID(forwardsHits, "forward-dialog-resume")
 	hitForwardDialogResumeHelp      = tree.ID(forwardsHits, "forward-dialog-resume-help")
 	hitForwardHostDismiss           = tree.ID(forwardsHits, "forward-host-dismiss")
-	hitForwardHostScrollUp          = tree.ID(forwardsHits, "forward-host-scroll-up")
-	hitForwardHostScrollDown        = tree.ID(forwardsHits, "forward-host-scroll-down")
+	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
+	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
+	hitForwardHostPickerScope       = tree.ID(forwardsHits, "forward-host-picker-scope")
 	hitForwardModeLocal             = tree.ID(forwardsHits, "forward-mode-local")
 	hitForwardModeSOCKS5            = tree.ID(forwardsHits, "forward-mode-socks5")
 	hitForwardModeHTTPConnect       = tree.ID(forwardsHits, "forward-mode-http-connect")
@@ -289,23 +290,29 @@ var (
 
 // Jump-host routing: its page and dialog.
 var (
-	hitProxyAdd            = tree.ID(proxiesHits, "proxy-add")
-	hitProxyEdit           = tree.ID(proxiesHits, "proxy-edit")
-	hitProxyStartStop      = tree.ID(proxiesHits, "proxy-start-stop")
-	hitProxyRemove         = tree.ID(proxiesHits, "proxy-remove")
-	hitProxyDialogClose    = tree.ID(proxiesHits, "proxy-dialog-close")
-	hitProxyDialogCancel   = tree.ID(proxiesHits, "proxy-dialog-cancel")
-	hitProxyDialogSubmit   = tree.ID(proxiesHits, "proxy-dialog-submit")
-	hitProxyDialogTarget   = tree.ID(proxiesHits, "proxy-dialog-target")
-	hitProxyDialogJump     = tree.ID(proxiesHits, "proxy-dialog-jump")
-	hitProxyDialogViaShell = tree.ID(proxiesHits, "proxy-dialog-via-shell")
-	hitProxyDialogViaHelp  = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
-	hitProxyDialogRelay    = tree.ID(proxiesHits, "proxy-dialog-relay")
-	hitProxyTargetDismiss  = tree.ID(proxiesHits, "proxy-target-dismiss")
-	hitProxyJumpDismiss    = tree.ID(proxiesHits, "proxy-jump-dismiss")
-	hitProxyRowList        = tree.Sub(proxiesHits, tree.Name("proxy-row"))
-	hitProxyTargetItemList = tree.Sub(proxiesHits, tree.Name("proxy-target-item"))
-	hitProxyJumpItemList   = tree.Sub(proxiesHits, tree.Name("proxy-jump-item"))
+	hitProxyAdd               = tree.ID(proxiesHits, "proxy-add")
+	hitProxyEdit              = tree.ID(proxiesHits, "proxy-edit")
+	hitProxyStartStop         = tree.ID(proxiesHits, "proxy-start-stop")
+	hitProxyRemove            = tree.ID(proxiesHits, "proxy-remove")
+	hitProxyDialogClose       = tree.ID(proxiesHits, "proxy-dialog-close")
+	hitProxyDialogCancel      = tree.ID(proxiesHits, "proxy-dialog-cancel")
+	hitProxyDialogSubmit      = tree.ID(proxiesHits, "proxy-dialog-submit")
+	hitProxyDialogTarget      = tree.ID(proxiesHits, "proxy-dialog-target")
+	hitProxyDialogJump        = tree.ID(proxiesHits, "proxy-dialog-jump")
+	hitProxyDialogViaShell    = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogViaHelp     = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
+	hitProxyDialogRelay       = tree.ID(proxiesHits, "proxy-dialog-relay")
+	hitProxyTargetDismiss     = tree.ID(proxiesHits, "proxy-target-dismiss")
+	hitProxyJumpDismiss       = tree.ID(proxiesHits, "proxy-jump-dismiss")
+	hitProxyTargetTrigger     = tree.ID(proxiesHits, "proxy-target-trigger")
+	hitProxyJumpTrigger       = tree.ID(proxiesHits, "proxy-jump-trigger")
+	hitProxyTargetScroll      = tree.ID(proxiesHits, "proxy-target-scroll")
+	hitProxyJumpScroll        = tree.ID(proxiesHits, "proxy-jump-scroll")
+	hitProxyTargetPickerScope = tree.ID(proxiesHits, "proxy-target-picker-scope")
+	hitProxyJumpPickerScope   = tree.ID(proxiesHits, "proxy-jump-picker-scope")
+	hitProxyRowList           = tree.Sub(proxiesHits, tree.Name("proxy-row"))
+	hitProxyTargetItemList    = tree.Sub(proxiesHits, tree.Name("proxy-target-item"))
+	hitProxyJumpItemList      = tree.Sub(proxiesHits, tree.Name("proxy-jump-item"))
 )
 
 // Known-host management: its page and dialog, with the rows and their checkboxes
@@ -1344,10 +1351,20 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 			return &state.ai.rename.editor
 		}
 	case modalNewProxy:
-		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
-			return &state.proxyEditor.relay
+		switch hit {
+		case hitProxyDialogRelay:
+			if state.proxyEditor.viaShell {
+				return &state.proxyEditor.relay
+			}
+		case hitProxyDialogTarget:
+			return &state.proxyEditor.targetSelect.Query
+		case hitProxyDialogJump:
+			return &state.proxyEditor.jumpSelect.Query
 		}
 	case modalNewForward:
+		if hit == hitForwardDialogHost {
+			return &state.forwardEditor.hostSelect.Query
+		}
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
@@ -2088,6 +2105,8 @@ func (state *State) clickHostDialog(id ui.ID) {
 		if state.editor.protocol != protocolSerial {
 			state.openHostProxyDialog()
 		}
+	case hitHostJumpConfigure:
+		state.openHostJumpRoute()
 	default:
 		state.clickHostProtocol(id)
 	}
@@ -2450,6 +2469,12 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 			return result
 		}
 	}
+	if result, handled := state.proxyPickerPointer(event); handled {
+		return result
+	}
+	if result, handled := state.forwardPickerPointer(event); handled {
+		return result
+	}
 	if result := state.hostFormPointer(event); result.Handled {
 		return result
 	}
@@ -2619,6 +2644,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		return result
 	}
 	if result, handled := state.hostGroupPickerKey(event); handled {
+		return result
+	}
+	if result, handled := state.proxyDialogKey(event); handled {
+		return result
+	}
+	if result, handled := state.forwardDialogKey(event); handled {
 		return result
 	}
 	if result, handled := state.snippetGroupKey(event); handled {

@@ -82,59 +82,6 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 		}
 		return items, state.aiSettingsClick, true
 
-	case state.modal == modalNewForward && target == hitForwardDialogHost && !state.forwardEditor.hostOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.hosts))
-		for _, host := range state.hosts {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitForwardHostItemList.At(int(host.ID)), Label: host.Label, Disabled: !host.isSSH(),
-			})
-		}
-		return items, func(id ui.ID) bool {
-			hostID, ok := id.In(hitForwardHostItemList)
-			if !ok {
-				return false
-			}
-			if _, exists := state.hostByID(uint32(hostID)); !exists {
-				return false
-			}
-			state.forwardEditor.hostID = uint32(hostID)
-			return true
-		}, true
-
-	case state.modal == modalNewProxy && target == hitProxyDialogTarget && !state.proxyEditor.targetOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.hosts))
-		for _, host := range state.hosts {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitProxyTargetItemList.At(int(host.ID)), Label: host.Label,
-				Disabled: !host.isSSH() || state.proxyTargetConfiguredExcluding(host.ID, state.proxyEditor.routeID),
-			})
-		}
-		return items, func(id ui.ID) bool {
-			hostID, ok := id.In(hitProxyTargetItemList)
-			if !ok || !state.proxyTargetSelectable(uint32(hostID)) {
-				return false
-			}
-			return state.chooseProxyTarget(uint32(hostID))
-		}, true
-
-	case state.modal == modalNewProxy && target == hitProxyDialogJump && !state.proxyEditor.jumpOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.hosts))
-		for _, host := range state.hosts {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitProxyJumpItemList.At(int(host.ID)), Label: host.Label, Disabled: !host.isSSH(),
-			})
-		}
-		return items, func(id ui.ID) bool {
-			hostID, ok := id.In(hitProxyJumpItemList)
-			if !ok {
-				return false
-			}
-			if _, exists := state.hostByID(uint32(hostID)); !exists {
-				return false
-			}
-			return state.chooseProxyJump(uint32(hostID))
-		}, true
-
 	case target == hitAISetFormPreset && !state.ai.cfg.presetOpen:
 		items := make([]components.MenuTypeaheadItem, 0, len(aiPresets))
 		for index := range aiPresets {

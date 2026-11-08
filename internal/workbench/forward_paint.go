@@ -7,8 +7,6 @@ import (
 	"motty/internal/portforward"
 )
 
-const forwardHostPageSize = 6
-
 func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	pal, messages := state.pal, state.messages
 	canAdd := state.sshHostCount() > 0
@@ -210,53 +208,18 @@ func (state *State) paintForwardDialogField(canvas *ui.Canvas, id ui.ID, field f
 	})
 }
 
+// paintForwardHostField paints the searchable host picker. Typing filters by
+// name, address, account and group, which is what makes a long host list
+// navigable without paging.
 func (state *State) paintForwardHostField(canvas *ui.Canvas, bounds ui.Rect) {
 	theme := state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.ForwardFieldHost, "", "")
-	selected, selectedOK := state.hostByID(state.forwardEditor.hostID)
-	value := ""
-	hint := ""
-	if selectedOK {
-		value = selected.Label
-		hint = selected.Address
-	}
-
-	count := len(state.hosts)
-	visible := min(count, forwardHostPageSize)
-	popupHeight := float32(8 + visible*32)
-	if count > forwardHostPageSize {
-		popupHeight += 48
-	}
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: hitForwardDialogHost,
-		Label:     state.messages.ForwardFieldHost,
-		Value:     value,
-		Hint:      hint,
-		Open:      state.forwardEditor.hostOpen,
-		Invalid:   !selectedOK,
-		Content: ui.Rect{
-			X: content.X, Y: content.Y + content.Height + 4,
-			Width: content.Width, Height: popupHeight,
-		},
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitForwardHostDismiss, Viewport: state.windowRect(),
-		Scroll: state.selectScroll(state.forwardEditor.hostOpen, hitForwardHostDismiss),
+	layout := components.PaintSingleSelect(canvas, theme, content, &state.forwardEditor.hostSelect, components.SingleSelectOptions{
+		InputID: hitForwardDialogHost, TriggerID: hitForwardHostTrigger, DismissID: hitForwardHostDismiss,
+		Scope: hitForwardHostPickerScope, ScrollID: hitForwardHostScroll, OptionIDs: hitForwardHostItemList,
+		Label: state.messages.ForwardFieldHost, Placeholder: state.messages.HostPickerSearch,
+		EmptyLabel: state.messages.HostPickerNoMatches,
+		Viewport:   state.windowRect(), Layer: dialogLayer + 1,
 	})
-	defer selectControl.End()
-	if state.forwardEditor.hostOpen {
-		state.menuPlaced(selectControl.ContentBounds())
-	}
-	if count > forwardHostPageSize {
-		selectControl.AddScrollUp(hitForwardHostScrollUp, state.forwardEditor.hostOffset == 0)
-	}
-	end := min(state.forwardEditor.hostOffset+forwardHostPageSize, count)
-	for index := state.forwardEditor.hostOffset; index < end; index++ {
-		host := state.hosts[index]
-		selectControl.AddItem(components.SelectItem{
-			ID: hitForwardHostItemList.At(int(host.ID)), Label: host.Label, Value: host.Address,
-			Selected: host.ID == state.forwardEditor.hostID, Disabled: !host.isSSH(),
-		})
-	}
-	if count > forwardHostPageSize {
-		selectControl.AddScrollDown(hitForwardHostScrollDown, end == count)
-	}
+	state.forwardEditor.hostPopup = layout.Popup
 }

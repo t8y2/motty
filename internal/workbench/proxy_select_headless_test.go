@@ -12,8 +12,8 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// hostSelectTestState is the proxy dialog with more hosts than the popup shows,
-// opened on the last one so the select has to scroll to its selection.
+// hostSelectTestState is the proxy dialog with more hosts than its popup shows,
+// opened on the last one so the picker has to reveal its selection.
 func hostSelectTestState(t *testing.T) *State {
 	t.Helper()
 	state := newTestState(t, testOptions(t))
@@ -24,19 +24,19 @@ func hostSelectTestState(t *testing.T) *State {
 		})
 		state.nextHostID++
 	}
+	state.selectedHostID = state.hosts[len(state.hosts)-1].ID
 	state.Click(hitProxies)
 	state.Click(hitProxyAdd)
 	if state.modal != modalNewProxy {
 		t.Fatalf("proxy dialog = %d", state.modal)
 	}
-	state.proxyEditor.targetID = state.hosts[len(state.hosts)-1].ID
 	return state
 }
 
-// The jump and target selects paint six rows and let MenuScroll move the rest:
-// the wheel changes which hosts show, and opening lands on the current host so
-// the arrow keys continue from there instead of from the top of the list.
-func TestProxyHostSelectScrollsAndOpensOnTheSelectedHost(t *testing.T) {
+// The host pickers scroll to the chosen host when they open, keep the keyboard
+// in their search field, and let the wheel move the list only over its own
+// surface.
+func TestProxyHostSelectRevealsTheChosenHostAndScrolls(t *testing.T) {
 	state := hostSelectTestState(t)
 	view, err := headless.Open(app.Config{
 		Title: "proxy", Width: 1400, Height: 900, Paint: state.Paint, OnPointer: state.Pointer,
@@ -54,51 +54,42 @@ func TestProxyHostSelectScrollsAndOpensOnTheSelectedHost(t *testing.T) {
 	if err := view.Wait(100 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if !state.proxyEditor.targetOpen {
-		t.Fatal("the target select did not open")
+	if !state.proxyEditor.targetSelect.Open {
+		t.Fatal("the target picker did not open")
 	}
-	if got, want := state.popups.surface.Height, float32(8+proxyHostVisible*32); got != want {
-		t.Fatalf("popup = %.0f tall, want %.0f", got, want)
+	if focused := view.Snapshot().Focused; focused != hitProxyDialogTarget {
+		t.Fatalf("focus on open = %v, want the search field %v", focused, hitProxyDialogTarget)
 	}
-	if state.popups.scroll.Offset == 0 {
-		t.Fatal("the popup did not scroll to the selected host")
+	canvas, _ := paintedTexts(state)
+	last := len(state.hosts) - 1
+	if !hasHit(canvas, hitProxyTargetItemList.At(last)) {
+		t.Fatalf("the chosen host %d was not revealed", last)
 	}
-	last := hitProxyTargetItemList.At(int(state.proxyEditor.targetID))
-	if focused := view.Snapshot().Focused; focused != last {
-		t.Fatalf("focus on open = %v, want the selected row %v", focused, last)
+	if hasHit(canvas, hitProxyTargetItemList.At(0)) {
+		t.Fatal("the list did not scroll down to the chosen host")
 	}
 
-	// Up from the selection must land on the previous host, not on the first.
-	previous := hitProxyTargetItemList.At(int(state.hosts[len(state.hosts)-2].ID))
-	if err := view.Driver().Key(ui.KeyUp, 0); err != nil {
+	// The wheel over the popup scrolls it back to the top.
+	box := state.proxyEditor.targetPopup
+	if err := view.Scroll(ui.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: -1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if focused := view.Snapshot().Focused; focused != previous {
-		t.Fatalf("Up moved focus to %v, want %v", focused, previous)
+	canvas, _ = paintedTexts(state)
+	if !hasHit(canvas, hitProxyTargetItemList.At(0)) || hasHit(canvas, hitProxyTargetItemList.At(last)) {
+		t.Fatal("the wheel did not move the list")
 	}
-
-	// The wheel over the popup moves the list; one over the page behind it does not.
-	box, scroll := state.popups.surface, state.popups.scroll.Offset
-	if err := view.Scroll(ui.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: -96}); err != nil {
-		t.Fatal(err)
-	}
-	if err := view.Wait(50 * time.Millisecond); err != nil {
-		t.Fatal(err)
-	}
-	if state.popups.scroll.Offset >= scroll {
-		t.Fatalf("the wheel did not move the list: %.0f -> %.0f", scroll, state.popups.scroll.Offset)
-	}
-	moved := state.popups.scroll.Offset
+	// A wheel beside the popup leaves it where it is.
 	if err := view.Scroll(ui.ScrollEvent{X: 4, Y: 4, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if state.popups.scroll.Offset != moved {
-		t.Fatalf("a wheel beside the popup moved it: %.0f -> %.0f", moved, state.popups.scroll.Offset)
+	canvas, _ = paintedTexts(state)
+	if !hasHit(canvas, hitProxyTargetItemList.At(0)) || hasHit(canvas, hitProxyTargetItemList.At(last)) {
+		t.Fatal("a wheel beside the popup moved the list")
 	}
 }

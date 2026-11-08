@@ -47,7 +47,7 @@ click 889 305
 type secret
 click "Add Host"
 settle 400
-click "Proxies"
+click "Jump Routes"
 settle 300
 click "Add Route"
 settle 400

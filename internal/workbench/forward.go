@@ -2,13 +2,14 @@ package workbench
 
 import (
 	"fmt"
-	"github.com/vivaui/viva/ui"
 	"net"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
@@ -157,12 +158,14 @@ type forwardEditor struct {
 	destinationHost text.Editor
 	destinationPort text.Editor
 	hostID          uint32
-	hostOpen        bool
-	hostOffset      int
-	mode            portforward.Mode
-	resume          bool
-	editing         bool
-	forwardID       uint32
+	// hostSelect is the searchable host picker. Its query stays here so typing
+	// filters the list without opening a second surface.
+	hostSelect components.SingleSelectState
+	hostPopup  ui.Rect
+	mode       portforward.Mode
+	resume     bool
+	editing    bool
+	forwardID  uint32
 }
 
 type forwardField uint8
@@ -291,6 +294,19 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	return forward
 }
 
+// syncForwardHostSelect rebuilds the host picker from the catalog and shows the
+// host the editor currently holds. It runs when the dialog opens, not while
+// painting, so an unchanged dialog allocates nothing for its list.
+func (state *State) syncForwardHostSelect() {
+	editor := &state.forwardEditor
+	options := make([]components.SingleSelectOption, 0, len(state.hosts))
+	for _, host := range state.hosts {
+		options = append(options, hostSelectOption(host, !host.isSSH()))
+	}
+	editor.hostSelect.SetOptions(options)
+	editor.hostSelect.SetValue(hostSelectValue(editor.hostID))
+}
+
 func (state *State) openForwardDialog() {
 	if len(state.hosts) == 0 {
 		state.showActionWarning(state.messages.ForwardDialogTitle, state.messages.ErrForwardHostRequired)
@@ -311,6 +327,7 @@ func (state *State) openForwardDialog() {
 		return
 	}
 	state.forwardEditor.reset(hostID)
+	state.syncForwardHostSelect()
 	state.forwardDialogError = ""
 	state.modal = modalNewForward
 }
@@ -336,63 +353,44 @@ func (state *State) openEditForwardID(id uint32) {
 		hostID = host.ID
 	}
 	state.forwardEditor.load(forward, hostID)
+	state.syncForwardHostSelect()
 	state.forwardDialogError = ""
 	state.modal = modalNewForward
 }
 
 func (state *State) clickForwardDialog(id ui.ID) {
-	if state.forwardEditor.hostOpen {
+	editor := &state.forwardEditor
+	if editor.hostSelect.Open {
 		switch {
 		case id == hitForwardDialogClose || id == hitForwardDialogCancel:
 			state.closeForwardDialog()
 			state.status = state.messages.StatusEditCanceled
-			return
 		case id == hitForwardDialogSubmit:
-			state.forwardEditor.hostOpen = false
+			editor.hostSelect.Open = false
 			state.submitForwardDialog()
-			return
-		case id == hitForwardDialogHost:
-			state.forwardEditor.hostOpen = false
-			return
+		case id == hitForwardDialogHost || id == hitForwardHostTrigger:
+			editor.hostSelect.Open = true
 		case id == hitForwardHostDismiss:
-			state.forwardEditor.hostOpen = false
-			return
-		case id == hitForwardHostScrollUp:
-			if state.forwardEditor.hostOffset > 0 {
-				state.forwardEditor.hostOffset--
-			}
-			return
-		case id == hitForwardHostScrollDown:
-			if state.forwardEditor.hostOffset+forwardHostPageSize < len(state.hosts) {
-				state.forwardEditor.hostOffset++
-			}
-			return
+			editor.hostSelect.Open = false
+		case id == hitForwardHostScroll:
+			// The scrollbar drag belongs to the pointer handler.
 		case id.Scope() == hitForwardHostItemList:
-			hostID := uint32(item(id))
-			if _, ok := state.hostByID(hostID); ok {
-				state.forwardEditor.hostID = hostID
-				state.forwardEditor.hostOpen = false
+			if index, ok := id.In(hitForwardHostItemList); ok && editor.hostSelect.Choose(index) {
+				if hostID, ok := hostSelectID(editor.hostSelect.Value()); ok {
+					editor.hostID = hostID
+				}
 			}
-			return
 		default:
-			state.forwardEditor.hostOpen = false
-			return
+			editor.hostSelect.Open = false
 		}
+		return
 	}
 	switch id {
 	case hitForwardDialogClose, hitForwardDialogCancel:
 		state.closeForwardDialog()
 		state.status = state.messages.StatusEditCanceled
-	case hitForwardDialogHost:
-		state.forwardEditor.hostOpen = true
-		// Open at the page that holds the chosen host, as Base UI reveals the
-		// selected item when its select opens.
-		for index, host := range state.hosts {
-			if host.ID == state.forwardEditor.hostID {
-				state.forwardEditor.hostOffset = index / forwardHostPageSize * forwardHostPageSize
-				break
-			}
-		}
+	case hitForwardDialogHost, hitForwardHostTrigger:
+		editor.hostSelect.Open = true
 	case hitForwardModeLocal:
 		state.forwardEditor.mode = portforward.ModeLocal
 		state.forwardDialogError = ""
@@ -412,7 +410,63 @@ func (state *State) clickForwardDialog(id ui.ID) {
 	}
 }
 
+// forwardDialogKey routes arrows, Enter, Escape and Tab to the open host
+// picker, so Enter chooses a host instead of submitting the form.
+func (state *State) forwardDialogKey(event ui.KeyEvent) (ui.EventResult, bool) {
+	if state.modal != modalNewForward {
+		return ui.EventResult{}, false
+	}
+	editor := &state.forwardEditor
+	var result ui.EventResult
+	switch {
+	case event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger:
+		result = editor.hostSelect.Key(event)
+	case event.Key == ui.KeyEscape && editor.hostSelect.Open:
+		result = editor.hostSelect.Key(event)
+	case event.Key == ui.KeyTab && editor.hostSelect.Open:
+		result = editor.hostSelect.Key(event)
+	default:
+		return ui.EventResult{}, false
+	}
+	if result.Handled || result.Repaint {
+		// A host chosen with Enter changes the picker's value; a picker that is
+		// still open is a search in progress, not a choice.
+		if !editor.hostSelect.Open {
+			if hostID, ok := hostSelectID(editor.hostSelect.Value()); ok {
+				editor.hostID = hostID
+			}
+		}
+	}
+	return result, result.Handled || result.Repaint
+}
+
+func (state *State) forwardPickerPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+	editor := &state.forwardEditor
+	if !editor.hostSelect.Open {
+		return ui.EventResult{}, false
+	}
+	inside := event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger ||
+		event.Target == hitForwardHostScroll || event.Target.Scope() == hitForwardHostItemList
+	if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !inside {
+		editor.hostSelect.Open = false
+		return ui.EventResult{Handled: true, Repaint: true}, true
+	}
+	if result := editor.hostSelect.Pointer(event); result.Handled {
+		return result, true
+	}
+	return ui.EventResult{}, false
+}
+
+func (state *State) scrollForwardDialog(event ui.ScrollEvent) ui.EventResult {
+	editor := &state.forwardEditor
+	if !editor.hostSelect.Open {
+		return ui.EventResult{}
+	}
+	return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.hostPopup) && editor.hostSelect.Wheel(event)}
+}
+
 func (state *State) submitForwardDialog() {
+	state.forwardEditor.hostSelect.Open = false
 	if state.forwardDialogError = state.forwardEditor.validate(state); state.forwardDialogError != "" {
 		return
 	}

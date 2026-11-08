@@ -365,6 +365,10 @@ func (state *State) hostFormHeight() float32 {
 	if state.editor.protocol != protocolSerial {
 		height += hostFormRowHeight
 	}
+	if state.editor.protocol == protocolSSH {
+		// The jump route row sits under the proxy row.
+		height += hostFormRowHeight
+	}
 	if state.dialogError != "" {
 		height += 32
 	}

@@ -947,6 +947,10 @@ type Messages struct {
 	ProxyViaShellTag           string
 	ErrProxyRelay              string
 	ConnDetailConnectingViaFmt string
+	// Host pickers shared by the jump-route and port-forwarding dialogs: the
+	// placeholder of the search field and the row shown when nothing matches.
+	HostPickerSearch    string
+	HostPickerNoMatches string
 
 	// SFTP remote-file page.
 	SFTPFiles                   string

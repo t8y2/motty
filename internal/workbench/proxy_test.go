@@ -380,10 +380,10 @@ func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 	}
 	state.Click(hitProxyDialogJump)
 	canvas, _ = paintedTexts(state)
-	if !hasHit(canvas, hitProxyJumpItemList.At(int(state.hosts[0].ID))) || !hasHit(canvas, hitProxyJumpItemList.At(int(state.hosts[2].ID))) {
+	if !hasHit(canvas, hitProxyJumpItemList.At(0)) || !hasHit(canvas, hitProxyJumpItemList.At(2)) {
 		t.Fatalf("jump options = %+v", canvas.Hits())
 	}
-	state.Click(hitProxyJumpItemList.At(int(state.hosts[2].ID)))
+	state.Click(hitProxyJumpItemList.At(2))
 	state.Click(hitProxyDialogSubmit)
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, "Production") || !contains(texts, "Router") || !contains(texts, state.messages.ProxyRunning) ||
@@ -401,7 +401,7 @@ func TestJumpRouteSelectionsSwapInsteadOfDeadlocking(t *testing.T) {
 		t.Fatalf("defaults = %+v", state.proxyEditor)
 	}
 	state.Click(hitProxyDialogTarget)
-	state.Click(hitProxyTargetItemList.At(int(state.hosts[0].ID)))
+	state.Click(hitProxyTargetItemList.At(0))
 	if state.proxyEditor.targetID != state.hosts[0].ID || state.proxyEditor.jumpID != state.hosts[1].ID {
 		t.Fatalf("swapped selection = %+v", state.proxyEditor)
 	}

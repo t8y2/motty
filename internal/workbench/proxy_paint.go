@@ -151,64 +151,34 @@ func (state *State) proxyRelayNote() string {
 	return state.messages.ProxyRelayNoPrelude
 }
 
+// paintProxyHostField paints one searchable host picker. Typing in the field
+// filters the list by name, address, account and group, so a long catalog is
+// still reachable without scrolling.
 func (state *State) paintProxyHostField(canvas *ui.Canvas, bounds ui.Rect, target bool) {
 	theme := state.Theme()
 	label := state.messages.ProxyFieldJump
-	triggerID, dismissID, itemBase := hitProxyDialogJump, hitProxyJumpDismiss, hitProxyJumpItemList
-	selectedID, open := state.proxyEditor.jumpID, state.proxyEditor.jumpOpen
+	inputID, triggerID, dismissID := hitProxyDialogJump, hitProxyJumpTrigger, hitProxyJumpDismiss
+	scrollID, itemBase := hitProxyJumpScroll, hitProxyJumpItemList
+	scope := hitProxyJumpPickerScope
+	control := &state.proxyEditor.jumpSelect
 	if target {
 		label = state.messages.ProxyFieldTarget
-		triggerID, dismissID, itemBase = hitProxyDialogTarget, hitProxyTargetDismiss, hitProxyTargetItemList
-		selectedID, open = state.proxyEditor.targetID, state.proxyEditor.targetOpen
+		inputID, triggerID, dismissID = hitProxyDialogTarget, hitProxyTargetTrigger, hitProxyTargetDismiss
+		scrollID, itemBase = hitProxyTargetScroll, hitProxyTargetItemList
+		scope = hitProxyTargetPickerScope
+		control = &state.proxyEditor.targetSelect
 	}
 	content := components.BeginField(canvas, theme, bounds).Paint(label, "", "")
-	selected, selectedOK := state.hostByID(selectedID)
-	value, hint := "", ""
-	if selectedOK {
-		value, hint = selected.Label, selected.target
-	}
-	count := len(state.hosts)
-	visible := min(count, proxyHostVisible)
-	popupHeight := float32(8 + visible*32)
-	// Add every host and let MenuScroll own the wheel, same pattern as the
-	// transfer-center host select. The old page window only painted six rows and
-	// wired ScrollUp/ScrollDown buttons, so trackpad gestures moved MenuScroll
-	// over a list that already fit and never changed which hosts were shown.
-	opening := open && state.popups.owner != dismissID
-	scroll := state.selectScroll(open, dismissID)
-	if opening && scroll != nil {
-		selectedIndex := 0
-		for index, host := range state.hosts {
-			if host.ID == selectedID {
-				selectedIndex = index
-				break
-			}
-		}
-		scroll.Offset = max(0, min(float32(selectedIndex)*32, float32(count)*32+8-popupHeight))
-		// RequestFocus, not SetInitialFocus: the dialog claims its trigger as the
-		// initial focus after this field paints, at the same trap depth, so an initial
-		// focus set here would be overridden. A request is applied once, and the list
-		// follows the focused row from then on.
-		canvas.RequestFocus(itemBase.At(int(selectedID)))
-	}
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: triggerID, Label: label, Value: value, Hint: hint, Open: open, Invalid: !selectedOK,
-		Content: ui.Rect{X: content.X, Y: content.Y + content.Height + 4, Width: content.Width, Height: popupHeight},
-		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: dismissID, Viewport: state.windowRect(),
-		Scroll: scroll,
+	layout := components.PaintSingleSelect(canvas, theme, content, control, components.SingleSelectOptions{
+		InputID: inputID, TriggerID: triggerID, DismissID: dismissID, Scope: scope,
+		ScrollID: scrollID, OptionIDs: itemBase,
+		Label: label, Placeholder: state.messages.HostPickerSearch,
+		EmptyLabel: state.messages.HostPickerNoMatches,
+		Viewport:   state.windowRect(), Layer: dialogLayer + 1,
 	})
-	defer selectControl.End()
-	if open {
-		state.menuPlaced(selectControl.ContentBounds())
+	if target {
+		state.proxyEditor.targetPopup = layout.Popup
+		return
 	}
-	for _, host := range state.hosts {
-		disabled := !host.isSSH()
-		if target && state.proxyTargetConfiguredExcluding(host.ID, state.proxyEditor.routeID) {
-			disabled = true
-		}
-		selectControl.AddItem(components.SelectItem{
-			ID: itemBase.At(int(host.ID)), Label: host.Label, Value: host.target,
-			Selected: host.ID == selectedID, Disabled: disabled,
-		})
-	}
+	state.proxyEditor.jumpPopup = layout.Popup
 }
