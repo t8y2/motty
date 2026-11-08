@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -118,5 +119,20 @@ func TestWorkspaceRestoreIgnoresUnknownOrInvalidLayoutMetadata(t *testing.T) {
 	})
 	if state.workspaceManaged(workspace) || len(state.managedWorkspaceLayouts) != 0 || len(state.temporaryWorkspaceLayouts) != 0 {
 		t.Fatal("invalid metadata was attached to a restored workspace")
+	}
+}
+
+// A file from before layouts existed holds only a grid width for each workspace.
+// Reading it and writing it back must work, or the save that follows every edit
+// fails for as long as the file is stored.
+func TestLegacyWorkspaceLayoutEntryRoundTripsAndDoesNotBlockSaving(t *testing.T) {
+	const legacy = `{"workspace_layouts":[{"id":2,"columns":3,"temporary":true}]}`
+	saved, err := projectState([]byte(legacy))
+	if err != nil {
+		t.Fatalf("a stored legacy layout entry cannot be read back: %v", err)
+	}
+	var again savedState
+	if err := json.Unmarshal(saved, &again); err != nil || len(again.WorkspaceLayouts) != 1 || again.WorkspaceLayouts[0].Columns != 3 {
+		t.Fatalf("the entry did not survive: %s (%v)", saved, err)
 	}
 }

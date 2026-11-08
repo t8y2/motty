@@ -7,8 +7,10 @@ import layoutcore "motty/internal/workspace"
 type savedWorkspaceLayout struct {
 	ID layoutcore.WorkspaceID `json:"id"`
 	// Layout is the recorded arrangement. Files from before layouts existed
-	// hold only Columns, a grid width, which stands for GridSpec(Columns).
-	Layout    layoutcore.LayoutSpec `json:"layout"`
+	// hold only Columns, a grid width, which stands for GridSpec(Columns). A zero
+	// Layout is left out when written: it has no kind to name, and encoding it
+	// fails, which made every save fail while such a file was still stored.
+	Layout    layoutcore.LayoutSpec `json:"layout,omitzero"`
 	Columns   uint8                 `json:"columns,omitempty"`
 	Temporary bool                  `json:"temporary,omitempty"`
 }
