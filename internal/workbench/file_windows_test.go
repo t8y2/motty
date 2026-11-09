@@ -129,6 +129,7 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 					}
 				}
 				foundTabHint := false
+				foundReload, foundSave := false, false
 				for _, hit := range view.Snapshot().Hits {
 					if hit.ID.Scope() == hitDocumentTabList {
 						foundTabHint = true
@@ -140,12 +141,23 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 					if hit.ID == hitDocumentLocation {
 						t.Fatal("the document name was painted twice")
 					}
-					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentReload || hit.ID == hitDocumentSave || hit.ID == hitDocumentInput {
+					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentInput {
+						checkBounds(hit.Bounds)
+					}
+					if hit.Label == d.owner.messages.FileWindow.Reload {
+						foundReload = true
+						checkBounds(hit.Bounds)
+					}
+					if hit.Label == d.owner.messages.FileWindow.Save {
+						foundSave = true
 						checkBounds(hit.Bounds)
 					}
 				}
 				if !foundTabHint {
 					t.Fatal("missing document tab hint")
+				}
+				if !foundReload || !foundSave {
+					t.Fatal("missing footer reload or save button")
 				}
 				d.encodingOpen = true
 				if err := view.Resize(int(size.Width), int(size.Height)+1); err != nil {
@@ -840,7 +852,7 @@ func TestDocumentImageAndUnsavedConfirmationAtDisplayScales(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			d.click(hitDocumentActual)
+			d.ui.zoom, d.ui.pan = 1, gfx.Point{}
 			view.Resize(681, 481)
 			view.Rest()
 			if math.Abs(float64(d.ui.imageGeometry.Image.Width)*scale-64) > .01 {
@@ -879,5 +891,37 @@ func TestDocumentImageAndUnsavedConfirmationAtDisplayScales(t *testing.T) {
 			d.click(hitDocumentCancel)
 			view.Close()
 		}
+	}
+}
+
+// The document window declares its footer buttons as page elements. A click and a
+// key on one go through the window's page: the button's identity is the page's,
+// so the document's central click dispatcher never sees it.
+func TestDocumentWindowPageReceivesFooterButtonClicksAndKeys(t *testing.T) {
+	d := documentFixture(t)
+	view, err := headless.Open(d.config(), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	wrap, ok := view.Hit(d.owner.messages.CodeEditor.WrapOn)
+	if !ok {
+		t.Fatal("missing the page's wrap button")
+	}
+	before := d.edit.noWrap
+	if err := view.Click(wrap.Bounds.X+wrap.Bounds.Width/2, wrap.Bounds.Y+wrap.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if d.edit.noWrap == before {
+		t.Fatal("a click on a page button did not run its action")
+	}
+	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+		t.Fatal(err)
+	}
+	if d.edit.noWrap == before {
+		t.Fatal("a key on the focused page button did not run its action")
 	}
 }

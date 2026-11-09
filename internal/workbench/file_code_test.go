@@ -500,7 +500,9 @@ func TestDocumentWrapToggleChangesTheLayoutNotTheText(t *testing.T) {
 	if documentHasHit(view, hitDocumentEditorScrollX) {
 		t.Fatal("a wrapping editor shows a horizontal scrollbar")
 	}
-	d.click(hitDocumentWrap)
+	if err := view.ClickLabel(d.owner.messages.CodeEditor.WrapOn); err != nil {
+		t.Fatal(err)
+	}
 	view.refresh(t)
 	if !d.edit.noWrap || !documentHasHit(view, hitDocumentEditorScrollX) {
 		t.Fatal("without wrapping a long line should scroll sideways")
@@ -550,7 +552,7 @@ func TestDocumentCodeEditorScreenshots(t *testing.T) {
 		shoot(view, fmt.Sprintf("goto-%.0fx", scale))
 
 		d.closeFind()
-		d.click(hitDocumentWrap)
+		d.edit.noWrap = true
 		documentCaretAt(d, 15, 40)
 		view.refresh(t)
 		shoot(view, fmt.Sprintf("nowrap-%.0fx", scale))

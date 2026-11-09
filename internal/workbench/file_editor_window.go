@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -14,21 +15,19 @@ import (
 const (
 	fileWindowTabScrollbarGap    = float32(2)
 	fileWindowTabScrollbarHeight = float32(6)
-	// fileTabsPageRoot names the tab strip's page in the window's Tree.
-	fileTabsPageRoot = "file-tabs"
 )
+
+// fileWindowPageSeq numbers the editor pages: every content window names its
+// controls in the one window Tree, so no two windows may name them alike.
+var fileWindowPageSeq atomic.Uint64
 
 type fileWindowTabUI struct {
 	viewport, scrollbar ui.Box
-	// page is the tab strip declared with the page API, and view the function
-	// that declares it: kept here so a paint does not make either again.
-	page         *ui.Page
-	view         func(ui.C)
-	contentWidth float32
-	geometry     components.ScrollAreaGeometry
-	hovered      bool
-	dragging     bool
-	grab         float32
+	contentWidth        float32
+	geometry            components.ScrollAreaGeometry
+	hovered             bool
+	dragging            bool
+	grab                float32
 }
 
 func (m *fileWindowManager) hasTab(d *fileDocument) bool {
@@ -436,10 +435,31 @@ func documentTabLayout(available float32, count int) (width, content float32, ov
 	return width, content, overflow
 }
 
-// paintTabs reserves the tab strip's region and leaves it to the tab page. The
-// host declares the strip inside a Frame it lays out itself, so Frame.Page is the
-// seam: the region's rectangle is only known once that Frame is laid out.
-func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
+// editPage is the page the window's controls are declared in. A shared window
+// keeps one page for all its documents; a window opened for one document names
+// its own. The root is unique per window, since every window names its controls
+// in the one Tree.
+func (m *fileWindowManager) editPage(theme *gfx.Theme) *ui.Page {
+	if m.page == nil {
+		root := fmt.Sprintf("file-window-%d", fileWindowPageSeq.Add(1))
+		m.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: theme})
+	}
+	return m.page
+}
+
+// documentPage is editPage for a document painted in a window of its own.
+func (d *fileDocument) documentPage() *ui.Page {
+	if d.ui.page == nil {
+		root := fmt.Sprintf("file-document-%d", fileWindowPageSeq.Add(1))
+		d.ui.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: &d.owner.theme})
+	}
+	return d.ui.page
+}
+
+// declareTabsSection declares the tab strip at the top of the window's page: the
+// clipped row of tabs and, when they overflow, the slot the scrollbar is painted
+// into.
+func (m *fileWindowManager) declareTabsSection(c ui.C, width float32) {
 	if len(m.order) == 0 {
 		return
 	}
@@ -447,29 +467,9 @@ func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	if activeDocument == nil {
 		return
 	}
-	available := max(size.Width-24, 1)
-	_, _, overflow := documentTabLayout(available, len(m.order))
-	sectionHeight := barTabHeight
-	if overflow {
-		sectionHeight += fileWindowTabScrollbarGap + fileWindowTabScrollbarHeight
-	}
-	if m.tabs.page == nil {
-		m.tabs.page = ui.NewPage(ui.PageConfig{Root: fileTabsPageRoot, Theme: &activeDocument.owner.theme})
-		m.tabs.view = m.declareTabs
-	}
-	f.Page(m.tabs.page, m.tabs.view).FillWidth().Height(sectionHeight).Shrink(0)
-}
-
-// declareTabs is the tab page: the clipped row of tabs and, when they overflow,
-// the slot the scrollbar is painted into.
-func (m *fileWindowManager) declareTabs(c ui.C) {
-	activeDocument := m.activeDocument()
-	if activeDocument == nil {
-		return
-	}
 	theme := activeDocument.owner.Theme()
 	metrics := theme.Metrics
-	available := max(c.Frame().Bounds().Width, 1)
+	available := max(width-24, 1)
 	tabWidth, contentWidth, overflow := documentTabLayout(available, len(m.order))
 	pitch := tabWidth + barGap
 	activeIndex := -1
@@ -481,7 +481,11 @@ func (m *fileWindowManager) declareTabs(c ui.C) {
 	}
 	scroll := m.tabStrip.layoutIndex(gfx.Rect{Width: available}, float32(len(m.order))*pitch, len(m.order), activeIndex, pitch, tabWidth)
 	m.tabs.contentWidth = contentWidth
-	ui.Column(c).FillWidth().FillHeight().Shrink(0).Children(func() {
+	sectionHeight := barTabHeight
+	if overflow {
+		sectionHeight += fileWindowTabScrollbarGap + fileWindowTabScrollbarHeight
+	}
+	ui.Column(c).FillWidth().Height(sectionHeight).Shrink(0).Children(func() {
 		m.tabs.viewport = ui.Row(c).FillWidth().Height(barTabHeight).Shrink(0).Clip()
 		m.tabs.viewport.Children(func() {
 			m.declareDocumentTabRows(c, activeDocument, metrics, scroll)
@@ -688,6 +692,11 @@ func (m *fileWindowManager) clickTab(id gfx.ID) bool {
 }
 
 func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInput {
+	if m.page != nil {
+		if input := m.page.TextInput(context); input != nil {
+			return input
+		}
+	}
 	if d := m.activeDocument(); d != nil {
 		return d.textInput(context)
 	}
@@ -696,6 +705,14 @@ func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInp
 
 func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 	hoverChanged := m.trackTabPointer(event)
+	if m.page != nil {
+		if result, ok := m.page.Pointer(event); ok {
+			if hoverChanged {
+				result.Repaint = true
+			}
+			return result
+		}
+	}
 	if result, handled := m.tabScrollbarPointer(event); handled {
 		if hoverChanged {
 			result.Repaint = true
@@ -715,6 +732,11 @@ func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 func (m *fileWindowManager) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
+	}
+	if m.page != nil {
+		if result, ok := m.page.Key(event); ok {
+			return result
+		}
 	}
 	if event.Target.Scope() == hitDocumentTabList || event.Target.Scope() == hitDocumentTabCloseList {
 		return m.tabKey(event)
