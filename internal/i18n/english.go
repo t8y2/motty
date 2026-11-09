@@ -947,6 +947,8 @@ var EnglishMessages = Messages{
 	SFTPDirectoryName:           "Folder name",
 	SFTPCreateDirectory:         "Create",
 	SFTPErrDirectoryRequired:    "Enter a folder name",
+	SFTPErrDirectoryExists:      "An item with this name already exists",
+	SFTPErrPermissionDenied:     "Permission denied",
 	SFTPCreatingDirectoryFmt:    "Creating %s…",
 	SFTPDirectoryCreatedFmt:     "Created folder %s",
 	SFTPRenameTitle:             "Rename",

@@ -1015,6 +1015,8 @@ type Messages struct {
 	SFTPDirectoryName           string
 	SFTPCreateDirectory         string
 	SFTPErrDirectoryRequired    string
+	SFTPErrDirectoryExists      string
+	SFTPErrPermissionDenied     string
 	SFTPCreatingDirectoryFmt    string
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string

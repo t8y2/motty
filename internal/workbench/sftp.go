@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -592,6 +593,20 @@ func (view *sftpView) setItemCountStatus(format string, count int) {
 	view.listingStatus = ""
 }
 
+func (folder *sftpFolder) hasEntry(name string) bool {
+	for _, row := range folder.allRows {
+		if row.entry.Name == name {
+			return true
+		}
+	}
+	for _, row := range folder.rows {
+		if row.entry.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // selectRow applies a press on a row the way a file list does: a plain press
 // selects that row alone, Command or Control toggles it among the others, and
 // Shift selects every row from the one last chosen to it.
@@ -1115,7 +1130,7 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 			if errors.Is(result.Err, sftpclient.ErrCanceled) {
 				view.status = state.messages.SFTPCanceled
 			} else {
-				view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+				view.errorText = state.formatSFTPError(result.Err)
 			}
 		}
 		return
@@ -1535,6 +1550,10 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 			view.dialogError = state.messages.SFTPErrDirectoryRequired
 			return
 		}
+		if !validRemoteBaseName(value) {
+			view.dialogError = state.messages.SFTPErrRenameInvalid
+			return
+		}
 		remotePath := sftpRemotePath(view.path, value)
 		queued = view.worker.CreateDirectory(remotePath)
 		operation = sftpclient.OperationCreateDirectory
@@ -1711,7 +1730,7 @@ func (state *State) pumpSFTP(session *Session) {
 							state.transfers.open = true
 						}
 					} else {
-						view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+						view.errorText = state.formatSFTPError(result.Err)
 					}
 				} else if result.Operation == sftpclient.OperationUpload {
 					view.refreshAfterTransfers = true
@@ -1770,7 +1789,7 @@ func (state *State) pumpSFTP(session *Session) {
 					view.dialog = sftpDialogRemoteChanged
 					view.errorText = state.messages.SFTPEditConflict
 				} else {
-					view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+					view.errorText = state.formatSFTPError(result.Err)
 				}
 				if result.Operation == sftpclient.OperationRemoveDirectory {
 					state.sftpFolderRemovalStopped(view, result.Err)
@@ -2018,6 +2037,23 @@ func (state *State) fitSFTP(size gfx.Size) {
 			view.lfolder.first = min(view.lfolder.first, max(0, len(view.lfolder.shownRows())-view.lfolder.visibleRows))
 		}
 	}
+}
+
+func (state *State) formatSFTPError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, sftpclient.ErrDestinationExists) || errors.Is(err, os.ErrExist) {
+		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrDirectoryExists)
+	}
+	var status *sftp.StatusError
+	if errors.As(err, &status) {
+		switch status.FxCode() {
+		case sftp.ErrSSHFxPermissionDenied:
+			return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrPermissionDenied)
+		}
+	}
+	return fmt.Sprintf(state.messages.SFTPErrorFmt, err)
 }
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {

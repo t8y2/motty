@@ -947,6 +947,8 @@ var TraditionalMessages = Messages{
 	SFTPDirectoryName:           "資料夾名稱",
 	SFTPCreateDirectory:         "建立",
 	SFTPErrDirectoryRequired:    "請輸入資料夾名稱",
+	SFTPErrDirectoryExists:      "該名稱已存在",
+	SFTPErrPermissionDenied:     "沒有權限操作該檔案或目錄",
 	SFTPCreatingDirectoryFmt:    "正在建立 %s…",
 	SFTPDirectoryCreatedFmt:     "已建立資料夾 %s",
 	SFTPRenameTitle:             "重新命名",
