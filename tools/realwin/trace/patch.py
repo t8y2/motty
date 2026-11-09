@@ -65,8 +65,8 @@ edit(win / "renderer_windows.go",
 
 (motty / "internal/workbench/trace_tmp.go").write_text(tracer("workbench", "traceTmp", "MOTTY_PUMP_TRACE"))
 edit(motty / "internal/workbench/terminal.go",
-     "	data := t.rx\n	pending := false\n",
-     '	data := t.rx\n	if len(data) > 0 {\n		traceTmp("pump drained=%d", len(data))\n	}\n	pending := false\n')
+     "	data := t.rx\n	wasExec := t.exec != nil\n",
+     '	data := t.rx\n	if len(data) > 0 {\n		traceTmp("pump drained=%d", len(data))\n	}\n	wasExec := t.exec != nil\n')
 
 (motty / "internal/localshell/trace_tmp.go").write_text(tracer("localshell", "trace", "MOTTY_SHELL_TRACE"))
 shell = motty / "internal/localshell/shell.go"
