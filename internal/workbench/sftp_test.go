@@ -515,6 +515,49 @@ func replaceSFTPText(t testing.TB, state *State, value string) {
 	editor.Insert(value)
 }
 
+// sftpPageButtonHit finds the page control with this accessible label.
+func sftpPageButtonHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// clickSFTPPageButton paints the window and delivers a click's event pass to
+// the files page control with this label, which acts while it is declared.
+func clickSFTPPageButton(t testing.TB, state *State, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := sftpPageButtonHit(&canvas, label)
+	if !ok {
+		t.Fatalf("no files control labeled %q", label)
+	}
+	var pass gfx.Canvas
+	pass.BeginEventPass(hit.ID)
+	state.Paint(&pass, size)
+	pass.EndEventPass()
+}
+
+// clickSFTPWindowButton is clickSFTPPageButton for a file window's own canvas.
+func clickSFTPWindowButton(t testing.TB, w *sftpWindow, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 640, Height: 400}
+	var canvas gfx.Canvas
+	w.paint(&canvas, size)
+	hit, ok := sftpPageButtonHit(&canvas, label)
+	if !ok {
+		t.Fatalf("no window control labeled %q", label)
+	}
+	var pass gfx.Canvas
+	pass.BeginEventPass(hit.ID)
+	w.paint(&pass, size)
+	pass.EndEventPass()
+}
+
 func TestSFTPBrowseAndDownload(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
@@ -591,7 +634,7 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 	}
 
 	replaceSFTPText(t, state, "saved remotely\n中文\n")
-	state.Click(hitSFTPEditSave)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return !view.busy && !sftpEditorDirty(view) && view.status == state.messages.SFTPEditSaved
 	})
@@ -608,7 +651,7 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 		t.Fatalf("remote content = %q, temporaries = %d", content, temporaryCount)
 	}
 
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	if view.editPath != "" || state.EditorFor(hitSFTPEditor) != nil {
 		t.Fatalf("editor stayed open: %+v", view)
 	}
@@ -625,7 +668,7 @@ func TestSFTPRemoteTextEditorPreservesLocalEditsOnConflict(t *testing.T) {
 	})
 	remote.mu.Unlock()
 
-	state.Click(hitSFTPEditSave)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.dialog == sftpDialogRemoteChanged })
 	if view.editEditor.String() != "my local edits\n" || view.errorText != state.messages.SFTPEditConflict {
 		t.Fatalf("conflict editor = %q error = %q", view.editEditor.String(), view.errorText)
@@ -635,7 +678,7 @@ func TestSFTPRemoteTextEditorPreservesLocalEditsOnConflict(t *testing.T) {
 		t.Fatalf("keeping edits changed state: %+v", view)
 	}
 
-	state.Click(hitSFTPEditReload)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditReload)
 	if view.dialog != sftpDialogReloadEdit {
 		t.Fatalf("reload confirmation = %v", view.dialog)
 	}
@@ -649,7 +692,7 @@ func TestSFTPRemoteTextEditorConfirmsDiscard(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := openSFTPTextEditor(t, state, session, "notes.txt")
 	replaceSFTPText(t, state, "unsaved")
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	if view.dialog != sftpDialogDiscardEdit || view.editPath == "" {
 		t.Fatalf("discard confirmation = %+v", view)
 	}
@@ -657,7 +700,7 @@ func TestSFTPRemoteTextEditorConfirmsDiscard(t *testing.T) {
 	if view.editEditor.String() != "unsaved" {
 		t.Fatalf("cancel discard lost edits: %q", view.editEditor.String())
 	}
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	state.Click(hitSFTPDialogSubmit)
 	if view.editPath != "" || view.dialog != sftpDialogNone {
 		t.Fatalf("discard did not close editor: %+v", view)
@@ -709,9 +752,12 @@ func TestSFTPRemoteTextEditorPaintsStableControls(t *testing.T) {
 	if _, ok := canvas.NextFrame(); ok {
 		t.Fatal("idle SFTP editor requested another frame")
 	}
-	for _, id := range []gfx.ID{hitSFTPEditor, hitSFTPEditSave, hitSFTPEditBack, hitSFTPEditReload} {
-		if _, ok := hitByID(&canvas, contextID(id)); !ok {
-			t.Fatalf("missing editor hit %d", id)
+	if _, ok := hitByID(&canvas, contextID(hitSFTPEditor)); !ok {
+		t.Fatal("missing editor hit")
+	}
+	for _, label := range []string{state.messages.SFTPEditSave, state.messages.SFTPEditBack, state.messages.SFTPEditReload} {
+		if _, ok := sftpPageButtonHit(&canvas, label); !ok {
+			t.Fatalf("missing editor control %q", label)
 		}
 	}
 	state.Paint(&canvas, size)

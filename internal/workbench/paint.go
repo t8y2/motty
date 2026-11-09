@@ -1033,6 +1033,17 @@ type chromeLayout struct {
 	newTabShells ui.Box
 	// hostList is the hosts list: where the wheel is aimed.
 	hostList gfx.Rect
+	// sftpPanelPage and sftpEditorPage declare the docked files panel and its
+	// editor; sftpEmptyPage declares the panel before it has a list.
+	sftpPanelPage  *ui.Page
+	sftpPanelView  func(ui.C)
+	sftpPanel      sftpPanelScratch
+	sftpEditorPage *ui.Page
+	sftpEditorView func(ui.C)
+	sftpEditor     sftpEditorScratch
+	sftpEmptyPage  *ui.Page
+	sftpEmptyView  func(ui.C)
+	sftpEmpty      sftpEmptyScratch
 }
 
 // declareNavigation declares the sidebar: the name of the application over the

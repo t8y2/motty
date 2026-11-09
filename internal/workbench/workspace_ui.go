@@ -380,53 +380,66 @@ func (state *State) paintContextSFTP(canvas *gfx.Canvas, bounds gfx.Rect, sessio
 }
 
 // paintEmptyContextSFTP is the panel before a file list exists: the same title
-// and close button as the list, then what the panel needs to start.
+// and close button as the list, then what the panel needs to start. It is a page
+// of its own, like the list it becomes.
 func (state *State) paintEmptyContextSFTP(canvas *gfx.Canvas, size gfx.Size, session *Session) {
+	chrome := &state.chrome
+	if chrome.sftpEmptyPage == nil {
+		chrome.sftpEmptyPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: sftpEmptyRoot, Theme: &state.theme})
+		chrome.sftpEmptyView = state.declareEmptyContextSFTP
+	}
+	chrome.sftpEmpty = sftpEmptyScratch{session: session}
+	chrome.sftpEmptyPage.Draw(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}, chrome.sftpEmptyView)
+	s := &chrome.sftpEmpty
 	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := pal.workspace, pal.line
-	bounds := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
-	canConnect := session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
+	headerBounds := s.header.Rect()
+	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, pal.line)
+	state.paintIconButton(canvas, hitSFTPClose, iconClose, s.closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, pal.workspace)
+	moveIcon, moveHint := state.sftpPanelMoveAction()
+	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, s.sideButton.Rect(), moveHint, false, iconButtonQuiet, pal.workspace)
+	if session != nil {
+		titleBounds := s.sessionTitle.Rect()
+		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, gfx.WeightRegular, titleBounds.Width), titleBounds, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
+	}
+	if s.canConnect {
+		components.BeginButton(canvas, state.Theme(), hitSFTPOpen, s.openButton.Rect()).Default(messages.SFTPOpen)
+	}
+}
+
+// declareEmptyContextSFTP declares the panel's chrome and the one action it
+// offers while there is no list yet.
+func (state *State) declareEmptyContextSFTP(c ui.C) {
+	s := &state.chrome.sftpEmpty
+	session := s.session
+	pal, messages := state.pal, state.messages
+	bounds := c.Frame().Bounds()
+	s.canConnect = session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.
 	middle := bounds.Height * 0.38
+	buttonWidth := min(max(bounds.Width-2*sftpPad, 0), 160)
 
-	var header, closeButton, sideButton, sessionTitle, openButton ui.Box
-	buttonWidth := min(max(size.Width-2*sftpPad, 0), 160)
-	f := state.filesLayout.Begin(canvas, state.Theme(), bounds)
-	f.Stack().Fill().Background(pal.workspace).Children(func() {
-		f.Column().Fill().PadX(sftpPad).Children(func() {
-			header = f.Row().FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(headerBackground).Gap(8).Items(ui.Center).Children(func() {
-				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
-				sideButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
-				closeButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
+	ui.Stack(c).Fill().Background(pal.workspace).Children(func() {
+		ui.Column(c).Fill().PadX(sftpPad).Children(func() {
+			s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Gap(8).Items(ui.Center)
+			s.header.Children(func() {
+				ui.Text(c, messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				s.sideButton = ui.Slot(c).Size(sftpHeaderButton, sftpHeaderButton)
+				s.closeButton = ui.Slot(c).Size(sftpHeaderButton, sftpHeaderButton)
 			})
 			if session != nil {
 				// Whose files these would be: the session the panel follows.
-				sessionTitle = f.Slot().Height(16).MarginSides(2, sftpHeaderButton+8, 0, 0)
+				s.sessionTitle = ui.Slot(c).Height(16).MarginSides(2, sftpHeaderButton+8, 0, 0)
 			}
 		})
-		f.Column().Fill().PadSides(0, sftpPad, 0, sftpPad).Children(func() {
-			if canConnect {
-				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).TextCenter().MarginSides(middle-32, 0, 10, 0)
-				openButton = f.Slot().Size(buttonWidth, 34).Self(ui.Center)
+		ui.Column(c).Fill().PadSides(0, sftpPad, 0, sftpPad).Children(func() {
+			if s.canConnect {
+				ui.Text(c, messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).TextCenter().MarginSides(middle-32, 0, 10, 0)
+				s.openButton = ui.Slot(c).Size(buttonWidth, 34).Self(ui.Center)
 			} else {
-				f.Text(messages.SFTPUnavailable).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(middle-12, 0, 0, 0)
+				ui.Text(c, messages.SFTPUnavailable).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(middle-12, 0, 0, 0)
 			}
 		})
 	})
-	f.End()
-
-	headerBounds := header.Rect()
-	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, headerBorder)
-	state.paintIconButton(canvas, hitSFTPClose, iconClose, closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, headerBackground)
-	moveIcon, moveHint := state.sftpPanelMoveAction()
-	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, sideButton.Rect(), moveHint, false, iconButtonQuiet, headerBackground)
-	if session != nil {
-		titleBounds := sessionTitle.Rect()
-		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, gfx.WeightRegular, titleBounds.Width), titleBounds, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
-	}
-	if canConnect {
-		components.BeginButton(canvas, state.Theme(), hitSFTPOpen, openButton.Rect()).Default(messages.SFTPOpen)
-	}
 }
 
 func adoptEmbeddedFocus(canvas, child *gfx.Canvas, mount gfx.Scope) {

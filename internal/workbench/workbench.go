@@ -271,7 +271,6 @@ var (
 	hitSFTPUp              = tree.ID(sftpHits, "sftp-up")
 	hitSFTPRefresh         = tree.ID(sftpHits, "sftp-refresh")
 	hitSFTPDownload        = tree.ID(sftpHits, "sftp-download")
-	hitSFTPCancel          = tree.ID(sftpHits, "sftp-cancel")
 	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
 	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
@@ -286,9 +285,6 @@ var (
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
 	hitSFTPDialogField     = tree.ID(sftpHits, "sftp-dialog-field")
 	hitSFTPEditor          = tree.ID(sftpHits, "sftp-editor")
-	hitSFTPEditSave        = tree.ID(sftpHits, "sftp-edit-save")
-	hitSFTPEditBack        = tree.ID(sftpHits, "sftp-edit-back")
-	hitSFTPEditReload      = tree.ID(sftpHits, "sftp-edit-reload")
 	hitSFTPBreadcrumbList  = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
 	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 	hitSFTPColumnList      = tree.Sub(sftpHits, tree.Name("sftp-column"))
@@ -830,8 +826,6 @@ type State struct {
 	wrapped          [failureLines]string
 	restoredView     ui.View
 	connectionLayout ui.View
-	// filesLayout lays out the files panel, its editor and the panel before it has a list.
-	filesLayout ui.View
 	// area: terminal and workspace panes
 	terminalPageLayout ui.View
 	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome

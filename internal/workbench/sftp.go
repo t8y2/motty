@@ -312,6 +312,25 @@ func (state *State) hideFilesPanel(session *Session) {
 	state.save()
 }
 
+// cancelSFTPOperation cancels whatever the files view is doing, with the status
+// the file list and the transfer center report.
+func (state *State) cancelSFTPOperation(view *sftpView) {
+	if !view.busy {
+		return
+	}
+	if view.operation == sftpclient.OperationList && !view.extracting {
+		state.cancelSFTPNavigation(view)
+		view.status = state.messages.SFTPCanceled
+		return
+	}
+	if view.extracting && view.cancelExtract != nil {
+		view.cancelExtract()
+	} else {
+		view.worker.Cancel()
+	}
+	view.status = state.messages.SFTPCanceling
+}
+
 func (state *State) clickSFTP(id gfx.ID) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone {
@@ -407,28 +426,6 @@ func (state *State) clickSFTP(id gfx.ID) {
 		return
 	}
 	switch {
-	case id == hitSFTPEditBack && !view.busy:
-		state.closeSFTPEditor(view)
-		return
-	case id == hitSFTPEditSave && !view.busy:
-		state.saveSFTPEditor(view)
-		return
-	case id == hitSFTPEditReload && !view.busy:
-		state.reloadSFTPEditor(view)
-		return
-	}
-	switch {
-	case id == hitSFTPCancel && view.busy:
-		if view.operation == sftpclient.OperationList && !view.extracting {
-			state.cancelSFTPNavigation(view)
-			view.status = state.messages.SFTPCanceled
-			return
-		} else if view.extracting && view.cancelExtract != nil {
-			view.cancelExtract()
-		} else {
-			view.worker.Cancel()
-		}
-		view.status = state.messages.SFTPCanceling
 	case id == hitSFTPRefresh && !view.busy:
 		view.forgetListings() // refresh means: trust nothing remembered
 		stopSFTPSearch(&view.sftpFolder)
@@ -1856,6 +1853,9 @@ func (state *State) fitSFTP(size gfx.Size) {
 }
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if result, handled := state.sftpPanelKey(event); handled {
+		return result, true
+	}
 	if result, handled := state.sftpPlacesKey(event); handled {
 		return result, true
 	}
@@ -1961,6 +1961,9 @@ func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 }
 
 func (state *State) sftpPathPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if result, handled := state.sftpPanelPointer(event); handled {
+		return result, true
+	}
 	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary || event.Target != hitSFTPPathEdit {
 		return gfx.EventResult{}, false
 	}
