@@ -537,7 +537,7 @@ func clickSFTPPageButton(t testing.TB, state *State, label string) {
 		t.Fatalf("no files control labeled %q", label)
 	}
 	var pass gfx.Canvas
-	pass.BeginEventPass(hit.ID)
+	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&pass, size)
 	pass.EndEventPass()
 }
@@ -553,7 +553,7 @@ func clickSFTPWindowButton(t testing.TB, w *sftpWindow, label string) {
 		t.Fatalf("no window control labeled %q", label)
 	}
 	var pass gfx.Canvas
-	pass.BeginEventPass(hit.ID)
+	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	w.paint(&pass, size)
 	pass.EndEventPass()
 }

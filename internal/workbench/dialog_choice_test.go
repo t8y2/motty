@@ -43,7 +43,7 @@ func clickDialogChoice(t testing.TB, state *State, label string) {
 	t.Helper()
 	hit := dialogChoiceHit(t, state, label)
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(hit.ID)
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&canvas, dialogChoicePaint)
 	canvas.EndEventPass()
 }
@@ -90,7 +90,7 @@ func TestHostDialogChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		t.Fatalf("protocol result = %+v", result)
 	}
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate)
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, dialogChoicePaint)
 	canvas.EndEventPass()
 	if state.editor.protocol != protocolTelnet {

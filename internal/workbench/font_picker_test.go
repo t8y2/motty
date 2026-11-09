@@ -40,7 +40,7 @@ func waitFor(t testing.TB, state *State, condition func() bool) {
 func clickFontPickerRow(t testing.TB, state *State, row int) {
 	t.Helper()
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(hitFontPickerItemList.At(row))
+	canvas.BeginEventPass(hitFontPickerItemList.At(row), gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	canvas.EndEventPass()
 }

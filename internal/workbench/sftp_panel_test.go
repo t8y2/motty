@@ -41,7 +41,7 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 		t.Fatal("panel position does not support arrow-key selection")
 	}
 	var rove gfx.Canvas
-	rove.BeginEventPass(result.Activate)
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&rove, gfx.Size{Width: 1400, Height: 1100})
 	rove.EndEventPass()
 	if state.sftpPanelSide != layoutcore.ContextRight {

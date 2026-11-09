@@ -27,7 +27,7 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 		t.Fatalf("keyboard choice: %+v", result)
 	}
 	var rove gfx.Canvas
-	rove.BeginEventPass(result.Activate)
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&rove, gfx.Size{Width: 1400, Height: 3400})
 	rove.EndEventPass()
 	if state.tabOrientation != tabsVertical {

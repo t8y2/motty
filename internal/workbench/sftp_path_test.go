@@ -151,7 +151,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 		t.Fatalf("right arrow = %+v", result)
 	}
 	var rove gfx.Canvas
-	rove.BeginEventPass(result.Activate)
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&rove, gfx.Size{Width: 1400, Height: 900})
 	rove.EndEventPass()
 	if !state.sftpPathInput {
@@ -166,7 +166,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 		t.Fatalf("left arrow = %+v", result)
 	}
 	rove.Reset()
-	rove.BeginEventPass(result.Activate)
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&rove, gfx.Size{Width: 1400, Height: 900})
 	rove.EndEventPass()
 	if state.sftpPathInput {

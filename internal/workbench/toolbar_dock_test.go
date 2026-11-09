@@ -139,7 +139,7 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 				t.Fatalf("size keyboard navigation failed: %+v", result)
 			}
 			var roveCanvas gfx.Canvas
-			roveCanvas.BeginEventPass(result.Activate)
+			roveCanvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 			state.Paint(&roveCanvas, gfx.Size{Width: 760, Height: 500})
 			roveCanvas.EndEventPass()
 			if state.terminalToolbarSize != terminalToolbarMedium {

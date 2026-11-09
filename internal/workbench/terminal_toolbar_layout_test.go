@@ -804,7 +804,7 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 		t.Fatalf("position keyboard result=%+v", result)
 	}
 	var rove gfx.Canvas
-	rove.BeginEventPass(result.Activate)
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&rove, gfx.Size{Width: 1400, Height: 3400})
 	rove.EndEventPass()
 	if state.terminalToolbarPosition != terminalToolbarRight {

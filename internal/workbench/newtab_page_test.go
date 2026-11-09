@@ -19,7 +19,7 @@ func newTabState(t *testing.T) *State {
 func newTabClick(t *testing.T, state *State, id gfx.ID) {
 	t.Helper()
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(id)
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	canvas.EndEventPass()
 }

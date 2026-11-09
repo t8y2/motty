@@ -479,7 +479,7 @@ func clickRemoteTabChoice(t *testing.T, w *remoteToolsWindow, label string) {
 	if !ok {
 		t.Fatalf("no remote tab labeled %q", label)
 	}
-	canvas.BeginEventPass(hit.ID)
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	w.paint(&canvas, size)
 	canvas.EndEventPass()
 }

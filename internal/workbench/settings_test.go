@@ -83,7 +83,7 @@ func clickSettingsChoiceFirst(t testing.TB, state *State, label string) {
 func clickSettingsChoiceHit(t testing.TB, state *State, hit gfx.Hit) {
 	t.Helper()
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(hit.ID)
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
 	canvas.EndEventPass()
 }
@@ -139,7 +139,7 @@ func clickSettingsChoiceInRow(t testing.TB, state *State, rowLabel, optionLabel 
 	t.Helper()
 	hit := settingsChoiceHitInRow(t, state, rowLabel, optionLabel)
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(hit.ID)
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
 	canvas.EndEventPass()
 }
@@ -411,7 +411,7 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 			t.Fatalf("%q: from=%v to=%v result=%+v", rowLabel, from.ID, to.ID, result)
 		}
 		canvas.Reset()
-		canvas.BeginEventPass(result.Activate)
+		canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		canvas.EndEventPass()
 		if !applied() {

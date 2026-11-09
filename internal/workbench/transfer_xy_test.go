@@ -170,7 +170,7 @@ func TestXYSetupChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		t.Fatalf("mode result = %+v", result)
 	}
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate)
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, dialogChoicePaint)
 	canvas.EndEventPass()
 	if state.xy.mode != xymodem.XMODEM1K {
@@ -184,7 +184,7 @@ func TestXYSetupChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		t.Fatalf("direction result = %+v", result)
 	}
 	canvas = gfx.Canvas{}
-	canvas.BeginEventPass(result.Activate)
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, dialogChoicePaint)
 	canvas.EndEventPass()
 	if state.xy.sending {

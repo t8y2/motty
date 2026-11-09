@@ -201,7 +201,7 @@ func TestLocalStartSettingChoosesAndPersists(t *testing.T) {
 		t.Fatalf("arrow key on the choice = %+v", next)
 	}
 	canvas.Reset()
-	canvas.BeginEventPass(next.Activate)
+	canvas.BeginEventPass(next.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
 	canvas.EndEventPass()
 	if state.localStart != localStartHome {

@@ -170,7 +170,7 @@ func TestAIProbeDialogChoicesMoveWithArrowKeys(t *testing.T) {
 		t.Fatalf("Right in the concurrency choice = %+v", result)
 	}
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate)
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
 	canvas.EndEventPass()
 	if got := state.aiProbeConcurrency(); got != 8 {

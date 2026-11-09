@@ -860,7 +860,7 @@ func TestAIBehaviourChoiceMovesWithArrowKeys(t *testing.T) {
 	}
 	// The rove carries out the choice as a click: the event pass applies it.
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate)
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
 	canvas.EndEventPass()
 	if state.ai.settings.autoUpTo != risk.Medium {
