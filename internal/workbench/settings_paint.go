@@ -67,10 +67,6 @@ type settingsControl struct {
 type settingsPage struct {
 	state *State
 	c     ui.C
-	// f is the Frame underneath. The page declares with c; f stays for the
-	// assistant's sections, which paint through it until they move to the page
-	// API.
-	f *ui.Frame
 	// scroll is the column of groups, whose content height the wheel clamps to.
 	scroll ui.Box
 	// width is the width of a group's card.
@@ -152,7 +148,6 @@ func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 // the scrolling column of groups on the right.
 func (state *State) declareSettingsWorkspace(c ui.C) {
 	pal, view := state.pal, &state.settings
-	f := c.Frame() // kept for the ai_* helpers that still declare with it
 	bounds := c.Bounds()
 	navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
 	areaWidth := max(bounds.Width-navWidth-1, 0)
@@ -163,7 +158,7 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 	}
 
 	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
-	page := settingsPage{state: state, c: c, f: f, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
+	page := settingsPage{state: state, c: c, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
 	// The wheel in settings.go owns the offsets; each area starts at its
 	// declared offset and the paint reads the clamped value back afterwards.
 	ui.Row(c).Fill().Children(func() {

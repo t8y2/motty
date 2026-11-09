@@ -142,7 +142,7 @@ func (state *State) declareAIImportSourcesBody(c ui.C) {
 					ui.Text(c, state.aiImportSourceStatus(source)).FontSize(metrics.FontSizeS).
 						Color(state.aiImportSourceStatusColor(source)).LineHeight(17).Ellipsis()
 				})
-				pages.sourceSlots = append(pages.sourceSlots, state.aiButtonSlot(c.Frame(), m.ImportPreview))
+				pages.sourceSlots = append(pages.sourceSlots, state.aiButtonSlot(c, m.ImportPreview))
 			})
 		}
 		if len(cfg.importSources) == 0 {
@@ -163,7 +163,7 @@ func (state *State) declareAIImportSourcesBody(c ui.C) {
 				ui.Text(c, m.ImportChooseFileHint).FontSize(metrics.FontSizeS).Color(pal.muted).
 					LineHeight(16).Ellipsis()
 			})
-			pages.choose = state.aiButtonSlot(c.Frame(), m.ImportChooseFile)
+			pages.choose = state.aiButtonSlot(c, m.ImportChooseFile)
 		})
 
 		if cfg.importErr != "" {

@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/store"
 	"motty/internal/localshell"
@@ -373,7 +374,7 @@ func (s *State) paintAICLIAuth(page *settingsPage) {
 			// they shrink with the card, the primary Sign in button disappears on
 			// ordinary narrow windows; keep their intrinsic width and let the
 			// status words wrap instead.
-			page.f.Row().Gap(8).Shrink(0).Children(func() {
+			ui.Row(page.c).Gap(8).Shrink(0).Children(func() {
 				page.button(hitAICLIRecheck, m.CLIAuthRecheck, aiButtonOutline, s.ai.auth[p.ID] == cli.AuthChecking)
 				if p.Kind == store.KindCodexCLI {
 					page.button(hitAICLIDevice, m.CLIAuthDevice, aiButtonOutline, s.ai.login != nil)

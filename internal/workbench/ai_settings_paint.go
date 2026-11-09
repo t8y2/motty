@@ -187,9 +187,8 @@ func (state *State) applyAIMCPMode(mode gate.Mode) {
 
 // aiText is a row of one line of text.
 func (page *settingsPage) aiText(height float32, value string, size float32, weight float32, color gfx.Color) {
-	f := page.f
 	page.rowOf(height).PadX(18).Children(func() {
-		f.Text(value).FontSize(size).Weight(weight).Color(color)
+		ui.Text(page.c, value).FontSize(size).Weight(weight).Color(color)
 	})
 }
 
@@ -204,11 +203,11 @@ func (page *settingsPage) aiFrame(height float32, label, description string, des
 // aiFrameFor is aiFrame whose words label the control with that identity (see
 // lineFor): pressing them flips the switch that control declares.
 func (page *settingsPage) aiFrameFor(labelFor gfx.ID, height float32, label, description string, descriptionColor gfx.Color, control func()) {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
 	page.rowOf(height).PadX(18).Gap(24).Children(func() {
-		words := f.Column().Grow(1).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
-			f.Paragraph(description, settingsDescLines).FontSize(metrics.FontSizeS).Color(descriptionColor).LineHeight(15).MarginSides(1, 0, 0, 0)
+		words := ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
+			ui.Paragraph(c, description, settingsDescLines).FontSize(metrics.FontSizeS).Color(descriptionColor).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
 		control()
@@ -231,10 +230,10 @@ func (state *State) aiButtonSize(canvas *gfx.Canvas, label string) (width, heigh
 
 // aiButtonSlot reserves the room of a button for aiButton to paint into. The
 // keyboard visits controls in the order they are painted, so the settings page
-// records its buttons (settingsPage.button) and paints them after the frame.
-func (state *State) aiButtonSlot(f *ui.Frame, label string) ui.Box {
-	width, height := state.aiButtonSize(f.Canvas(), label)
-	return f.Slot().Size(width, height)
+// records its buttons (settingsPage.button) and paints them after the page.
+func (state *State) aiButtonSlot(c ui.C, label string) ui.Box {
+	width, height := state.aiButtonSize(c.Canvas(), label)
+	return ui.Slot(c).Size(width, height)
 }
 
 // aiButton paints a small button in a slot.
@@ -257,9 +256,6 @@ const (
 	aiSwitchWidth  = float32(36)
 	aiSwitchHeight = float32(20)
 )
-
-// aiSwitchSlot reserves the room of a switch for aiSwitch to paint into.
-func aiSwitchSlot(f *ui.Frame) ui.Box { return f.Slot().Size(aiSwitchWidth, aiSwitchHeight) }
 
 // aiSwitch paints a switch in a slot.
 func (state *State) aiSwitch(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, on, disabled bool, label string) {
@@ -301,12 +297,12 @@ func (state *State) paintAISettingsHead(page *settingsPage) {
 	}
 
 	if cfg.notice != "" {
-		page.f.Text(cfg.notice).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20).MarginSides(-4, 4, 8, 4)
+		ui.Text(page.c, cfg.notice).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20).MarginSides(-4, 4, 8, 4)
 	}
 }
 
 func (state *State) paintAIProviders(page *settingsPage) {
-	f, pal, m := page.f, state.pal, state.messages.AISettings
+	c, pal, m := page.c, state.pal, state.messages.AISettings
 	providers := state.ai.providers
 	if state.ai.storeErr != nil {
 		page.group(m.ProvidersTitle, func() {
@@ -329,20 +325,20 @@ func (state *State) paintAIProviders(page *settingsPage) {
 				nameColor = pal.muted
 			}
 			page.separator()
-			row := f.Column().Height(aiProviderRowHeight)
+			row := ui.Column(c).Height(aiProviderRowHeight)
 			page.hitOn(row, hitAISetProviderRow.At(index), provider.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: isSelected})
 			row.Children(func() {
-				f.Row().Grow(1).MarginSides(4, 6, 4, 6).PadX(12).Gap(18).Items(ui.Center).Background(background).Radius(radius.control).Children(func() {
-					f.Row().Grow(1).Shrink(1).Gap(12).Items(ui.Center).Children(func() {
-						f.Icon(aiProviderIcon(provider)).Size(20, 20).Color(nameColor).Shrink(0)
-						f.Column().Grow(1).Shrink(1).Children(func() {
-							f.Text(provider.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(nameColor).LineHeight(21)
-							f.Text(state.aiProviderMeta(provider)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+				ui.Row(c).Grow(1).MarginSides(4, 6, 4, 6).PadX(12).Gap(18).Items(ui.Center).Background(background).Radius(radius.control).Children(func() {
+					ui.Row(c).Grow(1).Shrink(1).Gap(12).Items(ui.Center).Children(func() {
+						ui.Icon(c, aiProviderIcon(provider)).Size(20, 20).Color(nameColor).Shrink(0)
+						ui.Column(c).Grow(1).Shrink(1).Children(func() {
+							ui.Text(c, provider.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(nameColor).LineHeight(21)
+							ui.Text(c, state.aiProviderMeta(provider)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 						})
 					})
-					f.Row().Gap(12).Items(ui.Center).Shrink(0).Children(func() {
+					ui.Row(c).Gap(12).Items(ui.Center).Shrink(0).Children(func() {
 						page.switchSlot(hitAISetProviderSwitch.At(index), provider.Enabled, false, m.ProviderEnabled+" "+provider.Name)
-						f.Row().Gap(8).Children(func() {
+						ui.Row(c).Gap(8).Children(func() {
 							page.button(hitAISetProviderEdit.At(index), m.ProviderEdit, aiButtonOutline, false)
 							page.button(hitAISetProviderDelete.At(index), m.ProviderDelete, aiButtonOutline, false)
 						})
@@ -352,9 +348,9 @@ func (state *State) paintAIProviders(page *settingsPage) {
 		}
 		page.rowOf(aiFooterRowHeight).PadX(18).Gap(12).Children(func() {
 			if len(providers) == 0 {
-				f.Text(m.ProvidersEmpty).FontSize(metrics.FontSizeS).Color(pal.muted)
+				ui.Text(c, m.ProvidersEmpty).FontSize(metrics.FontSizeS).Color(pal.muted)
 			}
-			f.Spacer()
+			ui.Spacer(c)
 			page.button(hitAISetProviderImport, m.ProviderImport, aiButtonOutline, false)
 			page.button(hitAISetProviderAdd, m.ProviderAdd, aiButtonPrimary, false)
 		})
@@ -416,7 +412,7 @@ func (state *State) aiModelsStatus() (string, bool) {
 }
 
 func (state *State) paintAIModels(page *settingsPage) {
-	f, pal, m := page.f, state.pal, state.messages.AISettings
+	c, pal, m := page.c, state.pal, state.messages.AISettings
 	cfg := &state.ai.cfg
 	provider, ok := state.aiSelectedProvider()
 	if state.ai.storeErr != nil || !ok {
@@ -447,7 +443,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 		// to probe: the buttons are not offered at all.
 		probeable := !store.IsCLIKind(provider.Kind)
 		page.aiFrame(settingsRowHeight, fmt.Sprintf(m.ModelsOfFmt, provider.Name), description, pal.muted, func() {
-			f.Row().Gap(8).Items(ui.Center).Shrink(0).Children(func() {
+			ui.Row(c).Gap(8).Items(ui.Center).Shrink(0).Children(func() {
 				if probeable {
 					page.button(hitAISetModelProbeAll, probeLabel, aiButtonOutline, total == 0)
 				}
@@ -471,7 +467,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if filteredTotal == 0 && total > 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
-		defaultColWidth, _ := state.aiButtonSize(f.Canvas(), m.ModelUse)
+		defaultColWidth, _ := state.aiButtonSize(c.Canvas(), m.ModelUse)
 		if defaultColWidth < 76 {
 			defaultColWidth = 76
 		}
@@ -492,8 +488,8 @@ func (state *State) paintAIModels(page *settingsPage) {
 					label = m.CLIDefaultModel
 				}
 				// Name and reasoning chip (left-aligned, clickable to configure reasoning effort)
-				f.Row().Grow(1).Gap(8).Items(ui.Center).Children(func() {
-					f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
+				ui.Row(c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
+					ui.Text(c, label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
 					_, _, isReasoning, isOverride, isDisabled := state.aiModelReasoningInfo(&model)
 					var (
 						chipText      string
@@ -520,19 +516,19 @@ func (state *State) paintAIModels(page *settingsPage) {
 						chipBg = pal.surfaceSoft
 						chipTextColor = pal.muted
 					}
-					reasoningBox := f.Row().Height(20).PadX(8).Center().Radius(10).Background(chipBg)
+					reasoningBox := ui.Row(c).Height(20).PadX(8).Center().Radius(10).Background(chipBg)
 					page.hitOn(reasoningBox, hitAISetModelReasoning.At(row), chipText, gfx.HitOptions{Role: gfx.RoleButton})
 					reasoningBox.Children(func() {
-						f.Text(chipText).FontSize(metrics.FontSizeS).Color(chipTextColor).Weight(chipWeight)
+						ui.Text(c, chipText).FontSize(metrics.FontSizeS).Color(chipTextColor).Weight(chipWeight)
 					})
 				})
 
 				// Probe badge or button (fixed-width column for neat vertical alignment)
 				if !probeable {
-					f.Row().Width(probeColWidth).Shrink(0)
+					ui.Row(c).Width(probeColWidth).Shrink(0)
 				} else if isProbing {
-					f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
-						f.Text(m.ModelProbing).FontSize(metrics.FontSizeS).Color(pal.muted)
+					ui.Row(c).Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
+						ui.Text(c, m.ModelProbing).FontSize(metrics.FontSizeS).Color(pal.muted)
 					})
 				} else if hasRes {
 					switch res.Status {
@@ -545,37 +541,37 @@ func (state *State) paintAIModels(page *settingsPage) {
 						} else if ms >= 2500 {
 							textColor = pal.danger
 						}
-						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
+						box := ui.Row(c).Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
 						page.hitOn(box, hitAISetModelProbe.At(row), badgeText, gfx.HitOptions{Role: gfx.RoleButton})
 						box.Children(func() {
-							f.Text("✓ " + badgeText).FontSize(metrics.FontSizeS).Color(textColor).Weight(gfx.WeightMedium)
+							ui.Text(c, "✓ "+badgeText).FontSize(metrics.FontSizeS).Color(textColor).Weight(gfx.WeightMedium)
 						})
 					case probe.StatusFailed:
-						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
+						box := ui.Row(c).Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
 						page.hitOn(box, hitAISetModelProbe.At(row), m.ModelProbeFailed, gfx.HitOptions{Role: gfx.RoleButton})
 						box.Children(func() {
-							f.Text("✗ " + m.ModelProbeFailed).FontSize(metrics.FontSizeS).Color(pal.danger).Weight(gfx.WeightMedium)
+							ui.Text(c, "✗ "+m.ModelProbeFailed).FontSize(metrics.FontSizeS).Color(pal.danger).Weight(gfx.WeightMedium)
 						})
 					case probe.StatusSkipped:
-						f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
-							f.Text(m.ModelProbeSkipped).FontSize(metrics.FontSizeS).Color(pal.muted)
+						ui.Row(c).Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
+							ui.Text(c, m.ModelProbeSkipped).FontSize(metrics.FontSizeS).Color(pal.muted)
 						})
 					default:
-						f.Row().Width(probeColWidth).Center().Shrink(0).Children(func() {
+						ui.Row(c).Width(probeColWidth).Center().Shrink(0).Children(func() {
 							page.button(hitAISetModelProbe.At(row), m.ModelProbe, aiButtonOutline, false)
 						})
 					}
 				} else {
-					f.Row().Width(probeColWidth).Center().Shrink(0).Children(func() {
+					ui.Row(c).Width(probeColWidth).Center().Shrink(0).Children(func() {
 						page.button(hitAISetModelProbe.At(row), m.ModelProbe, aiButtonOutline, false)
 					})
 				}
 
 				// Default status / button (fixed-width column to prevent probe column shift)
-				f.Row().Width(defaultColWidth).Center().Shrink(0).Children(func() {
+				ui.Row(c).Width(defaultColWidth).Center().Shrink(0).Children(func() {
 					if isDefault {
-						f.Row().Height(20).PadX(8).Center().Background(pal.accentSoft).Radius(10).Children(func() {
-							f.Text(m.ModelDefault).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.accent)
+						ui.Row(c).Height(20).PadX(8).Center().Background(pal.accentSoft).Radius(10).Children(func() {
+							ui.Text(c, m.ModelDefault).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.accent)
 						})
 					} else {
 						page.button(hitAISetModelUse.At(row), m.ModelUse, aiButtonOutline, false)
@@ -587,8 +583,8 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if filteredTotal > aiModelPageSize {
 			first := cfg.page*aiModelPageSize + 1
 			page.rowOf(aiPagerRowHeight).PadX(18).Gap(8).Children(func() {
-				f.Text(fmt.Sprintf(m.ModelPageFmt, first, first+shown-1, filteredTotal)).FontSize(metrics.FontSizeS).Color(pal.muted)
-				f.Spacer()
+				ui.Text(c, fmt.Sprintf(m.ModelPageFmt, first, first+shown-1, filteredTotal)).FontSize(metrics.FontSizeS).Color(pal.muted)
+				ui.Spacer(c)
 				page.button(hitAISetModelPrev, m.ModelPrev, aiButtonOutline, cfg.page == 0)
 				page.button(hitAISetModelNext, m.ModelNext, aiButtonOutline, first+shown-1 >= filteredTotal)
 			})
@@ -596,7 +592,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 
 		// A model can be added by name, for providers that do not list theirs.
 		page.rowOf(aiAddRowHeight).PadX(18).Gap(10).Children(func() {
-			page.add(settingsControl{kind: controlModelInput, slot: f.Slot().Grow(1).MinWidth(40).Height(32)})
+			page.add(settingsControl{kind: controlModelInput, slot: ui.Slot(c).Grow(1).MinWidth(40).Height(32)})
 			page.button(hitAISetModelAdd, m.ModelAdd, aiButtonOutline, false)
 		})
 	})
@@ -646,6 +642,7 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 }
 
 func (state *State) paintAIMCP(page *settingsPage) {
+	c := page.c
 	pal, m := state.pal, state.messages.AISettings
 	settings := &state.ai.settings
 
@@ -662,8 +659,8 @@ func (state *State) paintAIMCP(page *settingsPage) {
 		description, color = m.MCPResetDone, pal.success
 	}
 	page.group(m.MCPHTTPTitle, func() {
-		page.f.Column().Pad(18).Children(func() {
-			page.f.Wrap(m.MCPHTTPDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
+		ui.Column(c).Pad(18).Children(func() {
+			ui.Wrap(c, m.MCPHTTPDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
 		})
 		page.aiFrameFor(hitAISetMCPEnabled, settingsRowHeight, m.MCPEnable, m.MCPEnableDesc, pal.muted, func() {
 			page.switchSlot(hitAISetMCPEnabled, settings.mcpEnabled, false, m.MCPEnable)
@@ -680,13 +677,13 @@ func (state *State) paintAIMCP(page *settingsPage) {
 		page.mcpFrame(m.MCPToken, description, color, func() {
 			// The two token actions do not fit side by side in a narrow page.
 			if page.width < 500 {
-				page.f.Column().Gap(8).Children(func() {
+				ui.Column(c).Gap(8).Children(func() {
 					page.mcpCopyButton(hitAISetMCPCopyToken, m.MCPCopyToken, !ready)
 					page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
 				})
 				return
 			}
-			page.f.Row().Gap(8).Children(func() {
+			ui.Row(c).Gap(8).Children(func() {
 				page.mcpCopyButton(hitAISetMCPCopyToken, m.MCPCopyToken, !ready)
 				page.button(hitAISetMCPReset, m.MCPReset, aiButtonOutline, false)
 			})
@@ -697,8 +694,8 @@ func (state *State) paintAIMCP(page *settingsPage) {
 }
 
 func (page *settingsPage) mcpAccessWarning(message string) {
-	page.f.Column().PadSides(0, 18, 12, 18).Children(func() {
-		page.f.Wrap(message).FontSize(metrics.FontSizeS).LineHeight(18).Color(page.state.pal.danger)
+	ui.Column(page.c).PadSides(0, 18, 12, 18).Children(func() {
+		ui.Wrap(page.c, message).FontSize(metrics.FontSizeS).LineHeight(18).Color(page.state.pal.danger)
 	})
 }
 

@@ -451,7 +451,7 @@ func (state *State) declareAIChip(c ui.C, chip aiChip) {
 	remove := hitAIAttachRemove.At(chip.index)
 	label := fmt.Sprintf(m.AttachRemoveFmt, name)
 	fill := gfx.Color{}
-	if canvas := c.Frame().Canvas(); canvas != nil && (canvas.Pressed() == remove || canvas.Hovered() == remove) {
+	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == remove || canvas.Hovered() == remove) {
 		fill = pal.surfaceHot
 	}
 	ui.Row(c).Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(ui.Center).
