@@ -689,10 +689,15 @@ func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 		t.Fatal("the preview list does not scroll")
 	}
 	list := find(hitAISetImportList)
-	state.aiImportWheel(gfx.ScrollEvent{
+	if err := view.Scroll(gfx.ScrollEvent{
 		X: list.Bounds.X + 20, Y: list.Bounds.Y + 20, DeltaY: 160, Precise: true,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if scroll.Offset == 0 {
-		t.Fatal("the preview page's wheel route did not move the list")
+		t.Fatal("the wheel event did not move the preview list")
+	}
+	if got := state.aiImportSelectedCount(); got != before-1 {
+		t.Fatalf("scrolling changed the selection: %d selected, want %d", got, before-1)
 	}
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 )
 
@@ -26,43 +25,44 @@ func (state *State) desktopLatency(view *desktopView) (string, gfx.Color, string
 		fmt.Sprintf(state.messages.Desktop.LatencyHintFmt, sampled.Local().Format("15:04:05"))
 }
 
-// desktopLatencyUI is one desktop's RTT badge: the page that declares it in the
-// status strip, and what the last paint gave it. A desktop pane has its own, so
-// split panes do not share a page.
+// desktopLatencyUI is one desktop's RTT badge as the status strip shows it: the
+// text, its color and hint, and how wide the text is. The strip's Frame reserves
+// a slot for it; paintDesktopLatency draws the badge into it. A desktop pane has
+// its own badge, so split panes do not share one.
 type desktopLatencyUI struct {
-	page  *ui.Page
-	view  func(ui.C)
 	label string
 	color gfx.Color
 	hint  string
 	width float32
 }
 
-func (state *State) declareDesktopLatency(f *ui.Frame, canvas *gfx.Canvas, view *desktopView) {
+// desktopLatencyBadge reads what the status strip's badge says and measures it.
+// It reserves no element: the strip's layout gives the badge a slot, because the
+// strip is laid out by a Frame.
+func (state *State) desktopLatencyBadge(canvas *gfx.Canvas, view *desktopView) (desktopLatencyUI, bool) {
+	var badge desktopLatencyUI
 	if !state.terminalShowLatency {
-		return
+		return badge, false
 	}
 	label, color, hint := state.desktopLatency(view)
 	if label == "" {
-		return
+		return badge, false
 	}
-	width := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 2
-	latency := &view.latency
-	latency.label, latency.color, latency.hint, latency.width = label, color, hint, width
-	if latency.page == nil {
-		latency.page = ui.NewPage(ui.PageConfig{Root: fmt.Sprintf("desktop-latency-%d", view.sessionID), Theme: &state.theme})
-		latency.view = func(c ui.C) { state.declareDesktopLatencyPage(c, latency) }
-	}
-	f.Page(latency.page, latency.view).Size(width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+	badge.label, badge.color, badge.hint = label, color, hint
+	badge.width = canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 2
+	return badge, true
 }
 
-// declareDesktopLatencyPage declares the badge's row: the RTT in the sample's
-// color over a wash of it, with the sample time as the hover hint.
-func (state *State) declareDesktopLatencyPage(c ui.C, latency *desktopLatencyUI) {
-	ui.Row(c).Fill().HitWith(hitDesktopLatency, latency.label, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: latency.hint}).
-		PadX(6).Items(ui.Center).Background(withAlpha(latency.color, 0.14)).Radius(4).Children(func() {
-		ui.Text(c, latency.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(latency.color).LineHeight(16).Width(latency.width)
-	})
+// paintDesktopLatency draws the badge in the rectangle the status strip reserved
+// for it: the RTT in the sample's color over a wash of it, with the sample time
+// as the hover hint. The same identity the overlay and chromeless presentations
+// use names the badge.
+func (state *State) paintDesktopLatency(canvas *gfx.Canvas, bounds gfx.Rect, badge desktopLatencyUI) {
+	canvas.Rounded(bounds, 4, withAlpha(badge.color, 0.14))
+	canvas.Label(badge.label, gfx.Rect{X: bounds.X + 6, Y: bounds.Y, Width: badge.width, Height: bounds.Height},
+		gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: badge.color})
+	canvas.HitWithOptions(hitDesktopLatency, bounds, badge.label,
+		gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: badge.hint})
 }
 
 func (state *State) paintDesktopFullscreenControls(canvas *gfx.Canvas, view *desktopView, area gfx.Rect) {
