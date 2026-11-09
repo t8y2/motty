@@ -279,7 +279,9 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 							t.Fatal("refresh controls and tabs use different heights")
 						}
 					}
-					if remoteCanvasHasText(&canvas, state.messages.Tools.RemoteTitle) || remoteCanvasHasText(&canvas, fmt.Sprintf(state.messages.Tools.RemoteDescriptionFmt, w.session.Title)) {
+					// The window's own titlebar names the tool; what must not
+					// repeat is the content header under it.
+					if remoteContentHasText(&canvas, state.messages.Tools.RemoteTitle) || remoteContentHasText(&canvas, fmt.Sprintf(state.messages.Tools.RemoteDescriptionFmt, w.session.Title)) {
 						t.Fatal("redundant content title/subtitle is still painted")
 					}
 				}
@@ -394,6 +396,21 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 
 func remoteCanvasHasText(canvas *gfx.Canvas, text string) bool {
 	for _, painted := range canvas.Texts() {
+		if strings.Contains(painted.Value, text) {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteContentHasText is remoteCanvasHasText for the area under the window's
+// titlebar: that bar carries the tool's own name, so only a repeat inside the
+// content says the redundant header is back.
+func remoteContentHasText(canvas *gfx.Canvas, text string) bool {
+	for _, painted := range canvas.Texts() {
+		if painted.Bounds.Y < TitlebarHeight {
+			continue
+		}
 		if strings.Contains(painted.Value, text) {
 			return true
 		}
