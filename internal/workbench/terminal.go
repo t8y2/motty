@@ -110,18 +110,16 @@ type terminal struct {
 	// language or the address it is made from changes.
 	label, labelFormat, labelAddress string
 
-	// page is the pane's page: its bar, its find bar and the terminal control.
-	// pageView and controlDraw are kept here so a paint builds no method values;
-	// handlers is the terminal control's input, kept with the control's state.
-	page        *ui.Page
-	pageView    func(ui.C)
+	// controlDraw is kept here so a paint builds no method value; handlers is
+	// the terminal control's input, kept with the control's state.
 	controlDraw func(*ui.DrawContext)
 	handlers    ui.Handlers
-	painted     bool // the page has been declared, so its controls take input
-	// controlID and parts are the page's identities, made once so painting and
-	// event routing do not rebuild the page's name.
+	// controlID and parts are the workbench page's identities, made once so
+	// painting and event routing do not rebuild the page's name. panePart is
+	// the container's Part, kept so a paint does not build the name either.
 	controlID gfx.ID
 	parts     gfx.Scope
+	panePart  string
 	// paintFinding, paintInSplit and paintInactive are the shapes the last
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
@@ -1111,32 +1109,32 @@ func (state *State) layout() terminalGeometry {
 }
 
 func (state *State) layoutForSession(sessionID uint32) terminalGeometry {
-	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
-	if !ok {
-		return state.terminalLayoutForEvent(sessionID, state.viewport)
-	}
-	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
-	if !ok {
-		return state.terminalLayoutForEvent(sessionID, state.viewport)
-	}
-	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction)
-	geometry := state.terminalLayoutForEvent(sessionID, paneVirtualSize(bounds))
-	origin := paneEmbedOrigin(bounds)
-	geometry.area.X += origin.X
-	geometry.area.Y += origin.Y
-	geometry.left += origin.X
-	geometry.top += origin.Y
-	return geometry
+	return state.terminalWindowLayout(sessionID)
 }
 
-// terminalLayoutForEvent lays out a terminal using the pane-local viewport and
-// coordinates viva supplies after decoding an embedded hit.
-func (state *State) terminalLayoutForEvent(sessionID uint32, viewport gfx.Size) terminalGeometry {
+// terminalWindowLayout lays a terminal out where the window paints it: the pane
+// rectangle of the workbench page. The terminal pane is a component of the
+// window now, so its events and its Draw share these window coordinates.
+func (state *State) terminalWindowLayout(sessionID uint32) terminalGeometry {
 	chrome, sessionOK := state.terminalChromeForSession(sessionID)
 	if !sessionOK {
 		chrome = terminalChrome{top: infoBarHeight}
 	}
-	return terminalLayoutWithChrome(viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
+	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
+	if !ok {
+		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
+	}
+	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
+	if !ok {
+		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
+	}
+	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction)
+	return terminalGeometryForArea(gfx.Rect{
+		X:      bounds.X,
+		Y:      bounds.Y + chrome.top,
+		Width:  bounds.Width,
+		Height: max(bounds.Height-chrome.top, 0),
+	}, state.cellWidth, state.cellHeight, state.padding())
 }
 
 // fitTerminals gives every session's screen and pty the size the window now
@@ -1219,7 +1217,7 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		session = state.terminalPageSession(context.ID)
 	}
 	if session == nil {
-		session = state.terminalPageSessionWithoutTerm(context.ID)
+		session = state.terminalSessionWithoutTerm(context.ID)
 	}
 	if session == nil || session.term == nil || state.activeSessionID != 0 && session.ID != state.activeSessionID {
 		// Typing goes nowhere from here, and the page cannot show it: the text
@@ -1233,16 +1231,8 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	if session.desk != nil {
 		return state.desktopTextInput(session)
 	}
-	t := session.term
-	if t.painted {
-		if page := state.terminalPageFor(session); page != nil {
-			if input := page.TextInput(context); input != nil {
-				return input
-			}
-		}
-	}
-	if t.handlers.Text != nil {
-		return t.handlers.Text(context)
+	if input := state.terminalPageText(session, context); input != nil {
+		return input
 	}
 	return state.terminalTextInputFor(session)
 }
@@ -1691,11 +1681,12 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		event.Target = local
 		return state.scroll(event)
 	}
-	session := state.terminalPageSession(event.Target)
-	if session == nil {
-		session = state.terminalSession(event.Target)
+	if state.terminalPageSession(event.Target) != nil {
+		// The terminal pane is part of the workbench page, so the event already
+		// has the window's coordinates and identity.
+		return state.scroll(event)
 	}
-	if session != nil {
+	if session := state.terminalSession(event.Target); session != nil {
 		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
 		if embedded {
 			event.X -= origin.X
@@ -1733,7 +1724,7 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return state.desktopScroll(session, event)
 	}
 	if paged {
-		return state.panePageScroll(session, event)
+		return state.terminalPageScroll(session, event)
 	}
 	return state.terminalScroll(session, event)
 }
@@ -1778,7 +1769,7 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 
 func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	terminal := session.term
-	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
+	position := state.terminalPositionAt(session, event.X, event.Y)
 	repaint := false
 	terminal.wheelY += event.StepY(state.cellHeight) / state.cellHeight
 	vertical := int(terminal.wheelY)

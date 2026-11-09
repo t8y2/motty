@@ -226,7 +226,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	terminal := session.term
 	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
-	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
+	position := state.terminalPositionAt(session, event.X, event.Y)
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
 		result.Repaint = terminal.links.clear() || result.Repaint
 		return result
@@ -362,7 +362,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 // (see stepSelectionScroll), not from further pointer events.
 func (state *State) armSelectionScroll(session *Session, event gfx.PointerEvent, column int) {
 	selection := &session.term.selection
-	geometry := state.terminalLayoutForEvent(session.ID, event.Viewport)
+	geometry := state.terminalWindowLayout(session.ID)
 	_, rows := session.term.screen.Size()
 	bottom := geometry.top + float32(rows)*state.cellHeight
 	edge := selectionEdge{column: column, last: selection.edge.last, stepped: selection.edge.stepped}
@@ -526,8 +526,8 @@ func terminalMouseModifiers(modifiers gfx.Modifiers) term.MouseModifiers {
 	return result
 }
 
-func (state *State) terminalPositionAt(session *Session, viewport gfx.Size, x, y float32) term.Position {
-	geometry := state.terminalLayoutForEvent(session.ID, viewport)
+func (state *State) terminalPositionAt(session *Session, x, y float32) term.Position {
+	geometry := state.terminalWindowLayout(session.ID)
 	terminal := session.term
 	if terminal == nil {
 		return term.Position{}

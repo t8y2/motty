@@ -2301,11 +2301,23 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		}
 		return result
 	}
-	session := state.terminalPageSession(event.Target)
-	if session == nil {
-		session = state.terminalSession(event.Target)
+	// The terminal pane is part of the workbench page, so its identities and
+	// coordinates are already the window's; the page routes the event to the
+	// control. A press still makes that pane the active one.
+	if session := state.terminalPageSession(event.Target); session != nil {
+		changed := false
+		if event.Kind == gfx.PointerDown {
+			changed = state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
+		}
+		result := state.pointer(event)
+		result.Repaint = result.Repaint || changed
+		if changed && event.Kind == gfx.PointerDown {
+			state.save()
+		}
+		return result
 	}
-	if session != nil {
+	if session := state.terminalSession(event.Target); session != nil {
 		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
 		if embedded {
 			event.X -= origin.X
@@ -2396,7 +2408,7 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return result
 	}
 	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone && state.activeSection == sectionTerminal {
-		if result, handled := state.panePagePointer(session, event); handled {
+		if result, handled := state.terminalPagePointer(session, event); handled {
 			return result
 		}
 	}
@@ -2495,6 +2507,10 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		state.ActivatePane(session.ID)
 		mount, _ = tree.MountOf(event.Target.Scope())
 		event.Target = local
+	} else if session := state.terminalPageSession(event.Target); session != nil {
+		// A terminal pane is part of the workbench page; its identity and focus
+		// are already the window's. A key there makes that pane the active one.
+		state.ActivatePane(session.ID)
 	} else if event.Target.IsZero() && state.sftpHeaderMenuOwns(state.popups.owner) {
 		// Opening an embedded menu can temporarily leave its focus trap empty.
 		// Its first keyboard-selected row still belongs to the file panel, and the
@@ -2719,7 +2735,7 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 	}
 	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone {
-		if result, handled := state.panePageKey(session, event); handled {
+		if result, handled := state.terminalPageKey(session, event); handled {
 			return result
 		}
 	}

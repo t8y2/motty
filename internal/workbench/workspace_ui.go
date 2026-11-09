@@ -126,6 +126,53 @@ func (state *State) refreshWorkspaceViews() bool {
 	return true
 }
 
+// paintsTerminalPane reports whether a session is shown by the terminal pane
+// view. The connection, restored and desktop session views keep their own
+// frame/canvas painters for now; only the terminal pane is a component of the
+// workbench page.
+func (state *State) paintsTerminalPane(session *Session) bool {
+	return session.term != nil && !session.restored && !state.showsProgress(session) && session.desk == nil
+}
+
+// declareWorkspacePanes declares the terminal panes inside the workbench page:
+// one Part-named container per visible pane at its deck rectangle. The page
+// names them, so focus, keys, text, wheel and hits all use the page's routing;
+// the window bar, pane tabs, dividers and the docked SFTP panel stay outside.
+func (state *State) declareWorkspacePanes(c ui.C) {
+	state.refreshWorkspaceViews()
+	frame := state.workspacePixelBounds(state.viewport)
+	c.Part(terminalWorkspacePart)
+	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Width(frame.Width).Height(frame.Height).Clip().Children(func() {
+		for index := range state.panes {
+			pane := state.panes[index]
+			if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
+				continue // a tab that is not showing
+			}
+			session, ok := state.sessionByIDPointer(pane.SessionID)
+			if !ok || !state.paintsTerminalPane(session) {
+				continue
+			}
+			bounds := pixelBounds(frame, pane.Bounds)
+			// The container itself is the pane's ground: a press here is a press
+			// inside the pane. The terminal control, declared below, paints after
+			// it and wins where it has a hit.
+			part := session.term.panePart
+			if part == "" {
+				part = terminalPageRoot(session.ID)
+				session.term.panePart = part
+			}
+			c.Part(part)
+			ui.Column(c).Absolute().
+				Left(bounds.X-frame.X).Top(bounds.Y-frame.Y).
+				Width(bounds.Width).Height(bounds.Height).
+				HitWith(hitPaneActivateList.At(index), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).
+				Clip().Children(func() {
+				state.declareTerminalPane(c, session, bounds)
+			})
+		}
+	})
+}
+
 func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 	state.refreshWorkspaceViews()
 	state.workspacePaneTools.count = 0
@@ -140,41 +187,32 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintContextPanel(canvas, size, frame)
 		return
 	}
-	if len(state.panes) == 1 {
-		pane := state.panes[0]
-		// The pane's own ground, as in a split: a press here is a press inside the
-		// pane, so it must reach the pane rather than fall through to the window
-		// and take the keyboard away from the page.
-		canvas.HitWithOptions(hitPaneActivateList.At(0), pixelBounds(frame, pane.Bounds), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
-		if session, ok := state.sessionByIDPointer(pane.SessionID); ok {
-			state.paneCanvas.BeginEmbedded(canvas, 0)
-			state.paintSessionPage(&state.paneCanvas, paneVirtualSize(frame), session)
-			state.paneCanvas.EndFrame()
-			canvas.Clip(frame)
-			canvas.Embed(&state.paneCanvas, paneEmbedOrigin(frame), 0)
-			canvas.Unclip()
-			canvas.AdoptEmbedded(&state.paneCanvas, 0)
-		} else {
-			state.paintEmptyPane(canvas, frame, pane)
-		}
-		state.paintTerminalDrop(canvas)
-		state.paintContextPanel(canvas, size, frame)
-		return
-	}
-
+	single := len(state.panes) == 1
 	for index := range state.panes {
 		pane := state.panes[index]
 		if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
 			continue // a tab that is not showing
 		}
 		bounds := pixelBounds(frame, pane.Bounds)
-		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 		session, ok := state.sessionByIDPointer(pane.SessionID)
+		if ok && state.paintsTerminalPane(session) {
+			// The page already painted the pane's chrome and terminal; what is
+			// left are the pieces it paints itself (find surface, completion,
+			// notice, spinner and status light).
+			state.paintTerminalPaneDetails(canvas, session, bounds)
+			continue
+		}
+		// Session views that are still frames of their own keep the interim
+		// embedded canvas. The pane's ground reaches them as before.
+		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 		if !ok {
 			state.paintEmptyPane(canvas, bounds, pane)
 			continue
 		}
-		mount := paneMount(session)
+		var mount gfx.Scope
+		if !single {
+			mount = paneMount(session)
+		}
 		state.paneCanvas.BeginEmbedded(canvas, mount)
 		state.paintSessionPage(&state.paneCanvas, paneVirtualSize(bounds), session)
 		state.paneCanvas.EndFrame()
@@ -307,8 +345,6 @@ func (state *State) paintSessionPage(canvas *gfx.Canvas, size gfx.Size, session 
 		state.paintConnectionPage(canvas, size, session)
 	case session.desk != nil:
 		state.paintDesktopPage(canvas, size, session)
-	default:
-		state.paintTerminalPage(canvas, size, session)
 	}
 }
 
@@ -595,11 +631,15 @@ func (state *State) paneGround(hit gfx.ID) (*Session, bool) {
 	return state.sessionByIDPointer(state.panes[index].SessionID)
 }
 
-// paneIdentity names an identity a session's page painted as the pane paints it:
-// side by side the pane's mount is part of it, while a workspace of one pane
-// paints its page in place and the page's own identity is the one the window
-// knows.
+// paneIdentity names an identity a session's page painted as the pane paints it.
+// The terminal pane is part of the workbench page now, so its identities are
+// already the window's. The connection, restored and desktop views still paint
+// into an embedded canvas: side by side their mount is part of the identity,
+// while a workspace of one pane paints the view in place.
 func (state *State) paneIdentity(session *Session, local gfx.ID) gfx.ID {
+	if state.paintsTerminalPane(session) {
+		return local
+	}
 	state.refreshWorkspaceViews()
 	if len(state.panes) > 1 {
 		return tree.MountID(paneMount(session), local)

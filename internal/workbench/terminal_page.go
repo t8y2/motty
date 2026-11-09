@@ -8,21 +8,27 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// A terminal pane is one ui.Page drawn into the pane's rectangle: the pane bar
-// or find bar above, and the terminal below. The terminal is a ui.Control, so
-// its keys, pointer, wheel and text arrive through the page's control routing
-// rather than through the window's central hit dispatcher. The scrollbar is a
-// part of the control; everything painted with an identity of its own (the
-// find bar, the tool rail) keeps the window's dispatch.
+// A terminal pane is declared inside the workbench page: the workspace names a
+// container per pane, and the pane view puts the bar or find bar above the
+// terminal. The terminal is a ui.Control of that page, so its keys, pointer,
+// wheel and text arrive through the page's control routing. The scrollbar is a
+// part of the control; everything painted with an identity of its own (the find
+// bar, the tool rail) keeps the window's dispatch.
+//
+// The pane containers are named by Part, not keyed: a Part name is the word the
+// program gives it, so the identities the page makes can be rebuilt from the
+// tree without a paint (the tests that drive a State without painting rely on
+// that), while still being one stable name per session in the workbench page.
 const terminalControlPart = "terminal"
 
-// The pane's page names the two containers the control lives in: a page element
-// is named under the nearest named container, and the control has to keep one
-// identity whatever bars the pane declares above it. Parts name them, so a bar
-// appearing or leaving does not move the control.
+// The pane's containers: the workspace part holds the visible panes, a pane
+// root holds one session's pane, and the control lives under the pane and body
+// parts. Parts name them, so a bar appearing or leaving does not move the
+// control.
 const (
-	terminalPanePart = "pane"
-	terminalBodyPart = "body"
+	terminalWorkspacePart = "workspace"
+	terminalPanePart      = "pane"
+	terminalBodyPart      = "body"
 )
 
 // terminalPartScrollbar is the scrollbar's part of the terminal control.
@@ -30,27 +36,36 @@ const (
 	terminalPartScrollbar = iota
 )
 
-// terminalPageRoot names one session's page in the window's identity tree. Each
-// pane has its own page, so the root is what keeps their controls apart.
+// terminalPageRoot names one session's pane container in the window's identity
+// tree. The session number is unique in the window, so it keeps the panes apart.
 func terminalPageRoot(sessionID uint32) string {
 	return "terminal-" + strconv.FormatUint(uint64(sessionID), 10)
 }
 
-// terminalPageRootScope is where a session's page names its elements.
+// terminalWorkspaceScope is where the shell page declares the panes.
+func terminalWorkspaceScope() gfx.Scope {
+	return Tree().Sub(Tree().Feature(shellPageRoot), Tree().Name(terminalWorkspacePart))
+}
+
+// terminalPageRootScope is the scope of a session's pane container.
 func terminalPageRootScope(sessionID uint32) gfx.Scope {
-	return Tree().Feature(terminalPageRoot(sessionID))
+	return Tree().Sub(terminalWorkspaceScope(), Tree().Name(terminalPageRoot(sessionID)))
 }
 
-// terminalBodyScope is the scope the terminal control is named in: the page's
-// body column, under the pane column.
+// terminalPaneScope is the pane container the session's bar and body live in.
+func terminalPaneScope(sessionID uint32) gfx.Scope {
+	return Tree().Sub(terminalPageRootScope(sessionID), Tree().Name(terminalPanePart))
+}
+
+// terminalBodyScope is the scope the terminal control is named in: the pane's
+// body column.
 func terminalBodyScope(sessionID uint32) gfx.Scope {
-	pane := Tree().Sub(terminalPageRootScope(sessionID), Tree().Name(terminalPanePart))
-	return Tree().Sub(pane, Tree().Name(terminalBodyPart))
+	return Tree().Sub(terminalPaneScope(sessionID), Tree().Name(terminalBodyPart))
 }
 
-// terminalControlHit is the local identity of a pane's terminal control, as the
-// page declares it with Part("terminal") in its body. A host that has not
-// painted the page can still name the control with it.
+// terminalControlHit is the identity of a pane's terminal control, as the page
+// declares it with Part("terminal") in its body. A host that has not painted the
+// page can still name the control with it.
 func terminalControlHit(sessionID uint32) gfx.ID {
 	return terminalBodyScope(sessionID).ID(Tree().Name(terminalControlPart))
 }
@@ -61,48 +76,31 @@ func terminalControlParts(sessionID uint32) gfx.Scope {
 	return Tree().Sub(terminalBodyScope(sessionID), Tree().Name(terminalControlPart))
 }
 
-// pageIdentity makes the page's control identity and part scope once: painting
-// and event routing read them, and rebuilding the root's name would allocate.
+// pageIdentity makes the control identity and part scope once: painting and
+// event routing read them, and rebuilding the name would allocate. The name is
+// a pure function of the page's parts, so it is the same before and after a
+// paint.
 func (t *terminal) pageIdentity(sessionID uint32) {
 	if !t.controlID.IsZero() {
 		return
 	}
-	body := terminalBodyScope(sessionID)
-	name := Tree().Name(terminalControlPart)
-	t.controlID = body.ID(name)
-	t.parts = Tree().Sub(body, name)
+	t.controlID = terminalControlHit(sessionID)
+	t.parts = terminalControlParts(sessionID)
 }
 
-// terminalPageFor returns the session's page, making it and its cached
-// declaration functions on first use. A session without a terminal has no page.
-func (state *State) terminalPageFor(session *Session) *ui.Page {
-	t := session.term
-	if t == nil {
-		return nil
-	}
-	t.pageIdentity(session.ID)
-	if t.page == nil {
-		sessionID := session.ID
-		t.page = ui.NewPage(ui.PageConfig{Root: terminalPageRoot(sessionID), Theme: &state.theme})
-		t.pageView = func(c ui.C) { state.declareTerminalPane(c, sessionID) }
-		t.controlDraw = func(d *ui.DrawContext) { state.drawTerminalControl(d, sessionID) }
-	}
-	return t.page
-}
-
-// installTerminalHandlers gives a newly configured terminal its control input.
-// The functions keep the session's identity rather than a pointer: the session
-// slice moves as tabs open and close.
+// installTerminalHandlers gives a newly configured terminal its control input
+// and its Draw function. The functions keep the session's identity rather than
+// a pointer: the session slice moves as tabs open and close.
 func (state *State) installTerminalHandlers(session *Session) {
 	t := session.term
 	if t == nil {
 		return
 	}
 	sessionID := session.ID
-	// A session can move to another window: its page and handlers must be the
-	// new window's, naming the session's new number.
-	t.page, t.pageView, t.controlDraw = nil, nil, nil
-	t.controlID, t.parts, t.painted = gfx.ID{}, 0, false
+	// A session can move to another window: its handlers and identity must be
+	// the new window's, naming the session's new number.
+	t.controlDraw = func(d *ui.DrawContext) { state.drawTerminalControl(d, sessionID) }
+	t.controlID, t.parts, t.panePart = gfx.ID{}, 0, terminalPageRoot(sessionID)
 	t.pageIdentity(sessionID)
 	h := &t.handlers
 	h.Role = gfx.RoleTerminal
@@ -151,8 +149,8 @@ func (state *State) installTerminalHandlers(session *Session) {
 	}
 }
 
-// terminalPageSession finds the session whose pane page owns a local identity:
-// the terminal control or one of its parts.
+// terminalPageSession finds the session whose terminal control or control part
+// an identity names.
 func (state *State) terminalPageSession(target gfx.ID) *Session {
 	if target.IsZero() {
 		return nil
@@ -173,11 +171,11 @@ func (state *State) terminalPageSession(target gfx.ID) *Session {
 	return nil
 }
 
-// terminalPageSessionWithoutTerm is terminalPageSession for a session whose
-// terminal was dropped: the page identity is still known, and the text-input
-// gap reports the session it belongs to. It builds the name, so it is for the
-// rare gap path, not for routing.
-func (state *State) terminalPageSessionWithoutTerm(target gfx.ID) *Session {
+// terminalSessionWithoutTerm is terminalPageSession for a session whose
+// terminal was dropped: the identity is still known, and the text-input gap
+// reports the session it belongs to. It builds the name, so it is for the rare
+// gap path, not for routing.
+func (state *State) terminalSessionWithoutTerm(target gfx.ID) *Session {
 	if target.IsZero() {
 		return nil
 	}
@@ -196,19 +194,17 @@ func (state *State) terminalPageSessionWithoutTerm(target gfx.ID) *Session {
 	return nil
 }
 
-// panePageKey routes a key the page owns through the page, or straight to the
-// control's handlers when the page has not been painted yet (a unit test that
-// drives the session without a frame).
-func (state *State) panePageKey(session *Session, event gfx.KeyEvent) (gfx.EventResult, bool) {
+// terminalPageKey routes a key the terminal control owns through the workbench
+// page, or straight to the control's handlers when the page has not declared it
+// yet (a unit test that drives the session without a frame).
+func (state *State) terminalPageKey(session *Session, event gfx.KeyEvent) (gfx.EventResult, bool) {
 	t := session.term
 	if t == nil {
 		return gfx.EventResult{}, false
 	}
-	if t.painted {
-		if page := state.terminalPageFor(session); page != nil {
-			if result, ok := page.Key(event); ok {
-				return result, true
-			}
+	if page := state.chrome.windowPage; page != nil {
+		if result, ok := page.Key(event); ok {
+			return result, true
 		}
 	}
 	if t.handlers.Key != nil {
@@ -217,17 +213,15 @@ func (state *State) panePageKey(session *Session, event gfx.KeyEvent) (gfx.Event
 	return gfx.EventResult{}, false
 }
 
-// panePagePointer is panePageKey for the pointer.
-func (state *State) panePagePointer(session *Session, event gfx.PointerEvent) (gfx.EventResult, bool) {
+// terminalPagePointer is terminalPageKey for the pointer.
+func (state *State) terminalPagePointer(session *Session, event gfx.PointerEvent) (gfx.EventResult, bool) {
 	t := session.term
 	if t == nil {
 		return gfx.EventResult{}, false
 	}
-	if t.painted {
-		if page := state.terminalPageFor(session); page != nil {
-			if result, ok := page.Pointer(event); ok {
-				return result, true
-			}
+	if page := state.chrome.windowPage; page != nil {
+		if result, ok := page.Pointer(event); ok {
+			return result, true
 		}
 	}
 	if t.handlers.Pointer != nil {
@@ -236,15 +230,15 @@ func (state *State) panePagePointer(session *Session, event gfx.PointerEvent) (g
 	return gfx.EventResult{}, false
 }
 
-// panePageScroll is panePageKey for the wheel.
-func (state *State) panePageScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
+// terminalPageScroll is terminalPageKey for the wheel.
+func (state *State) terminalPageScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	t := session.term
 	if t == nil {
 		return gfx.EventResult{}
 	}
-	if t.painted {
-		if page := state.terminalPageFor(session); page != nil {
-			return page.Wheel(event)
+	if page := state.chrome.windowPage; page != nil {
+		if result := page.Wheel(event); result.Handled || result.Repaint {
+			return result
 		}
 	}
 	if t.handlers.Scroll != nil {
@@ -253,20 +247,42 @@ func (state *State) panePageScroll(session *Session, event gfx.ScrollEvent) gfx.
 	return gfx.EventResult{}
 }
 
-// declareTerminalPane is the page's view: the bar, the find bar and the
-// terminal control, laid out in the pane's rectangle.
-func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
-	session, ok := state.sessionByIDPointer(sessionID)
-	if !ok || session.term == nil {
+// terminalPageText is terminalPageKey for the platform's text service.
+func (state *State) terminalPageText(session *Session, context app.TextInputContext) *app.TextInput {
+	t := session.term
+	if t == nil {
+		return nil
+	}
+	if page := state.chrome.windowPage; page != nil {
+		if input := page.TextInput(context); input != nil {
+			return input
+		}
+	}
+	if t.handlers.Text != nil {
+		return t.handlers.Text(context)
+	}
+	return nil
+}
+
+// declareTerminalPane is the pane view: the bar, the find bar and the terminal
+// control, laid out in the pane's rectangle. bounds is the pane as the window
+// paints it; the page is one window-sized tree now, so the view keeps window
+// coordinates rather than a pane-local canvas.
+func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rect) {
+	t := session.term
+	if t == nil {
 		return
 	}
-	t := session.term
-	bounds := c.Bounds()
 	chrome, ok := state.terminalChromeForSession(session.ID)
 	if !ok {
 		chrome = terminalChrome{top: infoBarHeight}
 	}
-	geometry := terminalLayoutWithChrome(gfx.Size{Width: bounds.Width, Height: bounds.Height}, state.cellWidth, state.cellHeight, chrome, state.padding())
+	geometry := terminalGeometryForArea(gfx.Rect{
+		X:      bounds.X,
+		Y:      bounds.Y + chrome.top,
+		Width:  bounds.Width,
+		Height: max(bounds.Height-chrome.top, 0),
+	}, state.cellWidth, state.cellHeight, state.padding())
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
 	barBackground, barBorder := state.pal.workspace, state.pal.line
@@ -301,7 +317,7 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 	noticeReserved := noticeReserve > 0
 
 	c.Part(terminalPanePart)
-	ui.Column(c).Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
+	ui.Column(c).Fill().Children(func() {
 		if inSplit || finding {
 			ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				if finding {
@@ -329,7 +345,6 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
 		})
 	})
-	t.painted = true
 }
 
 // drawTerminalControl paints the grid inside the control's rectangle.

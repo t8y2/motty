@@ -45,6 +45,11 @@ func hitOf(t *testing.T, driver *app.Driver, id gfx.ID) gfx.Hit {
 // pagedIdentity is a page identity as the window sees it: a workspace of one
 // pane paints its page in place, and panes side by side mount theirs.
 func pagedIdentity(state *State, session *Session, local gfx.ID) gfx.ID {
+	// The terminal pane is part of the workbench page; the connection and
+	// restored views still paint into an embedded canvas.
+	if state.paintsTerminalPane(session) {
+		return local
+	}
 	if len(state.Panes(nil)) > 1 {
 		return tree.MountID(paneMount(session), local)
 	}

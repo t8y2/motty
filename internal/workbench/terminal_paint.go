@@ -41,20 +41,24 @@ const (
 	terminalBarToolGap     = float32(4)
 )
 
-// paintTerminalPage draws a session. Active panes get a configurable tool rail
-// with only connection latency and actions. Every split pane reserves the same
-// bar height and identifies its own session there, so switching focus cannot
-// move or resize a PTY. Find mode puts its search controls in that strip, as a
-// macOS terminal puts its search bar above the text rather than over it, and
-// leaves the shared rail where it is.
-func (state *State) paintTerminalPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
+// paintTerminalPaneDetails paints what the pane declares but the page does not
+// own as elements: the find bar's text surface, the spinner and status light of
+// a split bar, the completion popover and the input notice. It runs after the
+// page painted the pane, clipped to the pane as the old embedded view was.
+//
+// Active panes get a configurable tool rail with only connection latency and
+// actions. Every split pane reserves the same bar height and identifies its own
+// session there, so switching focus cannot move or resize a PTY. Find mode puts
+// its search controls in that strip, as a macOS terminal puts its search bar
+// above the text rather than over it, and leaves the shared rail where it is.
+func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
 	if session.term == nil {
 		return
 	}
 	state.wantLatencyProbe(session, canvas)
-	page := state.terminalPageFor(session)
-	page.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, session.term.pageView)
 	t := session.term
+	canvas.Clip(bounds)
+	defer canvas.Unclip()
 	switch {
 	case t.paintFinding:
 		state.paintFindBarSlots(canvas, session, t.paintFind)

@@ -566,6 +566,9 @@ func (state *State) declareShell(c ui.C) {
 				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
 		})
 	})
+	if chrome.shellFullPage && state.terminalPage() {
+		state.declareWorkspacePanes(c)
+	}
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how
