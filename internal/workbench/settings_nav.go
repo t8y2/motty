@@ -121,8 +121,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 	ui.Column(c).Width(width).FillHeight().Children(func() {
 		ui.Text(c, m.SettingsTitle).FontSize(19).Bold().Color(pal.text).LineHeight(28).MarginSides(26, 8, 10, 22).Shrink(0)
 		page.add(settingsControl{kind: controlSearch, slot: ui.Slot(c).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)})
-		page.navList = ui.Scroll(c).FillWidth().Grow(1).Basis(0)
-		view.navListScroll = page.navList.ScrollState()
+		page.navList = ui.ScrollAt(c, view.navScroll).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {
 			ui.Column(c).Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
 				for category := settingsCategory(0); category < settingsCategoryCount; category++ {

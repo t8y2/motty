@@ -125,11 +125,11 @@ func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	// The layout clamps the areas' offsets to the content it just laid out; take
 	// that back so the wheel, the next paint and the tests all agree. A clamp is a
 	// move the user did not make, so one paint shows the corrected offset.
-	if offset := view.contentScroll.Offset; offset != state.settingsScroll {
+	if offset := page.scroll.ScrollState().Offset; offset != state.settingsScroll {
 		state.settingsScroll = offset
 		canvas.RequestFrame()
 	}
-	if offset := view.navListScroll.Offset; offset != view.navScroll {
+	if offset := page.navList.ScrollState().Offset; offset != view.navScroll {
 		view.navScroll = offset
 		canvas.RequestFrame()
 	}
@@ -152,8 +152,8 @@ func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 // the scrolling column of groups on the right.
 func (state *State) declareSettingsWorkspace(c ui.C) {
 	pal, view := state.pal, &state.settings
-	f := c.Frame()
-	bounds := f.Bounds()
+	f := c.Frame() // kept for the ai_* helpers that still declare with it
+	bounds := c.Bounds()
 	navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
 	areaWidth := max(bounds.Width-navWidth-1, 0)
 	title := state.settingsCategoryName(state.settingsCategory)
@@ -164,20 +164,12 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 
 	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
 	page := settingsPage{state: state, c: c, f: f, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
-	// The page keeps the scroll offsets (the wheel in settings.go owns them), so
-	// seed the areas' own state before they are declared; ScrollArea reads it when
-	// it names the area, which is what lays the content out at that offset.
-	if view.contentScroll != nil {
-		view.contentScroll.Offset = state.settingsScroll
-	}
-	if view.navListScroll != nil {
-		view.navListScroll.Offset = view.navScroll
-	}
+	// The wheel in settings.go owns the offsets; each area starts at its
+	// declared offset and the paint reads the clamped value back afterwards.
 	ui.Row(c).Fill().Children(func() {
 		page.nav(navWidth, searching)
 		ui.Column(c).Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
-		page.scroll = ui.Scroll(c).Grow(1).Basis(0).Items(ui.Center)
-		view.contentScroll = page.scroll.ScrollState()
+		page.scroll = ui.ScrollAt(c, state.settingsScroll).Grow(1).Basis(0).Items(ui.Center)
 		page.scroll.Children(func() {
 			ui.Column(c).FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
 				page.header(title, searching)
@@ -269,7 +261,7 @@ func (page *settingsPage) headerButton(label string, id gfx.ID) {
 
 // canvas is the page's canvas: a control paints from it and a label is measured
 // with it. Reading it from the Frame is not declaring layout.
-func (page *settingsPage) canvas() *gfx.Canvas { return page.c.Frame().Canvas() }
+func (page *settingsPage) canvas() *gfx.Canvas { return page.c.Canvas() }
 
 func (state *State) paintSettingsCategory(page *settingsPage) {
 	switch state.settingsCategory {

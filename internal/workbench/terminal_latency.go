@@ -182,7 +182,7 @@ func (state *State) declareLatencyTag(c ui.C, session *Session) {
 	if !ok {
 		return
 	}
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	textWidth := canvas.TextWidthWeight(latencyText, metrics.FontSizeS, gfx.WeightMedium) + 2
 	ui.Row(c).PadSides(2, 6, 2, 6).MarginSides(0, 8, 0, 0).Items(ui.Center).
 		Background(withAlpha(latencyColor, 0.14)).Radius(4).Children(func() {

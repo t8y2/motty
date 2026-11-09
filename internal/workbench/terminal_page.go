@@ -261,7 +261,7 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 		return
 	}
 	t := session.term
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	chrome, ok := state.terminalChromeForSession(session.ID)
 	if !ok {
 		chrome = terminalChrome{top: infoBarHeight}

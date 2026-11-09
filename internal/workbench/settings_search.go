@@ -65,15 +65,6 @@ type settingsUI struct {
 	navView    float32
 	navRect    gfx.Rect
 
-	// contentScroll and navListScroll are the page's two scroll areas. The wheel
-	// in settings.go owns the offsets (settingsScroll and navScroll), and a page
-	// ScrollArea reads its offset when it is declared, so the pointer from the
-	// previous paint seeds the next one. Both areas are declared by every paint
-	// of the page, and the page is the only user of its View, so the states are
-	// not dropped between visits.
-	contentScroll *ui.ScrollState
-	navListScroll *ui.ScrollState
-
 	// pageView is how tall the page's own window was when it was last painted:
 	// the workspace content box, inside the slot's border. The wheel and the
 	// paint both clamp to it, so the end of the page is reachable either way.
