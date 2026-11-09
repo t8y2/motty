@@ -45,41 +45,37 @@ type toolbarDockUI struct {
 	sideViewports           [4]gfx.Rect
 	bottomScroll, bottomMax [2]float32
 	bottomViewports         [2]gfx.Rect
-	// Each painted strip is a page of its own except the top, which the window
-	// bar's page declares directly. The pages and their declaration functions
-	// are kept between paints; the scratch values below are this paint's.
+	// The workbench page declares every strip: the top as the bar's own row,
+	// the bottom and each side as Part-named absolute containers. The tools
+	// themselves keep the identities the window names by hand. The scratch
+	// values below are this paint's declaration.
 	topTools          []barTool
 	topOverflow       bool
 	topBuffer         [maxBarTools]barTool
-	bottomPage        *ui.Page
-	bottomView        func(ui.C)
 	bottomLeftWidth   float32
 	bottomRightWidth  float32
 	bottomLeft        ui.Box
 	bottomRight       ui.Box
 	bottomLeftBuffer  [maxBarTools]barTool
 	bottomRightBuffer [maxBarTools]barTool
-	sidePages         [2]*ui.Page
-	sideViews         [2]func(ui.C)
 	sideScratch       [2]toolbarDockSideScratch
 }
 
-// toolbarDockSideScratch is what the side page leaves for the group painted
-// into each half of the rail.
+// toolbarDockSideScratch is what the workbench page's side container leaves for
+// the group painted into each half of the rail.
 type toolbarDockSideScratch struct {
 	topHeight, bottomHeight float32
 	top, bottom             ui.Box
 }
 
-// Each strip declared as a page names its controls in the window's one identity
-// tree, so it has a root of its own. The top strip has none: it is declared in
-// the window bar's page.
-const toolbarDockBottomPageRoot = "toolbar-dock-bottom-page"
+// The bottom strip and each side rail are Part-named containers of the
+// workbench page, so they share the window's identity tree and routing.
+const toolbarDockBottomPart = "toolbar-dock-bottom"
 
-var toolbarDockSidePageRoots = [2]string{"toolbar-dock-side-right-page", "toolbar-dock-side-left-page"}
+var toolbarDockSideParts = [2]string{"toolbar-dock-side-right", "toolbar-dock-side-left"}
 
-// toolbarDockSidePageIndex numbers the side pages: right is 0, left is 1.
-func toolbarDockSidePageIndex(left bool) int {
+// toolbarDockSideAt numbers the sides: right is 0, left is 1.
+func toolbarDockSideAt(left bool) int {
 	if left {
 		return 1
 	}
@@ -401,12 +397,31 @@ func (state *State) toolbarDockBottomBounds(size gfx.Size, emptyTarget bool) gfx
 	return bounds
 }
 
-// declareToolbarDockBottomPage declares the bottom strip: the two viewports the
-// left and right groups scroll in. Their widths were measured before the page is
-// drawn, since they decide the split.
-func (state *State) declareToolbarDockBottomPage(c ui.C) {
+// declareToolbarDockBottom declares the bottom strip in the workbench page as
+// the two viewports the left and right groups scroll in. Their widths were
+// measured here, before the page is laid out, since they decide the split.
+func (state *State) declareToolbarDockBottom(c ui.C) {
 	dock := &state.toolbarDock
-	ui.Row(c).Fill().Pad(4).Children(func() {
+	left := state.toolbarDockTools(toolbarDockBottom, &dock.bottomLeftBuffer)
+	right := state.toolbarDockTools(toolbarDockBottomRight, &dock.bottomRightBuffer)
+	if len(left)+len(right) == 0 {
+		dock.bottomLeft, dock.bottomRight = ui.Box{}, ui.Box{}
+		return
+	}
+	bounds := state.toolbarDockBottomBounds(state.viewport, false)
+	viewport := bounds.Inset(gfx.All(4))
+	leftExtent, rightExtent := state.toolbarDockHorizontalExtent(left), state.toolbarDockHorizontalExtent(right)
+	gap := float32(0)
+	if len(left) > 0 && len(right) > 0 {
+		gap = min(12, viewport.Width)
+	}
+	available := max(viewport.Width-gap, 0)
+	// Let a small group keep its space; share the rest when both overflow.
+	leftWidth := min(leftExtent, max(available/2, available-rightExtent))
+	rightWidth := min(rightExtent, max(available-leftWidth, 0))
+	dock.bottomLeftWidth, dock.bottomRightWidth = leftWidth, rightWidth
+	c.Part(toolbarDockBottomPart)
+	ui.Row(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Pad(4).Children(func() {
 		dock.bottomLeft = ui.Slot(c).Width(dock.bottomLeftWidth).Shrink(0)
 		ui.Spacer(c)
 		dock.bottomRight = ui.Slot(c).Width(dock.bottomRightWidth).Shrink(0)
@@ -422,22 +437,6 @@ func (state *State) paintToolbarDockBottom(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	bounds := state.toolbarDockBottomBounds(size, false)
 	dock.zones[3], dock.zones[6] = toolbarDockBottomZones(bounds)
-	viewport := bounds.Inset(gfx.All(4))
-	leftExtent, rightExtent := state.toolbarDockHorizontalExtent(left), state.toolbarDockHorizontalExtent(right)
-	gap := float32(0)
-	if len(left) > 0 && len(right) > 0 {
-		gap = min(12, viewport.Width)
-	}
-	available := max(viewport.Width-gap, 0)
-	// Let a small group keep its space; share the rest when both overflow.
-	leftWidth := min(leftExtent, max(available/2, available-rightExtent))
-	rightWidth := min(rightExtent, max(available-leftWidth, 0))
-	dock.bottomLeftWidth, dock.bottomRightWidth = leftWidth, rightWidth
-	if dock.bottomPage == nil {
-		dock.bottomPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: toolbarDockBottomPageRoot, Theme: &state.theme})
-		dock.bottomView = state.declareToolbarDockBottomPage
-	}
-	dock.bottomPage.Draw(canvas, bounds, dock.bottomView)
 	canvas.Fill(bounds, state.pal.shell)
 	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, state.pal.line)
 	state.paintToolbarDockBottomGroup(canvas, left, toolbarDockBottom, dock.bottomLeft.Rect())
@@ -503,6 +502,51 @@ func (state *State) toolbarDockSideReserve() float32 {
 	return state.toolbarDockSideReserveFor(true, false) + state.toolbarDockSideReserveFor(false, false)
 }
 
+// declareToolbarDockSides declares each physical side rail in the workbench
+// page. Each rail's upper and lower groups scroll in viewports of their own;
+// their heights were measured here, since they decide the split.
+func (state *State) declareToolbarDockSides(c ui.C) {
+	session, terminalVisible := state.terminalSideRailSession()
+	for _, left := range []bool{false, true} {
+		state.declareToolbarDockSide(c, left, session, terminalVisible)
+	}
+}
+
+// declareToolbarDockSide declares one side rail: its upper and lower groups
+// scroll in viewports of their own. A side the shell holds no room for declares
+// nothing and leaves no boxes behind.
+func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, terminalVisible bool) {
+	dock := &state.toolbarDock
+	side := toolbarDockSideAt(left)
+	scratch := &dock.sideScratch[side]
+	if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
+		scratch.top, scratch.bottom = ui.Box{}, ui.Box{}
+		return
+	}
+	topZone, bottomZone := toolbarDockSideTop, toolbarDockSideBottom
+	if left {
+		topZone, bottomZone = toolbarDockLeftTop, toolbarDockLeftBottom
+	}
+	bounds := state.toolbarDockSideBoundsFor(state.viewport, left)
+	var topBuffer, bottomBuffer [maxBarTools]barTool
+	top := state.toolbarDockTools(topZone, &topBuffer)
+	bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
+	viewport := bounds.Inset(gfx.All(4))
+	bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
+	if len(top) == 0 {
+		bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
+	}
+	if len(bottom) == 0 {
+		bottomHeight = 0
+	}
+	scratch.topHeight, scratch.bottomHeight = max(viewport.Height-bottomHeight, 0), bottomHeight
+	c.Part(toolbarDockSideParts[side])
+	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Pad(4).Children(func() {
+		scratch.top = ui.Slot(c).Height(scratch.topHeight).Shrink(0)
+		scratch.bottom = ui.Slot(c).Height(scratch.bottomHeight).Shrink(0)
+	})
+}
+
 func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 	session, terminalVisible := state.terminalSideRailSession()
 	for _, left := range []bool{false, true} {
@@ -518,6 +562,7 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		if left {
 			topZone, bottomZone = toolbarDockLeftTop, toolbarDockLeftBottom
 		}
+		side := toolbarDockSideAt(left)
 		var topBuffer, bottomBuffer [maxBarTools]barTool
 		top := state.toolbarDockTools(topZone, &topBuffer)
 		bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
@@ -541,26 +586,10 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 			x += bounds.Width - 1
 		}
 		canvas.Fill(gfx.Rect{X: x, Y: bounds.Y, Width: 1, Height: bounds.Height}, border)
-		viewport := bounds.Inset(gfx.All(4))
 		if terminalVisible && primary {
 			session.term.railBounds = bounds
 		}
-		bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
-		if len(top) == 0 {
-			bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
-		}
-		if len(bottom) == 0 {
-			bottomHeight = 0
-		}
-		side := toolbarDockSidePageIndex(left)
 		scratch := &dock.sideScratch[side]
-		scratch.topHeight, scratch.bottomHeight = max(viewport.Height-bottomHeight, 0), bottomHeight
-		if dock.sidePages[side] == nil {
-			dock.sidePages[side] = ui.NewPage(ui.PageConfig{Tree: &tree, Root: toolbarDockSidePageRoots[side], Theme: &state.theme})
-			at := side
-			dock.sideViews[at] = func(c ui.C) { state.declareToolbarDockSidePage(c, at) }
-		}
-		dock.sidePages[side].Draw(canvas, bounds, dock.sideViews[side])
 		var owner *Session
 		if terminalVisible && primary {
 			owner = session
@@ -568,17 +597,6 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintToolbarDockSideGroup(canvas, top, topZone, scratch.top.Rect(), background, owner)
 		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, scratch.bottom.Rect(), background, owner)
 	}
-}
-
-// declareToolbarDockSidePage declares one side rail: its upper and lower groups
-// scroll in viewports of their own. Their heights were measured before the page
-// is drawn, since they decide the split.
-func (state *State) declareToolbarDockSidePage(c ui.C, side int) {
-	scratch := &state.toolbarDock.sideScratch[side]
-	ui.Column(c).Fill().Pad(4).Children(func() {
-		scratch.top = ui.Slot(c).Height(scratch.topHeight).Shrink(0)
-		scratch.bottom = ui.Slot(c).Height(scratch.bottomHeight).Shrink(0)
-	})
 }
 
 func toolbarDockSideIndex(zone toolbarDockZone) int {
@@ -716,59 +734,7 @@ func (state *State) toolbarDockDropAt(at gfx.Point) toolbarDockDrop {
 	return toolbarDockDrop{}
 }
 
-// toolbarDockPagePointer gives the strips declared as pages their pointer events
-// before the window's own routing. The strips paint their buttons into slots
-// with the identities the window names by hand, so the pages own no target the
-// drag below must still see. The top strip is declared in the window bar's page,
-// which the window routes itself.
-func (state *State) toolbarDockPagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	dock := &state.toolbarDock
-	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
-		if page == nil {
-			continue
-		}
-		if result, ok := page.Pointer(event); ok {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// toolbarDockPageKey is toolbarDockPagePointer for the keyboard.
-func (state *State) toolbarDockPageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	dock := &state.toolbarDock
-	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
-		if page == nil {
-			continue
-		}
-		if result, ok := page.Key(event); ok {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// toolbarDockPageWheel is toolbarDockPagePointer for the wheel. The strips'
-// scrolling lives in this file's scroll handler, not in a page scroll area, so
-// the pages take only what they declare as their own.
-func (state *State) toolbarDockPageWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	dock := &state.toolbarDock
-	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
-		if page == nil {
-			continue
-		}
-		result := page.Wheel(event)
-		if result.Handled || result.Repaint {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
 func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
-	if result, ok := state.toolbarDockPagePointer(event); ok {
-		return result
-	}
 	dock := &state.toolbarDock
 	if dock.menu {
 		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitToolbarDockDismiss {
@@ -841,9 +807,6 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 }
 
 func (state *State) toolbarDockKey(event gfx.KeyEvent) gfx.EventResult {
-	if result, ok := state.toolbarDockPageKey(event); ok {
-		return result
-	}
 	dock := &state.toolbarDock
 	if event.Release {
 		return gfx.EventResult{}
@@ -949,9 +912,6 @@ func (state *State) paintToolbarDockDrag(canvas *gfx.Canvas) {
 }
 
 func (state *State) toolbarDockScroll(event gfx.ScrollEvent) gfx.EventResult {
-	if result, ok := state.toolbarDockPageWheel(event); ok {
-		return result
-	}
 	if state.modal != modalNone {
 		return gfx.EventResult{}
 	}

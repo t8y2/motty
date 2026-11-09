@@ -577,6 +577,11 @@ func (state *State) declareShell(c ui.C) {
 			state.declareSFTPTab(c)
 		}
 	}
+	// The bottom strip and each side rail are containers of this page too, at
+	// the outer bands their reserves keep free. Their tools are painted by the
+	// window after the page, into the slots these declarations leave.
+	state.declareToolbarDockBottom(c)
+	state.declareToolbarDockSides(c)
 	if !chrome.shellFullPage && state.activeSection == sectionSettings {
 		state.declareSettingsWorkspace(c)
 	}

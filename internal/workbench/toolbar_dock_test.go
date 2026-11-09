@@ -296,52 +296,61 @@ func TestToolbarDockPresenceCheckDoesNotAllocate(t *testing.T) {
 	}
 }
 
-// The bottom and side strips are pages of their own; the top strip is declared
-// in the window bar's page. Their tool cells come from that layout, and they
-// leave the identities (and so the drag and keyboard paths) to the window. A
-// click delivered in a paint's event pass still reaches the action the window
-// dispatches for the tool.
+// The bottom and side strips are containers of the workbench page: the page
+// lays their viewports out and the window paints the tools into them. The tools
+// keep the identities the window names by hand, so a click delivered in a
+// paint's event pass still reaches the action the window dispatches for the
+// tool.
 func TestToolbarDockStripsKeepTheWindowActions(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.activeSection = sectionTerminal
 	size := gfx.Size{Width: 1200, Height: 800}
-	state.moveToolbarDockTool(hitConnExport, toolbarDockBottom, gfx.ID{})
-	state.moveToolbarDockTool(hitTheme, toolbarDockSideBottom, gfx.ID{})
+	state.moveToolbarDockTool(hitTheme, toolbarDockBottom, gfx.ID{})
+	state.moveToolbarDockTool(hitAIToggle, toolbarDockSideBottom, gfx.ID{})
 	state.Resize(size)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	dock := &state.toolbarDock
-	if dock.bottomPage == nil || dock.sidePages[0] == nil {
-		t.Fatalf("strips painted without pages: bottom=%t side=%t", dock.bottomPage != nil, dock.sidePages[0] != nil)
+	side := toolbarDockSideAt(false)
+	// The page's declaration leaves the viewports the window paints into; a
+	// strip with tools but no slots would paint them at the window's origin.
+	if dock.bottomLeft.Rect().Width <= 0 || dock.bottomRight.Rect().Width < 0 {
+		t.Fatalf("the workbench page did not declare the bottom strip: %+v", dock.bottomLeft.Rect())
 	}
-	// The tools keep the identities the window names by hand, so the page does
-	// not take the press the dock drag starts on, an arrow key, or the wheel the
-	// dock's own scroll handler reads.
-	if _, ok := state.toolbarDockPagePointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitConnExport, X: 4, Y: 4}); ok {
-		t.Fatal("a strip page took a press aimed at a tool")
+	if dock.sideScratch[side].top.Rect().Height <= 0 || dock.sideScratch[side].top.Rect().Width <= 0 {
+		t.Fatalf("the workbench page did not declare the side rail: %+v", dock.sideScratch[side].top.Rect())
 	}
-	if _, ok := state.toolbarDockPageKey(gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight}); ok {
-		t.Fatal("a strip page took an arrow key aimed at a tool")
+	// The tools keep the identities the window names by hand; the window's dock
+	// dispatcher still owns their press, arrow keys and the wheel it scrolls.
+	if box, ok := hitByID(&canvas, hitTheme); !ok || box.Bounds.Y < size.Height-state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("bottom tool was not painted into the bottom strip: %+v, %t", box.Bounds, ok)
 	}
-	if _, ok := state.toolbarDockPageWheel(gfx.ScrollEvent{X: 4, Y: 4}); ok {
-		t.Fatal("a strip page took a wheel event it does not scroll")
+	if box, ok := hitByID(&canvas, hitAIToggle); !ok || box.Bounds.X < size.Width/2 {
+		t.Fatalf("side tool was not painted into the side rail: %+v, %t", box.Bounds, ok)
+	}
+	pass := func(target gfx.ID) {
+		t.Helper()
+		var event gfx.Canvas
+		event.BeginEventPass(target, gfx.ClickInfo{})
+		state.Paint(&event, size)
+		event.EndEventPass()
+		event.RunAfterPaint()
 	}
 	before := state.appearance
-	var pass gfx.Canvas
-	pass.BeginEventPass(hitTheme, gfx.ClickInfo{})
-	state.Paint(&pass, size)
-	pass.EndEventPass()
-	pass.RunAfterPaint()
+	pass(hitTheme)
 	if state.appearance == before {
-		t.Fatal("the event pass did not reach the side strip's theme action")
+		t.Fatal("the event pass did not reach the bottom strip's theme action")
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("fixture opened the assistant before the side action")
+	}
+	pass(hitAIToggle)
+	if !state.aiPanelVisible() {
+		t.Fatal("the event pass did not reach the side strip's assistant action")
 	}
 	// The top strip has no page of its own: its tool stays the window's, and a
 	// click on it in the event pass opens the command palette.
-	var topPass gfx.Canvas
-	topPass.BeginEventPass(hitCommandPalette, gfx.ClickInfo{})
-	state.Paint(&topPass, size)
-	topPass.EndEventPass()
-	topPass.RunAfterPaint()
+	pass(hitCommandPalette)
 	if state.modal != modalCommandPalette {
 		t.Fatal("the event pass did not reach the top strip's command palette action")
 	}
