@@ -569,6 +569,7 @@ func (state *State) declareShell(c ui.C) {
 	if chrome.shellFullPage && state.terminalPage() {
 		state.declareWorkspacePanes(c)
 	}
+	state.declareAIPanel(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how

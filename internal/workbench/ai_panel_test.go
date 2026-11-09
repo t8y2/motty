@@ -92,11 +92,27 @@ func paintAt(state *State, size gfx.Size) (*gfx.Canvas, []string) {
 // actions the page deferred, as the runtime does after an event pass.
 func clickAIPanelPage(t testing.TB, state *State, id gfx.ID) {
 	t.Helper()
+	clickAIPanelPageAt(t, state, panelWide, id)
+}
+
+func clickAIPanelPageAt(t testing.TB, state *State, size gfx.Size, id gfx.ID) {
+	t.Helper()
 	var canvas gfx.Canvas
 	canvas.BeginEventPass(id, gfx.ClickInfo{})
-	state.Paint(&canvas, panelWide)
+	state.Paint(&canvas, size)
 	canvas.EndEventPass()
 	canvas.RunAfterPaint()
+}
+
+// aiDrawerDismiss is the hit that dismisses the open assistant drawer: the
+// page's Drawer paints its backdrop over the window.
+func aiDrawerDismiss(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
 }
 
 func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
@@ -736,7 +752,10 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	state.Click(hitAIToggle)
 	canvas, _ := paintAt(state, panelNarrow)
 	panelHit(t, canvas, hitAIInput)
-	dismiss := panelHit(t, canvas, hitAIDrawerDismiss)
+	dismiss, ok := aiDrawerDismiss(canvas)
+	if !ok {
+		t.Fatal("the drawer painted no dismiss backdrop")
+	}
 	if terminalColumns(state) != before {
 		t.Fatalf("a drawer took terminal width: %d -> %d", before, terminalColumns(state))
 	}
@@ -744,7 +763,7 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	if input.Bounds.X+input.Bounds.Width > panelNarrow.Width || input.Bounds.X < panelNarrow.Width*0.4 {
 		t.Fatalf("drawer input at %+v", input.Bounds)
 	}
-	state.Click(dismiss.ID)
+	clickAIPanelPageAt(t, state, panelNarrow, dismiss.ID)
 	canvas, _ = paintAt(state, panelNarrow)
 	if _, ok := hitByID(canvas, hitAIInput); ok || state.ai.open {
 		t.Fatal("the drawer did not close")

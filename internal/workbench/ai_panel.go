@@ -90,7 +90,14 @@ const (
 	aiMinTerminal = float32(360)            // the panes keep at least this much beside the panel
 )
 
-func inAIPanel(id gfx.ID) bool { return tree.Within(id.Scope(), aiPanelHits) }
+func inAIPanel(id gfx.ID) bool {
+	if id.IsZero() {
+		return false
+	}
+	// The page-declared elements live under the workbench page's assistant
+	// container; the ones this package paints by hand keep their own feature.
+	return tree.Within(id.Scope(), aiPanelHits) || tree.Within(id.Scope(), aiPanelScope())
+}
 
 type aiDragKind uint8
 
@@ -365,27 +372,24 @@ type aiPanel struct {
 
 	// The model chip and its menu: modelMenu is whether the ui.Menu is open.
 	modelMenu   bool
-	window      gfx.Rect // the whole window, for the menus to be placed and dismissed in
-	chip        gfx.Rect
 	approvalLay aiApprovalLayout
 
-	// menuPage declares the open chip menus in a page of the whole window, so a
-	// menu may open outside the panel and its dismiss backdrop covers the window.
-	// Its rows are the menus' own; the chips are anchors declared in it and
-	// painted by the panel's hand-drawn composer.
-	menuPage *ui.Page
-	menuView func(ui.C)
+	// mode is how the workbench page placed the panel in its last paint, and
+	// declared whether it declared it at all. drawerOpen is the page Drawer's open
+	// bool: its address is the drawer's identity, so it must stay one field.
+	mode       aiPanelMode
+	declared   bool
+	drawerOpen bool
+	resize     aiPanelResize
 
-	// page declares the panel's chrome; pageView is its declaration kept so a
-	// paint makes no method value. body holds what the page left for the
-	// hand-painted controls and lists, and pageScratch the values its
-	// declaration reads. composerDraw paints the native textarea into the box
-	// the page reserved, and is kept for the same reason.
-	page         *ui.Page
-	pageView     func(ui.C)
-	composerDraw func(*ui.DrawContext)
-	body         aiBody
-	pageScratch  aiPanelPageScratch
+	// contentDraw and overDraw paint the parts the page's declaration left for
+	// the last pass, kept so a paint makes no method values. composerDraw paints
+	// the native textarea into the box the page reserved, and is kept for the
+	// same reason.
+	contentDraw, overDraw func(*ui.DrawContext)
+	composerDraw          func(*ui.DrawContext)
+	body                  aiBody
+	pageScratch           aiPanelPageScratch
 
 	// importPages is the provider import dialog's page and the slots its
 	// hand-painted buttons go into.
@@ -393,13 +397,11 @@ type aiPanel struct {
 
 	// The approval scope chip and the menu it opens. The scope itself belongs to
 	// the conversation (ai.autoUpTo); this is only its view state.
-	autoMenu  bool
-	scopeChip gfx.Rect // where the chip was painted, for the menu to hang above
+	autoMenu bool
 
 	// Reasoning effort chip and menu
 	reasoningMenu   bool
 	reasoningEffort string
-	reasoningChip   gfx.Rect
 
 	// mentions is what the @ before the caret can name, from the last layout.
 	mentionBuf       [maxMentionSuggestions]mentionName
@@ -927,18 +929,23 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
-	// The open chip menus are window-level overlays declared by a page of their
-	// own: they own the pointer over the whole window before the panel does.
-	if panel.menuPage != nil && state.aiMenuOpen() {
-		if result, ok := panel.menuPage.Pointer(event); ok {
-			return result, true
+	// The panel and its menus are part of the workbench page now: its controls
+	// and the open menu's backdrop are the page's, so it reads their presses
+	// first. The identities this file paints by hand are outside the page, so a
+	// press on them falls through to the gestures below.
+	page := state.chrome.windowPage
+	if state.aiMenuShown() {
+		// An open chip menu owns the pointer over the whole window: over it, the
+		// page's menu acts; anywhere else the press goes nowhere.
+		if page != nil && inAIPanel(event.Target) {
+			if result, ok := page.Pointer(event); ok {
+				return result, true
+			}
 		}
+		return gfx.EventResult{Handled: true}, true
 	}
-	// The page's own targets (and any overlay it declares) come first. Its Root
-	// is the panel's page, so the controls this file names by hand stay outside
-	// it and are handled below.
-	if panel.page != nil {
-		if result, ok := panel.page.Pointer(event); ok {
+	if page != nil && inAIPanel(event.Target) {
+		if result, ok := page.Pointer(event); ok {
 			return result, true
 		}
 	}
@@ -1022,13 +1029,22 @@ func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
 func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
-	// An open chip menu owns the wheel: over it, its own list scrolls; over the
-	// rest of the window, the gesture goes nowhere.
-	if panel.menuPage != nil && state.aiMenuOpen() {
-		if result := panel.menuPage.Wheel(event); result.Handled || result.Repaint {
-			return result, true
+	// The chip menus are the workbench page's popups: an open one owns the wheel
+	// over the whole window, scrolling its own list where the pointer is over it
+	// and going nowhere otherwise.
+	page := state.chrome.windowPage
+	if state.aiMenuShown() {
+		if page != nil && inAIPanel(event.Target) {
+			if result := page.Wheel(event); result.Handled || result.Repaint {
+				return result, true
+			}
 		}
 		return gfx.EventResult{Handled: true}, true
+	}
+	if page != nil && inAIPanel(event.Target) {
+		if result := page.Wheel(event); result.Handled || result.Repaint {
+			return result, true
+		}
 	}
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
 		return gfx.EventResult{}, false
@@ -1098,21 +1114,29 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	ai := &state.ai
 	panel := &ai.panel
-	// The chip menus live in a page of the whole window: its rows carry page
-	// identities, so they are routed before the panel's own hand-named targets.
-	if panel.menuPage != nil && state.aiMenuOpen() && (panel.menuPage.Overlay() || panel.menuPage.Owns(event.Target)) {
-		if result, handled := panel.menuPage.Key(event); handled {
-			return result, true
+	page := state.chrome.windowPage
+	// The chip menus are the workbench page's popups: their rows carry the page's
+	// identities, so it routes their keys before the panel's own.
+	if state.aiMenuShown() {
+		if page != nil && inAIPanel(event.Target) {
+			if result, handled := page.Key(event); handled {
+				return result, true
+			}
 		}
+		switch event.Key {
+		case gfx.KeyEscape, gfx.KeyEnter, gfx.KeySpace, gfx.KeyTab:
+			return gfx.EventResult{}, true
+		}
+		return gfx.EventResult{Handled: true}, true
 	}
 	if !inAIPanel(event.Target) {
 		return gfx.EventResult{}, false
 	}
-	// The page's Controls, TextAreas and Shortcuts take their keys before the
-	// panel's own handling. Its Root is separate from the identities this file
-	// declares by hand, so those still fall through to the code below.
-	if panel.page != nil {
-		if result, handled := panel.page.Key(event); handled {
+	// The page's controls and shortcuts take their keys before the panel's own
+	// handling. The identities this file declares by hand are outside the page,
+	// so those still fall through to the code below.
+	if page != nil {
+		if result, handled := page.Key(event); handled {
 			return result, true
 		}
 	}
@@ -1283,10 +1307,10 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 		return nil
 	}
 	panel := &state.ai.panel
-	// A page field of the panel would take the platform's editor first; the
-	// composer itself is the hand-painted editor below.
-	if panel.page != nil {
-		if input := panel.page.TextInput(context); input != nil {
+	// A field declared by the workbench page would take the platform's editor
+	// first; the composer itself is painted by hand and served below.
+	if page := state.chrome.windowPage; page != nil {
+		if input := page.TextInput(context); input != nil {
 			return input
 		}
 	}

@@ -382,25 +382,6 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	panel.targetBounds = gfx.Rect{X: box.X + 8, Y: box.Y + 6, Width: min(200, max(box.Width-16, 0)), Height: 24}
 	panel.composer = box
 	panel.boxHeight = box.Height
-	// The box's top edge is what is dragged to make it taller.
-	canvas.HitWithOptions(hitAIComposerGrip, gfx.Rect{X: box.X + 8, Y: box.Y - 3, Width: max(box.Width-16, 0), Height: 7}, m.ResizeComposer,
-		gfx.HitOptions{Role: gfx.RoleSlider, Cursor: gfx.PointerCursorResizeVertical, SkipFocus: true})
-
-	_, hasModel := state.aiModelText()
-	if hasModel {
-		panel.chip = body.modelChip.Rect()
-		panel.scopeChip = gfx.Rect{}
-		if ai.mode == agent.ModeAgent {
-			panel.scopeChip = body.scopeChip.Rect()
-		}
-		if _, _, hasReasoning := state.aiCurrentModelReasoning(); hasReasoning {
-			panel.reasoningChip = body.reasoningChip.Rect()
-		} else {
-			panel.reasoningChip = gfx.Rect{}
-		}
-	} else {
-		panel.reasoningChip = gfx.Rect{}
-	}
 }
 
 // declareAIReasoningChip declares the pill in the message box that shows and controls
@@ -420,6 +401,9 @@ func (state *State) declareAIReasoningChip(c ui.C) ui.Box {
 		ui.Icon(c, lucideIcons[iconSliders]).Size(12, 12).Color(pal.muted).Shrink(0)
 		ui.Text(c, displayText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 		ui.Icon(c, lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
+		if state.ai.panel.reasoningMenu {
+			state.declareAIReasoningMenu(c, aiChipMenuAnchor(c, hitAIReasoningChip, displayText))
+		}
 	})
 }
 
@@ -456,8 +440,9 @@ func (state *State) declareAIModelChip(c ui.C) ui.Box {
 		fill = pal.surfaceHot
 	}
 	label := state.ai.settings.defaultModel
+	accessible := fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label)
 	return ui.Row(c).Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(56).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIModelChip, fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label), gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
+		HitWith(hitAIModelChip, accessible, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
 		chipIcon, known := state.aiDefaultProviderIcon()
 		if !known {
 			chipIcon = lucideIcons[iconSliders]
@@ -465,6 +450,9 @@ func (state *State) declareAIModelChip(c ui.C) ui.Box {
 		ui.Icon(c, chipIcon).Size(13, 13).Color(pal.muted).Shrink(0)
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 		ui.Icon(c, lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
+		if state.ai.panel.modelMenu {
+			state.declareAIModelMenu(c, aiChipMenuAnchor(c, hitAIModelChip, accessible))
+		}
 	})
 }
 
@@ -496,7 +484,20 @@ func (state *State) declareAIAutoScopeChip(c ui.C, locked bool) ui.Box {
 		ui.Icon(c, lucideIcons[icon]).Size(12, 12).Color(foreground).Shrink(0)
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
 		ui.Icon(c, lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
+		if state.ai.panel.autoMenu {
+			state.declareAIAutoScopeMenu(c, aiChipMenuAnchor(c, hitAIAutoScope, label))
+		}
 	})
+}
+
+// aiChipMenuAnchor is where a chip's menu hangs: an invisible, zero-size element
+// at the chip's top left, two pixels up, carrying the chip's identity so the
+// menu's keys reach it and closing gives the focus back to it. ui.Menu leaves
+// four pixels between a menu and its anchor, so the menu opens six above the
+// chip.
+func aiChipMenuAnchor(c ui.C, id gfx.ID, label string) ui.Box {
+	return ui.Slot(c).Absolute().Left(0).Top(-2).Size(0, 0).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true})
 }
 
 // aiScope is one row of the approval chip's menu.
@@ -576,12 +577,12 @@ func (state *State) aiMenuProviders() []aiMenuProvider {
 }
 
 // declareAIModelMenu declares the chip's menu, above it: the providers, and
-// beside them the models of the one that is open. The menu hangs off an anchor
-// at the chip's place, since the composer paints the chip itself.
-func (state *State) declareAIModelMenu(c ui.C) {
+// beside them the models of the one that is open. anchor is the chip itself, so
+// the popup is placed after the layout of the box that opened it.
+func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	panel := &state.ai.panel
 	providers := state.aiMenuProviders()
-	if len(providers) == 0 || panel.chip.Width <= 0 {
+	if len(providers) == 0 {
 		return
 	}
 	canvas, size := c.Canvas(), c.Theme().Metrics.FontSizeM
@@ -597,8 +598,8 @@ func (state *State) declareAIModelMenu(c ui.C) {
 	}
 	providersWidth += 24 // the mark before each name
 	width := aiMenuWidth(providersWidth)
-	label := fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, state.ai.settings.defaultModel)
-	anchor := aiMenuAnchor(c, panel.chip, hitAIModelChip, label)
+	// The menus are dialogs' peers: they must paint over a drawer's content.
+	c.Frame().PopupLayer(dialogLayer)
 	ui.Menu(c, anchor, &panel.modelMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
@@ -624,9 +625,9 @@ func (state *State) declareAIModelMenu(c ui.C) {
 
 // declareAIAutoScopeMenu declares the approval chip's menu, above it: the scopes
 // and what each lets run without asking. An item's second line carries that.
-func (state *State) declareAIAutoScopeMenu(c ui.C) {
+func (state *State) declareAIAutoScopeMenu(c ui.C, anchor ui.Box) {
 	panel := &state.ai.panel
-	if state.ai.mode == agent.ModeAsk || panel.scopeChip.Width <= 0 {
+	if state.ai.mode == agent.ModeAsk {
 		return
 	}
 	if _, hasModel := state.aiModelText(); !hasModel {
@@ -643,7 +644,8 @@ func (state *State) declareAIAutoScopeMenu(c ui.C) {
 	}
 	width = max(width, aiMenuContextWidth)
 	level := state.aiAutoUpTo()
-	anchor := aiMenuAnchor(c, panel.scopeChip, hitAIAutoScope, state.aiScopeName(level))
+	// The menus are dialogs' peers: they must paint over a drawer's content.
+	c.Frame().PopupLayer(dialogLayer)
 	ui.Menu(c, anchor, &panel.autoMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
@@ -657,10 +659,10 @@ func (state *State) declareAIAutoScopeMenu(c ui.C) {
 
 // declareAIReasoningMenu declares the reasoning chip's menu, above it: the
 // levels the current model supports.
-func (state *State) declareAIReasoningMenu(c ui.C) {
+func (state *State) declareAIReasoningMenu(c ui.C, anchor ui.Box) {
 	panel := &state.ai.panel
 	_, levels, ok := state.aiCurrentModelReasoning()
-	if !ok || len(levels) == 0 || panel.reasoningChip.Width <= 0 {
+	if !ok || len(levels) == 0 {
 		return
 	}
 	canvas, theme := c.Canvas(), c.Theme()
@@ -673,8 +675,8 @@ func (state *State) declareAIReasoningMenu(c ui.C) {
 	}
 	width = max(width, aiMenuContextWidth)
 	current := state.aiEffectiveReasoningEffort()
-	label := state.messages.AIPanel.ReasoningEffort + ": " + state.aiReasoningEffortLabel(current)
-	anchor := aiMenuAnchor(c, panel.reasoningChip, hitAIReasoningChip, label)
+	// The menus are dialogs' peers: they must paint over a drawer's content.
+	c.Frame().PopupLayer(dialogLayer)
 	ui.Menu(c, anchor, &panel.reasoningMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
