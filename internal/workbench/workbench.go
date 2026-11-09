@@ -2540,9 +2540,13 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 			return result
 		}
 	}
-	if state.activeSection == sectionSettings && state.modal == modalNone && state.settings.workspace != nil {
-		if result, handled := state.settings.workspace.Key(event); handled {
-			return result
+	if state.activeSection == sectionSettings && state.modal == modalNone {
+		// The settings are part of the workbench page, so the page routes their
+		// keys: a Choice's arrows, a Control's own keys, an overlay's hold.
+		if page := state.chrome.windowPage; page != nil {
+			if result, handled := page.Key(event); handled {
+				return result
+			}
 		}
 	}
 	result := state.key(event)

@@ -277,7 +277,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 			case sectionProxies:
 				state.paintProxiesWorkspace(canvas, workspace)
 			case sectionSettings:
-				state.paintSettingsWorkspace(canvas, workspace)
+				state.paintSettingsDetails(canvas)
 			case sectionKnownHosts:
 				state.paintKnownHostsWorkspace(canvas, workspace)
 			case sectionNotes:
@@ -571,6 +571,9 @@ func (state *State) declareShell(c ui.C) {
 	if chrome.shellFullPage && state.terminalPage() {
 		state.declareWorkspacePanes(c)
 		state.declareContextPanel(c)
+	}
+	if !chrome.shellFullPage && state.activeSection == sectionSettings {
+		state.declareSettingsWorkspace(c)
 	}
 	state.declareAIPanel(c)
 }

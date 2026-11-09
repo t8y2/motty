@@ -1052,7 +1052,7 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	canvas, _ := world.paint()
 	// The page's Choices are named in the settings workspace page, not in the
 	// application's own block of hit identities.
-	workspace := tree.Feature(settingsWorkspaceRoot)
+	workspace := tree.Sub(tree.Feature(shellPageRoot), tree.Name(settingsWorkspacePart))
 	stops := func(canvas *gfx.Canvas) []gfx.ID {
 		var order []gfx.ID
 		for _, hit := range canvas.Hits() {

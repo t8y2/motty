@@ -99,21 +99,80 @@ const (
 	settingsPageBottom = float32(28)
 )
 
-// settingsWorkspaceRoot names the settings page's controls in the window's Tree.
-const settingsWorkspaceRoot = "settings-workspace"
+// settingsWorkspacePart names the settings content's container in the workbench
+// page. The page declares it at the section workspace's rectangle, so the
+// category list, the page's scroll and every control they name are the
+// workbench's: its keyboard, pointer, wheel and text routing reach them, and the
+// settings need no page of their own.
+const settingsWorkspacePart = "settings-workspace"
 
-func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// settingsWorkspaceBounds is the rectangle the shell gives the section
+// workspace, less its border: the settings content fills it. The shell lays that
+// slot out with flex; this is the same rectangle, computed before the page has
+// been laid out so the settings can be declared in it.
+func (state *State) settingsWorkspaceBounds(window gfx.Rect) gfx.Rect {
+	chrome := &state.chrome
+	left := state.toolbarDockSideReserveFor(true, false)
+	return gfx.Rect{
+		X:      left + navigationWidth,
+		Y:      windowBarHeight,
+		Width:  max(window.Width-left-navigationWidth-chrome.shellCardRight, 0),
+		Height: max(window.Height-windowBarHeight-state.toolbarDockBottomReserve(false)-sectionCardMargin, 0),
+	}.Inset(gfx.All(workspaceBorder))
+}
+
+// declareSettingsWorkspace declares the settings content in the workbench page:
+// the category list on the left and the scrolling column of groups on the right,
+// inside a container the page names by Part at the workspace slot. The page then
+// owns the scrolls, the Choices and the controls they name.
+func (state *State) declareSettingsWorkspace(c ui.C) {
 	view := &state.settings
+	bounds := state.settingsWorkspaceBounds(c.Bounds())
 	view.pageView = bounds.Height
 	maxScroll := max(state.settingsContent-bounds.Height, 0)
 	state.settingsScroll = min(max(state.settingsScroll, 0), maxScroll)
 	view.navScroll = min(max(view.navScroll, 0), max(view.navContent-view.navView, 0))
-	if view.workspace == nil {
-		view.workspace = ui.NewPage(ui.PageConfig{Root: settingsWorkspaceRoot, Theme: &state.theme})
-		view.workspaceView = state.declareSettingsWorkspace
+
+	pal := state.pal
+	navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
+	areaWidth := max(bounds.Width-navWidth-1, 0)
+	title := state.settingsCategoryName(state.settingsCategory)
+	searching := state.settingsSearching()
+	if searching {
+		title = state.messages.Tools.SearchTitle
 	}
-	view.declared = settingsPage{}
-	view.workspace.Draw(canvas, bounds, view.workspaceView)
+
+	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
+	page := settingsPage{state: state, c: c, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
+	// The wheel in settings.go owns the offsets; each area starts at its
+	// declared offset and the paint reads the clamped value back afterwards.
+	c.Part(settingsWorkspacePart)
+	ui.Stack(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Clip().Children(func() {
+		ui.Row(c).Fill().Children(func() {
+			page.nav(navWidth, searching)
+			ui.Column(c).Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
+			page.scroll = ui.ScrollAt(c, state.settingsScroll).Grow(1).Basis(0).Items(ui.Center)
+			page.scroll.Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
+					page.header(title, searching)
+					if searching {
+						state.paintSettingsResults(&page)
+					} else {
+						state.paintSettingsCategory(&page)
+					}
+				})
+			})
+		})
+	})
+	view.declared = page
+}
+
+// paintSettingsDetails paints what the settings declared into its slots once the
+// workbench page has laid it out: the controls recorded during the declaration,
+// the scroll offsets the layout settled, and the scroll a search result asked
+// for. The page itself already painted the cards and the scrolling columns.
+func (state *State) paintSettingsDetails(canvas *gfx.Canvas) {
+	view := &state.settings
 	page := &view.declared
 	state.settingsContent = page.scroll.Content()
 	view.navContent, view.navView = page.navList.Content(), page.navList.Rect().Height
@@ -142,41 +201,6 @@ func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 		view.jumped = false
 		canvas.RequestFrame()
 	}
-}
-
-// declareSettingsWorkspace declares the page: the category list on the left and
-// the scrolling column of groups on the right.
-func (state *State) declareSettingsWorkspace(c ui.C) {
-	pal, view := state.pal, &state.settings
-	bounds := c.Bounds()
-	navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
-	areaWidth := max(bounds.Width-navWidth-1, 0)
-	title := state.settingsCategoryName(state.settingsCategory)
-	searching := state.settingsSearching()
-	if searching {
-		title = state.messages.Tools.SearchTitle
-	}
-
-	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
-	page := settingsPage{state: state, c: c, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
-	// The wheel in settings.go owns the offsets; each area starts at its
-	// declared offset and the paint reads the clamped value back afterwards.
-	ui.Row(c).Fill().Children(func() {
-		page.nav(navWidth, searching)
-		ui.Column(c).Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
-		page.scroll = ui.ScrollAt(c, state.settingsScroll).Grow(1).Basis(0).Items(ui.Center)
-		page.scroll.Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
-				page.header(title, searching)
-				if searching {
-					state.paintSettingsResults(&page)
-				} else {
-					state.paintSettingsCategory(&page)
-				}
-			})
-		})
-	})
-	view.declared = page
 }
 
 // paintSettingsControls paints the controls the page recorded into their slots,

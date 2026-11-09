@@ -80,10 +80,6 @@ type settingsUI struct {
 	actions  []components.ButtonAction
 	colors   []gfx.Color
 
-	// workspace is the page the settings workspace is declared in, and
-	// workspaceView its declaration, kept so a paint makes no method value.
-	workspace     *ui.Page
-	workspaceView func(ui.C)
 	// declared is what the last declaration laid out: its scrolling column, the
 	// navigation list and the search anchor, read once the page has ended.
 	declared settingsPage
