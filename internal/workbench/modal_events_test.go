@@ -22,6 +22,21 @@ func modalEventDriver(t *testing.T, state *State) *app.Driver {
 	return driver
 }
 
+// clickPaintedHit presses the control named id through the driver's real
+// pointer event pass, the way a window does.
+func clickPaintedHit(t *testing.T, driver *app.Driver, id gfx.ID) {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == id && !hit.IsLabel && hit.Bounds.Width > 0 {
+			if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("the painted control %v was not found", id)
+}
+
 func TestAIRenameEscapeKeepsHistoryOpen(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	db, err := state.aiStore()

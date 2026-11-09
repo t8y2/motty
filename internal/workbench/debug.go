@@ -45,12 +45,16 @@ var (
 	hitDebugScrollX = tree.ID(debugHits, "scroll-x")
 )
 
-// devState is the gallery's own state: the layout of the page and the editor it
-// shows. The text, its undo history and its caret live in editor; code holds
-// only what a steady paint would otherwise rebuild. A release build keeps none
-// of it.
+// devState is the gallery's own state: the page and the editor it shows. The
+// text, its undo history and its caret live in editor; code holds only what a
+// steady paint would otherwise rebuild. A release build keeps none of it.
 type devState struct {
-	layout  ui.View
+	// page declares the gallery's heading and the area its editor fills. view
+	// and area are kept from the paint that made the page, so a steady paint
+	// rebuilds neither.
+	page    *ui.Page
+	view    func(ui.C)
+	area    ui.Box
 	editor  text.Editor
 	code    components.CodeEditor
 	started bool
