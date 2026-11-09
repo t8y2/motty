@@ -407,8 +407,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintUpdateProgress(canvas, viewport)
 	case modalFileProperties:
 		state.paintFileProperties(canvas, viewport)
-	case modalCommandPalette:
-		state.paintCommandPalette(canvas, viewport)
 	case modalHistory:
 		state.paintHistory(canvas, viewport)
 	case modalShortcutCapture:
@@ -591,6 +589,9 @@ func (state *State) declareShell(c ui.C) {
 		state.declareSettingsWorkspace(c)
 	}
 	state.declareAIPanel(c)
+	// The command palette is a dialog of the window's own page: its search field,
+	// its list and its sort switch are page elements.
+	state.declareCommandPalette(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how

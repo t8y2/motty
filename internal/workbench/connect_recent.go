@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -20,9 +18,6 @@ const (
 	connectSortWorkspaces
 	connectSortRecent
 )
-
-// connectSortRoot names the switch in the window's Tree.
-const connectSortRoot = "connect-sort"
 
 var connectSortChoices = [...]connectSortChoice{connectSortDefault, connectSortWorkspaces, connectSortRecent}
 
@@ -48,31 +43,23 @@ func (state *State) connectSortValue() connectSortChoice {
 	return connectSortDefault
 }
 
-// paintConnectSort paints the default/workspaces/recent switch in the picker's
-// title row. It is a page Choice, so its arrows move between the options.
-func (state *State) paintConnectSort(canvas *gfx.Canvas, layout components.DialogLayout) {
-	width := float32(270)
-	rect := gfx.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
-	palette := &state.commandPalette
-	palette.sort = state.connectSortValue()
-	if palette.sortPage == nil {
-		palette.sortPage = ui.NewPage(ui.PageConfig{Root: connectSortRoot, Theme: &state.theme})
-		palette.sortView = state.declareConnectSort
-	}
-	palette.sortPage.Draw(canvas, rect, palette.sortView)
-}
-
+// declareConnectSort declares the default/workspaces/recent switch in the title
+// row of the picker's dialog. It is a page Choice, so its arrows move between the
+// options.
 func (state *State) declareConnectSort(c ui.C) {
 	palette := &state.commandPalette
-	if !ui.Choice(c, &palette.sort, connectSortChoices[:], state.connectSortLabel).Fill().Changed() {
-		return
-	}
-	palette.workspaces = palette.sort == connectSortWorkspaces
-	if !palette.workspaces {
-		state.recentConnectSort = palette.sort == connectSortRecent
-		state.save()
-	}
-	state.rebuildCommandPalette()
+	palette.sort = state.connectSortValue()
+	ui.Stack(c).Absolute().Left(palette.sortLeft).Top(palette.sortTop).Width(commandPaletteSortWidth).Height(palette.sortHeight).Children(func() {
+		if !ui.Choice(c, &palette.sort, connectSortChoices[:], state.connectSortLabel).Fill().Changed() {
+			return
+		}
+		palette.workspaces = palette.sort == connectSortWorkspaces
+		if !palette.workspaces {
+			state.recentConnectSort = palette.sort == connectSortRecent
+			state.save()
+		}
+		state.rebuildCommandPalette()
+	})
 }
 
 // rememberRecentConnection consumes the user dial once, never a status refresh
