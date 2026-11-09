@@ -546,11 +546,12 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	}
 	sftpWindowListRows[side] = row.ID.Scope()
 	entry := &folder.rows[row.Index]
+	c := row.C
 	pal := w.owner.pal
 	background := pal.workspace
 	if row.Selected() {
 		background = pal.accentSoft
-	} else if row.C.Frame().Canvas().Hovered() == row.ID {
+	} else if c.Canvas().Hovered() == row.ID {
 		background = pal.surfaceHot
 	}
 	color := pal.text
@@ -566,22 +567,21 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 		box = box.Border(1, pal.accent)
 	}
 	box.Children(func() {
-		f := row.C.Frame()
-		declareSFTPRowIcon(f, entry, tint)
-		f.Text(entry.entry.Name).Color(color).Ellipsis().Grow(1)
+		declareSFTPRowIcon(c, entry, tint)
+		ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
 		for _, column := range w.owner.sftpColumns.entries[1:] {
 			if !column.Enabled {
 				continue
 			}
 			if column.Key == sftpColumnSize {
-				f.Text(entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(62).TextEnd()
+				ui.Text(c, entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(62).TextEnd()
 			}
 			if column.Key == sftpColumnModified {
 				date := entry.cells[3]
 				if paneWidth < 420 && len(date) >= 16 {
 					date = date[5:10]
 				}
-				f.Text(date).FontSize(metrics.FontSizeS).Color(pal.muted).Width(w.dateWidth(paneWidth))
+				ui.Text(c, date).FontSize(metrics.FontSizeS).Color(pal.muted).Width(w.dateWidth(paneWidth))
 			}
 		}
 	})

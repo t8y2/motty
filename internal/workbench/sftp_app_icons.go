@@ -120,11 +120,11 @@ func (state *State) loadAppIcons(view *sftpView, previous, rows []sftpRow) {
 
 // declareSFTPRowIcon declares what leads a row: the system's icon for an
 // application bundle once it has arrived, otherwise the glyph of its kind.
-func declareSFTPRowIcon(f *ui.Frame, row *sftpRow, tint gfx.Color) {
+func declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
 	switch {
 	case row.appIcon.ready():
-		f.Image(row.appIcon.bitmap)
+		ui.Image(c, row.appIcon.bitmap)
 	case row.icon != nil:
-		f.Icon(*row.icon).Color(tint)
+		ui.Icon(c, *row.icon).Color(tint)
 	}
 }
