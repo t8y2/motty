@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -135,11 +136,15 @@ type fontsUI struct {
 	scroll   float32 // pixel offset of the filtered list
 	built    bool
 
-	// pickerPage is the body's page, made the first time the picker paints: its
-	// search slot, the list and the sample. pickerView is the method value it
-	// declares, made once so a paint does not allocate it.
+	// pickerPage is the body's page, made when the picker opens: its search slot,
+	// the list and the sample. pickerView is the method value it declares, made
+	// once so a paint does not allocate it.
 	pickerPage *ui.Page
 	pickerView func(ui.C)
+	// pickerLoad reads the installed families the open picker offers. The picker
+	// makes it with its page and drops it on close, so closing the picker cancels
+	// the read and the next opening starts clean.
+	pickerLoad *ui.EffectState[[]string, int]
 	// searchSlot is where the body's first slot sat in the last paint: the
 	// search field is painted into it after the page has laid it out.
 	searchSlot ui.Box
@@ -298,7 +303,8 @@ func (state *State) openFontPicker(fallback bool) {
 }
 
 // openPicker opens the picker for what kind names, and starts reading the list it
-// offers if that has not been read.
+// offers if that has not been read. The read is the picker page's effect: it runs
+// once, and closing the picker cancels it.
 func (state *State) openPicker(kind fontPickerKind) {
 	state.modal = modalFontPicker
 	state.fonts.kind = kind
@@ -306,22 +312,57 @@ func (state *State) openPicker(kind fontPickerKind) {
 	state.fonts.built = false
 	list := state.pickerList()
 	if list.installed != nil || list.loading {
+		// The list is known, or another opening is already reading it.
 		return
 	}
-	list.loading = true
-	state.listFonts(state.pickerFamilies(), func(s *State, families []string) {
-		list.loading = false
-		if families == nil {
-			families = []string{}
-		}
-		list.installed = families
-		s.fonts.built = false
-		if kind == pickInterfaceFont {
-			s.reconcileInterfaceFont()
-			return
-		}
-		s.applyTerminalFace()
+	fonts := &state.fonts
+	fonts.closePickerPage()
+	fonts.pickerPage = ui.NewPage(ui.PageConfig{Root: fontPickerPageRoot, Theme: &state.theme, Invalidator: state.options.Invalidator})
+	fonts.pickerView = state.declareFontPickerBody
+	families := state.pickerFamilies()
+	fonts.pickerLoad = ui.NewEffect[[]string, int](func(context.Context) ([]string, error) {
+		return families(), nil
 	})
+	list.loading = true
+}
+
+// finishFontPickerLoad applies the families the picker's effect read to the list
+// the picker is showing.
+func (state *State) finishFontPickerLoad(families []string) {
+	fonts := &state.fonts
+	list := state.pickerList()
+	list.loading = false
+	if families == nil {
+		families = []string{}
+	}
+	list.installed = families
+	fonts.built = false
+	if fonts.kind == pickInterfaceFont {
+		state.reconcileInterfaceFont()
+		return
+	}
+	state.applyTerminalFace()
+}
+
+// closePickerPage ends the picker page and its read, leaving the lists as they
+// are. A read that had not finished is cancelled; its result is dropped.
+func (fonts *fontsUI) closePickerPage() {
+	if fonts.pickerPage != nil {
+		fonts.pickerPage.Close()
+		fonts.pickerPage = nil
+		fonts.pickerView = nil
+	}
+	fonts.pickerLoad = nil
+}
+
+// closeFontPickerPage closes the open picker's page and read. The list's loading
+// flag is cleared when nothing arrived, so the next opening asks again.
+func (state *State) closeFontPickerPage() {
+	list := state.pickerList()
+	if list.installed == nil {
+		list.loading = false
+	}
+	state.fonts.closePickerPage()
 }
 
 // refreshFontPicker builds the list the picker shows for its search text.
@@ -636,7 +677,7 @@ func (state *State) paintFontPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
 func (state *State) paintFontPickerBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	fonts := &state.fonts
 	if fonts.pickerPage == nil {
-		fonts.pickerPage = ui.NewPage(ui.PageConfig{Root: fontPickerPageRoot, Theme: &state.theme})
+		fonts.pickerPage = ui.NewPage(ui.PageConfig{Root: fontPickerPageRoot, Theme: &state.theme, Invalidator: state.options.Invalidator})
 		fonts.pickerView = state.declareFontPickerBody
 	}
 	fonts.pickerPage.Draw(canvas, bounds, fonts.pickerView)
@@ -647,6 +688,14 @@ func (state *State) paintFontPickerBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 // list keeps room for all its rows, so the sample under it stays where it is.
 func (state *State) declareFontPickerBody(c ui.C) {
 	m, pal, fonts := state.messages.Tools, state.pal, &state.fonts
+	if load := fonts.pickerLoad; load != nil {
+		ui.Effect(c, load, 0)
+		if families, _, ok := load.Take(); ok {
+			fonts.pickerLoad = nil
+			state.finishFontPickerLoad(families)
+			state.refreshFontPicker() // the paint that takes the list also shows it
+		}
+	}
 	fonts.scroll = min(max(fonts.scroll, 0), fonts.maxScroll())
 	rows := len(fonts.filtered)
 	ui.Column(c).Fill().Children(func() {

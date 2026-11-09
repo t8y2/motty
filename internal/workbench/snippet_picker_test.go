@@ -103,6 +103,7 @@ func openPickerView(t *testing.T, state *State, scale float64) *headless.Session
 	t.Helper()
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
+	state.options.Invalidator = &invalidator
 	view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
 	if err != nil {
 		t.Fatal(err)

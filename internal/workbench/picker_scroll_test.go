@@ -29,7 +29,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 			switch kind {
 			case "fonts":
 				state.openFontPicker(false)
-				waitFor(t, state, func() bool { return !state.fonts.loading })
+				waitForPicker(t, state, func() bool { return !state.fonts.loading })
 				state.refreshFontPicker()
 				offset, step, maximum = &state.fonts.scroll, fontPickerRowStep, state.fonts.maxScroll()
 			case "connections":
@@ -195,7 +195,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 func TestPickerShortLists(t *testing.T) {
 	state := newTestState(t, fontOptions(t, []string{"Only font"}))
 	state.openFontPicker(false)
-	waitFor(t, state, func() bool { return !state.fonts.loading })
+	waitForPicker(t, state, func() bool { return !state.fonts.loading })
 	state.refreshFontPicker()
 	state.Scroll(gfx.ScrollEvent{DeltaY: 100, Precise: true})
 	if state.fonts.scroll != 0 {

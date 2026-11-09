@@ -28,7 +28,7 @@ func TestFontPickerNavigationConfirmsTheHighlightedFont(t *testing.T) {
 			}
 			state := newTestState(t, fontOptions(t, families))
 			state.openFontPicker(false)
-			waitFor(t, state, func() bool { return !state.fonts.loading })
+			waitForPicker(t, state, func() bool { return !state.fonts.loading })
 			view := openPickerView(t, state, 1)
 			hit := dualHit(t, view, hitFontPickerItemList.At(test.start))
 			if err := view.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
@@ -58,7 +58,7 @@ func TestFontPickerNavigationConfirmsTheHighlightedFont(t *testing.T) {
 func TestFontPickerNavigationKeepsSearchFocus(t *testing.T) {
 	state := newTestState(t, fontOptions(t, testFonts))
 	state.openFontPicker(false)
-	waitFor(t, state, func() bool { return !state.fonts.loading })
+	waitForPicker(t, state, func() bool { return !state.fonts.loading })
 	view := openPickerView(t, state, 1)
 	if err := view.Keys("Down"); err != nil {
 		t.Fatal(err)

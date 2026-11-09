@@ -930,6 +930,7 @@ func (state *State) Close() {
 	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
+	state.closeFontPickerPage()
 	state.flushTerminalDirectories()
 	state.closeRemoteToolsWindows()
 	state.closeFileWindows()
