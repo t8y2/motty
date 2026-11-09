@@ -583,8 +583,11 @@ func (state *State) paneGroundFocus(session *Session) gfx.ID {
 		return hitConnRetry // the page's one action, the key it shows
 	case state.showsProgress(session):
 		return gfx.ID{}
-	case session.desk != nil, session.term != nil:
+	case session.desk != nil:
 		return hitTerminalList.At(int(session.ID))
+	case session.term != nil:
+		session.term.pageIdentity(session.ID)
+		return session.term.controlID
 	}
 	return gfx.ID{}
 }
@@ -621,7 +624,11 @@ func (state *State) activeTerminalFocusHit() gfx.ID {
 	if !ok || session.term == nil {
 		return gfx.ID{}
 	}
-	return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
+	if session.desk != nil {
+		return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
+	}
+	session.term.pageIdentity(session.ID)
+	return state.paneIdentity(session, session.term.controlID)
 }
 
 func (state *State) dragPaneDivider(event gfx.PointerEvent) gfx.EventResult {

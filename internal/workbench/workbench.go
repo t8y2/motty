@@ -1798,8 +1798,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickKeys(id)
 	case tree.Within(id.Scope(), sftpHits):
 		state.clickSFTP(id)
-	case id.Scope() == hitTerminalList:
-		// Pressing the terminal only focuses it; the runtime already did.
 	case id.Scope() == hitTabCloseList:
 		state.closeWorkspace(layoutcore.WorkspaceID(uint32(item(id))))
 	case id.Scope() == hitTabList:
@@ -2316,7 +2314,11 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		}
 		return result
 	}
-	if session := state.terminalOrBarSession(event.Target); session != nil {
+	session := state.terminalPageSession(event.Target)
+	if session == nil {
+		session = state.terminalSession(event.Target)
+	}
+	if session != nil {
 		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
 		if embedded {
 			event.X -= origin.X
@@ -2401,14 +2403,15 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.terminalFindPointer(event); handled {
 		return result
 	}
-	if result, handled := state.terminalScrollbarPointer(event); handled {
-		return result
+	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone && state.activeSection == sectionTerminal {
+		if result, handled := state.panePagePointer(session, event); handled {
+			return result
+		}
 	}
 	if session := state.terminalSession(event.Target); session != nil && state.modal == modalNone && state.activeSection == sectionTerminal {
 		if session.desk != nil {
 			return state.desktopPointer(session, event)
 		}
-		return state.terminalPointer(session, event)
 	}
 	if result, handled := state.sftpMenuPointer(event); handled {
 		return result
@@ -2717,7 +2720,11 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		if session.desk != nil {
 			return state.desktopKey(session, event)
 		}
-		return state.terminalKey(session, event)
+	}
+	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone {
+		if result, handled := state.panePageKey(session, event); handled {
+			return result
+		}
 	}
 	if result, handled := state.settingsSearchKey(event); handled {
 		return result

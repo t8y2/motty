@@ -53,7 +53,7 @@ func pagedIdentity(state *State, session *Session, local gfx.ID) gfx.ID {
 
 // terminalOf is the identity of the terminal a session's page paints.
 func terminalOf(state *State, session *Session) gfx.ID {
-	return pagedIdentity(state, session, hitTerminalList.At(int(session.ID)))
+	return pagedIdentity(state, session, terminalTestHit(state, session))
 }
 
 // paneBoundsOf is where a session's pane sits in the window.

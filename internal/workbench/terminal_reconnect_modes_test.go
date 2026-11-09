@@ -38,7 +38,7 @@ func TestAReconnectedShellTakesBackTheModesALostConnectionLeft(t *testing.T) {
 		t.Fatalf("the new shell inherited a dead program's modes: %+v", modes)
 	}
 
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	geometry := state.layout()
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
 	if result := state.Pointer(gfx.PointerEvent{

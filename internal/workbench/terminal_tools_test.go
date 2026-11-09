@@ -476,7 +476,7 @@ func TestBroadcastTypesIntoEveryPaneOfTheTabUntilItIsTurnedOff(t *testing.T) {
 	if !strings.HasSuffix(second.typed(), "echo hi") {
 		t.Fatalf("paste did not reach the other pane: %q", second.typed())
 	}
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTerminalList.At(int(firstID))})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalTestHitByID(state, firstID)})
 	if !strings.HasSuffix(second.typed(), "\r") {
 		t.Fatalf("Enter did not reach the other pane: %q", second.typed())
 	}

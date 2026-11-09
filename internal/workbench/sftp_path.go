@@ -58,6 +58,9 @@ func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
 	if !ok {
 		session = state.terminalSession(target)
+		if session == nil {
+			session = state.terminalPageSession(target)
+		}
 		local = target
 		ok = session != nil
 	}

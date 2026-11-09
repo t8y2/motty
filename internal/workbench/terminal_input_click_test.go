@@ -18,7 +18,7 @@ func inputClickState(t *testing.T) (*State, *Session, *fakeShell, terminalGeomet
 }
 
 func clickTerminal(state *State, session *Session, geometry terminalGeometry, column int, modifiers gfx.Modifiers) {
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	x, y := cellPoint(geometry, 0, column, state.cellWidth, state.cellHeight)
 	for _, kind := range []gfx.PointerEventKind{gfx.PointerDown, gfx.PointerUp} {
 		state.Pointer(gfx.PointerEvent{
@@ -47,7 +47,7 @@ func TestPlainClickMovesTheCursorButADragDoesNot(t *testing.T) {
 	if got, want := shell.typed(), "\x1b[D\x1b[D"; got != want {
 		t.Fatalf("click sent %q, want %q", got, want)
 	}
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	x0, y := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 	x1, _ := cellPoint(geometry, 0, 6, state.cellWidth, state.cellHeight)
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, ClickCount: 1, X: x0, Y: y, Viewport: state.viewport})

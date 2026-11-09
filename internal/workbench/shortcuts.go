@@ -435,6 +435,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		if session := state.terminalSession(target); session != nil && session.term != nil && !session.term.selection.selected {
 			return gfx.EventResult{}
 		}
+		if session := state.terminalPageSession(target); session != nil && session.term != nil && !session.term.selection.selected {
+			return gfx.EventResult{}
+		}
 	}
 	if event.Repeat && !action.repeats() {
 		return gfx.EventResult{Handled: true}
@@ -556,6 +559,9 @@ func (state *State) keyShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 // active terminal, the way the raw key path reads it.
 func (state *State) terminalHasMetaChords(target gfx.ID) bool {
 	if session := state.terminalSession(target); session != nil {
+		return session.term != nil
+	}
+	if session := state.terminalPageSession(target); session != nil {
 		return session.term != nil
 	}
 	if session, _, ok := state.decodePaneHit(target); ok {

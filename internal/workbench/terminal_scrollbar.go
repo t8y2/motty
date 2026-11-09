@@ -8,35 +8,8 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// hitTerminalBar is the scrollbar of a terminal that has scrollback. It is only
-// drawn while the view moves or the pointer is over it, but its track always
-// takes hits, so moving to the right edge brings it back.
-var hitTerminalBar = tree.Sub(shellHits, tree.Name("terminal-bar"))
-
 // terminalBarLinger is how long the scrollbar stays after the view last moved.
 const terminalBarLinger = 1000 * time.Millisecond
-
-// scrollbarSession finds the session whose terminal owns a scrollbar hit.
-func (state *State) scrollbarSession(hit gfx.ID) *Session {
-	if hit.Scope() != hitTerminalBar {
-		return nil
-	}
-	for index := range state.sessions {
-		if state.sessions[index].ID == uint32(item(hit)) {
-			return &state.sessions[index]
-		}
-	}
-	return nil
-}
-
-// terminalOrBarSession finds the session whose terminal, or whose terminal's
-// scrollbar, owns a hit: the places a pointer or wheel over the terminal lands.
-func (state *State) terminalOrBarSession(hit gfx.ID) *Session {
-	if session := state.terminalSession(hit); session != nil {
-		return session
-	}
-	return state.scrollbarSession(hit)
-}
 
 // terminalScrollbarShown reports whether the terminal has history to scroll
 // through. The alternate screen has none, and a synchronized update is a frozen
@@ -57,7 +30,8 @@ func (state *State) terminalScrollArea(canvas *gfx.Canvas, session *Session, are
 	theme := state.Theme()
 	theme.Border = withAlpha(state.termPal.termFG, 0.22*fade)
 	theme.MutedForeground = withAlpha(state.termPal.termFG, 0.55*fade)
-	id := hitTerminalBar.At(int(session.ID))
+	session.term.pageIdentity(session.ID)
+	id := session.term.parts.At(terminalPartScrollbar)
 	return components.BeginScrollArea(canvas, theme, area, gfx.Size{Width: area.Width, Height: area.Height + history}).
 		Offset(0, float32(screen.Scrollback()-screen.ViewOffset())*state.cellHeight).
 		VerticalScrollbar(id, state.messages.Tools.ScrollbarLabel, "")
@@ -70,11 +44,12 @@ func (state *State) terminalScrollArea(canvas *gfx.Canvas, session *Session, are
 // for the frame that starts the fade.
 func (state *State) terminalBarFade(canvas *gfx.Canvas, session *Session) float32 {
 	t := session.term
-	id := hitTerminalBar.At(int(session.ID))
+	session.term.pageIdentity(session.ID)
+	id := session.term.parts.At(terminalPartScrollbar)
 	now := canvas.Now()
 	offset := t.screen.ViewOffset()
 	hovered := canvas.Hovered()
-	over := t.barDragging || canvas.Pressed() == id || hovered == id || hovered == hitTerminalList.At(int(session.ID))
+	over := t.barDragging || canvas.Pressed() == id || hovered == id || hovered == session.term.controlID
 	if offset != t.barOffset {
 		t.barOffset, t.barSince, t.barLit = offset, now, true
 	}
@@ -102,37 +77,37 @@ func (state *State) paintTerminalScrollbar(canvas *gfx.Canvas, session *Session,
 }
 
 // terminalScrollbarPointer drags the thumb and pages when the track beside it is
-// pressed.
-func (state *State) terminalScrollbarPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	session := state.scrollbarSession(event.Target)
+// pressed. The scrollbar is a part of the terminal control, so the session is
+// the control's own.
+func (state *State) terminalScrollbarPointer(session *Session, event gfx.PointerEvent) gfx.EventResult {
 	if session == nil || session.term == nil || state.cellHeight <= 0 {
-		return gfx.EventResult{}, false
+		return gfx.EventResult{}
 	}
 	t := session.term
 	if state.modal != modalNone || state.activeSection != sectionTerminal || !t.terminalScrollbarShown() {
 		t.barDragging = false
-		return gfx.EventResult{}, false
+		return gfx.EventResult{}
 	}
 	layout := state.terminalLayoutForEvent(session.ID, event.Viewport)
 	geometry := state.terminalScrollArea(nil, session, layout.area, 1).Geometry()
 	switch event.Kind {
 	case gfx.PointerDown:
 		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
-			return gfx.EventResult{}, false
+			return gfx.EventResult{}
 		}
 		thumb := geometry.VerticalThumb
 		switch {
 		case event.Y < thumb.Y:
-			return state.scrollTerminalView(t, layout.rows-1), true
+			return state.scrollTerminalView(t, layout.rows-1)
 		case event.Y >= thumb.Y+thumb.Height:
-			return state.scrollTerminalView(t, -(layout.rows - 1)), true
+			return state.scrollTerminalView(t, -(layout.rows - 1))
 		}
 		t.barDragging = true
 		t.barGrab = event.Y - thumb.Y
-		return gfx.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}
 	case gfx.PointerMove, gfx.PointerUp:
 		if !t.barDragging {
-			return gfx.EventResult{}, false
+			return gfx.EventResult{}
 		}
 		offset := geometry.VerticalOffsetForThumb(event.Y - t.barGrab)
 		line := int(math.Round(float64(offset / state.cellHeight)))
@@ -140,15 +115,15 @@ func (state *State) terminalScrollbarPointer(event gfx.PointerEvent) (gfx.EventR
 		if event.Kind == gfx.PointerUp {
 			t.barDragging = false
 		}
-		return result, true
+		return result
 	case gfx.PointerExit:
 		if !t.barDragging {
-			return gfx.EventResult{}, false
+			return gfx.EventResult{}
 		}
 		t.barDragging = false
-		return gfx.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}
 	}
-	return gfx.EventResult{}, false
+	return gfx.EventResult{}
 }
 
 // scrollTerminalView moves the view by lines, positive going back into history.

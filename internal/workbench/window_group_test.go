@@ -305,7 +305,7 @@ func TestAMovedSessionTypesAndSearchesInItsNewWindow(t *testing.T) {
 	pair.second.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 
 	// The text system's handler is the new window's, and the session's new number.
-	input := pair.second.TerminalInput(app.TextInputContext{ID: hitTerminalList.At(int(session.ID)), Terminal: true})
+	input := pair.second.TerminalInput(app.TextInputContext{ID: terminalTestHit(pair.second, session), Terminal: true})
 	if input == nil || input.OnEvent == nil {
 		t.Fatal("the moved terminal takes no text")
 	}

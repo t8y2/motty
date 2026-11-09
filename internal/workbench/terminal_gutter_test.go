@@ -67,7 +67,7 @@ func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	}
 
 	session.term.write([]byte("alpha beta\r\n"))
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 0, 7, state.cellWidth, state.cellHeight)
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})

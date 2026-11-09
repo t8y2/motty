@@ -13,6 +13,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
 	"motty/internal/i18n"
@@ -108,6 +109,27 @@ type terminal struct {
 	// label is the accessible name of the terminal, rebuilt only when the
 	// language or the address it is made from changes.
 	label, labelFormat, labelAddress string
+
+	// page is the pane's page: its bar, its find bar and the terminal control.
+	// pageView and controlDraw are kept here so a paint builds no method values;
+	// handlers is the terminal control's input, kept with the control's state.
+	page        *ui.Page
+	pageView    func(ui.C)
+	controlDraw func(*ui.DrawContext)
+	handlers    ui.Handlers
+	painted     bool // the page has been declared, so its controls take input
+	// controlID and parts are the page's identities, made once so painting and
+	// event routing do not rebuild the page's name.
+	controlID gfx.ID
+	parts     gfx.Scope
+	// paintFinding, paintInSplit and paintInactive are the shapes the last
+	// declaration made, which the bar's slots are painted in after the page.
+	paintFinding, paintInSplit, paintInactive bool
+	paintNoticeShown                          bool
+	paintBarBackground                        gfx.Color
+	paintGeometry                             terminalGeometry
+	paintFind                                 findBarSlots
+	paintSpinner, paintLight, paintNotice     ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
 	preedit    app.TextState
@@ -308,6 +330,7 @@ func (state *State) configureTerminal(session *Session) {
 	state.attachCompletion(session)
 	state.stampTerminal(session.term)
 	state.reportTerminalColors(session.term)
+	state.installTerminalHandlers(session)
 	sessionID := session.ID
 	session.term.screen.SetSyncHold(func(on bool) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
@@ -980,7 +1003,13 @@ func terminalLayoutWithChrome(size gfx.Size, cellWidth, cellHeight float32, chro
 		Width:  size.Width,
 		Height: max(size.Height-windowBarHeight-chrome.top, 0),
 	}
-	geometry := terminalGeometry{area: area, left: pad.x + pad.gutter, top: area.Y + pad.top}
+	return terminalGeometryForArea(area, cellWidth, cellHeight, pad)
+}
+
+// terminalGeometryForArea lays a terminal's cells out in the rectangle it was
+// given, as a terminal control's Draw knows it.
+func terminalGeometryForArea(area gfx.Rect, cellWidth, cellHeight float32, pad terminalPadding) terminalGeometry {
+	geometry := terminalGeometry{area: area, left: area.X + pad.x + pad.gutter, top: area.Y + pad.top}
 	if cellWidth > 0 && cellHeight > 0 {
 		geometry.cols = max(int((area.Width-2*pad.x-pad.gutter)/cellWidth), minTerminalCols)
 		geometry.rows = max(int((area.Height-pad.top-pad.bottom)/cellHeight), minTerminalRows)
@@ -1186,6 +1215,12 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	if session == nil {
 		session = state.terminalSession(context.ID)
 	}
+	if session == nil {
+		session = state.terminalPageSession(context.ID)
+	}
+	if session == nil {
+		session = state.terminalPageSessionWithoutTerm(context.ID)
+	}
 	if session == nil || session.term == nil || state.activeSessionID != 0 && session.ID != state.activeSessionID {
 		// Typing goes nowhere from here, and the page cannot show it: the text
 		// system simply gets no surface. Saying why, once per cause rather than
@@ -1199,6 +1234,27 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 		return state.desktopTextInput(session)
 	}
 	t := session.term
+	if t.painted {
+		if page := state.terminalPageFor(session); page != nil {
+			if input := page.TextInput(context); input != nil {
+				return input
+			}
+		}
+	}
+	if t.handlers.Text != nil {
+		return t.handlers.Text(context)
+	}
+	return state.terminalTextInputFor(session)
+}
+
+// terminalTextInputFor is the text surface of a terminal: a preedit surface at
+// the cursor cell where input methods compose, and the receiver of committed
+// text and pastes. The returned value is reused.
+func (state *State) terminalTextInputFor(session *Session) *app.TextInput {
+	t := session.term
+	if t == nil {
+		return nil
+	}
 	geometry := state.layoutForSession(session.ID)
 	cursor := t.screen.Cursor()
 	if _, _, cells, ok := t.prediction.overlay(state.now()); ok {
@@ -1635,7 +1691,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		event.Target = local
 		return state.scroll(event)
 	}
-	if session := state.terminalOrBarSession(event.Target); session != nil {
+	session := state.terminalPageSession(event.Target)
+	if session == nil {
+		session = state.terminalSession(event.Target)
+	}
+	if session != nil {
 		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
 		if embedded {
 			event.X -= origin.X
@@ -1657,7 +1717,10 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return state.scrollSessionLogs(event)
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if hovered := state.terminalOrBarSession(event.Target); hovered != nil {
+	paged := false
+	if hovered := state.terminalPageSession(event.Target); hovered != nil {
+		session, ok, paged = hovered, true, true
+	} else if hovered := state.terminalSession(event.Target); hovered != nil {
 		session, ok = hovered, true
 	}
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.term == nil || state.cellWidth <= 0 || state.cellHeight <= 0 || state.showsProgress(session) {
@@ -1669,9 +1732,20 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if session.desk != nil {
 		return state.desktopScroll(session, event)
 	}
+	if paged {
+		return state.panePageScroll(session, event)
+	}
+	return state.terminalScroll(session, event)
+}
+
+// terminalScroll turns the wheel into scrollback, or mouse reports, or arrow
+// keys on the alternate screen, where a pager or editor owns the display and
+// has no scrollback.
+func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	t := session.term
 	modes := t.screen.Modes()
-	if modes.Mouse != term.MouseOff && event.Target == hitTerminalList.At(int(session.ID)) && event.Modifiers&gfx.ModifierShift == 0 {
+	session.term.pageIdentity(session.ID)
+	if modes.Mouse != term.MouseOff && event.Target == session.term.controlID && event.Modifiers&gfx.ModifierShift == 0 {
 		return state.terminalMouseScroll(session, event)
 	}
 	if modes.AltScreen {

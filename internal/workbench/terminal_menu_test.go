@@ -14,7 +14,7 @@ import (
 
 func rightClick(state *State, session *Session, x, y float32) gfx.EventResult {
 	return state.Pointer(gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTerminalList.At(int(session.ID)),
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: terminalTestHit(state, session),
 		X: x, Y: y, Viewport: state.viewport,
 	})
 }
@@ -181,7 +181,7 @@ func TestTerminalMenuYieldsToMouseReportingPrograms(t *testing.T) {
 	// Shift takes the press back from the program.
 	state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Modifiers: gfx.ModifierShift,
-		Target: hitTerminalList.At(int(session.ID)), X: 400, Y: 300, Viewport: state.viewport,
+		Target: terminalTestHit(state, session), X: 400, Y: 300, Viewport: state.viewport,
 	})
 	if !state.terminalMenu.open {
 		t.Fatal("Shift+right click does not open the menu")

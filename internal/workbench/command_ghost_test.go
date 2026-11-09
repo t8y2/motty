@@ -34,7 +34,7 @@ func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 func (h *historyWorld) ghost() (string, bool) { return h.state.commandGhost(&h.state.sessions[0]) }
 
 func (h *historyWorld) key(event gfx.KeyEvent) {
-	event.Target = hitTerminalList.At(int(h.state.sessions[0].ID))
+	event.Target = terminalTestHit(h.state, &h.state.sessions[0])
 	h.state.Key(event)
 	h.state.Wake()
 }

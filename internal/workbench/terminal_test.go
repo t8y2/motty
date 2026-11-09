@@ -35,8 +35,31 @@ func liveSession(t testing.TB) (*State, *world, *fakeConn, *fakeShell) {
 	return state, world, fake, shell
 }
 
+// terminalTestHit is a session's terminal control as its page names it. A test
+// that builds a State without painting installs the control's handlers here,
+// which is what declaring the page would do.
+func terminalTestHit(state *State, session *Session) gfx.ID {
+	if t := session.term; t != nil && t.handlers.Key == nil {
+		state.installTerminalHandlers(session)
+	}
+	return terminalControlHit(session.ID)
+}
+
+// terminalTestHitByID is terminalTestHit for a session number.
+func terminalTestHitByID(state *State, sessionID uint32) gfx.ID {
+	if session, ok := state.sessionByIDPointer(sessionID); ok {
+		return terminalTestHit(state, session)
+	}
+	return terminalControlHit(sessionID)
+}
+
 func terminalHit(state *State, index int) gfx.ID {
-	return hitTerminalList.At(int(state.sessions[index].ID))
+	return terminalTestHit(state, &state.sessions[index])
+}
+
+// terminalTestScrollbar is the scrollbar part of a session's terminal control.
+func terminalTestScrollbar(session *Session) gfx.ID {
+	return terminalControlParts(session.ID).At(terminalPartScrollbar)
 }
 
 func key(state *State, index int, event gfx.KeyEvent) gfx.EventResult {

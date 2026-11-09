@@ -1956,7 +1956,7 @@ func TestTheWheelOverTheTerminalBesideTheFilesPanelScrollsTheTerminal(t *testing
 	}
 	rows := len(session.files.rows)
 	first := session.files.first
-	over := pagedIdentity(state, session, hitTerminalList.At(int(session.ID)))
+	over := pagedIdentity(state, session, terminalTestHit(state, session))
 	x, y := panel.X+panel.Width+panel.Width/2, panel.Y+200
 	result := state.Scroll(gfx.ScrollEvent{X: x, Y: y, DeltaY: -3 * state.cellHeight, Precise: true, Viewport: size, Target: over})
 	if got := session.term.screen.ViewOffset(); got != 3 || !result.Repaint {

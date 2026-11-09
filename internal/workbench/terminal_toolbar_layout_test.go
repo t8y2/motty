@@ -352,7 +352,7 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 		}
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID))))
+		hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalTestHit(state, session)))
 		if !ok {
 			t.Fatalf("session %d has no mounted terminal hit", session.ID)
 		}
@@ -388,7 +388,7 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID))))
+	hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalTestHit(state, session)))
 	if !ok {
 		t.Fatal("the second split has no painted terminal hit")
 	}
@@ -427,7 +427,7 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	bar, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))))
+	bar, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalControlParts(session.ID).At(terminalPartScrollbar)))
 	if !ok {
 		t.Fatal("the second split has no painted scrollbar")
 	}
@@ -440,7 +440,7 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 	grab := origin.Y + geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
 	result := state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
-		Target: tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))),
+		Target: tree.MountID(paneMount(session), terminalControlParts(session.ID).At(terminalPartScrollbar)),
 		X:      x, Y: grab, Viewport: size,
 	})
 	if !result.Handled || !session.term.barDragging {

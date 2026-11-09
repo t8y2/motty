@@ -1903,7 +1903,7 @@ func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	// A terminal keeps its own keys: an open editor or panel is no reason to take
 	// Escape away from the shell the user is typing into.
-	if state.terminalSession(event.Target) != nil {
+	if state.terminalSession(event.Target) != nil || state.terminalPageSession(event.Target) != nil {
 		return gfx.EventResult{}, false
 	}
 	if view.editPath != "" {

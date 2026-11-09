@@ -66,7 +66,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			}
 			var canvas gfx.Canvas
 			state.Paint(&canvas, size)
-			hit, ok := hitByID(&canvas, hitTerminalList.At(int(originalID)))
+			hit, ok := hitByID(&canvas, terminalTestHitByID(state, originalID))
 			if !ok || hit.Bounds.Width != 1200-terminalToolRailExtent {
 				t.Fatalf("restored terminal hit = %+v", hit)
 			}
@@ -96,7 +96,7 @@ func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {
 	if bounds := state.workspacePixelBounds(size); bounds.X != 0 || bounds.Width != size.Width-terminalToolRailExtent {
 		t.Fatalf("terminal workspace = %+v, want room for the shared right rail", bounds)
 	}
-	terminalHit, ok := hitByID(&terminal, hitTerminalList.At(int(state.sessions[0].ID)))
+	terminalHit, ok := hitByID(&terminal, terminalTestHit(state, &state.sessions[0]))
 	if !ok || terminalHit.Bounds.X != 0 || terminalHit.Bounds.Width != size.Width-terminalToolRailExtent {
 		t.Fatalf("single terminal does not use full workspace: %+v", terminalHit)
 	}
@@ -218,7 +218,7 @@ func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {
 		if !ok || activate.Bounds != pixelBounds(frame, panes[index].Bounds) {
 			t.Fatalf("pane %d activation hit = %+v", index, activate)
 		}
-		terminalID := hitTerminalList.At(int(session.ID))
+		terminalID := terminalTestHit(state, session)
 		terminalID = tree.MountID(paneMount(session), terminalID)
 		terminal, ok := hitByID(&canvas, terminalID)
 		if !ok {
@@ -268,7 +268,7 @@ func TestWorkspacePaintsEverySessionPageInsideItsPane(t *testing.T) {
 	}
 
 	terminal := &state.sessions[0]
-	terminalID := tree.MountID(paneMount(terminal), hitTerminalList.At(int(terminal.ID)))
+	terminalID := tree.MountID(paneMount(terminal), terminalTestHit(state, terminal))
 	if _, ok := hitByID(&canvas, terminalID); !ok {
 		t.Fatalf("terminal page hit %d is missing", terminalID)
 	}
@@ -322,7 +322,7 @@ func TestWorkspaceBackgroundPointerActivatesPane(t *testing.T) {
 		background = state.sessions[1].ID
 	}
 	session, _ := state.sessionByIDPointer(background)
-	target := tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID)))
+	target := tree.MountID(paneMount(session), terminalTestHit(state, session))
 	hit, ok := hitByID(&canvas, target)
 	if !ok {
 		t.Fatalf("background terminal hit %d is missing", target)
@@ -359,7 +359,7 @@ func TestWorkspaceBackgroundTerminalKeepsFocusThroughActivation(t *testing.T) {
 	if background.ID == state.activeSessionID {
 		background = &state.sessions[1]
 	}
-	target := tree.MountID(paneMount(background), hitTerminalList.At(int(background.ID)))
+	target := tree.MountID(paneMount(background), terminalTestHit(state, background))
 	var terminal gfx.Hit
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == target {
@@ -395,8 +395,8 @@ func TestNativeTextInputOnlyTargetsTheActivePane(t *testing.T) {
 
 	first := &state.sessions[0]
 	second := &state.sessions[1]
-	firstTarget := tree.MountID(paneMount(first), hitTerminalList.At(int(first.ID)))
-	secondTarget := tree.MountID(paneMount(second), hitTerminalList.At(int(second.ID)))
+	firstTarget := tree.MountID(paneMount(first), terminalTestHit(state, first))
+	secondTarget := tree.MountID(paneMount(second), terminalTestHit(state, second))
 	if input := state.TerminalInput(app.TextInputContext{ID: firstTarget, Terminal: true}); input != nil {
 		t.Fatal("inactive pane exposed a native text receiver")
 	}
@@ -872,7 +872,7 @@ func TestPanesActivateOnPressNotOnHover(t *testing.T) {
 			other = &state.sessions[index]
 		}
 	}
-	target := tree.MountID(paneMount(other), hitTerminalList.At(int(other.ID)))
+	target := tree.MountID(paneMount(other), terminalTestHit(state, other))
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, X: 20, Y: 80, Viewport: size})
 	state.Scroll(gfx.ScrollEvent{Target: target, X: 20, Y: 80, DeltaY: 40, Viewport: size})
 	if state.activeSessionID != active {
