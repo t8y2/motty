@@ -246,3 +246,161 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 		t.Fatalf("the wheel did not move the list: %v -> %v", before, state.ai.scroll.Offset())
 	}
 }
+
+// TestAIListControlTakesRealRowAndListEvents drives the list's own control in
+// the runtime's event pass: a click on a row, a drag over answer text, a press
+// on the list's ground (which focuses the control) and the page keys it then
+// gets. The control's handlers are what the page routes those events to; the
+// rows stay the hit identities the conversation has always used.
+func TestAIListControlTakesRealRowAndListEvents(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	conversationFixture(state)
+	// Enough rows below the visible ones that PageDown has somewhere to go.
+	for index := 0; index < 20; index++ {
+		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "another answer below the fold"})
+	}
+	state.ai.open = true
+	state.ai.scroll.ScrollToStart()
+	view := openAIPanelView(t, state)
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	find := func(id gfx.ID) gfx.Hit {
+		t.Helper()
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == id {
+				return hit
+			}
+		}
+		t.Fatalf("hit %v is not painted", id)
+		return gfx.Hit{}
+	}
+	point := func(bounds gfx.Rect) (float32, float32) {
+		return bounds.X + bounds.Width/2, bounds.Y + bounds.Height/2
+	}
+
+	// A press on the reasoning row's header is a click the runtime delivers as
+	// the row's identity, and the panel's gesture opens it as it always has.
+	row := find(hitAIRows.At(1))
+	if err := view.Click(point(row.Bounds)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.ai.panel.rows[1].expanded {
+		t.Fatal("a real click on the row header did not expand it")
+	}
+
+	// A drag over the answer's text selects it through the list's Pointer path,
+	// and Escape, aimed at the focused text, clears it.
+	text := find(hitAIAnswerText.At(2))
+	start := gfx.Point{X: text.Bounds.X + 2, Y: text.Bounds.Y + 2}
+	end := gfx.Point{X: text.Bounds.X + text.Bounds.Width - 2, Y: text.Bounds.Y + text.Bounds.Height - 2}
+	if err := view.Press(start.X, start.Y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(end.X, end.Y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(end.X, end.Y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.ai.panel.hasAITextSelection() {
+		t.Fatal("dragging over the answer left no selection")
+	}
+	if err := view.Keys("Escape"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.ai.panel.hasAITextSelection() {
+		t.Fatal("Escape did not clear the selection")
+	}
+
+	// The list is a page Control: a press on its ground focuses it, and a page
+	// key then reaches its Key handler and scrolls the conversation.
+	snapshot := view.Snapshot()
+	control := gfx.Hit{}
+	for _, hit := range snapshot.Hits {
+		if hit.Label == state.messages.AIPanel.ListLabel && hit.Role == gfx.RoleGroup {
+			control = hit
+			break
+		}
+	}
+	if control.ID.IsZero() {
+		t.Fatal("the list control is not painted")
+	}
+	x, y, found := float32(0), float32(0), false
+	for py := control.Bounds.Y + 2; py < control.Bounds.Y+control.Bounds.Height && !found; py += 6 {
+		for px := control.Bounds.X + 2; px < control.Bounds.X+control.Bounds.Width; px += 6 {
+			top := gfx.ID{}
+			for _, hit := range snapshot.Hits {
+				if pointInRect(px, py, hit.Bounds) {
+					top = hit.ID
+				}
+			}
+			if top == control.ID {
+				x, y, found = px, py, true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no point of the list control is uncovered by a row hit")
+	}
+	state.ai.scroll.ScrollToStart()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != control.ID {
+		t.Fatalf("a press on the list ground focused %v, want the control %v", got, control.ID)
+	}
+	before := state.ai.scroll.Offset()
+	if err := view.Keys("pagedown"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.ai.scroll.Offset() <= before {
+		t.Fatalf("PageDown on the list control did not scroll: %v -> %v", before, state.ai.scroll.Offset())
+	}
+
+	// The composer and the model menu still take their events through the page.
+	input := find(hitAIInput)
+	if err := view.Click(point(input.Bounds)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.ai.input.String(); got != "hello" {
+		t.Fatalf("typing reached the composer as %q", got)
+	}
+	chip := find(hitAIModelChip)
+	if err := view.Click(point(chip.Bounds)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.ai.panel.modelMenu {
+		t.Fatal("the model chip did not open its menu")
+	}
+}

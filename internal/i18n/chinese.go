@@ -1159,6 +1159,7 @@ var chineseAIPanel = AIPanelMessages{
 	Example3:       "看看哪些进程在监听哪些端口",
 	ScrollToEnd:    "滚动到最新消息",
 	ScrollbarLabel: "消息滚动位置",
+	ListLabel:      "对话",
 
 	IdleTitle:    "问问 SSH 和命令行的事",
 	IdleHint:     "先连接一台主机,助手就能看到它的终端;在代理模式下还能替你在上面执行命令。在那之前,它只根据你的提问来回答。",

@@ -385,9 +385,13 @@ type aiPanel struct {
 	// contentDraw and overDraw paint the parts the page's declaration left for
 	// the last pass, kept so a paint makes no method values. composerDraw paints
 	// the native textarea into the box the page reserved, and is kept for the
-	// same reason.
+	// same reason. The message and history list is the page's Control: listDraw
+	// paints its rows and listHandlers takes the gestures over them, both kept
+	// here so a paint declares no closures.
 	contentDraw, overDraw func(*ui.DrawContext)
 	composerDraw          func(*ui.DrawContext)
+	listDraw              func(*ui.DrawContext)
+	listHandlers          ui.Handlers
 	body                  aiBody
 	pageScratch           aiPanelPageScratch
 
@@ -928,7 +932,6 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // text hit is a focusable group outside the Tab order; links and copy buttons
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	panel := &state.ai.panel
 	// The panel and its menus are part of the workbench page now: its controls
 	// and the open menu's backdrop are the page's, so it reads their presses
 	// first. The identities this file paints by hand are outside the page, so a
@@ -948,6 +951,21 @@ func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 		if result, ok := page.Pointer(event); ok {
 			return result, true
 		}
+	}
+	return state.aiPanelPointerGesture(event)
+}
+
+// aiPanelPointerGesture is what the panel does with a pointer event after the
+// page has had it: the scrollbar, a text selection, the mentions, the examples
+// and a drag of an edge. The list Control's Pointer handler is this function, so
+// a press the page routes to the control and one that falls through to the
+// hand-painted list identities act the same way.
+func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	panel := &state.ai.panel
+	if state.aiMenuShown() {
+		// Called from the page for a press on the list control while a chip menu
+		// is open: the menu owns the window and the press goes nowhere.
+		return gfx.EventResult{Handled: true}, true
 	}
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
 		return result, true
@@ -1010,6 +1028,13 @@ func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 	return gfx.EventResult{Handled: true}, true
 }
 
+// aiPanelListPointer is the list Control's Pointer: the same gestures a press
+// that falls through to the hand-painted rows gets.
+func (state *State) aiPanelListPointer(event gfx.PointerEvent) gfx.EventResult {
+	result, _ := state.aiPanelPointerGesture(event)
+	return result
+}
+
 // aiDrag follows the pointer while the panel's left edge or the message box's top
 // edge is being dragged.
 func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
@@ -1028,7 +1053,6 @@ func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 // aiPanelScroll scrolls the message list, or the history list. A wheel over the
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
 func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	panel := &state.ai.panel
 	// The chip menus are the workbench page's popups: an open one owns the wheel
 	// over the whole window, scrolling its own list where the pointer is over it
 	// and going nowhere otherwise.
@@ -1046,6 +1070,20 @@ func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool)
 			return result, true
 		}
 	}
+	return state.aiPanelScrollGesture(event)
+}
+
+// aiPanelScrollGesture is the wheel's work after the page has had it: the
+// composer's own scroll, the conversation or history list, and swallowing a
+// wheel over the rest of the panel so the terminal behind it stays still. The
+// list Control's Scroll handler is this function.
+func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult, bool) {
+	panel := &state.ai.panel
+	if state.aiMenuShown() {
+		// Called from the page for a wheel over the list control while a chip
+		// menu is open: the menu owns the window's wheel.
+		return gfx.EventResult{Handled: true}, true
+	}
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
 		return gfx.EventResult{}, false
 	}
@@ -1057,6 +1095,13 @@ func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{Handled: true}, true
 	}
 	return state.aiPanelScrollBy(event.StepY(24)), true
+}
+
+// aiPanelListScroll is the list Control's Scroll: the same scrolling a wheel
+// that falls through to the hand-painted list gets.
+func (state *State) aiPanelListScroll(event gfx.ScrollEvent) gfx.EventResult {
+	result, _ := state.aiPanelScrollGesture(event)
+	return result
 }
 
 // aiPanelScrollTo moves the active list to an absolute offset.
@@ -1112,8 +1157,6 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
 	}
-	ai := &state.ai
-	panel := &ai.panel
 	page := state.chrome.windowPage
 	// The chip menus are the workbench page's popups: their rows carry the page's
 	// identities, so it routes their keys before the panel's own.
@@ -1123,11 +1166,7 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 				return result, true
 			}
 		}
-		switch event.Key {
-		case gfx.KeyEscape, gfx.KeyEnter, gfx.KeySpace, gfx.KeyTab:
-			return gfx.EventResult{}, true
-		}
-		return gfx.EventResult{Handled: true}, true
+		return state.aiPanelKeyGesture(event)
 	}
 	if !inAIPanel(event.Target) {
 		return gfx.EventResult{}, false
@@ -1139,6 +1178,28 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		if result, handled := page.Key(event); handled {
 			return result, true
 		}
+	}
+	return state.aiPanelKeyGesture(event)
+}
+
+// aiPanelKeyGesture is the panel's key handling after the page has had the key.
+// The list Control's Key handler is this function: a key the control is given
+// when it has the focus acts like one aimed at the hand-painted rows.
+func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || event.Target == hitAIToggle {
+		return gfx.EventResult{}, false
+	}
+	ai := &state.ai
+	panel := &ai.panel
+	if state.aiMenuShown() {
+		switch event.Key {
+		case gfx.KeyEscape, gfx.KeyEnter, gfx.KeySpace, gfx.KeyTab:
+			return gfx.EventResult{}, true
+		}
+		return gfx.EventResult{Handled: true}, true
+	}
+	if !inAIPanel(event.Target) {
+		return gfx.EventResult{}, false
 	}
 	if event.Target.Scope() == hitAIExamples && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		return gfx.EventResult{Focus: hitAIInput, Repaint: true}, true
@@ -1236,6 +1297,14 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return state.aiPanelScrollBy(step), true
 	}
 	return gfx.EventResult{}, false
+}
+
+// aiPanelListKey is the list Control's Key: the same handling a key aimed at the
+// hand-painted rows gets, including the scrollbar's arrows, the page keys and
+// Escape over selected text.
+func (state *State) aiPanelListKey(event gfx.KeyEvent) gfx.EventResult {
+	result, _ := state.aiPanelKeyGesture(event)
+	return result
 }
 
 // aiPanelEnter is Enter in the message box. With a question waiting for an

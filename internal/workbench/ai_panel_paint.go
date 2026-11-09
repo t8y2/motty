@@ -636,7 +636,8 @@ const aiMenuContextWidth = float32(144)
 
 // paintAIPanelContent paints the parts the declaration left for the last pass,
 // once the page has laid the body out: the title buttons and setup card in their
-// slots, the message or history list, and the bottom's field and buttons.
+// slots and the bottom's field and buttons. The list itself is the page's
+// Control and paints in its own Draw (paintAIList).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
@@ -644,18 +645,38 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	if s.showSetup {
 		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
 	}
-	list := panel.body.list.Rect()
+	// Keep the list's rectangle even when it is the empty state, which paints no
+	// Control: the wheel and the scrollbar read it between paints.
+	panel.list = panel.body.list.Rect()
+	panel.listing = panel.history
+	// A row that is gone takes the selection that pointed into it, whether the
+	// list paints rows at all: the empty state has no Draw to do it later.
+	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
+	state.paintAIBottom(canvas, &panel.body)
+}
+
+// paintAIList is the list Control's Draw: the saved conversations or the
+// conversation, painted with the rows' own layouts inside the control's
+// rectangle. It is the last user of the frame-based row painters; they are not
+// called from anywhere else.
+func (state *State) paintAIList(d *ui.DrawContext) {
+	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
+	// The list slot is wider than the control by the divider's hit strip: the
+	// rows are measured and painted from the slot, so their pixels do not move
+	// when the control keeps clear of the resize handle.
+	list := panel.list
+	if list.Width <= 0 {
+		list = d.Rect
+	}
 	panel.list = list
 	panel.listing = panel.history
 	panel.textFirst, panel.textLast = -1, -1
-	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	switch {
 	case panel.history:
 		state.paintAIHistory(canvas, list)
 	case len(ai.items) > 0:
 		state.paintAIMessages(canvas, list)
 	}
-	state.paintAIBottom(canvas, &panel.body)
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
@@ -698,6 +719,12 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	if panel.composerDraw == nil {
 		panel.composerDraw = state.paintAIComposerTextarea
 	}
+	if panel.listDraw == nil {
+		panel.listDraw = state.paintAIList
+		panel.listHandlers.Pointer = state.aiPanelListPointer
+		panel.listHandlers.Key = state.aiPanelListKey
+		panel.listHandlers.Scroll = state.aiPanelListScroll
+	}
 
 	panel.body = aiBody{}
 	ui.Column(c).Fill().Draw(panel.contentDraw).DrawOver(panel.overDraw).Children(func() {
@@ -718,9 +745,16 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		}
 		ui.Divider(c).Background(pal.line)
 		// With nothing to show, the list's room is the page's own empty state;
-		// the history and the conversation are painted into a slot.
+		// the history and the conversation are one Control the page declares, so
+		// its scroll gestures go to the control's handlers. The control starts at
+		// the divider's hit strip so it does not cross the resize handle; the
+		// strip is list padding, and the list is painted from the slot's whole
+		// rectangle below.
 		if panel.history || len(state.ai.items) > 0 {
-			panel.body.list = ui.Slot(c).Grow(1)
+			inset := panel.resize.handle/2 + 1
+			panel.body.list = ui.Column(c).Grow(1).Children(func() {
+				ui.Control(c, m.ListLabel, &panel.listHandlers).Fill().MarginLeft(inset).Draw(panel.listDraw)
+			})
 		} else {
 			panel.body.list = state.declareAIEmpty(c)
 		}

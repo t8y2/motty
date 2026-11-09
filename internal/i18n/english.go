@@ -1159,6 +1159,7 @@ var englishAIPanel = AIPanelMessages{
 	Example3:       "Show me what is listening on which port",
 	ScrollToEnd:    "Scroll to the latest message",
 	ScrollbarLabel: "Message scroll position",
+	ListLabel:      "Conversation",
 
 	IdleTitle:    "Ask anything about SSH and the shell",
 	IdleHint:     "Open a host and the assistant can see its terminal; in Agent mode it can also run commands there. Until then it answers from what you ask.",
