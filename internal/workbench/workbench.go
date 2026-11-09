@@ -533,7 +533,7 @@ type State struct {
 	workspacePaneTabLabels []string
 	tabStrip               tabStrip
 	tabOrientation         tabOrientation
-	tabNumbers             bool // each tab shows the number its shortcut key names
+	tabNumbers             bool // each tab shows its place number next to the name
 	verticalTabs           verticalTabs
 	tabMenu                tabMenu
 	hostMenu               hostMenu

@@ -128,9 +128,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsAppearance, "")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
-	if state.tabNumbers {
-		row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
-	}
+	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
 	if state.tabOrientation == tabsVertical {
 		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)

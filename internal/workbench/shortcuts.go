@@ -350,22 +350,22 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		// Swallow the release of every press this routing consumed, a snippet
 		// chord included, so a terminal that asked for releases is not sent the
 		// end of a press it never saw.
-		consumed := state.shortcutActionFor(chord) != shortcutNone ||
+		consumed := state.shortcuts.actionFor(chord) != shortcutNone ||
 			state.activeSection == sectionTerminal && state.snippetFor(chord, -1) >= 0
 		return gfx.EventResult{Handled: consumed}
 	}
 	if state.modal == modalShortcutCapture {
 		return state.captureShortcut(event, chord)
 	}
-	if chord.Char == '+' && state.shortcutActionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
+	if chord.Char == '+' && state.shortcuts.actionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
 		// Preserve the default zoom-in alias without collapsing a custom + binding.
 		alias := keymap.Chord{Modifiers: chord.Modifiers &^ gfx.ModifierShift, Char: '='}
-		if state.shortcutActionFor(alias) == shortcutZoomIn {
+		if state.shortcuts.actionFor(alias) == shortcutZoomIn {
 			chord = alias
 		}
 	}
 	if login := state.ai.login; login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
-		action := state.shortcutActionFor(chord)
+		action := state.shortcuts.actionFor(chord)
 		if action == shortcutNone {
 			return gfx.EventResult{}
 		}
@@ -411,7 +411,7 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if result, handled := state.aiPanelShortcut(event); handled {
 		return result
 	}
-	action := state.shortcutActionFor(chord)
+	action := state.shortcuts.actionFor(chord)
 	if action == shortcutNone {
 		if index := state.snippetFor(chord, -1); index >= 0 && state.activeSection == sectionTerminal {
 			if !event.Repeat {

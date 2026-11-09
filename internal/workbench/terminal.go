@@ -1476,7 +1476,7 @@ func (state *State) terminalToolbarKey(session *Session, event gfx.KeyEvent) (gf
 // whether or not its action applies to the focused target.
 func (state *State) shortcutBound(event gfx.KeyEvent) bool {
 	chord, ok := keymap.FromEvent(event)
-	return ok && state.shortcutActionFor(chord) != shortcutNone
+	return ok && state.shortcuts.actionFor(chord) != shortcutNone
 }
 
 func (state *State) copySelection(session *Session) gfx.EventResult {

@@ -84,8 +84,9 @@ func (state *State) setTabNumberModifier(id gfx.ID) bool {
 	return true
 }
 
-// setTabNumbers shows or hides the number each tab carries, and with it the
-// number shortcuts: a key with no number on screen has nothing to name.
+// setTabNumbers shows or hides the number each tab carries. The number
+// shortcuts stay bound either way: a tab holds its place in the bar with or
+// without the badge naming it.
 func (state *State) setTabNumbers(shown bool) bool {
 	if state.tabNumbers == shown {
 		return false
@@ -111,15 +112,4 @@ func tabNumber(number int) string {
 func tabNumberColor(foreground gfx.Color) gfx.Color {
 	foreground.Alpha *= .6
 	return foreground
-}
-
-// shortcutActionFor is actionFor with the settings that switch an action off.
-// The number row is the one action a setting can silence: with the numbers
-// hidden, its keys belong to the terminal again.
-func (state *State) shortcutActionFor(chord keymap.Chord) shortcutAction {
-	action := state.shortcuts.actionFor(chord)
-	if action == shortcutTabNumber && !state.tabNumbers {
-		return shortcutNone
-	}
-	return action
 }
