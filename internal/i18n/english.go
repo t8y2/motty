@@ -1386,6 +1386,15 @@ var englishAISettings = AISettingsMessages{
 	ModelPrev:        "Previous",
 	ModelNext:        "Next",
 
+	ModelFilterAll:       "All",
+	ModelFilterAvailable: "Available",
+	ModelFilterFailed:    "Failed",
+	ModelFilterEnabled:   "Enabled",
+	ModelSortDefault:     "Default",
+	ModelSortLatencyAsc:  "Fastest",
+	ModelSortLatencyDesc: "Slowest",
+	ModelSortNameAsc:     "Name",
+
 	ModelsProbeAll:    "Probe all",
 	ModelsProbeCancel: "Cancel",
 	ProbeDialogTitle:  "Probe All Models",

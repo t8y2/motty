@@ -1386,6 +1386,15 @@ var traditionalAISettings = AISettingsMessages{
 	ModelPrev:        "上一頁",
 	ModelNext:        "下一頁",
 
+	ModelFilterAll:       "全部",
+	ModelFilterAvailable: "可用",
+	ModelFilterFailed:    "失敗",
+	ModelFilterEnabled:   "已啟用",
+	ModelSortDefault:     "預設",
+	ModelSortLatencyAsc:  "最快",
+	ModelSortLatencyDesc: "最慢",
+	ModelSortNameAsc:     "名稱",
+
 	ModelsProbeAll:    "探測全部",
 	ModelsProbeCancel: "取消探測",
 	ProbeDialogTitle:  "探測全部模型",

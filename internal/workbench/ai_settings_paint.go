@@ -309,6 +309,49 @@ func (state *State) paintAIModels(page *settingsPage) {
 		}
 		if total == 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
+		} else {
+			totalCnt, availCnt, failCnt, _ := state.aiModelCounts(provider.ID)
+			filterOptions := [...]components.SegmentOption{
+				{ID: hitAISetFilterAll, Label: fmt.Sprintf("%s (%d)", m.ModelFilterAll, totalCnt)},
+				{ID: hitAISetFilterAvailable, Label: fmt.Sprintf("%s (%d)", m.ModelFilterAvailable, availCnt)},
+				{ID: hitAISetFilterFailed, Label: fmt.Sprintf("%s (%d)", m.ModelFilterFailed, failCnt)},
+				{ID: hitAISetFilterEnabled, Label: m.ModelFilterEnabled},
+			}
+			selectedFilter := hitAISetFilterAll
+			switch cfg.modelFilter {
+			case aiModelFilterAvailable:
+				selectedFilter = hitAISetFilterAvailable
+			case aiModelFilterFailed:
+				selectedFilter = hitAISetFilterFailed
+			case aiModelFilterEnabled:
+				selectedFilter = hitAISetFilterEnabled
+			}
+
+			sortOptions := [...]components.SegmentOption{
+				{ID: hitAISetSortDefault, Label: m.ModelSortDefault},
+				{ID: hitAISetSortLatencyAsc, Label: m.ModelSortLatencyAsc},
+				{ID: hitAISetSortLatencyDesc, Label: m.ModelSortLatencyDesc},
+				{ID: hitAISetSortNameAsc, Label: m.ModelSortNameAsc},
+			}
+			selectedSort := hitAISetSortDefault
+			switch cfg.modelSort {
+			case aiModelSortLatencyAsc:
+				selectedSort = hitAISetSortLatencyAsc
+			case aiModelSortLatencyDesc:
+				selectedSort = hitAISetSortLatencyDesc
+			case aiModelSortNameAsc:
+				selectedSort = hitAISetSortNameAsc
+			}
+
+			filterWidth := max(components.SegmentedControlWidth(f.Canvas(), state.Theme(), filterOptions[:]), 260)
+			sortWidth := max(components.SegmentedControlWidth(f.Canvas(), state.Theme(), sortOptions[:]), 220)
+			page.rowOf(46).PadX(18).Gap(10).Children(func() {
+				f.Row().Grow(1).Gap(12).Items(ui.Center).Children(func() {
+					page.segmentSlot(filterWidth, filterOptions[:], selectedFilter)
+					f.Spacer()
+					page.segmentSlot(sortWidth, sortOptions[:], selectedSort)
+				})
+			})
 		}
 		filteredModels := state.aiFilteredModels(provider.ID)
 		filteredTotal := len(filteredModels)
@@ -325,7 +368,10 @@ func (state *State) paintAIModels(page *settingsPage) {
 			model := filteredModels[cfg.page*aiModelPageSize+row]
 			isDefault := state.aiIsDefault(provider.ID, model.Name)
 			nameColor := pal.text
-			if !model.Enabled {
+			nameWeight := gfx.WeightRegular
+			if isDefault {
+				nameWeight = gfx.WeightMedium
+			} else if !model.Enabled {
 				nameColor = pal.muted
 			}
 			res, hasRes := state.aiGetProbeResult(provider.ID, model.Name)
@@ -338,7 +384,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 				}
 				// Name and reasoning chip (left-aligned, clickable to configure reasoning effort)
 				f.Row().Grow(1).Gap(8).Items(ui.Center).Children(func() {
-					f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
+					f.Text(label).FontSize(metrics.FontSizeM).Weight(nameWeight).Color(nameColor).MarginSides(0, 4, 0, 0)
 					_, _, isReasoning, isOverride, isDisabled := state.aiModelReasoningInfo(&model)
 					var (
 						chipText      string

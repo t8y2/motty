@@ -191,3 +191,144 @@ func TestAIModelProbeConcurrencyAndTimeoutOptions(t *testing.T) {
 		t.Fatalf("expected timeout 30s, got %v", got)
 	}
 }
+
+func TestAIModelFilterAndCounts(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	provider := world.addOpenAI(t, "Custom", "https://api.example.com/v1", "key-123")
+
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := []store.Model{
+		{ProviderID: provider.ID, Name: "chat-m1", Enabled: true},
+		{ProviderID: provider.ID, Name: "chat-m2", Enabled: false},
+		{ProviderID: provider.ID, Name: "chat-m3", Enabled: true},
+		{ProviderID: provider.ID, Name: "chat-m4", Enabled: false},
+	}
+	if err := db.SaveModels(provider.ID, models); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+
+	state.aiSetProbeResult(provider.ID, "chat-m1", probe.Result{Status: probe.StatusSuccess, Latency: 200 * time.Millisecond})
+	state.aiSetProbeResult(provider.ID, "chat-m2", probe.Result{Status: probe.StatusFailed, Error: "timeout"})
+	state.aiSetProbeResult(provider.ID, "chat-m3", probe.Result{Status: probe.StatusSuccess, Latency: 100 * time.Millisecond})
+	// chat-m4 has no probe result
+
+	total, avail, fail, en := state.aiModelCounts(provider.ID)
+	if total != 4 || avail != 2 || fail != 1 || en != 2 {
+		t.Fatalf("unexpected counts: total=%d, avail=%d, fail=%d, en=%d", total, avail, fail, en)
+	}
+
+	// Filter: Available
+	state.Click(hitAISetFilterAvailable)
+	filtered := state.aiFilteredModels(provider.ID)
+	if len(filtered) != 2 || filtered[0].Name != "chat-m1" || filtered[1].Name != "chat-m3" {
+		t.Fatalf("unexpected available models: %v", filtered)
+	}
+
+	// Filter: Failed
+	state.Click(hitAISetFilterFailed)
+	filtered = state.aiFilteredModels(provider.ID)
+	if len(filtered) != 1 || filtered[0].Name != "chat-m2" {
+		t.Fatalf("unexpected failed models: %v", filtered)
+	}
+
+	// Filter: Enabled
+	state.Click(hitAISetFilterEnabled)
+	filtered = state.aiFilteredModels(provider.ID)
+	if len(filtered) != 2 || filtered[0].Name != "chat-m1" || filtered[1].Name != "chat-m3" {
+		t.Fatalf("unexpected enabled models: %v", filtered)
+	}
+
+	// Filter: All
+	state.Click(hitAISetFilterAll)
+	filtered = state.aiFilteredModels(provider.ID)
+	if len(filtered) != 4 {
+		t.Fatalf("unexpected all models count: %d", len(filtered))
+	}
+}
+
+func TestAIModelSortLatencyAndName(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	provider := world.addOpenAI(t, "Custom", "https://api.example.com/v1", "key-123")
+
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := []store.Model{
+		{ProviderID: provider.ID, Name: "model-c", Enabled: true},
+		{ProviderID: provider.ID, Name: "model-a", Enabled: true},
+		{ProviderID: provider.ID, Name: "model-b", Enabled: true},
+		{ProviderID: provider.ID, Name: "model-fail", Enabled: true},
+	}
+	_ = db.SaveModels(provider.ID, models)
+	state.reloadAI()
+
+	state.aiSetProbeResult(provider.ID, "model-c", probe.Result{Status: probe.StatusSuccess, Latency: 500 * time.Millisecond})
+	state.aiSetProbeResult(provider.ID, "model-a", probe.Result{Status: probe.StatusSuccess, Latency: 100 * time.Millisecond})
+	state.aiSetProbeResult(provider.ID, "model-b", probe.Result{Status: probe.StatusSuccess, Latency: 300 * time.Millisecond})
+	state.aiSetProbeResult(provider.ID, "model-fail", probe.Result{Status: probe.StatusFailed})
+
+	// Latency ascending: model-a (100ms) -> model-b (300ms) -> model-c (500ms) -> model-fail
+	state.Click(hitAISetSortLatencyAsc)
+	filtered := state.aiFilteredModels(provider.ID)
+	if len(filtered) != 4 || filtered[0].Name != "model-a" || filtered[1].Name != "model-b" || filtered[2].Name != "model-c" || filtered[3].Name != "model-fail" {
+		t.Fatalf("unexpected latency asc order: %v", filtered)
+	}
+
+	// Latency descending: model-c (500ms) -> model-b (300ms) -> model-a (100ms) -> model-fail
+	state.Click(hitAISetSortLatencyDesc)
+	filtered = state.aiFilteredModels(provider.ID)
+	if len(filtered) != 4 || filtered[0].Name != "model-c" || filtered[1].Name != "model-b" || filtered[2].Name != "model-a" || filtered[3].Name != "model-fail" {
+		t.Fatalf("unexpected latency desc order: %v", filtered)
+	}
+
+	// Name ascending: model-a -> model-b -> model-c -> model-fail
+	state.Click(hitAISetSortNameAsc)
+	filtered = state.aiFilteredModels(provider.ID)
+	if len(filtered) != 4 || filtered[0].Name != "model-a" || filtered[1].Name != "model-b" || filtered[2].Name != "model-c" || filtered[3].Name != "model-fail" {
+		t.Fatalf("unexpected name asc order: %v", filtered)
+	}
+}
+
+func TestAIModelDefaultPinnedToTop(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	provider := world.addOpenAI(t, "Custom", "https://api.example.com/v1", "key-123")
+
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := []store.Model{
+		{ProviderID: provider.ID, Name: "model-fast", Enabled: true},
+		{ProviderID: provider.ID, Name: "model-slow", Enabled: true},
+	}
+	_ = db.SaveModels(provider.ID, models)
+	// Set model-slow as default
+	if err := db.SetDefaultModel(provider.ID, "model-slow"); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+
+	state.aiSetProbeResult(provider.ID, "model-fast", probe.Result{Status: probe.StatusSuccess, Latency: 50 * time.Millisecond})
+	state.aiSetProbeResult(provider.ID, "model-slow", probe.Result{Status: probe.StatusSuccess, Latency: 800 * time.Millisecond})
+
+	// Even though model-fast has lower latency, model-slow must be pinned to top (index 0)
+	state.Click(hitAISetSortLatencyAsc)
+	filtered := state.aiFilteredModels(provider.ID)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(filtered))
+	}
+	if filtered[0].Name != "model-slow" {
+		t.Fatalf("expected default model-slow to be pinned at index 0, got %s", filtered[0].Name)
+	}
+	if filtered[1].Name != "model-fast" {
+		t.Fatalf("expected model-fast at index 1, got %s", filtered[1].Name)
+	}
+}
