@@ -3,7 +3,6 @@ package workbench
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -39,11 +38,10 @@ type aiApprovalLayout struct {
 // aiBody holds where the panel's hand-painted parts went once its layout was
 // done: the controls and fields that are not flex elements.
 type aiBody struct {
-	close, history, newChat            ui.Box
-	setup, list                        ui.Box
-	summary, confirm, decline, approve ui.Box
-	mentions                           [maxMentionSuggestions]ui.Box
-	box                                ui.Box
+	close, history, newChat   ui.Box
+	setup, list               ui.Box
+	confirm, decline, approve ui.Box
+	box                       ui.Box
 }
 
 // aiPrepareBottom measures what the declaration of the bottom needs to know
@@ -96,8 +94,8 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 			}
 			if len(panel.mentions) > 0 {
 				ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
-					for index := range panel.mentions {
-						body.mentions[index] = ui.Slot(c).Height(aiMentionRow)
+					for index, name := range panel.mentions {
+						state.declareAIMention(c, index, name)
 					}
 				})
 			}
@@ -106,6 +104,22 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 			}
 		})
 		body.box = ui.Slot(c).Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin)
+	})
+}
+
+// declareAIMention declares one session the @ before the caret can name.
+func (state *State) declareAIMention(c ui.C, index int, name mentionName) {
+	panel, pal := &state.ai.panel, state.pal
+	id := hitAIMentions.At(index)
+	var background gfx.Color
+	if canvas := c.Frame().Canvas(); canvas != nil && (panel.mentionIndex == index || canvas.FocusVisible() == id) {
+		background = pal.surfaceHot
+	}
+	label := "@" + name.name
+	ui.Row(c).Height(aiMentionRow).FillWidth().PadX(8).Gap(10).Items(ui.Center).Background(background).Radius(radius.item).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {
+		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).Ellipsis().Grow(1)
+		ui.Text(c, name.detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MaxWidth(120).Ellipsis()
 	})
 }
 
@@ -161,7 +175,11 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 				})
 			}
 		})
-		body.summary = ui.Slot(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0)
+		ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
+			for _, line := range panel.approvalLay.summary {
+				ui.Text(c, line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(pal.text)
+			}
+		})
 		if request.SessionLabel != "" {
 			ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
 		}
@@ -222,11 +240,6 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	if len(ai.approvals) > 0 {
 		approval := ai.approvals[0]
 		request := &approval.request
-		f := state.aiFlex.summary.Begin(canvas, theme, body.summary.Rect())
-		f.Column().Fill().Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
-			state.aiMonoLines(f, panel.approvalLay.summary, pal.text)
-		})
-		f.End()
 		allowed := true
 		if request.NeedsText {
 			allowed = strings.TrimSpace(ai.confirm.String()) == request.Confirm
@@ -254,22 +267,6 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 		} else {
 			approve.Default(approveLabel)
 		}
-	}
-
-	for index, name := range panel.mentions {
-		id := hitAIMentions.At(index)
-		background := gfx.Color{}
-		if panel.mentionIndex == index || canvas.FocusVisible() == id {
-			background = pal.surfaceHot
-		}
-		label := "@" + name.name
-		row := state.aiFlex.mention.Begin(canvas, theme, body.mentions[index].Rect())
-		row.Row().Fill().PadX(8).Gap(10).Items(ui.Center).Background(background).Radius(radius.item).
-			HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {
-			row.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).Ellipsis().Grow(1)
-			row.Text(name.detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MaxWidth(120).Ellipsis()
-		})
-		row.End()
 	}
 
 	// The message box, with the model chip and Send inside it.
@@ -543,217 +540,127 @@ func (state *State) aiMenuProviders() []aiMenuProvider {
 	return list
 }
 
-// aiMenuOpening is where the menu opens: the provider whose model answers now,
-// with the list scrolled so that model is in view.
-func (state *State) aiMenuOpening() (provider int, list components.MenuScroll) {
-	list.BarID = hitAIModelBar
-	provider, row := state.aiMenuOpeningRow()
-	list.Offset = float32(row) * 32
-	return provider, list
-}
-
-func (state *State) aiMenuOpeningRow() (provider, scroll int) {
-	for index, entry := range state.aiMenuProviders() {
-		if entry.id != state.ai.settings.defaultProvider {
-			continue
-		}
-		for at, model := range entry.models {
-			if model.current {
-				return index, min(max(at-aiMenuRows/2, 0), max(len(entry.models)-aiMenuRows, 0))
-			}
-		}
-		return index, 0
-	}
-	return 0, 0
-}
-
-// paintAIModelMenu is the chip's menu, above it: the providers, and beside them
-// the models of the one that is open, a few rows at a time and scrolled with the
-// wheel.
-func (state *State) paintAIModelMenu(canvas *gfx.Canvas) {
+// declareAIModelMenu declares the chip's menu, above it: the providers, and
+// beside them the models of the one that is open. The menu hangs off an anchor
+// at the chip's place, since the composer paints the chip itself.
+func (state *State) declareAIModelMenu(c ui.C) {
 	panel := &state.ai.panel
 	providers := state.aiMenuProviders()
-	if len(providers) == 0 {
+	if len(providers) == 0 || panel.chip.Width <= 0 {
 		return
 	}
-	theme := state.Theme()
-	size := theme.Metrics.FontSizeM
-	panel.modelProvider = min(max(panel.modelProvider, 0), len(providers)-1)
-	// Resting on a provider row opens its models after the same 100ms Base UI
-	// uses, even while another provider's list is open.
-	if index, ok := canvas.Hovered().In(hitAIModelProviders); ok && index < len(providers) && index != panel.modelProvider {
-		if id, wait := panel.modelHover.Rest(canvas.Hovered(), time.Now(), 100*time.Millisecond); !id.IsZero() {
-			panel.modelProvider = index
-			panel.modelList = components.MenuScroll{BarID: hitAIModelBar}
-			panel.modelSubmenu = panel.modelSubmenu.Open(canvas.Hovered())
-			panel.modelTypeahead.Reset()
-		} else if wait > 0 {
-			canvas.RequestFrameIn(wait)
+	canvas, size := c.Frame().Canvas(), c.Theme().Metrics.FontSizeM
+	textWidth := func(value string) float32 {
+		if canvas == nil {
+			return 0
 		}
-	} else {
-		panel.modelHover.Reset()
+		return canvas.TextWidthWeight(value, size, gfx.WeightRegular)
 	}
-	open := providers[panel.modelProvider]
-	submenuOpen := panel.modelSubmenu.IsOpen(hitAIModelProviders.At(panel.modelProvider))
-	options := components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitAIModelDismiss, Viewport: panel.window, Side: components.OverlayTop}
-	menuWidth := func(width float32) float32 { return min(max(width+56, 140), 320) }
-
-	// The providers first.
 	var providersWidth float32
 	for _, provider := range providers {
-		providersWidth = max(providersWidth, canvas.TextWidthWeight(provider.name, size, gfx.WeightRegular))
+		providersWidth = max(providersWidth, textWidth(provider.name))
 	}
 	providersWidth += 24 // the mark before each name
-	providersHeight := float32(32*len(providers) + 8)
-	first := state.aiMenuRect(canvas, menuWidth(providersWidth), providersHeight, func(popup ui.Box) { popup.Above(panel.chip, 6, ui.Start) })
-	menu := components.BeginDropdownMenu(canvas, theme, first, options)
-	var row gfx.Rect
-	for index, provider := range providers {
-		item := menu.AddItem(components.DropdownMenuItem{
-			ID: hitAIModelProviders.At(index), Label: provider.name, Icon: provider.icon, Kind: components.DropdownMenuSubmenu,
-			Expanded: panel.modelSubmenu.IsOpen(hitAIModelProviders.At(index)),
-		})
-		if index == panel.modelProvider {
-			row = item
+	width := aiMenuWidth(providersWidth)
+	label := fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, state.ai.settings.defaultModel)
+	anchor := aiMenuAnchor(c, panel.chip, hitAIModelChip, label)
+	ui.Menu(c, anchor, &panel.modelMenu, func(menu *ui.MenuItems) {
+		menu.Above()
+		menu.WidthRange(width, width)
+		for index := range providers {
+			provider := &providers[index]
+			var modelsWidth float32
+			for _, model := range provider.models {
+				modelsWidth = max(modelsWidth, textWidth(model.name))
+			}
+			modelsMenuWidth := aiMenuWidth(modelsWidth)
+			menu.Sub(provider.name, func(to *ui.MenuItems) {
+				to.WidthRange(modelsMenuWidth, modelsMenuWidth)
+				for row := range provider.models {
+					model := &provider.models[row]
+					if to.Item(model.name).Chosen(model.current).Clicked() {
+						state.aiChooseModel(index, row)
+					}
+				}
+			}).Icon(provider.icon)
 		}
-	}
-	menu.End()
-	if !submenuOpen {
-		panel.modelsRect = gfx.Rect{}
-		return
-	}
-
-	// Beside the row that opened them: the models, a window of them.
-	visible := min(len(open.models), aiMenuRows)
-	var modelsWidth float32
-	for _, model := range open.models {
-		modelsWidth = max(modelsWidth, canvas.TextWidthWeight(model.name, size, gfx.WeightRegular))
-	}
-	modelsHeight := float32(32*visible + 8)
-	width := menuWidth(modelsWidth)
-	// Beside the row that opened them, top aligned, flipping left at the edge.
-	models := components.SubmenuPlacement(row, gfx.Size{Width: width, Height: modelsHeight}, panel.window)
-	panel.modelsRect = models
-	// The model list owns Escape while it is open; its parent's backdrop still
-	// dismisses both. It has no backdrop of its own.
-	options.DismissID, options.Viewport = hitAIModelSubDismiss, gfx.Rect{}
-	options.ID = hitAIModelList
-	options.Scroll = &panel.modelList
-	menu = components.BeginDropdownMenu(canvas, theme, models, options)
-	for index, model := range open.models {
-		menu.AddItem(components.DropdownMenuItem{ID: hitAIModels.At(index), Label: model.name, Kind: components.DropdownMenuRadio, Selected: model.current})
-	}
-	menu.End()
+	})
 }
 
-// paintAIAutoScopeMenu is the approval chip's menu, above it: the scopes and what
-// each lets run without asking. It is a context menu because every row carries a
-// description, which the animated dropdown menu has no room for; the cost is that
-// it appears at once instead of growing out of the chip.
-func (state *State) paintAIAutoScopeMenu(canvas *gfx.Canvas) {
+// declareAIAutoScopeMenu declares the approval chip's menu, above it: the scopes
+// and what each lets run without asking. An item's second line carries that.
+func (state *State) declareAIAutoScopeMenu(c ui.C) {
 	panel := &state.ai.panel
-	if !panel.autoMenu || state.ai.mode == agent.ModeAsk {
+	if state.ai.mode == agent.ModeAsk || panel.scopeChip.Width <= 0 {
 		return
 	}
 	if _, hasModel := state.aiModelText(); !hasModel {
 		return
 	}
-	theme := state.Theme()
+	canvas, theme := c.Frame().Canvas(), c.Theme()
 	scopes := state.aiScopes()
-	items := make([]components.ContextMenuItem, 0, len(scopes))
-	var width, height float32
+	var width float32
 	for _, scope := range scopes {
-		item := components.ContextMenuItem{
-			ID: hitAIAutoScopeLevels.At(int(scope.level)), Label: scope.name, Description: scope.description,
-			Kind: components.ContextMenuRadio, Selected: state.aiAutoUpTo() == scope.level,
-			Value: scope.name, Hint: scope.description,
+		item := components.ContextMenuItem{Label: scope.name, Description: scope.description, Kind: components.ContextMenuRadio}
+		if canvas != nil {
+			width = max(width, components.ContextMenuItemWidth(canvas, *theme, item))
 		}
-		items = append(items, item)
-		width = max(width, components.ContextMenuItemWidth(canvas, theme, item))
-		height += components.ContextMenuItemHeight(theme, item, 0)
 	}
-	height += 8 // the surface's padding above and below the rows
-	bounds := state.aiMenuRect(canvas, width, height, func(popup ui.Box) { popup.Above(panel.scopeChip, 6, ui.Start) })
-	menu := components.BeginContextMenu(canvas, theme, bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: hitAIAutoScopeDismiss, DismissID: hitAIAutoScopeDismiss,
-		Viewport: panel.window, Scroll: &panel.autoScroll,
+	width = max(width, aiMenuContextWidth)
+	level := state.aiAutoUpTo()
+	anchor := aiMenuAnchor(c, panel.scopeChip, hitAIAutoScope, state.aiScopeName(level))
+	ui.Menu(c, anchor, &panel.autoMenu, func(menu *ui.MenuItems) {
+		menu.Above()
+		menu.WidthRange(width, width)
+		for _, scope := range scopes {
+			if menu.Item(scope.name).Description(scope.description).Chosen(level == scope.level).Clicked() {
+				state.aiSetAutoUpTo(scope.level)
+			}
+		}
 	})
-	for _, item := range items {
-		menu.AddItem(item)
-	}
-	// A menu opened with the pointer has no keyboard focus of its own yet: give
-	// the scope the first row, which is also where the arrow keys start. Once a
-	// row holds focus, painting must not take it back.
-	if focused := canvas.Focused(); focused.Scope() != hitAIAutoScopeLevels {
-		canvas.SetInitialFocus(hitAIAutoScopeLevels.At(0))
-	}
-	menu.End()
 }
 
-// paintAIReasoningMenu is the reasoning chip's popup menu, above it: lists the supported levels.
-func (state *State) paintAIReasoningMenu(canvas *gfx.Canvas) {
+// declareAIReasoningMenu declares the reasoning chip's menu, above it: the
+// levels the current model supports.
+func (state *State) declareAIReasoningMenu(c ui.C) {
 	panel := &state.ai.panel
-	if !panel.reasoningMenu {
-		return
-	}
 	_, levels, ok := state.aiCurrentModelReasoning()
-	if !ok || len(levels) == 0 {
+	if !ok || len(levels) == 0 || panel.reasoningChip.Width <= 0 {
 		return
 	}
-	theme := state.Theme()
-	currentEffort := state.aiEffectiveReasoningEffort()
-	items := make([]components.ContextMenuItem, 0, len(levels))
-	var width, height float32
-	for index, level := range levels {
-		label := state.aiReasoningEffortLabel(level)
-		item := components.ContextMenuItem{
-			ID:       hitAIReasoningMenu.At(index),
-			Label:    label,
-			Kind:     components.ContextMenuRadio,
-			Selected: currentEffort == level,
-			Value:    level,
+	canvas, theme := c.Frame().Canvas(), c.Theme()
+	var width float32
+	for _, level := range levels {
+		item := components.ContextMenuItem{Label: state.aiReasoningEffortLabel(level), Kind: components.ContextMenuRadio}
+		if canvas != nil {
+			width = max(width, components.ContextMenuItemWidth(canvas, *theme, item))
 		}
-		items = append(items, item)
-		width = max(width, components.ContextMenuItemWidth(canvas, theme, item))
-		height += components.ContextMenuItemHeight(theme, item, 0)
 	}
-	height += 8
-	bounds := state.aiMenuRect(canvas, width, height, func(popup ui.Box) { popup.Above(panel.reasoningChip, 6, ui.Start) })
-	menu := components.BeginContextMenu(canvas, theme, bounds, components.ContextMenuOptions{
-		Layer:     dialogLayer,
-		Scope:     hitAIReasoningDismiss,
-		DismissID: hitAIReasoningDismiss,
-		Viewport:  panel.window,
+	width = max(width, aiMenuContextWidth)
+	current := state.aiEffectiveReasoningEffort()
+	label := state.messages.AIPanel.ReasoningEffort + ": " + state.aiReasoningEffortLabel(current)
+	anchor := aiMenuAnchor(c, panel.reasoningChip, hitAIReasoningChip, label)
+	ui.Menu(c, anchor, &panel.reasoningMenu, func(menu *ui.MenuItems) {
+		menu.Above()
+		menu.WidthRange(width, width)
+		for _, level := range levels {
+			if menu.Item(state.aiReasoningEffortLabel(level)).Chosen(current == level).Clicked() {
+				panel.reasoningEffort = level
+			}
+		}
 	})
-	for _, item := range items {
-		menu.AddItem(item)
-	}
-	if focused := canvas.Focused(); focused.Scope() != hitAIReasoningMenu {
-		canvas.SetInitialFocus(hitAIReasoningMenu.At(0))
-	}
-	menu.End()
 }
 
-// aiMenuRect is where a menu width wide and height tall goes: place says where it
-// hangs (above the chip, or at a point), and flex keeps it inside the window.
-func (state *State) aiMenuRect(canvas *gfx.Canvas, width, height float32, place func(ui.Box)) gfx.Rect {
-	f := state.aiFlex.menu.Begin(canvas, state.Theme(), state.ai.panel.window)
-	popup := f.Popup().Size(width, height)
-	place(popup)
-	f.End()
-	return popup.Rect()
-}
-
-// aiChooseModel makes the n-th model of the open provider the one that answers,
-// switching it on if it was only fetched.
-func (state *State) aiChooseModel(n int) {
+// aiChooseModel makes the n-th model of provider providerIndex the one that
+// answers, switching it on if it was only fetched.
+func (state *State) aiChooseModel(providerIndex, n int) {
 	panel := &state.ai.panel
 	panel.modelMenu = false
 	providers := state.aiMenuProviders()
-	if panel.modelProvider < 0 || panel.modelProvider >= len(providers) {
+	if providerIndex < 0 || providerIndex >= len(providers) {
 		return
 	}
-	provider := providers[panel.modelProvider]
+	provider := providers[providerIndex]
 	if n < 0 || n >= len(provider.models) {
 		return
 	}

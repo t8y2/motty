@@ -135,7 +135,7 @@ func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			folder.filterOpen = false
 			result.Focus = sftpWindowList[side]
 			if len(folder.rows) > 0 {
-				result.Focus = sftpWindowRows[side].At(max(0, folder.selected))
+				result.Focus = w.rowID(side, max(0, folder.selected))
 			}
 		}
 		return result, true

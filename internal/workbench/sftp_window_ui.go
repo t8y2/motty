@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -11,11 +10,15 @@ import (
 
 var sftpWindowHits = tree.Feature("sftp-window")
 var (
-	hitSFTPDetach                = tree.ID(sftpHits, "detach")
-	sftpWindowSides              = tree.Sub(sftpWindowHits, tree.Name("sides"))
-	sftpWindowLocal              = tree.Sub(sftpWindowSides, tree.Name("local"))
-	sftpWindowRemote             = tree.Sub(sftpWindowSides, tree.Name("remote"))
-	sftpWindowRows               = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("rows")), tree.Sub(sftpWindowRemote, tree.Name("rows"))}
+	hitSFTPDetach    = tree.ID(sftpHits, "detach")
+	sftpWindowSides  = tree.Sub(sftpWindowHits, tree.Name("sides"))
+	sftpWindowLocal  = tree.Sub(sftpWindowSides, tree.Name("local"))
+	sftpWindowRemote = tree.Sub(sftpWindowSides, tree.Name("remote"))
+	sftpWindowRows   = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("rows")), tree.Sub(sftpWindowRemote, tree.Name("rows"))}
+	// sftpWindowListRows records the scopes the two Lists name their rows in as
+	// they declare them. The window addresses rows through them, and the test
+	// helpers that still speak in sftpWindowRows resolve through them too.
+	sftpWindowListRows           = [2]gfx.Scope{}
 	sftpWindowFilter             = [2]gfx.ID{tree.ID(sftpWindowLocal, "filter"), tree.ID(sftpWindowRemote, "filter")}
 	sftpWindowFilterClear        = [2]gfx.ID{tree.ID(sftpWindowLocal, "filter-clear"), tree.ID(sftpWindowRemote, "filter-clear")}
 	sftpWindowTreeToggle         = [2]gfx.ID{tree.ID(sftpWindowLocal, "tree-toggle"), tree.ID(sftpWindowRemote, "tree-toggle")}
@@ -68,6 +71,8 @@ type sftpWindowUI struct {
 	size                gfx.Size
 	list                [2]gfx.Rect
 	offset              [2]float32
+	offsetSynced        [2]float32
+	typeahead           [2]components.MenuTypeahead
 	bars                [2]components.ScrollAreaGeometry
 	barDrag             int // 1: local, 2: remote, 3: queue; zero when idle
 	barGrab             float32
@@ -94,7 +99,6 @@ type sftpWindowUI struct {
 	profileHoverOpen    bool
 	profileHoverAnchor  gfx.Rect
 	profileHoverTrigger gfx.ID
-	rows                [2]ui.View
 }
 
 // sftpWindowScratch is the room the window's page and each pane's page leave for
@@ -104,6 +108,8 @@ type sftpWindowScratch struct {
 	local       bool
 	address     ui.Box
 	list        ui.Box
+	tree        ui.Box
+	treeSet     bool
 	filter      ui.Box
 	sudoMode    ui.Box
 	buttons     [20]sftpIconButton
@@ -300,39 +306,33 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 	}
 	value := folder.pathInput().String()
 	components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
-	paneContent := s.list.Rect()
-	frameBounds := paneContent
-	if treeWidth, show := directoryTreePaneWidths(paneContent.Width); w.directoryTree[side].enabled && show {
-		treeBounds := gfx.Rect{X: paneContent.X, Y: paneContent.Y, Width: treeWidth, Height: paneContent.Height}
+	listBounds := s.list.Rect()
+	if s.treeSet {
+		treeBounds := s.tree.Rect()
 		w.paintDirectoryTree(canvas, treeBounds, local)
-		frameBounds = gfx.Rect{
-			X:      treeBounds.X + treeBounds.Width + directoryTreeGap,
-			Y:      paneContent.Y,
-			Width:  max(paneContent.Width-treeBounds.Width-directoryTreeGap, 0),
-			Height: paneContent.Height,
-		}
 	} else {
 		w.directoryTree[side].bounds = gfx.Rect{}
 	}
-	canvas.RoundedBorder(frameBounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .4), theme.Background)
-	// Keep scrolling rows and scrollbars inside the frame, so neither can
-	// paint over its top or bottom edge.
-	rowsBounds := frameBounds.Inset(gfx.All(2))
-	w.ui.list[side] = rowsBounds
-	folder.visibleRows = max(1, int(rowsBounds.Height/sftpRowHeight))
-	area := components.BeginScrollArea(canvas, theme, rowsBounds, gfx.Size{Width: rowsBounds.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).Offset(0, w.ui.offset[side]).Viewport(sftpWindowList[side], m.SFTPFiles).VerticalScrollbar(sftpWindowBar[side], m.SFTPFiles, "")
-	geometry := area.BeginContent()
-	w.ui.bars[side] = geometry
-	w.ui.offset[side] = geometry.OffsetY
-	folder.first = int(geometry.OffsetY / sftpRowHeight)
-	last := min(len(folder.rows), folder.first+int(math.Ceil(float64(rowsBounds.Height/sftpRowHeight)))+1)
-	r := w.ui.rows[side].Begin(canvas, theme, gfx.Rect{X: rowsBounds.X, Y: rowsBounds.Y - float32(math.Mod(float64(geometry.OffsetY), float64(sftpRowHeight))), Width: max(rowsBounds.Width-10, 0), Height: float32(last-folder.first) * sftpRowHeight})
-	r.Column().FillWidth().Children(func() {
-		for index := folder.first; index < last; index++ {
-			w.paintRow(r, &folder.rows[index], sftpWindowRows[side].At(index), bounds.Width)
+	// The List owns the rows, their identity, the choice and the offset; the
+	// window keeps what the List cannot paint (the custom scrollbar, and the
+	// empty or loading message) and the fields the drop target and the model
+	// read between paints.
+	w.ui.list[side] = listBounds
+	folder.visibleRows = max(1, int(listBounds.Height/sftpRowHeight))
+	if scroll := s.list.ScrollState(); scroll != nil {
+		if w.ui.offset[side] != w.ui.offsetSynced[side] {
+			// The model (history restore, a filter, a sort, a test) asked for an
+			// offset by writing it; hand it to the List.
+			scroll.ScrollTo(w.ui.offset[side])
 		}
-	})
-	r.End()
+		folder.listScroll = scroll
+		folder.scrollOffset = scroll.Offset
+		w.ui.offset[side] = scroll.Offset
+		w.ui.offsetSynced[side] = scroll.Offset
+		folder.first = max(0, int(scroll.Offset/sftpRowHeight))
+	}
+	area := components.BeginScrollArea(canvas, theme, listBounds, gfx.Size{Width: listBounds.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).Offset(0, w.ui.offset[side]).VerticalScrollbar(sftpWindowBar[side], m.SFTPFiles, "")
+	w.ui.bars[side] = area.Geometry()
 	if len(folder.rows) == 0 {
 		label := m.SFTPEmpty
 		if folder.filterInputEditor().String() != "" {
@@ -344,7 +344,7 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 		if !local && w.view.busy {
 			label = m.SFTPLoading
 		}
-		canvas.LabelCenter(label, rowsBounds, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
+		canvas.LabelCenter(label, listBounds, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
 	}
 	area.EndContent()
 }
@@ -458,7 +458,37 @@ func (w *sftpWindow) declarePane(c ui.C) {
 				}
 			}
 		})
-		s.list = ui.Slot(c).Grow(1)
+		contentWidth := max(bounds.Width-16, 0)
+		treeWidth, showTree := directoryTreePaneWidths(contentWidth)
+		showTree = showTree && w.directoryTree[sideIndex(local)].enabled
+		listWidth := contentWidth - 4
+		if showTree {
+			listWidth = max(listWidth-treeWidth-directoryTreeGap, 0)
+		}
+		rowWidth := max(listWidth-10, 0)
+		ui.Row(c).Grow(1).HitWith(sftpWindowList[sideIndex(local)], m.SFTPFiles, gfx.HitOptions{Role: gfx.RoleGroup}).Children(func() {
+			if showTree {
+				s.tree = ui.Slot(c).Width(treeWidth)
+				s.treeSet = true
+				ui.Slot(c).Width(directoryTreeGap)
+			}
+			// The frame around the rows, as the panel has always drawn it: the
+			// List sits two pixels in so its rows and scrollbar stay clear of
+			// the rounded edge.
+			frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).Radius(6).Border(1, theme.Border.Mix(theme.MutedForeground, .4))
+			frame.Children(func() {
+				folder.prepareSFTPList()
+				folder.seedSFTPListChoice()
+				s.list = ui.List(c, &folder.list, len(folder.rows), func(row ui.ListRow) {
+					w.declareListRow(row, sideIndex(local), bounds.Width, rowWidth)
+				}).Grow(1).Label(m.SFTPFiles)
+				folder.seedSFTPListCurrent()
+				if folder.list.Changed() {
+					folder.takeSFTPListChoice()
+					w.selectionChanged(local)
+				}
+			})
+		})
 		selection := w.selection(local)
 		count := selection.count
 		// An `ls`-derived listing counts approximately, so it says so.
@@ -502,38 +532,52 @@ func (w *sftpWindow) declarePane(c ui.C) {
 	})
 }
 
-func (w *sftpWindow) paintRow(f *ui.Frame, row *sftpRow, id gfx.ID, paneWidth float32) {
-	pal, canvas := w.owner.pal, f.Canvas()
+// declareListRow declares one entry as a List row: its type icon, its name,
+// and, when the columns are on, its size and modification time. A selected row
+// is tinted, the pointer lightens one, and the keyboard's row is ringed. The
+// List owns the choice and the hover identity; the window only reads them.
+func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidth float32) {
+	folder := w.folder(side == 0)
+	if row.Index < 0 || row.Index >= len(folder.rows) {
+		return
+	}
+	if folder.listRowsScope != row.ID.Scope() {
+		folder.listRowsScope = row.ID.Scope()
+	}
+	sftpWindowListRows[side] = row.ID.Scope()
+	entry := &folder.rows[row.Index]
+	pal := w.owner.pal
 	background := pal.workspace
-	if row.selected {
+	if row.Selected() {
 		background = pal.accentSoft
-	} else if canvas.Hovered() == id {
+	} else if row.C.Frame().Canvas().Hovered() == row.ID {
 		background = pal.surfaceHot
 	}
 	color := pal.text
-	if row.entry.LinkBroken {
+	if entry.entry.LinkBroken {
 		color = pal.danger
 	}
 	tint := gfx.Color{Alpha: 1}
-	if row.mono {
+	if entry.mono {
 		tint = pal.muted
 	}
-	box := f.Row().Height(sftpRowHeight).Shrink(0).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(4).HitWith(id, row.entry.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: row.selected, Hint: row.entry.Name})
-	if canvas.FocusVisible() == id {
-		box.Border(1, pal.accent)
+	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(4)
+	if row.Focused() {
+		box = box.Border(1, pal.accent)
 	}
 	box.Children(func() {
-		declareSFTPRowIcon(f, row, tint)
-		f.Text(row.entry.Name).Color(color).Ellipsis().Grow(1)
-		for _, entry := range w.owner.sftpColumns.entries[1:] {
-			if !entry.Enabled {
+		f := row.C.Frame()
+		declareSFTPRowIcon(f, entry, tint)
+		f.Text(entry.entry.Name).Color(color).Ellipsis().Grow(1)
+		for _, column := range w.owner.sftpColumns.entries[1:] {
+			if !column.Enabled {
 				continue
 			}
-			if entry.Key == sftpColumnSize {
-				f.Text(row.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(62).TextEnd()
+			if column.Key == sftpColumnSize {
+				f.Text(entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(62).TextEnd()
 			}
-			if entry.Key == sftpColumnModified {
-				date := row.cells[3]
+			if column.Key == sftpColumnModified {
+				date := entry.cells[3]
 				if paneWidth < 420 && len(date) >= 16 {
 					date = date[5:10]
 				}

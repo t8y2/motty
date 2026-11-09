@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/tools"
 	"motty/internal/i18n"
@@ -520,20 +521,88 @@ func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintAIMenuOverlay(canvas)
 }
 
-// paintAIMenuOverlay paints the open chip menus after the panel body. They are
-// window-level popups: beside the home card a menu may open outside the card, so
-// the body's clip and layer must not cut them or their dismiss backdrop.
-func (state *State) paintAIMenuOverlay(canvas *gfx.Canvas) {
-	state.paintAIAutoScopeMenu(canvas)
-	state.paintAIReasoningMenu(canvas)
-	if !state.ai.panel.modelMenu {
-		return
+// aiPanelMenuRoot names the page that declares the open chip menus. It is a page
+// of the whole window, so a menu may open outside the panel and its dismiss
+// backdrop catches a press anywhere, without sharing names with the panel's page.
+const aiPanelMenuRoot = "ai-panel-menu"
+
+// aiMenuOpen reports whether one of the chip menus is showing. A menu whose
+// models or levels are gone paints nothing, so it is not open then either.
+func (state *State) aiMenuOpen() bool {
+	panel := &state.ai.panel
+	if panel.reasoningMenu {
+		if _, levels, ok := state.aiCurrentModelReasoning(); ok && len(levels) > 0 {
+			return true
+		}
 	}
-	if _, hasModel := state.aiModelText(); !hasModel {
-		return
+	if panel.autoMenu && state.ai.mode != agent.ModeAsk {
+		if _, has := state.aiModelText(); has {
+			return true
+		}
 	}
-	state.paintAIModelMenu(canvas)
+	if panel.modelMenu {
+		if _, has := state.aiModelText(); has {
+			return true
+		}
+	}
+	return false
 }
+
+// paintAIMenuOverlay paints the open chip menus after the panel body. They are
+// window-level popups declared by a page of the whole window: beside the home
+// card a menu may open outside the card, and a press anywhere in the window
+// dismisses it.
+func (state *State) paintAIMenuOverlay(canvas *gfx.Canvas) {
+	panel := &state.ai.panel
+	if !state.aiMenuOpen() {
+		return
+	}
+	if panel.menuPage == nil {
+		panel.menuPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiPanelMenuRoot, Theme: &state.theme})
+		panel.menuView = state.declareAIMenuPage
+	}
+	panel.menuPage.Draw(canvas, panel.window, panel.menuView)
+}
+
+// declareAIMenuPage declares the open chip menus in the window. Each menu hangs
+// above the chip that opened it; the anchors are invisible elements at the
+// chips' places, so the menu's own keyboard routing and focus return reach the
+// chips the composer paints by hand.
+func (state *State) declareAIMenuPage(c ui.C) {
+	panel := &state.ai.panel
+	// The menus are dialogs' peers: they must paint over a drawer's content.
+	c.Frame().PopupLayer(dialogLayer)
+	ui.Stack(c).Fill().Children(func() {
+		if panel.modelMenu {
+			state.declareAIModelMenu(c)
+		}
+		if panel.autoMenu {
+			state.declareAIAutoScopeMenu(c)
+		}
+		if panel.reasoningMenu {
+			state.declareAIReasoningMenu(c)
+		}
+	})
+}
+
+// aiMenuAnchor is an invisible element at the rect of a chip, named by the chip's
+// identity: the menu hangs off it, the menu's keys from the chip reach the menu
+// through it, and closing the menu gives the focus back to that identity. The
+// anchor is two pixels above the chip because ui.Menu leaves four pixels between
+// a menu and its anchor, and these menus open six above the chip.
+func aiMenuAnchor(c ui.C, rect gfx.Rect, id gfx.ID, label string) ui.Box {
+	return ui.Slot(c).Absolute().Left(rect.X).Top(rect.Y-2).Size(rect.Width, rect.Height).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true})
+}
+
+// aiMenuWidth is the assistant chip menu's width: what its words need plus room
+// for the mark and the padding, between 140 and 320 pixels.
+func aiMenuWidth(text float32) float32 { return min(max(text+56, 140), 320) }
+
+// aiMenuContextWidth is the least width a menu with description rows may have:
+// the same 144 a context menu keeps, which the approval and reasoning menus were
+// before they became page menus.
+const aiMenuContextWidth = float32(144)
 
 func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	ai, panel := &state.ai, &state.ai.panel
@@ -569,9 +638,7 @@ func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	switch {
 	case panel.history:
 		state.paintAIHistory(canvas, list)
-	case len(ai.items) == 0:
-		state.paintAIEmpty(canvas, list)
-	default:
+	case len(ai.items) > 0:
 		state.paintAIMessages(canvas, list)
 	}
 	state.paintAIBottom(canvas, &panel.body)
@@ -602,7 +669,13 @@ func (state *State) declareAIPanelPage(c ui.C) {
 			})
 		}
 		ui.Divider(c).Background(pal.line)
-		panel.body.list = ui.Slot(c).Grow(1)
+		// With nothing to show, the list's room is the page's own empty state;
+		// the history and the conversation are painted into a slot.
+		if panel.history || len(state.ai.items) > 0 {
+			panel.body.list = ui.Slot(c).Grow(1)
+		} else {
+			panel.body.list = state.declareAIEmpty(c)
+		}
 		state.declareAIBottom(c, &panel.body, s.boxHeight)
 	})
 	// The title row's controls are painted by hand into their slots; the page
@@ -657,50 +730,46 @@ func historyStyle(open bool) iconButtonStyle {
 	return iconButtonQuiet
 }
 
-// paintAIEmpty is the panel before the first question: a third of the free room
-// above the icon, the title, the hint and the examples, and two thirds below.
-func (state *State) paintAIEmpty(canvas *gfx.Canvas, list gfx.Rect) {
+// declareAIEmpty declares the panel before the first question: a third of the
+// free room above the icon, the title, the hint and the examples, and two thirds
+// below.
+func (state *State) declareAIEmpty(c ui.C) ui.Box {
 	pal := state.pal
 	title, hint, texts := state.aiEmptyTexts()
-	var examples [aiExamples]ui.Box
-	f := state.aiFlex.empty.Begin(canvas, state.Theme(), list)
-	f.Column().Fill().PadX(aiPad).Children(func() {
-		f.Spacer().MinHeight(8)
-		f.Column().Shrink(0).Children(func() {
-			f.Icon(lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
-			f.Text(title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
-			f.Paragraph(hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
-			f.Column().Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
-				for index := range examples {
-					examples[index] = f.Slot().Height(36)
+	return ui.Column(c).Grow(1).FillWidth().PadX(aiPad).Clip().Children(func() {
+		ui.Spacer(c).MinHeight(8)
+		ui.Column(c).Shrink(0).Children(func() {
+			ui.Icon(c, lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
+			ui.Text(c, title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
+			ui.Paragraph(c, hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
+			ui.Column(c).Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
+				for index, example := range texts {
+					state.declareAIExample(c, index, example)
 				}
 			})
 		})
-		f.Spacer().Grow(2)
+		ui.Spacer(c).Grow(2)
 	})
-	f.End()
+}
 
-	for index, example := range texts {
-		bounds := examples[index].Rect()
-		if bounds.Y+bounds.Height > list.Y+list.Height {
-			break
-		}
-		id := hitAIExamples.At(index)
-		background := pal.surface
+// declareAIExample declares one prompt of the empty panel as a row a click
+// fills in.
+func (state *State) declareAIExample(c ui.C, index int, example string) {
+	pal, id := state.pal, hitAIExamples.At(index)
+	background := pal.surface
+	if canvas := c.Frame().Canvas(); canvas != nil {
 		switch {
 		case canvas.Pressed() == id:
 			background = pal.surfaceHot
 		case canvas.Hovered() == id:
 			background = pal.surfaceSoft
 		}
-		r := state.aiFlex.row.Begin(canvas, state.Theme(), bounds)
-		r.Row().Fill().PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
-			HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
-			r.Text(example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
-			r.Icon(lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
-		})
-		r.End()
 	}
+	ui.Row(c).Height(36).PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
+		HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
+		ui.Text(c, example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
+		ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
+	})
 }
 
 // aiEmptyTexts are the words of the empty panel: about the terminal when there
@@ -1284,9 +1353,10 @@ type aiCopySlot struct {
 
 // aiFlexViews are the layouts the assistant's panel is declared with.
 type aiFlexViews struct {
-	empty, mention, summary, send, menu ui.View
-	shell, barButton                    ui.View
-	history, historyRows, messages      ui.View
-	row                                 ui.View // one row of the history or of the conversation, declared into its slot
-	status                              ui.View
+	send                 ui.View
+	shell, barButton     ui.View
+	history, historyRows ui.View
+	messages             ui.View
+	row                  ui.View // one row of the history or of the conversation, declared into its slot
+	status               ui.View
 }

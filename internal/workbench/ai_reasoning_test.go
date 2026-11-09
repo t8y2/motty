@@ -123,6 +123,8 @@ func TestAIReasoningMenuInteractionAndRequestTransmission(t *testing.T) {
 	})
 	_ = db.SetDefaultModel("p1", "o3-mini")
 	state.reloadAI()
+	state.ai.open = true
+	paintAt(state, panelWide)
 
 	// 点击 reasoning chip，开启菜单
 	state.Click(hitAIReasoningChip)
@@ -131,7 +133,7 @@ func TestAIReasoningMenuInteractionAndRequestTransmission(t *testing.T) {
 	}
 
 	// 选择菜单中的第 2 项（index 2 对应 "high"）
-	state.Click(hitAIReasoningMenu.At(2))
+	clickAIMenuRow(t, state, state.aiReasoningEffortLabel(reasoning.LevelHigh))
 	if state.ai.panel.reasoningMenu {
 		t.Fatalf("expected reasoningMenu to close after selection")
 	}
