@@ -387,6 +387,19 @@ type aiPanel struct {
 	chip           gfx.Rect
 	approvalLay    aiApprovalLayout
 
+	// page declares the panel's chrome; pageView is its declaration kept so a
+	// paint makes no method value. body holds what the page left for the
+	// hand-painted controls and lists, and pageScratch the values its
+	// declaration reads.
+	page        *ui.Page
+	pageView    func(ui.C)
+	body        aiBody
+	pageScratch aiPanelPageScratch
+
+	// importPages is the provider import dialog's page and the slots its
+	// hand-painted buttons go into.
+	importPages aiImportPages
+
 	// The approval scope chip and the menu it opens. The scope itself belongs to
 	// the conversation (ai.autoUpTo); this is only its view state.
 	autoMenu   bool
@@ -608,11 +621,8 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 		state.aiChooseTarget(id)
 	case id == hitAIToggle:
 		state.toggleAIPanel()
-	case id == hitAIClose || id == hitAIDrawerDismiss:
-		// Closing from inside the panel takes the keyboard with it; hand it back
-		// to the terminal the panel covered.
-		state.ai.panel.focusBack = true
-		state.setAIPanelOpen(false)
+	case id == hitAIDrawerDismiss:
+		state.closeAIPanel()
 	case id == hitAIAttach:
 		state.aiPickAttachments()
 	case id == hitAIUpload:
@@ -620,17 +630,6 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 	case id.Scope() == hitAIAttachRemove:
 		if index, ok := id.In(hitAIAttachRemove); ok {
 			state.aiRemoveAttachment(index)
-		}
-	case id == hitAINew:
-		state.aiNewConversation()
-		if ai.run == nil {
-			state.aiPanelReset()
-		}
-	case id == hitAIHistory:
-		panel.history = !panel.history
-		panel.clearAITextSelection()
-		if panel.history {
-			state.aiPanelLoadHistory()
 		}
 	case id == hitAIMode:
 		state.dropEscalationApprovals()
@@ -759,6 +758,33 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 		}
 	}
 	return true
+}
+
+// closeAIPanel closes the panel from inside itself: the keyboard goes back to
+// the terminal the panel covered.
+func (state *State) closeAIPanel() {
+	state.ai.panel.focusBack = true
+	state.setAIPanelOpen(false)
+}
+
+// newAIConversationFromPanel is the title row's New button: it starts a new
+// conversation, and forgets the layout of the old one when nothing is running.
+func (state *State) newAIConversationFromPanel() {
+	state.aiNewConversation()
+	if state.ai.run == nil {
+		state.aiPanelReset()
+	}
+}
+
+// toggleAIHistory shows the saved conversations in place of the messages, or
+// the messages again.
+func (state *State) toggleAIHistory() {
+	panel := &state.ai.panel
+	panel.history = !panel.history
+	panel.clearAITextSelection()
+	if panel.history {
+		state.aiPanelLoadHistory()
+	}
 }
 
 // aiCopyAnswer copies the last assistant answer as Markdown.
@@ -952,6 +978,14 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
+	// The page's own targets (and any overlay it declares) come first. Its Root
+	// is the panel's page, so the controls this file names by hand stay outside
+	// it and are handled below.
+	if panel.page != nil {
+		if result, ok := panel.page.Pointer(event); ok {
+			return result, true
+		}
+	}
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
 		return result, true
 	}
@@ -1152,6 +1186,14 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	ai := &state.ai
 	panel := &ai.panel
+	// The page's Controls, TextAreas and Shortcuts take their keys before the
+	// panel's own handling. Its Root is separate from the identities this file
+	// declares by hand, so those still fall through to the code below.
+	if panel.page != nil {
+		if result, handled := panel.page.Key(event); handled {
+			return result, true
+		}
+	}
 	if event.Target.Scope() == hitAIExamples && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		return gfx.EventResult{Focus: hitAIInput, Repaint: true}, true
 	}
@@ -1332,6 +1374,13 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 		return nil
 	}
 	panel := &state.ai.panel
+	// A page field of the panel would take the platform's editor first; the
+	// composer itself is the hand-painted editor below.
+	if panel.page != nil {
+		if input := panel.page.TextInput(context); input != nil {
+			return input
+		}
+	}
 	panel.input.Editor = nil
 	panel.input.State = app.TextStateOf(&state.ai.input)
 	if panel.input.OnEvent == nil {

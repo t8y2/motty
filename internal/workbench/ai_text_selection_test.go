@@ -686,7 +686,7 @@ func TestAnswerSelectionClearsWhenTheConversationIsReset(t *testing.T) {
 func TestOpeningHistoryClearsTheAnswerSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
 	panel := selectAnswerText(t, state, 0, 5)
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	if panel.hasAITextSelection() {
 		t.Fatalf("the history list kept the selection: %+v", panel.textSelect)
 	}

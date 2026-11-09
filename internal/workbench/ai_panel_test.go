@@ -87,6 +87,18 @@ func paintAt(state *State, size gfx.Size) (*gfx.Canvas, []string) {
 	return &canvas, texts
 }
 
+// clickAIPanelPage delivers a click on one of the panel's page-declared title
+// controls in the event pass of a paint, where the page reads it, and runs the
+// actions the page deferred, as the runtime does after an event pass.
+func clickAIPanelPage(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, panelWide)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
 func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 	t.Helper()
 	hit, ok := hitByID(canvas, id)
@@ -137,7 +149,7 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 	if terminal.Bounds.X+terminal.Bounds.Width > panelHit(t, canvas, hitAIInput).Bounds.X {
 		t.Fatalf("the terminal %+v runs under the panel", terminal.Bounds)
 	}
-	state.Click(hitAIClose)
+	clickAIPanelPage(t, state, hitAIClose)
 	canvas, _ = paintAt(state, panelWide)
 	if _, ok := hitByID(canvas, hitAIInput); ok {
 		t.Fatal("the panel stayed after Close")
@@ -750,7 +762,7 @@ func TestHistoryListsOpensAndDeletes(t *testing.T) {
 	_, _ = db.AppendMessage(one.ID, store.StoredMessage{Role: "assistant", Text: "hi, how can I help"})
 	_, _ = db.CreateConversation("Second chat", "x")
 	state.ai.open = true
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, "First chat") || !hasText(texts, "Second chat") || !hasText(texts, state.messages.AIPanel.HistoryTitle) {
 		t.Fatalf("history not listed: %q", texts)
@@ -762,7 +774,7 @@ func TestHistoryListsOpensAndDeletes(t *testing.T) {
 	if !hasText(texts, "hello there") || !hasText(texts, "hi, how can I help") || state.ai.panel.history {
 		t.Fatalf("conversation not opened: %q", texts)
 	}
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	paintAt(state, panelWide)
 	state.Click(hitAIHistoryDelete.At(1))
 	_, texts = paintAt(state, panelWide)

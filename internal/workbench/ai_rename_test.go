@@ -30,7 +30,7 @@ func TestAIRenameDialogButtons(t *testing.T) {
 				t.Fatal(err)
 			}
 			state.Click(hitAIToggle)
-			state.Click(hitAIHistory)
+			clickAIPanelPage(t, state, hitAIHistory)
 			state.Click(hitAIHistoryRename.At(0))
 			if state.modal != modalAIRename || state.ai.rename.id != conversation.ID {
 				t.Fatal("history action did not open the selected conversation")

@@ -32,7 +32,7 @@ func TestAIRenameEscapeKeepsHistoryOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Click(hitAIToggle)
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	state.Click(hitAIHistoryRename.At(0))
 	driver := modalEventDriver(t, state)
 	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
@@ -57,7 +57,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				}
 			}
 			state.Click(hitAIToggle)
-			state.Click(hitAIHistory)
+			clickAIPanelPage(t, state, hitAIHistory)
 			var closeID gfx.ID
 			switch name {
 			case "ai-rename":
@@ -227,7 +227,7 @@ func TestFormDialogsKeepTypedContentWhenPressedOutside(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.Click(hitAIToggle)
-			s.Click(hitAIHistory)
+			clickAIPanelPage(t, s, hitAIHistory)
 			s.Click(hitAIHistoryRename.At(0))
 		}, openModal(modalAIRename), hitAIRenameField},
 	} {
