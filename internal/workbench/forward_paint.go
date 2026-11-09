@@ -36,7 +36,7 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 		detailColor = pal.danger
 	}
 
-	var content, emptyIcon, emptyAdd, remove, edit, action, add ui.Box
+	var content, remove, edit, action, add ui.Box
 	f := state.forwardLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
@@ -50,7 +50,7 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
 		if len(state.forwards) == 0 {
-			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
+			state.declareEmptyPage(f, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
@@ -70,7 +70,7 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	state.paintToolbarButton(canvas, hitForwardAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ForwardAdd, addIcon, true, canAdd, condensed)
 
 	if len(state.forwards) == 0 {
-		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconForward, hitForwardAdd, messages.ForwardAdd, canAdd)
+		state.paintEmptyPage(canvas, iconForward, hitForwardAdd, messages.ForwardAdd, canAdd)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}

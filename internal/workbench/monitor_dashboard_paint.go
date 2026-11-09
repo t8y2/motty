@@ -181,10 +181,7 @@ func (s *State) paintDashboard(c *gfx.Canvas, b gfx.Rect) {
 	p := s.dashboardPanel()
 	theme := s.Theme()
 	if p == nil {
-		f := s.dashboard.emptyLayout.Begin(c, theme, b)
-		icon, button := s.declareEmptyPage(f, b, m.Empty, m.EmptyHint, m.Create)
-		f.End()
-		s.paintEmptyPage(c, icon, button, iconActivity, hitDashboardNew, m.Create, true)
+		s.drawEmptyPage(c, b, m.Empty, m.EmptyHint, m.Create, pal.muted, iconActivity, hitDashboardNew, m.Create, true)
 		return
 	}
 	actionTheme := theme

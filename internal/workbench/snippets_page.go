@@ -88,7 +88,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
-	var content, filter, emptyIcon, emptyAdd, remove, edit, send, add ui.Box
+	var content, filter, remove, edit, send, add ui.Box
 	f := form.layout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
@@ -102,7 +102,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
 		if len(form.list) == 0 {
-			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
+			state.declareEmptyPage(f, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
 		} else {
 			if len(form.groups) > 0 {
 				f.Row().Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
@@ -128,7 +128,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	state.paintToolbarButton(canvas, hitSnippetAdd, add.Rect().X, add.Rect().Y, addWidth, m.SnippetAdd, addIcon, true, canAdd, condensed)
 
 	if len(form.list) == 0 {
-		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
+		state.paintEmptyPage(canvas, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
 		return
 	}
 	// The command column leaves room before its text for the Enter keycap of the

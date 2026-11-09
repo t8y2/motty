@@ -281,10 +281,13 @@ func (state *State) openSettings() {
 func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
 	if state.schemeBrowserOpen {
-		if pointInRect(event.X, event.Y, state.schemeDrawerBody) {
-			result := state.schemeDrawerView.Wheel(event)
-			result.Handled = true
-			return result
+		if pointInRect(event.X, event.Y, state.scheme.body) {
+			if state.scheme.page != nil {
+				result := state.scheme.page.Wheel(event)
+				result.Handled = true
+				return result
+			}
+			return gfx.EventResult{Handled: true}
 		}
 		return gfx.EventResult{Handled: true}
 	}

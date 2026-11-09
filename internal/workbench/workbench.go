@@ -765,13 +765,12 @@ type State struct {
 	// schemeFilter is the drawer's search box. View state, so it is not kept.
 	schemeFilter text.Editor
 	// schemeBrowserOpen shows the complete collection in a drawer. The drawer's
-	// view and body outlive a paint so wheel handling can use the last layout.
-	schemeBrowserOpen  bool
-	schemeDrawerView   ui.View
-	schemeDrawerBody   gfx.Rect
-	schemeDrawerFilter string
-	schemeDrawerReset  bool
-	terminalPad        terminalPad
+	// page and body outlive a paint so wheel handling can use the last layout.
+	schemeBrowserOpen bool
+	scheme            schemeUI
+	// empty is the shared empty-state page the catalog sections paint.
+	empty       emptyStateUI
+	terminalPad terminalPad
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter
@@ -2330,6 +2329,11 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if state.schemeBrowserOpen && state.modal == modalNone && state.scheme.page != nil {
+		if result, ok := state.scheme.page.Pointer(event); ok {
+			return result
+		}
+	}
 	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
@@ -2508,6 +2512,11 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		// Its first keyboard-selected row still belongs to the file panel, and the
 		// row identities are already mounted where the menu was painted.
 		mount = 0
+	}
+	if state.schemeBrowserOpen && state.modal == modalNone && state.activeSection == sectionSettings && state.scheme.page != nil {
+		if result, handled := state.scheme.page.Key(event); handled {
+			return result
+		}
 	}
 	if state.activeSection == sectionSettings && state.modal == modalNone && state.settings.workspace != nil {
 		if result, handled := state.settings.workspace.Key(event); handled {

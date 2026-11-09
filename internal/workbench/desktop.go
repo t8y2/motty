@@ -104,6 +104,10 @@ type desktopView struct {
 	asked, pending desktopTarget
 	pendingSince   time.Duration
 	settling       bool
+	// sessionID names this view's latency page in the window's Tree, so split
+	// panes keep theirs apart.
+	sessionID uint32
+	latency   desktopLatencyUI
 }
 
 // desktopTarget is the desktop a pane wants of a server that follows it: as
@@ -848,6 +852,7 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 	pal, m := state.pal, state.messages
 	view := session.desk
 	view.present()
+	view.sessionID = session.ID
 	view.pixelScale = canvas.PixelScale()
 	geometry := view.layout(size)
 	view.area = geometry.area

@@ -42,7 +42,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 		emptyTitle, emptyDescription, emptyIconKind = messages.KnownHostsNoMatches, messages.KnownHostsNoMatchesSub, iconSearch
 	}
 
-	var search, content, emptyIconBox, pagination, refresh, retrust, remove ui.Box
+	var search, content, pagination, refresh, retrust, remove ui.Box
 	f := state.knownHostsLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Column().MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
@@ -57,7 +57,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 			remove = f.Slot().Size(deleteWidth, toolbarHeight)
 		})
 		if empty {
-			emptyIconBox, _ = state.declareEmptyPageWithColor(f, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
+			state.declareEmptyPageWithColor(f, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(14, 0, 0, 0)
 		}
@@ -86,7 +86,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 	})
 
 	if empty {
-		state.paintEmptyPage(canvas, emptyIconBox, ui.Box{}, emptyIconKind, gfx.ID{}, "", false)
+		state.paintEmptyPage(canvas, emptyIconKind, gfx.ID{}, "", false)
 	} else {
 		state.paintKnownHostsTable(canvas, content.Rect())
 	}

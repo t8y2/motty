@@ -997,7 +997,7 @@ func elide(canvas *gfx.Canvas, value string, size, weight, width float32) string
 // chromeLayout keeps the ui.View of each area of the window chrome that is laid
 // out by github.com/vivaui/viva/flex, and the few rectangles another painter needs from them.
 type chromeLayout struct {
-	window, probe, header, hostRow, empty, popup ui.View
+	window, probe, header, hostRow, popup ui.View
 	// widget lays out one small control at a time (a bar or toolbar button, a chip,
 	// an icon button): each paints what it declared before the next begins, so the
 	// view is shared. dialog is the body of one dialog.
@@ -2118,21 +2118,13 @@ func (state *State) hostBadgeFill(background gfx.Color) gfx.Color {
 // invited to add one.
 func (state *State) paintEmptyHosts(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages
-	var icon, add ui.Box
-	f := state.chrome.empty.Begin(canvas, state.Theme(), bounds)
-	icon, add = state.declareEmptyPage(f, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost)
-	f.End()
-	state.paintEmptyPage(canvas, icon, add, iconHosts, hitAddHostEmpty, m.NewHost, true)
+	state.drawEmptyPage(canvas, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted, iconHosts, hitAddHostEmpty, m.NewHost, true)
 }
 
 // paintNoMatches is what the list shows when the search box hides every host.
 func (state *State) paintNoMatches(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages
-	var icon, add ui.Box
-	f := state.chrome.empty.Begin(canvas, state.Theme(), bounds)
-	icon, add = state.declareEmptyPage(f, bounds, m.NoMatches, m.NoMatchesSub, "")
-	f.End()
-	state.paintEmptyPage(canvas, icon, add, iconSearch, gfx.ID{}, "", true)
+	state.drawEmptyPage(canvas, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, iconSearch, gfx.ID{}, "", true)
 }
 
 // lucideIcons maps the internal icon kinds to compiled Lucide icons

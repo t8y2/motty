@@ -26,6 +26,18 @@ func (state *State) desktopLatency(view *desktopView) (string, gfx.Color, string
 		fmt.Sprintf(state.messages.Desktop.LatencyHintFmt, sampled.Local().Format("15:04:05"))
 }
 
+// desktopLatencyUI is one desktop's RTT badge: the page that declares it in the
+// status strip, and what the last paint gave it. A desktop pane has its own, so
+// split panes do not share a page.
+type desktopLatencyUI struct {
+	page  *ui.Page
+	view  func(ui.C)
+	label string
+	color gfx.Color
+	hint  string
+	width float32
+}
+
 func (state *State) declareDesktopLatency(f *ui.Frame, canvas *gfx.Canvas, view *desktopView) {
 	if !state.terminalShowLatency {
 		return
@@ -35,9 +47,21 @@ func (state *State) declareDesktopLatency(f *ui.Frame, canvas *gfx.Canvas, view 
 		return
 	}
 	width := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 2
-	f.Row().HitWith(hitDesktopLatency, label, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: hint}).PadX(6).MarginSides(0, 8, 0, 0).Shrink(0).
-		Items(ui.Center).Background(withAlpha(color, 0.14)).Radius(4).Children(func() {
-		f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).LineHeight(16).Width(width)
+	latency := &view.latency
+	latency.label, latency.color, latency.hint, latency.width = label, color, hint, width
+	if latency.page == nil {
+		latency.page = ui.NewPage(ui.PageConfig{Root: fmt.Sprintf("desktop-latency-%d", view.sessionID), Theme: &state.theme})
+		latency.view = func(c ui.C) { state.declareDesktopLatencyPage(c, latency) }
+	}
+	f.Page(latency.page, latency.view).Size(width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+}
+
+// declareDesktopLatencyPage declares the badge's row: the RTT in the sample's
+// color over a wash of it, with the sample time as the hover hint.
+func (state *State) declareDesktopLatencyPage(c ui.C, latency *desktopLatencyUI) {
+	ui.Row(c).Fill().HitWith(hitDesktopLatency, latency.label, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: latency.hint}).
+		PadX(6).Items(ui.Center).Background(withAlpha(latency.color, 0.14)).Radius(4).Children(func() {
+		ui.Text(c, latency.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(latency.color).LineHeight(16).Width(latency.width)
 	})
 }
 
