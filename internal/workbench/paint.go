@@ -183,7 +183,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
 	}
-	pal := state.pal
 	// The window is a bar over a body. The terminals show the picture through their
 	// own ground, so with one set only the bar is shell-colored; the shell behind
 	// them must not cover it.
@@ -220,7 +219,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 			state.tabStrip.area = gfx.Rect{}
 		}
 	}
-	var workspaceSlot ui.Box
 	// The section and assistant are sibling cards, separated by the same margin
 	// the cards keep from the window's right and bottom edges.
 	cardRight := sectionCardMargin
@@ -228,23 +226,19 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		cardRight = reserve
 	}
 	cardRight += state.toolbarDockSideReserveFor(false, false)
-	f := chrome.window.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
-	root := f.Column().Fill()
-	if !picture {
-		root.Background(pal.shell)
+	chrome.workspaceSlot = ui.Box{}
+	chrome.shellPicture = picture
+	chrome.shellHeight = size.Height
+	chrome.shellGeometry = geometry
+	chrome.shellScroll = scroll
+	chrome.shellFullPage = fullPage
+	chrome.shellCardRight = cardRight
+	if chrome.windowPage == nil {
+		chrome.windowPage = ui.NewPage(ui.PageConfig{Root: shellPageRoot, Theme: &state.theme})
+		chrome.windowView = state.declareShell
 	}
-	root.Children(func() {
-		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
-		if !fullPage {
-			f.Row().Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
-				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
-				state.declareNavigation(f, size.Height)
-				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
-					Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
-			})
-		}
-	})
-	f.End()
+	chrome.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, chrome.windowView)
+	workspaceSlot := chrome.workspaceSlot
 	state.paintWindowBarParts(canvas, geometry.area)
 	if !fullPage {
 		state.paintLockup(canvas, chrome.lockup.Rect())
@@ -550,6 +544,30 @@ type barGeometry struct {
 	tabWidth          float32
 }
 
+// declareShell declares the window's shell as a page: the bar over the body,
+// and under it, unless a pane fills the window, the navigation rail beside the
+// slot the sections are painted into. The inputs come from chromeLayout, kept by
+// Paint before the page is declared, because the page's view takes no arguments.
+func (state *State) declareShell(c ui.C) {
+	chrome, pal := &state.chrome, state.pal
+	root := ui.Column(c).Fill()
+	if !chrome.shellPicture {
+		root.Background(pal.shell)
+	}
+	root.Children(func() {
+		state.declareWindowBar(c, &chrome.bar, false, chrome.shellPicture, chrome.shellGeometry, chrome.shellScroll)
+		if chrome.shellFullPage {
+			return
+		}
+		ui.Row(c).Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
+			ui.Slot(c).Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
+			state.declareNavigation(c, chrome.shellHeight)
+			chrome.workspaceSlot = ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
+				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
+		})
+	})
+}
+
 // windowBarGeometry lays the bar out once without its contents to find out how
 // wide the tabs come out: they stay barTabMax wide and shrink together to barTabMin
 // to share the room left of the buttons.
@@ -571,11 +589,12 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 		geometry.leading == leading && geometry.trailing == trailing {
 		return *geometry
 	}
-	f := chrome.probe.Begin(canvas, state.Theme(), gfx.Rect{Width: width, Height: windowBarHeight})
-	f.Column().Fill().Children(func() {
-		state.declareWindowBar(f, &chrome.probeBar, true, false, barGeometry{locked: locked, numbers: state.tabNumbers}, 0)
-	})
-	f.End()
+	chrome.probeInput = barGeometry{locked: locked, numbers: state.tabNumbers}
+	if chrome.probePage == nil {
+		chrome.probePage = ui.NewPage(ui.PageConfig{Root: shellProbeRoot, Theme: &state.theme})
+		chrome.probeView = state.declareProbeBar
+	}
+	chrome.probePage.Draw(canvas, gfx.Rect{Width: width, Height: windowBarHeight}, chrome.probeView)
 	*geometry = barGeometry{
 		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, valid: true,
 		locked:      locked,
@@ -589,13 +608,22 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 	return *geometry
 }
 
+// declareProbeBar declares the window bar for measurement only: no picture, no
+// hits, just the places whose rectangles give the tabs their width.
+func (state *State) declareProbeBar(c ui.C) {
+	chrome := &state.chrome
+	ui.Column(c).Fill().Children(func() {
+		state.declareWindowBar(c, &chrome.probeBar, true, false, chrome.probeInput, 0)
+	})
+}
+
 // declareWindowBar declares the strip the custom titlebar leaves for the app: the
 // hosts button and one tab per session on the left, the local terminal, search,
 // language, theme and settings buttons on the right. The tabs share the room left of
 // the buttons; when even the narrowest do not fit they scroll under a clip, and the
 // new-tab button stays at the end of that room instead of being pushed out of the
 // window. With probe set only the places are declared, for windowBarGeometry.
-func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
+func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, trailing := app.TitlebarInsets()
 	visibleFileTabs := 0
@@ -610,7 +638,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
 	}
-	row := f.Row().Height(windowBarHeight).PadSides(0, trailing+barMargin, 0, leading+barMargin).Items(ui.Center)
+	row := ui.Row(c).Height(windowBarHeight).PadSides(0, trailing+barMargin, 0, leading+barMargin).Items(ui.Center)
 	if !probe {
 		// The bar is where the window is moved from; its buttons and tabs, declared
 		// after it, take their own presses.
@@ -620,29 +648,29 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 		row.Background(pal.shell)
 	}
 	row.Children(func() {
-		state.barButton(f, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
+		state.barButton(c, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
 		if state.tabOrientation == tabsVertical {
 			if probe {
-				f.Spacer()
+				ui.Spacer(c)
 			} else {
 				// The name is drawn after the bar is laid out, centred over the
 				// workspace it names: see paintWindowBarTitle. The slot keeps the
 				// height of a tab so the drawn line sits on the row's middle.
-				bar.title = f.Slot().Grow(1).Height(barTabHeight)
+				bar.title = ui.Slot(c).Grow(1).Height(barTabHeight)
 				bar.titleLabel = state.windowBarTitle()
 			}
 		}
 		// The room of the tabs and the new-tab button. The tabs stay as wide as they
 		// like (barTabMax) and shrink together to barTabMin; the new-tab button
 		// follows the last of them, or ends the room when they do not fit.
-		tabRoom := f.Stack().Grow(1).MarginSides(0, barGap, 0, 0)
+		tabRoom := ui.Stack(c).Grow(1).MarginSides(0, barGap, 0, 0)
 		if state.tabOrientation == tabsVertical && visibleFileTabs == 0 {
 			tabRoom.Grow(0).Width(barButtonSize)
 		}
 		tabRoom.Children(func() {
-			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
-			f.Row().Fill().Items(ui.Center).Children(func() {
-				tabs := f.Row()
+			area := ui.Slot(c).Fill().MarginSides(0, barButtonSize, 0, 0)
+			ui.Row(c).Fill().Items(ui.Center).Children(func() {
+				tabs := ui.Row(c)
 				if probe {
 					chrome.probeRow = tabs
 				} else {
@@ -668,7 +696,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 								// The number sits beside the name, which keeps its room.
 								minimum += tabNumberMinExtra
 							}
-							tab = f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
+							tab = ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
@@ -677,7 +705,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 						if index == 0 {
 							first = -scroll
 						}
-						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
+						entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
 						bar.tabs = append(bar.tabs, entry)
 					}
 					for fileIndex, fileTab := range state.sftpTabs {
@@ -694,7 +722,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							if geometry.numbers {
 								minimum += tabNumberMinExtra
 							}
-							tab := f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
+							tab := ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
@@ -704,7 +732,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							entry.number = tabNumber(index + 1)
 						}
 						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
-						hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+						hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 						foreground := pal.muted
 						fill, edge := pal.tab, pal.line
 						switch {
@@ -731,51 +759,51 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							first = -scroll
 						}
 						label := state.sftpFileTabTitle(fileTab)
-						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+						ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active}).Children(func() {
-							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 							if state.tabNumbers && entry.number != "" {
 								// File tabs follow the session tabs in the number row,
 								// as they do for the number shortcuts.
-								f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 							}
-							f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
-							entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
-							f.Spacer()
+							ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+							entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
+							ui.Spacer(c)
 							if !active && !hovered {
-								f.Slot().Size(20, 20)
+								ui.Slot(c).Size(20, 20)
 								return
 							}
 							var closeFill gfx.Color
-							if f.Canvas().Hovered() == closeID {
+							if c.Canvas().Hovered() == closeID {
 								closeFill = pal.line
 								if active {
 									closeFill = pal.tabCloseHot
 								}
 							}
-							f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+							ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 								HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-								f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+								ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 							})
 						})
 						bar.tabs = append(bar.tabs, entry)
 					}
 				})
-				state.barButton(f, probe, hitNewTab, iconPlus, m.LabelNewTab)
+				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
 			})
 			if probe {
 				chrome.probeArea = area
 			}
 		})
-		state.declareToolbarDockTop(f, probe)
+		state.declareToolbarDockTop(c.Frame(), probe)
 	})
 }
 
 // declareWorkspaceTab shares tab styling and hit identities between both
 // orientations. number is the tab's place in the number row, zero for a tab no
 // number key reaches.
-func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
+func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
 	m, pal := state.messages, state.pal
 	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 	entry := barTab{workspace: workspace, id: id, closeID: closeID}
@@ -784,7 +812,7 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 		entry.number = tabNumber(number)
 	}
 	active := state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() == workspace.ID
-	hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+	hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 	foreground := pal.muted
 	fill, edge := pal.tab, pal.line
 	switch {
@@ -830,7 +858,7 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 			tabOptions.Hint = hint
 		}
 	}
-	row := f.Row().Size(width, height).Shrink(0)
+	row := ui.Row(c).Size(width, height).Shrink(0)
 	if vertical {
 		row.MarginSides(first, 0, barGap, 0)
 	} else {
@@ -840,15 +868,15 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 		PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(id, label, tabOptions).Children(func() {
 		if compact {
-			f.Spacer()
-			entry.badge = f.Slot().Size(20, 20).Shrink(0)
-			f.Spacer()
+			ui.Spacer(c)
+			entry.badge = ui.Slot(c).Size(20, 20).Shrink(0)
+			ui.Spacer(c)
 			return
 		}
-		entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+		entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 		if state.tabNumbers && entry.number != "" {
 			// The number names the name beside it, so it carries less ink.
-			f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 		}
 		titleColor := foreground
 		if entry.output != outputAlertNone {
@@ -859,35 +887,35 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 			// Reserve the same layout space as text, then shorten the path once
 			// the actual width is known. Ordinary names keep tail ellipsis.
 			entry.pathLabel = label
-			title = f.Slot().Size(f.Canvas().TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium), 20).Shrink(1)
+			title = ui.Slot(c).Size(c.Canvas().TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium), 20).Shrink(1)
 		} else {
-			title = f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
+			title = ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
 		}
 		entry.title = title
 		if vertical {
 			title.Grow(1).Basis(0)
 		}
 		if workspace.Locked {
-			f.Icon(lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
+			ui.Icon(c, lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
 		}
-		entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
+		entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
 		if !vertical {
-			f.Spacer()
+			ui.Spacer(c)
 		}
 		if !active && !hovered {
-			f.Slot().Size(20, 20)
+			ui.Slot(c).Size(20, 20)
 			return
 		}
 		var closeFill gfx.Color
-		if f.Canvas().Hovered() == closeID {
+		if c.Canvas().Hovered() == closeID {
 			closeFill = pal.line
 			if active {
 				closeFill = pal.tabCloseHot
 			}
 		}
-		f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+		ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 			HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-			f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+			ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 		})
 	})
 	entry.compact = compact
@@ -897,11 +925,11 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 // barButton declares a square icon button of the window bar. These buttons do not
 // take keyboard focus when pressed, so using one never pulls the keyboard out of a
 // terminal. With probe set it is only the place.
-func (state *State) barButton(f *ui.Frame, probe bool, id gfx.ID, icon uint8, label string) ui.Box {
+func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label string) ui.Box {
 	if probe {
-		return f.Slot().Size(barButtonSize, barButtonSize)
+		return ui.Slot(c).Size(barButtonSize, barButtonSize)
 	}
-	pal, canvas := state.pal, f.Canvas()
+	pal, canvas := state.pal, c.Canvas()
 	foreground := pal.muted
 	var fill gfx.Color
 	switch {
@@ -910,9 +938,9 @@ func (state *State) barButton(f *ui.Frame, probe bool, id gfx.ID, icon uint8, la
 	case canvas.Hovered() == id:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	return f.Row().Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
+	return ui.Row(c).Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[icon]).Color(foreground)
+		ui.Icon(c, lucideIcons[icon]).Color(foreground)
 	})
 }
 
@@ -994,10 +1022,36 @@ func elide(canvas *gfx.Canvas, value string, size, weight, width float32) string
 	return string(runes[:fits]) + "…"
 }
 
+// shellPageRoot names the shell's controls in the window's Tree, and
+// shellProbeRoot the window-bar page that measures the tabs. They are separate
+// pages, so each needs a root of its own.
+const (
+	shellPageRoot  = "window-shell"
+	shellProbeRoot = "window-bar-probe"
+)
+
 // chromeLayout keeps the ui.View of each area of the window chrome that is laid
 // out by github.com/vivaui/viva/flex, and the few rectangles another painter needs from them.
 type chromeLayout struct {
-	window, probe, header, hostRow, popup ui.View
+	header, hostRow, popup ui.View
+	// windowPage declares the shell (the window bar, the navigation rail and the
+	// workspace slot), with windowView its declaration kept so a paint makes no new
+	// method value. workspaceSlot is the slot the sections paint into, and the
+	// shell* fields are what the cached view reads for the paint in progress.
+	// probePage declares the window bar once without its contents to find how wide
+	// the tabs come out; probeInput is what its cached view reads.
+	windowPage     *ui.Page
+	windowView     func(ui.C)
+	workspaceSlot  ui.Box
+	shellPicture   bool
+	shellHeight    float32
+	shellGeometry  barGeometry
+	shellScroll    float32
+	shellFullPage  bool
+	shellCardRight float32
+	probePage      *ui.Page
+	probeView      func(ui.C)
+	probeInput     barGeometry
 	// widget lays out one small control at a time (a bar or toolbar button, a chip,
 	// an icon button): each paints what it declared before the next begins, so the
 	// view is shared. dialog is the body of one dialog.
@@ -1048,7 +1102,7 @@ type chromeLayout struct {
 
 // declareNavigation declares the sidebar: the name of the application over the
 // pages, and the way to a shell on this computer and to the settings at the bottom.
-func (state *State) declareNavigation(f *ui.Frame, height float32) {
+func (state *State) declareNavigation(c ui.C, height float32) {
 	m := state.messages
 	logoGap := float32(20)
 	if height < 640 {
@@ -1072,42 +1126,42 @@ func (state *State) declareNavigation(f *ui.Frame, height float32) {
 		{hitSnippets, iconNote, m.NavSnippets, state.activeSection == sectionSnippets},
 		{hitNotes, iconNotebook, state.noteText("Notes", "笔记"), state.activeSection == sectionNotes},
 	}
-	f.Column().Width(navigationWidth).Shrink(0).Children(func() {
+	ui.Column(c).Width(navigationWidth).Shrink(0).Children(func() {
 		// The logo with the name beside it, painted into this slot after layout.
-		state.chrome.lockup = f.Slot().Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(ui.Center)
+		state.chrome.lockup = ui.Slot(c).Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(ui.Center)
 		for _, item := range items {
-			state.navigationItem(f, item.id, item.icon, item.label, item.active, 4)
+			state.navigationItem(c, item.id, item.icon, item.label, item.active, 4)
 		}
 		if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
-			state.verticalTabs.slot = f.Slot().Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
+			state.verticalTabs.slot = ui.Slot(c).Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
 		}
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
 		// the component gallery there (see declareDevNavigation).
 		if state.tabOrientation != tabsVertical || len(state.workspaceTabs) == 0 {
-			f.Spacer()
+			ui.Spacer(c)
 		}
-		state.navigationItem(f, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
-		state.openLocalShellPickerOn(f.Canvas(), hitLocalTerminal, false)
-		state.devDeclareNavigation(f)
-		state.navigationItem(f, hitSettings, iconSettings, m.NavSettings, state.activeSection == sectionSettings, 16)
+		state.navigationItem(c, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
+		state.openLocalShellPickerOn(c.Canvas(), hitLocalTerminal, false)
+		state.devDeclareNavigation(c)
+		state.navigationItem(c, hitSettings, iconSettings, m.NavSettings, state.activeSection == sectionSettings, 16)
 	})
 }
 
 // navigationItem declares one row of the sidebar: an icon and a name, filled while
 // it is the page on show or the pointer is on it.
-func (state *State) navigationItem(f *ui.Frame, id gfx.ID, icon uint8, label string, active bool, below float32) {
+func (state *State) navigationItem(c ui.C, id gfx.ID, icon uint8, label string, active bool, below float32) {
 	pal := state.pal
 	var fill gfx.Color
 	if active {
 		fill = pal.surfaceHot
-	} else if f.Canvas().Hovered() == id {
+	} else if c.Canvas().Hovered() == id {
 		fill = pal.surfaceSoft
 	}
-	f.Row().Height(36).MarginSides(0, 9, below, 9).PadSides(0, 9, 0, 15).Gap(12).Items(ui.Center).Radius(radius.control).Background(fill).
+	ui.Row(c).Height(36).MarginSides(0, 9, below, 9).PadSides(0, 9, 0, 15).Gap(12).Items(ui.Center).Radius(radius.control).Background(fill).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleMenuItem, Selected: active}).Children(func() {
-		f.Icon(lucideIcons[icon]).IconTransform(state.iconMotion(f.Canvas(), id, icon)).Color(pal.text)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Icon(c, lucideIcons[icon]).IconTransform(state.iconMotion(c.Canvas(), id, icon)).Color(pal.text)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 	})
 }
 

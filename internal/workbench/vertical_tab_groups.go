@@ -321,7 +321,7 @@ func (state *State) declareGroupedVerticalTabsPage(c ui.C) {
 			if indent > 0 {
 				ui.Slot(c).Width(indent).Shrink(0)
 			}
-			state.verticalTabs.tabs = append(state.verticalTabs.tabs, state.declareWorkspaceTab(c.Frame(), state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
+			state.verticalTabs.tabs = append(state.verticalTabs.tabs, state.declareWorkspaceTab(c, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
 		})
 	}
 }
@@ -332,7 +332,7 @@ func (state *State) declareVerticalTabGroup(c ui.C, index int, width float32) {
 	id := group.id()
 	expanded := !view.collapsed[group.key]
 	fill := pal.shell
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	if group.active {
 		fill = pal.surfaceHot
 	} else if canvas != nil && canvas.Hovered() == id {

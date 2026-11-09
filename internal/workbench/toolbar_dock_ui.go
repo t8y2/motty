@@ -204,7 +204,7 @@ func (state *State) declareToolbarDockTopPage(c ui.C) {
 			}
 		}
 		if dock.topOverflow {
-			box := state.barButton(c.Frame(), false, hitToolbarDockMore, iconEllipsis, state.messages.Toolbars.More)
+			box := state.barButton(c, false, hitToolbarDockMore, iconEllipsis, state.messages.Toolbars.More)
 			dock.topSlots = append(dock.topSlots, toolbarDockSlot{barTool{id: hitToolbarDockMore}, box})
 		}
 	})

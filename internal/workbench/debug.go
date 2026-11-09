@@ -84,8 +84,8 @@ func (state *State) devEditor() *text.Editor {
 }
 
 // devDeclareNavigation puts the gallery in the sidebar, above Settings.
-func (state *State) devDeclareNavigation(f *ui.Frame) {
-	state.navigationItem(f, hitDebug, iconBug, state.messages.NavDebug, state.activeSection == sectionDebug, 4)
+func (state *State) devDeclareNavigation(c ui.C) {
+	state.navigationItem(c, hitDebug, iconBug, state.messages.NavDebug, state.activeSection == sectionDebug, 4)
 }
 
 // devPlaysIconMotion reports whether id is the gallery's row. It is a sidebar

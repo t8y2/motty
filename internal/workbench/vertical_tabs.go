@@ -58,9 +58,20 @@ type verticalTabs struct {
 	barGeometry components.ScrollAreaGeometry
 	bounds      gfx.Rect
 	slot        ui.Box
-	view        ui.View
+	// page declares the plain tab list, with pageView its declaration kept so a
+	// paint makes no new method value; pageWidth and pageCompact are what the
+	// cached view reads for the paint in progress. The grouped list has a page of
+	// its own (see vertical_tab_groups.go).
+	page        *ui.Page
+	pageView    func(ui.C)
+	pageWidth   float32
+	pageCompact bool
 	tabs        []barTab
 }
+
+// verticalTabsPageRoot names the plain tab list's page in the window's Tree. The
+// grouped list has its own root (verticalTabGroupsPageRoot).
+const verticalTabsPageRoot = "vertical-tabs-page"
 
 func (state *State) setTabOrientation(orientation tabOrientation) bool {
 	if state.tabOrientation == orientation {
@@ -260,19 +271,13 @@ func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
 		HoverScrollbars(view.over || view.barDrag)
 	geometry := area.BeginContent()
 	view.barGeometry = geometry
-	tabWidth := list.Width
 	view.tabs = view.tabs[:0]
-	f := view.view.Begin(canvas, state.Theme(), geometry.Content)
-	f.Column().Fill().Children(func() {
-		if view.grouping {
-			state.declareGroupedVerticalTabs(f, tabWidth, compact)
-			return
-		}
-		for index, workspace := range state.workspaceTabs {
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, workspace, tabWidth, verticalTabHeight, 0, true, compact, index+1))
-		}
-	})
-	f.End()
+	view.pageWidth, view.pageCompact = list.Width, compact
+	if view.page == nil {
+		view.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: verticalTabsPageRoot, Theme: &state.theme})
+		view.pageView = state.declareVerticalTabsRows
+	}
+	view.page.Draw(canvas, geometry.Content, view.pageView)
 	state.paintWorkspaceTabParts(canvas, list, view.tabs)
 	if view.grouping {
 		state.paintVerticalTabGroupIcons(canvas)
@@ -284,6 +289,22 @@ func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
 	} else {
 		components.BeginButton(canvas, state.Theme(), hitVerticalTabsNew, button).Secondary(m.LabelNewTab)
 	}
+}
+
+// declareVerticalTabsRows declares the sidebar's tab rows in the page. The width
+// and compact state are what paintVerticalTabs put on the view; a cached page
+// view takes no arguments.
+func (state *State) declareVerticalTabsRows(c ui.C) {
+	view := &state.verticalTabs
+	ui.Column(c).Fill().Children(func() {
+		if view.grouping {
+			state.declareGroupedVerticalTabs(c.Frame(), view.pageWidth, view.pageCompact)
+			return
+		}
+		for index, workspace := range state.workspaceTabs {
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(c, workspace, view.pageWidth, verticalTabHeight, 0, true, view.pageCompact, index+1))
+		}
+	})
 }
 
 func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, tabs []barTab) {
