@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	layoutcore "motty/internal/workspace"
 )
 
 var (
@@ -13,14 +14,17 @@ var (
 )
 
 func (s *State) notesPanelWidth(size gfx.Size) float32 {
+	return s.notesPanelWidthFor(s.deck.ActiveWorkspace(), size)
+}
+func (s *State) notesPanelWidthFor(id layoutcore.WorkspaceID, size gfx.Size) float32 {
 	base := s.baseWorkspacePixelBounds(size)
-	if context, ok := s.deck.Context(s.deck.ActiveWorkspace()); ok && context.Open && size.Width >= contextDrawerAt {
+	if context, ok := s.deck.Context(id); ok && context.Open && size.Width >= contextDrawerAt {
 		base.Width = max(0, base.Width-s.contextPanelWidth(base, context)-1)
 	}
-	base.Width -= s.aiReserve(s.deck.ActiveWorkspace(), size) + s.independentMonitorReserve(s.deck.ActiveWorkspace(), size)
+	base.Width -= s.aiReserve(id, size) + s.independentMonitorReserve(id, size)
 	width := float32(400)
-	if s.notes.sidebar != nil {
-		width = s.notes.sidebar.width
+	if v := s.noteSidebars[id]; v != nil {
+		width = v.width
 	}
 	maximum := max(0, base.Width*.7)
 	return min(max(width, min(280, maximum)), maximum)
@@ -29,7 +33,7 @@ func (s *State) notesVisible() bool {
 	if s.noteTarget != nil && s.noteTarget.windowView {
 		return true
 	}
-	return s.modal == modalNone && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notes.panel)
+	return s.modal == modalNone && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notesPanelOpen())
 }
 func (s *State) noteResizable(canvas *gfx.Canvas) components.Resizable {
 	v := &s.notes.view

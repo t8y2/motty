@@ -146,6 +146,7 @@ type savedState struct {
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	NoteSidebars            *savedNoteSidebars  `json:"note_sidebars,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
 	Notes                   []savedNote         `json:"notes,omitempty"`
 	NoteFolders             []savedNoteFolder   `json:"note_folders,omitempty"`
@@ -598,6 +599,7 @@ func (state *State) snapshot() savedState {
 	saved.Autofill = state.savedAutofillRules()
 	saved.Credentials = state.savedCredentials()
 	saved.NoteView = state.savedNotesView()
+	saved.NoteSidebars = state.savedNoteSidebars()
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for index, entry := range state.snippets.list {
@@ -886,6 +888,7 @@ func (state *State) restore(saved savedState) {
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
+	state.restoreNoteSidebars(saved.NoteSidebars, saved.NoteView.Panel)
 	if state.mergedHosts || staleDefaults {
 		// What was folded into another host is still in the store, and so is the
 		// generation this table was reconciled against: record both so the next
@@ -945,7 +948,6 @@ func (state *State) reloadSettings() error {
 // restoreLocal applies what belongs to this computer: the language and look, the
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
-	state.notes.panel = saved.NoteView.Panel
 	state.restoreNotesView(saved.NoteView)
 	state.notes.selected = saved.NoteView.Selected
 	state.notes.folder = saved.NoteView.Folder

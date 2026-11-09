@@ -825,11 +825,14 @@ type State struct {
 	remote        remoteToolsView
 	edits         externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
-	fontSizeText  string
-	fontSizeShown float32
-	highlights    *highlight.Set
-	highlighting  highlightUI
-	notes         notesUI
+	fontSizeText         string
+	fontSizeShown        float32
+	highlights           *highlight.Set
+	highlighting         highlightUI
+	noteSidebars         map[layoutcore.WorkspaceID]*noteSidebar
+	noteSidebarWorkspace layoutcore.WorkspaceID
+	noteSidebarFocusBack bool
+	notes                notesUI
 	// noteLinks is what this window knows about the files of linked notes, and
 	// noteWatches the directory watches that follow them.
 	noteLinks      map[string]*noteLinkState
@@ -942,8 +945,8 @@ func (state *State) Close() {
 	state.save()
 	state.closeNoteWatches()
 	state.cancelNoteImages()
-	if state.notes.sidebar != nil && state.notes.sidebar.content.imageCancel != nil {
-		state.notes.sidebar.content.imageCancel()
+	for id := range state.noteSidebars {
+		state.closeNoteSidebar(id)
 	}
 	state.callbacksClosed.Store(true)
 	state.closed = true
@@ -2015,6 +2018,7 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 	if err != nil {
 		return
 	}
+	state.closeNoteSidebar(id)
 	delete(state.temporaryWorkspaceLayouts, id)
 	delete(state.managedWorkspaceLayouts, id)
 	state.clearWorkspaceBroadcast(id)

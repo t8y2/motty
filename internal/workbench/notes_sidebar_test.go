@@ -73,8 +73,10 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	}
 	s.Click(hitNoteRows.At(s.notes.view.noteTokens["pinned"]))
 	paint()
-	if s.notes.selected != "other" || s.notes.body.String() != before || s.notes.list[2].Body != "saved" {
-		t.Fatal("browser saved or switched the draft")
+	// Saving the per-tab view may flush the shared draft; browsing must not
+	// change its contents or select a different note in the main editor.
+	if s.notes.selected != "other" || s.notes.body.String() != before || s.notes.list[2].Body != before {
+		t.Fatal("browser changed or switched the main draft")
 	}
 	s.Click(hitNoteSideLinked)
 	n.query.SetSelection(text.Range{End: len([]rune(n.query.String()))})
@@ -261,6 +263,9 @@ func TestNotesSidebarHeaderWrapsWithoutOverlappingControls(t *testing.T) {
 func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
 	for _, key := range []gfx.Key{gfx.KeyEnter, gfx.KeySpace} {
 		s, _, _, _ := liveSession(t)
+		// Closing now saves, and the save syncs the browser selection against
+		// the library, so the selected note must actually exist.
+		s.notes.list = []savedNote{{ID: "note", Body: "body"}}
 		s.activeSection = sectionTerminal
 		s.Click(hitNotesPanel)
 		v := s.noteSidebarState()
@@ -274,7 +279,7 @@ func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
 		size := gfx.Size{Width: 1400, Height: 900}
 		before := s.workspacePixelBounds(size).Width
 		result := s.noteSidebarKey(gfx.KeyEvent{Target: hitNoteSideClose, Key: key})
-		if !result.Handled || s.notes.panel || v.widthDragging || v.splitDragging || s.workspacePixelBounds(size).Width <= before {
+		if !result.Handled || s.notesPanelOpen() || v.widthDragging || v.splitDragging || s.workspacePixelBounds(size).Width <= before {
 			t.Fatal("close did not hide sidebar and release its width/capture")
 		}
 		s.Click(hitNotesPanel)

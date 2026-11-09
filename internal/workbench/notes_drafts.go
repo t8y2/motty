@@ -151,6 +151,9 @@ func (s *State) activateNoteView(n *notesUI) bool {
 	return true
 }
 func (s *State) invalidateNoteViews() {
+	for _, v := range s.noteSidebars {
+		s.syncNoteSidebarContent(&v.content)
+	}
 	s.syncNoteWindows()
 	if s.options.Invalidate != nil {
 		s.options.Invalidate()
@@ -234,6 +237,22 @@ func (s *State) noteViewInput(n *notesUI, context app.TextInputContext, input *a
 // NotesInput resolves the main window's shared note draft without claiming an
 // inactive editor until a native input event actually arrives.
 func (s *State) NotesInput(context app.TextInputContext) *app.TextInput {
+	if context.ID == hitNoteSearch && s.noteSidebarVisible() {
+		id := s.deck.ActiveWorkspace()
+		v := s.noteSidebarState()
+		version := v.inputVersion
+		input := &v.content.input
+		*input = app.TextInput{State: app.TextStateOf(&v.content.query), NavigationKeys: context.NavigationKeys}
+		input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
+			if s.closed || s.deck.ActiveWorkspace() != id || s.noteSidebars[id] != v || !s.noteSidebarVisible() || v.inputVersion != version {
+				return app.TextState{}, nil
+			}
+			event.Apply(&v.content.query)
+			s.invalidateNoteViews()
+			return app.TextStateOf(&v.content.query), nil
+		}
+		return input
+	}
 	if context.ID != hitNoteBody && context.ID != hitNoteTitle && context.ID != hitNoteTags && context.ID != hitNoteFind {
 		return nil
 	}
