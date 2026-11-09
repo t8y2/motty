@@ -43,8 +43,9 @@ func (command WorkspaceCommand) normalized() WorkspaceCommand {
 }
 
 // WorkspaceTemplate is the small, shareable definition of a saved workspace.
-// It references catalog hosts or this computer's default local terminal and
-// never contains credentials, sessions, or terminal state.
+// It references catalog hosts, this computer's default local terminal, or one
+// named local shell, and never contains credentials, sessions, or terminal
+// state.
 type WorkspaceTemplate struct {
 	Commands map[string]WorkspaceCommand `json:"commands,omitempty"`
 	ID       string                      `json:"id"`
@@ -87,8 +88,10 @@ func (template *WorkspaceTemplate) validate() error {
 	seen := make(map[string]struct{}, len(template.HostIDs))
 	for index, hostID := range template.HostIDs {
 		hostID = strings.TrimSpace(hostID)
-		if hostID != workspaceLocalTerminalRef && (!validCatalogID(hostID) || hostID == "") {
-			return ErrWorkspaceTemplateHostID
+		if hostID != workspaceLocalTerminalRef {
+			if _, shell := workspaceLocalShellRef(hostID); !shell && (!validCatalogID(hostID) || hostID == "") {
+				return ErrWorkspaceTemplateHostID
+			}
 		}
 		if _, exists := seen[hostID]; exists {
 			return ErrWorkspaceTemplateDupID

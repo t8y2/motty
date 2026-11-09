@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/localshell"
 	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
@@ -391,6 +392,12 @@ func (state *State) workspaceDraftHosts() []Host {
 		search := host.Label + " " + host.Address + " " + host.User + " " + host.Group + " " + host.Tags
 		if host.ID == localHostID {
 			search += " " + state.messages.LocalTerminal
+			if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+				search += " " + shell
+				if _, wsl := localshell.WSLDistro(shell); wsl {
+					search += " wsl"
+				}
+			}
 		}
 		if query != "" && !strings.Contains(strings.ToLower(search), query) {
 			continue
@@ -591,6 +598,7 @@ func (state *State) paintWorkspaceDraftRemoveButtons(canvas *gfx.Canvas, content
 
 func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	draft, m := &state.workspaceDraft, state.messages
+	state.adoptWSLDistros() // the distributions join the list when wsl.exe answers
 	hosts := state.workspaceDraftHosts()
 	const rowHeight = float32(60)
 	draft.content = 0
@@ -663,6 +671,9 @@ func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bound
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {
 		detail = state.messages.WorkspaceLocalTerminalHint
+		if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+			detail = shell
+		}
 	}
 	monitorLabel(canvas, elide(canvas, detail, 12, gfx.WeightRegular, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), gfx.WeightRegular)
 	side := components.CheckboxExtent(theme)
