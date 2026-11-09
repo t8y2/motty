@@ -499,7 +499,7 @@ func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
 	if raised != 1 || opened != 0 {
 		t.Fatalf("default relaunch: raised %d, opened %d", raised, opened)
 	}
-	first.Click(hitSettingsRelaunchNewWindow)
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralRelaunchNewWindow)
 	first.Launch(nil)
 	first.Wake()
 	if raised != 1 || opened != 1 {
@@ -529,7 +529,7 @@ func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
 		t.Fatal("the new-window choice did not survive a restart")
 	}
 	openGeneralSettings(second)
-	second.Click(hitSettingsRelaunchRaise)
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralRelaunchRaise)
 	second.Launch(nil)
 	second.Wake()
 	if opened != 2 || raised != 4 {
@@ -541,8 +541,10 @@ func TestRelaunchUsesChoiceChangedInAnotherWindow(t *testing.T) {
 	pair := newTwoWindows(t)
 	opened := 0
 	pair.second.options.NewWindow = func() error { opened++; return nil }
+	// The first window only shows the row; the launch happens in the second.
+	pair.first.options.NewWindow = func() error { return nil }
 	openGeneralSettings(pair.first)
-	pair.first.Click(hitSettingsRelaunchNewWindow)
+	clickSettingsChoice(t, pair.first, pair.first.messages.Tools.GeneralRelaunchNewWindow)
 	pair.second.Launch(nil)
 	pair.second.Wake()
 	if opened != 1 {
@@ -579,7 +581,7 @@ func TestWhatClosingDoesIsChosenInSettingsAndSurvivesARestart(t *testing.T) {
 	if !contains(texts, first.messages.Tools.GeneralClose) {
 		t.Fatalf("no close row: %q", texts)
 	}
-	first.Click(hitSettingsCloseQuit)
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralCloseQuit)
 	if first.StaysInTray() {
 		t.Fatal("choosing Quit still stays in the tray")
 	}
@@ -587,7 +589,7 @@ func TestWhatClosingDoesIsChosenInSettingsAndSurvivesARestart(t *testing.T) {
 	if second.StaysInTray() {
 		t.Fatal("the choice was forgotten by a restart")
 	}
-	second.Click(hitSettingsCloseTray)
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralCloseTray)
 	if !second.StaysInTray() {
 		t.Fatal("choosing the tray again did not stick")
 	}

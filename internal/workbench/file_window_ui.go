@@ -51,9 +51,15 @@ var (
 )
 
 type fileDocumentUI struct {
-	marks                                     []components.MarkdownCodeRun
-	highlighter                               func(string, string, []components.CodeEditorRun) []components.CodeEditorRun
-	frame                                     ui.View
+	marks       []components.MarkdownCodeRun
+	highlighter func(string, string, []components.CodeEditorRun) []components.CodeEditorRun
+	frame       ui.View
+	// page is the window's page when this document is painted in a window of its
+	// own (a paint not made by the shared window manager).
+	page *ui.Page
+	// contentBox, encodingBox and saveBox are the page's slots, kept so what is
+	// painted by hand goes where the page laid it out.
+	contentBox, encodingBox, saveBox          ui.Box
 	code                                      components.CodeEditor
 	diff                                      components.CodeDiff
 	input                                     app.TextInput
@@ -89,67 +95,25 @@ func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if d.ui.highlighter == nil {
 		d.ui.highlighter = d.highlight
 	}
-	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	theme := d.owner.Theme()
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	var content, encoding, save ui.Box
-	f := d.ui.frame.Begin(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		if d.owner.fileWindows.painting {
-			d.owner.fileWindows.paintTabs(f, size)
-			f.Divider().Background(theme.Border)
-		}
-		if d.problem != "" {
-			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		content = f.Slot().Grow(1).MinHeight(64)
-		f.Row().Height(32).Gap(8).Items(ui.Center).Children(func() {
-			if d.image == nil {
-				encoding = f.Slot().Width(min(220, size.Width*.4)).Height(32)
-			}
-			status := d.footerStatus()
-			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
-				HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
-			if d.image != nil {
-				f.Button(hitDocumentFit, m.Fit).Small().Outline()
-				f.Button(hitDocumentActual, m.Actual).Small().Outline()
-				f.Button(hitDocumentZoomOut, "−").Small().Outline()
-				f.Button(hitDocumentZoomIn, "+").Small().Outline()
-			}
-			if d.image == nil && d.ready {
-				wrap := d.owner.messages.CodeEditor.WrapOn
-				if d.edit.noWrap {
-					wrap = d.owner.messages.CodeEditor.WrapOff
-				}
-				f.Button(hitDocumentWrap, wrap).Small().Outline()
-			}
-			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
-			if d.image == nil {
-				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
-				if d.local {
-					f.Button(hitDocumentSave, m.Save).Small().Disabled(disabled)
-				} else {
-					save = f.Slot().Width(112).Height(32)
-				}
-			}
-		})
-	})
-	f.End()
+	d.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, d.declareEditWindow)
 	if d.owner.fileWindows.painting {
 		d.owner.fileWindows.paintTabsScrollbar(canvas)
 	}
 	d.ui.saveAnchor = gfx.Rect{}
 	if d.image == nil && !d.local {
-		d.ui.saveAnchor = save.Rect()
+		d.ui.saveAnchor = d.ui.saveBox.Rect()
 	}
 	if d.image != nil {
-		d.ui.imageBounds = content.Rect()
-		d.ui.imageGeometry = components.PaintImageView(canvas, theme, content.Rect(), components.ImageViewOptions{
+		d.ui.imageBounds = d.ui.contentBox.Rect()
+		d.ui.imageGeometry = components.PaintImageView(canvas, theme, d.ui.contentBox.Rect(), components.ImageViewOptions{
 			Bitmap: gfx.Bitmap{Pix: d.image.Pix, Width: d.image.Width, Height: d.image.Height, Stride: d.image.Width * 4, ID: binary.LittleEndian.Uint64(d.revision[:8]), Version: 1}, Zoom: d.ui.zoom, Pan: d.ui.pan,
 		})
 	} else {
-		d.ui.encodingBounds = encoding.Rect()
-		d.ui.editorBounds = content.Rect()
-		d.paintCodeEditor(canvas, theme, content.Rect())
+		d.ui.encodingBounds = d.ui.encodingBox.Rect()
+		d.ui.editorBounds = d.ui.contentBox.Rect()
+		d.paintCodeEditor(canvas, theme, d.ui.contentBox.Rect())
 		d.paintEncoding(canvas)
 	}
 	if d.image == nil && !d.local {
@@ -161,6 +125,78 @@ func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	d.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
 	d.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+}
+
+// windowPage is the page this paint declares its window in: the shared window's
+// one page while the manager paints, else the document's own.
+func (d *fileDocument) windowPage() *ui.Page {
+	if d.owner.fileWindows.painting {
+		return d.owner.fileWindows.editPage(&d.owner.theme)
+	}
+	return d.documentPage()
+}
+
+// declareEditWindow declares the document window: the tab strip when it shares a
+// window, the problem line, the room the editor takes, and the footer. What the
+// editor, the image and the footer's menus paint themselves goes into the slots
+// kept here.
+func (d *fileDocument) declareEditWindow(c ui.C) {
+	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	bounds := c.Frame().Bounds()
+	shared := d.owner.fileWindows.painting
+	d.ui.encodingBox, d.ui.saveBox = ui.Box{}, ui.Box{}
+	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
+		if shared {
+			d.owner.fileWindows.declareTabsSection(c, bounds.Width)
+			ui.Divider(c).Background(theme.Border)
+		}
+		if d.problem != "" {
+			ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
+		}
+		d.ui.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
+		ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+			if d.image == nil {
+				d.ui.encodingBox = ui.Slot(c).Width(min(220, bounds.Width*.4)).Height(32)
+			}
+			status := d.footerStatus()
+			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+				HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
+			if d.image != nil {
+				d.pageButton(c, "fit", hitDocumentFit, m.Fit).Small().Outline()
+				d.pageButton(c, "actual", hitDocumentActual, m.Actual).Small().Outline()
+				d.pageButton(c, "zoom-out", hitDocumentZoomOut, "−").Small().Outline()
+				d.pageButton(c, "zoom-in", hitDocumentZoomIn, "+").Small().Outline()
+			}
+			if d.image == nil && d.ready {
+				wrap := d.owner.messages.CodeEditor.WrapOn
+				if d.edit.noWrap {
+					wrap = d.owner.messages.CodeEditor.WrapOff
+				}
+				d.pageButton(c, "wrap", hitDocumentWrap, wrap).Small().Outline()
+			}
+			d.pageButton(c, "reload", hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
+			if d.image == nil {
+				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
+				if d.local {
+					d.pageButton(c, "save", hitDocumentSave, m.Save).Small().Disabled(disabled)
+				} else {
+					d.ui.saveBox = ui.Slot(c).Width(112).Height(32)
+				}
+			}
+		})
+	})
+}
+
+// pageButton is a footer button of the page, named by key so its identity does
+// not move when a neighbouring control comes or goes. Its click is the page's,
+// handled after the paint that delivered it.
+func (d *fileDocument) pageButton(c ui.C, key string, id gfx.ID, label string) ui.Box {
+	c.Key(key)
+	button := ui.Button(c, label)
+	if button.Clicked() {
+		c.After(func() { d.click(id) })
+	}
+	return button
 }
 
 func (d *fileDocument) paintComparison(canvas *gfx.Canvas, size gfx.Size) {
@@ -750,6 +786,35 @@ func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{}
+}
+
+// windowKey, windowPointer and windowTextInput are the document windows own
+// input callbacks: the page first, as a host routes it, then the document.
+func (d *fileDocument) windowKey(event gfx.KeyEvent) gfx.EventResult {
+	if d.ui.page != nil {
+		if result, ok := d.ui.page.Key(event); ok {
+			return result
+		}
+	}
+	return d.key(event)
+}
+
+func (d *fileDocument) windowPointer(event gfx.PointerEvent) gfx.EventResult {
+	if d.ui.page != nil {
+		if result, ok := d.ui.page.Pointer(event); ok {
+			return result
+		}
+	}
+	return d.pointer(event)
+}
+
+func (d *fileDocument) windowTextInput(context app.TextInputContext) *app.TextInput {
+	if d.ui.page != nil {
+		if input := d.ui.page.TextInput(context); input != nil {
+			return input
+		}
+	}
+	return d.textInput(context)
 }
 
 func (d *fileDocument) comparisonShortcut(event gfx.KeyEvent) gfx.EventResult {

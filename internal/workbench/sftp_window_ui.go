@@ -50,16 +50,21 @@ var (
 	hitSFTPWindowMenuDismiss     = tree.ID(sftpWindowHits, "menu-dismiss")
 	hitSFTPWindowMenuCopy        = tree.ID(sftpWindowHits, "menu-copy")
 	hitSFTPWindowQueueBar        = tree.ID(sftpWindowHits, "queue-scroll")
-	hitSFTPWindowConnectCancel   = tree.ID(sftpWindowHits, "connect-cancel")
-	hitSFTPWindowConnectRetry    = tree.ID(sftpWindowHits, "connect-retry")
-	hitSFTPWindowAuthenticate    = tree.ID(sftpWindowHits, "authenticate")
 	sftpWindowQueueRows          = tree.Sub(sftpWindowHits, tree.Name("queue-rows"))
 )
 
 type sftpWindowUI struct {
-	frame               ui.View
-	panes               [2]ui.View
-	rows                [2]ui.View
+	// root names this window's pages in the identity tree: every window is a
+	// page of its own, and no two windows may name their controls alike.
+	root                string
+	windowPage          *ui.Page
+	windowView          func(ui.C)
+	connectPage         *ui.Page
+	connectView         func(ui.C)
+	panePages           [2]*ui.Page
+	paneView            func(ui.C)
+	scratch             sftpWindowScratch
+	connect             sftpWindowConnectScratch
 	size                gfx.Size
 	list                [2]gfx.Rect
 	offset              [2]float32
@@ -89,6 +94,32 @@ type sftpWindowUI struct {
 	profileHoverOpen    bool
 	profileHoverAnchor  gfx.Rect
 	profileHoverTrigger gfx.ID
+	rows                [2]ui.View
+}
+
+// sftpWindowScratch is the room the window's page and each pane's page leave for
+// what is painted by hand after they have been laid out.
+type sftpWindowScratch struct {
+	body, queue ui.Box
+	local       bool
+	address     ui.Box
+	list        ui.Box
+	filter      ui.Box
+	sudoMode    ui.Box
+	buttons     [20]sftpIconButton
+	buttonCount int
+}
+
+// sftpWindowConnectScratch is the room the connecting page leaves for its icon.
+type sftpWindowConnectScratch struct{ badge ui.Box }
+
+// pageRoot is this window's page root: unique per window, since every window
+// names its controls in the window's one identity tree.
+func (w *sftpWindow) pageRoot() string {
+	if w.ui.root == "" {
+		w.ui.root = fmt.Sprintf("sftp-window-%d", w.session.ID)
+	}
+	return w.ui.root
 }
 
 func sideIndex(local bool) int {
@@ -110,50 +141,24 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		w.paintConnecting(canvas, size)
 		return
 	}
-	var body, queue ui.Box
-	f := w.ui.frame.Begin(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		body = f.Slot().Grow(1)
-		if w.queueCount() > 0 {
-			queue = f.Slot().Height(min(244, max(108, size.Height*.28))).Shrink(0)
-		}
-		status := w.view.status
-		if w.view.errorText != "" {
-			status = w.view.errorText
-		}
-		if !w.connected() {
-			status = m.SFTPWindow.Disconnected
-		}
-		if status == "" {
-			if w.browse.enabled {
-				status = w.browseDescription()
-			} else {
-				status = m.SFTPWindow.DragHint
-			}
-		}
-		if w.browse.enabled {
-			f.Row().Height(20).Gap(6).Items(ui.Center).Children(func() {
-				f.Icon(lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
-				f.Text(m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
-				f.Text(w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				f.Icon(lucideIcons[iconForward]).Size(12, 12).Color(theme.MutedForeground)
-				f.Text(w.browse.roots[1]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				if status != "" && status != w.browseDescription() {
-					f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				}
-			})
-		} else {
-			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
-		}
-	})
-	f.End()
-	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, body.Rect(), w.ui.fraction).LimitsPx(220, 220)
+	if w.ui.windowPage == nil {
+		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme})
+		w.ui.windowView = w.declareWindow
+	}
+	w.ui.scratch = sftpWindowScratch{}
+	w.ui.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
+	body := w.ui.scratch.body.Rect()
+	var queue gfx.Rect
+	if w.queueCount() > 0 {
+		queue = w.ui.scratch.queue.Rect()
+	}
+	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
 	panels := w.ui.split.Paint(m.SFTPWindow.Title)
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
 	w.paintPane(canvas, panels.First, firstLocal)
 	w.paintPane(canvas, panels.Second, !firstLocal)
 	if w.queueCount() > 0 {
-		w.paintQueue(canvas, queue.Rect())
+		w.paintQueue(canvas, queue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -206,6 +211,48 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 }
 
+// declareWindow declares the window's own chrome: the status line, and the room
+// the panes and the transfer queue take.
+func (w *sftpWindow) declareWindow(c ui.C) {
+	s := &w.ui.scratch
+	size := w.ui.size
+	theme, m := w.owner.Theme(), w.owner.messages
+	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
+		s.body = ui.Slot(c).Grow(1)
+		if w.queueCount() > 0 {
+			s.queue = ui.Slot(c).Height(min(244, max(108, size.Height*.28))).Shrink(0)
+		}
+		status := w.view.status
+		if w.view.errorText != "" {
+			status = w.view.errorText
+		}
+		if !w.connected() {
+			status = m.SFTPWindow.Disconnected
+		}
+		if status == "" {
+			if w.browse.enabled {
+				status = w.browseDescription()
+			} else {
+				status = m.SFTPWindow.DragHint
+			}
+		}
+		if w.browse.enabled {
+			ui.Row(c).Height(20).Gap(6).Items(ui.Center).Children(func() {
+				ui.Icon(c, lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
+				ui.Text(c, m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
+				ui.Text(c, w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+				ui.Icon(c, lucideIcons[iconForward]).Size(12, 12).Color(theme.MutedForeground)
+				ui.Text(c, w.browse.roots[1]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+				if status != "" && status != w.browseDescription() {
+					ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+				}
+			})
+		} else {
+			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
+		}
+	})
+}
+
 func (w *sftpWindow) canTransfer(local bool) bool {
 	if !w.connected() || w.view.worker == nil || w.navigationBusy() || w.bookmark.open || w.fileProperties.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.path == "" || w.view.lfolder.path == "" {
 		return false
@@ -217,162 +264,22 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 	side := sideIndex(local)
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
-	var address, list, filter ui.Box
-	var sudoMode ui.Box
-	compact := bounds.Height < 230
-	var buttons [20]sftpIconButton
-	buttonCount := 0
-	f := w.ui.panes[side].Begin(canvas, theme, bounds)
-	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		buttons[buttonCount] = sftpIconButton{box: f.Slot().Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
-		buttonCount++
-	}
-	f.Column().Fill().Pad(8).Gap(6).Children(func() {
-		f.Row().Height(28).Gap(4).Items(ui.Center).Children(func() {
-			title := m.SFTPWindow.Remote
-			if local {
-				title = m.SFTPWindow.Local
-			}
-			f.Text(title).Bold().Color(theme.Foreground).Ellipsis().Grow(1)
-			if !local && sudoSFTPAvailable(&w.session, w.view) {
-				sudoMode = f.Slot().Width(64).Height(28).Shrink(0)
-			}
-			treeHint := m.SFTPWindow.ShowDirectoryTree
-			if w.directoryTree[side].enabled {
-				treeHint = m.SFTPWindow.HideDirectoryTree
-			}
-			treeDisabled := directoryTreeToggleDisabled(w.directoryTree[side].enabled, max(bounds.Width-16, 0))
-			if treeDisabled {
-				treeHint = m.SFTPWindow.DirectoryTreeNeedsWidth
-			}
-			icon(sftpWindowTreeToggle[side], iconDirectoryTree, treeHint, treeDisabled)
-			if w.directoryTree[side].enabled {
-				buttons[buttonCount-1].style = iconButtonActive
-			}
-			if !local && bounds.Width >= 420 {
-				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
-				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
-			}
-			if local || bounds.Width >= 340 {
-				icon(sftpWindowUp[side], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
-				icon(sftpWindowRefresh[side], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
-			}
-			if folder.showHidden {
-				icon(sftpWindowHidden[side], iconEye, m.Tools.FilesHideHidden, false)
-				buttons[buttonCount-1].style = iconButtonActive
-			}
-			if local {
-				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil)
-				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0)
-				hint := m.SFTPWindow.BrowseSync
-				if w.browse.enabled {
-					hint = w.browseDescription()
-				}
-				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()))
-				if w.browse.enabled {
-					buttons[buttonCount-1].style = iconButtonActive
-				}
-			}
-			icon(sftpWindowMore[side], iconEllipsis, m.Tools.FilesMore, false)
-		})
-		f.Row().Height(32).Gap(2).Items(ui.Center).Children(func() {
-			address = f.Slot().Height(32).Grow(1)
-			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
-			if local {
-				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces
-			}
-			icon(listID, iconChevronDown, listHint, false)
-			star, hint := uint8(iconStar), m.SFTPWindow.FavoriteAdd
-			if w.directoryFavorite(local) {
-				star, hint = iconStarSolid, m.SFTPWindow.FavoriteRemove
-			}
-			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""))
-		})
-		if folder.filterOpen {
-			filter = f.Slot().Height(32).Shrink(0)
-		}
+	if w.ui.panePages[side] == nil {
+		name := "remote"
 		if local {
-			w.owner.declareLocalCoverage(f, folder, hitSFTPWindowCoverage)
+			name = "local"
 		}
-		{
-			f.Row().Height(20).Gap(8).PadX(8).Items(ui.Center).Children(func() {
-				for _, entry := range w.owner.sftpColumns.entries {
-					if !entry.Enabled {
-						continue
-					}
-					column, label := int(entry.Key), m.SFTPWindow.Name
-					switch entry.Key {
-					case sftpColumnSize:
-						label = m.SFTPWindow.Size
-					case sftpColumnModified:
-						label = m.SFTPWindow.Modified
-					}
-					if w.ui.sort[side].column == column {
-						if w.ui.sort[side].descending {
-							label += " ↓"
-						} else {
-							label += " ↑"
-						}
-					}
-					box := f.Text(label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[side].At(column), label, gfx.HitOptions{Role: gfx.RoleButton})
-					if column == 0 {
-						box.Grow(1)
-					} else if column == 1 {
-						box.Width(62).TextEnd()
-					} else {
-						box.Width(w.dateWidth(bounds.Width))
-					}
-				}
-			})
-		}
-		list = f.Slot().Grow(1)
-		selection := w.selection(local)
-		count := selection.count
-		// An `ls`-derived listing counts approximately, so it says so.
-		format := m.SFTPItemsFmt
-		if !local && w.view.approximate {
-			format = m.SCPItemsFmt
-		}
-		status := fmt.Sprintf(format, len(folder.rows))
-		if folder.filterInputEditor().String() != "" {
-			status = fmt.Sprintf(m.Tools.FilesFilterCountFmt, len(folder.rows), sftpVisibleRowCount(folder))
-			if !local && w.view.approximate {
-				status += " · " + fmt.Sprintf(m.SCPItemsFmt, len(folder.rows))
-			}
-		}
-		if count > 0 {
-			status += " · " + fmt.Sprintf(m.SFTPWindow.SelectedFmt, count)
-		}
-		if !compact {
-			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
-		}
-		if !compact {
-			f.Row().Height(28).Gap(2).Items(ui.Center).Children(func() {
-				if count == 0 {
-					return
-				}
-				for _, action := range w.selectionActions(local) {
-					icon(sftpWindowActions[side].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected())
-					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
-						buttons[buttonCount-1].style = iconButtonDanger
-					}
-				}
-			})
-			if bounds.Height >= 320 {
-				if count == 1 {
-					f.Text(w.owner.sftpDetailsLine(w.view, folder.rows[selection.index].entry)).FontSize(metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(18)
-				} else {
-					f.Slot().Height(18)
-				}
-			}
-		}
-	})
-	f.End()
-	if !local && sudoSFTPAvailable(&w.session, w.view) {
-		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
+		w.ui.panePages[side] = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot() + "-" + name, Theme: &w.owner.theme})
+		w.ui.paneView = w.declarePane
 	}
-	w.owner.paintSFTPIconButtons(canvas, buttons[:buttonCount])
-	for _, button := range buttons[:buttonCount] {
+	w.ui.scratch = sftpWindowScratch{local: local}
+	w.ui.panePages[side].Draw(canvas, bounds, w.ui.paneView)
+	s := &w.ui.scratch
+	if !local && sudoSFTPAvailable(&w.session, w.view) {
+		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, s.sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
+	}
+	w.owner.paintSFTPIconButtons(canvas, s.buttons[:s.buttonCount])
+	for _, button := range s.buttons[:s.buttonCount] {
 		if button.id == sftpWindowMore[side] {
 			w.ui.headerAnchor[side] = button.box.Rect()
 		}
@@ -384,16 +291,16 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 		}
 	}
 	if folder.filterOpen {
-		w.owner.paintSFTPFilterInput(canvas, filter.Rect(), folder, sftpWindowFilter[side], sftpWindowFilterClear[side])
+		w.owner.paintSFTPFilterInput(canvas, s.filter.Rect(), folder, sftpWindowFilter[side], sftpWindowFilterClear[side])
 	}
 	if !local {
-		w.view.places.anchors[1] = address.Rect()
+		w.view.places.anchors[1] = s.address.Rect()
 	} else {
-		w.view.places.anchors[0] = address.Rect()
+		w.view.places.anchors[0] = s.address.Rect()
 	}
 	value := folder.pathInput().String()
-	components.PaintInput(canvas, theme, address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
-	paneContent := list.Rect()
+	components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
+	paneContent := s.list.Rect()
 	frameBounds := paneContent
 	if treeWidth, show := directoryTreePaneWidths(paneContent.Width); w.directoryTree[side].enabled && show {
 		treeBounds := gfx.Rect{X: paneContent.X, Y: paneContent.Y, Width: treeWidth, Height: paneContent.Height}
@@ -440,6 +347,159 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 		canvas.LabelCenter(label, rowsBounds, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
 	}
 	area.EndContent()
+}
+
+// declarePane declares one side of the window: its title and actions, the path,
+// the filter, the column headers and the room the list takes.
+func (w *sftpWindow) declarePane(c ui.C) {
+	s := &w.ui.scratch
+	local := s.local
+	folder := w.folder(local)
+	theme, m := w.owner.Theme(), w.owner.messages
+	bounds := c.Frame().Bounds()
+	compact := bounds.Height < 230
+	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
+		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
+		s.buttonCount++
+	}
+	ui.Column(c).Fill().Pad(8).Gap(6).Children(func() {
+		ui.Row(c).Height(28).Gap(4).Items(ui.Center).Children(func() {
+			title := m.SFTPWindow.Remote
+			if local {
+				title = m.SFTPWindow.Local
+			}
+			ui.Text(c, title).Bold().Color(theme.Foreground).Ellipsis().Grow(1)
+			if !local && sudoSFTPAvailable(&w.session, w.view) {
+				s.sudoMode = ui.Slot(c).Width(64).Height(28).Shrink(0)
+			}
+			treeHint := m.SFTPWindow.ShowDirectoryTree
+			if w.directoryTree[sideIndex(local)].enabled {
+				treeHint = m.SFTPWindow.HideDirectoryTree
+			}
+			treeDisabled := directoryTreeToggleDisabled(w.directoryTree[sideIndex(local)].enabled, max(bounds.Width-16, 0))
+			if treeDisabled {
+				treeHint = m.SFTPWindow.DirectoryTreeNeedsWidth
+			}
+			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled)
+			if w.directoryTree[sideIndex(local)].enabled {
+				s.buttons[s.buttonCount-1].style = iconButtonActive
+			}
+			if !local && bounds.Width >= 420 {
+				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
+				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
+			}
+			if local || bounds.Width >= 340 {
+				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
+				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+			}
+			if folder.showHidden {
+				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false)
+				s.buttons[s.buttonCount-1].style = iconButtonActive
+			}
+			if local {
+				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil)
+				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0)
+				hint := m.SFTPWindow.BrowseSync
+				if w.browse.enabled {
+					hint = w.browseDescription()
+				}
+				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()))
+				if w.browse.enabled {
+					s.buttons[s.buttonCount-1].style = iconButtonActive
+				}
+			}
+			icon(sftpWindowMore[sideIndex(local)], iconEllipsis, m.Tools.FilesMore, false)
+		})
+		ui.Row(c).Height(32).Gap(2).Items(ui.Center).Children(func() {
+			s.address = ui.Slot(c).Height(32).Grow(1)
+			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
+			if local {
+				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces
+			}
+			icon(listID, iconChevronDown, listHint, false)
+			star, hint := uint8(iconStar), m.SFTPWindow.FavoriteAdd
+			if w.directoryFavorite(local) {
+				star, hint = iconStarSolid, m.SFTPWindow.FavoriteRemove
+			}
+			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""))
+		})
+		if folder.filterOpen {
+			s.filter = ui.Slot(c).Height(32).Shrink(0)
+		}
+		if local {
+			w.owner.declareLocalCoverage(c, folder, hitSFTPWindowCoverage)
+		}
+		ui.Row(c).Height(20).Gap(8).PadX(8).Items(ui.Center).Children(func() {
+			for _, entry := range w.owner.sftpColumns.entries {
+				if !entry.Enabled {
+					continue
+				}
+				column, label := int(entry.Key), m.SFTPWindow.Name
+				switch entry.Key {
+				case sftpColumnSize:
+					label = m.SFTPWindow.Size
+				case sftpColumnModified:
+					label = m.SFTPWindow.Modified
+				}
+				if w.ui.sort[sideIndex(local)].column == column {
+					if w.ui.sort[sideIndex(local)].descending {
+						label += " ↓"
+					} else {
+						label += " ↑"
+					}
+				}
+				box := ui.Text(c, label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[sideIndex(local)].At(column), label, gfx.HitOptions{Role: gfx.RoleButton})
+				if column == 0 {
+					box.Grow(1)
+				} else if column == 1 {
+					box.Width(62).TextEnd()
+				} else {
+					box.Width(w.dateWidth(bounds.Width))
+				}
+			}
+		})
+		s.list = ui.Slot(c).Grow(1)
+		selection := w.selection(local)
+		count := selection.count
+		// An `ls`-derived listing counts approximately, so it says so.
+		format := m.SFTPItemsFmt
+		if !local && w.view.approximate {
+			format = m.SCPItemsFmt
+		}
+		status := fmt.Sprintf(format, len(folder.rows))
+		if folder.filterInputEditor().String() != "" {
+			status = fmt.Sprintf(m.Tools.FilesFilterCountFmt, len(folder.rows), sftpVisibleRowCount(folder))
+			if !local && w.view.approximate {
+				status += " · " + fmt.Sprintf(m.SCPItemsFmt, len(folder.rows))
+			}
+		}
+		if count > 0 {
+			status += " · " + fmt.Sprintf(m.SFTPWindow.SelectedFmt, count)
+		}
+		if !compact {
+			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
+		}
+		if !compact {
+			ui.Row(c).Height(28).Gap(2).Items(ui.Center).Children(func() {
+				if count == 0 {
+					return
+				}
+				for _, action := range w.selectionActions(local) {
+					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected())
+					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
+						s.buttons[s.buttonCount-1].style = iconButtonDanger
+					}
+				}
+			})
+			if bounds.Height >= 320 {
+				if count == 1 {
+					ui.Text(c, w.owner.sftpDetailsLine(w.view, folder.rows[selection.index].entry)).FontSize(metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(18)
+				} else {
+					ui.Slot(c).Height(18)
+				}
+			}
+		}
+	})
 }
 
 func (w *sftpWindow) paintRow(f *ui.Frame, row *sftpRow, id gfx.ID, paneWidth float32) {

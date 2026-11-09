@@ -59,7 +59,7 @@ func TestNewTabWorkspaceTabLaunchesTemplatesAndCreatesWorkspaces(t *testing.T) {
 	state.templates = []WorkspaceTemplate{template}
 	before := len(state.deck.Workspaces(nil))
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortWorkspaces)
+	clickSettingsChoice(t, state, state.messages.WorkspaceLibraryTitle)
 	if !state.commandPalette.workspaces || len(state.deck.Workspaces(nil)) != before {
 		t.Fatal("switching to workspaces opened a tab")
 	}
@@ -68,7 +68,7 @@ func TestNewTabWorkspaceTabLaunchesTemplatesAndCreatesWorkspaces(t *testing.T) {
 		t.Fatalf("modal=%d tabs=%d dials=%d", state.modal, len(state.deck.Workspaces(nil)), len(world.configs))
 	}
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortWorkspaces)
+	clickSettingsChoice(t, state, state.messages.WorkspaceLibraryTitle)
 	clickPickerRow(t, state, state.messages.WorkspaceNew)
 	if state.modal != modalWorkspaceDraft || len(state.deck.Workspaces(nil)) != before+1 {
 		t.Fatalf("new workspace modal=%d tabs=%d", state.modal, len(state.deck.Workspaces(nil)))
@@ -79,19 +79,19 @@ func TestNewTabWorkspaceTabFiltersTemplatesAndKeepsHostSort(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.templates = []WorkspaceTemplate{mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 0), 1)}
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
-	state.Click(hitConnectSortWorkspaces)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
+	clickSettingsChoice(t, state, state.messages.WorkspaceLibraryTitle)
 	state.commandPalette.search.Insert("production")
 	state.refreshCommandPalette()
 	if got := state.commandPalette.visible; len(got) != 1 || state.commandPalette.entries[got[0]].target != hitConnectPickWorkspaces.At(0) {
 		t.Fatalf("workspace matches = %v", got)
 	}
-	state.Click(hitConnectSortDefault)
+	clickSettingsChoice(t, state, state.messages.NewTabSortDefault)
 	if state.recentConnectSort || state.commandPalette.workspaces {
 		t.Fatal("default hosts mode was not restored")
 	}
-	state.Click(hitConnectSortWorkspaces)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.WorkspaceLibraryTitle)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	if !state.recentConnectSort || state.commandPalette.workspaces {
 		t.Fatal("recent hosts mode was not restored")
 	}
@@ -100,7 +100,7 @@ func TestNewTabWorkspaceTabFiltersTemplatesAndKeepsHostSort(t *testing.T) {
 func TestNewTabWorkspaceTabOffersCreationWithoutTemplates(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortWorkspaces)
+	clickSettingsChoice(t, state, state.messages.WorkspaceLibraryTitle)
 	if len(state.commandPalette.visible) != 1 || state.commandPalette.entries[state.commandPalette.visible[0]].target != hitConnectPickWorkspaceNew {
 		t.Fatalf("empty workspaces offer = %+v", state.commandPalette.entries)
 	}
@@ -158,7 +158,7 @@ func TestNewTabPickerMatchesEverySpaceSeparatedKeywordInBothSortModes(t *testing
 			state := newTestState(t, options)
 			state.Click(hitNewTab)
 			if recent {
-				state.Click(hitConnectSortRecent)
+				clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 			}
 			// Reverse the label/address order and vary case and whitespace. Every
 			// term must match the same host, even across its displayed fields.
@@ -171,9 +171,9 @@ func TestNewTabPickerMatchesEverySpaceSeparatedKeywordInBothSortModes(t *testing
 				t.Fatalf("%s picker matches = %v", name, got)
 			}
 			if recent {
-				state.Click(hitConnectSortDefault)
+				clickSettingsChoice(t, state, state.messages.NewTabSortDefault)
 			} else {
-				state.Click(hitConnectSortRecent)
+				clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 			}
 			if state.commandPalette.search.String() != "  oA   Xx  " {
 				t.Fatal("switching sort cleared the search")
@@ -323,16 +323,10 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 	state.Click(hitNewTab)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	var recent gfx.ID
-	for _, hit := range canvas.Hits() {
-		if hit.Label == "Recent login" {
-			recent = hit.ID
-		}
-	}
-	if recent.IsZero() {
+	if _, ok := settingsChoiceIn(&canvas, state.messages.NewTabSortRecent); !ok {
 		t.Fatal("new-tab picker has no Recent login control")
 	}
-	state.Click(recent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first, ok := hitByID(&canvas, hitCommandPaletteItems.At(1)) // group title precedes the host
@@ -348,7 +342,7 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 	if !ok || first.Label != host.Label {
 		t.Fatalf("recent after restart = %q, want %q", first.Label, host.Label)
 	}
-	second.Click(hitConnectSortDefault)
+	clickSettingsChoice(t, second, second.messages.NewTabSortDefault)
 	canvas.Reset()
 	second.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first, ok = hitByID(&canvas, hitCommandPaletteItems.At(0))
@@ -409,14 +403,14 @@ func TestRecentPickerFiltersThenGroupsAndKeepsAnOpenListStill(t *testing.T) {
 	if got := pickerRowLabels(state); !slices.Equal(got, want) {
 		t.Fatalf("search rows = %v, want %v", got, want)
 	}
-	state.Click(hitConnectSortDefault)
+	clickSettingsChoice(t, state, state.messages.NewTabSortDefault)
 	if state.commandPalette.search.String() != "node" {
 		t.Fatal("switch cleared search")
 	}
 	if got := pickerRowLabels(state); !slices.Equal(got, []string{"node A1", "node A2", "node B1", "node B2"}) {
 		t.Fatalf("default search = %v", got)
 	}
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	result := state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalNone {
 		t.Fatalf("Enter did not select first connection: %+v", result)

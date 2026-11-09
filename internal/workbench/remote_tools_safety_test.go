@@ -209,7 +209,7 @@ func TestRemoteFailedTabSwitchNeverShowsAnotherTabsTimestamp(t *testing.T) {
 	server.mu.Lock()
 	server.failures["docker ps"] = errors.New("missing docker")
 	server.mu.Unlock()
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	if !state.remote.collectedAt.IsZero() || state.remote.snapshotStatus != "" || strings.Contains(state.remote.searchSummary, previous) {
 		t.Fatal("tab switch painted the previous tab's collection timestamp")
 	}

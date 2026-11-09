@@ -96,7 +96,7 @@ func TestSFTPHistoryNavigationCancelCompletesFeedback(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("directory read did not start")
 	}
-	state.Click(hitSFTPCancel)
+	state.cancelSFTPOperation(view)
 	if view.busy || view.status != state.messages.SFTPCanceled {
 		t.Fatalf("retired navigation did not finish cancel feedback: busy=%v status=%q", view.busy, view.status)
 	}
@@ -115,7 +115,7 @@ func TestSFTPHistoryExtractionCancelKeepsAsynchronousFeedback(t *testing.T) {
 	view.busy, view.extracting, view.operation = true, true, sftpclient.OperationList
 	canceled := false
 	view.cancelExtract = func() { canceled = true }
-	state.Click(hitSFTPCancel)
+	state.cancelSFTPOperation(view)
 	if !canceled || !view.busy || view.status != state.messages.SFTPCanceling {
 		t.Fatalf("extraction cancellation lost its asynchronous state: canceled=%v busy=%v status=%q", canceled, view.busy, view.status)
 	}

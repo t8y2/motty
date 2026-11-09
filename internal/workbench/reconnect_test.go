@@ -176,8 +176,9 @@ func TestCancelCloseAndManualReconnectCancelScheduledAttempt(t *testing.T) {
 func TestTurningReconnectOffCancelsWaitingSessions(t *testing.T) {
 	state, _, connection, _ := reconnectingSession(t, reconnectForever)
 	disconnectEstablished(connection, state)
-	state.activeSection = sectionSettings
-	state.Click(hitSettingsReconnectOff)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsConnection)
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionReconnect, state.settingsReconnectLabel(reconnectOff))
 	if state.connectionReconnect != reconnectOff || state.sessions[0].reconnectPending {
 		t.Fatalf("policy=%v pending=%v", state.connectionReconnect, state.sessions[0].reconnectPending)
 	}

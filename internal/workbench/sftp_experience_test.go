@@ -333,7 +333,7 @@ func TestSFTPSaveRefreshesTheShownDirectoryAndReportsSuccess(t *testing.T) {
 	readsBefore := remote.readCount("/home/test")
 	const saved = "saved and refreshed\n"
 	replaceSFTPText(t, state, saved)
-	state.Click(hitSFTPEditSave)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		if view.busy || sftpEditorDirty(view) || view.errorText != "" || len(state.fileNotices.items) != 1 {
 			return false

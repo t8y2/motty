@@ -83,24 +83,17 @@ func (state *State) setCompletionMode(mode completionMode) bool {
 	return true
 }
 
-func (state *State) settingsCompletionOptions() [3]components.SegmentOption {
-	m := state.messages.Completion
-	return [...]components.SegmentOption{
-		{ID: hitSettingsCompletionOff, Label: m.ModeOff},
-		{ID: hitSettingsCompletionList, Label: m.ModeList},
-		{ID: hitSettingsCompletionBoth, Label: m.ModeBoth},
-	}
-}
+var settingsCompletionChoices = [...]completionMode{completionOff, completionList, completionBoth}
 
-func (state *State) selectedCompletionOption() gfx.ID {
-	switch state.completionMode() {
+func (state *State) settingsCompletionLabel(mode completionMode) string {
+	m := state.messages.Completion
+	switch mode {
 	case completionOff:
-		return hitSettingsCompletionOff
+		return m.ModeOff
 	case completionList:
-		return hitSettingsCompletionList
-	default:
-		return hitSettingsCompletionBoth
+		return m.ModeList
 	}
+	return m.ModeBoth
 }
 
 // completionScope names the popover's focus scope; it is separate from the

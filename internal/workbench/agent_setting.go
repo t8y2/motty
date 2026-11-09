@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
@@ -96,21 +95,39 @@ func (choice agentChoice) resolved() string {
 	})
 }
 
-func (state *State) settingsAgentOptions() [4]components.SegmentOption {
-	m := state.messages
-	return [...]components.SegmentOption{
-		{ID: hitSettingsAgentSystem, Label: m.SettingsSSHAgentSystem},
-		{ID: hitSettingsAgentOnePassword, Label: "1Password"},
-		{ID: hitSettingsAgentBitwarden, Label: "Bitwarden"},
-		{ID: hitSettingsAgentCustom, Label: m.SettingsSSHAgentCustom},
+// settingsAgentKindChoices are the choices the agent row offers. The chosen
+// agent's path is the custom choice's own state, so the choice binds the kind.
+var settingsAgentKindChoices = [...]agentKind{agentKindSystem, agentKindOnePassword, agentKindBitwarden, agentKindCustom}
+
+func (state *State) settingsAgentKindLabel(kind agentKind) string {
+	switch kind {
+	case agentKindOnePassword:
+		return "1Password"
+	case agentKindBitwarden:
+		return "Bitwarden"
+	case agentKindCustom:
+		return state.messages.SettingsSSHAgentCustom
 	}
+	return state.messages.SettingsSSHAgentSystem
 }
 
 func (state *State) paintSSHAgentRow(page *settingsPage) {
 	m := state.messages
-	options := state.settingsAgentOptions()
-	selected := options[state.sshAgent.kind].ID
-	page.row(m.SettingsSSHAgent, state.sshAgentRowDescription(), options[:], selected)
+	kind := state.sshAgent.kind
+	settingsChoiceRow(page, m.SettingsSSHAgent, state.sshAgentRowDescription(), &kind, settingsAgentKindChoices[:], state.settingsAgentKindLabel,
+		func() {
+			if kind == agentKindCustom {
+				state.openSSHAgentPathForm()
+				return
+			}
+			state.setSSHAgent(agentChoice{kind: kind})
+			state.save()
+		},
+		func() {
+			if kind == agentKindCustom {
+				state.openSSHAgentPathForm()
+			}
+		})
 }
 
 func (state *State) sshAgentRowDescription() string {

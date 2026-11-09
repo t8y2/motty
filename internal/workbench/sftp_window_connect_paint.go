@@ -13,40 +13,23 @@ import (
 // Reuse the terminal connection ring and its reduced-motion behavior.
 func (w *sftpWindow) paintConnecting(canvas *gfx.Canvas, size gfx.Size) {
 	state, s := w.owner, &w.session
-	m, pal := state.messages, state.pal
+	pal := state.pal
 	failed := s.failed() || s.phase == sshconn.PhaseClosed
 	waiting := isPromptPhase(s.phase)
-	title, detail := fmt.Sprintf(m.SFTPWindow.ConnectingFmt, s.Title), s.Address
-	icon, tint := uint8(iconSFTPTransfer), pal.accent
-	if waiting {
-		detail = m.SFTPWindow.AuthenticationHint
+	if w.ui.connectPage == nil {
+		w.ui.connectPage = ui.NewPage(ui.PageConfig{Root: w.pageRoot() + "-connect", Theme: &state.theme})
+		w.ui.connectView = w.declareConnecting
 	}
-	if failed {
-		title, icon, tint = m.HostStateFailed, iconAlert, pal.danger
-		if s.err != nil {
-			detail = s.err.Error()
-		}
-	}
-	var badge ui.Box
-	f := w.ui.frame.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().Center().Pad(20).Children(func() {
-		f.Column().Width(min(480, max(size.Width-40, 0))).Gap(12).Items(ui.Center).Children(func() {
-			badge = f.Slot().Size(72, 72)
-			f.Text(title).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).FillWidth().Ellipsis().TextCenter().LineHeight(26)
-			f.Text(detail).FontSize(metrics.FontSizeS).Color(pal.muted).FillWidth().Ellipsis().TextCenter().LineHeight(22)
-			f.Row().Gap(8).MarginSides(12, 0, 0, 0).Children(func() {
-				f.Button(hitSFTPWindowConnectCancel, m.ConnClose).Outline()
-				if failed {
-					f.Button(hitSFTPWindowConnectRetry, m.ConnRetry)
-				} else if waiting {
-					f.Button(hitSFTPWindowAuthenticate, m.SFTPWindow.Authenticate)
-				}
-			})
-		})
-	})
-	f.End()
-	bounds := badge.Rect()
+	w.ui.connect = sftpWindowConnectScratch{}
+	w.ui.connectPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.connectView)
+	bounds := w.ui.connect.badge.Rect()
 	cx, cy := bounds.X+bounds.Width/2, bounds.Y+bounds.Height/2
+	tint := pal.accent
+	icon := uint8(iconSFTPTransfer)
+	if failed {
+		tint = pal.danger
+		icon = iconAlert
+	}
 	canvas.Rounded(gfx.Rect{X: cx - 25, Y: cy - 25, Width: 50, Height: 50}, 14, withAlpha(tint, .12))
 	paintIcon(canvas, icon, gfx.Rect{X: cx - 12, Y: cy - 12, Width: 24, Height: 24}, tint)
 	if !failed {
@@ -55,4 +38,48 @@ func (w *sftpWindow) paintConnecting(canvas *gfx.Canvas, size gfx.Size) {
 			canvas.RequestFrameIn(time.Second / 30)
 		}
 	}
+}
+
+// declareConnecting declares the window's loading page: what it is connecting
+// to, what happened, and the one action it can offer.
+func (w *sftpWindow) declareConnecting(c ui.C) {
+	state, s := w.owner, &w.session
+	m, pal := state.messages, state.pal
+	size := w.ui.size
+	failed := s.failed() || s.phase == sshconn.PhaseClosed
+	waiting := isPromptPhase(s.phase)
+	title, detail := fmt.Sprintf(m.SFTPWindow.ConnectingFmt, s.Title), s.Address
+	if waiting {
+		detail = m.SFTPWindow.AuthenticationHint
+	}
+	if failed {
+		title = m.HostStateFailed
+		if s.err != nil {
+			detail = s.err.Error()
+		}
+	}
+	ui.Column(c).Fill().Center().Pad(20).Children(func() {
+		ui.Column(c).Width(min(480, max(size.Width-40, 0))).Gap(12).Items(ui.Center).Children(func() {
+			w.ui.connect.badge = ui.Slot(c).Size(72, 72)
+			ui.Text(c, title).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).FillWidth().Ellipsis().TextCenter().LineHeight(26)
+			ui.Text(c, detail).FontSize(metrics.FontSizeS).Color(pal.muted).FillWidth().Ellipsis().TextCenter().LineHeight(22)
+			ui.Row(c).Gap(8).MarginSides(12, 0, 0, 0).Children(func() {
+				closeButton := ui.Button(c, m.ConnClose).Outline()
+				if closeButton.Clicked() {
+					w.closeHostNow()
+				}
+				if failed {
+					retry := ui.Button(c, m.ConnRetry)
+					if retry.Clicked() && (w.session.failed() || w.session.phase == sshconn.PhaseClosed) {
+						w.connect()
+					}
+				} else if waiting {
+					authenticate := ui.Button(c, m.SFTPWindow.Authenticate)
+					if authenticate.Clicked() {
+						w.owner.raiseSFTPAuthentication(&w.session)
+					}
+				}
+			})
+		})
+	})
 }

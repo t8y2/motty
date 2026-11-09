@@ -32,6 +32,19 @@ const (
 	aiMaxLines     = 4096 // the most lines one message is laid out in
 )
 
+// aiPanelPageRoot names the panel's page. It is separate from aiPanelHits, the
+// place of the identities this package names by hand, so the page's controls and
+// the hand-painted ones do not share names.
+const aiPanelPageRoot = "ai-panel-page"
+
+// aiPanelPageScratch is what paintAIBody measures before declaring the panel's
+// page, so the page's view reads the values instead of measuring them again.
+type aiPanelPageScratch struct {
+	boxHeight, setupWidth    float32
+	showSetup                bool
+	setupLabel, setupSummary string
+}
+
 // aiRowView is the measured form of one message: its wrapped lines and the height
 // they add up to. It is rebuilt only when what it was built from changed, so
 // repainting a long conversation measures nothing. Nothing in it says where
@@ -523,48 +536,32 @@ func (state *State) paintAIMenuOverlay(canvas *gfx.Canvas) {
 }
 
 func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
-	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
+	ai, panel := &state.ai, &state.ai.panel
 	m := state.messages.AIPanel
 	panel.rect = bounds
 	width := bounds.Width - 2*aiPad
+	s := &panel.pageScratch
 	_, hasModel := state.aiModelText()
-	setupLabel, setupSummary := m.SetupModel, m.SetupSummary
-	showSetup := !hasModel || ai.needLogin != ""
+	s.setupLabel, s.setupSummary = m.SetupModel, m.SetupSummary
+	s.showSetup = !hasModel || ai.needLogin != ""
 	if ai.needLogin != "" {
-		setupLabel, setupSummary = state.messages.AISettings.CLIAuthLogin, state.messages.AISettings.CLIAuthSignedOut
+		s.setupLabel, s.setupSummary = state.messages.AISettings.CLIAuthLogin, state.messages.AISettings.CLIAuthSignedOut
 	}
-	boxHeight := state.aiPrepareBottom(canvas, width)
-	setupWidth := min(max(canvas.TextWidthWeight(setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
+	s.boxHeight = state.aiPrepareBottom(canvas, width)
+	s.setupWidth = min(max(canvas.TextWidthWeight(s.setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
 
-	var body aiBody
-	f := state.aiFlex.body.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().Children(func() {
-		// The title row: the name, a new conversation, the history, and the way out.
-		f.Row().Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
-			f.Icon(lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
-			f.Text(m.Title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).Grow(1)
-			body.newChat = f.Slot().Size(barToolSize, barToolSize)
-			body.history = f.Slot().Size(barToolSize, barToolSize)
-			body.close = f.Slot().Size(barToolSize, barToolSize)
-		})
-		// The way to get a model; once there is one, the message box names it.
-		if showSetup {
-			f.Row().Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
-				f.Paragraph(setupSummary, 3).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Grow(1)
-				body.setup = f.Slot().Size(setupWidth, 30)
-			})
-		}
-		f.Divider().Background(pal.line)
-		body.list = f.Slot().Grow(1)
-		state.declareAIBottom(f, &body, boxHeight)
-	})
-	f.End()
-
-	state.paintAIHeader(canvas, &body)
-	if showSetup {
-		components.BeginButton(canvas, state.Theme(), hitAISetup, body.setup.Rect()).Small().Default(setupLabel)
+	panel.body = aiBody{}
+	if panel.page == nil {
+		panel.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiPanelPageRoot, Theme: &state.theme})
+		panel.pageView = state.declareAIPanelPage
 	}
-	list := body.list.Rect()
+	panel.page.Draw(canvas, bounds, panel.pageView)
+
+	state.paintAIHeader(canvas, &panel.body)
+	if s.showSetup {
+		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
+	}
+	list := panel.body.list.Rect()
 	panel.list = list
 	panel.listing = panel.history
 	panel.textFirst, panel.textLast = -1, -1
@@ -577,7 +574,51 @@ func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	default:
 		state.paintAIMessages(canvas, list)
 	}
-	state.paintAIBottom(canvas, &body)
+	state.paintAIBottom(canvas, &panel.body)
+}
+
+// declareAIPanelPage declares the panel's chrome: the title row, the setup card,
+// the divider and the message list, with the bottom under them. The icon buttons
+// and the list content are painted into the slots once the page is laid out. The
+// title row's controls read their click here, in the page's declaration.
+func (state *State) declareAIPanelPage(c ui.C) {
+	panel := &state.ai.panel
+	pal, m := state.pal, state.messages.AIPanel
+	s := &panel.pageScratch
+	ui.Column(c).Fill().Children(func() {
+		// The title row: the name, a new conversation, the history, and the way out.
+		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
+			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
+			ui.Text(c, m.Title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).Grow(1)
+			panel.body.newChat = ui.Slot(c).Size(barToolSize, barToolSize)
+			panel.body.history = ui.Slot(c).Size(barToolSize, barToolSize)
+			panel.body.close = ui.Slot(c).Size(barToolSize, barToolSize)
+		})
+		// The way to get a model; once there is one, the message box names it.
+		if s.showSetup {
+			ui.Row(c).Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
+				ui.Paragraph(c, s.setupSummary, 3).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Grow(1)
+				panel.body.setup = ui.Slot(c).Size(s.setupWidth, 30)
+			})
+		}
+		ui.Divider(c).Background(pal.line)
+		panel.body.list = ui.Slot(c).Grow(1)
+		state.declareAIBottom(c, &panel.body, s.boxHeight)
+	})
+	// The title row's controls are painted by hand into their slots; the page
+	// reads their click while it declares them, so an event-pass paint delivers
+	// it there rather than through the window's central dispatcher. The action
+	// runs after the paint, as the central dispatcher did.
+	if canvas := c.Frame().Canvas(); canvas != nil && state.modal == modalNone {
+		switch {
+		case canvas.Clicked(hitAIClose):
+			c.After(state.closeAIPanel)
+		case canvas.Clicked(hitAIHistory):
+			c.After(state.toggleAIHistory)
+		case canvas.Clicked(hitAINew) && state.ai.run == nil:
+			c.After(state.newAIConversationFromPanel)
+		}
+	}
 }
 
 // aiModelText is the line naming the model that answers, and whether there is one.
@@ -1243,9 +1284,9 @@ type aiCopySlot struct {
 
 // aiFlexViews are the layouts the assistant's panel is declared with.
 type aiFlexViews struct {
-	body, empty, mention, summary, send, menu ui.View
-	shell, barButton                          ui.View
-	history, historyRows, messages            ui.View
-	row                                       ui.View // one row of the history or of the conversation, declared into its slot
-	status                                    ui.View
+	empty, mention, summary, send, menu ui.View
+	shell, barButton                    ui.View
+	history, historyRows, messages      ui.View
+	row                                 ui.View // one row of the history or of the conversation, declared into its slot
+	status                              ui.View
 }

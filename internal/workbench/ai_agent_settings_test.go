@@ -86,11 +86,11 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 	if !contains(texts, m.AgentsTitle) || !contains(texts, m.AgentHostsNoneDesc) || !contains(texts, m.AgentActivityNone) {
 		t.Fatalf("the empty group says %v", texts)
 	}
-	state.Click(hitAISetAgentRun)
+	clickSettingsChoice(t, state, m.AgentModeRun)
 	if settingValue(t, db, agentModeSetting) != AgentModeCommands || state.ai.settings.agentMode != gate.ModeAsk {
 		t.Fatal("running commands was not stored")
 	}
-	state.Click(hitAISetAgentObserve)
+	clickSettingsChoice(t, state, m.AgentModeObserve)
 	if settingValue(t, db, agentModeSetting) != AgentModeReadOnly || state.ai.settings.agentMode != gate.ModeObserve {
 		t.Fatal("read only was not stored")
 	}

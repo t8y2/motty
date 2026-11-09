@@ -55,7 +55,7 @@ func TestSnippetPickerSendsOnlyToTheTickedTerminals(t *testing.T) {
 	state.activeSection = sectionTerminal
 
 	state.Click(hitTerminalSnippets)
-	state.Click(hitSendTargetChosen)
+	clickSettingsChoice(t, state, state.messages.Tools.SendTargetChosen)
 	palette := &state.commandPalette
 	if len(palette.visible) != 1 || !palette.entries[palette.visible[0]].checkable {
 		t.Fatalf("the list holds %d rows, want the one connected terminal as a choice", len(palette.visible))

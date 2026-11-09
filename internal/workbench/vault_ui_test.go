@@ -394,6 +394,42 @@ func TestForgetAllAsksFirstThenEmptiesTheVault(t *testing.T) {
 	}
 }
 
+// The vault dialogs' bodies are pages now; their buttons and field still answer
+// the window's real pointer event pass, not only the stable-hit dispatcher.
+func TestVaultDialogsAnswerRealPointerEvents(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	signInSavingThePassword(t, state, world, "hunter2")
+	if err := state.secrets.vault.LegacyForTests("master password"); err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault.DropKeyForTests()
+
+	state.Click(hitHosts)
+	second := connect(t, state, world)
+	askForPassword(state, second, 1)
+	if state.modal != modalVaultUnlock {
+		t.Fatalf("modal = %d, want the unlock dialog", state.modal)
+	}
+	driver := modalEventDriver(t, state)
+	typeInto(state, hitVaultUnlockField, "master password")
+	clickPaintedHit(t, driver, hitVaultUnlockSubmit)
+	if state.modal != modalNone || len(second.passwords) != 1 || second.passwords[0] != "hunter2" {
+		t.Fatalf("modal %d, sent %v: the page's submit did not unlock", state.modal, second.passwords)
+	}
+
+	state.Click(hitSettings)
+	state.Click(hitSettingsVaultForget)
+	if state.modal != modalVaultForget {
+		t.Fatalf("modal = %d, want the forget dialog", state.modal)
+	}
+	driver = modalEventDriver(t, state)
+	clickPaintedHit(t, driver, hitVaultForgetConfirm)
+	if state.modal != modalNone || state.secrets.vault.Len() != 0 {
+		t.Fatalf("modal %d, saved %d: the page's confirm did not forget", state.modal, state.secrets.vault.Len())
+	}
+}
+
 func TestARestoredTabConnectsItselfWhenTheVaultHasItsPassword(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

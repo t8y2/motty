@@ -29,7 +29,8 @@ func TestSettingsControlStaysInsideANarrowCard(t *testing.T) {
 	canvas.SetTree(Tree())
 	for _, width := range []float32{212, 140, 600} {
 		bounds := gfx.Rect{X: 100, Y: 50, Width: width, Height: 400}
-		f := state.settingsPage.Begin(&canvas, state.Theme(), bounds)
+		var view ui.View
+		f := view.Begin(&canvas, state.Theme(), bounds)
 		page := settingsPage{state: state, f: f, width: width, rowHeight: settingsRowHeight}
 		var control ui.Box
 		f.Column().Fill().Children(func() {

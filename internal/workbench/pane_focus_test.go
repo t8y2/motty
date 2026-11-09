@@ -53,7 +53,7 @@ func pagedIdentity(state *State, session *Session, local gfx.ID) gfx.ID {
 
 // terminalOf is the identity of the terminal a session's page paints.
 func terminalOf(state *State, session *Session) gfx.ID {
-	return pagedIdentity(state, session, hitTerminalList.At(int(session.ID)))
+	return pagedIdentity(state, session, terminalTestHit(state, session))
 }
 
 // paneBoundsOf is where a session's pane sits in the window.
@@ -102,7 +102,7 @@ func twoLivePanes(t *testing.T) (*State, *fakeShell, *fakeShell) {
 	if !state.splitActivePane(layoutcore.Horizontal) {
 		t.Fatal("split right")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(2))
 	openHost(state)
 	secondConn := world.conns[1]

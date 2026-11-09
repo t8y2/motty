@@ -408,6 +408,11 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.NotesInput(context); input != nil {
 			return input
 		}
+		// The provider form's fields are declared in its own page; the page
+		// supplies the editor the platform types into.
+		if input := state.AIProviderFormInput(context); input != nil {
+			return input
+		}
 		editor := state.EditorFor(context.ID)
 		if editor == nil {
 			return nil

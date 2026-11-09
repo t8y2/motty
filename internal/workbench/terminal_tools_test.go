@@ -254,7 +254,27 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	}
 	typeInto(state, hitHighlightPattern, "5\\d\\d")
 	state.Click(hitHighlightRegex)
-	state.Click(hitHighlightColorList.At(2)) // Green in the dialog's order: Red, Yellow, Green
+	// The color chips are controls of the dialog's page: press one through an
+	// event pass, as the window does, rather than through the stable-hit
+	// dispatcher.
+	driver := modalEventDriver(t, state)
+	green := hitHighlightColorList.At(2) // Green in the dialog's order: Red, Yellow, Green
+	var chip gfx.Hit
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == green && !hit.IsLabel {
+			chip = hit
+			break
+		}
+	}
+	if chip.Bounds.Width == 0 {
+		t.Fatal("the dialog painted no green color chip")
+	}
+	if err := driver.Click(chip.Bounds.X+chip.Bounds.Width/2, chip.Bounds.Y+chip.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if state.highlighting.slot != highlight.Green {
+		t.Fatalf("the green chip did not choose its color: slot %v", state.highlighting.slot)
+	}
 	state.Click(hitHighlightSubmit)
 	if state.modal != modalNone || len(state.highlighting.rules) != 1 {
 		t.Fatalf("modal %d, rules %v", state.modal, state.highlighting.rules)
@@ -476,7 +496,7 @@ func TestBroadcastTypesIntoEveryPaneOfTheTabUntilItIsTurnedOff(t *testing.T) {
 	if !strings.HasSuffix(second.typed(), "echo hi") {
 		t.Fatalf("paste did not reach the other pane: %q", second.typed())
 	}
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTerminalList.At(int(firstID))})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalTestHitByID(state, firstID)})
 	if !strings.HasSuffix(second.typed(), "\r") {
 		t.Fatalf("Enter did not reach the other pane: %q", second.typed())
 	}

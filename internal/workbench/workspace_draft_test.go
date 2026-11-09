@@ -48,7 +48,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		state := newTestState(t, options)
 		state.activeSection = sectionWorkspaces
 		state.Click(hitWorkspaceNew)
-		state.Click(hitWorkspaceDraftFixed)
+		clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 		state.workspaceDraft.name.Insert("Production pair")
 		state.Click(workspaceDraftHostID(1))
 		state.Click(workspaceDraftHostID(0))
@@ -76,7 +76,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	state := newTestState(t, options)
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	state.workspaceDraft.name.Insert("Production pair")
 	state.Click(workspaceDraftHostID(1))
 	state.Click(workspaceDraftHostID(0))
@@ -137,7 +137,7 @@ func TestWorkspaceDraftSwitchingModesKeepsTheSharedSelection(t *testing.T) {
 	state.Click(hitWorkspaceDraftPresets.At(2))
 	want := hostCatalogIDs(state.hosts[:2])
 
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("fixed mode selection = %v, want %v", got, want)
 	}
@@ -145,7 +145,7 @@ func TestWorkspaceDraftSwitchingModesKeepsTheSharedSelection(t *testing.T) {
 		t.Fatalf("fixed mode columns = %+v", state.workspaceDraft.layout)
 	}
 
-	state.Click(hitWorkspaceDraftTemporary)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftTemporary)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("temporary mode selection = %v, want %v", got, want)
 	}
@@ -511,7 +511,7 @@ func TestWorkspaceDraftRejectsAnEmptyNameWithoutClosing(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	state.Click(hitWorkspaceDraftSubmit)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.error == "" || len(state.templates) != 0 {
 		t.Fatalf("modal=%d error=%q templates=%d", state.modal, state.workspaceDraft.error, len(state.templates))
@@ -547,15 +547,19 @@ func TestWorkspaceLibraryOffersBothCreationModes(t *testing.T) {
 	panelHit(t, canvas, hitWorkspaceNew)
 	state.Click(hitWorkspaceNew)
 	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
-	panelHit(t, canvas, hitWorkspaceDraftTemporary)
-	panelHit(t, canvas, hitWorkspaceDraftFixed)
+	if _, ok := settingsChoiceIn(canvas, state.messages.WorkspaceDraftTemporary); !ok {
+		t.Fatal("the draft dialog offers no temporary mode")
+	}
+	if _, ok := settingsChoiceIn(canvas, state.messages.WorkspaceDraftFixed); !ok {
+		t.Fatal("the draft dialog offers no fixed mode")
+	}
 	if state.modal != modalWorkspaceDraft {
 		t.Fatalf("modal = %d", state.modal)
 	}
 	state.Click(hitWorkspaceDraftCancel)
 	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceNew)
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftFixed {
 		t.Fatalf("fixed entry opened modal=%d mode=%d", state.modal, state.workspaceDraft.mode)
 	}

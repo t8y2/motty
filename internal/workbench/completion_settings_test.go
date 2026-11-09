@@ -61,13 +61,14 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 			state.selectSettingsCategory(settingsTerminal)
 			var canvas gfx.Canvas
 			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
-			for _, option := range state.settingsCompletionOptions() {
-				hit, ok := hitByID(&canvas, option.ID)
-				if !ok || !canvasHasText(&canvas, option.Label) {
-					t.Fatalf("completion mode %q is not offered", option.Label)
+			for _, mode := range settingsCompletionChoices {
+				label := state.settingsCompletionLabel(mode)
+				hit, ok := settingsChoiceInRow(&canvas, state.messages.History.SuggestRow, label)
+				if !ok || !canvasHasText(&canvas, label) {
+					t.Fatalf("completion mode %q is not offered", label)
 				}
-				if want := option.ID == hitSettingsCompletionBoth; hit.Selected != want {
-					t.Errorf("mode %q selected=%v, want %v by default", option.Label, hit.Selected, want)
+				if want := label == state.settingsCompletionLabel(completionBoth); hit.Selected != want {
+					t.Errorf("mode %q selected=%v, want %v by default", label, hit.Selected, want)
 				}
 			}
 			state.selectSettingsCategory(settingsShortcuts)
@@ -99,18 +100,17 @@ func TestCompletionModeIsChosenAndPersistsInSettings(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
 	cases := []struct {
-		id                    gfx.ID
 		mode                  completionMode
 		suggestOff, inlineOff bool
 	}{
-		{hitSettingsCompletionList, completionList, false, true},
-		{hitSettingsCompletionOff, completionOff, true, false},
-		{hitSettingsCompletionBoth, completionBoth, false, false},
+		{completionList, false, true},
+		{completionOff, true, false},
+		{completionBoth, false, false},
 	}
 	for _, c := range cases {
-		state.Click(c.id)
+		clickSettingsChoiceInRow(t, state, state.messages.History.SuggestRow, state.settingsCompletionLabel(c.mode))
 		if state.completionMode() != c.mode || state.history.suggestOff != c.suggestOff || state.history.inlineOff != c.inlineOff {
-			t.Fatalf("mode after %v = %v (suggestOff=%v inlineOff=%v)", c.id, state.completionMode(), state.history.suggestOff, state.history.inlineOff)
+			t.Fatalf("mode after %v = %v (suggestOff=%v inlineOff=%v)", c.mode, state.completionMode(), state.history.suggestOff, state.history.inlineOff)
 		}
 		again := newTestState(t, options)
 		if again.completionMode() != c.mode {

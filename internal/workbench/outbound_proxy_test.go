@@ -21,7 +21,7 @@ func proxyWorld(t testing.TB) (*world, Options) {
 	return newWorld(t)
 }
 
-func configureProxy(t *testing.T, state *State, kind gfx.ID, address, user, password, bypass string) {
+func configureProxy(t *testing.T, state *State, kind outboundProxyChoice, address, user, password, bypass string) {
 	t.Helper()
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
@@ -29,7 +29,7 @@ func configureProxy(t *testing.T, state *State, kind gfx.ID, address, user, pass
 	if state.modal != modalOutboundProxy {
 		t.Fatalf("modal = %d", state.modal)
 	}
-	state.Click(kind)
+	clickSettingsChoice(t, state, state.outboundProxyChoiceLabel(kind))
 	for _, field := range []struct {
 		hit   gfx.ID
 		value string
@@ -47,7 +47,7 @@ func configureProxy(t *testing.T, state *State, kind gfx.ID, address, user, pass
 func TestAConfiguredProxyCarriesEveryNewConnectionWithItsPasswordFromTheVault(t *testing.T) {
 	world, options := proxyWorld(t)
 	state := newTestState(t, options)
-	configureProxy(t, state, hitProxyKindSOCKS5, "proxy.corp:1080", "me", "s3cret", "")
+	configureProxy(t, state, proxyChoiceSOCKS5, "proxy.corp:1080", "me", "s3cret", "")
 	if state.modal != modalNone || state.proxy.kind != sshconn.ProxySOCKS5 || state.proxy.address != "proxy.corp:1080" || state.proxy.user != "me" {
 		t.Fatalf("modal %d, proxy %+v, error %q", state.modal, state.proxy, state.proxyForm.dialogError)
 	}
@@ -79,7 +79,7 @@ func TestTheProxyDialogRefusesWhatCannotWork(t *testing.T) {
 	for _, address := range []string{"", "nohostport", "host:0", "host:99999", "ho st:80", ":80"} {
 		state.Click(hitSettings)
 		state.Click(hitSettingsProxyConfigure)
-		state.Click(hitProxyKindHTTP)
+		clickSettingsChoice(t, state, state.messages.Tools.ProxyHTTP)
 		if address != "" {
 			typeInto(state, hitOutboundProxyAddress, address)
 		}
@@ -94,7 +94,7 @@ func TestTheProxyDialogRefusesWhatCannotWork(t *testing.T) {
 	}
 	// "None" needs no address.
 	state.Click(hitSettingsProxyConfigure)
-	state.Click(hitProxyKindNone)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxyNone)
 	state.Click(hitOutboundProxySubmit)
 	if state.modal != modalNone {
 		t.Fatalf("modal %d, error %q", state.modal, state.proxyForm.dialogError)
@@ -104,7 +104,7 @@ func TestTheProxyDialogRefusesWhatCannotWork(t *testing.T) {
 func TestRemovingTheLoginOrTheProxyForgetsItsPassword(t *testing.T) {
 	_, options := proxyWorld(t)
 	state := newTestState(t, options)
-	configureProxy(t, state, hitProxyKindHTTP, "p:3128", "me", "pw", "")
+	configureProxy(t, state, proxyChoiceHTTP, "p:3128", "me", "pw", "")
 	if _, found, _ := state.secrets.vault.Get(proxyPasswordSecret); !found {
 		t.Fatal("the password was not saved")
 	}
@@ -122,7 +122,7 @@ func TestRemovingTheLoginOrTheProxyForgetsItsPassword(t *testing.T) {
 func TestALockedVaultMakesAConnectionThroughTheProxyFailWithTheReason(t *testing.T) {
 	world, options := proxyWorld(t)
 	state := newTestState(t, options)
-	configureProxy(t, state, hitProxyKindSOCKS5, "p:1080", "me", "pw", "")
+	configureProxy(t, state, proxyChoiceSOCKS5, "p:1080", "me", "pw", "")
 	if err := state.secrets.vault.LegacyForTests("a master password"); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestTheHostProxyDialogStagesAProxyUntilTheHostIsSaved(t *testing.T) {
 	if state.modal != modalOutboundProxy || !state.proxyForm.forHost {
 		t.Fatalf("host proxy modal = %d form=%+v", state.modal, state.proxyForm)
 	}
-	state.Click(hitProxyKindSOCKS5)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxySOCKS5)
 	typeInto(state, hitOutboundProxyAddress, "host.proxy:1080")
 	typeInto(state, hitOutboundProxyUser, "proxy-user")
 	typeInto(state, hitOutboundProxyPassword, "host-secret")
@@ -296,7 +296,7 @@ func TestCancelingHostProxyConfigurationReturnsToTheUnchangedHost(t *testing.T) 
 	state := newTestState(t, options)
 	state.Click(hitAddHost)
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindHTTP)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxyHTTP)
 	typeInto(state, hitOutboundProxyAddress, "proxy.example.com:3128")
 	state.Click(hitOutboundProxyCancel)
 	if state.modal != modalNewHost || state.editor.proxy != nil {
@@ -316,7 +316,7 @@ func TestCancelingTheOuterHostFormDiscardsAnAcceptedProxyDraft(t *testing.T) {
 		typeInto(state, hitDialogLabel, "Canceled")
 		typeInto(state, hitDialogAddress, "canceled.example.com")
 		state.Click(hitHostProxyConfigure)
-		state.Click(hitProxyKindSOCKS5)
+		clickSettingsChoice(t, state, state.messages.Tools.ProxySOCKS5)
 		typeInto(state, hitOutboundProxyAddress, "draft.proxy:1080")
 		typeInto(state, hitOutboundProxyUser, "draft-user")
 		typeInto(state, hitOutboundProxyPassword, "draft-secret")
@@ -338,7 +338,7 @@ func TestCancelingTheOuterHostFormDiscardsAnAcceptedProxyDraft(t *testing.T) {
 		}
 		state.openEditHostID(host.ID)
 		state.Click(hitHostProxyConfigure)
-		state.Click(hitProxyKindHTTP)
+		clickSettingsChoice(t, state, state.messages.Tools.ProxyHTTP)
 		state.proxyForm.address = *text.NewEditor("draft.proxy:3128")
 		state.proxyForm.user = *text.NewEditor("draft-user")
 		state.proxyForm.password = *text.NewEditor("draft-secret")
@@ -358,7 +358,7 @@ func TestTheHostProxyDialogRejectsAnInvalidDedicatedAddress(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitAddHost)
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindSOCKS5)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxySOCKS5)
 	typeInto(state, hitOutboundProxyAddress, "missing-port")
 	state.Click(hitOutboundProxySubmit)
 	if state.modal != modalOutboundProxy || state.proxyForm.dialogError != state.messages.Tools.ProxyErrorAddress {
@@ -378,7 +378,7 @@ func TestTheHostDialogOffersProxyConfigurationOnlyForNetworkHosts(t *testing.T) 
 	if _, ok := hitByID(canvas, hitHostProxyConfigure); !ok {
 		t.Fatal("an SSH host does not offer proxy configuration")
 	}
-	state.Click(hitDialogProtocolSerial)
+	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
 	canvas, _ = paintedTexts(state)
 	if _, ok := hitByID(canvas, hitHostProxyConfigure); ok {
 		t.Fatal("a serial host offers proxy configuration")
@@ -457,7 +457,7 @@ func TestRemovingAHostProxyLoginOpensTheDefaultVault(t *testing.T) {
 
 	state.openEditHostID(host.ID)
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindNone)
+	clickSettingsChoice(t, state, state.messages.Tools.HostProxyDirect)
 	state.Click(hitOutboundProxySubmit)
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNone || state.dialogError != "" {
@@ -619,7 +619,7 @@ func TestANewHostGetsAUniqueCatalogIDBeforeItsProxyPasswordIsSaved(t *testing.T)
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	typeInto(state, hitDialogUser, "deploy")
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindHTTP)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxyHTTP)
 	typeInto(state, hitOutboundProxyAddress, "replacement.proxy:3128")
 	typeInto(state, hitOutboundProxyUser, "replacement-user")
 	typeInto(state, hitOutboundProxyPassword, "replacement-secret")
@@ -691,7 +691,7 @@ func TestDeletingAHostRetiresItsProxyPasswordAndItsIDIsNotReused(t *testing.T) {
 	typeInto(state, hitDialogAddress, deleted.Address)
 	typeInto(state, hitDialogUser, deleted.User)
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindHTTP)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxyHTTP)
 	typeInto(state, hitOutboundProxyAddress, "new.proxy:3128")
 	typeInto(state, hitOutboundProxyUser, "proxy-user")
 	state.Click(hitOutboundProxySubmit)
@@ -749,7 +749,7 @@ func TestRemovingAHostProxyLoginWaitsForTheLockedVault(t *testing.T) {
 
 	state.openEditHostID(host.ID)
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindNone)
+	clickSettingsChoice(t, state, state.messages.Tools.HostProxyDirect)
 	state.Click(hitOutboundProxySubmit)
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.Tools.ProxyPasswordLocked {
@@ -773,7 +773,7 @@ func TestSwitchingANewHostToSerialIgnoresItsHiddenProxyDraft(t *testing.T) {
 	typeInto(state, hitDialogLabel, "Serial console")
 	typeInto(state, hitDialogAddress, "/dev/tty-test")
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindSOCKS5)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxySOCKS5)
 	typeInto(state, hitOutboundProxyAddress, "unused.proxy:1080")
 	typeInto(state, hitOutboundProxyUser, "unused-user")
 	typeInto(state, hitOutboundProxyPassword, "unused-secret")
@@ -784,7 +784,7 @@ func TestSwitchingANewHostToSerialIgnoresItsHiddenProxyDraft(t *testing.T) {
 	state.secrets.declined = true
 	state.secrets.vault.DropKeyForTests()
 
-	state.Click(hitDialogProtocolSerial)
+	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
 	state.Click(hitDialogSubmit)
 	added := state.hosts[len(state.hosts)-1]
 	if state.modal != modalNone || state.dialogError != "" || added.Protocol != protocolSerial || added.Proxy != nil {
@@ -809,7 +809,7 @@ func TestAHostCanBeReachedThroughAProxyCommand(t *testing.T) {
 	typeInto(state, hitDialogAddress, "ssh.example.com")
 	typeInto(state, hitDialogUser, "ops")
 	state.Click(hitHostProxyConfigure)
-	state.Click(hitProxyKindCommand)
+	clickSettingsChoice(t, state, state.messages.Tools.ProxyCommand)
 	typeInto(state, hitOutboundProxyAddress, "cloudflared access ssh --hostname %x")
 	state.Click(hitOutboundProxySubmit)
 	if state.modal != modalOutboundProxy || state.proxyForm.dialogError == "" {
@@ -839,7 +839,10 @@ func TestAProxyCommandIsNeverTheGlobalProxy(t *testing.T) {
 	_, options := proxyWorld(t)
 	state := newTestState(t, options)
 	state.openOutboundProxyDialog()
-	state.Click(hitProxyKindCommand)
+	canvas, _ := paintedTexts(state)
+	if _, ok := settingsChoiceIn(canvas, state.messages.Tools.ProxyCommand); ok {
+		t.Fatal("the global proxy dialog offered a proxy command")
+	}
 	if state.proxyForm.kind == sshconn.ProxyCommand {
 		t.Fatal("the global proxy dialog took a command")
 	}

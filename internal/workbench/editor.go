@@ -99,7 +99,15 @@ type hostEditor struct {
 	advancedOpen bool
 
 	protocol hostProtocol
-	flow     serial.Flow
+	// protocolBefore is the protocol the frame was laid out for when the page's
+	// protocol choice is declared: the choice writes the new one, and applyProtocol
+	// needs what the port field was filled from.
+	protocolBefore hostProtocol
+	// The segmented choices of the form are pages of their own, each declaring one
+	// control at the rectangle the form's layout gave it. They keep their roving
+	// focus for the dialog's key handling.
+	protocolChoice, flowChoice, algoChoice, transferChoice dialogChoice
+	flow                                                   serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
 	// console is RDP's own: it asks the server for its console (administrative)
 	// session.
@@ -389,14 +397,23 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 	if protocol == editor.protocol {
 		return
 	}
+	previous := editor.protocol
+	editor.protocol = protocol
+	editor.applyProtocol(previous)
+}
+
+// applyProtocol applies the protocol the page's choice already wrote. previous is
+// the protocol the form was showing: what the port and device fields were filled
+// from before the choice replaced it.
+func (editor *hostEditor) applyProtocol(previous hostProtocol) {
+	protocol := editor.protocol
 	// A password typed for one protocol's account is not another's.
 	editor.password, editor.passphrase = text.Editor{}, text.Editor{}
-	previous := defaultPortText(editor.protocol)
-	if value := editor.value(fieldPort); value == "" || value == previous {
+	if value := editor.value(fieldPort); value == "" || value == defaultPortText(previous) {
 		editor.port = text.Editor{}
 		editor.port.Insert(defaultPortText(protocol))
 	}
-	if editor.protocol == protocolSerial {
+	if previous == protocolSerial {
 		// The device the form offered means nothing to another protocol.
 		for _, port := range editor.ports {
 			if editor.value(fieldAddress) == port.Device {

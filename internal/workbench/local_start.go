@@ -29,15 +29,22 @@ func localStartPolicyFromString(value string) localStartPolicy {
 	return localStartRemember
 }
 
+// settingsLocalStartChoices are the choices the local folder row offers.
+var settingsLocalStartChoices = [...]localStartPolicy{localStartRemember, localStartHome}
+
+func (state *State) settingsLocalStartLabel(policy localStartPolicy) string {
+	if policy == localStartHome {
+		return state.messages.SettingsLocalStartHome
+	}
+	return state.messages.SettingsLocalStartRemember
+}
+
 // paintLocalStartSetting is the choice's row, beside the other local terminal
 // settings.
 func (state *State) paintLocalStartSetting(page *settingsPage) {
-	options := state.settingsLocalStartOptions()
-	selected := hitSettingsLocalStartRemember
-	if state.localStart == localStartHome {
-		selected = hitSettingsLocalStartHome
-	}
-	page.row(state.messages.SettingsLocalStart, state.messages.SettingsLocalStartDescription, options[:], selected)
+	policy := state.localStart
+	settingsChoiceRow(page, state.messages.SettingsLocalStart, state.messages.SettingsLocalStartDescription, &policy, settingsLocalStartChoices[:], state.settingsLocalStartLabel,
+		func() { state.setLocalStartPolicy(policy); state.save() }, nil)
 }
 
 func (state *State) setLocalStartPolicy(policy localStartPolicy) bool {

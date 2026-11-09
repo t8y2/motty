@@ -221,7 +221,7 @@ func TestTabMenuDuplicateDoesNotConsumeAPendingEmptyPane(t *testing.T) {
 	openEmptyTab(state)
 	pendingWorkspace := state.deck.ActiveWorkspace()
 	pendingPane := state.deck.ActivePane(pendingWorkspace)
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	rightClickTab(state, hitTabList.At(int(sourceWorkspace)))
 
 	state.Click(hitTabMenuDuplicate)

@@ -41,7 +41,7 @@ func multiTargetWorld(t *testing.T, model llm.Provider) *State {
 	if !state.splitActivePane(2) {
 		t.Fatal("could not split the second tab")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	state.selectedHostID = state.hosts[0].ID
 	connect(t, state, world)

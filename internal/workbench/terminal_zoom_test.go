@@ -83,10 +83,11 @@ func TestPaddingChangesHowManyCellsFitAndIsKept(t *testing.T) {
 	state := newTestState(t, options)
 	size := gfx.Size{Width: 1000, Height: 700}
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
 	normal := terminalLayout(size, 8, 16, state.padding())
-	state.Click(hitSettingsPadCompact)
+	clickSettingsChoiceInRow(t, state, state.messages.Tools.PaddingRow, state.settingsPaddingLabel(padCompact))
 	compact := terminalLayout(size, 8, 16, state.padding())
-	state.Click(hitSettingsPadRoomy)
+	clickSettingsChoiceInRow(t, state, state.messages.Tools.PaddingRow, state.settingsPaddingLabel(padRoomy))
 	roomy := terminalLayout(size, 8, 16, state.padding())
 	if !(compact.cols >= normal.cols && normal.cols > roomy.cols) || !(compact.left < normal.left && normal.left < roomy.left) {
 		t.Fatalf("compact %+v normal %+v roomy %+v", compact, normal, roomy)

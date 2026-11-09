@@ -40,7 +40,7 @@ func TestLaunchTwelveHostsCreatesOneWorkspaceAndDialsEveryHost(t *testing.T) {
 		if !ok {
 			t.Fatalf("pane %d lost its session", index)
 		}
-		terminalID := tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID)))
+		terminalID := tree.MountID(paneMount(session), terminalTestHit(state, session))
 		terminal, ok := hitByID(canvas, terminalID)
 		bounds := pixelBounds(frame, pane.Bounds)
 		if !ok || terminal.Bounds.Width <= 0 || terminal.Bounds.Height <= 0 ||

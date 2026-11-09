@@ -323,18 +323,18 @@ func (state *State) paintSchemeSettings(page *settingsPage) {
 // paintSchemePicks is two rows: seven well-known built-ins, Rose Pine Moon from
 // the bundled collection and the active scheme when it is not one of those.
 func (state *State) paintSchemePicks(page *settingsPage) {
-	m, f, pal := state.messages.Tools, page.f, state.pal
+	m, c, pal := state.messages.Tools, page.c, state.pal
 	page.group(m.SchemeGroup, func() {
 		page.rows++
-		f.Column().PadSides(14, 18, 22, 18).Children(func() {
-			f.Paragraph(m.SchemeDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
+		ui.Column(c).PadSides(14, 18, 22, 18).Children(func() {
+			ui.Paragraph(c, m.SchemeDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
 			look := m.SchemeLookDark
 			if state.appearance == appearanceLight {
 				look = m.SchemeLookLight
 			}
-			f.Text(look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
-			f.Row().Items(ui.Center).MarginSides(0, 0, 10, 0).Children(func() {
-				f.Text(m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+			ui.Text(c, look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
+			ui.Row(c).Items(ui.Center).MarginSides(0, 0, 10, 0).Children(func() {
+				ui.Text(c, m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
 				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
 			})
 			state.paintSchemeCards(page, state.schemeQuickPicks())
@@ -406,15 +406,15 @@ func (state *State) schemeQuickPicks() []int {
 // paintSchemeCards lays cards out four to a row; an incomplete last row keeps
 // its cards the width of the others.
 func (state *State) paintSchemeCards(page *settingsPage, indices []int) {
-	f := page.f
+	c := page.c
 	for start := 0; start < len(indices); start += schemeColumns {
 		end := min(start+schemeColumns, len(indices))
-		f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+		ui.Row(c).Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
 			for _, index := range indices[start:end] {
-				state.declareScheme(page, index)
+				state.declareScheme(c, page, index)
 			}
 			for pad := end - start; pad < schemeColumns; pad++ {
-				f.Spacer().Basis(0)
+				ui.Spacer(c).Basis(0)
 			}
 		})
 	}
@@ -622,8 +622,8 @@ func (state *State) declareSchemeDrawer(f *ui.Frame, index int, cards *[]schemeD
 
 // declareScheme declares one color scheme's card: its name and the four colors
 // it gives the terminal, on its own background.
-func (state *State) declareScheme(page *settingsPage, index int) {
-	f, pal := page.f, state.pal
+func (state *State) declareScheme(c ui.C, page *settingsPage, index int) {
+	pal := state.pal
 	id, name, scheme := state.schemeAt(index)
 	selected := state.activeScheme() == id
 	background, foreground, swatches := pal.terminal, pal.text, [4]gfx.Color{pal.danger, pal.success, pal.warning, pal.accent}
@@ -639,20 +639,20 @@ func (state *State) declareScheme(page *settingsPage, index int) {
 	if selected {
 		border, width = pal.accent, 2
 	}
-	card := f.Column().Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
+	card := ui.Column(c).Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
 	card.Children(func() {
 		// The border is the window's accent, which can be the card's own color, so
 		// the choice is also marked with a check in the card's text color: that one
 		// always reads on the card.
-		f.Row().Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
-			f.Text(name).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+		ui.Row(c).Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			ui.Text(c, name).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
 			if selected {
-				f.Icon(lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
+				ui.Icon(c, lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
 			}
 		})
 		view := &state.settings
 		view.colors = append(view.colors, swatches[:]...)
-		page.add(settingsControl{kind: controlSwatches, slot: f.Slot().Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
+		page.add(settingsControl{kind: controlSwatches, slot: ui.Slot(c).Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
 	})
 	page.hitOn(card, schemeHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 }

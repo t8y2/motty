@@ -340,7 +340,7 @@ func TestMCPConfigurationLayout(t *testing.T) {
 				// Both transport sections may be tall when narrow code blocks wrap.
 				state.Paint(&canvas, gfx.Size{Width: width, Height: 6000})
 				var copyToken, reset gfx.Hit
-				for _, id := range []gfx.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset, hitAISetAgentSelect, hitAISetAgentCopy, hitAISetAgentAllowAll} {
+				for _, id := range []gfx.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset, hitAISetAgentSelect, hitAISetAgentCopy} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width || hit.Bounds.Width <= 0 {
 						t.Fatalf("width %v: %s outside window: %+v", width, tree.Text(id), hit)
@@ -351,6 +351,10 @@ func TestMCPConfigurationLayout(t *testing.T) {
 					if id == hitAISetMCPReset {
 						reset = hit
 					}
+				}
+				// The stdio access level is a page Choice, painted after the HTTP one.
+				if hit, ok := settingsChoiceIn(&canvas, state.messages.AISettings.MCPModeAllowAll); !ok || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width || hit.Bounds.Width <= 0 {
+					t.Fatalf("width %v: stdio access level outside window: %+v", width, hit)
 				}
 				// Narrow pages stack the token actions instead of clipping one.
 				if width <= 600 && copyToken.Bounds.Y+copyToken.Bounds.Height > reset.Bounds.Y {

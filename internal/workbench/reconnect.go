@@ -186,6 +186,13 @@ func (state *State) setReconnectPolicy(policy reconnectPolicy) bool {
 		return false
 	}
 	state.connectionReconnect = policy
+	state.applyReconnectPolicy()
+	return true
+}
+
+// applyReconnectPolicy applies the policy the page's choice already wrote.
+func (state *State) applyReconnectPolicy() {
+	policy := state.connectionReconnect
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if policy == reconnectOff {
@@ -202,5 +209,4 @@ func (state *State) setReconnectPolicy(policy reconnectPolicy) bool {
 	}
 	// Forwards that waited for a retry this change took away stop now.
 	state.releaseWaitingForwards()
-	return true
 }

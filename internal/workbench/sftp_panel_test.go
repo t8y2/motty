@@ -25,17 +25,29 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	state.selectSettingsCategory(settingsFiles)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
-	for _, id := range []gfx.ID{hitSettingsPanelAutoOpen, hitSettingsPanelLeft, hitSettingsPanelRight} {
-		if _, ok := hitByID(&canvas, id); !ok {
-			t.Fatal("missing file panel setting", id)
+	if _, ok := hitByID(&canvas, hitSettingsPanelAutoOpen); !ok {
+		t.Fatal("missing file panel setting", hitSettingsPanelAutoOpen)
+	}
+	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
+		if _, ok := settingsChoiceIn(&canvas, state.settingsSFTPPanelPositionLabel(side)); !ok {
+			t.Fatalf("missing file panel position %q", state.settingsSFTPPanelPositionLabel(side))
 		}
 	}
 	state.Click(hitSettingsPanelAutoOpen)
-	result := state.Key(gfx.KeyEvent{Target: hitSettingsPanelLeft, Key: gfx.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsPanelRight || state.sftpPanelSide != layoutcore.ContextRight {
+	left := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))
+	right := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextRight))
+	result := state.Key(gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != right.ID || result.Activate != right.ID {
 		t.Fatal("panel position does not support arrow-key selection")
 	}
-	state.Click(hitSettingsPanelRight)
+	var rove gfx.Canvas
+	rove.BeginEventPass(result.Activate, gfx.ClickInfo{})
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 1100})
+	rove.EndEventPass()
+	if state.sftpPanelSide != layoutcore.ContextRight {
+		t.Fatal("the arrow key did not select the right panel")
+	}
+	clickSettingsChoice(t, state, state.settingsSFTPPanelPositionLabel(layoutcore.ContextRight))
 	if current, _ := state.deck.Context(workspace); current != before {
 		t.Fatal("editing defaults moved an existing workspace")
 	}
@@ -68,8 +80,11 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 		t.Fatal("moving the panel recreated its file view or worker")
 	}
 	state.Click(hitSFTPClose)
+	state.Click(hitSettings)
+	state.Key(gfx.KeyEvent{Target: hitSettingsSearch, Key: gfx.KeyEscape})
+	state.selectSettingsCategory(settingsFiles)
 	state.Click(hitSettingsPanelAutoOpen)
-	state.Click(hitSettingsPanelLeft)
+	clickSettingsChoice(t, state, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))
 	restored = newTestState(t, state.options)
 	context, _ = restored.deck.Context(restored.deck.ActiveWorkspace())
 	if context.Open || context.Side != layoutcore.ContextLeft {

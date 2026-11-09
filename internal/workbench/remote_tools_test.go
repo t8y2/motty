@@ -258,12 +258,15 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, id := range []gfx.ID{
-		hitRemoteTabProcesses, hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteRefresh,
+		hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteRefresh,
 		hitRemoteTerminate, hitRemoteKill, hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher,
 	} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("control %d is not painted", id)
 		}
+	}
+	if _, ok := settingsChoiceIn(&canvas, state.messages.Tools.RemoteTabProcesses); !ok {
+		t.Error("the process tab is not painted")
 	}
 	if _, ok := hitByID(&canvas, hitRemoteStop); ok {
 		t.Error("a container action shows on the process tab")
@@ -356,7 +359,7 @@ func TestAServerThatRefusesASignalIsReportedInTheDialog(t *testing.T) {
 
 func TestRemoteToolsManageContainers(t *testing.T) {
 	state, server, shell := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	if state.remote.rows[0].cells[0] != "web" || server.ran("docker ps") != 1 {
 		t.Fatalf("rows %+v", state.remote.rows)
@@ -391,7 +394,7 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 	server := &remoteServer{failures: map[string]error{}}
 	original.runCommand = server.run
 	state.openRemoteTools(source)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0) // running web
 	var canvas gfx.Canvas
@@ -412,7 +415,7 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 
 func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 1) // exited job
 	var canvas gfx.Canvas
@@ -431,7 +434,7 @@ func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	source, _ := state.remoteSession()
 	source.host.System = sshconn.SystemWindows
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0)
 	var canvas gfx.Canvas
@@ -455,7 +458,7 @@ func TestRemoteToolsContainerShellFailureDoesNotCreateATab(t *testing.T) {
 	server := &remoteServer{failures: map[string]error{"docker exec": errors.New("exit status 1")}}
 	original.runCommand = server.run
 	state.openRemoteTools(source)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteShell)
@@ -488,7 +491,7 @@ func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
 		return server.run(ctx, command, limit)
 	}
 	state.openRemoteTools(source)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteShell)
@@ -512,7 +515,7 @@ func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
 func TestRemoteToolsExplainWhyThereIsNothingToShow(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["docker ps"] = errors.New("exit status 127")
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if !state.remote.failed || state.remote.status != state.messages.Tools.RemoteErrNoDocker || len(state.remote.rows) != 0 {
 		t.Fatalf("status %q, rows %d", state.remote.status, len(state.remote.rows))
@@ -617,7 +620,7 @@ func TestRemoteToolsReadFromOldHostCannotReplaceNewHostRows(t *testing.T) {
 
 func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabImages)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabImages)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	if state.remote.rows[0].cells[0] != "debian:bookworm-slim" || state.remote.rows[0].cells[1] != "d4c45f66efc5" {
 		t.Fatalf("image row %+v", state.remote.rows[0])
@@ -658,7 +661,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	waitFor(t, state, func() bool { return server.ran("docker rmi cf001c2f8af7") == 1 })
 
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteTabVolumes)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabVolumes)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 1 })
 	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteRemove)
@@ -693,7 +696,7 @@ func TestReniceUsesTheSelectedProcessAndShowsTheServersRefusal(t *testing.T) {
 
 func TestRemoteToolsManageComposeProjects(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabCompose)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabCompose)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	if state.remote.rows[0].cells[0] != "batch" || state.remote.rows[1].cells[2] != "/srv/web/compose.yml" {
 		t.Fatalf("rows %+v", state.remote.rows)
@@ -726,7 +729,7 @@ func TestAServerWithoutComposeSaysSo(t *testing.T) {
 
 func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 	state, server, shell := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabImages)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabImages)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
@@ -759,14 +762,14 @@ func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	for _, entry := range []struct {
-		tab     gfx.ID
+		tab     string
 		title   string
 		command string
 	}{
-		{hitRemoteTabVolumes, state.messages.Tools.RemoteCreateVolumeTitle, "docker volume create scratch"},
-		{hitRemoteTabNetworks, state.messages.Tools.RemoteCreateNetworkTitle, "docker network create scratch"},
+		{state.messages.Tools.RemoteTabVolumes, state.messages.Tools.RemoteCreateVolumeTitle, "docker volume create scratch"},
+		{state.messages.Tools.RemoteTabNetworks, state.messages.Tools.RemoteCreateNetworkTitle, "docker network create scratch"},
 	} {
-		state.Click(entry.tab)
+		clickSettingsChoice(t, state, entry.tab)
 		waitFor(t, state, func() bool { return !state.remote.loading })
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})

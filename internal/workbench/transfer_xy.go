@@ -24,21 +24,70 @@ import (
 var transferXyHits = tree.Feature("transfer-xy")
 
 var (
-	hitXYProtocolX  = tree.ID(transferXyHits, "xy-protocol-x")
-	hitXYProtocol1K = tree.ID(transferXyHits, "xy-protocol1-k")
-	hitXYProtocolY  = tree.ID(transferXyHits, "xy-protocol-y")
-	hitXYSend       = tree.ID(transferXyHits, "xy-send")
-	hitXYReceive    = tree.ID(transferXyHits, "xy-receive")
-	hitXYStart      = tree.ID(transferXyHits, "xy-start")
-	hitXYCancel     = tree.ID(transferXyHits, "xy-cancel")
-	hitXYClose      = tree.ID(transferXyHits, "xy-close")
-	hitXYDismiss    = tree.ID(transferXyHits, "xy-dismiss")
+	hitXYStart   = tree.ID(transferXyHits, "xy-start")
+	hitXYCancel  = tree.ID(transferXyHits, "xy-cancel")
+	hitXYClose   = tree.ID(transferXyHits, "xy-close")
+	hitXYDismiss = tree.ID(transferXyHits, "xy-dismiss")
+)
+
+// The dialog's two segmented choices. Each is a page of its own, declaring one
+// Choice at the rectangle the dialog's body laid out.
+var (
+	xyModeChoices      = [...]xymodem.Mode{xymodem.XMODEM, xymodem.XMODEM1K, xymodem.YMODEM}
+	xyDirectionChoices = [...]bool{true, false}
 )
 
 // xySetup is the dialog's choices.
 type xySetup struct {
 	mode    xymodem.Mode
 	sending bool
+	// modeChoice and directionChoice are the dialog's segmented controls, each
+	// declared as a page so the dialog's keys can rove them.
+	modeChoice, directionChoice dialogChoice
+}
+
+// xyModeChoiceLabel names one transfer mode as the dialog shows it.
+func (state *State) xyModeChoiceLabel(mode xymodem.Mode) string {
+	switch mode {
+	case xymodem.XMODEM1K:
+		return "XMODEM-1K"
+	case xymodem.YMODEM:
+		return "YMODEM"
+	default:
+		return "XMODEM"
+	}
+}
+
+// xyDirectionChoiceLabel names the direction the dialog shows.
+func (state *State) xyDirectionChoiceLabel(sending bool) string {
+	if sending {
+		return state.messages.Tools.XYSend
+	}
+	return state.messages.Tools.XYReceive
+}
+
+// xyChoiceKey gives the dialog's page choices their arrows before the rest of
+// the window takes the key.
+func (state *State) xyChoiceKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	for _, choice := range [...]*ui.Page{state.xy.modeChoice.page, state.xy.directionChoice.page} {
+		if choice == nil {
+			continue
+		}
+		if result, handled := choice.Key(event); handled {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+// declareXYModeChoice is the page of the transfer mode choice.
+func (state *State) declareXYModeChoice(c ui.C) {
+	ui.Choice(c, &state.xy.mode, xyModeChoices[:], state.xyModeChoiceLabel).Fill()
+}
+
+// declareXYDirectionChoice is the page of the send/receive choice.
+func (state *State) declareXYDirectionChoice(c ui.C) {
+	ui.Choice(c, &state.xy.sending, xyDirectionChoices[:], state.xyDirectionChoiceLabel).Fill()
 }
 
 // openXYSetup opens the dialog for the session.
@@ -52,16 +101,6 @@ func (state *State) openXYSetup(session *Session) {
 
 func (state *State) clickXYSetup(id gfx.ID) {
 	switch id {
-	case hitXYProtocolX:
-		state.xy.mode = xymodem.XMODEM
-	case hitXYProtocol1K:
-		state.xy.mode = xymodem.XMODEM1K
-	case hitXYProtocolY:
-		state.xy.mode = xymodem.YMODEM
-	case hitXYSend:
-		state.xy.sending = true
-	case hitXYReceive:
-		state.xy.sending = false
 	case hitXYStart:
 		state.startXYTransfer()
 	case hitXYCancel, hitXYClose, hitXYDismiss:
@@ -168,21 +207,6 @@ func (state *State) paintXYDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 138, // two labelled choices
 	})
 	layout := dialog.Begin(m.XYTitle, m.XYDescription)
-	protocols := [...]components.SegmentOption{
-		{ID: hitXYProtocolX, Label: "XMODEM"}, {ID: hitXYProtocol1K, Label: "XMODEM-1K"}, {ID: hitXYProtocolY, Label: "YMODEM"},
-	}
-	selected := hitXYProtocolY
-	switch state.xy.mode {
-	case xymodem.XMODEM:
-		selected = hitXYProtocolX
-	case xymodem.XMODEM1K:
-		selected = hitXYProtocol1K
-	}
-	directions := [...]components.SegmentOption{{ID: hitXYSend, Label: m.XYSend}, {ID: hitXYReceive, Label: m.XYReceive}}
-	selectedDirection := hitXYReceive
-	if state.xy.sending {
-		selectedDirection = hitXYSend
-	}
 	// Two labelled choices, one under the other.
 	var protocol, direction ui.Box
 	f := state.partLayout.Begin(canvas, theme, layout.Body)
@@ -193,10 +217,10 @@ func (state *State) paintXYDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	f.End()
 	content := components.BeginField(canvas, theme, protocol.Rect()).Paint(m.XYProtocol, "", "")
 	content.Height = 32
-	components.BeginSegmentedControl(canvas, theme, content, protocols[:], selected).Paint()
+	state.drawDialogChoice(canvas, content, &state.xy.modeChoice, "xy-dialog-mode", xyModeChoice)
 	content = components.BeginField(canvas, theme, direction.Rect()).Paint(m.XYDirection, "", "")
 	content.Height = 32
-	components.BeginSegmentedControl(canvas, theme, content, directions[:], selectedDirection).Paint()
+	state.drawDialogChoice(canvas, content, &state.xy.directionChoice, "xy-dialog-direction", xyDirectionChoice)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitXYCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitXYStart, Label: m.XYStart},

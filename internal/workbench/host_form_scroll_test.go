@@ -75,6 +75,11 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 					t.Fatalf("Tab skipped %v", id)
 				}
 			}
+			// The protocol choice is a page; its chosen segment must still be in
+			// the form's tab ring.
+			if id := state.editor.protocolChoice.chosen; id.IsZero() || !seen[id] {
+				t.Fatalf("Tab skipped the protocol choice %v", id)
+			}
 			must(view.Keys("Shift+Tab"))
 			must(view.Rest())
 			find(view.Snapshot().Focused)

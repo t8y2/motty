@@ -28,6 +28,9 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 		if input := s.TerminalInput(c); input != nil {
 			return input
 		}
+		if input := s.AIProviderFormInput(c); input != nil {
+			return input
+		}
 		if editor := s.EditorFor(c.ID); editor != nil {
 			field = app.TextInput{Editor: editor}
 			return &field

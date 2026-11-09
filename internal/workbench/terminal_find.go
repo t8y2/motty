@@ -172,7 +172,8 @@ func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 func (state *State) closeTerminalFind(session *Session) gfx.EventResult {
 	session.term.find.close()
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalList.At(int(session.ID))}
+	session.term.pageIdentity(session.ID)
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: session.term.controlID}
 }
 
 // closePaneFind ends find mode on the session a pane shows. The find bar paints

@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -76,9 +77,16 @@ type settingsUI struct {
 	// controls are the page's controls, recorded while it is declared and
 	// painted once it is laid out.
 	controls []settingsControl
-	options  []components.SegmentOption
 	actions  []components.ButtonAction
 	colors   []gfx.Color
+
+	// workspace is the page the settings workspace is declared in, and
+	// workspaceView its declaration, kept so a paint makes no method value.
+	workspace     *ui.Page
+	workspaceView func(ui.C)
+	// declared is what the last declaration laid out: its scrolling column, the
+	// navigation list and the search anchor, read once the page has ended.
+	declared settingsPage
 }
 
 // settingsSearching reports whether the page shows search results, and brings

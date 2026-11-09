@@ -28,6 +28,101 @@ const (
 	sftpHeaderButton = float32(24)
 )
 
+// The docked files panel, its editor and the panel before it has a list are
+// pages: one Page per region, each with a Root of its own, so the panel's
+// controls are named where Viva's page layer expects them.
+const (
+	sftpPanelRoot  = "sftp-panel"
+	sftpEditorRoot = "sftp-editor"
+	sftpEmptyRoot  = "sftp-empty"
+)
+
+// sftpPanelScratch is the room the panel's page leaves for what is painted by
+// hand after it has been laid out: the icon buttons, the filter, the path and
+// the list. It is reused every paint.
+type sftpPanelScratch struct {
+	view    *sftpView
+	session *Session
+
+	// headerTools is where orderToolbarTools builds the header's actions.
+	headerTools [8]barTool
+	// buttons are the icon buttons, in the order they were declared.
+	buttons           [24]sftpIconButton
+	buttonCount       int
+	headerButtonCount int
+
+	header, crumbs, filterSlot, listSlot, spinnerSlot, moreButton ui.Box
+}
+
+// sftpEditorScratch is the room the editor page leaves for its text area and
+// the spinner beside its status line.
+type sftpEditorScratch struct {
+	view     *sftpView
+	textarea ui.Box
+	spinner  ui.Box
+}
+
+// sftpEmptyScratch is the room the pre-list panel page leaves for its chrome.
+type sftpEmptyScratch struct {
+	session      *Session
+	canConnect   bool
+	header       ui.Box
+	closeButton  ui.Box
+	sideButton   ui.Box
+	sessionTitle ui.Box
+	openButton   ui.Box
+}
+
+// sftpPanelPointer gives the docked files panel's pages the pointer events they
+// own. The panel is painted into an embedded canvas, and the host has already
+// translated the event to the page's own identities.
+func (state *State) sftpPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionTerminal {
+		return gfx.EventResult{}, false
+	}
+	chrome := &state.chrome
+	if chrome.sftpEditorPage != nil {
+		if result, ok := chrome.sftpEditorPage.Pointer(event); ok {
+			return result, true
+		}
+	}
+	if chrome.sftpPanelPage != nil {
+		if result, ok := chrome.sftpPanelPage.Pointer(event); ok {
+			return result, true
+		}
+	}
+	if chrome.sftpEmptyPage != nil {
+		if result, ok := chrome.sftpEmptyPage.Pointer(event); ok {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+// sftpPanelKey is sftpPanelPointer for the keyboard.
+func (state *State) sftpPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionTerminal {
+		return gfx.EventResult{}, false
+	}
+	chrome := &state.chrome
+	if chrome.sftpEditorPage != nil {
+		if result, ok := chrome.sftpEditorPage.Key(event); ok {
+			return result, true
+		}
+	}
+	if chrome.sftpPanelPage != nil {
+		if result, ok := chrome.sftpPanelPage.Key(event); ok {
+			return result, true
+		}
+	}
+	if chrome.sftpEmptyPage != nil {
+		if result, ok := chrome.sftpEmptyPage.Key(event); ok {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
 // sftpIconButton is an icon button declared into a slot of the page and painted
 // once the page has been laid out.
 type sftpIconButton struct {
@@ -60,13 +155,69 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 		state.paintSFTPEditor(canvas, size, session, view)
 		return
 	}
-	pal, messages := state.pal, state.messages
-	headerBackground, headerBorder := pal.workspace, pal.line
+	pal := state.pal
 	folder, local := view.active(), view.local
 	if folder.pathEditing && !state.sftpPathInput && canvas.Focused() != hitSFTPPath {
 		folder.pathEditing = false
 		folder.resetPathInput()
 	}
+	chrome := &state.chrome
+	if chrome.sftpPanelPage == nil {
+		chrome.sftpPanelPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: sftpPanelRoot, Theme: &state.theme})
+		chrome.sftpPanelView = state.declareSFTPPanel
+	}
+	chrome.sftpPanel = sftpPanelScratch{view: view, session: session}
+	chrome.sftpPanelPage.Draw(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)}, chrome.sftpPanelView)
+	s := &chrome.sftpPanel
+
+	for index := range s.buttons[:s.buttonCount] {
+		if s.buttons[index].id == hitSFTPHeaderMore {
+			s.moreButton = s.buttons[index].box
+			break
+		}
+	}
+	headerBounds := s.header.Rect()
+	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, pal.line)
+	for i := 0; i < s.headerButtonCount; i++ {
+		s.buttons[i].behind = pal.workspace
+	}
+	state.paintSFTPIconButtons(canvas, s.buttons[:s.buttonCount])
+	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
+		state.requestSFTPHeaderMenu(s.moreButton.Rect(), folder, view)
+	}
+	if folder.filterOpen {
+		state.paintSFTPFilter(canvas, s.filterSlot.Rect(), folder)
+	}
+	if state.sftpPathVisible(folder) {
+		state.paintSFTPPathInput(canvas, s.crumbs.Rect(), view)
+	} else {
+		state.paintSFTPBreadcrumbs(canvas, s.crumbs.Rect(), folder.crumbs)
+	}
+	state.paintSFTPList(canvas, size, s.listSlot.Rect(), session, view)
+	view.places.anchors[sideIndex(local)] = s.crumbs.Rect()
+	if view.bookmarksOpen {
+		places := sftpPlaceBrowser{owner: state, session: session, view: view}
+		places.paintDirectoryPlaces(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
+	}
+	if view.busy {
+		components.PaintSpinner(canvas, state.Theme(), s.spinnerSlot.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
+		canvas.RequestFrame()
+	}
+}
+
+// declareSFTPPanel declares the files panel into its page: a title line with
+// icon buttons, the path, the filter, the list and the status line. What is
+// painted rather than laid out (the icon buttons, the path, the list) keeps its
+// slot in the scratch.
+func (state *State) declareSFTPPanel(c ui.C) {
+	s := &state.chrome.sftpPanel
+	view := s.view
+	if view == nil {
+		return
+	}
+	pal, messages := state.pal, state.messages
+	folder, local := view.active(), view.local
+	session := s.session
 
 	// What the page shows decides its parts. The selection bar and the file
 	// actions are as tall as what they hold; the list takes what they leave.
@@ -92,9 +243,8 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 		status = view.errorText
 		statusColor = pal.danger
 	}
-	var buttons [24]sftpIconButton
-	var headerList [8]barTool
-	headerTools := headerList[:0]
+
+	headerTools := s.headerTools[:0]
 	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
 		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled})
 	}
@@ -114,22 +264,20 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
 	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
-	buttonCount, headerButtonCount := 0, 0
-	var header, crumbs, filterSlot, listSlot, spinnerSlot, moreButton ui.Box
 
-	f := state.filesLayout.Begin(canvas, state.Theme(), gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
-	// icon declares an icon button where it goes; it is painted after End.
+	// icon declares an icon button where it goes; it is painted after Draw.
 	icon := func(side float32, id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
-		buttons[buttonCount] = sftpIconButton{box: f.Slot().Size(side, side), id: id, icon: glyph, hint: hint, disabled: disabled, style: style}
-		buttonCount++
+		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(side, side), id: id, icon: glyph, hint: hint, disabled: disabled, style: style}
+		s.buttonCount++
 	}
-	f.Column().Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {
+	ui.Column(c).Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {
 		// One row for the panel: its name, then the actions on the folder and
 		// refresh and close, from the right. The words "Files" and the address say
 		// nothing the tab does not already; the room goes to the list.
-		header = f.Row().FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(headerBackground).Items(ui.Center).Children(func() {
-			f.Text(title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
-			f.Row().Gap(4).Shrink(0).Children(func() {
+		s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Items(ui.Center)
+		s.header.Children(func() {
+			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
+			ui.Row(c).Gap(4).Shrink(0).Children(func() {
 				for _, tool := range headerTools {
 					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, iconButtonQuiet)
 				}
@@ -142,31 +290,31 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 				icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 			})
 		})
-		headerButtonCount = buttonCount
+		s.headerButtonCount = s.buttonCount
 
 		// Where we are: one level up, then the tail of the path as many folders as
 		// fit. The bookmark controls close the row on the right: the list of the
 		// folders kept, and a star for this one.
-		f.Row().Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
+		ui.Row(c).Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			icon(sftpButton, hitSFTPUp, iconArrowUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
 			height := float32(24)
 			if state.sftpPathVisible(folder) {
 				height = sftpButton
 			}
-			crumbs = f.Slot().Grow(1).Height(height)
+			s.crumbs = ui.Slot(c).Grow(1).Height(height)
 			listID, starID, hint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, messages.SFTPWindow.DirectoryFavorites
 			if local {
 				listID, starID, hint = hitSFTPLocalPlaces, hitSFTPLocalStar, messages.SFTPWindow.LocalPlaces
 			}
-			f.Row().Gap(2).Shrink(0).Children(func() {
+			ui.Row(c).Gap(2).Shrink(0).Children(func() {
 				icon(sftpButton, listID, iconChevronDown, hint, false, iconButtonQuiet)
 				icon(sftpButton, starID, starIcon, starHint, folder.path == "" || !local && (view.busy || !places.connected() || session.host.CatalogID == ""), iconButtonQuiet)
 			})
 		})
 		if folder.filterOpen {
 			// The filter, and the switch that takes it into the subfolders.
-			f.Row().Height(32).Shrink(0).Gap(4).Items(ui.Center).MarginSides(5, 0, 4, 0).Children(func() {
-				filterSlot = f.Slot().Grow(1).Height(32)
+			ui.Row(c).Height(32).Shrink(0).Gap(4).Items(ui.Center).MarginSides(5, 0, 4, 0).Children(func() {
+				s.filterSlot = ui.Slot(c).Grow(1).Height(32)
 				if sftpSearchAvailable(view, local) {
 					style := iconButtonQuiet
 					if folder.deep {
@@ -176,9 +324,9 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 				}
 			})
 		}
-		f.Divider().Background(pal.line).MarginSides(2, 0, 3, 0)
+		ui.Divider(c).Background(pal.line).MarginSides(2, 0, 3, 0)
 
-		listSlot = f.Slot().Grow(1)
+		s.listSlot = ui.Slot(c).Grow(1)
 
 		if selectedCount > 0 {
 			// What can be done with the selection, under the list so the rows above
@@ -187,9 +335,9 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 			if one {
 				rowBottom = 0 // the details line keeps that room
 			}
-			f.Column().Shrink(0).Children(func() {
-				f.Divider().Background(pal.line)
-				f.Row().Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, rowBottom, 0).Children(func() {
+			ui.Column(c).Shrink(0).Children(func() {
+				ui.Divider(c).Background(pal.line)
+				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, rowBottom, 0).Children(func() {
 					add := func(id gfx.ID, glyph uint8, label string, danger bool) {
 						style := iconButtonQuiet
 						if danger {
@@ -226,16 +374,16 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 					}
 				})
 				if one {
-					f.Text(state.sftpDetailsLine(view, selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
+					ui.Text(c, state.sftpDetailsLine(view, selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
 				}
 			})
 		}
 
 		if local {
-			state.declareLocalCoverage(f, folder, hitSFTPCoverage)
+			state.declareLocalCoverage(c, folder, hitSFTPCoverage)
 		}
 		// What is happening.
-		statusRow := f.Row().Shrink(0).Gap(8).Items(ui.Center).MarginSides(6, 0, 0, 0)
+		statusRow := ui.Row(c).Shrink(0).Gap(8).Items(ui.Center).MarginSides(6, 0, 0, 0)
 		if folder.searching() {
 			// What a search read, how much of it, and what it could not read are
 			// too long for one line of a narrow panel, and the last of them is
@@ -246,52 +394,21 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 		}
 		statusRow.Children(func() {
 			if view.busy {
-				spinnerSlot = f.Slot().Size(16, 16)
+				s.spinnerSlot = ui.Slot(c).Size(16, 16)
 			}
 			if folder.searching() {
-				f.Paragraph(status, 3).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Grow(1).MarginSides(4, 0, 4, 0)
+				ui.Paragraph(c, status, 3).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Grow(1).MarginSides(4, 0, 4, 0)
 			} else {
-				f.Text(status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
+				ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
 			}
 			if view.busy {
-				f.Button(hitSFTPCancel, messages.SFTPCancelTransfer).Small().Outline()
+				cancel := ui.Button(c, messages.SFTPCancelTransfer).Small().Outline()
+				if cancel.Clicked() {
+					state.cancelSFTPOperation(view)
+				}
 			}
 		})
 	})
-	f.End()
-	for index := range buttons[:buttonCount] {
-		if buttons[index].id == hitSFTPHeaderMore {
-			moreButton = buttons[index].box
-			break
-		}
-	}
-
-	headerBounds := header.Rect()
-	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, headerBorder)
-	for i := 0; i < headerButtonCount; i++ {
-		buttons[i].behind = headerBackground
-	}
-	state.paintSFTPIconButtons(canvas, buttons[:buttonCount])
-	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
-		state.requestSFTPHeaderMenu(moreButton.Rect(), folder, view)
-	}
-	if folder.filterOpen {
-		state.paintSFTPFilter(canvas, filterSlot.Rect(), folder)
-	}
-	if state.sftpPathVisible(folder) {
-		state.paintSFTPPathInput(canvas, crumbs.Rect(), view)
-	} else {
-		state.paintSFTPBreadcrumbs(canvas, crumbs.Rect(), folder.crumbs)
-	}
-	state.paintSFTPList(canvas, size, listSlot.Rect(), session, view)
-	view.places.anchors[sideIndex(local)] = crumbs.Rect()
-	if view.bookmarksOpen {
-		places.paintDirectoryPlaces(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
-	}
-	if view.busy {
-		components.PaintSpinner(canvas, state.Theme(), spinnerSlot.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
-		canvas.RequestFrame()
-	}
 }
 
 // paintSFTPList declares the visible rows of the list into the slot the page
@@ -644,6 +761,44 @@ func (state *State) paintSFTPBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, cr
 }
 
 func (state *State) paintSFTPEditor(canvas *gfx.Canvas, size gfx.Size, session *Session, view *sftpView) {
+	chrome := &state.chrome
+	if chrome.sftpEditorPage == nil {
+		chrome.sftpEditorPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: sftpEditorRoot, Theme: &state.theme})
+		chrome.sftpEditorView = state.declareSFTPEditor
+	}
+	chrome.sftpEditor = sftpEditorScratch{view: view}
+	chrome.sftpEditorPage.Draw(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)}, chrome.sftpEditorView)
+	editor := &chrome.sftpEditor
+
+	value := view.editEditor.String()
+	focused := canvas.Focused() == hitSFTPEditor
+	selection := view.editEditor.Selection()
+	snapshot := components.TextareaSnapshot{
+		ID: hitSFTPEditor, Label: state.messages.SFTPEditLabel, Value: value,
+		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End, ReadOnly: view.busy,
+		Layout:         &view.editLayout,
+		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
+		Caret: aiByteOffset(value, view.editEditor.Caret()),
+	}
+	if marked, composing := view.editEditor.Composition(); composing {
+		snapshot.CompositionStart, snapshot.CompositionEnd = aiByteOffset(value, marked.Start), aiByteOffset(value, marked.End)
+	}
+	view.editRect = editor.textarea.Rect()
+	components.PaintTextarea(canvas, state.Theme(), view.editRect, snapshot)
+	if view.busy {
+		components.PaintSpinner(canvas, state.Theme(), editor.spinner.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
+		canvas.RequestFrame()
+	}
+}
+
+// declareSFTPEditor declares the editor page. It replaces the file list while a
+// remote file is open for editing.
+func (state *State) declareSFTPEditor(c ui.C) {
+	editor := &state.chrome.sftpEditor
+	view := editor.view
+	if view == nil {
+		return
+	}
 	pal, messages := state.pal, state.messages
 	dirty := sftpEditorDirty(view)
 	status := view.status
@@ -656,60 +811,49 @@ func (state *State) paintSFTPEditor(canvas *gfx.Canvas, size gfx.Size, session *
 		statusColor = pal.danger
 	}
 
-	var textarea, spinner ui.Box
-	f := state.filesLayout.Begin(canvas, state.Theme(), gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
-	f.Column().Fill().PadSides(14, 18, 10, 18).Background(pal.workspace).Children(func() {
+	ui.Column(c).Fill().PadSides(14, 18, 10, 18).Background(pal.workspace).Children(func() {
 		// Back on the left, the file's name and place beside it, the actions from
 		// the right.
-		f.Row().Height(36).Shrink(0).Children(func() {
-			f.Button(hitSFTPEditBack, messages.SFTPEditBack).Small().Outline().Disabled(view.busy)
-			f.Spacer()
-			f.Row().Gap(8).Shrink(0).Children(func() {
-				f.Button(hitSFTPEditReload, messages.SFTPEditReload).Small().Secondary().Disabled(view.busy)
-				f.Button(hitSFTPEditSave, messages.SFTPEditSave).Small().Disabled(view.busy || !dirty)
+		ui.Row(c).Height(36).Shrink(0).Children(func() {
+			back := ui.Button(c, messages.SFTPEditBack).Small().Outline().Disabled(view.busy)
+			if back.Clicked() && !view.busy {
+				state.closeSFTPEditor(view)
+			}
+			ui.Spacer(c)
+			ui.Row(c).Gap(8).Shrink(0).Children(func() {
+				reload := ui.Button(c, messages.SFTPEditReload).Small().Secondary().Disabled(view.busy)
+				if reload.Clicked() && !view.busy {
+					state.reloadSFTPEditor(view)
+				}
+				save := ui.Button(c, messages.SFTPEditSave).Small().Disabled(view.busy || !dirty)
+				if save.Clicked() && !view.busy {
+					state.saveSFTPEditor(view)
+				}
 			})
 		})
 		// Under the actions, whole: beside them the name of a file had no room in a
 		// panel this narrow.
-		f.Column().Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
-			f.Text(view.editName).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(26)
-			f.Text(view.editLocation).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().LineHeight(20)
+		ui.Column(c).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
+			ui.Text(c, view.editName).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(26)
+			ui.Text(c, view.editLocation).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().LineHeight(20)
 		})
-		f.Text(messages.SFTPEditSafety).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).MarginSides(10, 0, 6, 0)
-		textarea = f.Slot().Grow(1).MinHeight(64)
-		f.Row().Height(28).Shrink(0).Gap(8).Items(ui.Center).MarginSides(14, 0, 0, 0).Children(func() {
+		ui.Text(c, messages.SFTPEditSafety).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).MarginSides(10, 0, 6, 0)
+		editor.textarea = ui.Slot(c).Grow(1).MinHeight(64)
+		ui.Row(c).Height(28).Shrink(0).Gap(8).Items(ui.Center).MarginSides(14, 0, 0, 0).Children(func() {
 			if view.busy {
-				spinner = f.Slot().Size(16, 16)
+				editor.spinner = ui.Slot(c).Size(16, 16)
 			}
-			f.Text(status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
+			ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).Ellipsis().Grow(1)
 			if view.busy {
 				// With the file list's own place for it: in the header it did not
 				// fit beside the other three in a panel this narrow.
-				f.Button(hitSFTPCancel, messages.SFTPCancelTransfer).Small().Secondary()
+				cancel := ui.Button(c, messages.SFTPCancelTransfer).Small().Secondary()
+				if cancel.Clicked() {
+					state.cancelSFTPOperation(view)
+				}
 			}
 		})
 	})
-	f.End()
-
-	value := view.editEditor.String()
-	focused := canvas.Focused() == hitSFTPEditor
-	selection := view.editEditor.Selection()
-	snapshot := components.TextareaSnapshot{
-		ID: hitSFTPEditor, Label: messages.SFTPEditLabel, Value: value,
-		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End, ReadOnly: view.busy,
-		Layout:         &view.editLayout,
-		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
-		Caret: aiByteOffset(value, view.editEditor.Caret()),
-	}
-	if marked, composing := view.editEditor.Composition(); composing {
-		snapshot.CompositionStart, snapshot.CompositionEnd = aiByteOffset(value, marked.Start), aiByteOffset(value, marked.End)
-	}
-	view.editRect = textarea.Rect()
-	components.PaintTextarea(canvas, state.Theme(), view.editRect, snapshot)
-	if view.busy {
-		components.PaintSpinner(canvas, state.Theme(), spinner.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
-		canvas.RequestFrame()
-	}
 }
 
 func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view *sftpView) {

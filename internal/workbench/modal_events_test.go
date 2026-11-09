@@ -22,6 +22,21 @@ func modalEventDriver(t *testing.T, state *State) *app.Driver {
 	return driver
 }
 
+// clickPaintedHit presses the control named id through the driver's real
+// pointer event pass, the way a window does.
+func clickPaintedHit(t *testing.T, driver *app.Driver, id gfx.ID) {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == id && !hit.IsLabel && hit.Bounds.Width > 0 {
+			if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("the painted control %v was not found", id)
+}
+
 func TestAIRenameEscapeKeepsHistoryOpen(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	db, err := state.aiStore()
@@ -32,7 +47,7 @@ func TestAIRenameEscapeKeepsHistoryOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Click(hitAIToggle)
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	state.Click(hitAIHistoryRename.At(0))
 	driver := modalEventDriver(t, state)
 	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
@@ -57,7 +72,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				}
 			}
 			state.Click(hitAIToggle)
-			state.Click(hitAIHistory)
+			clickAIPanelPage(t, state, hitAIHistory)
 			var closeID gfx.ID
 			switch name {
 			case "ai-rename":
@@ -227,7 +242,7 @@ func TestFormDialogsKeepTypedContentWhenPressedOutside(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.Click(hitAIToggle)
-			s.Click(hitAIHistory)
+			clickAIPanelPage(t, s, hitAIHistory)
 			s.Click(hitAIHistoryRename.At(0))
 		}, openModal(modalAIRename), hitAIRenameField},
 	} {

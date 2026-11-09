@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 // commandPaletteHits is the place of the controls this file paints.
@@ -89,6 +90,30 @@ type commandPalette struct {
 	// It starts empty, so every group begins closed and a search is what looks
 	// inside them.
 	expandedGroups []string
+	// page declares the dialog body and listPage the rows of its list, each with
+	// its cached view. They are kept while the palette is open and reused across
+	// openings, so repainting allocates nothing. sortPage declares the new-tab
+	// picker's default/workspaces/recent switch.
+	page, listPage, sortPage *ui.Page
+	view, listView, sortView func(ui.C)
+	// sort is the switch's value, derived from workspaces and recentConnectSort
+	// before every paint and written back by its choice.
+	sort connectSortChoice
+	// The boxes the declarations laid out, painted after the pages end: the
+	// list window the scroll area shows and the send form's controls. The
+	// search field is a page field, bound to the editor the palette keeps.
+	searchField   ui.Field
+	searchBound   bool
+	searchLabel   string
+	searchPlace   string
+	listBox       ui.Box
+	sendInputBox  ui.Box
+	sendButtonBox ui.Box
+	sendRunBox    ui.Box
+	emptyText     string
+	bodyWidth     float32
+	// listFirst and listLast are the window of visible rows the list page declares.
+	listFirst, listLast int
 }
 
 func (state *State) openCommandPalette() {
@@ -313,16 +338,6 @@ func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
-	case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
-		if !state.commandPalette.connect {
-			return
-		}
-		state.commandPalette.workspaces = id == hitConnectSortWorkspaces
-		if !state.commandPalette.workspaces {
-			state.recentConnectSort = id == hitConnectSortRecent
-			state.save()
-		}
-		state.rebuildCommandPalette()
 	case hitCommandPaletteSearch:
 		return
 	default:
@@ -434,33 +449,26 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		state.closeCommandPalette()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if palette.connect {
-		switch event.Target {
-		case hitConnectSortDefault, hitConnectSortWorkspaces, hitConnectSortRecent:
-			// The switch is a radio group of its own: the arrows move between its
-			// options, and choosing one puts the keyboard back in the search
-			// field so typing filters the list at once.
-			options := state.connectSortOptions()
-			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
-				state.clickCommandPalette(next)
-				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
-			}
-			if event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace {
-				return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
-			}
+	if palette.connect && palette.sortPage != nil {
+		// The default/workspaces/recent switch is a page Choice: its arrows are
+		// the page's, and Enter or Space puts the keyboard back in the search
+		// field so typing filters the list.
+		if result, handled := palette.sortPage.Key(event); handled {
+			return result, true
+		}
+		if palette.sortPage.Owns(event.Target) && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+			return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
 		}
 	}
 	if palette.snippets {
-		switch event.Target {
-		case hitSendTargetCurrent, hitSendTargetAll, hitSendTargetChosen:
-			// Like the new-tab picker's switch: the arrows move between the
-			// options, and choosing one returns the keyboard to the search field.
-			options := state.sendTargetOptions()
-			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
-				state.clickCommandPalette(next)
-				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+		// The send target is a page Choice in the body: its arrows are the
+		// page's. The other keys of the form stay the palette's.
+		if palette.page != nil {
+			if result, handled := palette.page.Key(event); handled {
+				return result, true
 			}
-		case hitSnippetSendInput:
+		}
+		if event.Target == hitSnippetSendInput {
 			if event.Key == gfx.KeyEnter && !event.Repeat {
 				state.submitSend()
 				return gfx.EventResult{Handled: true, Repaint: true}, true

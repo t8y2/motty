@@ -34,13 +34,14 @@ func TestMCPAllowAllIsInactiveUntilConfirmedAndCanBeRevoked(t *testing.T) {
 			}
 			state.Click(hitAISetMCPEnabled)
 			before := world.changed
+			allowAll := state.messages.AISettings.MCPModeAllowAll
 			check := func(mode gate.Mode, saved string) {
 				t.Helper()
 				if state.ai.settings.mcpMode != mode || hub.gate().Mode != mode || settingValue(t, db, "ai.mcp.mode") != saved {
 					t.Fatalf("UI mode=%v, server mode=%v, saved=%q", state.ai.settings.mcpMode, hub.gate().Mode, settingValue(t, db, "ai.mcp.mode"))
 				}
 			}
-			state.Click(hitAISetMCPAllowAll)
+			clickSettingsChoiceFirst(t, state, allowAll)
 			check(initial.mode, initial.name)
 			if state.ai.cfg.dialog != aiDialogMCPAllowAll || world.changed != before {
 				t.Fatal("selecting allow-all did not wait for consent")
@@ -50,7 +51,7 @@ func TestMCPAllowAllIsInactiveUntilConfirmedAndCanBeRevoked(t *testing.T) {
 			if state.ai.cfg.dialog != aiDialogNone || world.changed != before {
 				t.Fatal("cancel changed the permission")
 			}
-			state.Click(hitAISetMCPAllowAll)
+			clickSettingsChoiceFirst(t, state, allowAll)
 			state.Click(hitAISetConfirmAction)
 			check(gate.ModeAllowAll, "allow-all")
 			if state.ai.cfg.dialog != aiDialogNone || world.changed != before+1 {
@@ -59,15 +60,15 @@ func TestMCPAllowAllIsInactiveUntilConfirmedAndCanBeRevoked(t *testing.T) {
 			if again := world.open(t); again.ai.settings.mcpMode != gate.ModeAllowAll {
 				t.Fatal("a new window lost the confirmed permission")
 			}
-			state.Click(hitAISetMCPAllowAll)
+			clickSettingsChoiceFirst(t, state, allowAll)
 			if state.ai.cfg.dialog != aiDialogNone {
 				t.Fatal("clicking the selected option asked again")
 			}
-			state.Click(hitAISetMCPAsk)
+			clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAsk)
 			check(gate.ModeAsk, "ask")
-			state.Click(hitAISetMCPObserve)
+			clickSettingsChoice(t, state, state.messages.AISettings.MCPModeObserve)
 			check(gate.ModeObserve, "observe")
-			state.Click(hitAISetMCPAllowAll)
+			clickSettingsChoiceFirst(t, state, allowAll)
 			if state.ai.cfg.dialog != aiDialogMCPAllowAll {
 				t.Fatal("enabling full access again bypassed confirmation")
 			}
@@ -96,8 +97,8 @@ func TestMCPAllowAllSaveFailureDoesNotSelectIt(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsMCP)
-	state.Click(hitAISetMCPAsk)
-	state.Click(hitAISetMCPAllowAll)
+	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAsk)
+	clickSettingsChoiceFirst(t, state, state.messages.AISettings.MCPModeAllowAll)
 	before := world.changed
 	if err := world.db(t).Close(); err != nil {
 		t.Fatal(err)
@@ -113,11 +114,11 @@ func TestMCPConsentForgetsSaveErrorsWhenCanceled(t *testing.T) {
 		world := newSettingsWorld(t, newLister())
 		state := world.state
 		state.selectSettingsCategory(settingsMCP)
-		allow := hitAISetMCPAllowAll
-		if agent {
-			allow = hitAISetAgentAllowAll
+		allow := func() { clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAllowAll) }
+		if !agent {
+			allow = func() { clickSettingsChoiceFirst(t, state, state.messages.AISettings.MCPModeAllowAll) }
 		}
-		state.Click(allow)
+		allow()
 		if err := world.db(t).Close(); err != nil {
 			t.Fatal(err)
 		}
@@ -126,7 +127,7 @@ func TestMCPConsentForgetsSaveErrorsWhenCanceled(t *testing.T) {
 			t.Fatal("the failed save did not report its error")
 		}
 		state.Click(hitAISetConfirmCancel)
-		state.Click(allow)
+		allow()
 		if state.ai.cfg.dialog == aiDialogNone || state.ai.cfg.notice != "" {
 			t.Fatal("the new confirmation retained the canceled save error")
 		}
@@ -162,25 +163,26 @@ func TestMCPPermissionsFollowTheSharedHubAcrossOpenWindows(t *testing.T) {
 			t.Fatal("the published permission differs from the running service")
 		}
 	}
-	a.Click(hitAISetMCPAsk)
+	mcpAllowAll := a.messages.AISettings.MCPModeAllowAll
 	a.Click(hitAISetMCPEnabled)
+	clickSettingsChoice(t, a, a.messages.AISettings.MCPModeAsk)
 	check(true, gate.ModeAsk, gate.ModeObserve)
-	a.Click(hitAISetMCPAllowAll)
+	clickSettingsChoiceFirst(t, a, mcpAllowAll)
 	a.Click(hitAISetConfirmAction)
 	check(true, gate.ModeAllowAll, gate.ModeObserve)
 	// The other window can immediately revoke access; subsequent unrelated
 	// settings changes must not write an earlier access level back.
-	b.Click(hitAISetMCPObserve)
+	clickSettingsChoice(t, b, b.messages.AISettings.MCPModeObserve)
 	check(true, gate.ModeObserve, gate.ModeObserve)
-	a.Click(hitAISetAgentAllowAll)
+	clickSettingsChoice(t, a, a.messages.AISettings.MCPModeAllowAll)
 	a.Click(hitAISetConfirmAction)
 	check(true, gate.ModeObserve, gate.ModeAllowAll)
 	b.Click(hitAISetMCPEnabled)
 	check(false, gate.ModeObserve, gate.ModeAllowAll)
-	a.Click(hitAISetMCPAllowAll)
+	clickSettingsChoiceFirst(t, a, mcpAllowAll)
 	a.Click(hitAISetConfirmAction)
 	check(false, gate.ModeAllowAll, gate.ModeAllowAll)
-	b.Click(hitAISetAgentObserve)
+	clickSettingsChoice(t, b, b.messages.AISettings.AgentModeObserve)
 	check(false, gate.ModeAllowAll, gate.ModeObserve)
 	b.Click(hitAISetMCPEnabled)
 	check(true, gate.ModeAllowAll, gate.ModeObserve)
@@ -196,9 +198,9 @@ func TestMCPFullAccessWarningsStayVisibleWhileHTTPIsOffAndAfterRestart(t *testin
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsMCP)
-	state.Click(hitAISetMCPAllowAll)
+	clickSettingsChoiceFirst(t, state, state.messages.AISettings.MCPModeAllowAll)
 	state.Click(hitAISetConfirmAction)
-	state.Click(hitAISetAgentAllowAll)
+	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAllowAll)
 	state.Click(hitAISetConfirmAction)
 	state = world.open(t)
 	state.selectSettingsCategory(settingsMCP)

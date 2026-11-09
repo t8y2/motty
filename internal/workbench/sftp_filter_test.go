@@ -137,7 +137,7 @@ func TestSFTPFilterShortcutUsesTheFileListFocusAndLeavesTerminalFindAlone(t *tes
 	}
 
 	result = state.Shortcut(gfx.KeyEvent{
-		Target: contextID(hitTerminalList.At(int(session.ID))), Modifiers: find.Modifiers, Text: string(find.Char),
+		Target: contextID(terminalTestHit(state, session)), Modifiers: find.Modifiers, Text: string(find.Char),
 	})
 	if !result.Handled || result.Focus != hitTerminalFindField || !session.term.find.open {
 		t.Fatalf("terminal find result=%+v open=%v", result, session.term.find.open)

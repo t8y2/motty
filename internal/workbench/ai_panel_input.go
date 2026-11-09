@@ -82,30 +82,30 @@ func aiByteOffset(value string, n int) int {
 // declareAIBottom declares what sits under the messages, from the top down: the
 // notice, the pinned question, the sessions an @ can name and the message box.
 // The divider above is the first pixel of the 8 pixels between it and them.
-func (state *State) declareAIBottom(f *ui.Frame, body *aiBody, boxHeight float32) {
+func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
-	f.Column().Children(func() {
-		f.Column().PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
+	ui.Column(c).Children(func() {
+		ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
 			if text := state.aiNoticeText(); text != "" {
-				f.Column().PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-					f.Paragraph(text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
+				ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
+					ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
 				})
 			}
 			if len(ai.approvals) > 0 {
-				state.declareAIApproval(f, body)
+				state.declareAIApproval(c, body)
 			}
 			if len(panel.mentions) > 0 {
-				f.Column().Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
+				ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
 					for index := range panel.mentions {
-						body.mentions[index] = f.Slot().Height(aiMentionRow)
+						body.mentions[index] = ui.Slot(c).Height(aiMentionRow)
 					}
 				})
 			}
 			if panel.chipRows > 0 {
-				state.declareAIChips(f)
+				state.declareAIChips(c)
 			}
 		})
-		body.box = f.Slot().Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin)
+		body.box = ui.Slot(c).Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin)
 	})
 }
 
@@ -139,7 +139,7 @@ func (state *State) aiLayoutApprovalSummary(canvas *gfx.Canvas, approval *aiAppr
 // declareAIApproval declares the pinned question (a border is inside the padding,
 // hence one pixel less of it): what is asked, how risky it is,
 // the command, why, a safer way, the word that confirms it, and the answer.
-func (state *State) declareAIApproval(f *ui.Frame, body *aiBody) {
+func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	approval := ai.approvals[0]
@@ -152,36 +152,36 @@ func (state *State) declareAIApproval(f *ui.Frame, body *aiBody) {
 		title = m.EscalationTitle
 	}
 
-	f.Column().PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
-		f.Row().Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
-			f.Text(title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
+	ui.Column(c).PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
+		ui.Row(c).Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
+			ui.Text(c, title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
 			if !approval.escalation {
-				f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(10, 0, 0, 0).Background(fill).Radius(radius.control).Children(func() {
-					f.Text(state.aiRiskText(assessment.Level)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
+				ui.Row(c).Height(16).PadX(6).Center().Shrink(0).MarginSides(10, 0, 0, 0).Background(fill).Radius(radius.control).Children(func() {
+					ui.Text(c, state.aiRiskText(assessment.Level)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
 				})
 			}
 		})
-		body.summary = f.Slot().Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0)
+		body.summary = ui.Slot(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0)
 		if request.SessionLabel != "" {
-			f.Wrap(m.Target+": "+request.SessionLabel).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
+			ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
 		}
 		if len(assessment.Reasons) > 0 {
-			f.Column().MarginSides(0, 0, 4, 0).Children(func() {
+			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
 				for index, reason := range assessment.Reasons {
 					if index == aiMaxReasons {
 						break
 					}
-					f.Row().Items(ui.Start).Children(func() {
-						f.Text("•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
-						f.Paragraph(reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
+					ui.Row(c).Items(ui.Start).Children(func() {
+						ui.Text(c, "•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
+						ui.Paragraph(c, reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
 					})
 				}
 			})
 		}
 		if assessment.Safer != "" {
-			f.Column().MarginSides(0, 0, 4, 0).Children(func() {
-				f.Text(m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
-				f.Paragraph(assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
+			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
+				ui.Text(c, m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
+				ui.Paragraph(c, assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
 			})
 		}
 		if request.NeedsText {
@@ -189,24 +189,24 @@ func (state *State) declareAIApproval(f *ui.Frame, body *aiBody) {
 				panel.confirmFor, panel.confirmFormat = approval, m.ConfirmFmt
 				panel.confirmText = fmt.Sprintf(m.ConfirmFmt, request.Confirm)
 			}
-			f.Column().MarginSides(0, 0, 8, 0).Children(func() {
-				f.Text(panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
-				body.confirm = f.Slot().Height(32)
+			ui.Column(c).MarginSides(0, 0, 8, 0).Children(func() {
+				ui.Text(c, panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
+				body.confirm = ui.Slot(c).Height(32)
 			})
 		}
-		f.Row().Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
+		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
 			// More questions behind this one.
 			if more := len(ai.approvals) - 1; more > 0 {
 				if panel.moreCount != more || panel.moreFormat != m.ApprovalMoreFmt {
 					panel.moreCount, panel.moreFormat = more, m.ApprovalMoreFmt
 					panel.moreText = fmt.Sprintf(m.ApprovalMoreFmt, more)
 				}
-				f.Text(panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
+				ui.Text(c, panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
 			} else {
-				f.Spacer()
+				ui.Spacer(c)
 			}
-			body.decline = f.Slot().Size(92, aiButtonHeight)
-			body.approve = f.Slot().Size(92, aiButtonHeight)
+			body.decline = ui.Slot(c).Size(92, aiButtonHeight)
+			body.approve = ui.Slot(c).Size(92, aiButtonHeight)
 		})
 	})
 }

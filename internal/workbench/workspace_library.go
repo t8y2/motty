@@ -22,8 +22,6 @@ var (
 	hitWorkspaceDraftDismiss          = tree.ID(workspaceHits, "draft-dismiss")
 	hitWorkspaceDraftCancel           = tree.ID(workspaceHits, "draft-cancel")
 	hitWorkspaceDraftSubmit           = tree.ID(workspaceHits, "draft-submit")
-	hitWorkspaceDraftTemporary        = tree.ID(workspaceHits, "draft-temporary")
-	hitWorkspaceDraftFixed            = tree.ID(workspaceHits, "draft-fixed")
 	hitWorkspaceDraftName             = tree.ID(workspaceHits, "draft-name")
 	hitWorkspaceDraftSearch           = tree.ID(workspaceHits, "draft-search")
 	hitWorkspaceDraftHostList         = tree.Sub(workspaceHits, tree.Name("draft-host"))

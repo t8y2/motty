@@ -23,7 +23,7 @@ func historyState() (*State, *Session, terminalGeometry) {
 
 func barPointer(state *State, session *Session, kind gfx.PointerEventKind, x, y float32) gfx.EventResult {
 	return state.Pointer(gfx.PointerEvent{
-		Kind: kind, Button: gfx.PointerButtonPrimary, Target: hitTerminalBar.At(int(session.ID)),
+		Kind: kind, Button: gfx.PointerButtonPrimary, Target: terminalTestScrollbar(session),
 		Captured: kind != gfx.PointerDown, X: x, Y: y, Viewport: state.viewport,
 	})
 }
@@ -43,7 +43,7 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 	actualGeometry := terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
 	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, actualGeometry)
-	bar, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID)))
+	bar, ok := hitByID(&canvas, terminalTestScrollbar(session))
 	if !ok {
 		t.Fatal("a terminal with history paints no scrollbar")
 	}
@@ -83,7 +83,7 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, geometry)
-	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID))); !ok {
+	if _, ok := hitByID(&canvas, terminalTestScrollbar(session)); !ok {
 		t.Fatal("no scrollbar over a terminal with history")
 	}
 
@@ -92,13 +92,13 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 	session.term.write([]byte("\x1b[?1049h"))
 	canvas = gfx.Canvas{}
 	state.paintGrid(&canvas, session, geometry)
-	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID))); ok {
+	if _, ok := hitByID(&canvas, terminalTestScrollbar(session)); ok {
 		t.Fatal("a scrollbar on the alternate screen")
 	}
 	fresh, freshSession, freshGeometry := selectionState()
 	canvas = gfx.Canvas{}
 	fresh.paintGrid(&canvas, freshSession, freshGeometry)
-	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(freshSession.ID))); ok {
+	if _, ok := hitByID(&canvas, terminalTestScrollbar(freshSession)); ok {
 		t.Fatal("a scrollbar with nothing to scroll")
 	}
 }
@@ -163,7 +163,7 @@ func barAlpha(canvas *gfx.Canvas, state *State, session *Session, geometry termi
 func TestTerminalScrollbarShowsWhileThePointerIsOverTheTerminal(t *testing.T) {
 	state, session, geometry := historyState()
 	var canvas gfx.Canvas
-	over := hitTerminalList.At(int(session.ID))
+	over := terminalTestHit(state, session)
 	var none gfx.ID
 
 	if got := barAlpha(&canvas, state, session, geometry, 0, none); got != 0 {

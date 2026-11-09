@@ -16,28 +16,40 @@ const debugLanguage = "go"
 // paintDebugWorkspace is the editor gallery: the page's heading, then the code
 // editor filling the rest of the workspace.
 func (state *State) paintDebugWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
-	pal, messages, theme := state.pal, state.messages, state.Theme()
+	theme := state.Theme()
 	editor := state.devEditor()
-
-	var area ui.Box
-	f := state.dev.layout.Begin(canvas, theme, bounds)
-	f.Column().Fill().PadSides(12, 18, 12, 18).Children(func() {
-		f.Column().MarginSides(4, 0, 13, 0).Gap(3).Children(func() {
-			f.Text(messages.DebugTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text)
-			f.Paragraph(messages.DebugDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22)
-		})
-		f.Divider().Background(pal.line)
-		f.Column().Grow(1).MarginSides(4, 0, 3, 0).Children(func() {
-			area = f.Slot().Grow(1)
-		})
-	})
-	f.End()
-
-	box := area.Rect()
+	page := state.debugWorkspacePage()
+	page.Draw(canvas, bounds, state.dev.view)
+	box := state.dev.area.Rect()
 	if box.Width <= 0 || box.Height <= 0 {
 		return
 	}
 	state.paintDebugEditor(canvas, theme, box, editor)
+}
+
+// debugWorkspacePage makes the page the gallery is declared in.
+func (state *State) debugWorkspacePage() *ui.Page {
+	if state.dev.page == nil {
+		state.dev.page = ui.NewPage(ui.PageConfig{Root: "debug-gallery", Theme: &state.theme})
+		state.dev.view = state.declareDebugWorkspace
+	}
+	return state.dev.page
+}
+
+// declareDebugWorkspace declares the gallery: its heading and the area the code
+// editor fills.
+func (state *State) declareDebugWorkspace(c ui.C) {
+	pal, messages := state.pal, state.messages
+	ui.Column(c).Fill().PadSides(12, 18, 12, 18).Children(func() {
+		ui.Column(c).MarginSides(4, 0, 13, 0).Gap(3).Children(func() {
+			ui.Text(c, messages.DebugTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text)
+			ui.Paragraph(c, messages.DebugDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22)
+		})
+		ui.Divider(c).Background(pal.line)
+		ui.Column(c).Grow(1).MarginSides(4, 0, 3, 0).Children(func() {
+			state.dev.area = ui.Slot(c).Grow(1)
+		})
+	})
 }
 
 // paintDebugEditor paints the editor in bounds. The text, the caret and the

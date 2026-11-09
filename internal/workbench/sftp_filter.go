@@ -430,13 +430,13 @@ func (state *State) refreshLocalCoverage(folder *sftpFolder) {
 	}
 }
 
-func (state *State) declareLocalCoverage(f *ui.Frame, folder *sftpFolder, id gfx.ID) {
+func (state *State) declareLocalCoverage(c ui.C, folder *sftpFolder, id gfx.ID) {
 	if folder.coverageText == "" {
 		return
 	}
-	f.Column().Height(38).Shrink(0).HitWith(id, folder.coverageText, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
-		f.Text(folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).Shrink(0)
-		f.Text(state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).Shrink(0)
+	ui.Column(c).Height(38).Shrink(0).HitWith(id, folder.coverageText, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
+		ui.Text(c, folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).Shrink(0)
+		ui.Text(c, state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).Shrink(0)
 	})
 }
 

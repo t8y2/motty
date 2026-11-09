@@ -179,34 +179,33 @@ func TestLocalStartSettingChoosesAndPersists(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
 	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
-	if _, visible := hitByID(&canvas, hitSettingsLocalStartRemember); !visible {
-		// The row sits with the local terminal settings at the terminal page's
-		// end, past the first screenful: reach it the way a user does.
-		state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
-		canvas.Reset()
-		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
-	}
-	for _, id := range []gfx.ID{hitSettingsLocalStartRemember, hitSettingsLocalStartHome} {
-		if _, ok := hitByID(&canvas, id); !ok {
-			t.Fatalf("settings paint no local folder choice %d", id)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	for _, policy := range []localStartPolicy{localStartRemember, localStartHome} {
+		if _, ok := settingsChoiceIn(&canvas, state.settingsLocalStartLabel(policy)); !ok {
+			t.Fatalf("settings paint no local folder choice %q", state.settingsLocalStartLabel(policy))
 		}
 	}
-	for _, test := range []struct {
-		hit  gfx.ID
-		want localStartPolicy
-	}{{hitSettingsLocalStartHome, localStartHome}, {hitSettingsLocalStartRemember, localStartRemember}} {
-		state.Click(test.hit)
-		if state.localStart != test.want {
-			t.Fatalf("clicking %d set %v, want %v", test.hit, state.localStart, test.want)
+	for _, want := range []localStartPolicy{localStartHome, localStartRemember} {
+		clickSettingsChoice(t, state, state.settingsLocalStartLabel(want))
+		if state.localStart != want {
+			t.Fatalf("clicking %v set %v, want %v", want, state.localStart, want)
 		}
-		if again := newTestState(t, options); again.localStart != test.want {
-			t.Fatalf("restored %v, want %v", again.localStart, test.want)
+		if again := newTestState(t, options); again.localStart != want {
+			t.Fatalf("restored %v, want %v", again.localStart, want)
 		}
 	}
-	next, ok := state.settingsKey(gfx.KeyEvent{Target: hitSettingsLocalStartRemember, Key: gfx.KeyRight})
-	if !ok || !next.Handled || state.localStart != localStartHome {
-		t.Fatalf("arrow key on the choice = %+v %v, policy %v", next, ok, state.localStart)
+	from := settingsChoiceHit(t, state, state.settingsLocalStartLabel(localStartRemember))
+	to := settingsChoiceHit(t, state, state.settingsLocalStartLabel(localStartHome))
+	next := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+	if !next.Handled || next.Focus != to.ID || next.Activate != to.ID {
+		t.Fatalf("arrow key on the choice = %+v", next)
+	}
+	canvas.Reset()
+	canvas.BeginEventPass(next.Activate, gfx.ClickInfo{})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	canvas.EndEventPass()
+	if state.localStart != localStartHome {
+		t.Fatalf("arrow key set %v, want home", state.localStart)
 	}
 	searchSettings(t, state, state.messages.SettingsLocalStart)
 	if state.settings.count != 1 {

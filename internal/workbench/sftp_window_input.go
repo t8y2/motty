@@ -12,7 +12,6 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
 )
 
 type sftpWindowDrag struct {
@@ -80,7 +79,55 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
+// pagePointer gives the window's pages the pointer events they own: the
+// connecting page, then each pane, then the window's own chrome.
+func (w *sftpWindow) pagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if w.ui.connectPage != nil {
+		if result, ok := w.ui.connectPage.Pointer(event); ok {
+			return result, true
+		}
+	}
+	for _, page := range w.ui.panePages {
+		if page != nil {
+			if result, ok := page.Pointer(event); ok {
+				return result, true
+			}
+		}
+	}
+	if w.ui.windowPage != nil {
+		if result, ok := w.ui.windowPage.Pointer(event); ok {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+// pageKey is pagePointer for the keyboard.
+func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if w.ui.connectPage != nil {
+		if result, ok := w.ui.connectPage.Key(event); ok {
+			return result, true
+		}
+	}
+	for _, page := range w.ui.panePages {
+		if page != nil {
+			if result, ok := page.Key(event); ok {
+				return result, true
+			}
+		}
+	}
+	if w.ui.windowPage != nil {
+		if result, ok := w.ui.windowPage.Key(event); ok {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
 func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if result, ok := w.pagePointer(event); ok {
+		return result
+	}
 	if w.view.worker == nil {
 		return gfx.EventResult{}
 	}
@@ -297,16 +344,6 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 func (w *sftpWindow) click(id gfx.ID) {
 	defer w.invalidate()
 	if w.view.worker == nil {
-		switch id {
-		case hitSFTPWindowConnectCancel:
-			w.closeHostNow()
-		case hitSFTPWindowConnectRetry:
-			if w.session.failed() || w.session.phase == sshconn.PhaseClosed {
-				w.connect()
-			}
-		case hitSFTPWindowAuthenticate:
-			w.owner.raiseSFTPAuthentication(&w.session)
-		}
 		return
 	}
 	if w.clickFileProperties(id) {
@@ -538,6 +575,9 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
+	}
+	if result, ok := w.pageKey(event); ok {
+		return result
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if w.view.worker == nil {

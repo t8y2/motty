@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/fuzzy"
 )
@@ -33,8 +34,6 @@ var (
 	hitHistoryDismiss        = tree.ID(historyHits, "history-dismiss")
 	hitHistoryClose          = tree.ID(historyHits, "history-close")
 	hitHistorySearch         = tree.ID(historyHits, "history-search")
-	hitHistoryScopeHost      = tree.ID(historyHits, "history-scope-host")
-	hitHistoryScopeAll       = tree.ID(historyHits, "history-scope-all")
 	hitHistoryItems          = tree.Sub(historyHits, tree.Name("history-items"))
 	hitSettingsHistoryToggle = tree.ID(historyHits, "settings-history")
 	hitSettingsHistoryClear  = tree.ID(historyHits, "settings-history-clear")
@@ -78,6 +77,9 @@ type historyUI struct {
 	query     string
 	selected  int
 	top       int // first listed result
+	// scopePage declares the host/all switch, and scopeView caches its view.
+	scopePage *ui.Page
+	scopeView func(ui.C)
 }
 
 // historyKey is the key under which a session's commands are kept.
@@ -438,18 +440,6 @@ func (state *State) clickHistory(id gfx.ID) {
 	switch id {
 	case hitHistoryDismiss, hitHistoryClose:
 		state.closeHistoryPicker()
-	case hitHistoryScopeHost:
-		if h.all {
-			h.all = false
-			state.loadHistory()
-			state.rankHistory()
-		}
-	case hitHistoryScopeAll:
-		if !h.all {
-			h.all = true
-			state.loadHistory()
-			state.rankHistory()
-		}
 	default:
 		if slot, ok := id.In(hitHistoryItems); ok && h.top+slot < len(h.ranked) {
 			h.selected = h.top + slot
@@ -464,6 +454,12 @@ func (state *State) historyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	state.rankHistory()
 	h := &state.history
+	if h.scopePage != nil {
+		// The host/all switch is a page Choice: its arrows are the page's.
+		if result, handled := h.scopePage.Key(event); handled {
+			return result, true
+		}
+	}
 	handled := gfx.EventResult{Handled: true, Repaint: true, Focus: hitHistorySearch}
 	switch event.Key {
 	case gfx.KeyEscape:

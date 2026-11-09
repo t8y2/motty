@@ -162,7 +162,7 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				if _, animated := canvas.NextFrame(); animated == reduced {
 					t.Fatal("connection animation did not respect reduced motion")
 				}
-				if _, ok := hitByID(&canvas, hitSFTPWindowConnectCancel); !ok {
+				if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnClose); !ok {
 					t.Fatal("loading window cannot cancel its handshake")
 				}
 			}
@@ -171,7 +171,7 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 			if state.modal != modalPassword || state.modalSession != w.session.ID {
 				t.Fatal("loading window lost its authentication prompt")
 			}
-			w.click(hitSFTPWindowConnectCancel)
+			clickSFTPWindowButton(t, w, state.messages.ConnClose)
 			conn.mu.Lock()
 			canceled := conn.canceled
 			conn.mu.Unlock()
@@ -209,10 +209,10 @@ func TestSFTPWindowFailedHandshakeRetriesInsideSameWindow(t *testing.T) {
 	state.Wake()
 	var canvas gfx.Canvas
 	w.paint(&canvas, gfx.Size{Width: 640, Height: 400})
-	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok || w.closed || len(state.fileNotices.items) != 0 {
+	if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnRetry); !ok || w.closed || len(state.fileNotices.items) != 0 {
 		t.Fatal("failed handshake needs inline failure and retry")
 	}
-	w.click(hitSFTPWindowConnectRetry)
+	clickSFTPWindowButton(t, w, state.messages.ConnRetry)
 	dualWait(t, state, w, host.windows[1].view, func() bool { return w.view.worker != nil && !w.view.busy && len(w.view.rows) == 2 })
 	if w.window != window || dials != 2 || len(host.windows) != 2 || w.session.term != nil {
 		t.Fatal("retry replaced the native window or created a terminal")
@@ -254,10 +254,10 @@ func TestSFTPWindowInvalidRouteStaysFailedAndRetryable(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	w.paint(&canvas, gfx.Size{Width: 640, Height: 400})
-	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok {
+	if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnRetry); !ok {
 		t.Fatal("invalid route failure cannot be retried")
 	}
-	w.click(hitSFTPWindowConnectRetry)
+	clickSFTPWindowButton(t, w, state.messages.ConnRetry)
 	state.Wake()
 	if w.session.phase != sshconn.PhaseFailed || w.closed || len(host.windows) != 2 || dials != 0 || len(state.sessions) != sessions || w.session.term != nil {
 		t.Fatalf("retry changed invalid route window: phase=%v closed=%t windows=%d dials=%d sessions=%d terminal=%v", w.session.phase, w.closed, len(host.windows), dials, len(state.sessions), w.session.term)

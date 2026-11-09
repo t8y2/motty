@@ -54,14 +54,14 @@ func TestVerticalTabGroupingIsAnIndependentLocalSetting(t *testing.T) {
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsGrouping); ok {
 		t.Fatal("horizontal tabs have nothing to group")
 	}
-	state.Click(hitSettingsTabsVertical)
+	clickSettingsChoice(t, state, state.messages.SettingsTabsVertical)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsGrouping); !ok {
 		t.Fatal("vertical tabs must expose the grouping switch")
 	}
 	state.Click(hitSettingsVerticalTabsGrouping)
-	state.Click(hitSettingsTabsHorizontal)
+	clickSettingsChoice(t, state, state.messages.SettingsTabsHorizontal)
 	if !state.verticalTabs.grouping || state.verticalTabsGrouped() {
 		t.Fatal("the grouping choice is kept, but horizontal tabs are never grouped")
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var toolbarSettingsHits = tree.Feature("toolbar-settings")
@@ -19,9 +20,6 @@ var (
 	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 	hitToolbarToggles         = tree.Sub(toolbarSettingsHits, tree.Name("toggle"))
 	hitToolbarPositions       = tree.Sub(toolbarSettingsHits, tree.Name("position"))
-	hitToolbarSizeSmall       = tree.ID(toolbarSettingsHits, "size-small")
-	hitToolbarSizeMedium      = tree.ID(toolbarSettingsHits, "size-medium")
-	hitToolbarSizeLarge       = tree.ID(toolbarSettingsHits, "size-large")
 )
 
 type toolbarSettingsUI struct {
@@ -32,6 +30,10 @@ type toolbarSettingsUI struct {
 	scrollDrag   bool
 	thumbOffset  float32
 	handleLabels []string
+	// sizePage declares the terminal toolbar's size switch, and sizeView caches
+	// its view.
+	sizePage *ui.Page
+	sizeView func(ui.C)
 }
 
 func (state *State) toolbarGroupName(group toolbarGroup) string {
@@ -97,15 +99,6 @@ func (state *State) clickToolbarSettings(id gfx.ID) {
 			state.terminalToolbarSize = terminalToolbarSmall
 		}
 		editor.list.Cancel()
-	case editor.group == toolbarTerminal && (id == hitToolbarSizeSmall || id == hitToolbarSizeMedium || id == hitToolbarSizeLarge):
-		size := terminalToolbarSmall
-		if id == hitToolbarSizeMedium {
-			size = terminalToolbarMedium
-		} else if id == hitToolbarSizeLarge {
-			size = terminalToolbarLarge
-		}
-		state.setTerminalToolbarSize(size)
-		return
 	case id.Scope() == hitToolbarPositions && editor.group <= toolbarTerminal:
 		index := item(id)
 		for _, spec := range toolbarCatalog[editor.group] {
@@ -229,12 +222,10 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
 		return gfx.EventResult{}
 	}
-	if state.toolbarEditor.group == toolbarTerminal && !event.Release &&
-		(event.Target == hitToolbarSizeSmall || event.Target == hitToolbarSizeMedium || event.Target == hitToolbarSizeLarge) {
-		options := state.settingsToolbarSizeOptions()
-		if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
-			state.clickToolbarSettings(next)
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+	if state.toolbarEditor.sizePage != nil {
+		// The size switch is a page Choice: its arrows are the page's.
+		if result, handled := state.toolbarEditor.sizePage.Key(event); handled {
+			return result
 		}
 	}
 	move, result := state.toolbarEditor.list.Key(event)
@@ -259,6 +250,39 @@ func (state *State) toolbarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult
 	return gfx.EventResult{Handled: true, Repaint: before != editor.scroll}
 }
 
+// toolbarSizeRoot names the terminal toolbar's size switch in the window's Tree.
+const toolbarSizeRoot = "toolbar-size"
+
+// toolbarSizeChoices are the three sizes the switch offers.
+var toolbarSizeChoices = [...]terminalToolbarSize{terminalToolbarSmall, terminalToolbarMedium, terminalToolbarLarge}
+
+func (state *State) toolbarSizeLabel(size terminalToolbarSize) string {
+	switch size {
+	case terminalToolbarMedium:
+		return state.messages.SettingsToolbarSizeMedium
+	case terminalToolbarLarge:
+		return state.messages.SettingsToolbarSizeLarge
+	}
+	return state.messages.SettingsToolbarSizeSmall
+}
+
+// drawToolbarSize paints the terminal toolbar's size switch in its slot. It is a
+// page Choice, so its arrows move between the options.
+func (state *State) drawToolbarSize(canvas *gfx.Canvas, bounds gfx.Rect) {
+	editor := &state.toolbarEditor
+	if editor.sizePage == nil {
+		editor.sizePage = ui.NewPage(ui.PageConfig{Root: toolbarSizeRoot, Theme: &state.theme})
+		editor.sizeView = state.declareToolbarSize
+	}
+	editor.sizePage.Draw(canvas, bounds, editor.sizeView)
+}
+
+func (state *State) declareToolbarSize(c ui.C) {
+	if ui.Choice(c, &state.terminalToolbarSize, toolbarSizeChoices[:], state.toolbarSizeLabel).Fill().Changed() {
+		state.applyTerminalToolbarSize()
+	}
+}
+
 func (state *State) paintToolbarSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
 	editor, m, theme := &state.toolbarEditor, state.messages.Toolbars, state.Theme()
 	entries := state.toolbars.entries(editor.group)
@@ -276,11 +300,9 @@ func (state *State) paintToolbarSettings(canvas *gfx.Canvas, viewport gfx.Rect) 
 	if editor.group == toolbarTerminal {
 		label := gfx.Rect{X: body.X, Y: body.Y, Width: min(200, body.Width/2), Height: 32}
 		canvas.Label(canvas.FitLine(state.messages.SettingsToolbarSize, theme.Metrics.FontSizeM, gfx.WeightRegular, label.Width), label, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
-		options := state.settingsToolbarSizeOptions()
-		selected := options[state.terminalToolbarSize].ID
-		components.BeginSegmentedControl(canvas, theme, gfx.Rect{
+		state.drawToolbarSize(canvas, gfx.Rect{
 			X: label.X + label.Width + 12, Y: body.Y, Width: max(body.Width-label.Width-12, 0), Height: 32,
-		}, options[:], selected).Paint()
+		})
 		body.Y += controlsHeight
 		body.Height = max(body.Height-controlsHeight, 0)
 	}

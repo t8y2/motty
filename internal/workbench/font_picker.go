@@ -42,6 +42,9 @@ var (
 
 const fontPickerVisibleRows = 8
 
+// fontPickerPageRoot names the picker body's controls in the window's Tree.
+const fontPickerPageRoot = "font-picker-body"
+
 // fontPickerKind is what the picker is choosing.
 type fontPickerKind uint8
 
@@ -131,6 +134,15 @@ type fontsUI struct {
 	selected int     // index into filtered
 	scroll   float32 // pixel offset of the filtered list
 	built    bool
+
+	// pickerPage is the body's page, made the first time the picker paints: its
+	// search slot, the list and the sample. pickerView is the method value it
+	// declares, made once so a paint does not allocate it.
+	pickerPage *ui.Page
+	pickerView func(ui.C)
+	// searchSlot is where the body's first slot sat in the last paint: the
+	// search field is painted into it after the page has laid it out.
+	searchSlot ui.Box
 
 	// text is the description the settings row shows; textFor and textLang are what
 	// it was made for.
@@ -515,9 +527,6 @@ func (state *State) clickFontPicker(id gfx.ID) {
 		state.cancelFontPicker()
 	case id == hitFontPickerConfirm:
 		state.confirmFont()
-	case id.Scope() == hitFontPickerItemList:
-		state.refreshFontPicker()
-		state.selectFont(item(id))
 	}
 }
 
@@ -591,7 +600,7 @@ func (state *State) paintFontPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if state.confirmFontOnDoubleClick(canvas) {
 		return
 	}
-	m, pal, fonts := state.messages.Tools, state.pal, &state.fonts
+	m, fonts := state.messages.Tools, &state.fonts
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose, InitialFocusID: hitFontPickerSearch,
@@ -605,77 +614,11 @@ func (state *State) paintFontPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
 		title = state.messages.SettingsInterfaceFont
 	}
 	layout := dialog.Begin(title, "")
-	rows := len(fonts.filtered)
-	var search, list ui.Box
-	// The list keeps room for all its rows, so the sample under it stays where it is;
-	// what the list lacks is said under the rows it has.
-	f := state.fontPickerLayout.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		search = f.Slot().Height(36)
-		list = f.Column().Height(fontPickerListHeight).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
-			switch {
-			case state.pickerList().loading:
-				f.Text(m.FontPickerLoading).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
-			case len(fonts.filtered) == 0:
-				f.Text(m.FontPickerEmpty).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
-			}
-		})
-		if len(fonts.filtered) > 0 {
-			// The highlighted font, set in itself.
-			entry := fonts.entries[fonts.filtered[fonts.selected]]
-			if fonts.kind == pickInterfaceFont {
-				state.paintInterfaceFontSample(f, entry)
-			} else {
-				face := state.fontSampleFace(entry)
-				f.Column().Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
-					f.Text(m.FontPickerSample).FontSize(metrics.FontSizeM).Color(pal.text).MonoFace(face).LineHeight(20).Height(20)
-					f.Text(m.FontPickerSampleSymbols).FontSize(metrics.FontSizeM).Color(pal.muted).MonoFace(face).LineHeight(20).Height(20)
-				})
-			}
-		}
-	})
-	f.End()
-
-	area := components.BeginScrollArea(canvas, state.Theme(), list.Rect(), gfx.Size{Width: list.Rect().Width, Height: fonts.contentHeight()}).Offset(0, fonts.scroll).HoverScrollbars(false)
-	geometry := area.BeginContent()
-	fonts.scroll = geometry.OffsetY
-	// Keep layout work bounded by the viewport while retaining logical row IDs.
-	first := int(geometry.OffsetY / fontPickerRowStep)
-	last := min(rows, first+fontPickerVisibleRows+1)
-	content := geometry.Content
-	content.Y += float32(first) * fontPickerRowStep
-	content.Height = float32(last-first) * fontPickerRowStep
-	f = state.fontPickerListLayout.Begin(canvas, state.Theme(), content)
-	f.Column().FillWidth().Children(func() {
-		for row := first; row < last; row++ {
-			entry := fonts.entries[fonts.filtered[row]]
-			selected := row == fonts.selected
-			inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
-			color := pal.text
-			line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(ui.Center).Radius(radius.item).
-				HitWith(hitFontPickerItemList.At(row), entry.label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
-			if selected {
-				line.Background(pal.accent)
-				color = pal.onAccent
-			} else {
-				line.Hover(ui.Look{}.Background(pal.surfaceHot))
-			}
-			line.Children(func() {
-				f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
-				if inUse {
-					f.Icon(lucideIcons[iconCheck]).Size(16, 16).Color(color)
-				} else {
-					f.Spacer().Size(16, 16).Grow(0)
-				}
-			})
-		}
-	})
-	f.End()
-	area.EndContent()
+	state.paintFontPickerBody(canvas, layout.Body)
 
 	value := fonts.search.String()
 	focused := canvas.Focused() == hitFontPickerSearch
-	components.PaintInput(canvas, state.Theme(), search.Rect(), components.InputSnapshot{
+	components.PaintInput(canvas, state.Theme(), fonts.searchSlot.Rect(), components.InputSnapshot{
 		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
 		Focused: focused, PlatformEditing: focused && value != "", NavigationKeys: true,
 	})
@@ -685,4 +628,101 @@ func (state *State) paintFontPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
 		components.ButtonAction{ID: hitFontPickerConfirm, Label: m.FontPickerConfirm, Variant: components.ButtonDefault, Disabled: confirmDisabled},
 	)
 	dialog.End()
+}
+
+// paintFontPickerBody draws the picker's body as a page: the search slot, the
+// list of families and the sample of the highlighted one. The page is made the
+// first time the picker paints and names its controls in the window's Tree.
+func (state *State) paintFontPickerBody(canvas *gfx.Canvas, bounds gfx.Rect) {
+	fonts := &state.fonts
+	if fonts.pickerPage == nil {
+		fonts.pickerPage = ui.NewPage(ui.PageConfig{Root: fontPickerPageRoot, Theme: &state.theme})
+		fonts.pickerView = state.declareFontPickerBody
+	}
+	fonts.pickerPage.Draw(canvas, bounds, fonts.pickerView)
+}
+
+// declareFontPickerBody declares the page: the search field's room, the list of
+// families (loading, empty or its visible rows) and the sample under it. The
+// list keeps room for all its rows, so the sample under it stays where it is.
+func (state *State) declareFontPickerBody(c ui.C) {
+	m, pal, fonts := state.messages.Tools, state.pal, &state.fonts
+	fonts.scroll = min(max(fonts.scroll, 0), fonts.maxScroll())
+	rows := len(fonts.filtered)
+	ui.Column(c).Fill().Children(func() {
+		fonts.searchSlot = ui.Slot(c).Height(36)
+		ui.Column(c).Height(fontPickerListHeight).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
+			switch {
+			case state.pickerList().loading:
+				ui.Text(c, m.FontPickerLoading).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
+			case rows == 0:
+				ui.Text(c, m.FontPickerEmpty).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(10, 0, 0, 0)
+			}
+			if rows > 0 {
+				state.declareFontPickerRows(c)
+			}
+		})
+		if rows > 0 {
+			// The highlighted font, set in itself.
+			state.declareFontPickerSample(c, fonts.entries[fonts.filtered[fonts.selected]])
+		}
+	})
+}
+
+// declareFontPickerRows declares the visible rows of the list, translating them
+// by the scroll offset the window keeps: the list keeps its layout work bounded
+// by the viewport while retaining logical row IDs.
+func (state *State) declareFontPickerRows(c ui.C) {
+	pal, fonts := state.pal, &state.fonts
+	rows := len(fonts.filtered)
+	first := int(fonts.scroll / fontPickerRowStep)
+	last := min(rows, first+fontPickerVisibleRows+1)
+	c.Frame().Scroll(fonts.scroll).Fill().Children(func() {
+		if top := float32(first) * fontPickerRowStep; top > 0 {
+			ui.Slot(c).Height(top)
+		}
+		for row := first; row < last; row++ {
+			entry := fonts.entries[fonts.filtered[row]]
+			selected := row == fonts.selected
+			inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
+			color := pal.text
+			line := ui.Row(c).Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(ui.Center).Radius(radius.item).
+				HitWith(hitFontPickerItemList.At(row), entry.label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+			if selected {
+				line.Background(pal.accent)
+				color = pal.onAccent
+			} else {
+				line.Hover(ui.Look{}.Background(pal.surfaceHot))
+			}
+			if line.Clicked() {
+				state.selectFont(row)
+			}
+			line.Children(func() {
+				ui.Text(c, entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
+				if inUse {
+					ui.Icon(c, lucideIcons[iconCheck]).Size(16, 16).Color(color)
+				} else {
+					ui.Spacer(c).Size(16, 16).Grow(0)
+				}
+			})
+		}
+		if rest := fonts.contentHeight() - float32(last)*fontPickerRowStep; rest > 0 {
+			ui.Slot(c).Height(rest)
+		}
+	})
+}
+
+// declareFontPickerSample declares the sample of the highlighted font: the
+// interface's own sample for that picker, the terminal's mono sample otherwise.
+func (state *State) declareFontPickerSample(c ui.C, entry fontEntry) {
+	if state.fonts.kind == pickInterfaceFont {
+		state.declareInterfaceFontSample(c, entry)
+		return
+	}
+	m, pal := state.messages.Tools, state.pal
+	face := state.fontSampleFace(entry)
+	ui.Column(c).Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
+		ui.Text(c, m.FontPickerSample).FontSize(metrics.FontSizeM).Color(pal.text).MonoFace(face).LineHeight(20).Height(20)
+		ui.Text(c, m.FontPickerSampleSymbols).FontSize(metrics.FontSizeM).Color(pal.muted).MonoFace(face).LineHeight(20).Height(20)
+	})
 }

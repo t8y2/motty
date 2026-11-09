@@ -33,14 +33,25 @@ func TestNetworkProxySettingThroughNativeDriver(t *testing.T) {
 	if err := view.Click(connection.Bounds.X+connection.Bounds.Width/2, connection.Bounds.Y+connection.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if hit := find(hitSettingsNetworkDirect); !hit.Selected {
+	findChoice := func(label string) gfx.Hit {
+		for _, hit := range view.Snapshot().Hits {
+			if hit.Label == label && hit.Role == gfx.RoleRadio {
+				return hit
+			}
+		}
+		t.Fatalf("choice %q is missing", label)
+		return gfx.Hit{}
+	}
+	directLabel := state.messages.SettingsNetworkProxyDirect
+	systemLabel := state.messages.SettingsNetworkProxySystem
+	if hit := findChoice(directLabel); !hit.Selected {
 		t.Fatal("leaving the proxy unset is not the default selection")
 	}
-	system := find(hitSettingsNetworkSystem)
+	system := findChoice(systemLabel)
 	if err := view.Click(system.Bounds.X+system.Bounds.Width/2, system.Bounds.Y+system.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if state.networkProxy != networkProxySystem || !find(hitSettingsNetworkSystem).Selected || find(hitSettingsNetworkDirect).Selected {
+	if state.networkProxy != networkProxySystem || !findChoice(systemLabel).Selected || findChoice(directLabel).Selected {
 		t.Fatal("the native driver did not select follow system")
 	}
 }

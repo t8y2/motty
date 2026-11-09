@@ -47,6 +47,19 @@ func toolbarDockViewAtScale(t *testing.T, scale float64) (*State, *headless.Sess
 	return state, view, options
 }
 
+// dualChoiceHit finds a page Choice segment by its label in the last frame: the
+// segments' identities belong to the page, so tests address them by what they say.
+func dualChoiceHit(t *testing.T, view *headless.Session, label string) gfx.Hit {
+	t.Helper()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label == label && hit.Role == gfx.RoleRadio && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing choice %q", label)
+	return gfx.Hit{}
+}
+
 func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
@@ -70,8 +83,11 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					ids := [...]gfx.ID{hitToolbarSizeSmall, hitToolbarSizeMedium, hitToolbarSizeLarge}
-					click(ids[size])
+					sizeLabels := [...]string{state.messages.SettingsToolbarSizeSmall, state.messages.SettingsToolbarSizeMedium, state.messages.SettingsToolbarSizeLarge}
+					choice := dualChoiceHit(t, view, sizeLabels[size])
+					if err := view.Click(choice.Bounds.X+choice.Bounds.Width/2, choice.Bounds.Y+choice.Bounds.Height/2); err != nil {
+						t.Fatal(err)
+					}
 					if state.terminalToolbarSize != size {
 						t.Fatalf("size selector did not apply %s", size.String())
 					}
@@ -116,9 +132,18 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 			if err := view.Resize(760, 500); err != nil {
 				t.Fatal(err)
 			}
-			result := state.Key(gfx.KeyEvent{Target: hitToolbarSizeLarge, Key: gfx.KeyLeft})
-			if !result.Handled || result.Focus != hitToolbarSizeMedium || state.terminalToolbarSize != terminalToolbarMedium {
+			large := dualChoiceHit(t, view, state.messages.SettingsToolbarSizeLarge)
+			medium := dualChoiceHit(t, view, state.messages.SettingsToolbarSizeMedium)
+			result := state.Key(gfx.KeyEvent{Target: large.ID, Key: gfx.KeyLeft})
+			if !result.Handled || result.Focus != medium.ID || result.Activate != medium.ID {
 				t.Fatalf("size keyboard navigation failed: %+v", result)
+			}
+			var roveCanvas gfx.Canvas
+			roveCanvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
+			state.Paint(&roveCanvas, gfx.Size{Width: 760, Height: 500})
+			roveCanvas.EndEventPass()
+			if state.terminalToolbarSize != terminalToolbarMedium {
+				t.Fatalf("size keyboard navigation chose %s", state.terminalToolbarSize.String())
 			}
 			if err := view.Resize(760, 500); err != nil {
 				t.Fatal(err)

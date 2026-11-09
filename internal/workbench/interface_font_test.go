@@ -59,7 +59,7 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 
 	// A click only highlights; Cancel leaves the font as it was.
 	told2 := len(*told)
-	state.Click(hitFontPickerItemList.At(2))
+	clickFontPickerRow(t, state, 2)
 	if state.modal != modalFontPicker || state.uiFont.family != "" || len(*told) != told2 {
 		t.Fatalf("a click applied the font: modal %d, family %q, told %v", state.modal, state.uiFont.family, *told)
 	}
@@ -102,7 +102,7 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 
 	// The Default row takes the family away again.
 	openInterfaceFontPickerFor(t, reloaded)
-	reloaded.Click(hitFontPickerItemList.At(0))
+	clickFontPickerRow(t, reloaded, 0)
 	reloaded.Click(hitFontPickerConfirm)
 	if reloaded.uiFont.family != "" || lastTold(secondTold) != "" {
 		t.Fatalf("the Default row left the family %q (told %v)", reloaded.uiFont.family, *secondTold)
@@ -129,7 +129,7 @@ func TestTheInterfaceFontPickerGuardsItsButtonsLikeTheTerminalFontOne(t *testing
 	paintedTexts(state)
 
 	// Enter on a button is that button's own.
-	state.Click(hitFontPickerItemList.At(1))
+	clickFontPickerRow(t, state, 1)
 	for _, target := range []gfx.ID{hitFontPickerCancel, hitFontPickerClose} {
 		result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 		if result.Handled || state.modal != modalFontPicker || state.uiFont.family != "" {

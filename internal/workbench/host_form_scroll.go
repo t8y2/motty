@@ -58,6 +58,26 @@ func (state *State) rememberHostControl(id gfx.ID, bounds gfx.Rect) {
 	}
 }
 
+// rememberHostChoice keeps a page Choice in the form's tab ring. The page paints
+// its options with identities of its own, so take the hit of the chosen option
+// from the paint; its identity is kept while the page lies outside the clipped
+// viewport, where the paint no longer reports it.
+func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, choice *dialogChoice, label string) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label != label || hit.Role != gfx.RoleRadio {
+			continue
+		}
+		if hit.Bounds.X >= bounds.X && hit.Bounds.Y >= bounds.Y &&
+			hit.Bounds.X < bounds.X+bounds.Width && hit.Bounds.Y < bounds.Y+bounds.Height {
+			choice.chosen = hit.ID
+			break
+		}
+	}
+	if !choice.chosen.IsZero() {
+		state.rememberHostControl(choice.chosen, bounds)
+	}
+}
+
 func (state *State) hostFormPopupOpen() bool {
 	e := &state.editor
 	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen || e.iconOpen

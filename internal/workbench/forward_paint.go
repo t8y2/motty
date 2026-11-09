@@ -110,23 +110,29 @@ func (state *State) paintForwardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	layout := dialog.Begin(dialogTitle, messages.ForwardDialogDescription)
 
+	// The mode switch is a page Choice, which writes the new mode during this
+	// paint. The rows were laid out from the mode at the start of the paint, so
+	// the rest of the paint must read that same mode; the next paint shows the
+	// new one.
+	mode := state.forwardEditor.mode
+
 	// Four rows of fields; the last holds the port beside the destination,
 	// 24% / 44% / 24% of the row with 4% between.
 	const rowHeight = 58
-	var name, host, mode, port, destination, destinationPort, resume, resumeHelp ui.Box
+	var name, host, modeBox, port, destination, destinationPort, resume, resumeHelp ui.Box
 	hint := messages.ForwardSOCKS5Hint
-	if state.forwardEditor.mode == portforward.ModeHTTPConnect {
+	if mode == portforward.ModeHTTPConnect {
 		hint = messages.ForwardHTTPConnectHint
 	}
 	f := state.forwardDialogLayout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		name = f.Slot().Height(rowHeight)
 		host = f.Slot().Height(rowHeight)
-		mode = f.Slot().Height(rowHeight)
+		modeBox = f.Slot().Height(rowHeight)
 		f.Row().Height(rowHeight).Children(func() {
 			port = f.Slot().Grow(24)
 			f.Spacer().Grow(4)
-			if !state.forwardEditor.usesClientDestination() {
+			if !modeUsesClientDestination(mode) {
 				destination = f.Slot().Grow(44)
 				f.Spacer().Grow(4)
 				destinationPort = f.Slot().Grow(24)
@@ -145,15 +151,15 @@ func (state *State) paintForwardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 
 	state.paintForwardDialogField(canvas, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "", name.Rect())
 	state.paintForwardHostField(canvas, host.Rect())
-	state.paintForwardModeField(canvas, mode.Rect())
+	state.paintForwardModeField(canvas, modeBox.Rect())
 	portTitle := messages.ForwardFieldLocalPort
-	if state.forwardEditor.mode == portforward.ModeRemote {
+	if mode == portforward.ModeRemote {
 		portTitle = messages.ForwardFieldRemotePort
 	}
 	state.paintForwardDialogField(canvas, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "", port.Rect())
-	if !state.forwardEditor.usesClientDestination() {
+	if !modeUsesClientDestination(mode) {
 		placeholder := messages.ForwardDestinationPlaceholder
-		if state.forwardEditor.mode == portforward.ModeRemote {
+		if mode == portforward.ModeRemote {
 			placeholder = messages.ForwardLocalDestinationHint
 		}
 		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, destination.Rect())
@@ -169,28 +175,50 @@ func (state *State) paintForwardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dialog.End()
 }
 
-func (state *State) forwardModeOptions() [4]components.SegmentOption {
-	return [4]components.SegmentOption{
-		{ID: hitForwardModeLocal, Label: state.messages.ForwardModeLocal},
-		{ID: hitForwardModeRemote, Label: state.messages.ForwardModeRemote},
-		{ID: hitForwardModeSOCKS5, Label: state.messages.ForwardModeSOCKS5},
-		{ID: hitForwardModeHTTPConnect, Label: state.messages.ForwardModeHTTPConnect},
-	}
-}
-
 func (state *State) paintForwardModeField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	content := components.BeginField(canvas, state.Theme(), bounds).Paint(state.messages.ForwardFieldType, "", "")
-	selected := hitForwardModeLocal
-	switch state.forwardEditor.mode {
+	state.drawForwardMode(canvas, content)
+}
+
+// forwardModeRoot names the forward type switch in the window's Tree.
+const forwardModeRoot = "forward-mode"
+
+// forwardModeChoices are the four kinds of forward the dialog offers.
+var forwardModeChoices = [...]portforward.Mode{
+	portforward.ModeLocal, portforward.ModeRemote, portforward.ModeSOCKS5, portforward.ModeHTTPConnect,
+}
+
+func (state *State) forwardModeLabel(mode portforward.Mode) string {
+	m := state.messages
+	switch mode {
 	case portforward.ModeRemote:
-		selected = hitForwardModeRemote
+		return m.ForwardModeRemote
 	case portforward.ModeSOCKS5:
-		selected = hitForwardModeSOCKS5
+		return m.ForwardModeSOCKS5
 	case portforward.ModeHTTPConnect:
-		selected = hitForwardModeHTTPConnect
+		return m.ForwardModeHTTPConnect
 	}
-	options := state.forwardModeOptions()
-	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], selected).Paint()
+	return m.ForwardModeLocal
+}
+
+// drawForwardMode paints the forward type switch in its slot. It is a page
+// Choice, so its arrows move between the options.
+func (state *State) drawForwardMode(canvas *gfx.Canvas, bounds gfx.Rect) {
+	editor := &state.forwardEditor
+	if editor.modePage == nil {
+		editor.modePage = ui.NewPage(ui.PageConfig{Root: forwardModeRoot, Theme: &state.theme})
+		editor.modeView = state.declareForwardMode
+	}
+	editor.modePage.Draw(canvas, bounds, editor.modeView)
+}
+
+func (state *State) declareForwardMode(c ui.C) {
+	choice := ui.Choice(c, &state.forwardEditor.mode, forwardModeChoices[:], state.forwardModeLabel).Fill()
+	// Any press on the switch clears a validation error, including a press on the
+	// mode that is already chosen.
+	if _, clicked := choice.ChosenIndex(); clicked {
+		state.forwardDialogError = ""
+	}
 }
 
 func (state *State) paintForwardDialogField(canvas *gfx.Canvas, id gfx.ID, field forwardField, title, placeholder string, bounds gfx.Rect) {

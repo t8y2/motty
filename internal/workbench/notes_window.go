@@ -115,17 +115,29 @@ func (d *fileDocument) paintNoteWindow(c *gfx.Canvas, size gfx.Size) {
 		c.AfterPaint(func() { d.click(id) })
 	}
 	c.Fill(n.viewport, s.Theme().Background)
-	var content ui.Box
-	f := d.ui.frame.Begin(c, s.Theme(), n.viewport)
-	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		s.fileWindows.paintTabs(f, size)
-		f.Divider().Background(s.Theme().Border)
-		content = f.Slot().Grow(1)
-	})
-	f.End()
+	d.windowPage().Draw(c, n.viewport, d.declareNoteWindow)
 	s.fileWindows.paintTabsScrollbar(c)
+	d.paintNoteContent(c, d.ui.contentBox.Rect())
+	if _, formatting := c.Hovered().In(hitNoteFormats); !formatting {
+		d.ui.tooltip.Paint(c, s.Theme(), n.viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	}
+}
+
+// declareNoteWindow declares the note window's share of the page: the tabs it
+// shares with files and the room the note takes.
+func (d *fileDocument) declareNoteWindow(c ui.C) {
+	s := d.owner
+	theme := s.Theme()
+	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
+		s.fileWindows.declareTabsSection(c, c.Frame().Bounds().Width)
+		ui.Divider(c).Background(theme.Border)
+		d.ui.contentBox = ui.Slot(c).Grow(1)
+	})
+}
+
+func (d *fileDocument) paintNoteContent(c *gfx.Canvas, b gfx.Rect) {
+	s, n := d.owner, &d.note.content
 	s.withNoteView(n, func() {
-		b := content.Rect()
 		if d.note.missing {
 			c.Label(s.noteText("Note deleted", "笔记已删除"), b, gfx.TextStyle{Size: 14, Color: s.pal.muted})
 			return
@@ -187,9 +199,6 @@ func (d *fileDocument) paintNoteWindow(c *gfx.Canvas, size gfx.Size) {
 		}
 		s.autosaveNotes(c)
 	})
-	if _, formatting := c.Hovered().In(hitNoteFormats); !formatting {
-		d.ui.tooltip.Paint(c, s.Theme(), n.viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
-	}
 }
 
 func (d *fileDocument) clickNoteWindow(id gfx.ID) {

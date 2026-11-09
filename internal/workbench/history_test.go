@@ -206,7 +206,7 @@ func TestHistoryPickerShiftEnterRunsAndScopeWidensToAllHosts(t *testing.T) {
 	if len(h.listed()) != 0 {
 		t.Fatalf("another host's command is listed for this host: %q", h.listed())
 	}
-	state.Click(hitHistoryScopeAll)
+	clickSettingsChoice(t, state, state.messages.History.ScopeAll)
 	if got := h.listed(); len(got) != 1 || got[0] != "kubectl get pods" {
 		t.Fatalf("all hosts lists %q", got)
 	}

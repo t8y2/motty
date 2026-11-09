@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -23,6 +24,178 @@ const (
 	aiPagerRowHeight    = float32(40)
 	aiAddRowHeight      = float32(58)
 )
+
+// The roots name the controls of the assistant's dialogs in the window's Tree.
+// A dialog's choices are declared in a Page of its own, so a click and the arrow
+// keys reach the choice the way they reach one on the settings page.
+const (
+	aiProbeBodyRoot     = "ai-probe-body"
+	aiReasoningBodyRoot = "ai-reasoning-body"
+)
+
+// The values the assistant's choices offer. A Choice writes one of these itself;
+// the changed callback stores it.
+var (
+	aiRiskChoices         = [...]risk.Level{risk.Low, risk.Medium, risk.High}
+	aiStepsChoices        = [...]int{6, 12, 24}
+	aiContextChoices      = [...]int{0, 30, 60, 120}
+	aiTextLimitChoices    = [...]int{1, 4, 8} // MiB, as stored in ai.attachment_text_mib
+	aiMCPModeChoices      = [...]gate.Mode{gate.ModeObserve, gate.ModeAsk, gate.ModeAllowAll}
+	aiAgentModeChoices    = [...]gate.Mode{gate.ModeObserve, gate.ModeAsk, gate.ModeAllowAll}
+	aiProbeConcChoices    = [...]int{1, 2, 4, 8}
+	aiProbeTimeoutChoices = [...]time.Duration{
+		5 * time.Second, 10 * time.Second, 15 * time.Second, 30 * time.Second,
+	}
+	aiReasoningModeChoices   = [...]int{0, 1, 2} // auto, enabled, disabled
+	aiReasoningPresetChoices = [...]int{0, 1, 2} // 3, 6, 2 tiers
+	aiFormKindChoices        = [...]string{store.KindOpenAI, store.KindAnthropic}
+	aiFormAuthChoices        = [...]string{store.AuthStyleAPIKey, store.AuthStyleBearer}
+	aiFormFormatChoices      = [...]string{"", store.APIFormatResponses}
+	aiModelFilterChoices     = [...]aiModelFilter{
+		aiModelFilterAll,
+		aiModelFilterAvailable,
+		aiModelFilterFailed,
+		aiModelFilterEnabled,
+	}
+	aiModelSortChoices = [...]aiModelSort{
+		aiModelSortDefault,
+		aiModelSortLatencyAsc,
+		aiModelSortLatencyDesc,
+		aiModelSortNameAsc,
+	}
+)
+
+func (state *State) aiRiskLabel(level risk.Level) string {
+	switch level {
+	case risk.Medium:
+		return state.messages.AISettings.RiskMedium
+	case risk.High:
+		return state.messages.AISettings.RiskHigh
+	}
+	return state.messages.AISettings.RiskLow
+}
+
+// aiRiskSetting is the value of ai.auto_up_to for level.
+func aiRiskSetting(level risk.Level) string {
+	switch level {
+	case risk.Medium:
+		return "medium"
+	case risk.High:
+		return "high"
+	}
+	return "low"
+}
+
+func (state *State) aiContextLabel(lines int) string {
+	if lines == 0 {
+		return state.messages.AISettings.ContextOff
+	}
+	return strconv.Itoa(lines)
+}
+
+func aiTextLimitLabel(mib int) string { return strconv.Itoa(mib) + " MiB" }
+
+func (state *State) aiMCPModeLabel(mode gate.Mode) string {
+	switch mode {
+	case gate.ModeAsk:
+		return state.messages.AISettings.MCPModeAsk
+	case gate.ModeAllowAll:
+		return state.messages.AISettings.MCPModeAllowAll
+	}
+	return state.messages.AISettings.MCPModeObserve
+}
+
+func (state *State) aiAgentModeLabel(mode gate.Mode) string {
+	switch mode {
+	case gate.ModeAsk:
+		return state.messages.AISettings.AgentModeRun
+	case gate.ModeAllowAll:
+		return state.messages.AISettings.MCPModeAllowAll
+	}
+	return state.messages.AISettings.AgentModeObserve
+}
+
+func aiProbeConcurrencyLabel(value int) string { return strconv.Itoa(value) }
+
+func aiProbeTimeoutLabel(value time.Duration) string {
+	return strconv.Itoa(int(value/time.Second)) + "s"
+}
+
+func (state *State) aiReasoningModeLabel(mode int) string {
+	switch mode {
+	case 1:
+		return state.messages.AISettings.ModelReasoningEnable
+	case 2:
+		return state.messages.AISettings.ModelReasoningDisable
+	}
+	return state.messages.AISettings.ModelReasoningAuto
+}
+
+func (state *State) aiReasoningModeDescription(mode int) string {
+	switch mode {
+	case 1:
+		return state.messages.AISettings.ModelReasoningEnableDesc
+	case 2:
+		return state.messages.AISettings.ModelReasoningDisableDesc
+	}
+	return state.messages.AISettings.ModelReasoningAutoDesc
+}
+
+func (state *State) aiReasoningPresetLabel(preset int) string {
+	switch preset {
+	case 1:
+		return state.messages.AISettings.ModelReasoningPreset6
+	case 2:
+		return state.messages.AISettings.ModelReasoningPreset2
+	}
+	return state.messages.AISettings.ModelReasoningPreset3
+}
+
+func (state *State) aiReasoningPresetDescription(preset int) string {
+	switch preset {
+	case 1:
+		return state.messages.AISettings.ModelReasoningPresetDesc1
+	case 2:
+		return state.messages.AISettings.ModelReasoningPresetDesc2
+	}
+	return state.messages.AISettings.ModelReasoningPresetDesc0
+}
+
+func (state *State) aiProviderKindLabel(kind string) string {
+	if kind == store.KindAnthropic {
+		return state.messages.AISettings.ProviderKindClaude
+	}
+	return state.messages.AISettings.ProviderKindOpenAI
+}
+
+func (state *State) aiAuthStyleLabel(style string) string {
+	if style == store.AuthStyleBearer {
+		return state.messages.AISettings.FormAuthBearer
+	}
+	return state.messages.AISettings.FormAuthAPIKey
+}
+
+func (state *State) aiFormatLabel(format string) string {
+	if format == store.APIFormatResponses {
+		return state.messages.AISettings.FormFormatResponses
+	}
+	return state.messages.AISettings.FormFormatChat
+}
+
+// applyAIMCPMode stores the shared HTTP access level the choice already wrote.
+// Full access is asked for, not written: the confirmation stores it.
+func (state *State) applyAIMCPMode(mode gate.Mode) {
+	switch mode {
+	case gate.ModeAllowAll:
+		if state.ai.settings.mcpMode != gate.ModeAllowAll {
+			state.ai.cfg.dialog = aiDialogMCPAllowAll
+		}
+	case gate.ModeAsk:
+		state.aiPut("ai.mcp.mode", "ask")
+	default:
+		state.aiPut("ai.mcp.mode", "observe")
+	}
+}
 
 // aiText is a row of one line of text.
 func (page *settingsPage) aiText(height float32, value string, size float32, weight float32, color gfx.Color) {
@@ -52,12 +225,6 @@ func (page *settingsPage) aiFrameFor(labelFor gfx.ID, height float32, label, des
 		page.labels(labelFor, words, label, false)
 		control()
 	})
-}
-
-// segmentSlot declares a segmented choice of the given width.
-func (page *settingsPage) segmentSlot(width float32, options []components.SegmentOption, selected gfx.ID) {
-	slot := page.f.Slot().Size(width, 34)
-	page.segments(slot, options, selected)
 }
 
 type aiButtonStyle uint8
@@ -311,45 +478,46 @@ func (state *State) paintAIModels(page *settingsPage) {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		} else {
 			totalCnt, availCnt, failCnt, _ := state.aiModelCounts(provider.ID)
-			filterOptions := [...]components.SegmentOption{
-				{ID: hitAISetFilterAll, Label: fmt.Sprintf("%s (%d)", m.ModelFilterAll, totalCnt)},
-				{ID: hitAISetFilterAvailable, Label: fmt.Sprintf("%s (%d)", m.ModelFilterAvailable, availCnt)},
-				{ID: hitAISetFilterFailed, Label: fmt.Sprintf("%s (%d)", m.ModelFilterFailed, failCnt)},
-				{ID: hitAISetFilterEnabled, Label: m.ModelFilterEnabled},
+			filterName := func(filter aiModelFilter) string {
+				switch filter {
+				case aiModelFilterAvailable:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterAvailable, availCnt)
+				case aiModelFilterFailed:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterFailed, failCnt)
+				case aiModelFilterEnabled:
+					return m.ModelFilterEnabled
+				default:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterAll, totalCnt)
+				}
 			}
-			selectedFilter := hitAISetFilterAll
-			switch cfg.modelFilter {
-			case aiModelFilterAvailable:
-				selectedFilter = hitAISetFilterAvailable
-			case aiModelFilterFailed:
-				selectedFilter = hitAISetFilterFailed
-			case aiModelFilterEnabled:
-				selectedFilter = hitAISetFilterEnabled
-			}
-
-			sortOptions := [...]components.SegmentOption{
-				{ID: hitAISetSortDefault, Label: m.ModelSortDefault},
-				{ID: hitAISetSortLatencyAsc, Label: m.ModelSortLatencyAsc},
-				{ID: hitAISetSortLatencyDesc, Label: m.ModelSortLatencyDesc},
-				{ID: hitAISetSortNameAsc, Label: m.ModelSortNameAsc},
-			}
-			selectedSort := hitAISetSortDefault
-			switch cfg.modelSort {
-			case aiModelSortLatencyAsc:
-				selectedSort = hitAISetSortLatencyAsc
-			case aiModelSortLatencyDesc:
-				selectedSort = hitAISetSortLatencyDesc
-			case aiModelSortNameAsc:
-				selectedSort = hitAISetSortNameAsc
+			sortName := func(s aiModelSort) string {
+				switch s {
+				case aiModelSortLatencyAsc:
+					return m.ModelSortLatencyAsc
+				case aiModelSortLatencyDesc:
+					return m.ModelSortLatencyDesc
+				case aiModelSortNameAsc:
+					return m.ModelSortNameAsc
+				default:
+					return m.ModelSortDefault
+				}
 			}
 
-			filterWidth := max(components.SegmentedControlWidth(f.Canvas(), state.Theme(), filterOptions[:]), 260)
-			sortWidth := max(components.SegmentedControlWidth(f.Canvas(), state.Theme(), sortOptions[:]), 220)
+			filterWidth := float32(260)
+			sortWidth := float32(220)
 			page.rowOf(46).PadX(18).Gap(10).Children(func() {
 				f.Row().Grow(1).Gap(12).Items(ui.Center).Children(func() {
-					page.segmentSlot(filterWidth, filterOptions[:], selectedFilter)
+					choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
+					if choice.Changed() {
+						cfg.page = 0
+						state.aiSettingsChanged()
+					}
 					f.Spacer()
-					page.segmentSlot(sortWidth, sortOptions[:], selectedSort)
+					choice = ui.Choice(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).Width(sortWidth)
+					if choice.Changed() {
+						cfg.page = 0
+						state.aiSettingsChanged()
+					}
 				})
 			})
 		}
@@ -507,31 +675,7 @@ func (state *State) paintAIModelInput(canvas *gfx.Canvas, bounds gfx.Rect) {
 func (state *State) paintAIBehaviour(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
 	settings := &state.ai.settings
-	choice := min(300, max(float32(190), page.width*0.40))
 
-	selectedRisk := hitAISetRiskLow
-	switch settings.autoUpTo {
-	case risk.Medium:
-		selectedRisk = hitAISetRiskMedium
-	case risk.High:
-		selectedRisk = hitAISetRiskHigh
-	}
-	selectedSteps := hitAISetSteps12
-	switch settings.maxSteps {
-	case 6:
-		selectedSteps = hitAISetSteps6
-	case 24:
-		selectedSteps = hitAISetSteps24
-	}
-	selectedContext := hitAISetContext60
-	switch settings.contextLines {
-	case 0:
-		selectedContext = hitAISetContext0
-	case 30:
-		selectedContext = hitAISetContext30
-	case 120:
-		selectedContext = hitAISetContext120
-	}
 	description, color := m.ClearHistoryDesc, pal.muted
 	switch {
 	case state.ai.run != nil:
@@ -539,20 +683,19 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 	case state.ai.cfg.clearedDone:
 		description, color = m.ClearHistoryDone, pal.success
 	}
-	riskOptions, stepOptions, contextOptions := state.aiRiskOptions(), state.aiStepsOptions(), state.aiContextOptions()
-	selectedText := hitAISetText4
-	switch settings.maxTextBytes {
-	case 1 << 20:
-		selectedText = hitAISetText1
-	case 8 << 20:
-		selectedText = hitAISetText8
-	}
-	textOptions := state.aiTextLimitOptions()
 	page.group(m.BehaviourTitle, func() {
-		page.aiFrame(settingsRowHeight, m.AutoRun, m.AutoRunDesc, pal.muted, func() { page.segmentSlot(choice, riskOptions[:], selectedRisk) })
-		page.aiFrame(settingsRowHeight, m.MaxSteps, m.MaxStepsDesc, pal.muted, func() { page.segmentSlot(choice, stepOptions[:], selectedSteps) })
-		page.aiFrame(settingsRowHeight, m.ContextLines, m.ContextLinesDesc, pal.muted, func() { page.segmentSlot(choice, contextOptions[:], selectedContext) })
-		page.aiFrame(settingsRowHeight, m.AttachmentTextLimit, m.AttachmentTextLimitDesc, pal.muted, func() { page.segmentSlot(choice, textOptions[:], selectedText) })
+		risk := settings.autoUpTo
+		settingsChoiceRow(page, m.AutoRun, m.AutoRunDesc, &risk, aiRiskChoices[:], state.aiRiskLabel,
+			func() { state.aiPut("ai.auto_up_to", aiRiskSetting(risk)) }, nil)
+		steps := settings.maxSteps
+		settingsChoiceRow(page, m.MaxSteps, m.MaxStepsDesc, &steps, aiStepsChoices[:], strconv.Itoa,
+			func() { state.aiPut("ai.max_steps", strconv.Itoa(steps)) }, nil)
+		lines := settings.contextLines
+		settingsChoiceRow(page, m.ContextLines, m.ContextLinesDesc, &lines, aiContextChoices[:], state.aiContextLabel,
+			func() { state.aiPut("ai.context_lines", strconv.Itoa(lines)) }, nil)
+		text := settings.maxTextBytes >> 20
+		settingsChoiceRow(page, m.AttachmentTextLimit, m.AttachmentTextLimitDesc, &text, aiTextLimitChoices[:], aiTextLimitLabel,
+			func() { state.aiPut("ai.attachment_text_mib", strconv.Itoa(text)) }, nil)
 		page.aiFrameFor(hitAISetRedact, settingsRowHeight, m.Redact, m.RedactDesc, pal.muted, func() { page.switchSlot(hitAISetRedact, settings.redact, false, m.Redact) })
 		page.aiFrameFor(hitAISetHistory, settingsRowHeight, m.History, m.HistoryDesc, pal.muted, func() { page.switchSlot(hitAISetHistory, settings.keepHistory, false, m.History) })
 		page.aiFrame(settingsRowHeight, m.ClearHistory, description, color, func() {
@@ -565,14 +708,6 @@ func (state *State) paintAIMCP(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
 	settings := &state.ai.settings
 
-	selected := hitAISetMCPObserve
-	switch settings.mcpMode {
-	case gate.ModeAsk:
-		selected = hitAISetMCPAsk
-	case gate.ModeAllowAll:
-		selected = hitAISetMCPAllowAll
-	}
-	modes := state.aiMCPModeOptions()
 	endpoint := m.MCPOff
 	if settings.mcpEnabled {
 		endpoint = m.MCPNotRunning
@@ -592,13 +727,9 @@ func (state *State) paintAIMCP(page *settingsPage) {
 		page.aiFrameFor(hitAISetMCPEnabled, settingsRowHeight, m.MCPEnable, m.MCPEnableDesc, pal.muted, func() {
 			page.switchSlot(hitAISetMCPEnabled, settings.mcpEnabled, false, m.MCPEnable)
 		})
-		page.mcpFrame(m.MCPMode, m.MCPModeDesc, pal.muted, func() {
-			width := min(float32(300), page.width-36)
-			if page.width >= 500 {
-				width = min(width, page.width*.44)
-			}
-			page.segmentSlot(width, modes[:], selected)
-		})
+		mode := settings.mcpMode
+		settingsChoiceRow(page, m.MCPMode, m.MCPModeDesc, &mode, aiMCPModeChoices[:], state.aiMCPModeLabel,
+			func() { state.applyAIMCPMode(mode) }, nil)
 		if settings.mcpMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.MCPAllowAllWarning)
 		}
@@ -683,52 +814,45 @@ func (state *State) paintAIConfirm(canvas *gfx.Canvas, viewport gfx.Rect, title,
 
 func (state *State) paintAIProbeDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.AISettings, state.Theme()
+	cfg := &state.ai.cfg
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose, InitialFocusID: hitAISetProbeStart,
 		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 140,
 	})
 	layout := dialog.Begin(m.ProbeDialogTitle, m.ProbeDialogDesc)
-
-	var concSlot, timeoutSlot ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
-		concSlot = f.Slot().Height(60)
-		timeoutSlot = f.Slot().Height(60)
-	})
-	f.End()
-
-	concContent := components.BeginField(canvas, theme, concSlot.Rect()).Paint(m.ProbeConcurrency, "", "")
-	concOptions := state.aiProbeConcOptions()
-	selectedConc := hitAISetProbeConc4
-	switch state.aiProbeConcurrency() {
-	case 1:
-		selectedConc = hitAISetProbeConc1
-	case 2:
-		selectedConc = hitAISetProbeConc2
-	case 8:
-		selectedConc = hitAISetProbeConc8
+	if cfg.probePage == nil {
+		cfg.probePage = ui.NewPage(ui.PageConfig{Root: aiProbeBodyRoot, Theme: &state.theme})
 	}
-	components.BeginSegmentedControl(canvas, theme, concContent, concOptions[:], selectedConc).Paint()
-
-	timeoutContent := components.BeginField(canvas, theme, timeoutSlot.Rect()).Paint(m.ProbeTimeout, "", "")
-	timeoutOptions := state.aiProbeTimeoutOptions()
-	selectedTimeout := hitAISetProbeTimeout15
-	switch state.aiProbeTimeout() {
-	case 5 * time.Second:
-		selectedTimeout = hitAISetProbeTimeout5
-	case 10 * time.Second:
-		selectedTimeout = hitAISetProbeTimeout10
-	case 30 * time.Second:
-		selectedTimeout = hitAISetProbeTimeout30
-	}
-	components.BeginSegmentedControl(canvas, theme, timeoutContent, timeoutOptions[:], selectedTimeout).Paint()
-
+	cfg.probePage.Draw(canvas, layout.Body, state.declareAIProbeBody)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAISetProbeStart, Label: m.ProbeStartAction},
 	)
 	dialog.End()
+}
+
+// declareAIProbeBody declares the probe dialog's two choices. The concurrency
+// and the timeout are the effective values, so the defaults (4 and 15s) show as
+// chosen before anything was stored.
+func (state *State) declareAIProbeBody(c ui.C) {
+	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+		ui.Text(c, m.ProbeConcurrency).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+		concurrency := state.aiProbeConcurrency()
+		ui.Row(c).FillWidth().Children(func() {
+			if ui.Choice(c, &concurrency, aiProbeConcChoices[:], aiProbeConcurrencyLabel).Fill().Changed() {
+				cfg.probeConcurrency = concurrency
+			}
+		})
+		ui.Text(c, m.ProbeTimeout).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).MarginSides(0, 0, 6, 0)
+		timeout := state.aiProbeTimeout()
+		ui.Row(c).FillWidth().Children(func() {
+			if ui.Choice(c, &timeout, aiProbeTimeoutChoices[:], aiProbeTimeoutLabel).Fill().Changed() {
+				cfg.probeTimeout = timeout
+			}
+		})
+	})
 }
 
 func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
@@ -752,49 +876,10 @@ func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx
 	})
 	desc := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
 	layout := dialog.Begin(m.ModelReasoningTitle, desc)
-
-	var modeSlot, presetSlot ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
-		modeSlot = f.Slot().Height(modeHeight)
-		if presetHeight > 0 {
-			presetSlot = f.Slot().Height(presetHeight)
-		}
-	})
-	f.End()
-
-	// 1. 模式选择 (Auto / Enable / Disable)
-	modeDesc := m.ModelReasoningAutoDesc
-	selectedMode := hitAISetReasoningAuto
-	switch cfg.reasoningMode {
-	case 1:
-		selectedMode = hitAISetReasoningEnable
-		modeDesc = m.ModelReasoningEnableDesc
-	case 2:
-		selectedMode = hitAISetReasoningDisable
-		modeDesc = m.ModelReasoningDisableDesc
+	if cfg.reasoningPage == nil {
+		cfg.reasoningPage = ui.NewPage(ui.PageConfig{Root: aiReasoningBodyRoot, Theme: &state.theme})
 	}
-	modeContent := components.BeginField(canvas, theme, modeSlot.Rect()).Paint(m.ModelReasoningMode, modeDesc, "")
-	modeOptions := state.aiReasoningModeOptions()
-	components.BeginSegmentedControl(canvas, theme, modeContent, modeOptions[:], selectedMode).Paint()
-
-	// 2. 如果是手动开启模式，选择档位预设
-	if presetHeight > 0 {
-		presetDesc := m.ModelReasoningPresetDesc0
-		selectedPreset := hitAISetReasoningPreset0
-		switch cfg.reasoningPreset {
-		case 1:
-			selectedPreset = hitAISetReasoningPreset1
-			presetDesc = m.ModelReasoningPresetDesc1
-		case 2:
-			selectedPreset = hitAISetReasoningPreset2
-			presetDesc = m.ModelReasoningPresetDesc2
-		}
-		presetContent := components.BeginField(canvas, theme, presetSlot.Rect()).Paint(m.ModelReasoningPreset, presetDesc, "")
-		presetOptions := state.aiReasoningPresetOptions()
-		components.BeginSegmentedControl(canvas, theme, presetContent, presetOptions[:], selectedPreset).Paint()
-	}
-
+	cfg.reasoningPage.Draw(canvas, layout.Body, state.declareAIReasoningBody)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAISetReasoningCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAISetReasoningSave, Label: m.ModelReasoningSave},
@@ -802,131 +887,30 @@ func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx
 	dialog.End()
 }
 
-func (state *State) paintAIProviderForm(canvas *gfx.Canvas, viewport gfx.Rect) {
-	if store.IsCLIKind(state.ai.cfg.kind) {
-		state.paintAICLIProviderForm(canvas, viewport)
-		return
-	}
-	m, theme := state.messages.AISettings, state.Theme()
-	cfg := &state.ai.cfg
-	title, submit := m.FormAddTitle, m.FormAdd
-	presetHeight := float32(60) // a new provider can start from a preset
-	if cfg.editID != "" {
-		title, submit, presetHeight = m.FormEditTitle, m.FormSave, 0
-	}
-	keyHeight := float32(60) // a saved key adds a line saying so under the field
-	if cfg.hadKey {
-		keyHeight = 78
-	}
-	authHeight := float32(0) // only Anthropic has a choice of credential header
-	if cfg.kind == store.KindAnthropic {
-		authHeight = 60
-	}
-	formatHeight := float32(0) // only an OpenAI-compatible provider has a choice of protocol; the route under it adds a line and a gap
-	if cfg.kind == store.KindOpenAI {
-		formatHeight = 84
-	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
-		ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+4*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
-	})
-	layout := dialog.Begin(title, m.FormDescription)
-
-	hint := ""
-	if cfg.hadKey {
-		hint = m.FormKeySaved
-	}
-	selected := hitAISetFormKindOpenAI
-	placeholder := m.FormBaseURLOpenAI
-	if cfg.kind == store.KindAnthropic {
-		selected, placeholder = hitAISetFormKindClaude, m.FormBaseURLClaude
-	}
-	var preset, name, kind, auth, format, url, modelsURL, key ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		if presetHeight > 0 {
-			preset = f.Slot().Height(presetHeight)
+// declareAIReasoningBody declares the reasoning dialog: the mode, and the effort
+// preset only while the mode gives the model a manual choice.
+func (state *State) declareAIReasoningBody(c ui.C) {
+	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+		ui.Text(c, m.ModelReasoningMode).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+		mode := cfg.reasoningMode
+		ui.Row(c).FillWidth().Children(func() {
+			if ui.Choice(c, &mode, aiReasoningModeChoices[:], state.aiReasoningModeLabel).Fill().Changed() {
+				cfg.reasoningMode = mode
+			}
+		})
+		ui.Text(c, state.aiReasoningModeDescription(cfg.reasoningMode)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		if cfg.reasoningMode != 1 {
+			return
 		}
-		name = f.Slot().Height(60)
-		kind = f.Slot().Height(60)
-		if authHeight > 0 {
-			auth = f.Slot().Height(authHeight)
-		}
-		url = f.Slot().Height(60)
-		modelsURL = f.Slot().Height(60)
-		if formatHeight > 0 {
-			format = f.Slot().Height(formatHeight)
-		}
-		key = f.Slot().Height(keyHeight).MarginSides(0, 0, 4, 0)
-		if cfg.formErr != "" {
-			f.Text(cfg.formErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
-		}
-	})
-	f.End()
-
-	if presetHeight > 0 {
-		state.paintAIPresetField(canvas, preset.Rect())
-	}
-	state.aiFormField(canvas, hitAISetFormName, m.FormName, m.FormNamePH, "", false, &cfg.name, name.Rect())
-	content := components.BeginField(canvas, theme, kind.Rect()).Paint(m.FormKind, "", "")
-	kinds := state.aiKindOptions()
-	components.BeginSegmentedControl(canvas, theme, content, kinds[:], selected).Paint()
-	if authHeight > 0 {
-		state.paintAIAuthField(canvas, auth.Rect())
-	}
-	state.aiFormField(canvas, hitAISetFormURL, m.FormBaseURL, placeholder, "", false, &cfg.baseURL, url.Rect())
-	state.aiFormField(canvas, hitAISetFormModelsURL, m.FormModelsURL, m.FormModelsURLPH, "", false, &cfg.modelsURL, modelsURL.Rect())
-	if formatHeight > 0 {
-		state.paintAIFormatField(canvas, format.Rect())
-	}
-	state.aiFormField(canvas, hitAISetFormKey, m.FormKey, m.FormKeyPH, hint, true, &cfg.apiKey, key.Rect())
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetFormSubmit, Label: submit},
-	)
-	dialog.End()
-}
-
-// paintAIAuthField paints the Anthropic credential-header choice. The style is
-// not a secret; the key itself stays in the secure field below.
-func (state *State) paintAIAuthField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FormAuth, "", "")
-	selected := hitAISetFormAuthAPIKey
-	if cfg.authStyle == store.AuthStyleBearer {
-		selected = hitAISetFormAuthBearer
-	}
-	options := state.aiAuthOptions()
-	components.BeginSegmentedControl(canvas, theme, content, options[:], selected).Paint()
-}
-
-// paintAIFormatField paints the OpenAI-compatible protocol choice, with the
-// route each protocol is sent to underneath: the address typed above is only
-// the base, and which route follows is not guessable from it.
-func (state *State) paintAIFormatField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
-	route := m.FormFormatChatRoute
-	selected := hitAISetFormFormatChat
-	if cfg.apiFormat == store.APIFormatResponses {
-		route, selected = m.FormFormatResponsesRoute, hitAISetFormFormatResp
-	}
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FormFormat, route, "")
-	options := state.aiFormatOptions()
-	components.BeginSegmentedControl(canvas, theme, content, options[:], selected).Paint()
-}
-
-// aiFormField paints one labelled input of the provider dialog. A secure field
-// shows bullets in place of its text.
-func (state *State) aiFormField(canvas *gfx.Canvas, id gfx.ID, title, placeholder, hint string, secure bool, editor interface{ String() string }, bounds gfx.Rect) {
-	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(title, hint, "")
-	value := editor.String()
-	focused := canvas.Focused() == id
-	state.paintSecretInput(canvas, content, components.InputSnapshot{
-		ID: id, Label: title, Value: value, Placeholder: placeholder, Secure: secure,
-		Focused: focused, PlatformEditing: focused && value != "",
+		ui.Text(c, m.ModelReasoningPreset).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).MarginSides(0, 0, 10, 0)
+		preset := cfg.reasoningPreset
+		ui.Row(c).FillWidth().Children(func() {
+			if ui.Choice(c, &preset, aiReasoningPresetChoices[:], state.aiReasoningPresetLabel).Fill().Changed() {
+				cfg.reasoningPreset = preset
+			}
+		})
+		ui.Text(c, state.aiReasoningPresetDescription(cfg.reasoningPreset)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	})
 }
 

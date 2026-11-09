@@ -110,7 +110,7 @@ func TestTerminalFindInputIsBoundedSingleLineAndCloseRestoresTerminalFocus(t *te
 
 	find.matches = make([]term.SearchMatch, 1, terminalFindKeep+1)
 	result := state.Key(gfx.KeyEvent{Target: hitTerminalFindField, Key: gfx.KeyEscape})
-	if !result.Handled || result.Focus != hitTerminalList.At(int(session.ID)) || find.open || len(find.matches) != 0 || cap(find.matches) != 0 {
+	if !result.Handled || result.Focus != terminalTestHit(state, session) || find.open || len(find.matches) != 0 || cap(find.matches) != 0 {
 		t.Fatalf("close result=%+v open=%t matches=%d/%d", result, find.open, len(find.matches), cap(find.matches))
 	}
 	if find.editor.RuneCount() != terminalFindMaxQuery {
@@ -122,7 +122,7 @@ func TestTerminalFindInputIsBoundedSingleLineAndCloseRestoresTerminalFocus(t *te
 
 	openFindForTest(t, state)
 	pointer := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitTerminalFindClose})
-	if !pointer.Handled || pointer.Focus != hitTerminalList.At(int(session.ID)) || find.open {
+	if !pointer.Handled || pointer.Focus != terminalTestHit(state, session) || find.open {
 		t.Fatalf("pointer close = %+v open=%t", pointer, find.open)
 	}
 	openFindForTest(t, state)

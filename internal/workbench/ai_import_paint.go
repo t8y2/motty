@@ -40,6 +40,32 @@ const (
 	aiImportResultGap          = float32(4)
 )
 
+// The provider import dialog's body is a page; the dialog's shell, its footer
+// buttons and the list's controls are painted by hand and keep their identities.
+const (
+	aiImportSourcesRoot = "ai-import-sources"
+	aiImportPreviewRoot = "ai-import-preview"
+	aiImportResultRoot  = "ai-import-result"
+)
+
+// aiImportPages are the import dialog's page per step, its declaration (kept so
+// a paint makes no method value) and the slots its hand-painted buttons and
+// list go into.
+type aiImportPages struct {
+	sourcesPage *ui.Page
+	sourcesView func(ui.C)
+	sourceSlots []ui.Box
+	choose      ui.Box
+
+	previewPage *ui.Page
+	previewView func(ui.C)
+	listHeight  float32
+	list        ui.Box
+
+	resultPage *ui.Page
+	resultView func(ui.C)
+}
+
 func (state *State) paintAIImport(canvas *gfx.Canvas, viewport gfx.Rect) {
 	switch state.ai.cfg.importStep {
 	case aiImportSources:
@@ -79,65 +105,75 @@ func (state *State) paintAIImportSources(canvas *gfx.Canvas, viewport gfx.Rect) 
 	})
 	layout := dialog.Begin(m.ImportSourcesTitle, m.ImportSourcesDesc)
 
-	var sourceSlots []ui.Box
-	var choose ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
+	pages := &state.ai.panel.importPages
+	pages.sourceSlots = pages.sourceSlots[:0]
+	if pages.sourcesPage == nil {
+		pages.sourcesPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiImportSourcesRoot, Theme: &state.theme})
+		pages.sourcesView = state.declareAIImportSourcesBody
+	}
+	pages.sourcesPage.Draw(canvas, layout.Body, pages.sourcesView)
+
+	for index, source := range cfg.importSources {
+		if index >= len(pages.sourceSlots) {
+			continue
+		}
+		state.aiButton(canvas, hitAISetImportSource.At(index), pages.sourceSlots[index].Rect(), m.ImportPreview,
+			aiButtonOutline, !source.Available())
+	}
+	state.aiButton(canvas, hitAISetImportChoose, pages.choose.Rect(), m.ImportChooseFile, aiButtonOutline, false)
+	dialog.Actions(layout, components.ButtonAction{ID: hitAISetImportClose, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
+	dialog.End()
+}
+
+// declareAIImportSourcesBody declares the step that names the sources found on
+// this computer. The preview buttons are painted into their slots afterwards.
+func (state *State) declareAIImportSourcesBody(c ui.C) {
+	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
+	pages := &state.ai.panel.importPages
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
 		for _, source := range cfg.importSources {
-			f.Row().Height(aiImportSourceRowHeight).Gap(12).Items(ui.Center).Children(func() {
-				f.Row().Size(32, 32).Shrink(0).Background(state.pal.accentSoft).Radius(radius.control).Center().Children(func() {
-					f.Icon(aiImportToolIcon(source.Tool)).Size(17, 17).Color(state.pal.accent)
+			ui.Row(c).Height(aiImportSourceRowHeight).Gap(12).Items(ui.Center).Children(func() {
+				ui.Row(c).Size(32, 32).Shrink(0).Background(pal.accentSoft).Radius(radius.control).Center().Children(func() {
+					ui.Icon(c, aiImportToolIcon(source.Tool)).Size(17, 17).Color(pal.accent)
 				})
-				f.Column().Grow(1).Shrink(1).Children(func() {
-					f.Text(aiImportToolName(source.Tool)).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
-						Color(state.pal.text).LineHeight(20)
-					f.Text(state.aiImportSourceStatus(source)).FontSize(metrics.FontSizeS).
+				ui.Column(c).Grow(1).Shrink(1).Children(func() {
+					ui.Text(c, aiImportToolName(source.Tool)).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+						Color(pal.text).LineHeight(20)
+					ui.Text(c, state.aiImportSourceStatus(source)).FontSize(metrics.FontSizeS).
 						Color(state.aiImportSourceStatusColor(source)).LineHeight(17).Ellipsis()
 				})
-				sourceSlots = append(sourceSlots, state.aiButtonSlot(f, m.ImportPreview))
+				pages.sourceSlots = append(pages.sourceSlots, state.aiButtonSlot(c.Frame(), m.ImportPreview))
 			})
 		}
 		if len(cfg.importSources) == 0 {
-			f.Row().Height(40).Children(func() {
-				f.Text(m.ImportNoSources).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20)
+			ui.Row(c).Height(40).Children(func() {
+				ui.Text(c, m.ImportNoSources).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20)
 			})
 		}
 
-		f.Divider().Background(state.pal.line).MarginSides(6, 0, 6, 0)
-		f.Row().Height(aiImportFallbackRowHeight).Gap(12).Items(ui.Center).Children(func() {
+		ui.Divider(c).Background(pal.line).MarginSides(6, 0, 6, 0)
+		ui.Row(c).Height(aiImportFallbackRowHeight).Gap(12).Items(ui.Center).Children(func() {
 			// The empty tile keeps the fallback's text on the same column as
 			// the source names above it.
-			f.Row().Size(32, 32).Shrink(0).Center().Children(func() {
-				f.Icon(icons.File).Size(16, 16).Color(state.pal.muted)
+			ui.Row(c).Size(32, 32).Shrink(0).Center().Children(func() {
+				ui.Icon(c, icons.File).Size(16, 16).Color(pal.muted)
 			})
-			f.Column().Grow(1).Shrink(1).Children(func() {
-				f.Text(m.ImportChooseFromFile).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(19)
-				f.Text(m.ImportChooseFileHint).FontSize(metrics.FontSizeS).Color(state.pal.muted).
+			ui.Column(c).Grow(1).Shrink(1).Children(func() {
+				ui.Text(c, m.ImportChooseFromFile).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(19)
+				ui.Text(c, m.ImportChooseFileHint).FontSize(metrics.FontSizeS).Color(pal.muted).
 					LineHeight(16).Ellipsis()
 			})
-			choose = state.aiButtonSlot(f, m.ImportChooseFile)
+			pages.choose = state.aiButtonSlot(c.Frame(), m.ImportChooseFile)
 		})
 
 		if cfg.importErr != "" {
-			f.Row().Height(22).Gap(8).Items(ui.Center).Children(func() {
-				f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0)
-				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(state.pal.danger).LineHeight(17).Ellipsis()
+			ui.Row(c).Height(22).Gap(8).Items(ui.Center).Children(func() {
+				ui.Icon(c, icons.CircleAlert).Size(14, 14).Color(pal.danger).Shrink(0)
+				ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(pal.danger).LineHeight(17).Ellipsis()
 			})
 		}
 	})
-	f.End()
-
-	for index, source := range cfg.importSources {
-		if index >= len(sourceSlots) {
-			continue
-		}
-		state.aiButton(canvas, hitAISetImportSource.At(index), sourceSlots[index].Rect(), m.ImportPreview,
-			aiButtonOutline, !source.Available())
-	}
-	state.aiButton(canvas, hitAISetImportChoose, choose.Rect(), m.ImportChooseFile, aiButtonOutline, false)
-	dialog.Actions(layout, components.ButtonAction{ID: hitAISetImportClose, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
-	dialog.End()
 }
 
 func (state *State) paintAIImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
@@ -178,71 +214,107 @@ func (state *State) paintAIImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) 
 	})
 	layout := dialog.Begin(m.ImportPreviewTitle, m.ImportPreviewDesc)
 
-	var list ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		// Only a full selection earns the check. A partial one keeps the dot,
-		// so the icon never claims more than the count says.
-		summaryIcon, summaryColor := icons.CircleDot, state.pal.muted
-		if importable > 0 && selected == importable {
-			summaryIcon, summaryColor = icons.CircleCheck, state.pal.success
-		}
-		f.Row().Height(aiImportSummaryHeight).MarginSides(0, aiImportRowReserve, 0, 10).
-			PadSides(0, 10, 0, 10).Gap(8).Items(ui.Center).Children(func() {
-			f.Icon(summaryIcon).Size(14, 14).Color(summaryColor).Shrink(0)
-			textColor := state.pal.muted
-			if selected > 0 {
-				textColor = state.pal.text
-			}
-			f.Text(fmt.Sprintf(m.ImportSelectedFmt, selected, importable)).FontSize(metrics.FontSizeS).
-				Color(textColor).LineHeight(17)
-		})
+	pages := &state.ai.panel.importPages
+	pages.listHeight = listHeight
+	if pages.previewPage == nil {
+		pages.previewPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiImportPreviewRoot, Theme: &state.theme})
+		pages.previewView = state.declareAIImportPreviewBody
+	}
+	pages.previewPage.Draw(canvas, layout.Body, pages.previewView)
 
-		if total == 0 {
-			f.Row().Height(40).Gap(8).Items(ui.Center).Children(func() {
-				f.Icon(icons.File).Size(15, 15).Color(state.pal.muted).Shrink(0)
-				f.Text(m.ImportNoCandidates).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
-			})
-		} else {
-			list = f.ScrollArea(hitAISetImportList).Height(listHeight).FillWidth().Gap(aiImportRowGap)
-			list.HitWith(hitAISetImportList, m.ImportPreviewTitle, gfx.HitOptions{Role: gfx.RoleGroup})
-			list.Children(func() {
-				for index, candidate := range cfg.importCandidates {
-					if candidate.Importable() {
-						state.aiImportCandidateRow(f, index, candidate, cfg.importSelected[index])
-						continue
-					}
-					if index == importable {
-						f.Row().Height(aiImportGroupHeight).MarginSides(4, aiImportRowReserve, 0, 2).
-							Gap(8).Items(ui.Center).Children(func() {
-							f.Icon(icons.CircleAlert).Size(13, 13).Color(state.pal.warning).Shrink(0)
-							f.Text(fmt.Sprintf(m.ImportUnavailableFmt, unavailable)).FontSize(metrics.FontSizeS).
-								Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
-						})
-					}
-					state.aiImportUnavailableRow(f, candidate)
-				}
-			})
+	if total > 0 {
+		// The candidate list keeps the scroll state State.Scroll and the
+		// scrollbar read, so it stays declared by the settings row's view in
+		// the slot the page left for it.
+		area := pages.list.Rect()
+		state.paintAIImportList(canvas, theme, area, listHeight)
+		if contentHeight > listHeight {
+			state.paintAIImportScrollbar(canvas, area)
 		}
-
-		if cfg.importErr != "" {
-			f.Row().Height(22).Gap(8).Items(ui.Center).Children(func() {
-				f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0)
-				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(state.pal.danger).LineHeight(17).Ellipsis()
-			})
-		}
-	})
-	f.End()
-
-	if total > 0 && contentHeight > listHeight {
-		state.paintAIImportScrollbar(canvas, list.Rect())
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAISetImportBack, Label: m.ImportBack, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAISetImportApply, Label: m.ImportApply, Disabled: selected == 0},
 	)
 	dialog.End()
+}
+
+// declareAIImportPreviewBody declares the count above the candidate list, the
+// list's slot, and any read error. The rows themselves are declared by
+// paintAIImportList into the slot.
+func (state *State) declareAIImportPreviewBody(c ui.C) {
+	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
+	pages := &state.ai.panel.importPages
+	total := len(cfg.importCandidates)
+	importable := aiImportImportableCount(cfg.importCandidates)
+	selected := state.aiImportSelectedCount()
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		// Only a full selection earns the check. A partial one keeps the dot,
+		// so the icon never claims more than the count says.
+		summaryIcon, summaryColor := icons.CircleDot, pal.muted
+		if importable > 0 && selected == importable {
+			summaryIcon, summaryColor = icons.CircleCheck, pal.success
+		}
+		ui.Row(c).Height(aiImportSummaryHeight).MarginSides(0, aiImportRowReserve, 0, 10).
+			PadSides(0, 10, 0, 10).Gap(8).Items(ui.Center).Children(func() {
+			ui.Icon(c, summaryIcon).Size(14, 14).Color(summaryColor).Shrink(0)
+			textColor := pal.muted
+			if selected > 0 {
+				textColor = pal.text
+			}
+			ui.Text(c, fmt.Sprintf(m.ImportSelectedFmt, selected, importable)).FontSize(metrics.FontSizeS).
+				Color(textColor).LineHeight(17)
+		})
+
+		if total == 0 {
+			ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(func() {
+				ui.Icon(c, icons.File).Size(15, 15).Color(pal.muted).Shrink(0)
+				ui.Text(c, m.ImportNoCandidates).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+			})
+		} else {
+			pages.list = ui.Slot(c).Height(pages.listHeight).FillWidth()
+		}
+
+		if cfg.importErr != "" {
+			ui.Row(c).Height(22).Gap(8).Items(ui.Center).Children(func() {
+				ui.Icon(c, icons.CircleAlert).Size(14, 14).Color(pal.danger).Shrink(0)
+				ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(pal.danger).LineHeight(17).Ellipsis()
+			})
+		}
+	})
+}
+
+// paintAIImportList declares the scrollable candidates in the slot the page
+// left, under the settings row's view so the wheel and the scrollbar keep the
+// state they read.
+func (state *State) paintAIImportList(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, listHeight float32) {
+	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
+	importable := aiImportImportableCount(cfg.importCandidates)
+	unavailable := len(cfg.importCandidates) - importable
+	f := state.settingsRow.Begin(canvas, theme, area)
+	f.Column().Fill().Children(func() {
+		list := f.ScrollArea(hitAISetImportList).Height(listHeight).FillWidth().Gap(aiImportRowGap)
+		list.HitWith(hitAISetImportList, m.ImportPreviewTitle, gfx.HitOptions{Role: gfx.RoleGroup})
+		list.Children(func() {
+			for index, candidate := range cfg.importCandidates {
+				if candidate.Importable() {
+					state.aiImportCandidateRow(f, index, candidate, cfg.importSelected[index])
+					continue
+				}
+				if index == importable {
+					f.Row().Height(aiImportGroupHeight).MarginSides(4, aiImportRowReserve, 0, 2).
+						Gap(8).Items(ui.Center).Children(func() {
+						f.Icon(icons.CircleAlert).Size(13, 13).Color(pal.warning).Shrink(0)
+						f.Text(fmt.Sprintf(m.ImportUnavailableFmt, unavailable)).FontSize(metrics.FontSizeS).
+							Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16)
+					})
+				}
+				state.aiImportUnavailableRow(f, candidate)
+			}
+		})
+	})
+	f.End()
 }
 
 // aiImportCandidateRow paints one selectable provider. A ticked row carries a
@@ -339,60 +411,71 @@ func (state *State) paintAIImportResult(canvas *gfx.Canvas, viewport gfx.Rect) {
 	})
 	layout := dialog.Begin(m.ImportDoneTitle, "")
 
-	icon, color := icons.CircleCheck, state.pal.success
-	if result.Failed > 0 || result.KeyFailed > 0 || result.Err != "" {
-		icon, color = icons.CircleAlert, state.pal.danger
-	} else if result.Created+result.Updated == 0 {
-		icon, color = icons.CircleDot, state.pal.muted
+	pages := &state.ai.panel.importPages
+	if pages.resultPage == nil {
+		pages.resultPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiImportResultRoot, Theme: &state.theme})
+		pages.resultView = state.declareAIImportResultBody
 	}
-
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(aiImportResultGap).Children(func() {
-		f.Row().Height(aiImportResultBannerHeight).PadSides(10, 12, 10, 12).
-			Background(state.pal.surfaceSoft).Radius(radius.control).Gap(10).
-			Items(ui.Center).Children(func() {
-			f.Icon(icon).Size(18, 18).Color(color).Shrink(0)
-			f.Text(fmt.Sprintf(m.ImportSummaryFmt, result.Created, result.Updated, result.Skipped)).
-				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
-		})
-		if result.GatewayCreated {
-			state.aiImportResultLineRow(f, icons.Info, state.pal.muted, m.ImportGatewayImported)
-		}
-		if result.KeyFailed > 0 {
-			state.aiImportResultLineRow(f, icons.Key, state.pal.danger,
-				fmt.Sprintf(m.ImportKeyFailedFmt, result.KeyFailed))
-		}
-		if result.Failed > 0 {
-			state.aiImportResultProblemRow(f, fmt.Sprintf(m.ImportFailedFmt, result.Failed, result.Err))
-		} else if result.Err != "" {
-			state.aiImportResultProblemRow(f, result.Err)
-		}
-		for _, reason := range result.Reasons {
-			state.aiImportResultLineRow(f, icons.CircleDot, state.pal.muted,
-				fmt.Sprintf(m.ImportReasonCountFmt, state.aiImportReasonText(reason.Reason), reason.Count))
-		}
-	})
-	f.End()
+	pages.resultPage.Draw(canvas, layout.Body, pages.resultView)
 	dialog.Actions(layout, components.ButtonAction{ID: hitAISetImportClose, Label: m.ImportClose})
 	dialog.End()
 }
 
+// declareAIImportResultBody declares the outcome of the import: what changed,
+// and the notes that need attention under it.
+func (state *State) declareAIImportResultBody(c ui.C) {
+	result, m, pal := state.ai.cfg.importResult, state.messages.AISettings, state.pal
+
+	icon, color := icons.CircleCheck, pal.success
+	if result.Failed > 0 || result.KeyFailed > 0 || result.Err != "" {
+		icon, color = icons.CircleAlert, pal.danger
+	} else if result.Created+result.Updated == 0 {
+		icon, color = icons.CircleDot, pal.muted
+	}
+
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(aiImportResultGap).Children(func() {
+		ui.Row(c).Height(aiImportResultBannerHeight).PadSides(10, 12, 10, 12).
+			Background(pal.surfaceSoft).Radius(radius.control).Gap(10).
+			Items(ui.Center).Children(func() {
+			ui.Icon(c, icon).Size(18, 18).Color(color).Shrink(0)
+			ui.Text(c, fmt.Sprintf(m.ImportSummaryFmt, result.Created, result.Updated, result.Skipped)).
+				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20)
+		})
+		if result.GatewayCreated {
+			state.aiImportResultLineRow(c, icons.Info, pal.muted, m.ImportGatewayImported)
+		}
+		if result.KeyFailed > 0 {
+			state.aiImportResultLineRow(c, icons.Key, pal.danger,
+				fmt.Sprintf(m.ImportKeyFailedFmt, result.KeyFailed))
+		}
+		if result.Failed > 0 {
+			state.aiImportResultProblemRow(c, fmt.Sprintf(m.ImportFailedFmt, result.Failed, result.Err))
+		} else if result.Err != "" {
+			state.aiImportResultProblemRow(c, result.Err)
+		}
+		for _, reason := range result.Reasons {
+			state.aiImportResultLineRow(c, icons.CircleDot, pal.muted,
+				fmt.Sprintf(m.ImportReasonCountFmt, state.aiImportReasonText(reason.Reason), reason.Count))
+		}
+	})
+}
+
 // aiImportResultLineRow is one compact note under the outcome. The icon carries
 // the kind of note so the line does not need a colored label.
-func (state *State) aiImportResultLineRow(f *ui.Frame, icon gfx.Icon, color gfx.Color, text string) {
-	f.Row().Height(aiImportResultLine).Gap(8).Items(ui.Center).Children(func() {
-		f.Icon(icon).Size(14, 14).Color(color).Shrink(0)
-		f.Text(text).FontSize(metrics.FontSizeS).Color(color).LineHeight(18).Ellipsis()
+func (state *State) aiImportResultLineRow(c ui.C, icon gfx.Icon, color gfx.Color, text string) {
+	ui.Row(c).Height(aiImportResultLine).Gap(8).Items(ui.Center).Children(func() {
+		ui.Icon(c, icon).Size(14, 14).Color(color).Shrink(0)
+		ui.Text(c, text).FontSize(metrics.FontSizeS).Color(color).LineHeight(18).Ellipsis()
 	})
 }
 
 // aiImportResultProblemRow wraps a save failure instead of clipping it: the
 // reason is what the user needs to act on.
-func (state *State) aiImportResultProblemRow(f *ui.Frame, text string) {
-	f.Row().Height(2 * aiImportResultLine).Gap(8).Items(ui.Start).Children(func() {
-		f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0).MarginSides(3, 0, 0, 0)
-		f.Column().Grow(1).Shrink(1).Children(func() {
-			f.Paragraph(text, 2).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
+func (state *State) aiImportResultProblemRow(c ui.C, text string) {
+	ui.Row(c).Height(2 * aiImportResultLine).Gap(8).Items(ui.Start).Children(func() {
+		ui.Icon(c, icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0).MarginSides(3, 0, 0, 0)
+		ui.Column(c).Grow(1).Shrink(1).Children(func() {
+			ui.Paragraph(c, text, 2).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
 		})
 	})
 }

@@ -38,7 +38,7 @@ func TestOSC8TerminalLinkUsesVifPublicOpenURL(t *testing.T) {
 	state.options.OpenURL = app.OpenURL
 	session.term.openLink = state.openTerminalLink
 	session.term.write([]byte("go \x1b]8;id=docs;https://example.test/docs\x1b\\documentation\x1b]8;;\x07 now"))
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	x, y := cellPoint(geometry, 0, 5, state.cellWidth, state.cellHeight)
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
@@ -53,7 +53,7 @@ func TestTerminalLinkHitHoverPaintAndClick(t *testing.T) {
 	session.term.write([]byte("go https://example.test/a now"))
 	var opened []string
 	session.term.openLink = func(target string) { opened = append(opened, target) }
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	x, y := cellPoint(geometry, 0, 5, state.cellWidth, state.cellHeight)
 
 	var canvas gfx.Canvas
@@ -115,7 +115,7 @@ func TestTerminalLinkHoverChecksTheNextLineAfterALinklessOne(t *testing.T) {
 	state, session, geometry := selectionState()
 	state.terminalLinkPlainClick = true
 	session.term.write([]byte("no links here\r\nsee https://example.test/x now"))
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 
 	emptyX, emptyY := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hit, X: emptyX, Y: emptyY, Viewport: state.viewport})
@@ -150,7 +150,7 @@ func TestTerminalLinkShiftSelectionAndRemoteMouseTakePriority(t *testing.T) {
 			session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
 			opened := ""
 			session.term.openLink = func(target string) { opened = target }
-			hit := hitTerminalList.At(int(session.ID))
+			hit := terminalTestHit(state, session)
 			startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 			endX, endY := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
 
@@ -179,7 +179,7 @@ func TestTerminalLinkShiftSelectionAndRemoteMouseTakePriority(t *testing.T) {
 func TestTerminalLinkSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, geometry := selectionState()
 	session.term.write([]byte("go https://example.test/a now"))
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	x, y := cellPoint(geometry, 0, 5, state.cellWidth, state.cellHeight)
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hit, X: x, Y: y, Viewport: state.viewport})
 
@@ -224,7 +224,7 @@ func TestTerminalLinkOpensOnlyWithTheModifierUnlessPlainClicksAreChosen(t *testi
 			session.term.write([]byte("go https://example.test/a now"))
 			opened := ""
 			session.term.openLink = func(target string) { opened = target }
-			hit := hitTerminalList.At(int(session.ID))
+			hit := terminalTestHit(state, session)
 			x, y := cellPoint(geometry, 0, 5, state.cellWidth, state.cellHeight)
 
 			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hit, Modifiers: test.modifiers, X: x, Y: y, Viewport: state.viewport})

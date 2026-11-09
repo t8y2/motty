@@ -42,8 +42,16 @@ type secretsUI struct {
 	// actions is where Settings lays out its buttons, so painting them keeps no
 	// slice of its own.
 	actions [3]components.ButtonAction
-	// layout lays out the body of the vault's dialogs, one at a time.
+	// layout lays out the save box under a secret field; it is the Frame the
+	// other password dialogs still use.
 	layout ui.View
+	// unlockPage and forgetPage declare the bodies of the vault's two dialogs.
+	// Each is made on the dialog's first paint and kept, so a repaint reuses it.
+	unlockPage, forgetPage *ui.Page
+	unlockView, forgetView func(ui.C)
+	unlockField            ui.Box // the slot the unlock field is painted into
+	forgetText             string // the description the forget body wraps
+	forgetLines            int
 }
 
 // secretPurpose says what a secret is for: its name in the vault, and the
@@ -337,6 +345,50 @@ func (state *State) submitVaultUnlock() {
 	state.showNextPrompt()
 }
 
+// The vault dialogs' bodies are pages of their own: one root each, so the two
+// never share names in the window's Tree.
+const (
+	vaultUnlockRoot = "vault-unlock"
+	vaultForgetRoot = "vault-forget"
+)
+
+// vaultUnlockPage makes the page the unlock dialog's body is declared in.
+func (state *State) vaultUnlockPage() *ui.Page {
+	secrets := &state.secrets
+	if secrets.unlockPage == nil {
+		secrets.unlockPage = ui.NewPage(ui.PageConfig{Root: vaultUnlockRoot, Theme: &state.theme})
+		secrets.unlockView = state.declareVaultUnlockBody
+	}
+	return secrets.unlockPage
+}
+
+// declareVaultUnlockBody lays out the unlock dialog: the master password field,
+// painted by paintSecretInput into the slot it reserves, and the error under it.
+func (state *State) declareVaultUnlockBody(c ui.C) {
+	secrets := &state.secrets
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
+		secrets.unlockField = ui.Slot(c).Height(62)
+		state.problemLineC(c, secrets.dialogError)
+	})
+}
+
+// vaultForgetPage makes the page the forget dialog's body is declared in.
+func (state *State) vaultForgetPage() *ui.Page {
+	secrets := &state.secrets
+	if secrets.forgetPage == nil {
+		secrets.forgetPage = ui.NewPage(ui.PageConfig{Root: vaultForgetRoot, Theme: &state.theme})
+		secrets.forgetView = state.declareVaultForgetBody
+	}
+	return secrets.forgetPage
+}
+
+// declareVaultForgetBody lays out the forget dialog's explanation, wrapped to
+// the lines the dialog's height was worked out from.
+func (state *State) declareVaultForgetBody(c ui.C) {
+	secrets := &state.secrets
+	ui.Paragraph(c, secrets.forgetText, secrets.forgetLines).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
+}
+
 func (state *State) paintVaultUnlockDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages, state.Theme()
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
@@ -345,14 +397,9 @@ func (state *State) paintVaultUnlockDialog(canvas *gfx.Canvas, viewport gfx.Rect
 		ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: withError(66, state.secrets.dialogError),
 	})
 	layout := dialog.Begin(m.VaultUnlockTitle, m.VaultConvertDescription)
-	var field ui.Box
-	f := state.secrets.layout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
-		field = f.Slot().Height(62)
-		state.problemLine(f, state.secrets.dialogError)
-	})
-	f.End()
-	content := components.BeginField(canvas, theme, field.Rect()).Paint(m.VaultUnlockLabel, "", "")
+	page := state.vaultUnlockPage()
+	page.Draw(canvas, layout.Body, state.secrets.unlockView)
+	content := components.BeginField(canvas, theme, state.secrets.unlockField.Rect()).Paint(m.VaultUnlockLabel, "", "")
 	value := state.secrets.unlock.String()
 	focused := canvas.Focused() == hitVaultUnlockField
 	state.paintSecretInput(canvas, content, components.InputSnapshot{
@@ -405,9 +452,9 @@ func (state *State) paintVaultForgetDialog(canvas *gfx.Canvas, viewport gfx.Rect
 		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: float32(len(lines))*21 - 1,
 	})
 	layout := dialog.Begin(m.VaultForgetTitle, "")
-	f := state.secrets.layout.Begin(canvas, state.Theme(), layout.Body)
-	f.Paragraph(description, len(wrapped)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
-	f.End()
+	state.secrets.forgetText, state.secrets.forgetLines = description, len(wrapped)
+	page := state.vaultForgetPage()
+	page.Draw(canvas, layout.Body, state.secrets.forgetView)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitVaultForgetCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitVaultForgetConfirm, Label: m.VaultForgetConfirm, Variant: components.ButtonDestructive},
@@ -525,6 +572,13 @@ func (state *State) paintSaveBoxAt(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.I
 func (state *State) problemLine(f *ui.Frame, problem string) {
 	if problem != "" {
 		f.Text(problem).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
+	}
+}
+
+// problemLineC is problemLine for a dialog body declared as a page.
+func (state *State) problemLineC(c ui.C, problem string) {
+	if problem != "" {
+		ui.Text(c, problem).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
 	}
 }
 

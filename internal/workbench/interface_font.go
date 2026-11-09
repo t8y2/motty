@@ -170,15 +170,15 @@ func (state *State) openInterfaceFontPicker() {
 	state.openPicker(pickInterfaceFont)
 }
 
-// paintInterfaceFontSample is the picker's sample for the interface: the
+// declareInterfaceFontSample is the picker's sample for the interface: the
 // highlighted family set in itself. The Default row has no family to set it in,
 // so its sample is drawn in the interface font as it is, proportional like the
 // rest of the window.
-func (state *State) paintInterfaceFontSample(f *ui.Frame, entry fontEntry) {
+func (state *State) declareInterfaceFontSample(c ui.C, entry fontEntry) {
 	pal := state.pal
-	f.Column().Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
-		first := f.Text(interfaceFontSample).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20).Height(20)
-		second := f.Text(interfaceFontSample2).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(20).Height(20)
+	ui.Column(c).Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
+		first := ui.Text(c, interfaceFontSample).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20).Height(20)
+		second := ui.Text(c, interfaceFontSample2).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(20).Height(20)
 		if entry.family != "" {
 			face := gfx.MonoFamily(entry.family)
 			first.MonoFace(face)

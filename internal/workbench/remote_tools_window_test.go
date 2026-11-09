@@ -169,7 +169,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if !movable {
 			t.Fatal("remote tools titlebar cannot drag the window")
 		}
-		if tab, ok := hitByID(&canvas, hitRemoteTabProcesses); !ok || tab.Bounds.Y < TitlebarHeight {
+		if tab, ok := settingsChoiceIn(&canvas, w.owner.messages.Tools.RemoteTabProcesses); !ok || tab.Bounds.Y < TitlebarHeight {
 			t.Fatal("remote tools tabs overlap the window titlebar")
 		}
 		if len(w.ui.remote.rows) != 3 || !strings.Contains(host.windows[0].config.Title, state.sessions[0].Address) {
@@ -204,7 +204,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if server.ran("kill -KILL 2211") != 1 || otherServer.ran("kill") != 0 {
 			t.Fatal("confirmation operated on the selected main tab instead of the captured server")
 		}
-		w.click(hitRemoteTabImages)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabImages)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		w.click(hitRemotePull)
 		input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitFormFieldList.At(0)})
@@ -228,7 +228,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		peerShell.say("\x1b[0m")
 		state.Wake()
 		state.broadcast = state.deck.ActiveWorkspace()
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
 		w.ui.remote.auto.enabled = true
@@ -308,7 +308,7 @@ func TestRemoteProcessButtonOpensProcessTabAndReusesToolsWindow(t *testing.T) {
 			t.Fatalf("process button opened tab %v with owner modal %v", w.ui.remote.tab, state.modal)
 		}
 
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
 		state.Click(hitProcessToolsOpen)
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteProcesses })
@@ -332,7 +332,7 @@ func TestRemoteNativeWindowContainerShellUsesItsOriginalConnection(t *testing.T)
 		original.mu.Unlock()
 		state.openRemoteTools(source)
 		w := state.remoteWindows[0]
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		state.activeSessionID = 0
 		selectRemoteToolsWindowRow(w, 0)
@@ -406,7 +406,7 @@ func TestRemoteNativeWindowReopenAndRestoreReadTheHostAgain(t *testing.T) {
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if len(w.ui.remote.rows) != 2 {
 			t.Fatalf("initial rows = %d", len(w.ui.remote.rows))
@@ -466,4 +466,20 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 			}
 		}
 	})
+}
+
+// clickRemoteTabChoice clicks one of the remote tools window's tabs by label.
+// The tab switch is a page Choice, so the click is applied in its event pass.
+func clickRemoteTabChoice(t *testing.T, w *remoteToolsWindow, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 1100, Height: 780}
+	var canvas gfx.Canvas
+	w.paint(&canvas, size)
+	hit, ok := settingsChoiceIn(&canvas, label)
+	if !ok {
+		t.Fatalf("no remote tab labeled %q", label)
+	}
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	w.paint(&canvas, size)
+	canvas.EndEventPass()
 }

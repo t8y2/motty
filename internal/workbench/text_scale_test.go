@@ -19,10 +19,10 @@ func TestTextScaleStepsTheWholeWindow(t *testing.T) {
 	state.Click(hitSettings)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitSettingsTextRegular); !ok {
+	if _, ok := settingsChoiceIn(&canvas, state.messages.SettingsTextSizeRegular); !ok {
 		t.Fatal("the settings page shows no interface text size choice")
 	}
-	state.Click(hitSettingsTextLarge)
+	clickSettingsChoice(t, state, state.messages.SettingsTextSizeLarge)
 	if state.textScale != textScaleLarge {
 		t.Fatalf("the choice did not stick: %v", state.textScale)
 	}
@@ -37,14 +37,14 @@ func TestTextScaleStepsTheWholeWindow(t *testing.T) {
 	if barTitleSize <= float32(13) {
 		t.Fatalf("the pane title stays at %v", barTitleSize)
 	}
-	state.Click(hitSettingsTextSmall)
+	clickSettingsChoice(t, state, state.messages.SettingsTextSizeSmall)
 	if metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
 		t.Fatalf("the small step leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
 	}
 	if state.theme.Metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
 		t.Fatalf("the theme did not follow the small step: %v", state.theme.Metrics.FontSizeM)
 	}
-	state.Click(hitSettingsTextRegular)
+	clickSettingsChoice(t, state, state.messages.SettingsTextSizeRegular)
 	if metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS || barTitleSize != 13 {
 		t.Fatalf("the regular step does not restore %v %v", metrics.FontSizeS, barTitleSize)
 	}

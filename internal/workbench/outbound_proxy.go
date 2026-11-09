@@ -30,11 +30,6 @@ var outboundProxyHits = tree.Feature("outbound-proxy")
 var (
 	hitSettingsProxyConfigure = tree.ID(outboundProxyHits, "settings-proxy-configure")
 	hitHostProxyConfigure     = tree.ID(outboundProxyHits, "host-proxy-configure")
-	hitProxyKindInherit       = tree.ID(outboundProxyHits, "proxy-kind-inherit")
-	hitProxyKindNone          = tree.ID(outboundProxyHits, "proxy-kind-none")
-	hitProxyKindSOCKS5        = tree.ID(outboundProxyHits, "proxy-kind-socks5")
-	hitProxyKindHTTP          = tree.ID(outboundProxyHits, "proxy-kind-http")
-	hitProxyKindCommand       = tree.ID(outboundProxyHits, "proxy-kind-command")
 	hitOutboundProxyAddress   = tree.ID(outboundProxyHits, "outbound-proxy-address")
 	hitOutboundProxyUser      = tree.ID(outboundProxyHits, "outbound-proxy-user")
 	hitOutboundProxyPassword  = tree.ID(outboundProxyHits, "outbound-proxy-password")
@@ -72,11 +67,64 @@ type outboundProxyForm struct {
 	// unconfirmed is set while the dialog shows an imported proxy command that
 	// the user has not saved yet.
 	unconfirmed bool
+	// choice is the proxy kind the page Choice offers, derived from inherit and
+	// kind before every paint.
+	choice outboundProxyChoice
+	// kindPage declares the kind switch, and kindView caches its view.
+	kindPage *ui.Page
+	kindView func(ui.C)
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
 	textKind      sshconn.ProxyKind
 	textLanguage  i18n.Language
+}
+
+// outboundProxyChoice is one option of the proxy kind switch. inherit is the
+// host dialog's "use the global proxy"; command is the host-only proxy command.
+type outboundProxyChoice uint8
+
+const (
+	proxyChoiceInherit outboundProxyChoice = iota
+	proxyChoiceNone
+	proxyChoiceSOCKS5
+	proxyChoiceHTTP
+	proxyChoiceCommand
+)
+
+// selectedChoice derives the switch's value from the form.
+func (form *outboundProxyForm) selectedChoice() outboundProxyChoice {
+	if form.inherit {
+		return proxyChoiceInherit
+	}
+	switch form.kind {
+	case sshconn.ProxySOCKS5:
+		return proxyChoiceSOCKS5
+	case sshconn.ProxyHTTPConnect:
+		return proxyChoiceHTTP
+	case sshconn.ProxyCommand:
+		return proxyChoiceCommand
+	}
+	return proxyChoiceNone
+}
+
+// applyProxyChoice writes the switch's value back into the form.
+func (state *State) applyProxyChoice() {
+	form := &state.proxyForm
+	switch form.choice {
+	case proxyChoiceInherit:
+		form.inherit, form.kind = true, sshconn.ProxyNone
+	case proxyChoiceSOCKS5:
+		form.inherit, form.kind = false, sshconn.ProxySOCKS5
+	case proxyChoiceHTTP:
+		form.inherit, form.kind = false, sshconn.ProxyHTTPConnect
+	case proxyChoiceCommand:
+		if form.forHost {
+			form.inherit, form.kind = false, sshconn.ProxyCommand
+		}
+	default:
+		form.inherit, form.kind = false, sshconn.ProxyNone
+	}
 }
 
 func cloneOutboundProxy(proxy *outboundProxy) *outboundProxy {
@@ -362,24 +410,11 @@ func (state *State) loadProxyForm(saved outboundProxy, password string) {
 }
 
 func (state *State) clickOutboundProxy(id gfx.ID) {
-	form := &state.proxyForm
 	switch id {
-	case hitProxyKindInherit:
-		form.inherit, form.kind = true, sshconn.ProxyNone
-	case hitProxyKindNone:
-		form.inherit, form.kind = false, sshconn.ProxyNone
-	case hitProxyKindSOCKS5:
-		form.inherit, form.kind = false, sshconn.ProxySOCKS5
-	case hitProxyKindHTTP:
-		form.inherit, form.kind = false, sshconn.ProxyHTTPConnect
-	case hitProxyKindCommand:
-		if form.forHost {
-			form.inherit, form.kind = false, sshconn.ProxyCommand
-		}
 	case hitOutboundProxySubmit:
 		state.submitOutboundProxy()
 	case hitOutboundProxyCancel, hitOutboundProxyClose:
-		if form.forHost {
+		if state.proxyForm.forHost {
 			state.modal = modalNewHost
 		} else {
 			state.closeModal()
@@ -471,6 +506,57 @@ func (state *State) submitOutboundProxy() {
 	state.save()
 }
 
+// outboundProxyKindRoot names the proxy kind switch in the window's Tree.
+const outboundProxyKindRoot = "outbound-proxy-kind"
+
+var (
+	// The host dialog also offers inheriting the global proxy and a proxy
+	// command; the global dialog offers only the kinds it can carry.
+	outboundProxyHostChoices   = [...]outboundProxyChoice{proxyChoiceInherit, proxyChoiceNone, proxyChoiceSOCKS5, proxyChoiceHTTP, proxyChoiceCommand}
+	outboundProxyGlobalChoices = [...]outboundProxyChoice{proxyChoiceNone, proxyChoiceSOCKS5, proxyChoiceHTTP}
+)
+
+func (state *State) outboundProxyChoiceLabel(choice outboundProxyChoice) string {
+	m := state.messages.Tools
+	switch choice {
+	case proxyChoiceInherit:
+		return m.HostProxyInherit
+	case proxyChoiceSOCKS5:
+		return m.ProxySOCKS5
+	case proxyChoiceHTTP:
+		return m.ProxyHTTP
+	case proxyChoiceCommand:
+		return m.ProxyCommand
+	}
+	if state.proxyForm.forHost {
+		return m.HostProxyDirect
+	}
+	return m.ProxyNone
+}
+
+// drawOutboundProxyKind paints the proxy kind switch in its slot. It is a page
+// Choice, so its arrows move between the options.
+func (state *State) drawOutboundProxyKind(canvas *gfx.Canvas, bounds gfx.Rect) {
+	form := &state.proxyForm
+	form.choice = form.selectedChoice()
+	if form.kindPage == nil {
+		form.kindPage = ui.NewPage(ui.PageConfig{Root: outboundProxyKindRoot, Theme: &state.theme})
+		form.kindView = state.declareOutboundProxyKind
+	}
+	form.kindPage.Draw(canvas, bounds, form.kindView)
+}
+
+func (state *State) declareOutboundProxyKind(c ui.C) {
+	form := &state.proxyForm
+	choices := outboundProxyHostChoices[:]
+	if !form.forHost {
+		choices = outboundProxyGlobalChoices[:]
+	}
+	if ui.Choice(c, &form.choice, choices, state.outboundProxyChoiceLabel).Fill().Changed() {
+		state.applyProxyChoice()
+	}
+}
+
 func (state *State) paintOutboundProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.proxyForm
@@ -488,31 +574,6 @@ func (state *State) paintOutboundProxyDialog(canvas *gfx.Canvas, viewport gfx.Re
 		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: withError(312, form.dialogError), // the kind and four fields
 	})
 	layout := dialog.Begin(title, description)
-	options := [...]components.SegmentOption{
-		{ID: hitProxyKindInherit, Label: m.HostProxyInherit},
-		{ID: hitProxyKindNone, Label: m.HostProxyDirect},
-		{ID: hitProxyKindSOCKS5, Label: m.ProxySOCKS5},
-		{ID: hitProxyKindHTTP, Label: m.ProxyHTTP},
-		{ID: hitProxyKindCommand, Label: m.ProxyCommand},
-	}
-	selected := hitProxyKindNone
-	if form.inherit {
-		selected = hitProxyKindInherit
-	} else {
-		switch form.kind {
-		case sshconn.ProxySOCKS5:
-			selected = hitProxyKindSOCKS5
-		case sshconn.ProxyHTTPConnect:
-			selected = hitProxyKindHTTP
-		case sshconn.ProxyCommand:
-			selected = hitProxyKindCommand
-		}
-	}
-	visibleOptions := options[:]
-	if !form.forHost {
-		options[1].Label = m.ProxyNone
-		visibleOptions = options[1 : len(options)-1]
-	}
 	disabled := form.inherit || form.kind == sshconn.ProxyNone
 	command := form.kind == sshconn.ProxyCommand
 	addressLabel, addressPlaceholder := m.ProxyAddress, "127.0.0.1:1080"
@@ -542,7 +603,7 @@ func (state *State) paintOutboundProxyDialog(canvas *gfx.Canvas, viewport gfx.Re
 		state.problemLine(f, form.dialogError)
 	})
 	f.End()
-	components.BeginSegmentedControl(canvas, theme, kind.Rect(), visibleOptions, selected).Paint()
+	state.drawOutboundProxyKind(canvas, kind.Rect())
 	for index, entry := range entries {
 		content := components.BeginField(canvas, theme, slots[index].Rect()).Paint(entry.label, "", "")
 		value := entry.editor.String()

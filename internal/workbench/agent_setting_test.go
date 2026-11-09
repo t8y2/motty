@@ -33,13 +33,14 @@ func TestAgentChoiceIsSavedAndResolved(t *testing.T) {
 func TestAgentSettingReachesConnectionsAndSurvivesARestart(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
-	state.activeSection, state.settingsCategory = sectionSettings, settingsConnection
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsConnection)
 
-	state.Click(hitSettingsAgentBitwarden)
+	clickSettingsChoice(t, state, state.settingsAgentKindLabel(agentKindBitwarden))
 	if state.sshAgent.kind != agentKindBitwarden {
 		t.Fatal("the Bitwarden choice was not taken")
 	}
-	state.Click(hitSettingsAgentCustom)
+	clickSettingsChoice(t, state, state.settingsAgentKindLabel(agentKindCustom))
 	if state.modal != modalForm {
 		t.Fatal("Custom did not ask for a path")
 	}
@@ -64,8 +65,9 @@ func TestAgentSettingReachesConnectionsAndSurvivesARestart(t *testing.T) {
 		t.Fatalf("after a restart the agent is %+v", restarted.sshAgent)
 	}
 
-	state.activeSection = sectionSettings
-	state.Click(hitSettingsAgentSystem)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsConnection)
+	clickSettingsChoice(t, state, state.settingsAgentKindLabel(agentKindSystem))
 	if state.sshAgent != (agentChoice{}) {
 		t.Fatal("System did not return to the default")
 	}

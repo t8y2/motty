@@ -22,9 +22,6 @@ import (
 var (
 	hitSnippetSendInput  = tree.ID(commandPaletteHits, "send-input")
 	hitSnippetSendButton = tree.ID(commandPaletteHits, "send-button")
-	hitSendTargetCurrent = tree.ID(commandPaletteHits, "send-target-current")
-	hitSendTargetAll     = tree.ID(commandPaletteHits, "send-target-all")
-	hitSendTargetChosen  = tree.ID(commandPaletteHits, "send-target-chosen")
 	hitSendRun           = tree.ID(commandPaletteHits, "send-run")
 	hitSendPickList      = tree.Sub(commandPaletteHits, tree.Name("send-target-session")) // + session id
 )
@@ -53,26 +50,18 @@ func (sender *snippetSender) runs() bool { return !sender.noRun }
 
 func (sender *snippetSender) isChosen(id uint32) bool { return slices.Contains(sender.chosen, id) }
 
-// sendOptions is one list for painting and for the keyboard.
-func (state *State) sendTargetOptions() [3]components.SegmentOption {
-	m := state.messages.Tools
-	return [3]components.SegmentOption{
-		{ID: hitSendTargetCurrent, Label: m.SendTargetCurrent},
-		{ID: hitSendTargetAll, Label: m.SendTargetAll},
-		{ID: hitSendTargetChosen, Label: m.SendTargetChosen},
-	}
-}
+// sendTargetChoices are the form's targets, in the order they are shown.
+var sendTargetChoices = [...]sendTarget{sendCurrent, sendAll, sendChosen}
 
-func sendTargetOf(id gfx.ID) (sendTarget, bool) {
-	switch id {
-	case hitSendTargetCurrent:
-		return sendCurrent, true
-	case hitSendTargetAll:
-		return sendAll, true
-	case hitSendTargetChosen:
-		return sendChosen, true
+func (state *State) sendTargetLabel(target sendTarget) string {
+	m := state.messages.Tools
+	switch target {
+	case sendAll:
+		return m.SendTargetAll
+	case sendChosen:
+		return m.SendTargetChosen
 	}
-	return 0, false
+	return m.SendTargetCurrent
 }
 
 // canTakeCommand reports whether a command typed now would reach this session.
@@ -100,14 +89,9 @@ func (state *State) sendTargets() []*Session {
 	return targets
 }
 
-// setSendTarget switches the form's target and, for the choice of terminals,
-// the picker's list to the terminals themselves.
-func (state *State) setSendTarget(target sendTarget) {
-	sender := &state.snippetSend
-	if sender.target == target {
-		return
-	}
-	sender.target = target
+// applySendTarget switches the picker's list for the target the page's choice
+// already wrote: the choice of terminals lists the terminals themselves.
+func (state *State) applySendTarget() {
 	palette := &state.commandPalette
 	palette.search = text.Editor{}
 	palette.filtered = false
@@ -207,10 +191,6 @@ func (state *State) clickSnippetSend(id gfx.ID) bool {
 	if !state.commandPalette.snippets {
 		return false
 	}
-	if target, ok := sendTargetOf(id); ok {
-		state.setSendTarget(target)
-		return true
-	}
 	switch id {
 	case hitSendRun:
 		state.snippetSend.noRun = !state.snippetSend.noRun
@@ -223,8 +203,9 @@ func (state *State) clickSnippetSend(id gfx.ID) bool {
 	return true
 }
 
-// paintSnippetSend paints the send form into the boxes the palette declared.
-func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, targets ui.Box, run ui.Box) {
+// paintSnippetSend paints the send form's fields into the boxes the palette
+// declared. The target switch is a page Choice declared with the body.
+func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, run ui.Box) {
 	m, theme := state.messages.Tools, state.Theme()
 	sender := &state.snippetSend
 	value := sender.input.String()
@@ -237,8 +218,5 @@ func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, targets 
 	components.BeginButtonRow(canvas, theme, button.Rect()).Paint(components.ButtonAction{
 		ID: hitSnippetSendButton, Label: m.SendCommandButton, Disabled: empty,
 	})
-	options := state.sendTargetOptions()
-	selected := [...]gfx.ID{sendCurrent: hitSendTargetCurrent, sendAll: hitSendTargetAll, sendChosen: hitSendTargetChosen}[sender.target]
-	components.BeginSegmentedControl(canvas, theme, targets.Rect(), options[:], selected).Paint()
 	state.paintDialogCheckbox(canvas, hitSendRun, m.SendRun, sender.runs(), run)
 }
