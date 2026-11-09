@@ -623,6 +623,7 @@ func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if panel.page == nil {
 		panel.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiPanelPageRoot, Theme: &state.theme})
 		panel.pageView = state.declareAIPanelPage
+		panel.composerDraw = state.paintAIComposerTextarea
 	}
 	panel.page.Draw(canvas, bounds, panel.pageView)
 
@@ -1353,7 +1354,6 @@ type aiCopySlot struct {
 
 // aiFlexViews are the layouts the assistant's panel is declared with.
 type aiFlexViews struct {
-	send                 ui.View
 	shell, barButton     ui.View
 	history, historyRows ui.View
 	messages             ui.View

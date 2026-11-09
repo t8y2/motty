@@ -467,32 +467,34 @@ func (state *State) declareAIChip(c ui.C, chip aiChip) {
 
 // declareAIAttachButton declares the paperclip in the message box that opens the
 // dialog for files to attach.
-func (state *State) declareAIAttachButton(f *ui.Frame) {
+func (state *State) declareAIAttachButton(c ui.C) {
 	pal, label := state.pal, state.messages.AIPanel.Attach
 	foreground := pal.muted
 	var fill gfx.Color
-	switch {
-	case f.Canvas().Pressed() == hitAIAttach:
-		fill, foreground = pal.surfaceHot, pal.text
-	case f.Canvas().Hovered() == hitAIAttach:
-		fill = pal.surfaceSoft
+	if canvas := c.Canvas(); canvas != nil {
+		switch {
+		case canvas.Pressed() == hitAIAttach:
+			fill, foreground = pal.surfaceHot, pal.text
+		case canvas.Hovered() == hitAIAttach:
+			fill = pal.surfaceSoft
+		}
 	}
-	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
+	ui.Column(c).Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
 		HitWith(hitAIAttach, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
+		ui.Icon(c, lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
 	})
 }
 
-func (state *State) declareAIUploadButton(f *ui.Frame) {
+func (state *State) declareAIUploadButton(c ui.C) {
 	pal, label := state.pal, state.messages.AIPanel.Upload
 	foreground := pal.muted
 	var fill gfx.Color
-	if f.Canvas().Pressed() == hitAIUpload || f.Canvas().Hovered() == hitAIUpload {
+	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == hitAIUpload || canvas.Hovered() == hitAIUpload) {
 		fill, foreground = pal.surfaceSoft, pal.text
 	}
-	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
+	ui.Column(c).Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
 		HitWith(hitAIUpload, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[iconUpload]).Size(16, 16).Color(foreground)
+		ui.Icon(c, lucideIcons[iconUpload]).Size(16, 16).Color(foreground)
 	})
 }
 

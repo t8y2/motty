@@ -379,11 +379,13 @@ type aiPanel struct {
 	// page declares the panel's chrome; pageView is its declaration kept so a
 	// paint makes no method value. body holds what the page left for the
 	// hand-painted controls and lists, and pageScratch the values its
-	// declaration reads.
-	page        *ui.Page
-	pageView    func(ui.C)
-	body        aiBody
-	pageScratch aiPanelPageScratch
+	// declaration reads. composerDraw paints the native textarea into the box
+	// the page reserved, and is kept for the same reason.
+	page         *ui.Page
+	pageView     func(ui.C)
+	composerDraw func(*ui.DrawContext)
+	body         aiBody
+	pageScratch  aiPanelPageScratch
 
 	// importPages is the provider import dialog's page and the slots its
 	// hand-painted buttons go into.

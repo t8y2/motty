@@ -17,9 +17,9 @@ import (
 //
 // The preview is one list, not pages. Importable rows lead and unavailable rows
 // follow under one explanation heading, so the selectable part stays together
-// and the reasons read as a reference block. The list scrolls rather than
-// splitting into pages; settingsRow owns that scroll state and State.Scroll
-// hands it the wheel while this dialog is open.
+// and the reasons read as a reference block. The list is a scroll area of the
+// preview's own page: the page takes the wheel (aiImportWheel) and keeps the
+// offset, and the scrollbar reads the state the page's layout reported.
 
 const (
 	aiImportSourceRowHeight   = float32(64)
@@ -60,7 +60,8 @@ type aiImportPages struct {
 	previewPage *ui.Page
 	previewView func(ui.C)
 	listHeight  float32
-	list        ui.Box
+	list        ui.Box // the page's scroll area, for its state after a layout
+	listSet     bool
 
 	resultPage *ui.Page
 	resultView func(ui.C)
@@ -223,11 +224,9 @@ func (state *State) paintAIImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) 
 	pages.previewPage.Draw(canvas, layout.Body, pages.previewView)
 
 	if total > 0 {
-		// The candidate list keeps the scroll state State.Scroll and the
-		// scrollbar read, so it stays declared by the settings row's view in
-		// the slot the page left for it.
+		// The candidate list is the preview page's scroll area; the wheel goes
+		// to that page (aiImportWheel) and the scrollbar reads its state.
 		area := pages.list.Rect()
-		state.paintAIImportList(canvas, theme, area, listHeight)
 		if contentHeight > listHeight {
 			state.paintAIImportScrollbar(canvas, area)
 		}
@@ -240,14 +239,15 @@ func (state *State) paintAIImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) 
 }
 
 // declareAIImportPreviewBody declares the count above the candidate list, the
-// list's slot, and any read error. The rows themselves are declared by
-// paintAIImportList into the slot.
+// list itself, and any read error. The list is a scroll area of this page, so
+// the wheel it takes and the offset it keeps belong to the dialog step.
 func (state *State) declareAIImportPreviewBody(c ui.C) {
 	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
 	pages := &state.ai.panel.importPages
 	total := len(cfg.importCandidates)
 	importable := aiImportImportableCount(cfg.importCandidates)
 	selected := state.aiImportSelectedCount()
+	pages.list, pages.listSet = ui.Box{}, false
 	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
 		// Only a full selection earns the check. A partial one keeps the dot,
 		// so the icon never claims more than the count says.
@@ -272,7 +272,7 @@ func (state *State) declareAIImportPreviewBody(c ui.C) {
 				ui.Text(c, m.ImportNoCandidates).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 			})
 		} else {
-			pages.list = ui.Slot(c).Height(pages.listHeight).FillWidth()
+			state.declareAIImportList(c)
 		}
 
 		if cfg.importErr != "" {
@@ -285,85 +285,106 @@ func (state *State) declareAIImportPreviewBody(c ui.C) {
 	})
 }
 
-// paintAIImportList declares the scrollable candidates in the slot the page
-// left, under the settings row's view so the wheel and the scrollbar keep the
-// state they read.
-func (state *State) paintAIImportList(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, listHeight float32) {
+// declareAIImportList declares the scrollable candidates: the importable rows
+// first, then one heading and the entries that cannot be written. It is the
+// page's scroll area, so the offset lives in the page's own view.
+func (state *State) declareAIImportList(c ui.C) {
 	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
+	pages := &state.ai.panel.importPages
 	importable := aiImportImportableCount(cfg.importCandidates)
 	unavailable := len(cfg.importCandidates) - importable
-	f := state.settingsRow.Begin(canvas, theme, area)
-	f.Column().Fill().Children(func() {
-		list := f.ScrollArea(hitAISetImportList).Height(listHeight).FillWidth().Gap(aiImportRowGap)
-		list.HitWith(hitAISetImportList, m.ImportPreviewTitle, gfx.HitOptions{Role: gfx.RoleGroup})
-		list.Children(func() {
-			for index, candidate := range cfg.importCandidates {
-				if candidate.Importable() {
-					state.aiImportCandidateRow(f, index, candidate, cfg.importSelected[index])
-					continue
-				}
-				if index == importable {
-					f.Row().Height(aiImportGroupHeight).MarginSides(4, aiImportRowReserve, 0, 2).
-						Gap(8).Items(ui.Center).Children(func() {
-						f.Icon(icons.CircleAlert).Size(13, 13).Color(pal.warning).Shrink(0)
-						f.Text(fmt.Sprintf(m.ImportUnavailableFmt, unavailable)).FontSize(metrics.FontSizeS).
-							Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16)
-					})
-				}
-				state.aiImportUnavailableRow(f, candidate)
+	list := c.Frame().ScrollArea(hitAISetImportList).Height(pages.listHeight).FillWidth().Shrink(0).Gap(aiImportRowGap)
+	list.HitWith(hitAISetImportList, m.ImportPreviewTitle, gfx.HitOptions{Role: gfx.RoleGroup})
+	list.Children(func() {
+		for index, candidate := range cfg.importCandidates {
+			if candidate.Importable() {
+				state.aiImportCandidateRow(c, index, candidate, cfg.importSelected[index])
+				continue
 			}
-		})
+			if index == importable {
+				ui.Row(c).Height(aiImportGroupHeight).MarginSides(4, aiImportRowReserve, 0, 2).
+					Gap(8).Items(ui.Center).Children(func() {
+					ui.Icon(c, icons.CircleAlert).Size(13, 13).Color(pal.warning).Shrink(0)
+					ui.Text(c, fmt.Sprintf(m.ImportUnavailableFmt, unavailable)).FontSize(metrics.FontSizeS).
+						Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16)
+				})
+			}
+			state.aiImportUnavailableRow(c, candidate)
+		}
 	})
-	f.End()
+	pages.list, pages.listSet = list, true
 }
 
-// aiImportCandidateRow paints one selectable provider. A ticked row carries a
+// aiImportListScroll is the candidate list's scroll state, nil when the list
+// was not declared in the last paint.
+func (state *State) aiImportListScroll() *ui.ScrollState {
+	pages := &state.ai.panel.importPages
+	if !pages.listSet {
+		return nil
+	}
+	return pages.list.ScrollState()
+}
+
+// aiImportWheel gives the wheel to the preview page, which scrolls the
+// candidate list (and nothing behind the dialog). State.Scroll hands the wheel
+// here while the preview is open.
+func (state *State) aiImportWheel(event gfx.ScrollEvent) gfx.EventResult {
+	if pages := &state.ai.panel.importPages; pages.previewPage != nil {
+		return pages.previewPage.Wheel(event)
+	}
+	return gfx.EventResult{}
+}
+
+// aiImportCandidateRow declares one selectable provider. A ticked row carries a
 // quiet surface tint, so the selection is legible at a glance without turning
 // the checkbox into the only mark of state.
-func (state *State) aiImportCandidateRow(f *ui.Frame, index int, candidate aiproviderimport.Candidate, checked bool) {
+func (state *State) aiImportCandidateRow(c ui.C, index int, candidate aiproviderimport.Candidate, checked bool) {
 	background := gfx.Color{}
 	if checked {
 		background = state.pal.surfaceSoft
 	}
-	f.Row().Height(aiImportRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
+	ui.Row(c).Height(aiImportRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
 		PadSides(0, 10, 0, 10).Gap(10).Items(ui.Center).Background(background).
 		Radius(radius.control).Children(func() {
-		f.Checkbox(hitAISetImportRow.At(index), checked).Label(candidate.Name)
-		f.Icon(aiImportKindIcon(candidate.Kind)).Size(18, 18).Color(state.pal.muted).Shrink(0)
-		f.Column().Grow(1).Shrink(1).Children(func() {
-			f.Text(candidate.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+		// The checkbox keeps the identity the central click dispatcher toggles;
+		// it is a Frame control because the choice lives in the import state,
+		// not in a bool a page binding could own.
+		c.Frame().Checkbox(hitAISetImportRow.At(index), checked).Label(candidate.Name)
+		ui.Icon(c, aiImportKindIcon(candidate.Kind)).Size(18, 18).Color(state.pal.muted).Shrink(0)
+		ui.Column(c).Grow(1).Shrink(1).Children(func() {
+			ui.Text(c, candidate.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 				Color(state.pal.text).LineHeight(20).Ellipsis()
-			f.Text(state.aiImportCandidateDetail(candidate)).FontSize(metrics.FontSizeS).
+			ui.Text(c, state.aiImportCandidateDetail(candidate)).FontSize(metrics.FontSizeS).
 				Color(state.pal.muted).LineHeight(16).Ellipsis()
 		})
 	})
 }
 
-// aiImportUnavailableRow paints an entry that cannot be written. It has no
+// aiImportUnavailableRow declares an entry that cannot be written. It has no
 // checkbox: the row is information, not a disabled control, and the reason sits
 // on its second line.
-func (state *State) aiImportUnavailableRow(f *ui.Frame, candidate aiproviderimport.Candidate) {
-	f.Row().Height(aiImportUnavailableRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
+func (state *State) aiImportUnavailableRow(c ui.C, candidate aiproviderimport.Candidate) {
+	ui.Row(c).Height(aiImportUnavailableRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
 		PadSides(0, 10, 0, 10).Gap(10).Items(ui.Center).Children(func() {
-		f.Slot().Size(16, 16)
-		f.Icon(icons.CircleAlert).Size(16, 16).Color(state.pal.warning).Shrink(0)
+		ui.Slot(c).Size(16, 16)
+		ui.Icon(c, icons.CircleAlert).Size(16, 16).Color(state.pal.warning).Shrink(0)
 		// The reason rows skip the checkbox and the kind tile. The left margin
 		// puts their names on the same column as the importable rows, so the
 		// block still reads as one list.
-		f.Column().Grow(1).Shrink(1).MarginSides(0, 0, 0, 26).Children(func() {
-			f.Text(candidate.Name).FontSize(metrics.FontSizeM).Color(state.pal.muted).
+		ui.Column(c).Grow(1).Shrink(1).MarginSides(0, 0, 0, 26).Children(func() {
+			ui.Text(c, candidate.Name).FontSize(metrics.FontSizeM).Color(state.pal.muted).
 				LineHeight(19).Ellipsis()
-			f.Text(state.aiImportCandidateDetail(candidate)).FontSize(metrics.FontSizeS).
+			ui.Text(c, state.aiImportCandidateDetail(candidate)).FontSize(metrics.FontSizeS).
 				Color(state.pal.muted).LineHeight(16).Ellipsis()
 		})
 	})
 }
 
 // paintAIImportScrollbar is the list's only sign that there is more below. It
-// is painted from the scroll state the layout just reported, after the clip is
+// is painted from the state the page's layout reported, after the clip is
 // closed, so it does not move with the rows.
 func (state *State) paintAIImportScrollbar(canvas *gfx.Canvas, bounds gfx.Rect) {
-	scroll := state.settingsRow.ScrollState(hitAISetImportList)
+	scroll := state.aiImportListScroll()
 	if scroll == nil || scroll.Max() <= 0 || bounds.Height <= 12 {
 		return
 	}
