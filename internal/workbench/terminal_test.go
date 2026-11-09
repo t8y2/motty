@@ -522,8 +522,8 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	canvas, _ := paintedTexts(state)
 	hit, ok := hitByID(canvas, terminalHit(state, 0))
-	if !ok || hit.Role != gfx.RoleTerminal || !hit.Autofocus || !hit.Focusable {
-		t.Fatalf("terminal hit = %+v, %v", hit, ok)
+	if !ok || hit.Role != gfx.RoleTerminal || !hit.Focusable || canvas.FocusRequest() != terminalHit(state, 0) {
+		t.Fatalf("terminal hit = %+v, %v; focus request = %v", hit, ok, canvas.FocusRequest())
 	}
 	if hit.Label != "Terminal deploy@prod.example.com:22" {
 		t.Fatalf("label = %q", hit.Label)
