@@ -73,8 +73,7 @@ func (state *State) paintNewTabPage(canvas *gfx.Canvas, bounds gfx.Rect) {
 // and never closer than 16 to the top.
 func (state *State) declareNewTabPage(c ui.C) {
 	pal, m := state.pal, state.messages
-	f := c.Frame()
-	bounds := f.Bounds()
+	bounds := c.Bounds()
 	width := min(newTabCardWidth, bounds.Width-48)
 	room := int((bounds.Height - newTabTitle - newTabFooter - 48) / newTabRowHeight)
 	rows := min(max(room, 1), newTabMaxHosts+1)
@@ -96,13 +95,13 @@ func (state *State) declareNewTabPage(c ui.C) {
 				})
 			})
 			ui.Row(c).Shrink(0).Gap(8).MarginSides(0, 0, newTabFooter-48, 0).Children(func() {
-				chrome.newTabAdd = ui.Slot(c).Size(toolbarButtonWidth(f.Canvas(), m.AddHost, false), 32).Self(ui.Center)
-				chrome.newTabAll = ui.Slot(c).Size(toolbarButtonWidth(f.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
+				chrome.newTabAdd = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.AddHost, false), 32).Self(ui.Center)
+				chrome.newTabAll = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
 				chrome.newTabFooter = true
 			})
 		})
 	})
-	if canvas := f.Canvas(); canvas != nil {
+	if canvas := c.Canvas(); canvas != nil {
 		if canvas.Clicked(hitNewTabHostNew) {
 			state.openHostDialog()
 		}

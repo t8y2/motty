@@ -726,7 +726,7 @@ func (state *State) declareFontPickerRows(c ui.C) {
 	rows := len(fonts.filtered)
 	first := int(fonts.scroll / fontPickerRowStep)
 	last := min(rows, first+fontPickerVisibleRows+1)
-	c.Frame().Scroll(fonts.scroll).Fill().Children(func() {
+	ui.ScrollAt(c, fonts.scroll).Fill().Children(func() {
 		if top := float32(first) * fontPickerRowStep; top > 0 {
 			ui.Slot(c).Height(top)
 		}

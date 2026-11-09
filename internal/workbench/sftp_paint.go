@@ -968,8 +968,7 @@ func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view 
 		submitLabel = messages.SFTPEditReloadConfirm
 		initialFocus = hitSFTPDialogCancel
 	}
-	fieldDialog := view.dialog == sftpDialogCreateDirectory || view.dialog == sftpDialogRename || view.dialog == sftpDialogMove || view.dialog == sftpDialogChmod ||
-		view.dialog == sftpDialogSymlink || view.dialog == sftpDialogExtract || view.dialog == sftpDialogCompress
+	fieldDialog := sftpDialogShowsField(view.dialog)
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
 	body := float32(0) // a confirmation is only its text
 	switch {
@@ -993,33 +992,13 @@ func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view 
 		ContentSize:    gfx.Size{Width: 520}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(title, description)
-	var first, second ui.Box
-	var chmodBoxes [9]ui.Box
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
-	column := f.Column().Fill()
-	if showError {
-		column.Justify(ui.Center) // as a label in the whole body
+	if view.dialogPage == nil {
+		view.dialogPage = ui.NewPage(ui.PageConfig{Root: sftpDialogBodyRoot, Theme: &state.theme})
+		view.dialogView = func(c ui.C) { state.declareSFTPDialogBody(c, view) }
 	}
-	column.Children(func() {
-		switch {
-		case fieldDialog:
-			// One labelled input, two for a link: its name and where it points.
-			f.Column().Shrink(0).Gap(8).PadSides(6, 4, 0, 4).Children(func() {
-				first = f.Slot().Height(64).Shrink(0)
-				if view.dialog == sftpDialogSymlink {
-					second = f.Slot().Height(64).Shrink(0)
-				}
-				if view.dialog == sftpDialogChmod {
-					chmodBoxes = state.declareSFTPChmodGrid(f)
-				}
-			})
-		case showError:
-			f.Text(view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
-		}
-	})
-	f.End()
+	view.dialogPage.Draw(canvas, layout.Body, view.dialogView)
 	if fieldDialog {
-		field := components.BeginField(canvas, theme, first.Rect())
+		field := components.BeginField(canvas, theme, view.dialogFirst.Rect())
 		if view.dialogError != "" {
 			field = field.Invalid()
 		}
@@ -1034,10 +1013,10 @@ func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view 
 			PlatformEditing: focused && value != "",
 		})
 		if view.dialog == sftpDialogChmod {
-			state.paintSFTPChmodGrid(canvas, view, &chmodBoxes)
+			state.paintSFTPChmodGrid(canvas, view, &view.dialogChmod)
 		}
 		if view.dialog == sftpDialogSymlink {
-			second := components.BeginField(canvas, theme, second.Rect()).Paint(messages.Tools.LinkTarget, "", "")
+			second := components.BeginField(canvas, theme, view.dialogSecond.Rect()).Paint(messages.Tools.LinkTarget, "", "")
 			secondValue := view.dialogEditor2.String()
 			secondFocused := canvas.Focused() == hitSFTPDialogField2
 			components.PaintInput(canvas, theme, second, components.InputSnapshot{
@@ -1053,30 +1032,60 @@ func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view 
 	dialog.End()
 }
 
+// declareSFTPDialogBody lays out the dialog's body: one labelled input, two for
+// a link, the permission grid under a chmod field, or the error of a failed
+// move when that is what the dialog says. The parts painted by hand are kept in
+// view so the painter can fill the boxes the page laid out.
+func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
+	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
+	view.dialogFirst, view.dialogSecond = ui.Box{}, ui.Box{}
+	view.dialogChmod = [9]ui.Box{}
+	column := ui.Column(c).Fill()
+	if showError {
+		column.Justify(ui.Center) // as a label in the whole body
+	}
+	column.Children(func() {
+		switch {
+		case sftpDialogShowsField(view.dialog):
+			ui.Column(c).Shrink(0).Gap(8).PadSides(6, 4, 0, 4).Children(func() {
+				view.dialogFirst = ui.Slot(c).Height(64).Shrink(0)
+				if view.dialog == sftpDialogSymlink {
+					view.dialogSecond = ui.Slot(c).Height(64).Shrink(0)
+				}
+				if view.dialog == sftpDialogChmod {
+					view.dialogChmod = state.declareSFTPChmodGrid(c)
+				}
+			})
+		case showError:
+			ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+		}
+	})
+}
+
 // declareSFTPChmodGrid lays out the three permission rows (owner, group,
 // others × read, write, execute) under the octal field and captures the nine
 // checkbox slots; paintSFTPChmodGrid fills them in.
-func (state *State) declareSFTPChmodGrid(f *ui.Frame) [9]ui.Box {
+func (state *State) declareSFTPChmodGrid(c ui.C) [9]ui.Box {
 	m := state.messages
 	groups := [3]string{m.SFTPPermissionsOwner, m.SFTPPermissionsGroup, m.SFTPPermissionsOthers}
 	letters := [3]string{"R", "W", "X"}
 	var boxes [9]ui.Box
-	grid := f.Column().Shrink(0).Gap(4)
+	grid := ui.Column(c).Shrink(0).Gap(4)
 	grid.Children(func() {
-		f.Row().Height(16).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
-			f.Slot().Width(72).Shrink(0)
+		ui.Row(c).Height(16).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
+			ui.Slot(c).Width(72).Shrink(0)
 			for _, letter := range letters {
-				f.Text(letter).FontSize(metrics.FontSizeS).Color(state.pal.muted).Width(20).TextCenter().Shrink(0)
+				ui.Text(c, letter).FontSize(metrics.FontSizeS).Color(state.pal.muted).Width(20).TextCenter().Shrink(0)
 			}
-			f.Spacer().Grow(1)
+			ui.Spacer(c).Grow(1)
 		})
 		for group := range groups {
-			f.Row().Height(24).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
-				f.Text(groups[group]).FontSize(metrics.FontSizeS).Color(state.pal.text).Width(72).Shrink(0)
-				for column := range letters {
-					boxes[group*3+column] = f.Slot().Size(20, 20).Shrink(0)
+			ui.Row(c).Height(24).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
+				ui.Text(c, groups[group]).FontSize(metrics.FontSizeS).Color(state.pal.text).Width(72).Shrink(0)
+				for perms := range letters {
+					boxes[group*3+perms] = ui.Slot(c).Size(20, 20).Shrink(0)
 				}
-				f.Spacer().Grow(1)
+				ui.Spacer(c).Grow(1)
 			})
 		}
 	})

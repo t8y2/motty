@@ -853,75 +853,75 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rec
 	var moreButton ui.Box
 	var content, detailSlot, loadMore, emptySlot ui.Box
 
-	f := state.sessionLogsLayout.Begin(canvas, theme, bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().Height(36).Gap(8).Items(ui.Center).Children(func() {
-			f.Text(m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
-			moreButton = f.Slot().Size(30, 30)
-		})
-		if !narrow {
-			f.Text(m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
-		}
-		f.Row().Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-			search = f.Slot().Size(searchWidth, toolbarHeight)
-			if !separateFilters {
-				f.Spacer()
-				timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
-			} else {
-				f.Spacer()
-				favoriteFilterBox = f.Slot().Size(toolbarHeight, toolbarHeight)
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Row(c).Height(36).Gap(8).Items(ui.Center).Children(func() {
+				ui.Text(c, m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
+				ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
+				moreButton = ui.Slot(c).Size(30, 30)
+			})
+			if !narrow {
+				ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
 			}
-		})
-		if separateFilters {
-			f.Row().Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-				timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
-				if !stackedFilters {
-					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-					sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
+			ui.Row(c).Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
+				search = ui.Slot(c).Size(searchWidth, toolbarHeight)
+				if !separateFilters {
+					ui.Spacer(c)
+					timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
+				} else {
+					ui.Spacer(c)
+					favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
 				}
 			})
-			if stackedFilters {
-				f.Row().Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
-					sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
+			if separateFilters {
+				ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
+					timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					if !stackedFilters {
+						outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+						sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					}
 				})
+				if stackedFilters {
+					ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
+						outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+						sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					})
+				}
 			}
-		}
-		switch {
-		case empty:
-			descriptionColor := pal.muted
-			if view.emptyDanger {
-				descriptionColor = pal.danger
+			switch {
+			case empty:
+				descriptionColor := pal.muted
+				if view.emptyDanger {
+					descriptionColor = pal.danger
+				}
+				emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
+			case sideDetail:
+				ui.Row(c).Grow(1).Basis(0).Gap(14).Children(func() {
+					content = ui.Slot(c).Grow(1).Basis(0)
+					detailSlot = ui.Slot(c).Width(min(sessionLogDetailWidth, inner*0.46))
+				})
+			case detailOnly:
+				detailSlot = ui.Slot(c).Grow(1).Basis(0)
+			default:
+				content = ui.Slot(c).Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
 			}
-			emptySlot = state.reserveEmptyPageWithColor(f, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
-		case sideDetail:
-			f.Row().Grow(1).Basis(0).Gap(14).Children(func() {
-				content = f.Slot().Grow(1).Basis(0)
-				detailSlot = f.Slot().Width(min(sessionLogDetailWidth, inner*0.46))
+			ui.Divider(c).Background(pal.line)
+			ui.Row(c).Height(46).Gap(12).Items(ui.Center).Children(func() {
+				ui.Text(c, view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
+				if view.more {
+					loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
+					loadMore = ui.Slot(c).Size(loadMoreWidth, toolbarHeight)
+				}
 			})
-		case detailOnly:
-			detailSlot = f.Slot().Grow(1).Basis(0)
-		default:
-			content = f.Slot().Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
-		}
-		f.Divider().Background(pal.line)
-		f.Row().Height(46).Gap(12).Items(ui.Center).Children(func() {
-			f.Text(view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
-			if view.more {
-				loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
-				loadMore = f.Slot().Size(loadMoreWidth, toolbarHeight)
-			}
 		})
 	})
-	f.End()
 
 	value := view.search.String()
 	components.PaintInputGroup(canvas, theme, search.Rect(), components.InputGroupSnapshot{

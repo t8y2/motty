@@ -102,11 +102,10 @@ type snippetsUI struct {
 	dialogRun      ui.Box
 	dialogShortcut ui.Box
 
-	// The page: the selected row, its layout and the count under the table.
+	// The page: the selected row and the count under the table.
 	selected  int
 	sort      components.TableSortState
 	grid      components.ReorderGridState
-	layout    ui.View
 	countText string
 	// sendAt is where the menu of terminals opens from the Send button.
 	sendAt gfx.Point

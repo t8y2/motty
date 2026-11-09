@@ -542,7 +542,6 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	knownHostsLayout  ui.View
 	settingsRow       ui.View
 	partLayout        ui.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
@@ -550,7 +549,6 @@ type State struct {
 	selectedWorkspaceTemplateID   string
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
-	workspaceLibraryLayout        ui.View
 	workspaceLibraryScroll        float32
 	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
@@ -574,8 +572,7 @@ type State struct {
 	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
-	forwardLayout, proxyLayout ui.View // the Port Forwarding and Proxies pages
-	chrome                     chromeLayout
+	chrome chromeLayout
 
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
@@ -836,7 +833,6 @@ type State struct {
 
 	// area: keychain, palette, import and the rest
 	railLayout            ui.View
-	keysLayout            ui.View
 	importLayout          ui.View
 	knownHostsTableLayout ui.View
 	hostToggleLayout      ui.View
@@ -892,9 +888,6 @@ type State struct {
 	// when the user disabled metadata capture in the settings.
 	sessionLogs    sessionLogs
 	sessionLogsOff bool
-	// sessionLogsLayout is the session-log page's flex layout, reused so a paint
-	// does not allocate its nodes.
-	sessionLogsLayout ui.View
 	// ai is the built-in assistant; see ai_state.go.
 	ai                 aiState
 	localProxyPort     uint16

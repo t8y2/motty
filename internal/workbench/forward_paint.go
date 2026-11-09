@@ -37,32 +37,32 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	}
 
 	var content, remove, edit, action, add, empty ui.Box
-	f := state.forwardLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				f.Paragraph(messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+					ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+					ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				})
+				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
+				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
+				action = ui.Slot(c).Size(actionWidth, toolbarHeight)
+				add = ui.Slot(c).Size(addWidth, toolbarHeight)
 			})
-			remove = f.Slot().Size(removeWidth, toolbarHeight)
-			edit = f.Slot().Size(editWidth, toolbarHeight)
-			action = f.Slot().Size(actionWidth, toolbarHeight)
-			add = f.Slot().Size(addWidth, toolbarHeight)
-		})
-		if len(state.forwards) == 0 {
-			empty = state.reserveEmptyPage(f, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
-		} else {
-			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
-		}
-		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			f.Text(state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
-			if hasSelection && selected.detail != "" {
-				f.Text(selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
+			if len(state.forwards) == 0 {
+				empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
+			} else {
+				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 			}
+			ui.Divider(c).Background(pal.line)
+			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+				ui.Text(c, state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
+				if hasSelection && selected.detail != "" {
+					ui.Text(c, selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
+				}
+			})
 		})
 	})
-	f.End()
 
 	state.paintToolbarButton(canvas, hitForwardRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ForwardRemove, removeIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitForwardEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ForwardEdit, editIcon, false, hasSelection, condensed)

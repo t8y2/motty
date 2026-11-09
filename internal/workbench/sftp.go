@@ -60,6 +60,21 @@ const (
 	sftpDialogBrowseCreateDirectory
 )
 
+// sftpDialogBodyRoot names the page a file dialog's body is declared in. One
+// body page serves every kind of dialog, since only one is open at a time.
+const sftpDialogBodyRoot = "sftp-dialog-body"
+
+// sftpDialogShowsField reports whether the dialog edits a field: a folder, a
+// name, a destination, an octal mode or a link.
+func sftpDialogShowsField(kind sftpDialogKind) bool {
+	switch kind {
+	case sftpDialogCreateDirectory, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
+		sftpDialogSymlink, sftpDialogExtract, sftpDialogCompress:
+		return true
+	}
+	return false
+}
+
 // sftpFolder is a folder on show: where it is, its rows and the user's place in
 // them. The panel has one for the server and one for this computer.
 type sftpFolder struct {
@@ -146,13 +161,21 @@ type sftpView struct {
 	status              string
 	// listingStatus is the listing message status still holds, so a completed
 	// listing can retire it without dropping the feedback that replaced it.
-	listingStatus         string
-	localListingStatus    bool // the shared listing message belongs to a pending local read
-	errorText             string
-	refreshStatus         string
-	dialog                sftpDialogKind
-	dialogEditor          text.Editor
-	dialogEditor2         text.Editor
+	listingStatus      string
+	localListingStatus bool // the shared listing message belongs to a pending local read
+	errorText          string
+	refreshStatus      string
+	dialog             sftpDialogKind
+	dialogEditor       text.Editor
+	dialogEditor2      text.Editor
+	// dialogPage declares the dialog's body; dialogView is its declaration,
+	// made once for the view. The boxes are where that body laid out the parts
+	// painted by hand: the one or two fields and the permission grid.
+	dialogPage            *ui.Page
+	dialogView            func(ui.C)
+	dialogFirst           ui.Box
+	dialogSecond          ui.Box
+	dialogChmod           [9]ui.Box
 	bookmarksOpen         bool
 	places                sftpPlaceMenu
 	dropping              bool // files are being dragged over the panel

@@ -36,32 +36,32 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	canCopy := hasSelection && selected.Error == ""
 
 	var content, addButton, removeButton, passphraseButton, copyButton, empty ui.Box
-	f := state.keysLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().Children(func() {
-			f.Column().Grow(1).PadSides(3, 0, 0, 0).Children(func() {
-				f.Text(messages.KeyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
-				f.Paragraph(messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Row(c).Children(func() {
+				ui.Column(c).Grow(1).PadSides(3, 0, 0, 0).Children(func() {
+					ui.Text(c, messages.KeyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
+					ui.Paragraph(c, messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
+				})
+				copyButton = ui.Slot(c).Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+				passphraseButton = ui.Slot(c).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+				removeButton = ui.Slot(c).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+				addButton = ui.Slot(c).Size(addWidth, toolbarHeight).Shrink(0)
 			})
-			copyButton = f.Slot().Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-			passphraseButton = f.Slot().Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-			removeButton = f.Slot().Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-			addButton = f.Slot().Size(addWidth, toolbarHeight).Shrink(0)
-		})
-		if len(state.identities) == 0 {
-			empty = state.reserveEmptyPage(f, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
-		} else {
-			content = f.Slot().Grow(1).MarginSides(17, 0, 9, 0)
-		}
-		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
-			f.Text(state.identityCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
-			if statusValue != "" {
-				f.Text(statusValue).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(22).Grow(1)
+			if len(state.identities) == 0 {
+				empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
+			} else {
+				content = ui.Slot(c).Grow(1).MarginSides(17, 0, 9, 0)
 			}
+			ui.Divider(c).Background(pal.line)
+			ui.Row(c).Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
+				ui.Text(c, state.identityCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
+				if statusValue != "" {
+					ui.Text(c, statusValue).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(22).Grow(1)
+				}
+			})
 		})
 	})
-	f.End()
 
 	state.keysAddButton = addButton.Rect()
 	state.paintToolbarButton(canvas, hitKeysCopyPublic, copyButton.Rect().X, copyButton.Rect().Y, copyWidth, messages.KeyCopyPublic, copyIcon, false, canCopy, condensed)

@@ -33,32 +33,32 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
 	var content, remove, edit, action, add, empty ui.Box
-	f := state.proxyLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				f.Paragraph(messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+					ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+					ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				})
+				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
+				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
+				action = ui.Slot(c).Size(actionWidth, toolbarHeight)
+				add = ui.Slot(c).Size(addWidth, toolbarHeight)
 			})
-			remove = f.Slot().Size(removeWidth, toolbarHeight)
-			edit = f.Slot().Size(editWidth, toolbarHeight)
-			action = f.Slot().Size(actionWidth, toolbarHeight)
-			add = f.Slot().Size(addWidth, toolbarHeight)
-		})
-		if len(state.proxies) == 0 {
-			empty = state.reserveEmptyPage(f, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
-		} else {
-			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
-		}
-		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			f.Text(state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-			if hasSelection {
-				f.Text(state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
+			if len(state.proxies) == 0 {
+				empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
+			} else {
+				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 			}
+			ui.Divider(c).Background(pal.line)
+			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+				ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+				if hasSelection {
+					ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
+				}
+			})
 		})
 	})
-	f.End()
 
 	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitProxyEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ProxyEdit, editIcon, false, hasSelection, condensed)

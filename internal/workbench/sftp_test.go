@@ -1983,3 +1983,41 @@ func TestTheWheelOverTheTerminalBesideTheFilesPanelScrollsTheTerminal(t *testing
 		t.Fatal("the wheel over the terminal moved the file list")
 	}
 }
+
+// TestSFTPChmodGridTransitionsThroughTheEventPass drives the permission grid
+// through the driver's real pointer event pass, not the test-only Click: the
+// dialog body is a page now, and its hand-painted checkbox hits must still
+// reach the central dispatcher and flip one bit of the octal field.
+func TestSFTPChmodGridTransitionsThroughTheEventPass(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialog != sftpDialogChmod || view.dialogEditor.String() != "644" {
+		t.Fatalf("chmod dialog = %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	driver := modalEventDriver(t, state)
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok {
+		t.Fatal("the permission grid is not painted")
+	}
+	// Group write on 644: 664. The click goes through the event pass to the
+	// central dispatcher, which flips the bit of the field's value.
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "664" {
+		t.Fatalf("after group-write click = %q, want 664", got)
+	}
+	if hit, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok || !hit.Checked {
+		t.Fatalf("group-write box after the click = %+v, painted %v", hit, ok)
+	}
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "644" {
+		t.Fatalf("after second click = %q, want 644", got)
+	}
+	// The field still moves the boxes: 700 has owner execute, and a click on
+	// that box clears it back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(2))
+	if got := view.dialogEditor.String(); got != "600" {
+		t.Fatalf("after owner-exec click on 700 = %q, want 600", got)
+	}
+}

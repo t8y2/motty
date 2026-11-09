@@ -194,34 +194,34 @@ func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas, bounds gfx.Rect) {
 	newWidth, newIcon := toolbarButtonLayout(canvas, m.WorkspaceNew, iconPlus, iconPlus, bounds.Width < 520)
 
 	var content, create, empty ui.Box
-	f := state.workspaceLibraryLayout.Begin(canvas, state.Theme(), bounds)
 	padding := float32(22)
 	if bounds.Width < 340 {
 		padding = 12
 	}
-	f.Column().Fill().PadSides(18, padding, 0, padding).Children(func() {
-		if bounds.Width < 520 {
-			f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
-			f.Row().Gap(8).MarginSides(12, 0, 20, 0).Children(func() {
-				create = f.Slot().Size(newWidth, toolbarHeight)
-			})
-		} else {
-			f.Row().MinHeight(74).Gap(10).MarginSides(0, 0, 14, 0).Items(ui.Start).Children(func() {
-				f.Column().Grow(1).Gap(6).Children(func() {
-					f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
-					f.Paragraph(m.WorkspaceLibraryDescription, 2).FontSize(12).LineHeight(19).Color(pal.muted)
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(18, padding, 0, padding).Children(func() {
+			if bounds.Width < 520 {
+				ui.Text(c, m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
+				ui.Row(c).Gap(8).MarginSides(12, 0, 20, 0).Children(func() {
+					create = ui.Slot(c).Size(newWidth, toolbarHeight)
 				})
-				create = f.Slot().Size(newWidth, toolbarHeight)
-			})
-		}
-		if len(state.templates) == 0 {
-			empty = state.reserveEmptyPage(f, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew)
-		} else {
-			content = f.Slot().Grow(1).MarginSides(0, 0, 14, 0)
-		}
-		f.Divider().Background(pal.line)
+			} else {
+				ui.Row(c).MinHeight(74).Gap(10).MarginSides(0, 0, 14, 0).Items(ui.Start).Children(func() {
+					ui.Column(c).Grow(1).Gap(6).Children(func() {
+						ui.Text(c, m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
+						ui.Paragraph(c, m.WorkspaceLibraryDescription, 2).FontSize(12).LineHeight(19).Color(pal.muted)
+					})
+					create = ui.Slot(c).Size(newWidth, toolbarHeight)
+				})
+			}
+			if len(state.templates) == 0 {
+				empty = state.reserveEmptyPage(c, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew)
+			} else {
+				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 14, 0)
+			}
+			ui.Divider(c).Background(pal.line)
+		})
 	})
-	f.End()
 
 	if len(state.templates) == 0 {
 		state.drawReservedEmptyPage(canvas, empty, iconColumns2, hitWorkspaceNew, m.WorkspaceNew, true)

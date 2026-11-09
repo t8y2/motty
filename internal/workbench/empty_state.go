@@ -16,10 +16,15 @@ const (
 	// page is enough: the catalog sections are exclusive, so one is painted at a
 	// time.
 	emptyStateRoot = "empty-state"
+	// catalogSectionRoot names the shared page a catalog section declares its
+	// body in. One page is enough for the same reason: the sections are
+	// exclusive.
+	catalogSectionRoot = "catalog-section"
 )
 
-// emptyStateUI is the shared empty-state page and what its last paint left for
-// the icon and the action, which are painted by hand.
+// emptyStateUI holds the two pages the catalog shares: the empty-state page
+// and what its last paint left for the icon and the action, which are painted
+// by hand, and the page a section declares its own body in.
 type emptyStateUI struct {
 	page   *ui.Page
 	view   func(ui.C)
@@ -30,21 +35,35 @@ type emptyStateUI struct {
 	color  gfx.Color
 	icon   ui.Box
 	button ui.Box
+	// bodyPage is the shared page the catalog sections declare their own body
+	// in, made the first time one paints.
+	bodyPage *ui.Page
+}
+
+// drawSectionBody draws a catalog section's body in bounds, declaring it with a
+// page so the section can reserve its empty-state slot with ui.Slot instead of
+// a Frame. Only one catalog section is painted at a time, so one page serves
+// them all, as it does for the empty state.
+func (state *State) drawSectionBody(canvas *gfx.Canvas, bounds gfx.Rect, view func(ui.C)) {
+	e := &state.empty
+	if e.bodyPage == nil {
+		e.bodyPage = ui.NewPage(ui.PageConfig{Root: catalogSectionRoot, Theme: &state.theme})
+	}
+	e.bodyPage.Draw(canvas, bounds, view)
 }
 
 // reserveEmptyPage records what the shared empty-state page draws and reserves
-// the region it fills in f, a frame that keeps a region of a larger layout. The
-// icon sits a little above the middle of the region, followed by one title, one
-// description and, when add is not empty, one primary action. The caller draws
-// the page into the returned box once f has laid out, with
-// drawReservedEmptyPage.
-func (state *State) reserveEmptyPage(f *ui.Frame, bounds gfx.Rect, title, sub, add string) ui.Box {
-	return state.reserveEmptyPageWithColor(f, bounds, title, sub, add, state.pal.muted)
+// the region it fills in c. The icon sits a little above the middle of the
+// region, followed by one title, one description and, when add is not empty,
+// one primary action. The caller draws the page into the returned box once the
+// section body has laid out, with drawReservedEmptyPage.
+func (state *State) reserveEmptyPage(c ui.C, bounds gfx.Rect, title, sub, add string) ui.Box {
+	return state.reserveEmptyPageWithColor(c, bounds, title, sub, add, state.pal.muted)
 }
 
-func (state *State) reserveEmptyPageWithColor(f *ui.Frame, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) ui.Box {
+func (state *State) reserveEmptyPageWithColor(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) ui.Box {
 	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor)
-	return f.Slot().Grow(1)
+	return ui.Slot(c).Grow(1)
 }
 
 // drawReservedEmptyPage draws the shared empty-state page into the region
