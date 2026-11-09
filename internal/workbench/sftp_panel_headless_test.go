@@ -84,7 +84,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 					row = i
 				}
 			}
-			hit, ok := findSnapshotHit(preview.Snapshot(), contextID(hitSFTPEntryList.At(row-files.first)))
+			hit, ok := findSnapshotHit(preview.Snapshot(), sftpListRowID(t, files.active(), row))
 			if row < 0 || !ok {
 				t.Fatal("missing destination folder")
 			}

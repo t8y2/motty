@@ -269,7 +269,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, origin gfx.Point, mo
 
 func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
-	if !ok || local != hitSFTPFilter && local.Scope() != hitSFTPEntryList {
+	if !ok || local != hitSFTPFilter && local.Scope() != hitSFTPEntryList && !session.files.active().onListRow(local) {
 		return gfx.EventResult{}, false
 	}
 	if session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
@@ -397,6 +397,8 @@ func (state *State) applySFTPFilter(view *sftpView, folder *sftpFolder, clearSel
 	if folder.searchShown {
 		folder.first, folder.scrollOffset = shownFirst, shownOffset
 	}
+	folder.listNeedsSeed = true
+	folder.listPendingFirst = folder.first
 	state.syncSFTPSearch(view, folder)
 }
 

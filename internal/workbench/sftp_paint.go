@@ -2,8 +2,8 @@ package workbench
 
 import (
 	"fmt"
-	"math"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -51,7 +51,13 @@ type sftpPanelScratch struct {
 	buttonCount       int
 	headerButtonCount int
 
-	header, crumbs, filterSlot, listSlot, spinnerSlot, moreButton ui.Box
+	header, crumbs, filterSlot, listHeader, listSlot, spinnerSlot, moreButton ui.Box
+	// How the List's rows were declared this paint: whether it shows search
+	// results, whether a scrollbar takes its edge, and the column widths.
+	listSearching            bool
+	listScrolls              bool
+	sizeWidth, modifiedWidth float32
+	rowWidth                 float32
 }
 
 // sftpEditorScratch is the room the editor page leaves for its text area and
@@ -193,7 +199,7 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 	} else {
 		state.paintSFTPBreadcrumbs(canvas, s.crumbs.Rect(), folder.crumbs)
 	}
-	state.paintSFTPList(canvas, size, s.listSlot.Rect(), session, view)
+	state.paintSFTPList(canvas, size, s, session, view)
 	view.places.anchors[sideIndex(local)] = s.crumbs.Rect()
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
@@ -326,7 +332,38 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		}
 		ui.Divider(c).Background(pal.line).MarginSides(2, 0, 3, 0)
 
-		s.listSlot = ui.Slot(c).Grow(1)
+		// The rows are one Viva List. Its header, when the list has one, is a
+		// slot painted after the page is laid out; the List takes the rest.
+		searching, rows := folder.searching(), folder.shownRows()
+		width := max(c.Frame().Bounds().Width-2*sftpPad, 0)
+		visible := 0
+		if folder.listHeight > 0 {
+			visible = int(folder.listHeight / sftpRowHeight)
+		}
+		scrolls := len(rows) > visible && visible > 0
+		rowWidth := width
+		if scrolls {
+			rowWidth = max(rowWidth-10, 0)
+		}
+		s.listSearching, s.listScrolls, s.rowWidth = searching, scrolls, rowWidth
+		s.sizeWidth, s.modifiedWidth = sftpColumnWidths(rowWidth)
+		if !searching {
+			s.listHeader = ui.Slot(c).Height(sftpListHeaderHeight).Shrink(0)
+		}
+		folder.prepareSFTPList()
+		folder.seedSFTPListChoice()
+		if folder.listPendingFirst >= 0 {
+			folder.list.ScrollTo(folder.listPendingFirst, ui.ListStart)
+			folder.listPendingFirst = -1
+		}
+		s.listSlot = ui.List(c, &folder.list, len(rows), func(row ui.ListRow) {
+			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth)
+		}).Grow(1)
+		folder.seedSFTPListCurrent()
+		if folder.list.Changed() {
+			folder.takeSFTPListChoice()
+			state.afterSFTPListChoice(view, folder)
+		}
 
 		if selectedCount > 0 {
 			// What can be done with the selection, under the list so the rows above
@@ -415,70 +452,40 @@ func (state *State) declareSFTPPanel(c ui.C) {
 // left for it, then paints what is drawn rather than laid out: the place
 // dropped files would go and the scroll bar. Which rows are visible is
 // arithmetic; where each goes and what is inside it is flex.
-func (state *State) paintSFTPList(canvas *gfx.Canvas, size gfx.Size, list gfx.Rect, session *Session, view *sftpView) {
+// paintSFTPList paints what the List does not: the column header, the scroll
+// bar, the empty or loading message and the place dropped files would go. The
+// rows themselves are declared as elements by declareSFTPListRow.
+func (state *State) paintSFTPList(canvas *gfx.Canvas, size gfx.Size, s *sftpPanelScratch, session *Session, view *sftpView) {
 	pal := state.pal
 	folder, local := view.active(), view.local
-	// Search results are the same list without the columns that describe a
-	// folder's entries: a result is where it is, and the panel is narrow.
 	searching, rows := folder.searching(), folder.shownRows()
-	headerHeight := min(sftpListHeaderHeight, max(list.Height, 0))
-	if searching {
-		headerHeight = 0
+	body := s.listSlot.Rect()
+	folder.listHeight = body.Height
+	folder.visibleRows = max(0, int(body.Height/sftpRowHeight))
+	if scroll := s.listSlot.ScrollState(); scroll != nil {
+		folder.listScroll = scroll
+		folder.scrollOffset = scroll.Offset
+		folder.first = max(0, int(scroll.Offset/sftpRowHeight))
 	}
-	body := gfx.Rect{X: list.X, Y: list.Y + headerHeight, Width: list.Width, Height: max(list.Height-headerHeight, 0)}
-	visibleRows := max(0, int(body.Height/sftpRowHeight))
-	scrolls := len(rows) > visibleRows && visibleRows > 0
-	rowWidth := body.Width
-	if scrolls {
-		rowWidth = max(rowWidth-10, 0)
+
+	if !searching {
+		state.paintSFTPColumnHeader(canvas, s.listHeader.Rect(), folder, s.sizeWidth, s.modifiedWidth, s.listScrolls)
 	}
-	sizeWidth, modifiedWidth := sftpColumnWidths(rowWidth)
+
+	// The List owns the offset; the bar is drawn from it with the same geometry
+	// the rows were laid out under.
+	area := components.BeginScrollArea(canvas, state.Theme(), body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * sftpRowHeight}).
+		Offset(0, folder.scrollOffset).
+		VerticalScrollbar(hitSFTPListScrollbar, state.messages.SFTPFiles, "")
+	area.BeginContent()
+	folder.scroll = area.EndContent()
+
 	empty := len(rows) == 0 && (!view.busy || local) && view.errorText == ""
 	loading := len(rows) == 0 && view.busy && !local && view.operation == sftpclient.OperationList && view.errorText == ""
 	reading := searching && len(rows) == 0 && folder.search.running && folder.search.failure == ""
 	if reading {
 		empty, loading = false, false
 	}
-	boxes := state.filesRowBoxes[:0]
-	var dropColumn ui.Box
-
-	if !searching {
-		state.paintSFTPColumnHeader(canvas, gfx.Rect{X: list.X, Y: list.Y, Width: list.Width, Height: headerHeight}, folder, sizeWidth, modifiedWidth, scrolls)
-	}
-
-	if !view.scrollDrag {
-		if folder.scroll.MaxOffsetY <= 0 || folder.scrollOffset > folder.scroll.MaxOffsetY || int(folder.scrollOffset/sftpRowHeight) != folder.first {
-			folder.scrollOffset = float32(folder.first) * sftpRowHeight
-		}
-	}
-	area := components.BeginScrollArea(canvas, state.Theme(), body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * sftpRowHeight}).
-		Offset(0, folder.scrollOffset).
-		VerticalScrollbar(hitSFTPListScrollbar, state.messages.SFTPFiles, "")
-	geometry := area.BeginContent()
-	folder.scroll = geometry
-	folder.scrollOffset = geometry.OffsetY
-	first := min(int(geometry.OffsetY/sftpRowHeight), max(0, len(rows)-max(visibleRows, 1)))
-	folder.first = first
-	last := min(len(rows), first+int(math.Ceil(float64(body.Height/sftpRowHeight)))+2)
-	f := state.filesList.Begin(canvas, state.Theme(), gfx.Rect{
-		X: body.X, Y: body.Y - geometry.OffsetY + float32(first)*sftpRowHeight,
-		Width: rowWidth, Height: float32(last-first) * sftpRowHeight,
-	})
-	f.Column().FillWidth().Children(func() {
-		dropColumn = f.Column().Grow(1)
-		dropColumn.Children(func() {
-			for index := first; index < last; index++ {
-				boxes = append(boxes, state.declareSFTPRow(
-					f, &rows[index], hitSFTPEntryList.At(index-first), sizeWidth, modifiedWidth, searching, rowWidth,
-				))
-			}
-		})
-	})
-	f.End()
-	area.EndContent()
-
-	folder.visibleRows = visibleRows
-	state.filesRowBoxes = boxes
 	if loading || reading {
 		spinnerSize := float32(16)
 		spinner := gfx.Rect{
@@ -508,11 +515,31 @@ func (state *State) paintSFTPList(canvas *gfx.Canvas, size gfx.Size, list gfx.Re
 
 	if view.dropping && !local {
 		// Where dropped files would go: the folder row they are over, or the folder.
-		target := dropColumn.Rect()
-		if row := view.dropRow; row >= first && row < last {
-			target = boxes[row-first].Rect()
+		target := body
+		if row := view.dropRow; row >= 0 && row < len(rows) {
+			target = gfx.Rect{
+				X: body.X, Y: body.Y + float32(row)*sftpRowHeight - folder.scrollOffset,
+				Width: s.rowWidth, Height: sftpRowHeight,
+			}
 		}
 		state.paintSFTPDropOverlay(canvas, target, state.messages.Tools.DropUploadHint)
+	}
+}
+
+// afterSFTPListChoice reports a choice the List delivered: the count, and the
+// folder the first click of a double click would open.
+func (state *State) afterSFTPListChoice(view *sftpView, folder *sftpFolder) {
+	view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+	if folder.searching() || view.local || view.busy || selectedSFTPCount(view) != 1 {
+		return
+	}
+	for index := range folder.rows {
+		if row := folder.rows[index]; row.selected && row.entry.IsDir() {
+			// The first click of a double-click: start reading the folder now,
+			// so the second finds the work done or under way.
+			state.prefetchSFTP(view, path.Join(view.path, row.entry.Name))
+			return
+		}
 	}
 }
 
@@ -586,71 +613,76 @@ func (state *State) declareSFTPColumnHeader(f *ui.Frame, folder *sftpFolder, col
 	})
 }
 
-// declareSFTPRow declares one entry: its type icon, its name, which takes the
-// room and ends with an ellipsis, and, when there is room, its modification
-// time. A selected row is tinted; the pointer lightens one. It returns the row.
-// A search result has its folder after the name, where the columns would be.
-func (state *State) declareSFTPRow(f *ui.Frame, row *sftpRow, id gfx.ID, sizeWidth, modifiedWidth float32, result bool, rowWidth float32) ui.Box {
-	pal, canvas := state.pal, f.Canvas()
-	name := row.cells[1]
-	if row.entry.IsLink() && row.entry.LinkTarget != "" {
-		name = row.cells[1] + " → " + row.entry.LinkTarget
+// declareSFTPListRow declares one entry as a List row: its type icon, its name,
+// which takes the room and ends with an ellipsis, and, when there is room, its
+// modification time. A selected row is tinted; the pointer lightens one. A
+// search result has its folder after the name, where the columns would be.
+func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view *sftpView, result bool, sizeWidth, modifiedWidth, rowWidth float32) {
+	rows := folder.shownRows()
+	if row.Index < 0 || row.Index >= len(rows) {
+		return
+	}
+	if folder.listRowsScope != row.ID.Scope() {
+		folder.listRowsScope = row.ID.Scope()
+	}
+	entry := &rows[row.Index]
+	f, canvas := row.C.Frame(), row.C.Frame().Canvas()
+	pal := state.pal
+	name := entry.cells[1]
+	if entry.entry.IsLink() && entry.entry.LinkTarget != "" {
+		name = entry.cells[1] + " → " + entry.entry.LinkTarget
 	}
 	nameColor := pal.text
-	if row.entry.LinkBroken {
+	if entry.entry.LinkBroken {
 		nameColor = pal.danger
 	}
 	tint := gfx.Color{Alpha: 1} // a colored glyph keeps its own colors
-	if row.mono {
+	if entry.mono {
 		tint = pal.muted
-		if row.entry.Mode&os.ModeSymlink != 0 {
+		if entry.entry.Mode&os.ModeSymlink != 0 {
 			tint = pal.accent
 		}
 	}
 	var background gfx.Color
 	switch {
-	case row.selected:
+	case row.Selected():
 		background = pal.accentSoft
-	case canvas.Hovered() == id:
+	case canvas.Hovered() == row.ID:
 		background = withAlpha(pal.surfaceHot, 0.7)
 	}
-	options := gfx.HitOptions{Role: gfx.RoleButton, Selected: row.selected}
-	if result {
-		options.Hint = row.where // the whole folder, when the row has room for part of it
-	}
-	box := f.Row().Height(sftpRowHeight).Shrink(0).Items(ui.Center).HitWith(id, row.cells[1], options)
+	focused := row.Focused()
 	contents := func() {
-		declareSFTPRowIcon(f, row, tint)
+		declareSFTPRowIcon(f, entry, tint)
 		label := f.Row().Grow(1).Clip().Items(ui.Center).MarginSides(0, 0, 0, 8)
 		label.Children(func() {
 			if result {
-				state.declareSFTPResultLabel(f, row, nameColor, rowWidth)
+				state.declareSFTPResultLabel(f, entry, nameColor, rowWidth)
 				return
 			}
-			if row.matchEnd > row.matchStart && row.matchEnd <= len(row.entry.Name) {
-				if prefix := row.entry.Name[:row.matchStart]; prefix != "" {
+			if entry.matchEnd > entry.matchStart && entry.matchEnd <= len(entry.entry.Name) {
+				if prefix := entry.entry.Name[:entry.matchStart]; prefix != "" {
 					f.Text(prefix).FontSize(metrics.FontSizeM).Color(nameColor).Shrink(0)
 				}
-				state.declareSFTPMatch(f, row.entry.Name[row.matchStart:row.matchEnd])
-				suffix := row.entry.Name[row.matchEnd:]
-				if row.entry.IsLink() && row.entry.LinkTarget != "" {
-					suffix += " → " + row.entry.LinkTarget
+				state.declareSFTPMatch(f, entry.entry.Name[entry.matchStart:entry.matchEnd])
+				suffix := entry.entry.Name[entry.matchEnd:]
+				if entry.entry.IsLink() && entry.entry.LinkTarget != "" {
+					suffix += " → " + entry.entry.LinkTarget
 				}
 				f.Text(suffix).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
 				return
 			}
 			f.Text(name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
 		})
-		for _, entry := range state.sftpColumns.entries[1:] {
-			if !entry.Enabled || result {
+		for _, column := range state.sftpColumns.entries[1:] {
+			if !column.Enabled || result {
 				continue
 			}
-			if entry.Key == sftpColumnSize {
-				f.Text(row.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(sizeWidth).TextEnd().Shrink(0)
+			if column.Key == sftpColumnSize {
+				f.Text(entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(sizeWidth).TextEnd().Shrink(0)
 				continue
 			}
-			if entry.Key == sftpColumnModified {
-				date := row.cells[3]
+			if column.Key == sftpColumnModified {
+				date := entry.cells[3]
 				if modifiedWidth < 100 && len(date) > 5 {
 					date = date[5:] // drop the year
 				}
@@ -658,15 +690,19 @@ func (state *State) declareSFTPRow(f *ui.Frame, row *sftpRow, id gfx.ID, sizeWid
 			}
 		}
 	}
-	if background.Alpha == 0 && canvas.FocusVisible() != id {
+	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Items(ui.Center)
+	if background.Alpha == 0 && !focused {
 		// Most rows have nothing behind them: their parts go straight in the row.
-		return box.PadX(8).Children(contents)
+		box = box.PadX(8)
+		box.Children(contents)
+		return
 	}
 	// A tinted or focused row is a rounded shape a pixel in from the top and
 	// bottom of the row, so the parts go in a box of that shape.
-	return box.PadY(1).Children(func() {
-		inner := f.Row().Grow(1).Self(ui.Stretch).Items(ui.Center).PadX(8).Background(background).Radius(radius.control)
-		if canvas.FocusVisible() == id {
+	box = box.PadY(1)
+	box.Children(func() {
+		inner := ui.Row(row.C).Fill().Items(ui.Center).PadX(8).Background(background).Radius(radius.control)
+		if focused {
 			inner.Border(1.5, pal.accent)
 		}
 		inner.Children(contents)

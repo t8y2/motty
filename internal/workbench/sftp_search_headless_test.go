@@ -93,7 +93,7 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 	if !ok || toggle.Label != state.messages.Tools.FilesSearchSubfolders {
 		t.Fatalf("switch hit = %+v, present %v", toggle, ok)
 	}
-	if _, ok := hit(contextID(hitSFTPEntryList.At(2))); !ok {
+	if _, ok := hit(sftpListRowID(t, view.active(), 2)); !ok {
 		t.Fatal("the third result is not on screen")
 	}
 	if dir := os.Getenv("MOTTY_SFTP_SEARCH_SCREENSHOTS"); dir != "" {
@@ -111,7 +111,7 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 		}
 	}
 
-	click(contextID(hitSFTPEntryList.At(2)), true)
+	click(sftpListRowID(t, view.active(), 2), true)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs/api" })
 	repaint()
 	if view.selected < 0 || view.rows[view.selected].entry.Name != "Guide-v2.md" {

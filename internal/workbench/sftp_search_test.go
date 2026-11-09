@@ -94,11 +94,13 @@ func TestSFTPSearchFindsNamesInSubfoldersOverAChannelOfItsOwn(t *testing.T) {
 		t.Fatalf("toggle hit = %+v, present %v", toggle, ok)
 	}
 	// The results are the folder's list: its rows, holding the matches.
-	row, ok := hitByID(&canvas, contextID(hitSFTPEntryList.At(2)))
-	if !ok || row.Label != "Guide-v2.md" || row.Hint != "docs/api" {
+	row, ok := hitByID(&canvas, sftpListRowID(t, view.active(), 2))
+	if !ok || row.Label != "Guide-v2.md" {
+		// A List row carries a label, not the extra hint the old painted row
+		// gave the folder; the folder is still drawn after the name.
 		t.Fatalf("result hit = %+v, present %v", row, ok)
 	}
-	if _, ok := hitByID(&canvas, contextID(hitSFTPEntryList.At(3))); ok {
+	if _, ok := hitByID(&canvas, sftpListRowID(t, view.active(), 3)); ok {
 		t.Fatal("the list has a row beyond the three results")
 	}
 	if _, ok := hitByID(&canvas, contextID(hitSFTPDownload)); ok {
@@ -107,7 +109,7 @@ func TestSFTPSearchFindsNamesInSubfoldersOverAChannelOfItsOwn(t *testing.T) {
 
 	// A press on a result selects it, and only it: nothing of the folder is
 	// selected for the buttons and keys that act on a selection.
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPEntryList.At(1))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Target: sftpListRowID(t, view.active(), 1)})
 	if search.selected != 1 || !search.rows[1].selected || selectedSFTPCount(view) != 0 {
 		t.Fatalf("selected result %d, folder selection %d", search.selected, selectedSFTPCount(view))
 	}
@@ -244,7 +246,9 @@ func TestSFTPSearchOnThisComputerLeavesHiddenFoldersAloneUntilShown(t *testing.T
 
 	state.Click(hitSFTPSearchToggle)
 	waitSearchDone(t, state, session, true)
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(1))})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: sftpListRowID(t, view.active(), 1)})
 	folder := &view.lfolder
 	if want := filepath.Join(dir, "photos", "2024"); folder.path != want || folder.selected < 0 || folder.rows[folder.selected].entry.Name != "beach.jpg" {
 		t.Fatalf("the local result led to %q with rows %v, selected %d", folder.path, rowNames(folder.rows), folder.selected)

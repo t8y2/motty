@@ -109,10 +109,17 @@ func (state *State) dropPanel(x, y float32) (*Session, *sftpView) {
 // dropFolderRow is the row of a folder under the pointer, or -1.
 func (state *State) dropFolderRow(view *sftpView, target gfx.ID) int {
 	local, ok := tree.Local(contextMount, target)
-	if !ok || local.Scope() != hitSFTPEntryList {
+	if !ok {
 		return -1
 	}
-	index := view.first + item(local)
+	folder := view.active()
+	index, listRow := folder.listRow(local)
+	if !listRow {
+		if local.Scope() != hitSFTPEntryList {
+			return -1
+		}
+		index = view.first + item(local)
+	}
 	if view.searching() || index < 0 || index >= len(view.rows) || !view.rows[index].entry.IsDir() {
 		return -1
 	}

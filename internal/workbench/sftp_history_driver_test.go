@@ -30,7 +30,10 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	state.navigateSFTPDirectory(view, "/home/test/docs")
 	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
 	driver := sftpPathFocusDriver(t, state)
-	historyDriverClick(t, driver, contextID(hitSFTPEntryList.At(0)))
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	historyDriverClick(t, driver, sftpListRowID(t, view.active(), 0))
 	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}

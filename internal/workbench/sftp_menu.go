@@ -88,7 +88,7 @@ func (state *State) sftpMenuDismissPointer(event gfx.PointerEvent) (gfx.EventRes
 // sftpMenuPointer opens the menu on a secondary press on a row of the file list,
 // selecting that row first unless it is already part of the selection.
 func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || event.Target.Scope() != hitSFTPEntryList {
+	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary {
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
@@ -97,13 +97,20 @@ func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	}
 	view := session.files
 	folder := view.active()
-	index := folder.first + item(event.Target)
+	index, listRow := folder.listRow(event.Target)
+	if !listRow {
+		if event.Target.Scope() != hitSFTPEntryList {
+			return gfx.EventResult{}, false
+		}
+		index = folder.first + item(event.Target)
+	}
 	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
 		return gfx.EventResult{Handled: true}, true
 	}
 	if folder.searching() {
 		// The actions in the menu are the folder's; a result is not in it.
 		folder.search.selectRow(index)
+		folder.listNeedsSeed = true
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if !folder.rows[index].selected {

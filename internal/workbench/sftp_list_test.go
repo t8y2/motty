@@ -43,8 +43,9 @@ func TestSFTPListOfThousandsPaintsOnlyWhatIsVisible(t *testing.T) {
 		}
 	}
 	// The renderer keeps one partially visible row and a small scroll-ahead
-	// buffer, but must never build the whole directory.
-	if names < view.visibleRows || names > view.visibleRows+3 {
+	// buffer, but must never build the whole directory. A List declares two
+	// rows beyond each edge of the viewport.
+	if names < view.visibleRows || names > view.visibleRows+6 {
 		t.Fatalf("%d names painted for %d visible rows", names, view.visibleRows)
 	}
 }

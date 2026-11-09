@@ -152,6 +152,8 @@ func (folder *sftpFolder) syncSearchList() {
 	folder.searchShown = shown
 	folder.first, folder.scrollOffset, folder.wheel = 0, 0, 0
 	folder.selected, folder.anchor = -1, -1
+	folder.listNeedsSeed = true
+	folder.listPendingFirst = 0
 	if shown {
 		for index := range folder.allRows {
 			folder.allRows[index].selected, folder.allRows[index].cells[0] = false, ""
@@ -359,6 +361,7 @@ func (state *State) pressSFTPSearchResult(view *sftpView, folder *sftpFolder, in
 		return
 	}
 	folder.search.selectRow(index)
+	folder.listNeedsSeed = true
 	if clicks >= 2 {
 		state.revealSFTPSearchResult(view, folder, index)
 	}

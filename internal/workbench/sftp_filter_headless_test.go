@@ -83,7 +83,7 @@ func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
 	}
 	var fileRow gfx.Hit
 	for _, hit := range preview.Snapshot().Hits {
-		if hit.ID == contextID(hitSFTPEntryList.At(0)) {
+		if hit.ID == sftpListRowID(t, viewState.active(), 0) {
 			fileRow = hit
 			break
 		}

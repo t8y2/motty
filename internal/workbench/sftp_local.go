@@ -386,6 +386,7 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) 
 			folder.rows[index].selected = !folder.rows[index].selected
 			folder.rows[index].cells[0] = sftpSelectionCell(folder.rows[index].selected)
 			view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+			folder.listNeedsSeed = true
 		}
 	default:
 		return false

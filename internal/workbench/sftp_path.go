@@ -68,7 +68,7 @@ func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	if local != hitSFTPPath && local != hitSFTPPathEdit && local != hitSFTPFilter &&
-		local.Scope() != hitSFTPEntryList && local.Scope() != hitSFTPBreadcrumbList {
+		local.Scope() != hitSFTPEntryList && local.Scope() != hitSFTPBreadcrumbList && !session.files.active().onListRow(local) {
 		return gfx.EventResult{}, false
 	}
 	context, ok := state.deck.Context(state.deck.ActiveWorkspace())

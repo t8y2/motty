@@ -830,12 +830,10 @@ type State struct {
 	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
-	filesList   ui.View
 	filesHeader ui.View
 	filesPopup  ui.View
-	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
+	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
-	filesRowBoxes []ui.Box
 
 	// area: keychain, palette, import and the rest
 	railLayout            ui.View
@@ -2420,13 +2418,13 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.sftpMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.sftpRowPointer(event); handled {
+		return result
+	}
 	if result, handled := state.sftpPathPointer(event); handled {
 		return result
 	}
 	if result, handled := state.sftpListPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpRowPointer(event); handled {
 		return result
 	}
 	return gfx.EventResult{}

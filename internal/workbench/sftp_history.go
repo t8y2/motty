@@ -175,6 +175,8 @@ func (folder *sftpFolder) restorePlace(place sftpPlace) {
 		_, folder.rows[i].selected = selected[folder.rows[i].entry.Name]
 		folder.rows[i].cells[0] = sftpSelectionCell(folder.rows[i].selected)
 	}
+	folder.listNeedsSeed = true
+	folder.listPendingFirst = folder.first
 	folder.rememberSelection()
 }
 
@@ -326,7 +328,7 @@ func (state *State) sftpHistoryKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	target := event.Target
-	if target.Scope() != hitSFTPEntryList && target.Scope() != hitSFTPBreadcrumbList && target != hitSFTPPathEdit && target != hitSFTPHeaderMore && target != hitSFTPUp && target != hitSFTPRefresh {
+	if target.Scope() != hitSFTPEntryList && target.Scope() != hitSFTPBreadcrumbList && target != hitSFTPPathEdit && target != hitSFTPHeaderMore && target != hitSFTPUp && target != hitSFTPRefresh && !state.onSFTPListRow(target) {
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
