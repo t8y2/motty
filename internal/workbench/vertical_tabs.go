@@ -58,6 +58,10 @@ type verticalTabs struct {
 	barGeometry components.ScrollAreaGeometry
 	bounds      gfx.Rect
 	slot        ui.Box
+	// slotRect is where the shell's page placed that slot in the last paint.
+	// The Box itself is only valid until the page is next painted, and the
+	// assistant's overlay paints the page again before the tabs do.
+	slotRect gfx.Rect
 	// page declares the plain tab list, with pageView its declaration kept so a
 	// paint makes no new method value; pageWidth and pageCompact are what the
 	// cached view reads for the paint in progress. The grouped list has a page of
@@ -222,7 +226,7 @@ func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.PushLayer(verticalTabsLayer)
 		defer canvas.PopLayer()
 	} else if len(state.workspaceTabs) > 0 {
-		bounds = view.slot.Rect()
+		bounds = view.slotRect
 	}
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		view.bounds = gfx.Rect{}

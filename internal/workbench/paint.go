@@ -143,7 +143,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.toolbarDock.sideViewports = [4]gfx.Rect{}
 	state.contextRect = gfx.Rect{}
 	state.hostsBounds, state.chrome.hostList = gfx.Rect{}, gfx.Rect{}
-	state.verticalTabs.bounds, state.verticalTabs.slot = gfx.Rect{}, ui.Box{}
+	state.verticalTabs.bounds, state.verticalTabs.slot, state.verticalTabs.slotRect = gfx.Rect{}, ui.Box{}, gfx.Rect{}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = gfx.Rect{}
 	state.ai.cfg.agentSelectBounds = gfx.Rect{}
@@ -243,6 +243,11 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// scroll/focus state.
 	state.beginMenus()
 	chrome.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, chrome.windowView)
+	// The page's Boxes end when its frame ends; take the slot's rect before
+	// another DrawOver (the assistant's overlay) begins the page again.
+	if state.verticalTabs.slot != (ui.Box{}) {
+		state.verticalTabs.slotRect = state.verticalTabs.slot.Rect()
+	}
 	workspaceSlot := chrome.workspaceSlot
 	state.paintWindowBarParts(canvas, geometry.area)
 	if !fullPage {
