@@ -153,7 +153,7 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 			canvas.Clip(frame)
 			canvas.Embed(&state.paneCanvas, paneEmbedOrigin(frame), 0)
 			canvas.Unclip()
-			adoptEmbeddedFocus(canvas, &state.paneCanvas, 0)
+			canvas.AdoptEmbedded(&state.paneCanvas, 0)
 		} else {
 			state.paintEmptyPane(canvas, frame, pane)
 		}
@@ -182,7 +182,7 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.Embed(&state.paneCanvas, paneEmbedOrigin(bounds), mount)
 		canvas.Unclip()
 		if pane.Active {
-			adoptEmbeddedFocus(canvas, &state.paneCanvas, mount)
+			canvas.AdoptEmbedded(&state.paneCanvas, mount)
 		}
 	}
 	state.paintPaneDividers(canvas, frame)
@@ -376,7 +376,7 @@ func (state *State) paintContextSFTP(canvas *gfx.Canvas, bounds gfx.Rect, sessio
 	canvas.Clip(bounds)
 	canvas.Embed(&state.contextCanvas, gfx.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}, contextMount)
 	canvas.Unclip()
-	adoptEmbeddedFocus(canvas, &state.contextCanvas, contextMount)
+	canvas.AdoptEmbedded(&state.contextCanvas, contextMount)
 }
 
 // paintEmptyContextSFTP is the panel before a file list exists: the same title
@@ -440,18 +440,6 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 			}
 		})
 	})
-}
-
-func adoptEmbeddedFocus(canvas, child *gfx.Canvas, mount gfx.Scope) {
-	if scope := child.TrappedFocusScope(); !scope.IsZero() {
-		canvas.TrapFocus(tree.MountID(mount, scope))
-	}
-	if focus := child.InitialFocus(); !focus.IsZero() {
-		canvas.SetInitialFocus(tree.MountID(mount, focus))
-	}
-	if target := child.EscapeTarget(); !target.IsZero() {
-		canvas.SetEscapeTarget(tree.MountID(mount, target))
-	}
 }
 
 func (state *State) paintPaneDividers(canvas *gfx.Canvas, frame gfx.Rect) {

@@ -265,7 +265,7 @@ func (state *State) paintSFTPTab(canvas *gfx.Canvas, bounds gfx.Rect) {
 	canvas.Clip(bounds)
 	canvas.Embed(&state.fileManagerView, gfx.Point{X: bounds.X, Y: bounds.Y}, mount)
 	canvas.Unclip()
-	adoptEmbeddedFocus(canvas, &state.fileManagerView, mount)
+	canvas.AdoptEmbedded(&state.fileManagerView, mount)
 }
 
 func (state *State) sftpTabLocalID(id gfx.ID) (gfx.ID, *sftpWindow, bool) {

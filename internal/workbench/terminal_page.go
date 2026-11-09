@@ -306,16 +306,9 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)
 			terminal := ui.Control(c, label, &t.handlers)
-			// ui.Control offers no hit option for the first keyboard focus. Keep
-			// its identity and options and add Autofocus, as the pane's own
-			// terminal hit had when it painted itself.
-			theme := state.Theme()
-			terminal.HitWith(t.controlID, label, gfx.HitOptions{
-				Role:      gfx.RoleTerminal,
-				Autofocus: session.ID == state.activeSessionID,
-				TextSize:  theme.Metrics.FontSizeM,
-				TextColor: theme.Foreground,
-			})
+			if session.ID == state.activeSessionID {
+				terminal.AutoFocus()
+			}
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
 		})
 	})
