@@ -89,7 +89,7 @@ func TestRemoteSortSurvivesRefreshAndIsRememberedForEachTab(t *testing.T) {
 	if state.remote.tableSort() != selectedOrder || state.remote.rows[0].cells[0] != "2211" {
 		t.Fatal("auto refresh reset the selected column or direction")
 	}
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	for column := 0; column < remoteColumnCounts[remoteContainers]; column++ {
 		state.Click(remoteTableHeaderID(remoteContainers, column))
@@ -101,7 +101,7 @@ func TestRemoteSortSurvivesRefreshAndIsRememberedForEachTab(t *testing.T) {
 			t.Fatal("Docker header did not switch to descending")
 		}
 	}
-	state.Click(hitRemoteTabProcesses)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.tableSort() != selectedOrder {
 		t.Fatal("switching tabs discarded the process table's ordering")

@@ -30,12 +30,13 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	for _, id := range []gfx.ID{hitSettingsPathBreadcrumbs, hitSettingsPathInput} {
-		if hit, ok := hitByID(paint(), id); !ok || hit.Role != gfx.RoleRadio || hit.Selected != (id == hitSettingsPathBreadcrumbs) {
-			t.Fatalf("path style option = %+v, present = %v", hit, ok)
+	for _, input := range []bool{false, true} {
+		hit, ok := settingsChoiceIn(paint(), state.settingsPathLabel(input))
+		if !ok || hit.Role != gfx.RoleRadio || hit.Selected != !input {
+			t.Fatalf("path style option %q = %+v, present = %v", state.settingsPathLabel(input), hit, ok)
 		}
 	}
-	state.Click(hitSettingsPathInput)
+	clickSettingsChoice(t, state, state.settingsPathLabel(true))
 	saved, _, err := loadState(state.options.StatePath)
 	if err != nil || !saved.SFTPPathInput {
 		t.Fatalf("saved path input = %v, error = %v", saved.SFTPPathInput, err)
@@ -55,7 +56,9 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	if _, ok := hitByID(canvas, contextID(hitSFTPBreadcrumbList.At(1))); ok {
 		t.Fatal("input mode still paints breadcrumbs")
 	}
-	state.Click(hitSettingsPathBreadcrumbs)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsFiles)
+	clickSettingsChoice(t, state, state.settingsPathLabel(false))
 	saved, _, err = loadState(state.options.StatePath)
 	if err != nil || saved.SFTPPathInput {
 		t.Fatalf("disabled path input = %v, error = %v", saved.SFTPPathInput, err)
@@ -140,16 +143,33 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	result := state.Key(gfx.KeyEvent{Target: hitSettingsPathBreadcrumbs, Key: gfx.KeyRight})
-	if !result.Handled || !state.sftpPathInput || result.Focus != hitSettingsPathInput {
-		t.Fatalf("right arrow = %+v, input = %v", result, state.sftpPathInput)
+	row := state.messages.Tools.FilesPathStyle
+	from := settingsChoiceHitInRow(t, state, row, state.settingsPathLabel(false))
+	to := settingsChoiceHitInRow(t, state, row, state.settingsPathLabel(true))
+	result := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
+		t.Fatalf("right arrow = %+v", result)
 	}
-	state.Click(hitSettingsPathInput) // selecting the same option must not toggle it off
+	var rove gfx.Canvas
+	rove.BeginEventPass(result.Activate)
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 900})
+	rove.EndEventPass()
+	if !state.sftpPathInput {
+		t.Fatal("the right arrow did not select the input field")
+	}
+	clickSettingsChoice(t, state, state.settingsPathLabel(true)) // selecting the same option must not toggle it off
 	if !state.sftpPathInput {
 		t.Fatal("selecting Input field twice changed the style")
 	}
-	result = state.Key(gfx.KeyEvent{Target: hitSettingsPathInput, Key: gfx.KeyLeft})
-	if !result.Handled || state.sftpPathInput {
+	result = state.Key(gfx.KeyEvent{Target: to.ID, Key: gfx.KeyLeft})
+	if !result.Handled || result.Activate != from.ID {
+		t.Fatalf("left arrow = %+v", result)
+	}
+	rove.Reset()
+	rove.BeginEventPass(result.Activate)
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 900})
+	rove.EndEventPass()
+	if state.sftpPathInput {
 		t.Fatal("left arrow did not select breadcrumbs")
 	}
 	state.setLanguage(i18n.Chinese)

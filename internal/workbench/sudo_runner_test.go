@@ -51,7 +51,7 @@ func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	}
 	session.conn = connection
 	server.failures["docker ps"] = errors.New("permission denied")
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	connection.mu.Lock()
 	before := len(connection.commands)

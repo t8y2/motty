@@ -12,7 +12,7 @@ import (
 func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
 	t.Helper()
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
 	state.Click(hitRemoteContainerDetails)

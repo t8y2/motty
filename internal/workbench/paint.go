@@ -1000,9 +1000,16 @@ type chromeLayout struct {
 	window, probe, header, hostRow, empty, popup ui.View
 	// widget lays out one small control at a time (a bar or toolbar button, a chip,
 	// an icon button): each paints what it declared before the next begins, so the
-	// view is shared. dialog is the body of one dialog, and newTab the page of an
-	// empty tab.
-	widget, dialog, newTab ui.View
+	// view is shared. dialog is the body of one dialog.
+	widget, dialog ui.View
+	// newTabPage declares the empty tab, with newTabView its declaration kept so a
+	// paint makes no new method value; newTabAdd and newTabAll are its footer
+	// buttons, painted by hand once the page has laid them out.
+	newTabPage   *ui.Page
+	newTabView   func(ui.C)
+	newTabAdd    ui.Box
+	newTabAll    ui.Box
+	newTabFooter bool
 	// importButton is where the toolbar's Import button was painted: the menu
 	// it opens hangs under it, right-aligned.
 	importButton gfx.Rect

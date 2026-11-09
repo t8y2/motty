@@ -199,10 +199,6 @@ var (
 	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
 	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
 	hitForwardHostPickerScope       = tree.ID(forwardsHits, "forward-host-picker-scope")
-	hitForwardModeLocal             = tree.ID(forwardsHits, "forward-mode-local")
-	hitForwardModeSOCKS5            = tree.ID(forwardsHits, "forward-mode-socks5")
-	hitForwardModeHTTPConnect       = tree.ID(forwardsHits, "forward-mode-http-connect")
-	hitForwardModeRemote            = tree.ID(forwardsHits, "forward-mode-remote")
 	hitForwardRowList               = tree.Sub(forwardsHits, tree.Name("forward-row"))
 	hitForwardHostItemList          = tree.Sub(forwardsHits, tree.Name("forward-host-item"))
 )
@@ -816,9 +812,6 @@ type State struct {
 	toolbarDock      toolbarDockUI
 	sftpColumnEditor sftpColumnSettingsUI
 
-	// area: settings
-	settingsPage ui.View // the whole settings workspace
-
 	// contextRect is where the last paint put the side panel (empty when there
 	// was none), so wheel events can tell which view they are over.
 	contextRect      gfx.Rect
@@ -906,10 +899,8 @@ type State struct {
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
 	filesLayout ui.View
 	// area: terminal and workspace panes
-	terminalPageLayout   ui.View
-	fontPickerListLayout ui.View
-	fontPickerLayout     ui.View // the font picker's list and sample
-	paneChrome           ui.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout ui.View
+	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
 	filesList   ui.View
@@ -922,8 +913,6 @@ type State struct {
 	// area: keychain, palette, import and the rest
 	railLayout            ui.View
 	keysLayout            ui.View
-	paletteListLayout     ui.View
-	paletteLayout         ui.View
 	importLayout          ui.View
 	knownHostsTableLayout ui.View
 	hostToggleLayout      ui.View
@@ -1846,11 +1835,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case id == hitPaneRename:
 		state.renameActiveTerminal()
 	case state.clickNewTabPage(id), state.clickConnectPick(id):
-	case id == hitPaneChooseHost:
-		state.pendingWorkspace = state.deck.ActiveWorkspace()
-		state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
-		state.activeSection = sectionHosts
-		state.save()
 	case id.Scope() == hitCommandSessionList:
 		state.ActivatePane(uint32(item(id)))
 		state.save()
@@ -2594,6 +2578,11 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		// row identities are already mounted where the menu was painted.
 		mount = 0
 	}
+	if state.activeSection == sectionSettings && state.modal == modalNone && state.settings.workspace != nil {
+		if result, handled := state.settings.workspace.Key(event); handled {
+			return result
+		}
+	}
 	result := state.key(event)
 	result.Focus = tree.MountID(mount, result.Focus)
 	return result
@@ -2677,6 +2666,16 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if result := state.hostPickerKey(event); result.Handled {
 		return result
+	}
+	if state.modal == modalNewHost {
+		if result, handled := state.hostDialogChoiceKey(event); handled {
+			return result
+		}
+	}
+	if state.modal == modalXYTransfer {
+		if result, handled := state.xyChoiceKey(event); handled {
+			return result
+		}
 	}
 	if result := state.hostFormKey(event); result.Handled {
 		return result
@@ -2798,14 +2797,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostsKey(event); handled {
 		return result
 	}
-	if state.modal == modalNewForward && (event.Target == hitForwardModeLocal || event.Target == hitForwardModeRemote || event.Target == hitForwardModeSOCKS5 || event.Target == hitForwardModeHTTPConnect) {
-		options := state.forwardModeOptions()
-		next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-		if handled {
-			state.Click(next)
-			return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
-		}
-	}
 	if state.modal == modalNewForward && event.Key == gfx.KeyEnter && state.EditorFor(event.Target) != nil && !event.Repeat {
 		state.submitForwardDialog()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -2821,6 +2812,12 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal == modalVaultUnlock && event.Key == gfx.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
 		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalOutboundProxy && state.proxyForm.kindPage != nil {
+		// The proxy kind switch is a page Choice: its arrows are the page's.
+		if result, handled := state.proxyForm.kindPage.Key(event); handled {
+			return result
+		}
 	}
 	if state.modal == modalOutboundProxy && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitOutboundProxyAddress || event.Target == hitOutboundProxyUser || event.Target == hitOutboundProxyPassword || event.Target == hitOutboundProxyBypass) {

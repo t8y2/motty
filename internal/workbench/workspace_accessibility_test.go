@@ -36,9 +36,14 @@ func TestWorkspaceModalEscapePrecedenceAndDraftSemantics(t *testing.T) {
 	state.Click(hitWorkspaceNew)
 
 	var canvas gfx.Canvas
-	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitWorkspaceDraftTemporary, true)
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	mode := panelHit(t, &canvas, hitWorkspaceDraftTemporary)
+	selected, ok := settingsChoiceIn(&canvas, state.messages.WorkspaceDraftTemporary)
+	if !ok {
+		t.Fatal("the draft dialog offers no temporary mode")
+	}
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, selected.ID, true)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	mode := panelHit(t, &canvas, selected.ID)
 	if mode.Role != gfx.RoleRadio || !mode.Selected {
 		t.Fatalf("selected draft mode = %+v", mode)
 	}

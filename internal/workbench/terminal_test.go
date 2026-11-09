@@ -114,7 +114,7 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 	if !state.splitActivePane(layoutcore.Horizontal) {
 		t.Fatal("split right")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(2))
 	connect(t, state, world) // a second session, still connecting
 	state.Resize(gfx.Size{Width: 1000, Height: 700})

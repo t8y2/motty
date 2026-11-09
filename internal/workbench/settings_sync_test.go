@@ -147,25 +147,33 @@ func assistantWindowsOnOneStore(t *testing.T) ([3]*State, *AIHub) {
 
 func TestAssistantSettingsChangedInOneWindowReachOtherWindows(t *testing.T) {
 	windows, hub := assistantWindowsOnOneStore(t)
+	m := windows[0].messages.AISettings
 	for _, change := range []struct {
 		window int
-		hit    gfx.ID
+		hit    gfx.ID // a switch
+		choice string // a page Choice's selected segment
 	}{
-		{0, hitAISetSteps24}, {0, hitAISetContext0}, {1, hitAISetRiskHigh},
-		{2, hitAISetRedact}, {0, hitAISetHistory}, {1, hitAISetSteps6},
-		{1, hitAISetRedact}, {2, hitAISetRiskLow},
+		{0, gfx.ID{}, "24"}, {0, gfx.ID{}, m.ContextOff}, {1, gfx.ID{}, m.RiskHigh},
+		{2, hitAISetRedact, ""}, {0, hitAISetHistory, ""}, {1, gfx.ID{}, "6"},
+		{1, hitAISetRedact, ""}, {2, gfx.ID{}, m.RiskLow},
 	} {
 		origin := windows[change.window]
 		before := origin.ai.settings
-		origin.Click(change.hit)
+		what := change.choice
+		if !change.hit.IsZero() {
+			origin.Click(change.hit)
+			what = tree.Text(change.hit)
+		} else {
+			clickSettingsChoice(t, origin, change.choice)
+		}
 		want := origin.ai.settings
 		if want == before {
-			t.Fatalf("setting %v did not change", change.hit)
+			t.Fatalf("setting %v did not change", what)
 		}
 		for index, state := range windows {
 			state.Wake()
 			if got := state.ai.settings; got != want {
-				t.Errorf("setting %v: window %d has %+v, want %+v from window %d", change.hit, index+1, got, want, change.window+1)
+				t.Errorf("setting %v: window %d has %+v, want %+v from window %d", what, index+1, got, want, change.window+1)
 			}
 		}
 	}
@@ -236,7 +244,7 @@ func TestAssistantSettingsRefreshKeepsAnActiveRequestAndDrafts(t *testing.T) {
 	b.ai.input.Insert("next question")
 	b.Click(hitAISetProviderAdd)
 	b.ai.cfg.name.Insert("unsaved provider")
-	a.Click(hitAISetSteps24)
+	clickSettingsChoice(t, a, "24")
 	b.Wake()
 	if b.ai.settings.maxSteps != 24 {
 		t.Fatal("the window running a request did not receive the setting")
@@ -260,7 +268,7 @@ func TestAssistantSettingsPublicationLeavesUnusedStoresClosed(t *testing.T) {
 	options.WindowID = 4
 	dormant := newTestState(t, options)
 	hub.Add(dormant, nil)
-	windows[0].Click(hitAISetSteps24)
+	clickSettingsChoice(t, windows[0], "24")
 	dormant.Wake()
 	if dormant.ai.store != nil || dormant.ai.storeTried {
 		t.Fatal("publishing settings opened an unused assistant database")

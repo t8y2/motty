@@ -42,13 +42,27 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 					}
 					t.Fatal("missing control", id)
 				}
+				// The access level is a page Choice: click its segment by its
+				// words. The first "Allow all" is the HTTP level.
+				clickChoice := func(label string, first bool) {
+					t.Helper()
+					view.Rest()
+					hit, ok := settingsChoiceInHits(view.Snapshot().Hits, label, !first)
+					if !ok {
+						t.Fatalf("missing access choice %q", label)
+					}
+					if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+						t.Fatal(err)
+					}
+				}
+				allowAll := state.messages.AISettings.MCPModeAllowAll
 				checkUnselected := func() {
 					t.Helper()
 					if state.ai.settings.mcpMode != gate.ModeAsk || settingValue(t, db, "ai.mcp.mode") != "ask" {
 						t.Fatal("access changed before confirmation")
 					}
 					for _, hit := range view.Snapshot().Hits {
-						if hit.ID == hitAISetMCPAllowAll && hit.Selected {
+						if hit.Label == allowAll && hit.Role == gfx.RoleRadio && hit.Selected {
 							t.Fatal("unconfirmed option looks selected")
 						}
 					}
@@ -64,7 +78,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 						}
 					}
 				}
-				click(hitAISetMCPAsk)
+				clickChoice(state.messages.AISettings.MCPModeAsk, false)
 				if err := view.Keys("right"); err != nil {
 					t.Fatal(err)
 				}
@@ -81,7 +95,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 				if state.ai.cfg.dialog != aiDialogNone {
 					t.Fatal("Escape did not cancel")
 				}
-				click(hitAISetMCPAllowAll)
+				clickChoice(allowAll, true)
 				checkUnselected()
 				if err := view.Keys("enter"); err != nil {
 					t.Fatal(err)
@@ -90,7 +104,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 				if state.ai.cfg.dialog != aiDialogNone {
 					t.Fatal("the default button did not cancel")
 				}
-				click(hitAISetMCPAllowAll)
+				clickChoice(allowAll, true)
 				click(hitAISetConfirmAction)
 				if state.ai.cfg.dialog != aiDialogNone || state.ai.settings.mcpMode != gate.ModeAllowAll {
 					t.Fatal("confirmation did not select full access")
@@ -112,7 +126,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 					}
 				}
 				shot("enabled-dark")
-				click(hitAISetMCPObserve)
+				clickChoice(state.messages.AISettings.MCPModeObserve, false)
 				if state.ai.settings.mcpMode != gate.ModeObserve {
 					t.Fatal("could not revoke access")
 				}

@@ -67,7 +67,7 @@ func TestRemoteToolsTabsAndSortKeepApartInANarrowWindow(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 520, Height: 380})
-	tabs, ok := hitByID(&canvas, hitRemoteTabContainers)
+	tabs, ok := settingsChoiceIn(&canvas, state.messages.Tools.RemoteTabContainers)
 	sort, sortOK := hitByID(&canvas, hitRemoteSortMemory)
 	if !ok || !sortOK {
 		t.Fatal("the tabs or the sort order are not painted")

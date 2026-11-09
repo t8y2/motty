@@ -22,9 +22,6 @@ import (
 // client configuration that starts it, and what they did.
 
 var (
-	hitAISetAgentObserve       = tree.ID(aiSettingsHits, "ai-set-agent-observe")
-	hitAISetAgentRun           = tree.ID(aiSettingsHits, "ai-set-agent-run")
-	hitAISetAgentAllowAll      = tree.ID(aiSettingsHits, "ai-set-agent-allow-all")
 	hitAISetAgentCopy          = tree.ID(aiSettingsHits, "ai-set-agent-copy")
 	hitAISetAgentClear         = tree.ID(aiSettingsHits, "ai-set-agent-clear")
 	hitAISetAgentSelect        = tree.ID(aiSettingsHits, "ai-set-agent-select")
@@ -38,23 +35,15 @@ const agentAuditShown = 5
 func (state *State) aiAgentModeOptions() [3]components.SegmentOption {
 	m := state.messages.AISettings
 	return [...]components.SegmentOption{
-		{ID: hitAISetAgentObserve, Label: m.AgentModeObserve},
-		{ID: hitAISetAgentRun, Label: m.AgentModeRun},
-		{ID: hitAISetAgentAllowAll, Label: m.MCPModeAllowAll},
+		{Label: m.AgentModeObserve},
+		{Label: m.AgentModeRun},
+		{Label: m.MCPModeAllowAll},
 	}
 }
 
-// aiAgentClick handles the controls of the group.
+// aiAgentClick handles the controls of the group that are not its mode choice.
 func (state *State) aiAgentClick(id gfx.ID) bool {
 	switch id {
-	case hitAISetAgentObserve:
-		state.aiPut(agentModeSetting, AgentModeReadOnly)
-	case hitAISetAgentRun:
-		state.aiPut(agentModeSetting, AgentModeCommands)
-	case hitAISetAgentAllowAll:
-		if state.ai.settings.agentMode != gate.ModeAllowAll {
-			state.ai.cfg.dialog = aiDialogAgentAllowAll
-		}
 	case hitAISetAgentCopy:
 		state.aiCopyText(hitAISetAgentCopy, state.aiAgentPreview())
 	case hitAISetAgentSelect:
@@ -75,6 +64,21 @@ func (state *State) aiAgentClick(id gfx.ID) bool {
 		return false
 	}
 	return true
+}
+
+// applyAIAgentMode stores the stdio server's access level the choice already
+// wrote. Full access is asked for, not written: the confirmation stores it.
+func (state *State) applyAIAgentMode(mode gate.Mode) {
+	switch mode {
+	case gate.ModeAllowAll:
+		if state.ai.settings.agentMode != gate.ModeAllowAll {
+			state.ai.cfg.dialog = aiDialogAgentAllowAll
+		}
+	case gate.ModeAsk:
+		state.aiPut(agentModeSetting, AgentModeCommands)
+	default:
+		state.aiPut(agentModeSetting, AgentModeReadOnly)
+	}
 }
 
 // agentExecutable is the program a client has to start.
@@ -157,13 +161,6 @@ func (state *State) agentAuditLines() []string {
 
 func (state *State) paintAIAgents(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
-	selected := hitAISetAgentObserve
-	switch state.ai.settings.agentMode {
-	case gate.ModeAsk:
-		selected = hitAISetAgentRun
-	case gate.ModeAllowAll:
-		selected = hitAISetAgentAllowAll
-	}
 	modes := state.aiAgentModeOptions()
 	hosts := state.agentHostsText()
 	entries := state.ai.agentAudit
@@ -175,10 +172,9 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		page.f.Column().Pad(18).Children(func() {
 			page.f.Wrap(m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
 		})
-		page.mcpFrame(m.AgentMode, m.AgentModeDesc, pal.muted, func() {
-			width := min(components.SegmentedControlWidth(page.f.Canvas(), state.Theme(), modes[:]), max(0, page.width-36))
-			page.segmentSlot(width, modes[:], selected)
-		})
+		mode := state.ai.settings.agentMode
+		settingsChoiceRow(page, m.AgentMode, m.AgentModeDesc, modes[:], &mode, aiAgentModeChoices[:], state.aiAgentModeLabel,
+			func() { state.applyAIAgentMode(mode) }, nil)
 		if state.ai.settings.agentMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.AgentAllowAllWarning)
 		}

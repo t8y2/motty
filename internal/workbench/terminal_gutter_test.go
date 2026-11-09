@@ -83,7 +83,8 @@ func TestGutterSettingPersists(t *testing.T) {
 	options.Keystore = &memKeys{}
 	state := newTestState(t, options)
 	state.Click(hitSettings)
-	state.Click(hitSettingsGutterTime)
+	state.selectSettingsCategory(settingsTerminal)
+	clickSettingsChoice(t, state, state.settingsGutterLabel(gutterTime))
 	if restored := newTestState(t, options); restored.terminalGutter != gutterTime {
 		t.Fatalf("restored gutter %v", restored.terminalGutter)
 	}

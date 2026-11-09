@@ -32,18 +32,22 @@ func startXY(t *testing.T, state *State, session *Session, mode xymodem.Mode, se
 	if state.modal != modalXYTransfer {
 		t.Fatalf("modal = %d", state.modal)
 	}
+	m := state.messages.Tools
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	for _, id := range []gfx.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY, hitXYSend, hitXYReceive, hitXYStart} {
-		if _, ok := hitByID(&canvas, id); !ok {
-			t.Fatalf("setup control %d is not painted", id)
+	for _, label := range []string{"XMODEM", "XMODEM-1K", "YMODEM", m.XYSend, m.XYReceive} {
+		if _, ok := dialogChoiceIn(&canvas, label); !ok {
+			t.Fatalf("setup choice %q is not painted", label)
 		}
 	}
-	state.Click([]gfx.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY}[mode])
+	if _, ok := hitByID(&canvas, hitXYStart); !ok {
+		t.Fatal("the start button is not painted")
+	}
+	clickDialogChoice(t, state, []string{"XMODEM", "XMODEM-1K", "YMODEM"}[mode])
 	if sending {
-		state.Click(hitXYSend)
+		clickDialogChoice(t, state, m.XYSend)
 	} else {
-		state.Click(hitXYReceive)
+		clickDialogChoice(t, state, m.XYReceive)
 	}
 	state.Click(hitXYStart)
 }
@@ -151,5 +155,39 @@ func TestSetupIsRefusedWhileATransferRuns(t *testing.T) {
 	state.openXYSetup(session)
 	if state.modal == modalXYTransfer {
 		t.Fatal("a second transfer was offered")
+	}
+}
+
+func TestXYSetupChoicesHaveRovingKeyboardFocus(t *testing.T) {
+	state, session, _ := transferState(t)
+	state.openXYSetup(session)
+	m := state.messages.Tools
+
+	xmodem := dialogChoiceHit(t, state, "XMODEM")
+	xmodem1k := dialogChoiceHit(t, state, "XMODEM-1K")
+	result := state.Key(gfx.KeyEvent{Target: xmodem.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != xmodem1k.ID || result.Activate != xmodem1k.ID {
+		t.Fatalf("mode result = %+v", result)
+	}
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(result.Activate)
+	state.Paint(&canvas, dialogChoicePaint)
+	canvas.EndEventPass()
+	if state.xy.mode != xymodem.XMODEM1K {
+		t.Fatalf("mode = %v after the arrow picked the next option", state.xy.mode)
+	}
+
+	send := dialogChoiceHit(t, state, m.XYSend)
+	receive := dialogChoiceHit(t, state, m.XYReceive)
+	result = state.Key(gfx.KeyEvent{Target: send.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != receive.ID || result.Activate != receive.ID {
+		t.Fatalf("direction result = %+v", result)
+	}
+	canvas = gfx.Canvas{}
+	canvas.BeginEventPass(result.Activate)
+	state.Paint(&canvas, dialogChoicePaint)
+	canvas.EndEventPass()
+	if state.xy.sending {
+		t.Fatal("the direction did not switch to receiving")
 	}
 }

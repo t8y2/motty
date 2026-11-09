@@ -151,7 +151,7 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	server.mu.Lock()
 	server.failures["docker ps"] = errors.New("exit status 127")
 	server.mu.Unlock()
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if len(state.remote.rows) != 0 {
@@ -171,8 +171,8 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	server.mu.Lock()
 	requests := len(server.commands)
 	server.mu.Unlock()
-	for _, tab := range []gfx.ID{hitRemoteTabImages, hitRemoteTabVolumes, hitRemoteTabNetworks, hitRemoteTabCompose, hitRemoteTabContainers} {
-		state.Click(tab)
+	for _, label := range []string{state.messages.Tools.RemoteTabImages, state.messages.Tools.RemoteTabVolumes, state.messages.Tools.RemoteTabNetworks, state.messages.Tools.RemoteTabCompose, state.messages.Tools.RemoteTabContainers} {
+		clickSettingsChoice(t, state, label)
 		canvas.Reset()
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if state.remote.loading || !state.remote.noDocker || !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
@@ -185,7 +185,7 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	if !unchanged {
 		t.Fatal("Docker tabs repeated commands despite a known missing installation")
 	}
-	state.Click(hitRemoteTabProcesses)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0)
 	canvas.Reset()
@@ -200,7 +200,7 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 		t.Fatal("missing Docker disabled unrelated process operations")
 	}
 	state.Click(hitRemoteProcessDetailsDismiss)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	if state.remote.loading {
 		t.Fatal("returning from processes did not reuse the known Docker empty state")
 	}
@@ -263,7 +263,10 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 					var canvas gfx.Canvas
 					canvas.SetPixelScale(float32(scale))
 					w.paint(&canvas, size)
-					tab, _ := hitByID(&canvas, hitRemoteTabProcesses)
+					tab, ok := settingsChoiceIn(&canvas, state.messages.Tools.RemoteTabProcesses)
+					if !ok {
+						t.Fatalf("language=%v size=%v: no process tab", language, size)
+					}
 					for _, id := range []gfx.ID{hitRemoteRefresh, hitRemoteAutoRefresh, hitRemoteSortCPU, hitRemoteSortMemory, hitRemoteClose} {
 						hit, ok := hitByID(&canvas, id)
 						if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
@@ -287,6 +290,13 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 				t.Helper()
 				box := dualHit(t, view, id)
 				if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
+					t.Fatal(err)
+				}
+			}
+			clickChoice := func(label string) {
+				t.Helper()
+				hit := dualChoiceHit(t, view, label)
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -366,7 +376,7 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 				server.mu.Lock()
 				server.failures = map[string]error{"docker ps": errors.New("exit status 127")}
 				server.mu.Unlock()
-				click(hitRemoteTabContainers)
+				clickChoice(state.messages.Tools.RemoteTabContainers)
 				settle()
 				if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("remote-docker-empty-%g.png", scale))); err != nil && !errors.Is(err, headless.ErrNoRenderer) {
 					t.Fatal(err)
@@ -398,10 +408,10 @@ func TestRemoteDockerRefreshFromAnotherTabProbesAgain(t *testing.T) {
 	server.mu.Lock()
 	server.failures["docker ps"] = errors.New("exit status 127")
 	server.mu.Unlock()
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && state.remote.noDocker })
 
-	state.Click(hitRemoteTabProcesses)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	server.mu.Lock()
 	delete(server.failures, "docker ps")
@@ -409,7 +419,7 @@ func TestRemoteDockerRefreshFromAnotherTabProbesAgain(t *testing.T) {
 	state.Click(hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	if state.remote.noDocker {
 		t.Fatal("installed Docker was still reported missing")

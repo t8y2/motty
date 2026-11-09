@@ -82,16 +82,40 @@ func (state *State) paintHistory(canvas *gfx.Canvas, viewport gfx.Rect) {
 		ID: hitHistorySearch, Label: m.Title, Value: value,
 		Placeholder: m.Placeholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
-	options := [...]components.SegmentOption{
-		{ID: hitHistoryScopeHost, Label: m.ScopeHost},
-		{ID: hitHistoryScopeAll, Label: m.ScopeAll},
-	}
-	selectedScope := options[0].ID
-	if h.all {
-		selectedScope = options[1].ID
-	}
 	rect := scope.Rect()
 	rect.Height = 30
-	components.BeginSegmentedControl(canvas, state.Theme(), rect, options[:], selectedScope).Paint()
+	state.drawHistoryScope(canvas, rect)
 	dialog.End()
 }
+
+// historyScopeRoot names the picker's host/all switch in the window's Tree.
+const historyScopeRoot = "history-scope"
+
+// drawHistoryScope paints the picker's host/all switch in its slot. The switch is
+// declared as a page Choice, so its arrows move between the two options.
+func (state *State) drawHistoryScope(canvas *gfx.Canvas, bounds gfx.Rect) {
+	h := &state.history
+	if h.scopePage == nil {
+		h.scopePage = ui.NewPage(ui.PageConfig{Root: historyScopeRoot, Theme: &state.theme})
+		h.scopeView = state.declareHistoryScope
+	}
+	h.scopePage.Draw(canvas, bounds, h.scopeView)
+}
+
+func (state *State) declareHistoryScope(c ui.C) {
+	h := &state.history
+	if ui.Choice(c, &h.all, historyScopeChoices[:], state.historyScopeLabel).Fill().Changed() {
+		state.loadHistory()
+		state.rankHistory()
+	}
+}
+
+func (state *State) historyScopeLabel(all bool) string {
+	if all {
+		return state.messages.History.ScopeAll
+	}
+	return state.messages.History.ScopeHost
+}
+
+// historyScopeChoices are the picker's switch values: this host, or every host.
+var historyScopeChoices = [...]bool{false, true}

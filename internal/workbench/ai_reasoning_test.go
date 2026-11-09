@@ -236,7 +236,7 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 	}
 
 	// 3. 用户选择强制关闭 (Disable) 并保存
-	state.Click(hitAISetReasoningDisable)
+	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningDisable)
 	if state.ai.cfg.reasoningMode != 2 {
 		t.Fatalf("expected reasoningMode 2, got %d", state.ai.cfg.reasoningMode)
 	}
@@ -262,8 +262,8 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 	if state.ai.cfg.reasoningModelName != "z-custom-model" {
 		t.Fatalf("expected reasoningModelName 'z-custom-model', got %q", state.ai.cfg.reasoningModelName)
 	}
-	state.Click(hitAISetReasoningEnable)
-	state.Click(hitAISetReasoningPreset1) // 6 档
+	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningEnable)
+	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningPreset6) // 6 档
 	state.Click(hitAISetReasoningSave)
 
 	model1, _ := state.aiModelAt("p1", 1)
@@ -275,7 +275,7 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 
 	// 5. 将 deepseek-v4-pro 恢复为自动感知 (Auto)
 	state.Click(hitAISetModelReasoning.At(0))
-	state.Click(hitAISetReasoningAuto)
+	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningAuto)
 	state.Click(hitAISetReasoningSave)
 
 	model0, _ = state.aiModelAt("p1", 0)
@@ -286,7 +286,7 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 
 	// 6. 验证渲染弹窗不发生 panic
 	state.Click(hitAISetModelReasoning.At(0))
-	state.Click(hitAISetReasoningEnable)
+	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningEnable)
 	canvas := &gfx.Canvas{}
 	state.paintAIDialogs(canvas, gfx.Rect{Width: 800, Height: 600})
 	state.Click(hitAISetReasoningCancel)

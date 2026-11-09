@@ -54,21 +54,18 @@ func (state *State) terminalToolbarMetrics() terminalToolbarMetrics {
 	}
 }
 
-func (state *State) settingsToolbarSizeOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitToolbarSizeSmall, Label: state.messages.SettingsToolbarSizeSmall},
-		{ID: hitToolbarSizeMedium, Label: state.messages.SettingsToolbarSizeMedium},
-		{ID: hitToolbarSizeLarge, Label: state.messages.SettingsToolbarSizeLarge},
-	}
-}
-
 func (state *State) setTerminalToolbarSize(size terminalToolbarSize) bool {
 	if state.terminalToolbarSize == size {
 		return false
 	}
 	state.terminalToolbarSize = size
-	state.toolbarDockChanged()
+	state.applyTerminalToolbarSize()
 	return true
+}
+
+// applyTerminalToolbarSize applies the size the page's choice already wrote.
+func (state *State) applyTerminalToolbarSize() {
+	state.toolbarDockChanged()
 }
 
 const (
@@ -105,6 +102,14 @@ func (state *State) setTerminalToolbarPosition(position terminalToolbarPosition)
 	if state.terminalToolbarPosition == position {
 		return false
 	}
+	state.terminalToolbarPosition = position
+	state.applyTerminalToolbarPosition()
+	return true
+}
+
+// applyTerminalToolbarPosition moves the terminal tools for the position the
+// page's choice already wrote.
+func (state *State) applyTerminalToolbarPosition() {
 	if state.toolbars.dock != nil {
 		// The group setting moves session tools together. Direct manipulation
 		// can subsequently distribute individual tools across both sides.
@@ -115,23 +120,21 @@ func (state *State) setTerminalToolbarPosition(position terminalToolbarPosition)
 			}
 			lower := entry.Zone == toolbarDockSideBottom || entry.Zone == toolbarDockLeftBottom
 			entry.Zone = toolbarDockSideTop
-			if position == terminalToolbarLeft {
+			if state.terminalToolbarPosition == terminalToolbarLeft {
 				entry.Zone = toolbarDockLeftTop
 			}
 			if lower {
 				entry.Zone = toolbarDockSideBottom
-				if position == terminalToolbarLeft {
+				if state.terminalToolbarPosition == terminalToolbarLeft {
 					entry.Zone = toolbarDockLeftBottom
 				}
 			}
 		}
 	}
-	state.terminalToolbarPosition = position
 	state.toolbarDock.sideScroll = [4]float32{}
 	state.resetTerminalToolRails()
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
-	return true
 }
 
 func (state *State) resetTerminalToolRails() {

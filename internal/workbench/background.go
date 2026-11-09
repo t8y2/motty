@@ -308,18 +308,6 @@ func (state *State) clickBackground(id gfx.ID) bool {
 		state.chooseBackground()
 	case hitBgRemove:
 		state.removeBackground()
-	case hitBgSubtle, hitBgMedium, hitBgStrong:
-		strength := bgMedium
-		switch id {
-		case hitBgSubtle:
-			strength = bgSubtle
-		case hitBgStrong:
-			strength = bgStrong
-		}
-		if state.bg.set && state.bg.strength != strength {
-			state.bg.strength = strength
-			state.save()
-		}
 	default:
 		return false
 	}
@@ -392,17 +380,31 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 	options := [3]components.SegmentOption{
 		{ID: hitBgSubtle, Label: m.BgSubtle}, {ID: hitBgMedium, Label: m.BgMedium}, {ID: hitBgStrong, Label: m.BgStrong},
 	}
-	selected := hitBgMedium
-	switch bg.strength {
-	case bgSubtle:
-		selected = hitBgSubtle
-	case bgStrong:
-		selected = hitBgStrong
-	}
+	strength := bg.strength
 	page.group(m.BgGroup, func() {
 		page.actionRow(m.BgRow, description, false,
 			components.ButtonAction{ID: hitBgChoose, Label: m.BgChoose, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitBgRemove, Label: m.BgRemove, Variant: components.ButtonOutline})
-		page.row(m.BgVisibility, "", options[:], selected)
+		settingsChoiceRow(page, m.BgVisibility, "", options[:], &strength, settingsBackgroundStrengthChoices[:], state.settingsBackgroundStrengthLabel,
+			func() {
+				if bg.set {
+					bg.strength = strength
+					state.save()
+				}
+			}, nil)
 	})
+}
+
+// settingsBackgroundStrengthChoices are how much of the picture shows.
+var settingsBackgroundStrengthChoices = [...]backgroundStrength{bgSubtle, bgMedium, bgStrong}
+
+func (state *State) settingsBackgroundStrengthLabel(strength backgroundStrength) string {
+	m := state.messages.Tools
+	switch strength {
+	case bgSubtle:
+		return m.BgSubtle
+	case bgStrong:
+		return m.BgStrong
+	}
+	return m.BgMedium
 }

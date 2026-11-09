@@ -9,6 +9,141 @@ import (
 	"motty/internal/i18n"
 )
 
+// settingsChoiceIn finds a page Choice's segment by its label: the rows of the
+// General page are Choices now, and their identities are the page's, not the
+// tree's. The choice declared last wins, which is the one painted over another.
+func settingsChoiceIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	return settingsChoiceInHits(canvas.Hits(), label, true)
+}
+
+// settingsChoiceFirstIn is settingsChoiceIn for the first of several choices that
+// offer the same words: the MCP page's HTTP and stdio access levels both say
+// "Allow all", and the HTTP one is painted first.
+func settingsChoiceFirstIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	return settingsChoiceInHits(canvas.Hits(), label, false)
+}
+
+// settingsChoiceInHits finds a page Choice's segment by its label in a hit list,
+// the last one when last is set.
+func settingsChoiceInHits(hits []gfx.Hit, label string, last bool) (gfx.Hit, bool) {
+	if last {
+		for i := len(hits) - 1; i >= 0; i-- {
+			if hit := hits[i]; hit.Label == label && hit.Role == gfx.RoleRadio {
+				return hit, true
+			}
+		}
+		return gfx.Hit{}, false
+	}
+	for _, hit := range hits {
+		if hit.Label == label && hit.Role == gfx.RoleRadio {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// settingsChoiceHit paints the settings page and finds the segment with label.
+func settingsChoiceHit(t testing.TB, state *State, label string) gfx.Hit {
+	t.Helper()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	if hit, ok := settingsChoiceIn(&canvas, label); ok {
+		return hit
+	}
+	var offered []string
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleRadio {
+			offered = append(offered, hit.Label)
+		}
+	}
+	t.Fatalf("no settings choice labeled %q (section %d, category %d); offered %q", label, state.activeSection, state.settingsCategory, offered)
+	return gfx.Hit{}
+}
+
+// clickSettingsChoice delivers a click on a page Choice segment in the event
+// pass, where the choice reads it.
+func clickSettingsChoice(t testing.TB, state *State, label string) {
+	t.Helper()
+	clickSettingsChoiceHit(t, state, settingsChoiceHit(t, state, label))
+}
+
+// clickSettingsChoiceFirst is clickSettingsChoice for the first of several
+// choices offering the same words.
+func clickSettingsChoiceFirst(t testing.TB, state *State, label string) {
+	t.Helper()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	hit, ok := settingsChoiceFirstIn(&canvas, label)
+	if !ok {
+		t.Fatalf("no settings choice labeled %q", label)
+	}
+	clickSettingsChoiceHit(t, state, hit)
+}
+
+func clickSettingsChoiceHit(t testing.TB, state *State, hit gfx.Hit) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(hit.ID)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	canvas.EndEventPass()
+}
+
+// settingsChoiceInRow finds the segment labeled optionLabel in the Choice row
+// whose setting name is rowLabel: several rows offer the same word (Normal is
+// the padding, the line spacing and the cursor thickness), so a label alone can
+// name more than one segment.
+func settingsChoiceInRow(canvas *gfx.Canvas, rowLabel, optionLabel string) (gfx.Hit, bool) {
+	rowY, found := float32(0), false
+	for _, text := range canvas.Texts() {
+		if text.Value == rowLabel {
+			rowY, found = text.Bounds.Y+text.Bounds.Height/2, true
+			break
+		}
+	}
+	if !found {
+		return gfx.Hit{}, false
+	}
+	var best gfx.Hit
+	bestDistance, ok := float32(0), false
+	for _, hit := range canvas.Hits() {
+		if hit.Label != optionLabel || hit.Role != gfx.RoleRadio {
+			continue
+		}
+		distance := hit.Bounds.Y + hit.Bounds.Height/2 - rowY
+		if distance < 0 {
+			distance = -distance
+		}
+		if !ok || distance < bestDistance {
+			best, bestDistance, ok = hit, distance, true
+		}
+	}
+	return best, ok
+}
+
+// settingsChoiceHitInRow paints the settings page and finds the segment with
+// optionLabel in the row named rowLabel.
+func settingsChoiceHitInRow(t testing.TB, state *State, rowLabel, optionLabel string) gfx.Hit {
+	t.Helper()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	if hit, ok := settingsChoiceInRow(&canvas, rowLabel, optionLabel); ok {
+		return hit
+	}
+	t.Fatalf("no settings choice labeled %q in the row %q", optionLabel, rowLabel)
+	return gfx.Hit{}
+}
+
+// clickSettingsChoiceInRow delivers a click on the segment with optionLabel in
+// the row named rowLabel.
+func clickSettingsChoiceInRow(t testing.TB, state *State, rowLabel, optionLabel string) {
+	t.Helper()
+	hit := settingsChoiceHitInRow(t, state, rowLabel, optionLabel)
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(hit.ID)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	canvas.EndEventPass()
+}
+
 func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 	for _, entry := range []gfx.ID{hitSettings, hitWindowSettings} {
 		state := newTestState(t, testOptions(t))
@@ -21,18 +156,31 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			category settingsCategory
 			texts    []string
 			hits     []gfx.ID
+			choices  []string
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []gfx.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitInterfaceFontChoose}},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []gfx.ID{hitInterfaceFontChoose}, nil},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
-			}, []gfx.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
-				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsCursorThin, hitSettingsCursorThick, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
+			}, []gfx.ID{hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsFontPick},
+				[]string{
+					state.messages.SettingsTerminalOptionText, state.messages.SettingsTerminalOptionMeta,
+					state.messages.Tools.PaddingCompact, state.messages.Tools.PaddingRoomy,
+					state.messages.Tools.LineHeightCompact, state.messages.Tools.LineHeightRoomy,
+					state.messages.Tools.CursorThin, state.messages.Tools.CursorThick,
+					state.settingsScrollbackLabel(1000), state.settingsScrollbackLabel(10000),
+					state.messages.SettingsTerminalClipboardBlock, state.messages.SettingsTerminalClipboardAllow,
+				}},
 			{settingsConnection, []string{
 				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
-			}, []gfx.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
-				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect,
-				hitSettingsStartupHosts}},
+			}, []gfx.ID{hitSettingsShareToggle, hitSettingsStartupHosts},
+				[]string{
+					state.settingsTimeoutLabel(5 * time.Second), state.settingsTimeoutLabel(30 * time.Second),
+					state.settingsKeepAliveLabel(60 * time.Second),
+					state.messages.SettingsConnectionReconnectThree, state.messages.SettingsConnectionReconnectForever,
+					state.messages.SettingsRestoreActive, state.messages.SettingsRestoreAll,
+					state.messages.SettingsNetworkProxySystem, state.messages.SettingsNetworkProxyDirect,
+				}},
 		} {
 			state.selectSettingsCategory(category.category)
 			// Tall enough for the whole category; a short window scrolls instead.
@@ -56,6 +204,11 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 					t.Errorf("settings hit %d is outside the settings place", id)
 				}
 			}
+			for _, label := range category.choices {
+				if _, ok := settingsChoiceIn(&canvas, label); !ok {
+					t.Errorf("entry %d category %d did not paint the choice %q", entry, category.category, label)
+				}
+			}
 		}
 	}
 }
@@ -75,7 +228,7 @@ func TestSettingsCategoriesAreChosenFromTheListAndStartAtTheTop(t *testing.T) {
 			t.Errorf("category %d selected = %v", category, hit.Selected)
 		}
 	}
-	if _, ok := hitByID(&canvas, hitSettingsTimeout5); ok {
+	if _, ok := settingsChoiceIn(&canvas, state.settingsTimeoutLabel(5*time.Second)); ok {
 		t.Fatal("a connection choice is painted on the General page")
 	}
 
@@ -95,10 +248,10 @@ func TestSettingsCategoriesAreChosenFromTheListAndStartAtTheTop(t *testing.T) {
 	}
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	if _, ok := hitByID(&canvas, hitSettingsTimeout5); !ok {
+	if _, ok := settingsChoiceIn(&canvas, state.settingsTimeoutLabel(5*time.Second)); !ok {
 		t.Fatal("the Connection page does not paint its choices")
 	}
-	if _, ok := hitByID(&canvas, hitSettingsLanguageEnglish); ok {
+	if _, ok := settingsChoiceIn(&canvas, state.messages.SettingsLanguageEnglish); ok {
 		t.Fatal("the Connection page paints a General choice")
 	}
 }
@@ -110,21 +263,21 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	if state.networkProxy != networkProxyDirect {
 		t.Fatalf("default network proxy = %v", state.networkProxy)
 	}
-	state.Click(hitSettingsLanguageChinese)
-	state.Click(hitSettingsAppearanceLight)
+	clickSettingsChoice(t, state, state.messages.SettingsLanguageChinese)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceLight)
 	state.selectSettingsCategory(settingsConnection)
-	state.Click(hitSettingsNetworkSystem)
+	clickSettingsChoice(t, state, state.settingsNetworkProxyLabel(networkProxySystem))
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionTimeout, state.settingsTimeoutLabel(30*time.Second))
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionKeepAlive, state.settingsKeepAliveLabel(60*time.Second))
+	clickSettingsChoice(t, state, state.settingsReconnectLabel(reconnectForever))
 	state.selectSettingsCategory(settingsTerminal)
-	state.Click(hitSettingsOptionMeta)
+	clickSettingsChoice(t, state, state.settingsOptionLabel(terminalOptionMeta))
 	for range 4 {
 		state.Click(hitSettingsFontSizeUp)
 	}
 	state.useTerminalFont(fontEntry{face: gfx.MonoClassic})
-	state.Click(hitSettingsScrollback1000)
-	state.Click(hitSettingsTimeout30)
-	state.Click(hitSettingsKeepAlive60)
-	state.Click(hitSettingsReconnectForever)
-	state.Click(hitSettingsClipboardAllow)
+	clickSettingsChoice(t, state, state.settingsScrollbackLabel(1000))
+	clickSettingsChoice(t, state, state.settingsClipboardLabel(terminalClipboardAllow))
 
 	if state.language != i18n.Chinese || state.messages.SettingsTitle != "设置" {
 		t.Fatalf("language=%v title=%q", state.language, state.messages.SettingsTitle)
@@ -146,7 +299,7 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 		t.Fatalf("terminal input=%+v, want AltSendsEscape", input)
 	}
 
-	state.Click(hitSettingsOptionText)
+	clickSettingsChoice(t, state, state.settingsOptionLabel(terminalOptionText))
 	if input := state.TerminalInput(app.TextInputContext{ID: hitTerminalList.At(1), Terminal: true}); input == nil || input.AltSendsEscape {
 		t.Fatalf("terminal input=%+v, want text-producing Option", input)
 	}
@@ -156,21 +309,21 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	options := freshOptions(t)
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageChinese)
-	first.Click(hitSettingsAppearanceLight)
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageChinese)
+	clickSettingsChoice(t, first, first.messages.SettingsAppearanceLight)
 	first.selectSettingsCategory(settingsConnection)
-	first.Click(hitSettingsNetworkSystem)
+	clickSettingsChoice(t, first, first.settingsNetworkProxyLabel(networkProxySystem))
+	clickSettingsChoiceInRow(t, first, first.messages.SettingsConnectionTimeout, first.settingsTimeoutLabel(5*time.Second))
+	clickSettingsChoiceInRow(t, first, first.messages.SettingsConnectionKeepAlive, first.settingsKeepAliveLabel(30*time.Second))
+	clickSettingsChoiceInRow(t, first, first.messages.SettingsConnectionReconnect, first.settingsReconnectLabel(reconnectThree))
 	first.selectSettingsCategory(settingsTerminal)
-	first.Click(hitSettingsOptionMeta)
+	clickSettingsChoice(t, first, first.settingsOptionLabel(terminalOptionMeta))
 	first.Click(hitSettingsFontSizeUp)
 	first.Click(hitSettingsFontSizeUp)
 	first.useTerminalFont(fontEntry{face: gfx.MonoClassic})
 	first.save()
-	first.Click(hitSettingsScrollback10000)
-	first.Click(hitSettingsTimeout5)
-	first.Click(hitSettingsKeepAlive30)
-	first.Click(hitSettingsReconnectThree)
-	first.Click(hitSettingsClipboardBlock)
+	clickSettingsChoice(t, first, first.settingsScrollbackLabel(10000))
+	clickSettingsChoice(t, first, first.settingsClipboardLabel(terminalClipboardBlock))
 
 	saved, report, err := loadState(first.options.StatePath)
 	if err != nil || report.outcome != loadOK {
@@ -217,12 +370,14 @@ func TestSettingsApplyScrollbackToExistingTerminalsAndReliabilityToNewConnection
 	}
 	state.sessions = append(state.sessions, Session{ID: 1, term: terminal})
 	state.Click(hitSettings)
-	state.Click(hitSettingsScrollback1000)
+	state.selectSettingsCategory(settingsTerminal)
+	clickSettingsChoice(t, state, state.settingsScrollbackLabel(1000))
 	if terminal.screen.ScrollbackLimit() != 1000 {
 		t.Fatalf("existing terminal scrollback max = %d", terminal.screen.ScrollbackLimit())
 	}
-	state.Click(hitSettingsTimeout30)
-	state.Click(hitSettingsKeepAlive60)
+	state.selectSettingsCategory(settingsConnection)
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionTimeout, state.settingsTimeoutLabel(30*time.Second))
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionKeepAlive, state.settingsKeepAliveLabel(60*time.Second))
 	state.activeSection = sectionHosts
 	openHost(state)
 	config := world.configs[len(world.configs)-1]
@@ -235,34 +390,75 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 
-	result := state.Key(gfx.KeyEvent{Target: hitSettingsLanguageEnglish, Key: gfx.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsLanguageChinese || state.language != i18n.Chinese {
-		t.Fatalf("language result=%+v language=%v", result, state.language)
-	}
-	result = state.Key(gfx.KeyEvent{Target: hitSettingsOptionText, Key: gfx.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsOptionMeta || state.terminalOption != terminalOptionMeta {
-		t.Fatalf("option result=%+v option=%v", result, state.terminalOption)
-	}
-	for _, test := range []struct {
-		from, to gfx.ID
-		check    func() bool
-	}{
-		{hitSettingsNetworkDirect, hitSettingsNetworkSystem, func() bool { return state.networkProxy == networkProxySystem }},
-		{hitSettingsPadNormal, hitSettingsPadRoomy, func() bool { return state.terminalPad == padRoomy }},
-		{hitSettingsScrollback5000, hitSettingsScrollback10000, func() bool { return state.terminalScrollback == 10000 }},
-		{hitSettingsTimeout10, hitSettingsTimeout30, func() bool { return state.connectionTimeout == 30*time.Second }},
-		{hitSettingsKeepAliveOff, hitSettingsKeepAlive30, func() bool { return state.connectionKeepAlive == 30*time.Second }},
-		{hitSettingsReconnectOff, hitSettingsReconnectThree, func() bool { return state.connectionReconnect == reconnectThree }},
-		{hitSettingsClipboardBlock, hitSettingsClipboardAsk, func() bool { return state.terminalClipboard == terminalClipboardAsk }},
-		{hitSettingsIntenseBoth, hitSettingsIntenseBright, func() bool {
-			return state.terminalIntense == intenseBright && state.termPal.intense == intenseBright
-		}},
-	} {
-		result = state.Key(gfx.KeyEvent{Target: test.from, Key: gfx.KeyRight})
-		if !result.Handled || result.Focus != test.to || !test.check() {
-			t.Fatalf("setting %d result=%+v", test.from, result)
+	// rove moves the focus from one segment to the next with the right arrow and
+	// delivers the activation the key reported, as the runtime does with an event
+	// pass: the choice is applied by the paint that reads it.
+	rove := func(category settingsCategory, rowLabel, fromLabel, toLabel string, applied func() bool) {
+		t.Helper()
+		state.selectSettingsCategory(category)
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+		from, ok := settingsChoiceInRow(&canvas, rowLabel, fromLabel)
+		if !ok {
+			t.Fatalf("%q: no choice labeled %q", rowLabel, fromLabel)
+		}
+		to, ok := settingsChoiceInRow(&canvas, rowLabel, toLabel)
+		if !ok {
+			t.Fatalf("%q: no choice labeled %q", rowLabel, toLabel)
+		}
+		result := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
+			t.Fatalf("%q: from=%v to=%v result=%+v", rowLabel, from.ID, to.ID, result)
+		}
+		canvas.Reset()
+		canvas.BeginEventPass(result.Activate)
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+		canvas.EndEventPass()
+		if !applied() {
+			t.Fatalf("%q was not applied by the activated choice", rowLabel)
 		}
 	}
+	m := state.messages
+
+	rove(settingsTerminal, m.SettingsTerminalOption, state.settingsOptionLabel(terminalOptionText), state.settingsOptionLabel(terminalOptionMeta),
+		func() bool { return state.terminalOption == terminalOptionMeta })
+	rove(settingsTerminal, m.Tools.PaddingRow, m.Tools.PaddingNormal, m.Tools.PaddingRoomy,
+		func() bool { return state.terminalPad == padRoomy })
+	rove(settingsTerminal, m.Tools.LineHeightRow, m.Tools.LineHeightNormal, m.Tools.LineHeightRoomy,
+		func() bool { return state.terminalLineHeight == lineHeightRoomy })
+	rove(settingsTerminal, m.Tools.CursorThicknessRow, m.Tools.CursorNormal, m.Tools.CursorThick,
+		func() bool { return state.terminalCursorThickness == cursorThick })
+	rove(settingsTerminal, m.Tools.GutterRow, m.Tools.GutterOff, m.Tools.GutterNumbers,
+		func() bool { return state.terminalGutter == gutterNumbers })
+	rove(settingsTerminal, m.Tools.IntenseRow, m.Tools.IntenseBoth, m.Tools.IntenseBright,
+		func() bool { return state.terminalIntense == intenseBright && state.termPal.intense == intenseBright })
+	rove(settingsTerminal, m.SettingsTerminalScrollback, state.settingsScrollbackLabel(5000), state.settingsScrollbackLabel(10000),
+		func() bool { return state.terminalScrollback == 10000 })
+	rove(settingsTerminal, m.SettingsTerminalClipboard, state.settingsClipboardLabel(terminalClipboardBlock), state.settingsClipboardLabel(terminalClipboardAsk),
+		func() bool { return state.terminalClipboard == terminalClipboardAsk })
+	// Completion starts on its last choice, so move it off before roving on.
+	clickSettingsChoiceInRow(t, state, m.History.SuggestRow, state.settingsCompletionLabel(completionOff))
+	rove(settingsTerminal, m.History.SuggestRow, state.settingsCompletionLabel(completionOff), state.settingsCompletionLabel(completionList),
+		func() bool { return state.completionMode() == completionList })
+	rove(settingsTerminal, m.Tools.TabTitleRow, state.settingsTabTitleLabel(tabTitleTerminal), state.settingsTabTitleLabel(tabTitleDirectory),
+		func() bool { return state.tabTitleMode == tabTitleDirectory })
+	rove(settingsTerminal, m.SettingsLocalStart, state.settingsLocalStartLabel(localStartRemember), state.settingsLocalStartLabel(localStartHome),
+		func() bool { return state.localStart == localStartHome })
+	rove(settingsConnection, m.SettingsNetworkProxy, state.settingsNetworkProxyLabel(networkProxyDirect), state.settingsNetworkProxyLabel(networkProxySystem),
+		func() bool { return state.networkProxy == networkProxySystem })
+	rove(settingsConnection, m.SettingsConnectionTimeout, state.settingsTimeoutLabel(10*time.Second), state.settingsTimeoutLabel(30*time.Second),
+		func() bool { return state.connectionTimeout == 30*time.Second })
+	rove(settingsConnection, m.SettingsConnectionKeepAlive, state.settingsKeepAliveLabel(0), state.settingsKeepAliveLabel(30*time.Second),
+		func() bool { return state.connectionKeepAlive == 30*time.Second })
+	rove(settingsConnection, m.SettingsConnectionReconnect, state.settingsReconnectLabel(reconnectOff), state.settingsReconnectLabel(reconnectThree),
+		func() bool { return state.connectionReconnect == reconnectThree })
+	rove(settingsConnection, m.SettingsRestore, state.settingsRestoreLabel(restoreConnectOff), state.settingsRestoreLabel(restoreConnectActive),
+		func() bool { return state.restoreConnect == restoreConnectActive })
+	rove(settingsConnection, m.SettingsSSHAgent, state.settingsAgentKindLabel(agentKindSystem), state.settingsAgentKindLabel(agentKindOnePassword),
+		func() bool { return state.sshAgent.kind == agentKindOnePassword })
+	// The language changes the row's own words, so it goes last.
+	rove(settingsGeneral, m.SettingsLanguage, state.settingsLanguageLabel(i18n.English), state.settingsLanguageLabel(i18n.Chinese),
+		func() bool { return state.language == i18n.Chinese })
 }
 
 func TestSettingsWorkspacePaintSchedulesNoIdleFrame(t *testing.T) {

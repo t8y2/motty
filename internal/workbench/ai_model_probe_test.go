@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/probe"
 	"motty/internal/ai/store"
 )
@@ -83,8 +84,8 @@ func TestAIModelProbeAllAndCancel(t *testing.T) {
 	}
 
 	// Change parameters in dialog
-	state.Click(hitAISetProbeConc2)
-	state.Click(hitAISetProbeTimeout10)
+	clickSettingsChoice(t, state, "2")
+	clickSettingsChoice(t, state, "10s")
 	if got := state.aiProbeConcurrency(); got != 2 {
 		t.Fatalf("expected concurrency 2, got %d", got)
 	}
@@ -159,6 +160,24 @@ func TestAIModelPagination(t *testing.T) {
 	}
 }
 
+func TestAIProbeDialogChoicesMoveWithArrowKeys(t *testing.T) {
+	world := newSettingsWorld(t, newLister("model-1"))
+	state := world.state
+	state.Click(hitAISetModelProbeAll)
+	current := settingsChoiceHit(t, state, "4")
+	result := state.Key(gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
+	if !result.Handled || !result.FocusVisible || result.Focus.IsZero() || result.Activate != result.Focus {
+		t.Fatalf("Right in the concurrency choice = %+v", result)
+	}
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(result.Activate)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	canvas.EndEventPass()
+	if got := state.aiProbeConcurrency(); got != 8 {
+		t.Fatalf("concurrency after Right = %d, want 8", got)
+	}
+}
+
 func TestAIModelProbeConcurrencyAndTimeoutOptions(t *testing.T) {
 	world := newSettingsWorld(t, newLister("model-1"))
 	state := world.state
@@ -171,22 +190,28 @@ func TestAIModelProbeConcurrencyAndTimeoutOptions(t *testing.T) {
 		t.Fatalf("expected default timeout 15s, got %v", got)
 	}
 
+	// The choices are in the probe dialog.
+	state.Click(hitAISetModelProbeAll)
+	if state.ai.cfg.dialog != aiDialogProbe {
+		t.Fatalf("expected the probe dialog, got %v", state.ai.cfg.dialog)
+	}
+
 	// Change concurrency
-	state.Click(hitAISetProbeConc1)
+	clickSettingsChoice(t, state, "1")
 	if got := state.aiProbeConcurrency(); got != 1 {
 		t.Fatalf("expected concurrency 1, got %d", got)
 	}
-	state.Click(hitAISetProbeConc8)
+	clickSettingsChoice(t, state, "8")
 	if got := state.aiProbeConcurrency(); got != 8 {
 		t.Fatalf("expected concurrency 8, got %d", got)
 	}
 
 	// Change timeout
-	state.Click(hitAISetProbeTimeout5)
+	clickSettingsChoice(t, state, "5s")
 	if got := state.aiProbeTimeout(); got != 5*time.Second {
 		t.Fatalf("expected timeout 5s, got %v", got)
 	}
-	state.Click(hitAISetProbeTimeout30)
+	clickSettingsChoice(t, state, "30s")
 	if got := state.aiProbeTimeout(); got != 30*time.Second {
 		t.Fatalf("expected timeout 30s, got %v", got)
 	}

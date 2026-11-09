@@ -40,6 +40,57 @@ func (state *State) tabNumberOptions() [3]components.SegmentOption {
 	}
 }
 
+// tabNumberChoice is the modifier family the digit row is bound to as the page's
+// Choice offers it. Its zero value is a chord bound elsewhere: no option is then
+// selected until one is chosen.
+type tabNumberChoice uint8
+
+const (
+	tabNumberNone tabNumberChoice = iota
+	tabNumberPrimary
+	tabNumberAlt
+	tabNumberShift
+)
+
+var tabNumberChoices = [...]tabNumberChoice{tabNumberPrimary, tabNumberAlt, tabNumberShift}
+
+func (state *State) tabNumberChoice() tabNumberChoice {
+	switch state.tabNumberModifierID() {
+	case hitSettingsTabNumbersPrimary:
+		return tabNumberPrimary
+	case hitSettingsTabNumbersAlt:
+		return tabNumberAlt
+	case hitSettingsTabNumbersShift:
+		return tabNumberShift
+	}
+	return tabNumberNone
+}
+
+func (state *State) tabNumberChoiceLabel(choice tabNumberChoice) string {
+	options := state.tabNumberOptions()
+	switch choice {
+	case tabNumberPrimary:
+		return options[0].Label
+	case tabNumberAlt:
+		return options[1].Label
+	case tabNumberShift:
+		return options[2].Label
+	}
+	return ""
+}
+
+func (choice tabNumberChoice) id() gfx.ID {
+	switch choice {
+	case tabNumberPrimary:
+		return hitSettingsTabNumbersPrimary
+	case tabNumberAlt:
+		return hitSettingsTabNumbersAlt
+	case tabNumberShift:
+		return hitSettingsTabNumbersShift
+	}
+	return gfx.ID{}
+}
+
 // tabNumberModifiers is the modifier set of one of those options.
 func tabNumberModifiers(id gfx.ID) (gfx.Modifiers, bool) {
 	primary := keymap.Primary

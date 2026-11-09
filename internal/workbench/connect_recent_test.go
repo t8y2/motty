@@ -12,7 +12,7 @@ import (
 func recentHostHint(t *testing.T, state *State, label string) string {
 	t.Helper()
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ := paintedTexts(state)
 	for _, hit := range canvas.Hits() {
 		if hit.ID.Scope() == hitCommandPaletteItems && hit.Label == label {
@@ -29,18 +29,30 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 	if state.modal != modalCommandPalette {
 		t.Fatal("the picker did not open")
 	}
-	result := state.Key(gfx.KeyEvent{Target: hitConnectSortDefault, Key: gfx.KeyRight})
-	if !result.Handled || !state.commandPalette.workspaces {
-		t.Fatalf("right on the switch = %+v, workspaces=%t", result, state.commandPalette.workspaces)
+	// The switch is a page Choice: an arrow reports the next segment to activate,
+	// and the click's event pass writes the value.
+	defaultHit := settingsChoiceHit(t, state, state.messages.NewTabSortDefault)
+	workspacesHit := settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
+	result := state.Key(gfx.KeyEvent{Target: defaultHit.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != workspacesHit.ID || result.Activate != workspacesHit.ID {
+		t.Fatalf("right on the switch = %+v", result)
 	}
-	if result.Focus != hitCommandPaletteSearch {
-		t.Fatalf("the keyboard stayed on the switch: %+v", result)
+	activateChoice(t, state, result.Activate)
+	if !state.commandPalette.workspaces {
+		t.Fatal("right on the switch did not choose workspaces")
 	}
-	result = state.Key(gfx.KeyEvent{Target: hitConnectSortWorkspaces, Key: gfx.KeyRight})
-	if !result.Handled || !state.recentConnectSort || state.commandPalette.workspaces {
-		t.Fatalf("right from workspaces = %+v, recent=%t workspaces=%t", result, state.recentConnectSort, state.commandPalette.workspaces)
+	workspacesHit = settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
+	recentHit := settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
+	result = state.Key(gfx.KeyEvent{Target: workspacesHit.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != recentHit.ID || result.Activate != recentHit.ID {
+		t.Fatalf("right from workspaces = %+v", result)
 	}
-	result = state.Key(gfx.KeyEvent{Target: hitConnectSortRecent, Key: gfx.KeyEnter})
+	activateChoice(t, state, result.Activate)
+	if !state.recentConnectSort || state.commandPalette.workspaces {
+		t.Fatalf("right from workspaces = recent=%t workspaces=%t", state.recentConnectSort, state.commandPalette.workspaces)
+	}
+	recentHit = settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
+	result = state.Key(gfx.KeyEvent{Target: recentHit.ID, Key: gfx.KeyEnter})
 	if !result.Handled || result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("enter on the switch = %+v", result)
 	}
@@ -147,7 +159,7 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	closeLocalShells(t, state)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	first := pickerRowLabels(state)
 	if first[0] != state.messages.LocalTerminal {
 		t.Fatalf("local did not sort first: %v", first)
@@ -156,7 +168,7 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ := paintedTexts(state)
 	hit, ok := hitByID(canvas, hitCommandPaletteItems.At(0))
 	if !ok || hit.Hint != now.Local().Format("2006-01-02 15:04:05 MST") {
@@ -167,7 +179,7 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ = paintedTexts(state)
 	hit, _ = hitByID(canvas, hitCommandPaletteItems.At(0))
 	if hit.Hint != now.Add(-time.Hour).Local().Format("2006-01-02 15:04:05 MST") {

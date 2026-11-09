@@ -17,7 +17,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"motty/internal/ai/gate"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/probe"
 	"motty/internal/ai/reasoning"
@@ -51,12 +51,6 @@ var (
 	hitAISetFormClose         = tree.ID(aiSettingsHits, "ai-set-form-close")
 	hitAISetFormCancel        = tree.ID(aiSettingsHits, "ai-set-form-cancel")
 	hitAISetFormSubmit        = tree.ID(aiSettingsHits, "ai-set-form-submit")
-	hitAISetFormKindOpenAI    = tree.ID(aiSettingsHits, "ai-set-form-kind-open-ai")
-	hitAISetFormKindClaude    = tree.ID(aiSettingsHits, "ai-set-form-kind-claude")
-	hitAISetFormAuthAPIKey    = tree.ID(aiSettingsHits, "ai-set-form-auth-api-key")
-	hitAISetFormAuthBearer    = tree.ID(aiSettingsHits, "ai-set-form-auth-bearer")
-	hitAISetFormFormatChat    = tree.ID(aiSettingsHits, "ai-set-form-format-chat")
-	hitAISetFormFormatResp    = tree.ID(aiSettingsHits, "ai-set-form-format-responses")
 	hitAISetFormPreset        = tree.ID(aiSettingsHits, "ai-set-form-preset")
 	hitAISetFormPresetDismiss = tree.ID(aiSettingsHits, "ai-set-form-preset-dismiss")
 	hitAISetFormPresetItems   = tree.Sub(aiSettingsHits, tree.Name("ai-set-form-preset-item"))
@@ -72,26 +66,10 @@ var (
 	hitAISetModelAdd          = tree.ID(aiSettingsHits, "ai-set-model-add")
 	hitAISetModelPrev         = tree.ID(aiSettingsHits, "ai-set-model-prev")
 	hitAISetModelNext         = tree.ID(aiSettingsHits, "ai-set-model-next")
-	hitAISetRiskLow           = tree.ID(aiSettingsHits, "ai-set-risk-low")
-	hitAISetRiskMedium        = tree.ID(aiSettingsHits, "ai-set-risk-medium")
-	hitAISetRiskHigh          = tree.ID(aiSettingsHits, "ai-set-risk-high")
-	hitAISetSteps6            = tree.ID(aiSettingsHits, "ai-set-steps6")
-	hitAISetSteps12           = tree.ID(aiSettingsHits, "ai-set-steps12")
-	hitAISetSteps24           = tree.ID(aiSettingsHits, "ai-set-steps24")
-	hitAISetContext0          = tree.ID(aiSettingsHits, "ai-set-context0")
-	hitAISetContext30         = tree.ID(aiSettingsHits, "ai-set-context30")
-	hitAISetContext60         = tree.ID(aiSettingsHits, "ai-set-context60")
-	hitAISetContext120        = tree.ID(aiSettingsHits, "ai-set-context120")
-	hitAISetText1             = tree.ID(aiSettingsHits, "ai-set-text1")
-	hitAISetText4             = tree.ID(aiSettingsHits, "ai-set-text4")
-	hitAISetText8             = tree.ID(aiSettingsHits, "ai-set-text8")
 	hitAISetRedact            = tree.ID(aiSettingsHits, "ai-set-redact")
 	hitAISetHistory           = tree.ID(aiSettingsHits, "ai-set-history")
 	hitAISetClearHistory      = tree.ID(aiSettingsHits, "ai-set-clear-history")
 	hitAISetMCPEnabled        = tree.ID(aiSettingsHits, "ai-set-mcp-enabled")
-	hitAISetMCPObserve        = tree.ID(aiSettingsHits, "ai-set-mcp-observe")
-	hitAISetMCPAsk            = tree.ID(aiSettingsHits, "ai-set-mcp-ask")
-	hitAISetMCPAllowAll       = tree.ID(aiSettingsHits, "ai-set-mcp-allow-all")
 	hitAISetMCPCopy           = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
 	hitAISetMCPCopyURL        = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
 	hitAISetMCPCopyToken      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
@@ -120,25 +98,11 @@ var (
 	hitAISetModelProbeAll  = tree.ID(aiSettingsHits, "ai-set-model-probe-all")
 	hitAISetProbeStart     = tree.ID(aiSettingsHits, "ai-set-probe-start")
 	hitAISetModelProbe     = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-probe"))
-	hitAISetProbeConc1     = tree.ID(aiSettingsHits, "ai-set-probe-conc-1")
-	hitAISetProbeConc2     = tree.ID(aiSettingsHits, "ai-set-probe-conc-2")
-	hitAISetProbeConc4     = tree.ID(aiSettingsHits, "ai-set-probe-conc-4")
-	hitAISetProbeConc8     = tree.ID(aiSettingsHits, "ai-set-probe-conc-8")
-	hitAISetProbeTimeout5  = tree.ID(aiSettingsHits, "ai-set-probe-to-5")
-	hitAISetProbeTimeout10 = tree.ID(aiSettingsHits, "ai-set-probe-to-10")
-	hitAISetProbeTimeout15 = tree.ID(aiSettingsHits, "ai-set-probe-to-15")
-	hitAISetProbeTimeout30 = tree.ID(aiSettingsHits, "ai-set-probe-to-30")
 
-	hitAISetModelReasoning   = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-reasoning"))
-	hitAISetReasoningAuto    = tree.ID(aiSettingsHits, "ai-set-reasoning-auto")
-	hitAISetReasoningEnable  = tree.ID(aiSettingsHits, "ai-set-reasoning-enable")
-	hitAISetReasoningDisable = tree.ID(aiSettingsHits, "ai-set-reasoning-disable")
-	hitAISetReasoningPreset0 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-0")
-	hitAISetReasoningPreset1 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-1")
-	hitAISetReasoningPreset2 = tree.ID(aiSettingsHits, "ai-set-reasoning-preset-2")
-	hitAISetReasoningSave    = tree.ID(aiSettingsHits, "ai-set-reasoning-save")
-	hitAISetReasoningCancel  = tree.ID(aiSettingsHits, "ai-set-reasoning-cancel")
-	hitAISetReasoningClose   = tree.ID(aiSettingsHits, "ai-set-reasoning-close")
+	hitAISetModelReasoning  = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-reasoning"))
+	hitAISetReasoningSave   = tree.ID(aiSettingsHits, "ai-set-reasoning-save")
+	hitAISetReasoningCancel = tree.ID(aiSettingsHits, "ai-set-reasoning-cancel")
+	hitAISetReasoningClose  = tree.ID(aiSettingsHits, "ai-set-reasoning-close")
 )
 
 // aiDialogKind is which of the section's dialogs is up.
@@ -252,6 +216,15 @@ type aiSettingsUI struct {
 	reasoningProviderID string
 	reasoningMode       int // 0: Auto, 1: Enabled, 2: Disabled
 	reasoningPreset     int // 0: 3档(low,medium,high), 1: 6档(minimal..max), 2: 2档(default,high)
+
+	// The dialogs' choices are declared in pages of their own: a dialog painted
+	// outside the settings page has no page context for them otherwise. Each is
+	// made once and reused while the window lives.
+	probePage      *ui.Page
+	reasoningPage  *ui.Page
+	formKindPage   *ui.Page
+	formAuthPage   *ui.Page
+	formFormatPage *ui.Page
 }
 
 func (state *State) aiSettingsVisible() bool {
@@ -321,22 +294,6 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 		} else {
 			cfg.dialog = aiDialogProbe
 		}
-	case id == hitAISetProbeConc1:
-		cfg.probeConcurrency = 1
-	case id == hitAISetProbeConc2:
-		cfg.probeConcurrency = 2
-	case id == hitAISetProbeConc4:
-		cfg.probeConcurrency = 4
-	case id == hitAISetProbeConc8:
-		cfg.probeConcurrency = 8
-	case id == hitAISetProbeTimeout5:
-		cfg.probeTimeout = 5 * time.Second
-	case id == hitAISetProbeTimeout10:
-		cfg.probeTimeout = 10 * time.Second
-	case id == hitAISetProbeTimeout15:
-		cfg.probeTimeout = 15 * time.Second
-	case id == hitAISetProbeTimeout30:
-		cfg.probeTimeout = 30 * time.Second
 	case id.Scope() == hitAISetModelProbe:
 		index, _ := id.In(hitAISetModelProbe)
 		state.aiProbeSingleModel(index)
@@ -356,32 +313,6 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 	case id.Scope() == hitAISetModelReasoning:
 		row, _ := id.In(hitAISetModelReasoning)
 		state.aiOpenModelReasoning(row)
-	case id == hitAISetRiskLow:
-		state.aiPut("ai.auto_up_to", "low")
-	case id == hitAISetRiskMedium:
-		state.aiPut("ai.auto_up_to", "medium")
-	case id == hitAISetRiskHigh:
-		state.aiPut("ai.auto_up_to", "high")
-	case id == hitAISetSteps6:
-		state.aiPut("ai.max_steps", "6")
-	case id == hitAISetSteps12:
-		state.aiPut("ai.max_steps", "12")
-	case id == hitAISetSteps24:
-		state.aiPut("ai.max_steps", "24")
-	case id == hitAISetContext0:
-		state.aiPut("ai.context_lines", "0")
-	case id == hitAISetContext30:
-		state.aiPut("ai.context_lines", "30")
-	case id == hitAISetContext60:
-		state.aiPut("ai.context_lines", "60")
-	case id == hitAISetContext120:
-		state.aiPut("ai.context_lines", "120")
-	case id == hitAISetText1:
-		state.aiPut("ai.attachment_text_mib", "1")
-	case id == hitAISetText4:
-		state.aiPut("ai.attachment_text_mib", "4")
-	case id == hitAISetText8:
-		state.aiPut("ai.attachment_text_mib", "8")
 	case id == hitAISetRedact:
 		state.aiPut("ai.redact", onOff(!state.ai.settings.redact))
 	case id == hitAISetHistory:
@@ -392,14 +323,6 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 		}
 	case id == hitAISetMCPEnabled:
 		state.aiPut("ai.mcp.enabled", onOff(!state.ai.settings.mcpEnabled))
-	case id == hitAISetMCPObserve:
-		state.aiPut("ai.mcp.mode", "observe")
-	case id == hitAISetMCPAsk:
-		state.aiPut("ai.mcp.mode", "ask")
-	case id == hitAISetMCPAllowAll:
-		if state.ai.settings.mcpMode != gate.ModeAllowAll {
-			cfg.dialog = aiDialogMCPAllowAll
-		}
 	case state.aiAgentClick(id):
 	case id == hitAISetMCPCopy:
 		state.aiCopyClientConfig()
@@ -463,32 +386,6 @@ func (state *State) aiDialogClick(id gfx.ID) {
 			state.aiCloseDialog()
 		case hitAISetFormSubmit:
 			state.aiSubmitProvider()
-		case hitAISetFormKindOpenAI:
-			if store.IsCLIKind(cfg.kind) {
-				return
-			}
-			cfg.kind = store.KindOpenAI
-		case hitAISetFormKindClaude:
-			if store.IsCLIKind(cfg.kind) {
-				return
-			}
-			cfg.kind = store.KindAnthropic
-		case hitAISetFormAuthAPIKey:
-			if cfg.kind == store.KindAnthropic {
-				cfg.authStyle = store.AuthStyleAPIKey
-			}
-		case hitAISetFormAuthBearer:
-			if cfg.kind == store.KindAnthropic {
-				cfg.authStyle = store.AuthStyleBearer
-			}
-		case hitAISetFormFormatChat:
-			if cfg.kind == store.KindOpenAI {
-				cfg.apiFormat = ""
-			}
-		case hitAISetFormFormatResp:
-			if cfg.kind == store.KindOpenAI {
-				cfg.apiFormat = store.APIFormatResponses
-			}
 		}
 	case aiDialogDelete:
 		switch id {
@@ -534,39 +431,11 @@ func (state *State) aiDialogClick(id gfx.ID) {
 			state.aiCancelProbe()
 			state.aiCloseDialog()
 			state.aiProbeAllModels()
-		case hitAISetProbeConc1:
-			cfg.probeConcurrency = 1
-		case hitAISetProbeConc2:
-			cfg.probeConcurrency = 2
-		case hitAISetProbeConc4:
-			cfg.probeConcurrency = 4
-		case hitAISetProbeConc8:
-			cfg.probeConcurrency = 8
-		case hitAISetProbeTimeout5:
-			cfg.probeTimeout = 5 * time.Second
-		case hitAISetProbeTimeout10:
-			cfg.probeTimeout = 10 * time.Second
-		case hitAISetProbeTimeout15:
-			cfg.probeTimeout = 15 * time.Second
-		case hitAISetProbeTimeout30:
-			cfg.probeTimeout = 30 * time.Second
 		}
 	case aiDialogModelReasoning:
 		switch id {
 		case hitAISetFormClose, hitAISetReasoningClose, hitAISetReasoningCancel:
 			state.aiCloseDialog()
-		case hitAISetReasoningAuto:
-			cfg.reasoningMode = 0
-		case hitAISetReasoningEnable:
-			cfg.reasoningMode = 1
-		case hitAISetReasoningDisable:
-			cfg.reasoningMode = 2
-		case hitAISetReasoningPreset0:
-			cfg.reasoningPreset = 0
-		case hitAISetReasoningPreset1:
-			cfg.reasoningPreset = 1
-		case hitAISetReasoningPreset2:
-			cfg.reasoningPreset = 2
 		case hitAISetReasoningSave:
 			state.aiSaveModelReasoning()
 		}
@@ -668,7 +537,6 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
-	var options []components.SegmentOption
 	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		cfg.mcpSelectOpen = true
 		cfg.agentSelectOpen = false
@@ -679,54 +547,41 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		cfg.mcpSelectOpen = false
 		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	var kind [2]components.SegmentOption
-	var auth [2]components.SegmentOption
-	var format [2]components.SegmentOption
-	var risks [3]components.SegmentOption
-	var steps [3]components.SegmentOption
-	var lines [4]components.SegmentOption
-	var modes [3]components.SegmentOption
-	var agents [3]components.SegmentOption
-	switch event.Target {
-	case hitAISetFormKindOpenAI, hitAISetFormKindClaude:
-		kind = state.aiKindOptions()
-		options = kind[:]
-	case hitAISetFormAuthAPIKey, hitAISetFormAuthBearer:
-		auth = state.aiAuthOptions()
-		options = auth[:]
-	case hitAISetFormFormatChat, hitAISetFormFormatResp:
-		format = state.aiFormatOptions()
-		options = format[:]
-	case hitAISetRiskLow, hitAISetRiskMedium, hitAISetRiskHigh:
-		risks = state.aiRiskOptions()
-		options = risks[:]
-	case hitAISetSteps6, hitAISetSteps12, hitAISetSteps24:
-		steps = state.aiStepsOptions()
-		options = steps[:]
-	case hitAISetContext0, hitAISetContext30, hitAISetContext60, hitAISetContext120:
-		lines = state.aiContextOptions()
-		options = lines[:]
-	case hitAISetText1, hitAISetText4, hitAISetText8:
-		textLimits := state.aiTextLimitOptions()
-		options = textLimits[:]
-	case hitAISetMCPObserve, hitAISetMCPAsk, hitAISetMCPAllowAll:
-		modes = state.aiMCPModeOptions()
-		options = modes[:]
-	case hitAISetAgentObserve, hitAISetAgentRun, hitAISetAgentAllowAll:
-		agents = state.aiAgentModeOptions()
-		options = agents[:]
-	default:
-		return gfx.EventResult{}, false
+	// The choices of the dialogs painted outside the settings page are declared
+	// in pages of their own; those pages own their arrow keys.
+	switch cfg.dialog {
+	case aiDialogProbe:
+		if cfg.probePage != nil {
+			if result, handled := cfg.probePage.Key(event); handled {
+				return result, true
+			}
+		}
+	case aiDialogModelReasoning:
+		if cfg.reasoningPage != nil {
+			if result, handled := cfg.reasoningPage.Key(event); handled {
+				return result, true
+			}
+		}
+	case aiDialogProvider:
+		if !store.IsCLIKind(cfg.kind) {
+			if cfg.formKindPage != nil {
+				if result, handled := cfg.formKindPage.Key(event); handled {
+					return result, true
+				}
+			}
+			if cfg.kind == store.KindAnthropic && cfg.formAuthPage != nil {
+				if result, handled := cfg.formAuthPage.Key(event); handled {
+					return result, true
+				}
+			}
+			if cfg.kind == store.KindOpenAI && cfg.formFormatPage != nil {
+				if result, handled := cfg.formFormatPage.Key(event); handled {
+					return result, true
+				}
+			}
+		}
 	}
-	next, handled := components.SegmentedControlKeyDown(event.Target, options, components.DirectionLTR, event.Key)
-	if !handled {
-		return gfx.EventResult{}, true
-	}
-	state.Click(next)
-	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
-		return gfx.EventResult{Focus: hitAISetConfirmCancel, FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+	return gfx.EventResult{}, false
 }
 
 func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
@@ -752,68 +607,42 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 	return nil
 }
 
-func (state *State) aiKindOptions() [2]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetFormKindOpenAI, Label: m.ProviderKindOpenAI},
-		{ID: hitAISetFormKindClaude, Label: m.ProviderKindClaude},
-	}
-}
-
-// aiAuthOptions is the Anthropic request-header choice. It is shown only for
-// Anthropic: an OpenAI-compatible endpoint is always bearer.
-func (state *State) aiAuthOptions() [2]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetFormAuthAPIKey, Label: m.FormAuthAPIKey},
-		{ID: hitAISetFormAuthBearer, Label: m.FormAuthBearer},
-	}
-}
-
-// aiFormatOptions is the OpenAI-compatible protocol choice. It is shown only for
-// OpenAI-compatible providers: an Anthropic provider has a single protocol.
-func (state *State) aiFormatOptions() [2]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetFormFormatChat, Label: m.FormFormatChat},
-		{ID: hitAISetFormFormatResp, Label: m.FormFormatResponses},
-	}
-}
-
+// The label widths settingsChoiceRow gives the behavior choices. The Choice
+// itself names its options from the typed values.
 func (state *State) aiRiskOptions() [3]components.SegmentOption {
 	m := state.messages.AISettings
 	return [...]components.SegmentOption{
-		{ID: hitAISetRiskLow, Label: m.RiskLow},
-		{ID: hitAISetRiskMedium, Label: m.RiskMedium},
-		{ID: hitAISetRiskHigh, Label: m.RiskHigh},
+		{Label: m.RiskLow},
+		{Label: m.RiskMedium},
+		{Label: m.RiskHigh},
 	}
 }
 
 func (state *State) aiStepsOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitAISetSteps6, Label: "6"}, {ID: hitAISetSteps12, Label: "12"}, {ID: hitAISetSteps24, Label: "24"},
+		{Label: "6"}, {Label: "12"}, {Label: "24"},
 	}
 }
 
 func (state *State) aiContextOptions() [4]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitAISetContext0, Label: state.messages.AISettings.ContextOff},
-		{ID: hitAISetContext30, Label: "30"}, {ID: hitAISetContext60, Label: "60"}, {ID: hitAISetContext120, Label: "120"},
+		{Label: state.messages.AISettings.ContextOff},
+		{Label: "30"}, {Label: "60"}, {Label: "120"},
 	}
 }
 
 func (state *State) aiTextLimitOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitAISetText1, Label: "1 MiB"}, {ID: hitAISetText4, Label: "4 MiB"}, {ID: hitAISetText8, Label: "8 MiB"},
+		{Label: "1 MiB"}, {Label: "4 MiB"}, {Label: "8 MiB"},
 	}
 }
 
 func (state *State) aiMCPModeOptions() [3]components.SegmentOption {
 	m := state.messages.AISettings
 	return [...]components.SegmentOption{
-		{ID: hitAISetMCPObserve, Label: m.MCPModeObserve},
-		{ID: hitAISetMCPAsk, Label: m.MCPModeAsk},
-		{ID: hitAISetMCPAllowAll, Label: m.MCPModeAllowAll},
+		{Label: m.MCPModeObserve},
+		{Label: m.MCPModeAsk},
+		{Label: m.MCPModeAllowAll},
 	}
 }
 
@@ -1494,24 +1323,6 @@ func (state *State) aiProbeTimeout() time.Duration {
 	return state.ai.cfg.probeTimeout
 }
 
-func (state *State) aiProbeConcOptions() [4]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitAISetProbeConc1, Label: "1"},
-		{ID: hitAISetProbeConc2, Label: "2"},
-		{ID: hitAISetProbeConc4, Label: "4"},
-		{ID: hitAISetProbeConc8, Label: "8"},
-	}
-}
-
-func (state *State) aiProbeTimeoutOptions() [4]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitAISetProbeTimeout5, Label: "5s"},
-		{ID: hitAISetProbeTimeout10, Label: "10s"},
-		{ID: hitAISetProbeTimeout15, Label: "15s"},
-		{ID: hitAISetProbeTimeout30, Label: "30s"},
-	}
-}
-
 func (state *State) aiProbeSingleModel(row int) {
 	provider, model, ok := state.aiModelOnPage(row)
 	if !ok || store.IsCLIKind(provider.Kind) {
@@ -1721,22 +1532,4 @@ func (state *State) aiSaveModelReasoning() {
 	}
 	state.aiWrote()
 	state.aiCloseDialog()
-}
-
-func (state *State) aiReasoningModeOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetReasoningAuto, Label: m.ModelReasoningAuto},
-		{ID: hitAISetReasoningEnable, Label: m.ModelReasoningEnable},
-		{ID: hitAISetReasoningDisable, Label: m.ModelReasoningDisable},
-	}
-}
-
-func (state *State) aiReasoningPresetOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetReasoningPreset0, Label: m.ModelReasoningPreset3},
-		{ID: hitAISetReasoningPreset1, Label: m.ModelReasoningPreset6},
-		{ID: hitAISetReasoningPreset2, Label: m.ModelReasoningPreset2},
-	}
 }

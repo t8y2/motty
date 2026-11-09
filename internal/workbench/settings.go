@@ -119,10 +119,16 @@ func (state *State) setTextScale(scale textScale) bool {
 		return false
 	}
 	state.textScale = scale
-	applyTextMetrics(scale.factor())
+	state.applyTextScale()
+	return true
+}
+
+// applyTextScale applies the scale the page's choice already wrote: the metrics,
+// the theme built from them, and the windows that draw with both.
+func (state *State) applyTextScale() {
+	applyTextMetrics(state.textScale.factor())
 	state.theme = state.pal.theme()
 	state.invalidateRemoteToolsWindows()
-	return true
 }
 
 func (state *State) setTerminalFontSize(value float32) bool {
@@ -324,7 +330,14 @@ func (state *State) setLanguage(language i18n.Language) bool {
 		return false
 	}
 	state.language = language
-	state.messages = i18n.For(language)
+	state.applyLanguage()
+	return true
+}
+
+// applyLanguage applies the language the page's choice already wrote: the
+// catalog and everything built from it.
+func (state *State) applyLanguage() {
+	state.messages = i18n.For(state.language)
 	state.invalidateRemoteToolsWindows()
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
@@ -350,7 +363,6 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	if state.modal == modalCommandPalette {
 		state.rebuildCommandPalette()
 	}
-	return true
 }
 
 func (state *State) clickSettings(id gfx.ID) bool {
@@ -368,32 +380,8 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	}
 	changed := false
 	switch id {
-	case hitSettingsLanguageEnglish:
-		changed = state.chooseLanguage(i18n.English)
-	case hitSettingsLanguageChinese:
-		changed = state.chooseLanguage(i18n.Chinese)
-	case hitSettingsLanguageTraditional:
-		changed = state.chooseLanguage(i18n.TraditionalChinese)
-	case hitSettingsAppearanceSystem:
-		changed = state.chooseAppearanceMode(appearanceFollowSystem)
-	case hitSettingsAppearanceDark:
-		changed = state.chooseAppearanceMode(appearancePinnedDark)
-	case hitSettingsAppearanceLight:
-		changed = state.chooseAppearanceMode(appearancePinnedLight)
-	case hitSettingsTextSmall:
-		changed = state.setTextScale(textScaleSmall)
-	case hitSettingsTextRegular:
-		changed = state.setTextScale(textScaleRegular)
-	case hitSettingsTextLarge:
-		changed = state.setTextScale(textScaleLarge)
-	case hitSettingsTabsHorizontal:
-		changed = state.setTabOrientation(tabsHorizontal)
-	case hitSettingsTabsVertical:
-		changed = state.setTabOrientation(tabsVertical)
 	case hitSettingsTabNumbers:
 		changed = state.setTabNumbers(!state.tabNumbers)
-	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
-		changed = state.setTabNumberModifier(id)
 	case hitSettingsOutputAlerts:
 		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
 		state.clearOutputAlerts()
@@ -402,137 +390,12 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsVerticalTabsGrouping:
 		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
-	case hitSettingsNetworkSystem:
-		changed = state.networkProxy != networkProxySystem
-		state.networkProxy = networkProxySystem
-	case hitSettingsNetworkDirect:
-		changed = state.networkProxy != networkProxyDirect
-		state.networkProxy = networkProxyDirect
-	case hitSettingsToolbarLeft:
-		changed = state.setTerminalToolbarPosition(terminalToolbarLeft)
-	case hitSettingsToolbarRight:
-		changed = state.setTerminalToolbarPosition(terminalToolbarRight)
-	case hitSettingsCloseTray:
-		changed = state.closeAction != closeToTray
-		state.closeAction = closeToTray
-	case hitSettingsCloseQuit:
-		changed = state.closeAction != closeQuits
-		state.closeAction = closeQuits
-	case hitSettingsRelaunchRaise:
-		changed = state.relaunchAction != relaunchRaise
-		state.relaunchAction = relaunchRaise
-	case hitSettingsRelaunchNewWindow:
-		changed = state.relaunchAction != relaunchNewWindow
-		state.relaunchAction = relaunchNewWindow
-	case hitSettingsOptionText:
-		changed = state.terminalOption != terminalOptionText
-		state.terminalOption = terminalOptionText
-	case hitSettingsOptionMeta:
-		changed = state.terminalOption != terminalOptionMeta
-		state.terminalOption = terminalOptionMeta
 	case hitSettingsFontSizeDown:
 		changed = state.setTerminalFontSize(state.terminalFontSize - 1)
 	case hitSettingsFontSizeUp:
 		changed = state.setTerminalFontSize(state.terminalFontSize + 1)
 	case hitSettingsFontSizeReset:
 		changed = state.setTerminalFontSize(terminalFontSizeDefault)
-	case hitSettingsPadCompact:
-		changed = state.setTerminalPadding(padCompact)
-	case hitSettingsPadNormal:
-		changed = state.setTerminalPadding(padNormal)
-	case hitSettingsPadRoomy:
-		changed = state.setTerminalPadding(padRoomy)
-	case hitSettingsLineHeightCompact:
-		changed = state.setTerminalLineHeight(lineHeightCompact)
-	case hitSettingsLineHeightNormal:
-		changed = state.setTerminalLineHeight(lineHeightNormal)
-	case hitSettingsLineHeightRoomy:
-		changed = state.setTerminalLineHeight(lineHeightRoomy)
-	case hitSettingsCursorThin:
-		changed = state.setTerminalCursorThickness(cursorThin)
-	case hitSettingsCursorNormal:
-		changed = state.setTerminalCursorThickness(cursorNormal)
-	case hitSettingsCursorThick:
-		changed = state.setTerminalCursorThickness(cursorThick)
-	case hitSettingsGutterOff:
-		changed = state.setTerminalGutter(gutterOff)
-	case hitSettingsGutterNumbers:
-		changed = state.setTerminalGutter(gutterNumbers)
-	case hitSettingsGutterTime:
-		changed = state.setTerminalGutter(gutterTime)
-	case hitSettingsGutterBoth:
-		changed = state.setTerminalGutter(gutterBoth)
-	case hitSettingsIntenseBoth:
-		changed = state.setTerminalIntense(intenseBoth)
-	case hitSettingsIntenseBright:
-		changed = state.setTerminalIntense(intenseBright)
-	case hitSettingsIntenseBold:
-		changed = state.setTerminalIntense(intenseBold)
-	case hitSettingsIntensePlain:
-		changed = state.setTerminalIntense(intensePlain)
-	case hitSettingsScrollback1000:
-		changed = state.setTerminalScrollback(1000)
-	case hitSettingsScrollback5000:
-		changed = state.setTerminalScrollback(5000)
-	case hitSettingsScrollback10000:
-		changed = state.setTerminalScrollback(10000)
-	case hitSettingsTimeout5:
-		changed = state.connectionTimeout != 5*time.Second
-		state.connectionTimeout = 5 * time.Second
-	case hitSettingsTimeout10:
-		changed = state.connectionTimeout != 10*time.Second
-		state.connectionTimeout = 10 * time.Second
-	case hitSettingsTimeout30:
-		changed = state.connectionTimeout != 30*time.Second
-		state.connectionTimeout = 30 * time.Second
-	case hitSettingsKeepAliveOff:
-		changed = state.connectionKeepAlive != 0
-		state.connectionKeepAlive = 0
-	case hitSettingsKeepAlive30:
-		changed = state.connectionKeepAlive != 30*time.Second
-		state.connectionKeepAlive = 30 * time.Second
-	case hitSettingsKeepAlive60:
-		changed = state.connectionKeepAlive != 60*time.Second
-		state.connectionKeepAlive = 60 * time.Second
-	case hitSettingsReconnectOff:
-		changed = state.setReconnectPolicy(reconnectOff)
-	case hitSettingsReconnectThree:
-		changed = state.setReconnectPolicy(reconnectThree)
-	case hitSettingsReconnectForever:
-		changed = state.setReconnectPolicy(reconnectForever)
-	case hitSettingsCompletionOff:
-		changed = state.setCompletionMode(completionOff)
-	case hitSettingsCompletionList:
-		changed = state.setCompletionMode(completionList)
-	case hitSettingsCompletionBoth:
-		changed = state.setCompletionMode(completionBoth)
-	case hitSettingsClipboardBlock:
-		changed = state.terminalClipboard != terminalClipboardBlock
-		state.terminalClipboard = terminalClipboardBlock
-	case hitSettingsClipboardAsk:
-		changed = state.terminalClipboard != terminalClipboardAsk
-		state.terminalClipboard = terminalClipboardAsk
-	case hitSettingsClipboardAllow:
-		changed = state.terminalClipboard != terminalClipboardAllow
-		state.terminalClipboard = terminalClipboardAllow
-	case hitSettingsRestoreActive:
-		changed = state.setRestoreConnectPolicy(restoreConnectActive)
-	case hitSettingsRestoreOff:
-		changed = state.setRestoreConnectPolicy(restoreConnectOff)
-	case hitSettingsRestoreAll:
-		changed = state.setRestoreConnectPolicy(restoreConnectAll)
-	case hitSettingsLocalStartRemember:
-		changed = state.setLocalStartPolicy(localStartRemember)
-	case hitSettingsLocalStartHome:
-		changed = state.setLocalStartPolicy(localStartHome)
-	case hitSettingsAgentSystem:
-		changed = state.setSSHAgent(agentChoice{})
-	case hitSettingsAgentOnePassword:
-		changed = state.setSSHAgent(agentChoice{kind: agentKindOnePassword})
-	case hitSettingsAgentBitwarden:
-		changed = state.setSSHAgent(agentChoice{kind: agentKindBitwarden})
-	case hitSettingsAgentCustom:
-		state.openSSHAgentPathForm()
 	case hitSettingsShareToggle:
 		if state.shareConnections == shareConnectionsOff {
 			changed = state.setShareConnections(shareConnectionsOn)
@@ -541,12 +404,6 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		}
 	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
 		state.clickStartupHosts(id)
-	case hitSettingsCursorBlock:
-		changed = state.setTerminalCursorStyle(cursorBlock)
-	case hitSettingsCursorBar:
-		changed = state.setTerminalCursorStyle(cursorBar)
-	case hitSettingsCursorUnderline:
-		changed = state.setTerminalCursorStyle(cursorUnderline)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
 	case hitSessionLogsSettingsToggle:
@@ -573,13 +430,256 @@ func (state *State) setTerminalScrollback(value int) bool {
 		return false
 	}
 	state.terminalScrollback = value
+	state.applyTerminalScrollback()
+	return true
+}
+
+// applyTerminalScrollback applies the limit the page's choice already wrote to
+// the terminals that are open.
+func (state *State) applyTerminalScrollback() {
 	for index := range state.sessions {
 		if terminal := state.sessions[index].term; terminal != nil {
-			terminal.screen.SetScrollbackLimit(value)
+			terminal.screen.SetScrollbackLimit(state.terminalScrollback)
 			terminal.find.refreshIfChanged(terminal.screen, state.messages, 0)
 		}
 	}
-	return true
+}
+
+// The choices behind the General page's segmented rows. The Option functions
+// above name them for the widths and the old dispatcher; a page Choice binds the
+// value itself, so these are the values it offers.
+var (
+	settingsLanguageChoices        = [...]i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese}
+	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
+	settingsTextSizeChoices        = [...]textScale{textScaleSmall, textScaleRegular, textScaleLarge}
+	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
+	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
+	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
+	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
+)
+
+func (state *State) settingsLanguageLabel(language i18n.Language) string {
+	switch language {
+	case i18n.Chinese:
+		return state.messages.SettingsLanguageChinese
+	case i18n.TraditionalChinese:
+		return state.messages.SettingsLanguageTraditionalChinese
+	}
+	return state.messages.SettingsLanguageEnglish
+}
+
+func (state *State) settingsAppearanceLabel(mode appearanceMode) string {
+	switch mode {
+	case appearancePinnedDark:
+		return state.messages.SettingsAppearanceDark
+	case appearancePinnedLight:
+		return state.messages.SettingsAppearanceLight
+	}
+	return state.messages.SettingsAppearanceSystem
+}
+
+func (state *State) settingsTextSizeLabel(scale textScale) string {
+	switch scale {
+	case textScaleSmall:
+		return state.messages.SettingsTextSizeSmall
+	case textScaleLarge:
+		return state.messages.SettingsTextSizeLarge
+	}
+	return state.messages.SettingsTextSizeRegular
+}
+
+func (state *State) settingsToolbarPositionLabel(position terminalToolbarPosition) string {
+	if position == terminalToolbarLeft {
+		return state.messages.SettingsToolbarPositionLeft
+	}
+	return state.messages.SettingsToolbarPositionRight
+}
+
+func (state *State) settingsTabOrientationLabel(orientation tabOrientation) string {
+	if orientation == tabsVertical {
+		return state.messages.SettingsTabsVertical
+	}
+	return state.messages.SettingsTabsHorizontal
+}
+
+func (state *State) settingsCloseLabel(action closeAction) string {
+	if action == closeQuits {
+		return state.messages.Tools.GeneralCloseQuit
+	}
+	return state.messages.Tools.GeneralCloseTray
+}
+
+func (state *State) settingsRelaunchLabel(action relaunchAction) string {
+	if action == relaunchNewWindow {
+		return state.messages.Tools.GeneralRelaunchNewWindow
+	}
+	return state.messages.Tools.GeneralRelaunchRaise
+}
+
+// The choices behind the Terminal and Connection pages. The ...Options
+// functions below name them for the widths; a page Choice binds these values.
+var (
+	settingsOptionChoices          = [...]terminalOptionMode{terminalOptionText, terminalOptionMeta}
+	settingsLineHeightChoices      = [...]lineHeight{lineHeightCompact, lineHeightNormal, lineHeightRoomy}
+	settingsPaddingChoices         = [...]terminalPad{padCompact, padNormal, padRoomy}
+	settingsGutterChoices          = [...]terminalGutter{gutterOff, gutterNumbers, gutterTime, gutterBoth}
+	settingsIntenseChoices         = [...]terminalIntense{intenseBoth, intenseBright, intenseBold, intensePlain}
+	settingsCursorThicknessChoices = [...]cursorThickness{cursorThin, cursorNormal, cursorThick}
+	settingsScrollbackChoices      = [...]int{1000, 5000, 10000}
+	settingsClipboardChoices       = [...]terminalClipboardPolicy{terminalClipboardBlock, terminalClipboardAsk, terminalClipboardAllow}
+	settingsCursorStyleChoices     = [...]terminalCursorStyle{cursorBlock, cursorBar, cursorUnderline}
+	settingsTabTitleChoices        = [...]tabTitleMode{tabTitleConnection, tabTitleTerminal, tabTitleDirectory}
+	settingsTimeoutChoices         = [...]time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second}
+	settingsKeepAliveChoices       = [...]time.Duration{0, 30 * time.Second, 60 * time.Second}
+	settingsReconnectChoices       = [...]reconnectPolicy{reconnectOff, reconnectThree, reconnectForever}
+	settingsRestoreChoices         = [...]restoreConnectPolicy{restoreConnectOff, restoreConnectActive, restoreConnectAll}
+	settingsNetworkProxyChoices    = [...]networkProxyMode{networkProxyDirect, networkProxySystem}
+)
+
+func (state *State) settingsOptionLabel(mode terminalOptionMode) string {
+	if mode == terminalOptionMeta {
+		return state.messages.SettingsTerminalOptionMeta
+	}
+	return state.messages.SettingsTerminalOptionText
+}
+
+func (state *State) settingsLineHeightLabel(mode lineHeight) string {
+	m := state.messages.Tools
+	switch mode {
+	case lineHeightCompact:
+		return m.LineHeightCompact
+	case lineHeightRoomy:
+		return m.LineHeightRoomy
+	}
+	return m.LineHeightNormal
+}
+
+func (state *State) settingsPaddingLabel(pad terminalPad) string {
+	m := state.messages.Tools
+	switch pad {
+	case padCompact:
+		return m.PaddingCompact
+	case padRoomy:
+		return m.PaddingRoomy
+	}
+	return m.PaddingNormal
+}
+
+func (state *State) settingsGutterLabel(gutter terminalGutter) string {
+	m := state.messages.Tools
+	switch gutter {
+	case gutterNumbers:
+		return m.GutterNumbers
+	case gutterTime:
+		return m.GutterTime
+	case gutterBoth:
+		return m.GutterBoth
+	}
+	return m.GutterOff
+}
+
+func (state *State) settingsIntenseLabel(style terminalIntense) string {
+	m := state.messages.Tools
+	switch style {
+	case intenseBright:
+		return m.IntenseBright
+	case intenseBold:
+		return m.IntenseBold
+	case intensePlain:
+		return m.IntensePlain
+	}
+	return m.IntenseBoth
+}
+
+func (state *State) settingsCursorThicknessLabel(mode cursorThickness) string {
+	m := state.messages.Tools
+	switch mode {
+	case cursorThin:
+		return m.CursorThin
+	case cursorThick:
+		return m.CursorThick
+	}
+	return m.CursorNormal
+}
+
+func (state *State) settingsScrollbackLabel(lines int) string {
+	switch lines {
+	case 1000:
+		return "1,000"
+	case 10000:
+		return "10,000"
+	}
+	return "5,000"
+}
+
+func (state *State) settingsClipboardLabel(policy terminalClipboardPolicy) string {
+	switch policy {
+	case terminalClipboardBlock:
+		return state.messages.SettingsTerminalClipboardBlock
+	case terminalClipboardAsk:
+		return state.messages.SettingsTerminalClipboardAsk
+	}
+	return state.messages.SettingsTerminalClipboardAllow
+}
+
+func (state *State) settingsCursorStyleLabel(style terminalCursorStyle) string {
+	m := state.messages.Tools
+	switch style {
+	case cursorBar:
+		return m.CursorShapeBar
+	case cursorUnderline:
+		return m.CursorShapeUnderline
+	}
+	return m.CursorShapeBlock
+}
+
+func (state *State) settingsTabTitleLabel(mode tabTitleMode) string {
+	m := state.messages.Tools
+	switch mode {
+	case tabTitleTerminal:
+		return m.TabTitleTerminal
+	case tabTitleDirectory:
+		return m.TabTitleDirectory
+	}
+	return m.TabTitleConnection
+}
+
+func (state *State) settingsTimeoutLabel(value time.Duration) string {
+	return fmt.Sprintf("%d s", int(value/time.Second))
+}
+
+func (state *State) settingsKeepAliveLabel(value time.Duration) string {
+	if value == 0 {
+		return state.messages.SettingsConnectionKeepAliveOff
+	}
+	return state.settingsTimeoutLabel(value)
+}
+
+func (state *State) settingsReconnectLabel(policy reconnectPolicy) string {
+	switch policy {
+	case reconnectThree:
+		return state.messages.SettingsConnectionReconnectThree
+	case reconnectForever:
+		return state.messages.SettingsConnectionReconnectForever
+	}
+	return state.messages.SettingsConnectionReconnectOff
+}
+
+func (state *State) settingsRestoreLabel(policy restoreConnectPolicy) string {
+	switch policy {
+	case restoreConnectActive:
+		return state.messages.SettingsRestoreActive
+	case restoreConnectAll:
+		return state.messages.SettingsRestoreAll
+	}
+	return state.messages.SettingsRestoreOff
+}
+
+func (state *State) settingsNetworkProxyLabel(mode networkProxyMode) string {
+	if mode == networkProxySystem {
+		return state.messages.SettingsNetworkProxySystem
+	}
+	return state.messages.SettingsNetworkProxyDirect
 }
 
 func (state *State) settingsLanguageOptions() [3]components.SegmentOption {
@@ -685,25 +785,25 @@ func (state *State) settingsIntenseOptions() [4]components.SegmentOption {
 
 func (state *State) settingsScrollbackOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitSettingsScrollback1000, Label: "1,000"},
-		{ID: hitSettingsScrollback5000, Label: "5,000"},
-		{ID: hitSettingsScrollback10000, Label: "10,000"},
+		{ID: hitSettingsScrollback1000, Label: state.settingsScrollbackLabel(1000)},
+		{ID: hitSettingsScrollback5000, Label: state.settingsScrollbackLabel(5000)},
+		{ID: hitSettingsScrollback10000, Label: state.settingsScrollbackLabel(10000)},
 	}
 }
 
 func (state *State) settingsTimeoutOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitSettingsTimeout5, Label: "5 s"},
-		{ID: hitSettingsTimeout10, Label: "10 s"},
-		{ID: hitSettingsTimeout30, Label: "30 s"},
+		{ID: hitSettingsTimeout5, Label: state.settingsTimeoutLabel(5 * time.Second)},
+		{ID: hitSettingsTimeout10, Label: state.settingsTimeoutLabel(10 * time.Second)},
+		{ID: hitSettingsTimeout30, Label: state.settingsTimeoutLabel(30 * time.Second)},
 	}
 }
 
 func (state *State) settingsKeepAliveOptions() [3]components.SegmentOption {
 	return [...]components.SegmentOption{
-		{ID: hitSettingsKeepAliveOff, Label: state.messages.SettingsConnectionKeepAliveOff},
-		{ID: hitSettingsKeepAlive30, Label: "30 s"},
-		{ID: hitSettingsKeepAlive60, Label: "60 s"},
+		{ID: hitSettingsKeepAliveOff, Label: state.settingsKeepAliveLabel(0)},
+		{ID: hitSettingsKeepAlive30, Label: state.settingsKeepAliveLabel(30 * time.Second)},
+		{ID: hitSettingsKeepAlive60, Label: state.settingsKeepAliveLabel(60 * time.Second)},
 	}
 }
 
@@ -763,93 +863,5 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.editorMenu.open = true
 		return gfx.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	var next gfx.ID
-	var handled bool
-	switch event.Target {
-	case hitSettingsPanelLeft, hitSettingsPanelRight:
-		options := state.settingsSFTPPanelPositionOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
-		options := state.settingsPathOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsLanguageTraditional:
-		options := state.settingsLanguageOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsAppearanceSystem, hitSettingsAppearanceDark, hitSettingsAppearanceLight:
-		options := state.settingsAppearanceOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsTextSmall, hitSettingsTextRegular, hitSettingsTextLarge:
-		options := state.settingsTextSizeOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsTabsHorizontal, hitSettingsTabsVertical:
-		options := state.settingsTabOrientationOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift:
-		options := state.tabNumberOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsNetworkSystem, hitSettingsNetworkDirect:
-		options := state.settingsNetworkProxyOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsToolbarLeft, hitSettingsToolbarRight:
-		options := state.settingsToolbarPositionOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsCloseTray, hitSettingsCloseQuit:
-		options := state.settingsCloseOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsRelaunchRaise, hitSettingsRelaunchNewWindow:
-		options := state.settingsRelaunchOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsOptionText, hitSettingsOptionMeta:
-		options := state.settingsOptionOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsPadCompact, hitSettingsPadNormal, hitSettingsPadRoomy:
-		options := state.settingsPaddingOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLineHeightCompact, hitSettingsLineHeightNormal, hitSettingsLineHeightRoomy:
-		options := state.settingsLineHeightOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsCursorThin, hitSettingsCursorNormal, hitSettingsCursorThick:
-		options := state.settingsCursorThicknessOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth:
-		options := state.settingsGutterOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain:
-		options := state.settingsIntenseOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsScrollback1000, hitSettingsScrollback5000, hitSettingsScrollback10000:
-		options := state.settingsScrollbackOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsTimeout5, hitSettingsTimeout10, hitSettingsTimeout30:
-		options := state.settingsTimeoutOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsKeepAliveOff, hitSettingsKeepAlive30, hitSettingsKeepAlive60:
-		options := state.settingsKeepAliveOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsReconnectOff, hitSettingsReconnectThree, hitSettingsReconnectForever:
-		options := state.settingsReconnectOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsCompletionOff, hitSettingsCompletionList, hitSettingsCompletionBoth:
-		options := state.settingsCompletionOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsClipboardBlock, hitSettingsClipboardAsk, hitSettingsClipboardAllow:
-		options := state.settingsClipboardOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsRestoreOff, hitSettingsRestoreActive, hitSettingsRestoreAll:
-		options := state.settingsRestoreOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsLocalStartRemember, hitSettingsLocalStartHome:
-		options := state.settingsLocalStartOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	case hitSettingsAgentSystem, hitSettingsAgentOnePassword, hitSettingsAgentBitwarden, hitSettingsAgentCustom:
-		options := state.settingsAgentOptions()
-		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
-	default:
-		return gfx.EventResult{}, false
-	}
-	if !handled {
-		return gfx.EventResult{}, true
-	}
-	state.Click(next)
-	return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+	return gfx.EventResult{}, false
 }

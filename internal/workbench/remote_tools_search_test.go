@@ -50,7 +50,7 @@ func TestRemoteSearchFindsIdleProcessesAndNeverSendsQueries(t *testing.T) {
 func TestRemoteSearchQueriesStayIndependentAcrossTabsAndRefresh(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	replaceRemoteQuery(t, state, "NGINX")
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 2 {
 		t.Fatal("process query leaked into containers")
@@ -64,7 +64,7 @@ func TestRemoteSearchQueriesStayIndependentAcrossTabsAndRefresh(t *testing.T) {
 	if len(state.remote.rows) != 1 {
 		t.Fatal("refresh lost container query")
 	}
-	state.Click(hitRemoteTabProcesses)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 1 || state.remote.rows[0].cells[0] != "2211" {
 		t.Fatal("returning to process tab lost its independent query")
@@ -119,7 +119,7 @@ func TestRemoteSearchEscapeClearsQueryAfterResultsTakeFocus(t *testing.T) {
 
 func TestRemoteSearchZeroMatchesDoesNotMeanNoDockerObjects(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	replaceRemoteQuery(t, state, "no-matching-container")
 	state.Click(hitRemoteRefresh)

@@ -105,13 +105,19 @@ func (state *State) setTerminalGutter(gutter terminalGutter) bool {
 		return false
 	}
 	state.terminalGutter = gutter
+	state.applyTerminalGutter()
+	return true
+}
+
+// applyTerminalGutter applies the strip the page's choice already wrote to the
+// terminals that are open and refits them to its width.
+func (state *State) applyTerminalGutter() {
 	for index := range state.sessions {
 		if t := state.sessions[index].term; t != nil {
 			state.stampTerminal(t)
 		}
 	}
 	state.fitTerminals()
-	return true
 }
 
 // gutterEntry caches the text of one row's gutter so a repaint of unchanged

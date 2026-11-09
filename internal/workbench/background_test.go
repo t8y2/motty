@@ -123,7 +123,6 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 		t.Fatalf("theme background %v, window color %v", state.Theme().Background, state.WindowColor())
 	}
 
-	state.Click(hitBgStrong) // not on this page: the click is ignored while the terminal is up
 	state.bg.strength = bgStrong
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
@@ -144,7 +143,7 @@ func TestTheBackgroundSurvivesARestartAndRemovingItDeletesTheCopy(t *testing.T) 
 	state, options := backgroundTestState(t, picked)
 	state.Click(hitBgChoose)
 	waitFor(t, state, state.backgroundOn)
-	state.Click(hitBgSubtle)
+	clickSettingsChoiceInRow(t, state, state.messages.Tools.BgVisibility, state.settingsBackgroundStrengthLabel(bgSubtle))
 	state.Close()
 
 	again := newTestState(t, options)

@@ -237,28 +237,24 @@ func TestRestoreConnectSettingChoosesAndPersists(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
-	canvas, _ := paintedTexts(state)
-	for _, id := range []gfx.ID{hitSettingsRestoreOff, hitSettingsRestoreActive, hitSettingsRestoreAll} {
-		var tall gfx.Canvas
-		state.Paint(&tall, gfx.Size{Width: 1400, Height: 1300})
-		if _, ok := hitByID(&tall, id); !ok {
-			t.Fatalf("settings paint no restore choice %d", id)
+	var tall gfx.Canvas
+	state.Paint(&tall, gfx.Size{Width: 1400, Height: 1300})
+	for _, policy := range []restoreConnectPolicy{restoreConnectOff, restoreConnectActive, restoreConnectAll} {
+		if _, ok := settingsChoiceIn(&tall, state.settingsRestoreLabel(policy)); !ok {
+			t.Fatalf("settings paint no restore choice %q", state.settingsRestoreLabel(policy))
 		}
 	}
-	_ = canvas
 	options := testOptions(t)
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	for _, test := range []struct {
-		hit  gfx.ID
-		want restoreConnectPolicy
-	}{{hitSettingsRestoreAll, restoreConnectAll}, {hitSettingsRestoreOff, restoreConnectOff}, {hitSettingsRestoreActive, restoreConnectActive}} {
-		first.Click(test.hit)
-		if first.restoreConnect != test.want {
-			t.Fatalf("clicking %d set %v, want %v", test.hit, first.restoreConnect, test.want)
+	first.selectSettingsCategory(settingsConnection)
+	for _, want := range []restoreConnectPolicy{restoreConnectAll, restoreConnectOff, restoreConnectActive} {
+		clickSettingsChoice(t, first, first.settingsRestoreLabel(want))
+		if first.restoreConnect != want {
+			t.Fatalf("clicking %v set %v, want %v", want, first.restoreConnect, want)
 		}
-		if again := newTestState(t, options); again.restoreConnect != test.want {
-			t.Fatalf("restored %v, want %v", again.restoreConnect, test.want)
+		if again := newTestState(t, options); again.restoreConnect != want {
+			t.Fatalf("restored %v, want %v", again.restoreConnect, want)
 		}
 	}
 }

@@ -406,29 +406,37 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	canvas, _ := paintedTexts(state)
-	if !hasHit(canvas, hitForwardModeLocal) || !hasHit(canvas, hitForwardModeRemote) || !hasHit(canvas, hitForwardModeSOCKS5) || !hasHit(canvas, hitForwardModeHTTPConnect) || !hasHit(canvas, hitForwardDialogDestination) {
+	local := forwardModeChoice(t, canvas, state.messages.ForwardModeLocal)
+	remote := forwardModeChoice(t, canvas, state.messages.ForwardModeRemote)
+	socks := forwardModeChoice(t, canvas, state.messages.ForwardModeSOCKS5)
+	connect := forwardModeChoice(t, canvas, state.messages.ForwardModeHTTPConnect)
+	if !hasHit(canvas, hitForwardDialogDestination) {
 		t.Fatalf("local forward dialog hits = %+v", canvas.Hits())
 	}
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeLocal})
-	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
-		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
+	// The mode switch is a page Choice: its arrows report the segment to activate
+	// as a click, and the click's event pass writes the value.
+	press := func(from, to gfx.Hit, key gfx.Key, want portforward.Mode) {
+		t.Helper()
+		result := state.Key(gfx.KeyEvent{Key: key, Target: from.ID})
+		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
+			t.Fatalf("mode key %v from %q result=%+v", key, from.Label, result)
+		}
+		activateChoice(t, state, result.Activate)
+		if state.forwardEditor.mode != want {
+			t.Fatalf("mode after %v = %d, want %d", key, state.forwardEditor.mode, want)
+		}
 	}
+	press(local, remote, gfx.KeyRight, portforward.ModeRemote)
 	canvas, texts := paintedTexts(state)
 	if !hasHit(canvas, hitForwardDialogDestination) || !hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardFieldRemotePort) {
 		t.Fatalf("remote dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeRemote})
-	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
-		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
+	press(remote, socks, gfx.KeyRight, portforward.ModeSOCKS5)
 	canvas, texts = paintedTexts(state)
 	if hasHit(canvas, hitForwardDialogDestination) || hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardSOCKS5Hint) {
 		t.Fatalf("SOCKS5 dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeSOCKS5})
-	if !result.Handled || result.Focus != hitForwardModeHTTPConnect || state.forwardEditor.mode != portforward.ModeHTTPConnect {
-		t.Fatalf("HTTP CONNECT keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
+	press(socks, connect, gfx.KeyRight, portforward.ModeHTTPConnect)
 	canvas, texts = paintedTexts(state)
 	if hasHit(canvas, hitForwardDialogDestination) || hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardHTTPConnectHint) {
 		t.Fatalf("HTTP CONNECT dialog texts=%v hits=%+v", texts, canvas.Hits())
@@ -438,18 +446,30 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if got := state.forwardEditor.validate(state); got != "" {
 		t.Fatalf("HTTP CONNECT validation = %q", got)
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeHTTPConnect})
-	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
-		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
+	press(connect, socks, gfx.KeyLeft, portforward.ModeSOCKS5)
+	press(socks, remote, gfx.KeyLeft, portforward.ModeRemote)
+	press(remote, local, gfx.KeyLeft, portforward.ModeLocal)
+}
+
+// forwardModeChoice finds the forward type switch's segment with label in the
+// painted dialog.
+func forwardModeChoice(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	hit, ok := settingsChoiceIn(canvas, label)
+	if !ok {
+		t.Fatalf("no forward mode choice labeled %q", label)
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeSOCKS5})
-	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
-		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeRemote})
-	if !result.Handled || result.Focus != hitForwardModeLocal || state.forwardEditor.mode != portforward.ModeLocal {
-		t.Fatalf("local keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
+	return hit
+}
+
+// activateChoice delivers the click an arrow key reported, so the page Choice
+// writes its value in the event pass.
+func activateChoice(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	canvas.EndEventPass()
 }
 
 func TestRemoteForwardDuplicatePortsAreScopedToSSHHost(t *testing.T) {
@@ -478,7 +498,7 @@ func TestRemoteForwardDuplicatePortsAreScopedToSSHHost(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			openForwardEditor(t, state)
-			state.Click(hitForwardModeRemote)
+			clickSettingsChoice(t, state, state.messages.ForwardModeRemote)
 			replaceForwardField(state, hitForwardDialogLabel, "Remote")
 			replaceForwardField(state, hitForwardDialogDestination, "127.0.0.1")
 			state.forwards = append(state.forwards, test.existing)
@@ -945,7 +965,7 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeSOCKS5)
+	clickSettingsChoice(t, state, state.messages.ForwardModeSOCKS5)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
@@ -959,7 +979,7 @@ func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort ui
 func addRemoteForwardRule(t testing.TB, state *State, label string, remotePort uint16, destination string, destinationPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeRemote)
+	clickSettingsChoice(t, state, state.messages.ForwardModeRemote)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(remotePort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
@@ -999,7 +1019,7 @@ func waitForwardResult(t testing.TB, state *State) {
 func addHTTPConnectForwardRule(t testing.TB, state *State, label string, localPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeHTTPConnect)
+	clickSettingsChoice(t, state, state.messages.ForwardModeHTTPConnect)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {

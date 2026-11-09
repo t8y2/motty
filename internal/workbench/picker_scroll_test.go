@@ -152,7 +152,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 				if state.fonts.selected != selected {
 					t.Fatal("wheel changed font selection")
 				}
-				state.Click(list.At(1))
+				clickFontPickerRow(t, state, 1)
 				if state.fonts.selected != 1 {
 					t.Fatal("partial row click selected wrong font")
 				}

@@ -361,13 +361,11 @@ func (w *remoteToolsWindow) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 		return gfx.EventResult{}
 	}
-	var options [6]components.SegmentOption
-	for i, id := range remoteTabHits {
-		options[i].ID = id
-	}
-	if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
-		w.click(next)
-		return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
+	// The tab switch is a page Choice: its arrows are the page's.
+	if w.ui.remote.tabPage != nil {
+		if result, handled := w.ui.remote.tabPage.Key(event); handled {
+			return result
+		}
 	}
 	return gfx.EventResult{}
 }

@@ -34,6 +34,17 @@ func waitFor(t testing.TB, state *State, condition func() bool) {
 	}
 }
 
+// clickFontPickerRow delivers a click on a row of the open picker the way the
+// runtime does: the paint it runs is the event pass of that row's click, where
+// the row reads Clicked in place.
+func clickFontPickerRow(t testing.TB, state *State, row int) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(hitFontPickerItemList.At(row))
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	canvas.EndEventPass()
+}
+
 func TestChoosingAnInstalledFontSwitchesTheTerminalAndIsKept(t *testing.T) {
 	options := fontOptions(t, testFonts)
 	state := newTestState(t, options)
@@ -154,7 +165,7 @@ func TestFontPickerKeysMoveScrollAndLeaveTheFontAloneOnEscape(t *testing.T) {
 
 	// Clicking a row selects it for preview without closing the modal; confirm applies it.
 	state.openFontPicker(false)
-	state.Click(hitFontPickerItemList.At(3)) // System, Classic, Family A0, Family A1
+	clickFontPickerRow(t, state, 3) // System, Classic, Family A0, Family A1
 	if state.fonts.selected != 3 || state.modal != modalFontPicker || state.fonts.family != "" {
 		t.Fatalf("selected %d modal %d family %q", state.fonts.selected, state.modal, state.fonts.family)
 	}
@@ -169,7 +180,7 @@ func TestTheBuiltInFacesAreChosenFromTheSameList(t *testing.T) {
 	state.useTerminalFont(fontEntry{family: "Menlo"})
 	state.openFontPicker(false)
 	waitFor(t, state, func() bool { return !state.fonts.loading })
-	state.Click(hitFontPickerItemList.At(1)) // Classic
+	clickFontPickerRow(t, state, 1) // Classic
 	state.Click(hitFontPickerConfirm)
 	if state.terminalFontFace != gfx.MonoClassic || state.fonts.family != "" {
 		t.Fatalf("face %d family %q", state.terminalFontFace, state.fonts.family)
@@ -293,7 +304,7 @@ func TestFontPickerClickSelectsAndPreviewsWithoutClosing(t *testing.T) {
 	state.refreshFontPicker()
 
 	// System, Classic, Fira Code, Iosevka, JetBrains Mono, Menlo
-	state.Click(hitFontPickerItemList.At(3))
+	clickFontPickerRow(t, state, 3)
 	if state.modal != modalFontPicker || state.fonts.selected != 3 || state.fonts.family != "Menlo" {
 		t.Fatalf("modal %d selected %d family %q", state.modal, state.fonts.selected, state.fonts.family)
 	}
@@ -310,7 +321,7 @@ func TestFontPickerDoubleClickConfirms(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 
 	// The first press of a double click is an ordinary click: it only selects.
-	state.Click(hitFontPickerItemList.At(2))
+	clickFontPickerRow(t, state, 2)
 	if state.modal != modalFontPicker || state.fonts.selected != 2 {
 		t.Fatalf("modal %d selected %d", state.modal, state.fonts.selected)
 	}
@@ -327,7 +338,7 @@ func TestFontPickerEnterOnAButtonIsThatButtonsOwn(t *testing.T) {
 	state := newTestState(t, fontOptions(t, testFonts))
 	state.openFontPicker(false)
 	waitFor(t, state, func() bool { return !state.fonts.loading })
-	state.Click(hitFontPickerItemList.At(2))
+	clickFontPickerRow(t, state, 2)
 
 	for _, target := range []gfx.ID{hitFontPickerCancel, hitFontPickerClose} {
 		result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})

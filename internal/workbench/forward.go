@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
@@ -166,6 +167,9 @@ type forwardEditor struct {
 	resume     bool
 	editing    bool
 	forwardID  uint32
+	// modePage declares the forward type switch, and modeView caches its view.
+	modePage *ui.Page
+	modeView func(ui.C)
 }
 
 type forwardField uint8
@@ -225,7 +229,13 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 }
 
 func (editor *forwardEditor) usesClientDestination() bool {
-	return editor.mode == portforward.ModeSOCKS5 || editor.mode == portforward.ModeHTTPConnect
+	return modeUsesClientDestination(editor.mode)
+}
+
+// modeUsesClientDestination reports whether a forward of this kind ends at the
+// client, so the destination fields are not shown.
+func modeUsesClientDestination(mode portforward.Mode) bool {
+	return mode == portforward.ModeSOCKS5 || mode == portforward.ModeHTTPConnect
 }
 
 func (editor *forwardEditor) port(field forwardField) (uint16, bool) {
@@ -391,18 +401,6 @@ func (state *State) clickForwardDialog(id gfx.ID) {
 		state.status = state.messages.StatusEditCanceled
 	case hitForwardDialogHost, hitForwardHostTrigger:
 		editor.hostSelect.Open = true
-	case hitForwardModeLocal:
-		state.forwardEditor.mode = portforward.ModeLocal
-		state.forwardDialogError = ""
-	case hitForwardModeRemote:
-		state.forwardEditor.mode = portforward.ModeRemote
-		state.forwardDialogError = ""
-	case hitForwardModeSOCKS5:
-		state.forwardEditor.mode = portforward.ModeSOCKS5
-		state.forwardDialogError = ""
-	case hitForwardModeHTTPConnect:
-		state.forwardEditor.mode = portforward.ModeHTTPConnect
-		state.forwardDialogError = ""
 	case hitForwardDialogResume:
 		state.forwardEditor.resume = !state.forwardEditor.resume
 	case hitForwardDialogSubmit:
@@ -417,6 +415,12 @@ func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{}, false
 	}
 	editor := &state.forwardEditor
+	if editor.modePage != nil {
+		// The forward type switch is a page Choice: its arrows are the page's.
+		if result, handled := editor.modePage.Key(event); handled {
+			return result, true
+		}
+	}
 	var result gfx.EventResult
 	switch {
 	case event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger:

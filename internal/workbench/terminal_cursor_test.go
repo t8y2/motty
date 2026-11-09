@@ -57,22 +57,14 @@ func TestCursorThicknessControlMarksTheStoredStep(t *testing.T) {
 			state.selectSettingsCategory(settingsTerminal)
 			var canvas gfx.Canvas
 			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
-			want := map[cursorThickness]gfx.ID{
-				cursorNormal: hitSettingsCursorNormal,
-				cursorThin:   hitSettingsCursorThin,
-				cursorThick:  hitSettingsCursorThick,
-			}[step]
-			for id, label := range map[gfx.ID]string{
-				hitSettingsCursorThin:   "thin",
-				hitSettingsCursorNormal: "normal",
-				hitSettingsCursorThick:  "thick",
-			} {
-				hit, ok := hitByID(&canvas, id)
+			row := state.messages.Tools.CursorThicknessRow
+			for _, option := range []cursorThickness{cursorThin, cursorNormal, cursorThick} {
+				hit, ok := settingsChoiceInRow(&canvas, row, state.settingsCursorThicknessLabel(option))
 				if !ok {
-					t.Fatalf("the %s step is not on the settings page", label)
+					t.Fatalf("the %s step is not on the settings page", option)
 				}
-				if hit.Selected != (id == want) {
-					t.Errorf("%s selected=%v, want %v", label, hit.Selected, id == want)
+				if hit.Selected != (option == step) {
+					t.Errorf("%s selected=%v, want %v", option, hit.Selected, option == step)
 				}
 			}
 		})

@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
@@ -36,6 +37,9 @@ type workspaceDraft struct {
 	previewScroll  float32
 	previewBounds  gfx.Rect
 	previewContent float32
+	// modePage declares the temporary/fixed switch, and modeView caches its view.
+	modePage *ui.Page
+	modeView func(ui.C)
 }
 
 func (draft *workspaceDraft) reset() {
@@ -86,18 +90,6 @@ func (state *State) clickWorkspaceDraft(id gfx.ID) {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(draft.editID)
 		}
 		state.closeModal()
-	case id == hitWorkspaceDraftTemporary:
-		if draft.mode == workspaceDraftEdit {
-			return
-		}
-		draft.mode = workspaceDraftTemporary
-		draft.error = ""
-	case id == hitWorkspaceDraftFixed:
-		if draft.mode == workspaceDraftEdit {
-			return
-		}
-		draft.mode = workspaceDraftFixed
-		draft.error = ""
 	case id.Scope() == hitWorkspaceDraftPresets:
 		if index, ok := id.In(hitWorkspaceDraftPresets); ok && index < len(workspacePresets) {
 			state.setWorkspaceDraftLayout(workspacePresets[index])
@@ -389,10 +381,43 @@ func (state *State) workspaceDraftVisibleHost(index int, ok bool) *Host {
 }
 
 func (state *State) workspaceDraftModeLabel() string {
-	if state.workspaceDraft.mode == workspaceDraftFixed {
+	return state.workspaceDraftModeName(state.workspaceDraft.mode)
+}
+
+// workspaceDraftModeName names one of the two modes the draft switch offers.
+func (state *State) workspaceDraftModeName(mode workspaceDraftMode) string {
+	if mode == workspaceDraftFixed {
 		return state.messages.WorkspaceDraftFixed
 	}
 	return state.messages.WorkspaceDraftTemporary
+}
+
+// workspaceDraftModeRoot names the draft's temporary/fixed switch in the Tree.
+const workspaceDraftModeRoot = "workspace-draft-mode"
+
+// workspaceDraftModeChoices are the two modes the switch offers; the edit mode
+// has no switch and shows its fields instead.
+var workspaceDraftModeChoices = [...]workspaceDraftMode{workspaceDraftTemporary, workspaceDraftFixed}
+
+// drawWorkspaceDraftMode paints the temporary/fixed switch in its slot. It is a
+// page Choice, so its arrows move between the options.
+func (state *State) drawWorkspaceDraftMode(canvas *gfx.Canvas, bounds gfx.Rect) {
+	draft := &state.workspaceDraft
+	if draft.modePage == nil {
+		draft.modePage = ui.NewPage(ui.PageConfig{Root: workspaceDraftModeRoot, Theme: &state.theme})
+		draft.modeView = state.declareWorkspaceDraftMode
+	}
+	draft.modePage.Draw(canvas, bounds, draft.modeView)
+}
+
+func (state *State) declareWorkspaceDraftMode(c ui.C) {
+	draft := &state.workspaceDraft
+	choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()
+	// Any press on the switch clears the error, including a press on the mode
+	// that is already chosen.
+	if _, clicked := choice.ChosenIndex(); clicked {
+		draft.error = ""
+	}
 }
 
 func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
@@ -401,12 +426,20 @@ func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
 
 func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	draft, m, theme := &state.workspaceDraft, state.messages, state.Theme()
+	// The mode switch is a page Choice, which writes the new mode during this
+	// paint. The dialog was laid out from the mode at the start of the paint, so
+	// the rest of the paint reads that same mode; the next paint shows the new
+	// one.
+	mode := draft.mode
 	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
-	initial := hitWorkspaceDraftTemporary
+	// The mode switch is a page Choice now, so its segment identities are the
+	// page's and not known here; the temporary draft opens without an initial
+	// focus and the dialog's trap settles it on the first press.
+	var initial gfx.ID
 	description := m.WorkspaceDraftDescription
-	if draft.mode == workspaceDraftFixed {
+	if mode == workspaceDraftFixed {
 		title, submit, initial = m.WorkspaceDraftTitleFixed, m.WorkspaceDraftSave, hitWorkspaceDraftName
-	} else if draft.mode == workspaceDraftEdit {
+	} else if mode == workspaceDraftEdit {
 		title, submit, initial = m.WorkspaceDraftTitleEdit, m.WorkspaceDraftSaveChanges, hitWorkspaceDraftName
 		description = m.WorkspaceDraftEditDescription
 	}
@@ -418,19 +451,11 @@ func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.R
 	layout := dialog.Begin(title, description)
 	body := layout.Body
 	y := body.Y
-	if draft.mode != workspaceDraftEdit {
-		modes := [2]components.SegmentOption{
-			{ID: hitWorkspaceDraftTemporary, Label: m.WorkspaceDraftTemporary},
-			{ID: hitWorkspaceDraftFixed, Label: m.WorkspaceDraftFixed},
-		}
-		selectedMode := hitWorkspaceDraftTemporary
-		if draft.mode == workspaceDraftFixed {
-			selectedMode = hitWorkspaceDraftFixed
-		}
-		components.BeginSegmentedControl(canvas, theme, gfx.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32}, modes[:], selectedMode).Paint()
+	if mode != workspaceDraftEdit {
+		state.drawWorkspaceDraftMode(canvas, gfx.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32})
 		y += 44
 	}
-	if draft.mode == workspaceDraftFixed || draft.mode == workspaceDraftEdit {
+	if mode == workspaceDraftFixed || mode == workspaceDraftEdit {
 		field := components.BeginField(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
 		control := field.Paint(m.WorkspaceDraftName, "", "")
 		components.PaintInput(canvas, theme, control, components.InputSnapshot{
@@ -463,9 +488,9 @@ func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.R
 	draft.bounds = gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: max(0, body.Y+body.Height-y-32)}
 	state.paintWorkspaceDraftHosts(canvas)
 	hint, color := m.WorkspaceDraftLimit, state.pal.muted
-	if draft.mode == workspaceDraftTemporary {
+	if mode == workspaceDraftTemporary {
 		hint = m.WorkspaceDraftTemporaryHint
-	} else if draft.mode == workspaceDraftEdit {
+	} else if mode == workspaceDraftEdit {
 		hint = m.WorkspaceDraftFixedHint
 	} else {
 		hint = m.WorkspaceDraftFixedHint
@@ -600,6 +625,7 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalWorkspaceDraft || event.Release {
 		return gfx.EventResult{}
 	}
+	draft := &state.workspaceDraft
 	if event.Key == gfx.KeyEscape {
 		if state.workspaceDraft.mode == workspaceDraftEdit {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceDraft.editID)
@@ -617,16 +643,10 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 		state.submitWorkspaceDraft()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if event.Target == hitWorkspaceDraftTemporary || event.Target == hitWorkspaceDraftFixed {
-		if state.workspaceDraft.mode == workspaceDraftEdit {
-			return gfx.EventResult{}
-		}
-		options := [2]components.TabOption{
-			{ID: hitWorkspaceDraftTemporary, Label: state.messages.WorkspaceDraftTemporary},
-			{ID: hitWorkspaceDraftFixed, Label: state.messages.WorkspaceDraftFixed},
-		}
-		if next, ok := components.TabsKeyDown(event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key); ok {
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+	if draft.modePage != nil {
+		// The temporary/fixed switch is a page Choice: its arrows are the page's.
+		if result, handled := draft.modePage.Key(event); handled {
+			return result
 		}
 	}
 	if event.Target == hitWorkspaceDraftScroll {

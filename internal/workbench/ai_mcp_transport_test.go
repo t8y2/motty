@@ -62,22 +62,24 @@ func TestAgentAllowAllWaitsForConfirmationAndKeepsHTTPIndependent(t *testing.T) 
 					t.Fatal("stdio permission or independent HTTP permission changed unexpectedly")
 				}
 			}
-			state.Click(hitAISetAgentAllowAll)
+			m := state.messages.AISettings
+			allowAll := func() { clickSettingsChoice(t, state, m.MCPModeAllowAll) }
+			allowAll()
 			check(before, initial)
 			if state.ai.cfg.dialog != aiDialogAgentAllowAll {
 				t.Fatal("full access did not ask for consent")
 			}
 			state.Click(hitAISetConfirmCancel)
 			check(before, initial)
-			state.Click(hitAISetAgentAllowAll)
+			allowAll()
 			state.Click(hitAISetConfirmAction)
 			check(gate.ModeAllowAll, AgentModeAllowAll)
 			if again := world.open(t); again.ai.settings.agentMode != gate.ModeAllowAll {
 				t.Fatal("confirmed access did not survive restart")
 			}
-			state.Click(hitAISetAgentObserve)
+			clickSettingsChoice(t, state, m.AgentModeObserve)
 			check(gate.ModeObserve, AgentModeReadOnly)
-			state.Click(hitAISetAgentAllowAll)
+			allowAll()
 			if state.ai.cfg.dialog != aiDialogAgentAllowAll {
 				t.Fatal("re-enabling full access skipped consent")
 			}

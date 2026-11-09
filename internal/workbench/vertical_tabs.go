@@ -74,12 +74,18 @@ func (state *State) setTabOrientation(orientation tabOrientation) bool {
 		return false
 	}
 	state.tabOrientation = orientation
-	state.tabStrip = tabStrip{vertical: orientation == tabsVertical}
+	state.applyTabOrientation()
+	return true
+}
+
+// applyTabOrientation lays the tabs out for the orientation the page's choice
+// already wrote.
+func (state *State) applyTabOrientation() {
+	state.tabStrip = tabStrip{vertical: state.tabOrientation == tabsVertical}
 	state.chrome.geometry.valid = false
 	state.verticalTabs.over, state.verticalTabs.barDrag = false, false
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
-	return true
 }
 
 func (state *State) setVerticalTabsAutoHide(autoHide bool) bool {

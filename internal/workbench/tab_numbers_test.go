@@ -151,7 +151,7 @@ func TestTheNumberKeysRowIsAlwaysInSettings(t *testing.T) {
 		t.Fatal("the number keys row is missing while the numbers are shown")
 	}
 
-	state.Click(hitSettingsTabNumbersAlt)
+	clickSettingsChoice(t, state, state.tabNumberOptions()[1].Label)
 	want := keymap.Chord{Modifiers: gfx.ModifierAlt, Char: '1'}
 	if got := state.shortcuts.chords.Chord(shortcutTabNumber); got != want {
 		t.Fatalf("choosing Alt bound %+v, want %+v", got, want)
@@ -172,15 +172,22 @@ func TestTheNumberKeysSettingTakesTheKeyboard(t *testing.T) {
 	state.Click(hitSettings)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
-	for _, id := range []gfx.ID{hitSettingsTabNumbersPrimary, hitSettingsTabNumbersAlt, hitSettingsTabNumbersShift} {
-		if _, ok := hitByID(&canvas, id); !ok {
-			t.Fatalf("the number keys row is missing option %v", id)
+	labels := state.tabNumberOptions()
+	for index := range labels {
+		if _, ok := settingsChoiceIn(&canvas, labels[index].Label); !ok {
+			t.Fatalf("the number keys row is missing option %q", labels[index].Label)
 		}
 	}
-	result := state.Key(gfx.KeyEvent{Target: hitSettingsTabNumbersPrimary, Key: gfx.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsTabNumbersAlt {
+	primary := settingsChoiceHit(t, state, labels[0].Label)
+	alt := settingsChoiceHit(t, state, labels[1].Label)
+	result := state.Key(gfx.KeyEvent{Target: primary.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != alt.ID || result.Activate != alt.ID {
 		t.Fatalf("keyboard choice: %+v", result)
 	}
+	var rove gfx.Canvas
+	rove.BeginEventPass(result.Activate)
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 3400})
+	rove.EndEventPass()
 	if got := state.shortcuts.chords.Chord(shortcutTabNumber).Modifiers; got != gfx.ModifierAlt {
 		t.Fatalf("the keyboard chose %v, want Alt", got)
 	}
@@ -191,7 +198,7 @@ func TestTheNumberKeysAreAbleToFireInATerminal(t *testing.T) {
 	state.Click(hitSettings)
 	// Shift alone cannot be told apart from typing its symbol, so the third
 	// choice is the platform's primary key with Shift.
-	state.Click(hitSettingsTabNumbersShift)
+	clickSettingsChoice(t, state, state.tabNumberOptions()[2].Label)
 	want := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierShift, Char: '1'}
 	if got := state.shortcuts.chords.Chord(shortcutTabNumber); got != want {
 		t.Fatalf("the third choice bound %+v, want %+v", got, want)

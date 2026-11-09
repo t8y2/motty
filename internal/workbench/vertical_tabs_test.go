@@ -15,14 +15,23 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 	state.Click(hitSettings)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
-	for _, id := range []gfx.ID{hitSettingsTabsHorizontal, hitSettingsTabsVertical} {
-		if _, ok := hitByID(&canvas, id); !ok {
-			t.Fatalf("missing General setting %v", id)
+	for _, label := range []string{state.messages.SettingsTabsHorizontal, state.messages.SettingsTabsVertical} {
+		if _, ok := settingsChoiceIn(&canvas, label); !ok {
+			t.Fatalf("missing General setting %q", label)
 		}
 	}
-	result := state.Key(gfx.KeyEvent{Target: hitSettingsTabsHorizontal, Key: gfx.KeyRight})
-	if !result.Handled || result.Focus != hitSettingsTabsVertical || state.tabOrientation != tabsVertical {
-		t.Fatalf("keyboard choice: %+v, orientation %v", result, state.tabOrientation)
+	horizontal := settingsChoiceHit(t, state, state.messages.SettingsTabsHorizontal)
+	vertical := settingsChoiceHit(t, state, state.messages.SettingsTabsVertical)
+	result := state.Key(gfx.KeyEvent{Target: horizontal.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != vertical.ID || result.Activate != vertical.ID {
+		t.Fatalf("keyboard choice: %+v", result)
+	}
+	var rove gfx.Canvas
+	rove.BeginEventPass(result.Activate)
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 3400})
+	rove.EndEventPass()
+	if state.tabOrientation != tabsVertical {
+		t.Fatalf("orientation %v after the arrow key activated the next choice", state.tabOrientation)
 	}
 	state.Click(hitSettingsVerticalTabsAutoHide)
 	saved, _, err := loadState(state.options.StatePath)
@@ -263,7 +272,7 @@ func TestAutoHideSettingIsOfferedOnlyForVerticalTabs(t *testing.T) {
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsAutoHide); ok {
 		t.Fatal("horizontal tabs have nothing to auto-hide")
 	}
-	state.Click(hitSettingsTabsVertical)
+	clickSettingsChoice(t, state, state.messages.SettingsTabsVertical)
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsAutoHide); !ok {

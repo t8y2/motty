@@ -788,9 +788,7 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 	state.activeSection = sectionSettings
 	session.term.railScroll = 90
 
-	if !state.clickSettings(hitSettingsToolbarLeft) {
-		t.Fatal("toolbar position setting was not handled")
-	}
+	clickSettingsChoice(t, state, state.messages.SettingsToolbarPositionLeft)
 	if state.terminalToolbarPosition != terminalToolbarLeft || session.term.railScroll != 0 {
 		t.Fatalf("position=%v scroll=%v after immediate setting", state.terminalToolbarPosition, session.term.railScroll)
 	}
@@ -799,9 +797,18 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 		t.Fatalf("background terminal screen=%dx%d geometry=%dx%d after toolbar setting", cols, rows, geometry.cols, geometry.rows)
 	}
 
-	result, handled := state.settingsKey(gfx.KeyEvent{Target: hitSettingsToolbarLeft, Key: gfx.KeyRight})
-	if !handled || !result.Handled || result.Focus != hitSettingsToolbarRight || state.terminalToolbarPosition != terminalToolbarRight {
-		t.Fatalf("position keyboard result=%+v handled=%v position=%v", result, handled, state.terminalToolbarPosition)
+	left := settingsChoiceHit(t, state, state.messages.SettingsToolbarPositionLeft)
+	right := settingsChoiceHit(t, state, state.messages.SettingsToolbarPositionRight)
+	result := state.Key(gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != right.ID || result.Activate != right.ID {
+		t.Fatalf("position keyboard result=%+v", result)
+	}
+	var rove gfx.Canvas
+	rove.BeginEventPass(result.Activate)
+	state.Paint(&rove, gfx.Size{Width: 1400, Height: 3400})
+	rove.EndEventPass()
+	if state.terminalToolbarPosition != terminalToolbarRight {
+		t.Fatalf("position=%v after the arrow key activated the next choice", state.terminalToolbarPosition)
 	}
 }
 

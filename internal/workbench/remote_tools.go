@@ -23,12 +23,6 @@ import (
 var remoteToolsHits = tree.Feature("remote-tools")
 
 var (
-	hitRemoteTabProcesses  = tree.ID(remoteToolsHits, "remote-tab-processes")
-	hitRemoteTabContainers = tree.ID(remoteToolsHits, "remote-tab-containers")
-	hitRemoteTabImages     = tree.ID(remoteToolsHits, "remote-tab-images")
-	hitRemoteTabVolumes    = tree.ID(remoteToolsHits, "remote-tab-volumes")
-	hitRemoteTabNetworks   = tree.ID(remoteToolsHits, "remote-tab-networks")
-	hitRemoteTabCompose    = tree.ID(remoteToolsHits, "remote-tab-compose")
 	hitRemoteNiceLower     = tree.ID(remoteToolsHits, "remote-nice-lower")
 	hitRemoteNiceNormal    = tree.ID(remoteToolsHits, "remote-nice-normal")
 	hitRemoteNiceHigher    = tree.ID(remoteToolsHits, "remote-nice-higher")
@@ -103,10 +97,65 @@ const (
 	remoteCompose
 )
 
-// remoteTabHits is the control of each tab, indexed by remoteTab.
-var remoteTabHits = [...]gfx.ID{
-	remoteProcesses: hitRemoteTabProcesses, remoteContainers: hitRemoteTabContainers,
-	remoteImages: hitRemoteTabImages, remoteVolumes: hitRemoteTabVolumes, remoteNetworks: hitRemoteTabNetworks, remoteCompose: hitRemoteTabCompose,
+// remoteTabChoices are the tabs in the order the switch shows them.
+var remoteTabChoices = [...]remoteTab{remoteProcesses, remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose}
+
+func (state *State) remoteTabLabel(tab remoteTab) string {
+	m := state.messages.Tools
+	switch tab {
+	case remoteContainers:
+		return m.RemoteTabContainers
+	case remoteImages:
+		return m.RemoteTabImages
+	case remoteVolumes:
+		return m.RemoteTabVolumes
+	case remoteNetworks:
+		return m.RemoteTabNetworks
+	case remoteCompose:
+		return m.RemoteTabCompose
+	}
+	return m.RemoteTabProcesses
+}
+
+// remoteTabsRoot names the tab switch in the window's Tree.
+const remoteTabsRoot = "remote-tools-tabs"
+
+// drawRemoteTabs paints the tab switch in its slot. It is a page Choice, so its
+// arrows move between the options.
+func (state *State) drawRemoteTabs(canvas *gfx.Canvas, bounds gfx.Rect) {
+	view := &state.remote
+	if view.tabPage == nil {
+		view.tabPage = ui.NewPage(ui.PageConfig{Root: remoteTabsRoot, Theme: &state.theme})
+		view.tabView = state.declareRemoteTabs
+	}
+	view.tabPage.Draw(canvas, bounds, view.tabView)
+}
+
+func (state *State) declareRemoteTabs(c ui.C) {
+	if ui.Choice(c, &state.remote.tab, remoteTabChoices[:], state.remoteTabLabel).Fill().Changed() {
+		state.applyRemoteTab()
+	}
+}
+
+// applyRemoteTab resets the view for the tab the page's choice already wrote and
+// reads the objects that tab lists.
+func (state *State) applyRemoteTab() {
+	view := &state.remote
+	m := state.messages.Tools
+	view.selected, view.page = "", 0
+	view.rows, view.pageText = nil, ""
+	view.procs, view.containers, view.compose, view.resources = nil, nil, nil, nil
+	view.collectedAt, view.stale, view.snapshotStatus = time.Time{}, false, ""
+	view.processesTruncated, view.commandsTruncated = false, false
+	state.rebuildRemoteRows()
+	if view.noDocker && view.tab != remoteProcesses {
+		// Docker availability belongs to the connection, not its tab. Keep the
+		// empty state until an explicit or timed refresh rechecks it.
+		view.serial++
+		view.loading, view.failed, view.status = false, true, m.RemoteErrNoDocker
+		return
+	}
+	state.refreshRemoteTools()
 }
 
 // kind is the Docker object kind of an images, volumes or networks tab.
@@ -183,6 +232,9 @@ type remoteToolsView struct {
 	note    string
 	failed  bool
 	columns [6]string
+	// tabPage declares the tab switch, and tabView caches its view.
+	tabPage *ui.Page
+	tabView func(ui.C)
 }
 
 func (state *State) remoteToolsOffered(session *Session) bool {
@@ -273,29 +325,6 @@ func (state *State) clickRemoteTools(id gfx.ID) {
 			view.auto.interval = remoteRefreshIntervals[index]
 			view.auto.enabled = true
 			view.auto.restart()
-		}
-	case id == hitRemoteTabProcesses || id == hitRemoteTabContainers || id == hitRemoteTabImages || id == hitRemoteTabVolumes || id == hitRemoteTabNetworks || id == hitRemoteTabCompose:
-		var tab remoteTab
-		for candidate, hit := range remoteTabHits {
-			if hit == id {
-				tab = remoteTab(candidate)
-			}
-		}
-		if tab != view.tab {
-			view.tab, view.selected, view.page = tab, "", 0
-			view.rows, view.pageText = nil, ""
-			view.procs, view.containers, view.compose, view.resources = nil, nil, nil, nil
-			view.collectedAt, view.stale, view.snapshotStatus = time.Time{}, false, ""
-			view.processesTruncated, view.commandsTruncated = false, false
-			state.rebuildRemoteRows()
-			if view.noDocker && tab != remoteProcesses {
-				// Docker availability belongs to the connection, not its tab.
-				// Keep the empty state until an explicit or timed refresh rechecks it.
-				view.serial++
-				view.loading, view.failed, view.status = false, true, m.RemoteErrNoDocker
-			} else {
-				state.refreshRemoteTools()
-			}
 		}
 	case state.clickRemoteTableSort(id):
 		return
@@ -883,21 +912,17 @@ func (state *State) paintRemoteTools(canvas *gfx.Canvas, viewport gfx.Rect) {
 func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
 	view := &state.remote
+	// The tab switch is a page Choice, which writes the new tab during this
+	// paint. The toolbar and table were laid out from the tab at the start of the
+	// paint, so the rest of the paint reads that same tab; the next paint shows
+	// the new one.
+	tab := view.tab
 	pageSize := state.remotePageSize()
 	tableHeight := components.TableHeaderHeight(theme) + float32(pageSize)*components.TableRowHeight(theme)
-	tabs := [...]components.SegmentOption{
-		{ID: hitRemoteTabProcesses, Label: m.RemoteTabProcesses},
-		{ID: hitRemoteTabContainers, Label: m.RemoteTabContainers},
-		{ID: hitRemoteTabImages, Label: m.RemoteTabImages},
-		{ID: hitRemoteTabVolumes, Label: m.RemoteTabVolumes},
-		{ID: hitRemoteTabNetworks, Label: m.RemoteTabNetworks},
-		{ID: hitRemoteTabCompose, Label: m.RemoteTabCompose},
-	}
-	selectedTab := remoteTabHits[view.tab]
 	// Tabs and refresh controls share the toolbar; sorting belongs to the table.
 	pages := (len(view.rows) + pageSize - 1) / pageSize
 	status := view.status
-	missingDocker := view.noDocker && view.tab != remoteProcesses && view.collectedAt.IsZero()
+	missingDocker := view.noDocker && tab != remoteProcesses && view.collectedAt.IsZero()
 	if view.loading && len(view.rows) == 0 && !missingDocker {
 		status = ""
 	}
@@ -929,7 +954,7 @@ func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 			})
 		}
 		searchSlot = f.Slot().Height(remoteSearchHeight).Shrink(0).MarginSides(8, 0, 0, 0)
-		if view.tab == remoteProcesses {
+		if tab == remoteProcesses {
 			tableSlot = f.Slot().Grow(1).Shrink(1).MinHeight(components.TableHeaderHeight(theme)+components.TableRowHeight(theme)).MarginSides(4, 0, 0, 0)
 		} else {
 			tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(4, 0, 0, 0)
@@ -956,7 +981,7 @@ func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 		canvas.HitWithOptions(hitRemoteSnapshotStatus, bounds, view.snapshotStatus,
 			gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: view.searchSummary})
 	}
-	components.BeginSegmentedControl(canvas, theme, tabsSlot.Rect(), tabs[:], selectedTab).Paint()
+	state.drawRemoteTabs(canvas, tabsSlot.Rect())
 	state.paintRemoteRefresh(canvas, refreshSlot.Rect())
 	if session, ok := state.remoteSession(); ok && session.host.System != sshconn.SystemWindows {
 		label := state.messages.SudoCommandsEnable
@@ -974,26 +999,26 @@ func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 		state.paintRemoteToolsLoading(canvas, tableSlot.Rect())
 		return
 	}
-	if view.tab == remoteProcesses {
+	if tab == remoteProcesses {
 		state.paintRemoteProcessTable(canvas, tableSlot.Rect())
 		return
 	}
 
 	var columns []components.TableColumn
 	var headings []string
-	if view.tab == remoteCompose {
+	if tab == remoteCompose {
 		columns = []components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}
 		view.columns = [6]string{m.RemoteColName, m.RemoteColStatus, m.RemoteColConfig}
 		headings = view.columns[:3]
-	} else if view.tab == remoteImages {
+	} else if tab == remoteImages {
 		columns = []components.TableColumn{{Width: 470}, {Width: 150}, {Width: 100, Alignment: components.TableAlignRight}, {Width: 0}}
 		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColSize, m.RemoteColCreated}
 		headings = view.columns[:4]
-	} else if view.tab == remoteVolumes {
+	} else if tab == remoteVolumes {
 		columns = []components.TableColumn{{Width: 470}, {Width: 150}, {Width: 0}}
 		view.columns = [6]string{m.RemoteColName, m.RemoteColDriver, m.RemoteColScope}
 		headings = view.columns[:3]
-	} else if view.tab == remoteNetworks {
+	} else if tab == remoteNetworks {
 		columns = []components.TableColumn{{Width: 300}, {Width: 160}, {Width: 150}, {Width: 0}}
 		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColDriver, m.RemoteColScope}
 		headings = view.columns[:4]
@@ -1005,7 +1030,7 @@ func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	var headerCells [6]components.TableHeader
 	order := view.tableSort()
 	for i, heading := range headings {
-		headerCells[i] = components.TableHeader{ID: remoteTableHeaderID(view.tab, i), Label: heading, Disabled: view.loading, FocusableWhenDisabled: true, Description: m.RemoteSortAction}
+		headerCells[i] = components.TableHeader{ID: remoteTableHeaderID(tab, i), Label: heading, Disabled: view.loading, FocusableWhenDisabled: true, Description: m.RemoteSortAction}
 		if order.Direction != components.TableSortNone && order.Column == i {
 			headerCells[i].Sort = order.Direction
 			if order.Direction == components.TableSortAscending {
@@ -1038,7 +1063,7 @@ func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 		row := &view.rows[index]
 		id := hitRemoteRowList.At(index)
 		table.Row(id, row.cells[:len(headings)], row.key == view.selected)
-		if view.tab == remoteProcesses {
+		if tab == remoteProcesses {
 			state.openRemoteProcessMenuOn(canvas, id, index)
 		}
 	}

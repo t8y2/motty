@@ -15,23 +15,12 @@ import (
 var hostProtocolUiHits = tree.Feature("host-protocol-ui")
 
 var (
-	hitDialogProtocolSSH     = tree.ID(hostProtocolUiHits, "dialog-protocol-ssh")
-	hitDialogProtocolTelnet  = tree.ID(hostProtocolUiHits, "dialog-protocol-telnet")
-	hitDialogProtocolSerial  = tree.ID(hostProtocolUiHits, "dialog-protocol-serial")
-	hitDialogProtocolVNC     = tree.ID(hostProtocolUiHits, "dialog-protocol-vnc")
-	hitDialogProtocolRDP     = tree.ID(hostProtocolUiHits, "dialog-protocol-rdp")
 	hitDialogViaSSH          = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
 	hitDialogClipboard       = tree.ID(hostProtocolUiHits, "dialog-clipboard")
 	hitDialogConsole         = tree.ID(hostProtocolUiHits, "dialog-console")
 	hitDialogChromeless      = tree.ID(hostProtocolUiHits, "dialog-chromeless")
-	hitDialogFlowNone        = tree.ID(hostProtocolUiHits, "dialog-flow-none")
-	hitDialogFlowHardware    = tree.ID(hostProtocolUiHits, "dialog-flow-hardware")
-	hitDialogFlowSoftware    = tree.ID(hostProtocolUiHits, "dialog-flow-software")
 	hitDialogPortsTrigger    = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
 	hitDialogPortsDismiss    = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
-	hitDialogAlgoDefault     = tree.ID(hostProtocolUiHits, "dialog-algo-default")
-	hitDialogAlgoCompatible  = tree.ID(hostProtocolUiHits, "dialog-algo-compatible")
-	hitDialogAlgoCustom      = tree.ID(hostProtocolUiHits, "dialog-algo-custom")
 	hitDialogAlgorithms      = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand    = tree.ID(hostProtocolUiHits, "dialog-login-command")
 	hitDialogAdvanced        = tree.ID(hostProtocolUiHits, "dialog-advanced")
@@ -54,18 +43,154 @@ var (
 // this is not choosing from a list.
 const maxListedPorts = 12
 
-func (state *State) paintHostProtocolSwitch(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m := state.messages.Tools
-	options := [...]components.SegmentOption{
-		{ID: hitDialogProtocolSSH, Label: m.ProtocolSSH},
-		{ID: hitDialogProtocolTelnet, Label: m.ProtocolTelnet},
-		{ID: hitDialogProtocolSerial, Label: m.ProtocolSerial},
-		{ID: hitDialogProtocolVNC, Label: state.messages.Desktop.ProtocolVNC},
-		{ID: hitDialogProtocolRDP, Label: state.messages.Desktop.ProtocolRDP},
+// The segmented choices of the host form. Each is a page of its own: the form's
+// layout has already placed every control at a rectangle, so a page declares one
+// Choice there and keeps the roving focus the dialog's keys ask it for.
+var (
+	hostProtocolChoices = [...]hostProtocol{protocolSSH, protocolTelnet, protocolSerial, protocolVNC, protocolRDP}
+	hostFlowChoices     = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostAlgoChoices     = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+)
+
+// dialogChoice is one segmented choice of a dialog, declared as a page. chosen is
+// the identity of the option the page painted last, kept so the form's tab ring
+// can reach the choice even while its page lies outside the clipped viewport.
+type dialogChoice struct {
+	page   *ui.Page
+	view   func(ui.C)
+	chosen gfx.ID
+}
+
+// dialogChoiceKind names the declaration a dialog choice's page is drawn with.
+type dialogChoiceKind uint8
+
+const (
+	hostProtocolChoice dialogChoiceKind = iota
+	hostFlowChoice
+	hostAlgoChoice
+	hostTransferChoice
+	xyModeChoice
+	xyDirectionChoice
+)
+
+// dialogChoiceView is the page declaration of one choice. It is asked for once,
+// when the page is made: a method value made in every paint allocates.
+func (state *State) dialogChoiceView(kind dialogChoiceKind) func(ui.C) {
+	switch kind {
+	case hostProtocolChoice:
+		return state.declareHostProtocolChoice
+	case hostFlowChoice:
+		return state.declareHostFlowChoice
+	case hostAlgoChoice:
+		return state.declareHostAlgoChoice
+	case hostTransferChoice:
+		return state.declareHostTransferChoice
+	case xyModeChoice:
+		return state.declareXYModeChoice
+	case xyDirectionChoice:
+		return state.declareXYDirectionChoice
 	}
-	selected := options[state.editor.protocol].ID
-	state.rememberHostControl(selected, bounds)
-	components.BeginSegmentedControl(canvas, state.Theme(), bounds, options[:], selected).Paint()
+	return nil
+}
+
+// drawDialogChoice draws a dialog choice's page in bounds, making the page the
+// first time the control paints.
+func (state *State) drawDialogChoice(canvas *gfx.Canvas, bounds gfx.Rect, choice *dialogChoice, root string, kind dialogChoiceKind) {
+	if choice.page == nil {
+		choice.page = ui.NewPage(ui.PageConfig{Root: root, Theme: &state.theme})
+		choice.view = state.dialogChoiceView(kind)
+	}
+	choice.page.Draw(canvas, bounds, choice.view)
+}
+
+// hostDialogChoiceKey gives the form's page choices their arrows before the
+// form's own Tab order and scrolling take the key.
+func (state *State) hostDialogChoiceKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	editor := &state.editor
+	for _, choice := range [...]*ui.Page{editor.protocolChoice.page, editor.flowChoice.page, editor.algoChoice.page, editor.transferChoice.page} {
+		if choice == nil {
+			continue
+		}
+		if result, handled := choice.Key(event); handled {
+			return result, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+// hostProtocolChoiceLabel names one protocol as the form's choice shows it.
+func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
+	switch protocol {
+	case protocolTelnet:
+		return state.messages.Tools.ProtocolTelnet
+	case protocolSerial:
+		return state.messages.Tools.ProtocolSerial
+	case protocolVNC:
+		return state.messages.Desktop.ProtocolVNC
+	case protocolRDP:
+		return state.messages.Desktop.ProtocolRDP
+	default:
+		return state.messages.Tools.ProtocolSSH
+	}
+}
+
+// hostFlowChoiceLabel names one flow control as the form's choice shows it.
+func (state *State) hostFlowChoiceLabel(flow serial.Flow) string {
+	switch flow {
+	case serial.FlowHardware:
+		return state.messages.Tools.FlowHardware
+	case serial.FlowSoftware:
+		return state.messages.Tools.FlowSoftware
+	default:
+		return state.messages.Tools.FlowNone
+	}
+}
+
+// hostAlgoChoiceLabel names one algorithm mode as the form's choice shows it.
+func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
+	switch mode {
+	case algoCompatible:
+		return state.messages.Tools.AlgoCompatible
+	case algoCustom:
+		return state.messages.Tools.AlgoCustom
+	default:
+		return state.messages.Tools.AlgoDefault
+	}
+}
+
+// declareHostProtocolChoice is the page of the protocol choice. The choice writes
+// editor.protocol, so applyProtocol is what follows the switch.
+func (state *State) declareHostProtocolChoice(c ui.C) {
+	editor := &state.editor
+	choice := ui.Choice(c, &editor.protocol, hostProtocolChoices[:], state.hostProtocolChoiceLabel).Fill()
+	if choice.Changed() {
+		editor.applyProtocol(editor.protocolBefore)
+		state.dialogError = ""
+	}
+}
+
+// declareHostFlowChoice is the page of the serial flow-control choice. The click
+// that already wrote editor.flow only has the form's error to clear.
+func (state *State) declareHostFlowChoice(c ui.C) {
+	choice := ui.Choice(c, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel).Fill()
+	if choice.Changed() {
+		state.dialogError = ""
+	}
+}
+
+// declareHostAlgoChoice is the page of the SSH algorithm choice.
+func (state *State) declareHostAlgoChoice(c ui.C) {
+	choice := ui.Choice(c, &state.editor.algoMode, hostAlgoChoices[:], state.hostAlgoChoiceLabel).Fill()
+	if choice.Changed() {
+		state.dialogError = ""
+	}
+}
+
+func (state *State) paintHostProtocolSwitch(canvas *gfx.Canvas, bounds gfx.Rect) {
+	editor := &state.editor
+	editor.protocolBefore = editor.protocol
+	state.drawDialogChoice(canvas, bounds, &editor.protocolChoice, "host-dialog-protocol", hostProtocolChoice)
+	state.rememberHostChoice(canvas, bounds, &editor.protocolChoice, state.hostProtocolChoiceLabel(editor.protocol))
 }
 
 // paintHostEndpointRows draws where the host is: its address and, beside it, the
@@ -138,13 +263,8 @@ func (state *State) paintHostEndpointRows(canvas *gfx.Canvas, x, y, width, rowHe
 		state.paintPortsTrigger(canvas, picker.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, tools.FieldLine, tools.FieldLinePlaceholder, second.Rect())
 		content := components.BeginField(canvas, state.Theme(), third.Rect()).Paint(tools.FieldFlow, "", "")
-		options := [...]components.SegmentOption{
-			{ID: hitDialogFlowNone, Label: tools.FlowNone},
-			{ID: hitDialogFlowHardware, Label: tools.FlowHardware},
-			{ID: hitDialogFlowSoftware, Label: tools.FlowSoftware},
-		}
-		components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[editor.flow].ID).Paint()
-		state.rememberHostControl(options[editor.flow].ID, content)
+		state.drawDialogChoice(canvas, content, &editor.flowChoice, "host-dialog-flow", hostFlowChoice)
+		state.rememberHostChoice(canvas, content, &editor.flowChoice, state.hostFlowChoiceLabel(editor.flow))
 	case protocolTelnet:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
@@ -231,20 +351,11 @@ func (state *State) paintPortsTrigger(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 }
 
-// clickHostProtocol handles the protocol controls of the host dialog.
+// clickHostProtocol handles the protocol controls of the host dialog. Its
+// segmented choices are pages now; the clicks they deliver write their own value.
 func (state *State) clickHostProtocol(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
-	case id == hitDialogProtocolSSH:
-		editor.setProtocol(protocolSSH)
-	case id == hitDialogProtocolTelnet:
-		editor.setProtocol(protocolTelnet)
-	case id == hitDialogProtocolSerial:
-		editor.setProtocol(protocolSerial)
-	case id == hitDialogProtocolVNC:
-		editor.setProtocol(protocolVNC)
-	case id == hitDialogProtocolRDP:
-		editor.setProtocol(protocolRDP)
 	case id == hitDialogViaSSH:
 		editor.viaSSH = !editor.viaSSH
 	case id == hitDialogClipboard:
@@ -253,18 +364,6 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.chromeless = !editor.chromeless
 	case id == hitDialogConsole:
 		editor.console = !editor.console
-	case id == hitDialogFlowNone:
-		editor.flow = serial.FlowNone
-	case id == hitDialogFlowHardware:
-		editor.flow = serial.FlowHardware
-	case id == hitDialogFlowSoftware:
-		editor.flow = serial.FlowSoftware
-	case id == hitDialogAlgoDefault:
-		editor.algoMode = algoDefault
-	case id == hitDialogAlgoCompatible:
-		editor.algoMode = algoCompatible
-	case id == hitDialogAlgoCustom:
-		editor.algoMode = algoCustom
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -279,7 +378,6 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.agentAccess = !editor.agentAccess
 	case state.clickHostAuthentication(id):
 	case state.clickHostCredential(id):
-	case state.clickTransferChoice(id):
 	case state.clickHostColor(id):
 	case id == hitDialogOTPRemove:
 		editor.otpRemove = !editor.otpRemove
@@ -467,8 +565,12 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas, bounds gfx.Rect) {
 // list that is allowed, then the one-time code secret.
 func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
 	m, editor, pal := state.messages.Tools, &state.editor, state.pal
+	// The page's choice may write a new mode while it is declared; the rows this
+	// frame laid out are the ones before it, so draw the custom field only when
+	// its row was laid out.
+	customMode := editor.algoMode == algoCustom
 	rows := float32(1)
-	if editor.algoMode == algoCustom {
+	if customMode {
 		rows++
 	}
 	const removeWidth, scanWidth, pasteWidth = 84, 132, 96
@@ -482,7 +584,7 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeigh
 	}
 	f.Column().Fill().Children(func() {
 		algo = f.Slot().Height(rowHeight)
-		if editor.algoMode == algoCustom {
+		if customMode {
 			custom = f.Slot().Height(rowHeight)
 		}
 		login = f.Slot().Height(rowHeight)
@@ -505,14 +607,9 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeigh
 	f.End()
 
 	content := components.BeginField(canvas, state.Theme(), algo.Rect()).Paint(m.AlgoField, "", "")
-	options := [...]components.SegmentOption{
-		{ID: hitDialogAlgoDefault, Label: m.AlgoDefault},
-		{ID: hitDialogAlgoCompatible, Label: m.AlgoCompatible},
-		{ID: hitDialogAlgoCustom, Label: m.AlgoCustom},
-	}
-	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], options[editor.algoMode].ID).Paint()
-	state.rememberHostControl(options[editor.algoMode].ID, content)
-	if editor.algoMode == algoCustom {
+	state.drawDialogChoice(canvas, content, &editor.algoChoice, "host-dialog-algorithm", hostAlgoChoice)
+	state.rememberHostChoice(canvas, content, &editor.algoChoice, state.hostAlgoChoiceLabel(editor.algoMode))
+	if customMode {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, custom.Rect())
 	}
 	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, login.Rect())

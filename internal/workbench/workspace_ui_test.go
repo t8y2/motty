@@ -383,7 +383,7 @@ func TestNativeTextInputOnlyTargetsTheActivePane(t *testing.T) {
 	if !state.splitActivePane(layoutcore.Horizontal) {
 		t.Fatal("split right")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(2))
 	openHost(state)
 	secondConn := world.conns[1]
@@ -825,7 +825,7 @@ func openHostInSplit(t testing.TB, state *State, hostID uint32, axis layoutcore.
 	if !state.splitActivePane(axis) {
 		t.Fatal("could not create an empty split pane")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(int(hostID)))
 	openHost(state)
 }

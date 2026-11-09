@@ -14,14 +14,21 @@ import (
 const (
 	fileWindowTabScrollbarGap    = float32(2)
 	fileWindowTabScrollbarHeight = float32(6)
+	// fileTabsPageRoot names the tab strip's page in the window's Tree.
+	fileTabsPageRoot = "file-tabs"
 )
 
 type fileWindowTabUI struct {
 	viewport, scrollbar ui.Box
-	contentWidth        float32
-	geometry            components.ScrollAreaGeometry
-	hovered, dragging   bool
-	grab                float32
+	// page is the tab strip declared with the page API, and view the function
+	// that declares it: kept here so a paint does not make either again.
+	page         *ui.Page
+	view         func(ui.C)
+	contentWidth float32
+	geometry     components.ScrollAreaGeometry
+	hovered      bool
+	dragging     bool
+	grab         float32
 }
 
 func (m *fileWindowManager) hasTab(d *fileDocument) bool {
@@ -429,6 +436,9 @@ func documentTabLayout(available float32, count int) (width, content float32, ov
 	return width, content, overflow
 }
 
+// paintTabs reserves the tab strip's region and leaves it to the tab page. The
+// host declares the strip inside a Frame it lays out itself, so Frame.Page is the
+// seam: the region's rectangle is only known once that Frame is laid out.
 func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	if len(m.order) == 0 {
 		return
@@ -437,9 +447,29 @@ func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	if activeDocument == nil {
 		return
 	}
+	available := max(size.Width-24, 1)
+	_, _, overflow := documentTabLayout(available, len(m.order))
+	sectionHeight := barTabHeight
+	if overflow {
+		sectionHeight += fileWindowTabScrollbarGap + fileWindowTabScrollbarHeight
+	}
+	if m.tabs.page == nil {
+		m.tabs.page = ui.NewPage(ui.PageConfig{Root: fileTabsPageRoot, Theme: &activeDocument.owner.theme})
+		m.tabs.view = m.declareTabs
+	}
+	f.Page(m.tabs.page, m.tabs.view).FillWidth().Height(sectionHeight).Shrink(0)
+}
+
+// declareTabs is the tab page: the clipped row of tabs and, when they overflow,
+// the slot the scrollbar is painted into.
+func (m *fileWindowManager) declareTabs(c ui.C) {
+	activeDocument := m.activeDocument()
+	if activeDocument == nil {
+		return
+	}
 	theme := activeDocument.owner.Theme()
 	metrics := theme.Metrics
-	available := max(size.Width-24, 1)
+	available := max(c.Frame().Bounds().Width, 1)
 	tabWidth, contentWidth, overflow := documentTabLayout(available, len(m.order))
 	pitch := tabWidth + barGap
 	activeIndex := -1
@@ -451,17 +481,13 @@ func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	}
 	scroll := m.tabStrip.layoutIndex(gfx.Rect{Width: available}, float32(len(m.order))*pitch, len(m.order), activeIndex, pitch, tabWidth)
 	m.tabs.contentWidth = contentWidth
-	sectionHeight := barTabHeight
-	if overflow {
-		sectionHeight += fileWindowTabScrollbarGap + fileWindowTabScrollbarHeight
-	}
-	f.Column().FillWidth().Height(sectionHeight).Shrink(0).Children(func() {
-		m.tabs.viewport = f.Row().FillWidth().Height(barTabHeight).Shrink(0).Clip()
+	ui.Column(c).FillWidth().FillHeight().Shrink(0).Children(func() {
+		m.tabs.viewport = ui.Row(c).FillWidth().Height(barTabHeight).Shrink(0).Clip()
 		m.tabs.viewport.Children(func() {
-			m.paintDocumentTabRows(f, activeDocument, metrics, scroll)
+			m.declareDocumentTabRows(c, activeDocument, metrics, scroll)
 		})
 		if overflow {
-			m.tabs.scrollbar = f.Slot().FillWidth().Height(fileWindowTabScrollbarHeight).Shrink(0).
+			m.tabs.scrollbar = ui.Slot(c).FillWidth().Height(fileWindowTabScrollbarHeight).Shrink(0).
 				MarginSides(fileWindowTabScrollbarGap, 0, 0, 0)
 		} else {
 			m.tabs.scrollbar = ui.Box{}
@@ -469,8 +495,12 @@ func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	})
 }
 
-func (m *fileWindowManager) paintDocumentTabRows(f *ui.Frame, activeDocument *fileDocument, metrics gfx.Metrics, scroll float32) {
+// declareDocumentTabRows declares one row per open document. A click on a row or
+// its close button is handled in place, after the paint, so the window's central
+// dispatcher does not see it as well.
+func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileDocument, metrics gfx.Metrics, scroll float32) {
 	pal := activeDocument.owner.pal
+	canvas := c.Frame().Canvas()
 	for index, key := range m.order {
 		d := m.documents[key]
 		if d == nil || d.closed {
@@ -478,7 +508,7 @@ func (m *fileWindowManager) paintDocumentTabRows(f *ui.Frame, activeDocument *fi
 		}
 		id, closeID := hitDocumentTabList.At(index), hitDocumentTabCloseList.At(index)
 		active := key == m.active
-		hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+		hovered := canvas != nil && (canvas.Hovered() == id || canvas.Hovered() == closeID)
 		foreground := pal.muted
 		fill, edge := pal.tab, pal.line
 		switch {
@@ -507,30 +537,44 @@ func (m *fileWindowManager) paintDocumentTabRows(f *ui.Frame, activeDocument *fi
 			first = -scroll
 		}
 		width := m.tabStrip.tabWidth
-		f.Row().Size(width, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+		row := ui.Row(c).Size(width, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 			PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 			HitWith(id, label, gfx.HitOptions{
 				Role: gfx.RoleTab, Selected: active, Hint: hint,
-			}).Children(func() {
-			f.Row().Size(20, 20).Shrink(0).Center().MarginSides(0, 7, 0, 0).Children(func() {
-				f.Icon(icon).Size(14, 14).Color(foreground)
 			})
-			f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
-			f.Spacer()
+		if row.Clicked() {
+			tabIndex := index
+			c.After(func() {
+				if tab := m.tabDocument(tabIndex); tab != nil {
+					m.activate(tab.cacheKey)
+				}
+			})
+		}
+		row.Children(func() {
+			ui.Row(c).Size(20, 20).Shrink(0).Center().MarginSides(0, 7, 0, 0).Children(func() {
+				ui.Icon(c, icon).Size(14, 14).Color(foreground)
+			})
+			ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+			ui.Spacer(c)
 			if !active && !hovered {
-				f.Slot().Size(20, 20)
+				ui.Slot(c).Size(20, 20)
 				return
 			}
 			var closeFill gfx.Color
-			if f.Canvas().Hovered() == closeID {
+			if canvas != nil && canvas.Hovered() == closeID {
 				closeFill = pal.line
 				if active {
 					closeFill = pal.tabCloseHot
 				}
 			}
-			f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
-				HitWith(closeID, fmt.Sprintf(d.owner.messages.FileWindow.CloseTabFmt, d.name), gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-				f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+			close := ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+				HitWith(closeID, fmt.Sprintf(d.owner.messages.FileWindow.CloseTabFmt, d.name), gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
+			if close.Clicked() {
+				tabIndex := index
+				c.After(func() { m.closeTab(tabIndex) })
+			}
+			close.Children(func() {
+				ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 			})
 		})
 	}
@@ -637,25 +681,10 @@ func (m *fileWindowManager) scrollTabs(event gfx.ScrollEvent) (gfx.EventResult, 
 	return gfx.EventResult{Handled: true, Repaint: m.tabStrip.offset != previous}, true
 }
 
+// clickTab reports a tab or close-button click that the tab page handled in
+// place: the window's central dispatcher claims it and does nothing more.
 func (m *fileWindowManager) clickTab(id gfx.ID) bool {
-	switch id.Scope() {
-	case hitDocumentTabList:
-		index, ok := id.In(hitDocumentTabList)
-		if ok {
-			if d := m.tabDocument(index); d != nil {
-				m.activate(d.cacheKey)
-			}
-		}
-		return true
-	case hitDocumentTabCloseList:
-		index, ok := id.In(hitDocumentTabCloseList)
-		if ok {
-			m.closeTab(index)
-		}
-		return true
-	default:
-		return false
-	}
+	return id.Scope() == hitDocumentTabList || id.Scope() == hitDocumentTabCloseList
 }
 
 func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInput {

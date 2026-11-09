@@ -204,11 +204,16 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1600})
 	for _, id := range []gfx.ID{
-		hitSettingsParallel1, hitSettingsParallel4, hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
+		hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
 		hitSettingsConfigureColumns, hitSettingsDownloadDirectory, hitSettingsDownloadAsk,
 	} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("settings control %d is not painted", id)
+		}
+	}
+	for _, count := range []int{1, 4} {
+		if _, ok := settingsChoiceIn(&canvas, state.settingsParallelLabel(count)); !ok {
+			t.Errorf("parallel choice %d is not painted", count)
 		}
 	}
 	var copied string
@@ -224,7 +229,7 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	if !strings.Contains(copied, "\\e]7;file://") {
 		t.Fatalf("copied %q", copied)
 	}
-	state.Click(hitSettingsParallel4)
+	clickSettingsChoice(t, state, state.settingsParallelLabel(4))
 	state.Click(hitSettingsKeepTimesToggle)
 	state.Click(hitSettingsConfigureColumns)
 	state.Click(hitSFTPColumnSettingsToggles.At(int(sftpColumnSize)))

@@ -53,7 +53,7 @@ func TestAChosenLanguageStaysWhateverTheSystemSays(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "zh-CN")
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageEnglish) // English on a Chinese system
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageEnglish) // English on a Chinese system
 	if first.language != i18n.English || !first.languageChosen {
 		t.Fatalf("language %v chosen %v", first.language, first.languageChosen)
 	}
@@ -67,7 +67,7 @@ func TestChoosingTheLanguageAlreadyShowingStillCountsAsAChoice(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "zh-CN")
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageChinese) // already Chinese, and now deliberately
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageChinese) // already Chinese, and now deliberately
 	if !first.languageChosen {
 		t.Fatal("the choice was not recorded")
 	}
@@ -81,7 +81,7 @@ func TestChoosingTraditionalChineseSurvivesARestart(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "en-US")
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageTraditional)
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageTraditionalChinese)
 	if first.language != i18n.TraditionalChinese || !first.languageChosen {
 		t.Fatalf("language %v chosen %v", first.language, first.languageChosen)
 	}
@@ -101,6 +101,6 @@ func useChinese(t testing.TB, state *State) {
 	t.Helper()
 	section := state.activeSection
 	state.Click(hitSettings)
-	state.Click(hitSettingsLanguageChinese)
+	clickSettingsChoice(t, state, state.messages.SettingsLanguageChinese)
 	state.activeSection = section
 }

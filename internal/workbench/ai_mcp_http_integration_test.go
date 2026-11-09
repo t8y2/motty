@@ -75,14 +75,15 @@ func TestMCPHTTPConsentControlsRealToolCallsAndRevocation(t *testing.T) {
 			t.Fatal("an unconfirmed tool call reached the remote backend")
 		}
 	}
-	state.Click(hitAISetMCPAllowAll)
+	allowAll := state.messages.AISettings.MCPModeAllowAll
+	clickSettingsChoiceFirst(t, state, allowAll)
 	call("terminal_exec", `{"command":"rm -rf /"}`, true)
 	call("sftp_remove", `{"path":"/tmp/mcp-test"}`, true)
 	checkUntouched()
 	state.Click(hitAISetConfirmCancel)
 	call("terminal_exec", `{"command":"touch /tmp/mcp-test"}`, true)
 	checkUntouched()
-	state.Click(hitAISetMCPAllowAll)
+	clickSettingsChoiceFirst(t, state, allowAll)
 	state.Click(hitAISetConfirmAction)
 	state.Wake()
 	call("terminal_exec", `{"command":"rm -rf /"}`, false)
@@ -93,7 +94,7 @@ func TestMCPHTTPConsentControlsRealToolCallsAndRevocation(t *testing.T) {
 	if executions.Load() != 1 || exists || len(state.ai.approvals) != 0 {
 		t.Fatal("confirmed access did not execute both tools without approval")
 	}
-	state.Click(hitAISetMCPObserve)
+	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeObserve)
 	state.Wake()
 	call("terminal_exec", `{"command":"touch /tmp/revoked"}`, true)
 	call("sftp_write", `{"path":"/tmp/revoked","content":"no"}`, true)
