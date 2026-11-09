@@ -416,11 +416,21 @@ func TestAIProviderFormValidates(t *testing.T) {
 	if state.ai.cfg.formErr != m.ErrFormName || state.ai.cfg.dialog != aiDialogProvider {
 		t.Fatalf("empty name: err=%q dialog=%d", state.ai.cfg.formErr, state.ai.cfg.dialog)
 	}
+	if state.ai.cfg.formFocus != aiFormFocusName {
+		t.Fatalf("empty name focused %d, want the name field", state.ai.cfg.formFocus)
+	}
 	world.typeInto(t, hitAISetFormName, "x")
 	world.typeInto(t, hitAISetFormURL, "ftp://host")
 	state.Click(hitAISetFormSubmit)
 	if state.ai.cfg.formErr != m.ErrFormBaseURL {
 		t.Fatalf("bad URL: err=%q", state.ai.cfg.formErr)
+	}
+	if state.ai.cfg.formFocus != aiFormFocusURL {
+		t.Fatalf("bad URL focused %d, want the URL field", state.ai.cfg.formFocus)
+	}
+	canvas, texts := world.paint()
+	if got := canvas.FocusRequest(); got != hitAISetFormURL {
+		t.Fatalf("bad URL requested focus %v, want the URL field", got)
 	}
 	for range "ftp://host" {
 		state.EditorFor(hitAISetFormURL).DeleteBackward()
@@ -429,7 +439,13 @@ func TestAIProviderFormValidates(t *testing.T) {
 	if state.ai.cfg.formErr != m.ErrFormKey {
 		t.Fatalf("official endpoint without key: err=%q", state.ai.cfg.formErr)
 	}
-	_, texts := world.paint()
+	if state.ai.cfg.formFocus != aiFormFocusKey {
+		t.Fatalf("missing key focused %d, want the key field", state.ai.cfg.formFocus)
+	}
+	canvas, texts = world.paint()
+	if got := canvas.FocusRequest(); got != hitAISetFormKey {
+		t.Fatalf("missing key requested focus %v, want the key field", got)
+	}
 	if !contains(texts, m.ErrFormKey) {
 		t.Fatalf("the error is not painted: %v", texts)
 	}

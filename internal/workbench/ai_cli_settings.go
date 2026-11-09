@@ -124,7 +124,7 @@ func (state *State) declareAIProviderForm(c ui.C) {
 				cfg.formPreset.Draw(func(d *ui.DrawContext) { state.paintAIPresetField(d.Canvas, d.Rect) })
 			}
 		}
-		state.aiFormField(c, hitAISetFormName, &cfg.formName, m.FormName, m.FormNamePH, "", 60)
+		state.aiFormField(c, hitAISetFormName, &cfg.formName, m.FormName, m.FormNamePH, "", 60, aiFormFocusName)
 		if cli {
 			hint := ""
 			if cfg.cliAutoPath != "" && cfg.cliPath.String() == cfg.cliAutoPath {
@@ -136,7 +136,7 @@ func (state *State) declareAIProviderForm(c ui.C) {
 			if hint != "" {
 				pathHeight = 88
 			}
-			state.aiFormField(c, hitAISetFormCLIPath, &cfg.formCLIPath, m.CLIPath, m.CLIPathDefault, hint, pathHeight)
+			state.aiFormField(c, hitAISetFormCLIPath, &cfg.formCLIPath, m.CLIPath, m.CLIPathDefault, hint, pathHeight, aiFormFocusCLIPath)
 		} else {
 			cfg.formKind = kind
 			if cfg.formKind != store.KindAnthropic {
@@ -154,8 +154,8 @@ func (state *State) declareAIProviderForm(c ui.C) {
 			if kind == store.KindAnthropic {
 				placeholder = m.FormBaseURLClaude
 			}
-			state.aiFormField(c, hitAISetFormURL, &cfg.formBaseURL, m.FormBaseURL, placeholder, "", 60)
-			state.aiFormField(c, hitAISetFormModelsURL, &cfg.formModelsURL, m.FormModelsURL, m.FormModelsURLPH, "", 60)
+			state.aiFormField(c, hitAISetFormURL, &cfg.formBaseURL, m.FormBaseURL, placeholder, "", 60, aiFormFocusURL)
+			state.aiFormField(c, hitAISetFormModelsURL, &cfg.formModelsURL, m.FormModelsURL, m.FormModelsURLPH, "", 60, aiFormFocusModelsURL)
 			if kind == store.KindOpenAI {
 				cfg.formFormat = cfg.apiFormat
 				if cfg.formFormat != store.APIFormatResponses {
@@ -172,7 +172,7 @@ func (state *State) declareAIProviderForm(c ui.C) {
 			if cfg.hadKey {
 				hint, keyHeight = m.FormKeySaved, 78
 			}
-			state.aiFormKeyField(c, hitAISetFormKey, &cfg.formAPIKey, m.FormKey, m.FormKeyPH, hint, keyHeight)
+			state.aiFormKeyField(c, hitAISetFormKey, &cfg.formAPIKey, m.FormKey, m.FormKeyPH, hint, keyHeight, aiFormFocusKey)
 		}
 		if cfg.formErr != "" {
 			problem := ui.Text(c, cfg.formErr).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
@@ -185,13 +185,14 @@ func (state *State) declareAIProviderForm(c ui.C) {
 
 // aiFormField declares one labelled text field of the form: the title row, the
 // control, and the hint under it, in the rhythm components.BeginField gives.
-func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32) {
+func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32, focus aiFormFocus) {
 	theme := c.Theme()
 	m := theme.Metrics
 	gap := m.GapItem / 2
 	ui.Column(c).Height(height).Children(func() {
 		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
-		ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		ui.FocusBind(box, &state.ai.cfg.formFocus, focus)
 		if hint != "" {
 			ui.Text(c, hint).FontSize(m.FontSizeM).Color(theme.MutedForeground).LineHeight(m.FontSizeM+7).MarginSides(gap, 0, 0, 0)
 		}
@@ -200,7 +201,7 @@ func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, place
 
 // aiFormKeyField is aiFormField for the API key, which shows bullets until its
 // eye button shows the text.
-func (state *State) aiFormKeyField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32) {
+func (state *State) aiFormKeyField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32, focus aiFormFocus) {
 	cfg := &state.ai.cfg
 	theme := c.Theme()
 	m := theme.Metrics
@@ -209,6 +210,7 @@ func (state *State) aiFormKeyField(c ui.C, id gfx.ID, field *ui.Field, title, pl
 	ui.Column(c).Height(height).Children(func() {
 		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
 		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		ui.FocusBind(box, &state.ai.cfg.formFocus, focus)
 		icon, label := lucideIcons[iconEye], state.messages.ShowSecret
 		if cfg.formKeyShown {
 			icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret
