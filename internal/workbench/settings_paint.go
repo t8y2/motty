@@ -61,13 +61,16 @@ type settingsControl struct {
 	first, count int
 }
 
-// settingsPage declares the settings page into a flex frame. The sections call
-// group and the row methods inside it; every control they name is recorded in the
-// state and painted by paintSettingsControls after the frame has ended.
+// settingsPage declares the settings page. The sections call group and the row
+// methods inside it; every control they name is recorded in the state and painted
+// by paintSettingsControls after the page has ended.
 type settingsPage struct {
 	state *State
 	c     ui.C
-	f     *ui.Frame
+	// f is the Frame underneath. The page declares with c; f stays for the
+	// assistant's sections, which paint through it until they move to the page
+	// API.
+	f *ui.Frame
 	// scroll is the column of groups, whose content height the wheel clamps to.
 	scroll ui.Box
 	// width is the width of a group's card.
@@ -119,8 +122,15 @@ func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	state.settingsContent = page.scroll.Content()
 	view.navContent, view.navView = page.navList.Content(), page.navList.Rect().Height
 	view.navRect = page.navList.Rect()
-	if clamped := min(max(view.navScroll, 0), max(view.navContent-view.navView, 0)); clamped != view.navScroll {
-		view.navScroll = clamped
+	// The layout clamps the areas' offsets to the content it just laid out; take
+	// that back so the wheel, the next paint and the tests all agree. A clamp is a
+	// move the user did not make, so one paint shows the corrected offset.
+	if offset := view.contentScroll.Offset; offset != state.settingsScroll {
+		state.settingsScroll = offset
+		canvas.RequestFrame()
+	}
+	if offset := view.navListScroll.Offset; offset != view.navScroll {
+		view.navScroll = offset
 		canvas.RequestFrame()
 	}
 	state.paintSettingsControls(canvas)
@@ -154,11 +164,22 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 
 	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
 	page := settingsPage{state: state, c: c, f: f, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
-	f.Row().Fill().Children(func() {
+	// The page keeps the scroll offsets (the wheel in settings.go owns them), so
+	// seed the areas' own state before they are declared; ScrollArea reads it when
+	// it names the area, which is what lays the content out at that offset.
+	if view.contentScroll != nil {
+		view.contentScroll.Offset = state.settingsScroll
+	}
+	if view.navListScroll != nil {
+		view.navListScroll.Offset = view.navScroll
+	}
+	ui.Row(c).Fill().Children(func() {
 		page.nav(navWidth, searching)
-		f.Column().Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
-		page.scroll = f.Scroll(state.settingsScroll).Grow(1).Basis(0).Items(ui.Center).Children(func() {
-			f.Column().FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
+		ui.Column(c).Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
+		page.scroll = ui.Scroll(c).Grow(1).Basis(0).Items(ui.Center)
+		view.contentScroll = page.scroll.ScrollState()
+		page.scroll.Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
 				page.header(title, searching)
 				if searching {
 					state.paintSettingsResults(&page)
@@ -223,10 +244,10 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 // header is the page's title and, for a category with a page-wide action, that
 // action against the right edge.
 func (page *settingsPage) header(title string, searching bool) {
-	f, pal := page.f, page.state.pal
-	row := f.Row().FillWidth().Items(ui.Center).Justify(ui.Between).MarginSides(0, 0, 20, 0)
+	c, pal := page.c, page.state.pal
+	row := ui.Row(c).FillWidth().Items(ui.Center).Justify(ui.Between).MarginSides(0, 0, 20, 0)
 	row.Children(func() {
-		f.Text(title).FontSize(26).Bold().Color(pal.text).LineHeight(34)
+		ui.Text(c, title).FontSize(26).Bold().Color(pal.text).LineHeight(34)
 		if searching {
 			return
 		}
@@ -241,10 +262,14 @@ func (page *settingsPage) header(title string, searching bool) {
 // row's buttons, so the keyboard reaches it and the page paints it in place.
 func (page *settingsPage) headerButton(label string, id gfx.ID) {
 	theme := page.state.Theme()
-	width := components.BeginButton(page.f.Canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label).BoundsWidth()
-	slot := page.f.Row().Size(width, 34).Shrink(0).Items(ui.Center).Justify(ui.End)
+	width := components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label).BoundsWidth()
+	slot := ui.Row(page.c).Size(width, 34).Shrink(0).Items(ui.Center).Justify(ui.End)
 	page.buttons(slot, false, components.ButtonAction{ID: id, Label: label, Variant: components.ButtonOutline})
 }
+
+// canvas is the page's canvas: a control paints from it and a label is measured
+// with it. Reading it from the Frame is not declaring layout.
+func (page *settingsPage) canvas() *gfx.Canvas { return page.c.Frame().Canvas() }
 
 func (state *State) paintSettingsCategory(page *settingsPage) {
 	switch state.settingsCategory {
@@ -415,28 +440,28 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 
 // groups declares the groups of a category, a column with room between them.
 func (page *settingsPage) groups(children func()) {
-	page.f.Column().Gap(settingsGroupGap).Children(children)
+	ui.Column(page.c).Gap(settingsGroupGap).Children(children)
 }
 
 // group declares a titled card whose rows children declares. The card is a
 // rounded, bordered column; the box inside it takes back the border's room, so a
 // row spans the whole card and a hairline the card less its border.
 func (page *settingsPage) group(title string, rows func()) {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
 	shift := float32(0)
 	if page.opened > 0 {
 		shift = settingsGroupGap
 	}
 	page.opened++
 	page.rows = 0
-	wrapper := f.Column()
+	wrapper := ui.Column(c)
 	page.matchAnchor(title, wrapper, shift)
 	wrapper.Children(func() {
 		if title != "" {
-			f.Text(title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).MarginSides(0, 4, 6, 4)
+			ui.Text(c, title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).MarginSides(0, 4, 6, 4)
 		}
-		f.Column().Background(pal.surface).Radius(radius.surface).Border(1, withAlpha(pal.line, 0.85)).Children(func() {
-			f.Column().Margin(-1).Children(rows)
+		ui.Column(c).Background(pal.surface).Radius(radius.surface).Border(1, withAlpha(pal.line, 0.85)).Children(func() {
+			ui.Column(c).Margin(-1).Children(rows)
 		})
 	})
 }
@@ -457,7 +482,7 @@ func (page *settingsPage) matchAnchor(label string, box ui.Box, shift float32) {
 // no room: the row starts where the line does.
 func (page *settingsPage) separator() {
 	if page.rows > 0 {
-		page.f.Column().Height(1).MarginSides(0, 1, -1, 1).Background(withAlpha(page.state.pal.line, 0.7))
+		ui.Column(page.c).Height(1).MarginSides(0, 1, -1, 1).Background(withAlpha(page.state.pal.line, 0.7))
 	}
 	page.rows++
 }
@@ -465,7 +490,7 @@ func (page *settingsPage) separator() {
 // rowOf opens a row of a card of the given height.
 func (page *settingsPage) rowOf(height float32) ui.Box {
 	page.separator()
-	return page.f.Row().Height(height).Items(ui.Center)
+	return ui.Row(page.c).Height(height).Items(ui.Center)
 }
 
 // line is one row of a group: the name and explanation on the left, wrapping to
@@ -486,18 +511,18 @@ func (page *settingsPage) lineWith(label, description string, controlWidth float
 // identity, as a Field's label is: pressing them focuses and clicks it, which for
 // a switch flips it. A zero identity makes the words plain text.
 func (page *settingsPage) lineFor(labelFor gfx.ID, label, description string, controlWidth float32, inside func()) ui.Box {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
 	controlWidth = min(controlWidth, max(page.width-60, 0))
 	var control ui.Box
 	row := page.rowOf(page.rowHeight)
 	page.matchAnchor(label, row, 0)
 	row.PadX(18).Gap(24).Children(func() {
-		words := f.Column().Grow(1).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
-			f.Paragraph(description, settingsDescLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
+		words := ui.Column(c).Grow(1).Children(func() {
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
+			ui.Paragraph(c, description, settingsDescLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
-		control = f.Row().Size(controlWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
+		control = ui.Row(c).Size(controlWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
 		if inside != nil {
 			control.Children(inside)
 		}
@@ -526,7 +551,7 @@ func settingsChoiceWidth[T comparable](page *settingsPage, choices []T, name fun
 	for _, choice := range choices {
 		options = append(options, components.SegmentOption{Label: name(choice)})
 	}
-	return components.SegmentedControlWidth(page.f.Canvas(), page.state.Theme(), options)
+	return components.SegmentedControlWidth(page.canvas(), page.state.Theme(), options)
 }
 
 // settingsChoiceRow is a row whose control is a page Choice: value is what the
@@ -571,7 +596,7 @@ func (page *settingsPage) actionRow(label, description string, disabled bool, ac
 	theme := page.state.Theme()
 	controlWidth := theme.Metrics.GapItem * float32(len(actions)-1)
 	for _, action := range actions {
-		controlWidth += components.BeginButton(page.f.Canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+		controlWidth += components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
 	}
 	controlWidth = min(controlWidth, page.width*0.6)
 	if page.controlWidth > 0 {
@@ -587,7 +612,7 @@ func (page *settingsPage) actionRow(label, description string, disabled bool, ac
 // setting's own name keeps the same room whatever the value is; a value too long
 // for that room ends in an ellipsis.
 func (page *settingsPage) valueActionRow(label, description, value string, disabled bool, actions ...components.ButtonAction) {
-	theme, canvas := page.state.Theme(), page.f.Canvas()
+	theme, canvas := page.state.Theme(), page.canvas()
 	gap := theme.Metrics.GapItem
 	buttonsWidth := gap * float32(len(actions)-1)
 	for _, action := range actions {
@@ -603,9 +628,9 @@ func (page *settingsPage) valueActionRow(label, description, value string, disab
 	}
 	var buttons ui.Box
 	page.lineWith(label, description, controlWidth, func() {
-		page.f.Text(value).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.muted).
+		ui.Text(page.c, value).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.muted).
 			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
-		buttons = page.f.Slot().Size(buttonsWidth, 34).Shrink(0)
+		buttons = ui.Slot(page.c).Size(buttonsWidth, 34).Shrink(0)
 	})
 	page.buttons(buttons, disabled, actions...)
 }
@@ -636,14 +661,15 @@ func (page *settingsPage) switchIn(slot ui.Box, id gfx.ID, on, disabled bool, la
 
 // button declares a small button and records it.
 func (page *settingsPage) button(id gfx.ID, label string, style aiButtonStyle, disabled bool) ui.Box {
-	slot := page.state.aiButtonSlot(page.f, label)
+	width, height := page.state.aiButtonSize(page.canvas(), label)
+	slot := ui.Slot(page.c).Size(width, height)
 	page.add(settingsControl{kind: controlButton, slot: slot, id: id, label: label, style: style, disabled: disabled})
 	return slot
 }
 
 // switchSlot declares a switch and records it.
 func (page *settingsPage) switchSlot(id gfx.ID, on, disabled bool, label string) ui.Box {
-	slot := aiSwitchSlot(page.f).Shrink(0)
+	slot := ui.Slot(page.c).Size(aiSwitchWidth, aiSwitchHeight).Shrink(0)
 	page.switchIn(slot, id, on, disabled, label)
 	return slot
 }

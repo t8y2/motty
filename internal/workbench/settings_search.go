@@ -65,6 +65,15 @@ type settingsUI struct {
 	navView    float32
 	navRect    gfx.Rect
 
+	// contentScroll and navListScroll are the page's two scroll areas. The wheel
+	// in settings.go owns the offsets (settingsScroll and navScroll), and a page
+	// ScrollArea reads its offset when it is declared, so the pointer from the
+	// previous paint seeds the next one. Both areas are declared by every paint
+	// of the page, and the page is the only user of its View, so the states are
+	// not dropped between visits.
+	contentScroll *ui.ScrollState
+	navListScroll *ui.ScrollState
+
 	// pageView is how tall the page's own window was when it was last painted:
 	// the workspace content box, inside the slot's border. The wheel and the
 	// paint both clamp to it, so the end of the page is reachable either way.
@@ -345,7 +354,7 @@ func (state *State) settingsSearchKey(event gfx.KeyEvent) (gfx.EventResult, bool
 func (state *State) paintSettingsResults(page *settingsPage) {
 	view := &state.settings
 	if view.count == 0 {
-		page.f.Text(view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
+		ui.Text(page.c, view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
 		return
 	}
 	page.controlWidth = 150 // room for the explanation; the button only names a category

@@ -19,16 +19,16 @@ type findBarSlots struct {
 // declareFindBar declares the bar of a pane whose search is open: the magnifier,
 // the query field taking what the buttons leave, the match count and the three
 // buttons. The field keeps 120 px however narrow the pane.
-func (state *State) declareFindBar(f *ui.Frame, session *Session) (slots findBarSlots) {
+func (state *State) declareFindBar(c ui.C, session *Session) (slots findBarSlots) {
 	find := &session.term.find
 	disabled := len(find.matches) == 0
-	f.Row().Fill().PadSides(0, termPadX, 0, termPadX).Items(ui.Center).Children(func() {
-		slots.icon = f.Slot().Size(16, 16).MarginSides(0, 8, 0, 0)
-		slots.field = f.Slot().Grow(1).MinWidth(120).Height(26).MarginSides(0, 10, 0, 0)
-		slots.count = f.Slot().Size(92, 22).Shrink(0).MarginSides(0, 8, 0, 0)
-		state.declareFindButton(f, hitTerminalFindPrevious, icons.ArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
-		state.declareFindButton(f, hitTerminalFindNext, icons.ArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 4, 0, 0)
-		state.declareFindButton(f, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
+	ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX).Items(ui.Center).Children(func() {
+		slots.icon = ui.Slot(c).Size(16, 16).MarginSides(0, 8, 0, 0)
+		slots.field = ui.Slot(c).Grow(1).MinWidth(120).Height(26).MarginSides(0, 10, 0, 0)
+		slots.count = ui.Slot(c).Size(92, 22).Shrink(0).MarginSides(0, 8, 0, 0)
+		state.declareFindButton(c, hitTerminalFindPrevious, icons.ArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
+		state.declareFindButton(c, hitTerminalFindNext, icons.ArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 4, 0, 0)
+		state.declareFindButton(c, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
 	})
 	return slots
 }
@@ -51,9 +51,9 @@ func (state *State) paintFindBarSlots(canvas *gfx.Canvas, session *Session, slot
 
 // declareFindButton declares one of the bar's icon buttons: quiet until the
 // pointer is over it, dimmed when there is nothing to go to.
-func (state *State) declareFindButton(f *ui.Frame, id gfx.ID, icon gfx.Icon, label string, disabled bool) ui.Box {
+func (state *State) declareFindButton(c ui.C, id gfx.ID, icon gfx.Icon, label string, disabled bool) ui.Box {
 	foreground := state.pal.muted
-	button := f.Row().Size(terminalFindButtonSize, terminalFindButtonSize).Shrink(0).Center().Radius(radius.item).
+	button := ui.Row(c).Size(terminalFindButtonSize, terminalFindButtonSize).Shrink(0).Center().Radius(radius.item).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Disabled: disabled, SkipFocus: true})
 	if disabled {
 		foreground.Alpha *= 0.45
@@ -61,7 +61,7 @@ func (state *State) declareFindButton(f *ui.Frame, id gfx.ID, icon gfx.Icon, lab
 		button.Hover(ui.Look{}.Background(state.pal.surfaceHot))
 	}
 	return button.Children(func() {
-		icon := f.Icon(icon).Size(14, 14).Color(foreground)
+		icon := ui.Icon(c, icon).Size(14, 14).Color(foreground)
 		if !disabled {
 			icon.StateFrom(button).Hover(ui.Look{}.Color(state.pal.text))
 		}

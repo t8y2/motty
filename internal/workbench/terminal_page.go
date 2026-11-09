@@ -16,6 +16,15 @@ import (
 // find bar, the tool rail) keeps the window's dispatch.
 const terminalControlPart = "terminal"
 
+// The pane's page names the two containers the control lives in: a page element
+// is named under the nearest named container, and the control has to keep one
+// identity whatever bars the pane declares above it. Parts name them, so a bar
+// appearing or leaving does not move the control.
+const (
+	terminalPanePart = "pane"
+	terminalBodyPart = "body"
+)
+
 // terminalPartScrollbar is the scrollbar's part of the terminal control.
 const (
 	terminalPartScrollbar = iota
@@ -32,17 +41,24 @@ func terminalPageRootScope(sessionID uint32) gfx.Scope {
 	return Tree().Feature(terminalPageRoot(sessionID))
 }
 
+// terminalBodyScope is the scope the terminal control is named in: the page's
+// body column, under the pane column.
+func terminalBodyScope(sessionID uint32) gfx.Scope {
+	pane := Tree().Sub(terminalPageRootScope(sessionID), Tree().Name(terminalPanePart))
+	return Tree().Sub(pane, Tree().Name(terminalBodyPart))
+}
+
 // terminalControlHit is the local identity of a pane's terminal control, as the
-// page declares it with Part("terminal") at its root. A host that has not
+// page declares it with Part("terminal") in its body. A host that has not
 // painted the page can still name the control with it.
 func terminalControlHit(sessionID uint32) gfx.ID {
-	return terminalPageRootScope(sessionID).ID(Tree().Name(terminalControlPart))
+	return terminalBodyScope(sessionID).ID(Tree().Name(terminalControlPart))
 }
 
 // terminalControlParts is the scope of the control's parts, the identities its
 // Draw declares for its own regions.
 func terminalControlParts(sessionID uint32) gfx.Scope {
-	return Tree().Sub(terminalPageRootScope(sessionID), Tree().Name(terminalControlPart))
+	return Tree().Sub(terminalBodyScope(sessionID), Tree().Name(terminalControlPart))
 }
 
 // pageIdentity makes the page's control identity and part scope once: painting
@@ -51,10 +67,10 @@ func (t *terminal) pageIdentity(sessionID uint32) {
 	if !t.controlID.IsZero() {
 		return
 	}
-	root := terminalPageRootScope(sessionID)
+	body := terminalBodyScope(sessionID)
 	name := Tree().Name(terminalControlPart)
-	t.controlID = root.ID(name)
-	t.parts = Tree().Sub(root, name)
+	t.controlID = body.ID(name)
+	t.parts = Tree().Sub(body, name)
 }
 
 // terminalPageFor returns the session's page, making it and its cached
@@ -245,8 +261,7 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 		return
 	}
 	t := session.term
-	f := c.Frame()
-	bounds := f.Bounds()
+	bounds := c.Frame().Bounds()
 	chrome, ok := state.terminalChromeForSession(session.ID)
 	if !ok {
 		chrome = terminalChrome{top: infoBarHeight}
@@ -285,23 +300,25 @@ func (state *State) declareTerminalPane(c ui.C, sessionID uint32) {
 	}
 	noticeReserved := noticeReserve > 0
 
-	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
+	c.Part(terminalPanePart)
+	ui.Column(c).Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
 		if inSplit || finding {
-			f.Stack().Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
+			ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				if finding {
-					t.paintFind = state.declareFindBar(f, session)
+					t.paintFind = state.declareFindBar(c, session)
 				} else {
-					t.paintSpinner, t.paintLight = state.declarePaneBar(f, bounds.Width, title, status, session, !inactive)
+					t.paintSpinner, t.paintLight = state.declarePaneBar(c, bounds.Width, title, status, session, !inactive)
 				}
-				f.Row().FillWidth().Height(1).Self(ui.End).Background(barBorder)
+				ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(barBorder)
 			})
 		}
-		f.Column().Grow(1).FillHeight().Children(func() {
+		c.Part(terminalBodyPart)
+		ui.Column(c).Grow(1).FillHeight().Children(func() {
 			switch {
 			case showingInputNotice:
-				t.paintNotice = f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0)
+				t.paintNotice = ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0)
 			case noticeReserved:
-				f.Slot().Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.ground(state.termPal.terminal))
+				ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.ground(state.termPal.terminal))
 			}
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)

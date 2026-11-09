@@ -177,75 +177,76 @@ const linkMarkSize = float32(26)
 // them. It takes the place of a row, so whatever follows it gets a hairline.
 func (page *settingsPage) tileBox(children func()) {
 	page.separator()
-	page.f.Column().FillWidth().Pad(14).Gap(10).Children(children)
+	ui.Column(page.c).FillWidth().Pad(14).Gap(10).Children(children)
 }
 
 // pair places two tiles side by side, or one above the other when the page is
 // too narrow for two.
 func (page *settingsPage) pair(first, second func()) {
 	if page.width < aboutTwoColumnMin {
-		page.f.Column().FillWidth().Gap(10).Children(func() {
+		ui.Column(page.c).FillWidth().Gap(10).Children(func() {
 			first()
 			second()
 		})
 		return
 	}
-	page.f.Row().FillWidth().Gap(10).Children(func() {
-		page.f.Column().Grow(1).Basis(0).Children(first)
-		page.f.Column().Grow(1).Basis(0).Children(second)
+	ui.Row(page.c).FillWidth().Gap(10).Children(func() {
+		ui.Column(page.c).Grow(1).Basis(0).Children(first)
+		ui.Column(page.c).Grow(1).Basis(0).Children(second)
 	})
 }
 
 // factTile is one fact of the build: its name above its value.
 func (page *settingsPage) factTile(icon uint8, label, value string) {
-	f, pal := page.f, page.state.pal
-	tile := f.Column().FillWidth().Height(60).PadSides(10, 12, 10, 12).Justify(ui.Center).Gap(3).Background(pal.surfaceSoft).Radius(radius.item)
+	c, pal := page.c, page.state.pal
+	tile := ui.Column(c).FillWidth().Height(60).PadSides(10, 12, 10, 12).Justify(ui.Center).Gap(3).Background(pal.surfaceSoft).Radius(radius.item)
 	page.matchAnchor(label, tile, 0)
 	tile.Children(func() {
-		f.Row().Items(ui.Center).Gap(6).Children(func() {
-			f.Icon(lucideIcons[icon]).Size(14, 14).Color(pal.muted).Shrink(0)
-			f.Text(label).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
+		ui.Row(c).Items(ui.Center).Gap(6).Children(func() {
+			ui.Icon(c, lucideIcons[icon]).Size(14, 14).Color(pal.muted).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
 		})
-		f.Text(value).Mono().FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(19).Ellipsis()
+		ui.Text(c, value).Mono().FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(19).Ellipsis()
 	})
 }
 
 // linkCard is one place to go: its mark, its name, what it is for, and a sign
 // that it opens outside the window. The whole card is the target.
 func (page *settingsPage) linkCard(id gfx.ID, mark linkMark, label, description string) {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
+	canvas := page.canvas()
 	background := pal.surfaceSoft
-	if f.Canvas().Hovered() == id {
+	if canvas.Hovered() == id {
 		background = pal.surfaceHot
 	}
 	border := withAlpha(pal.line, 0.85)
-	if f.Canvas().Focused() == id {
+	if canvas.Focused() == id {
 		border = pal.accent
 	}
-	card := f.Column().FillWidth().Height(86).PadSides(12, 12, 12, 12).Gap(5).Justify(ui.Center).Background(background).Radius(radius.control).Border(1, border)
+	card := ui.Column(c).FillWidth().Height(86).PadSides(12, 12, 12, 12).Gap(5).Justify(ui.Center).Background(background).Radius(radius.control).Border(1, border)
 	page.matchAnchor(label, card, 0)
 	page.hitOn(card, id, label, gfx.HitOptions{Role: gfx.RoleLink, Cursor: gfx.PointerCursorHand, Description: description})
 	card.Children(func() {
-		f.Row().Items(ui.Center).Gap(8).Children(func() {
+		ui.Row(c).Items(ui.Center).Gap(8).Children(func() {
 			page.linkMarkIcon(mark)
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Grow(1).Ellipsis()
-			f.Icon(lucideIcons[iconLink]).Size(12, 12).Color(pal.faint).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Grow(1).Ellipsis()
+			ui.Icon(c, lucideIcons[iconLink]).Size(12, 12).Color(pal.faint).Shrink(0)
 		})
-		f.Paragraph(description, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
+		ui.Paragraph(c, description, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
 	})
 }
 
 // linkMarkIcon draws a card's mark: its glyph, at the size that mark takes, on
 // the chip of its service, or the picture that brings its own tile.
 func (page *settingsPage) linkMarkIcon(mark linkMark) {
-	f := page.f
+	c := page.c
 	if mark.picture != nil {
-		f.Image(mark.picture()).Size(linkMarkSize, linkMarkSize).Shrink(0)
+		ui.Image(c, mark.picture()).Size(linkMarkSize, linkMarkSize).Shrink(0)
 		return
 	}
-	chip := f.Row().Size(linkMarkSize, linkMarkSize).Shrink(0).Center().Radius(radius.item).Background(mark.chip)
+	chip := ui.Row(c).Size(linkMarkSize, linkMarkSize).Shrink(0).Center().Radius(radius.item).Background(mark.chip)
 	chip.Children(func() {
-		f.Icon(lucideIcons[mark.icon]).Size(mark.size, mark.size).Color(mark.ink).Shrink(0)
+		ui.Icon(c, lucideIcons[mark.icon]).Size(mark.size, mark.size).Color(mark.ink).Shrink(0)
 	})
 }
 
@@ -253,19 +254,19 @@ func (page *settingsPage) linkMarkIcon(mark linkMark) {
 // not a place to go like the cards above, so it is one centered line below
 // them, and the words and the mark are the whole of its target.
 func (page *settingsPage) vivaColophon() {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
 	m := page.state.messages
 	color := pal.muted
-	if f.Canvas().Hovered() == hitAboutViva || f.Canvas().Focused() == hitAboutViva {
+	if canvas := page.canvas(); canvas.Hovered() == hitAboutViva || canvas.Focused() == hitAboutViva {
 		color = pal.accent
 	}
-	f.Row().FillWidth().Items(ui.Center).Justify(ui.Center).Children(func() {
-		line := f.Row().Items(ui.Center).Gap(5)
+	ui.Row(c).FillWidth().Items(ui.Center).Justify(ui.Center).Children(func() {
+		line := ui.Row(c).Items(ui.Center).Gap(5)
 		page.matchAnchor(m.About.Viva, line, 0)
 		page.hitOn(line, hitAboutViva, m.About.Viva, gfx.HitOptions{Role: gfx.RoleLink, Cursor: gfx.PointerCursorHand, Description: m.About.VivaDescription})
 		line.Children(func() {
-			f.Icon(lucideIcons[iconLink]).Size(11, 11).Color(color).Shrink(0)
-			f.Text(m.About.Viva).FontSize(metrics.FontSizeS).Color(color).LineHeight(15)
+			ui.Icon(c, lucideIcons[iconLink]).Size(11, 11).Color(color).Shrink(0)
+			ui.Text(c, m.About.Viva).FontSize(metrics.FontSizeS).Color(color).LineHeight(15)
 		})
 	})
 }
@@ -279,15 +280,16 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 	if state.settings.aboutCopied {
 		copyAction = m.About.CopiedAction
 	}
+	c := page.c
 	page.groups(func() {
 		page.group("", func() {
 			// The wordmark is a picture, so it keeps a slot the page paints
 			// once it is laid out, as the sidebar header does.
-			row := page.f.Row().Height(96).PadX(18).Gap(16).Items(ui.Center)
+			row := ui.Row(c).Height(96).PadX(18).Gap(16).Items(ui.Center)
 			row.Children(func() {
-				page.f.Column().Grow(1).Children(func() {
-					page.add(settingsControl{kind: controlLogo, slot: page.f.Slot().Size(lockupWidth, lockupHeight).Shrink(0)})
-					page.f.Paragraph(m.About.Tagline, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MarginSides(6, 0, 0, 0)
+				ui.Column(c).Grow(1).Children(func() {
+					page.add(settingsControl{kind: controlLogo, slot: ui.Slot(c).Size(lockupWidth, lockupHeight).Shrink(0)})
+					ui.Paragraph(c, m.About.Tagline, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MarginSides(6, 0, 0, 0)
 				})
 				page.button(hitAboutCopyInfo, copyAction, aiButtonOutline, false).Shrink(0)
 			})

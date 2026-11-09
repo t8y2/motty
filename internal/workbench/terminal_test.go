@@ -542,6 +542,40 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 	}
 }
 
+// Naming the pane's containers moved the terminal control under the pane and
+// body parts, and opening the find bar adds a sibling above it. The control's
+// identity must not move, and a press the window routes by that identity must
+// still reach the control's handlers through the page.
+func TestTerminalControlKeepsItsIdentityUnderThePanesContainers(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	size := gfx.Size{Width: 1000, Height: 700}
+	state.Resize(size)
+	session := &state.sessions[0]
+	paint := func() *gfx.Canvas {
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		return &canvas
+	}
+	closed := paint()
+	hit, ok := hitByID(closed, terminalTestHit(state, session))
+	if !ok {
+		t.Fatal("the terminal control has no painted hit with the find bar closed")
+	}
+	geometry := state.layoutForSession(session.ID)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit.ID,
+		X: geometry.left + state.cellWidth*1.5, Y: geometry.top + state.cellHeight*0.5, Viewport: size,
+	})
+	if want := session.term.screen.PointAt(term.Position{Row: 0, Column: 1}); session.term.selection.anchor != want {
+		t.Fatalf("the press mapped to %+v, want %+v", session.term.selection.anchor, want)
+	}
+	openFindForTest(t, state)
+	opened := paint()
+	if again, ok := hitByID(opened, hit.ID); !ok || again.ID != hit.ID {
+		t.Fatal("opening the find bar moved the terminal control")
+	}
+}
+
 func TestActiveToolRailOmitsConnectionIdentityAndStatus(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	_, texts := paintedTexts(state)
