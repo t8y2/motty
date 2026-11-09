@@ -599,7 +599,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	providersWidth += 24 // the mark before each name
 	width := aiMenuWidth(providersWidth)
 	// The menus are dialogs' peers: they must paint over a drawer's content.
-	c.Frame().PopupLayer(dialogLayer)
+	ui.PopupLayer(c, dialogLayer)
 	ui.Menu(c, anchor, &panel.modelMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
@@ -645,7 +645,7 @@ func (state *State) declareAIAutoScopeMenu(c ui.C, anchor ui.Box) {
 	width = max(width, aiMenuContextWidth)
 	level := state.aiAutoUpTo()
 	// The menus are dialogs' peers: they must paint over a drawer's content.
-	c.Frame().PopupLayer(dialogLayer)
+	ui.PopupLayer(c, dialogLayer)
 	ui.Menu(c, anchor, &panel.autoMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
@@ -676,7 +676,7 @@ func (state *State) declareAIReasoningMenu(c ui.C, anchor ui.Box) {
 	width = max(width, aiMenuContextWidth)
 	current := state.aiEffectiveReasoningEffort()
 	// The menus are dialogs' peers: they must paint over a drawer's content.
-	c.Frame().PopupLayer(dialogLayer)
+	ui.PopupLayer(c, dialogLayer)
 	ui.Menu(c, anchor, &panel.reasoningMenu, func(menu *ui.MenuItems) {
 		menu.Above()
 		menu.WidthRange(width, width)
