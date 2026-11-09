@@ -42,9 +42,8 @@ func (state *State) settingsLocalStartLabel(policy localStartPolicy) string {
 // paintLocalStartSetting is the choice's row, beside the other local terminal
 // settings.
 func (state *State) paintLocalStartSetting(page *settingsPage) {
-	options := state.settingsLocalStartOptions()
 	policy := state.localStart
-	settingsChoiceRow(page, state.messages.SettingsLocalStart, state.messages.SettingsLocalStartDescription, options[:], &policy, settingsLocalStartChoices[:], state.settingsLocalStartLabel,
+	settingsChoiceRow(page, state.messages.SettingsLocalStart, state.messages.SettingsLocalStartDescription, &policy, settingsLocalStartChoices[:], state.settingsLocalStartLabel,
 		func() { state.setLocalStartPolicy(policy); state.save() }, nil)
 }
 

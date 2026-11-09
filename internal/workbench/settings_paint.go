@@ -17,14 +17,15 @@ const (
 	// settingsValueMax caps how wide the value a row names is drawn before it is
 	// cut: a long font family must not push the row's own name out of the card.
 	settingsValueMax = float32(180)
+	// settingsChoiceMax is the largest number of options a choice row offers.
+	settingsChoiceMax = 4
 )
 
 // settingsControlKind is how a recorded control is painted.
 type settingsControlKind uint8
 
 const (
-	controlSegments         settingsControlKind = iota // a segmented choice
-	controlSwitch                                      // a two-state switch
+	controlSwitch           settingsControlKind = iota // a two-state switch
 	controlButtons                                     // buttons against the right edge of the slot
 	controlButton                                      // one small button filling the slot
 	controlHit                                         // the slot is a pointer target
@@ -52,7 +53,6 @@ type settingsControl struct {
 	slot     ui.Box
 	id       gfx.ID
 	label    string
-	selected gfx.ID
 	on       bool
 	disabled bool
 	style    aiButtonStyle
@@ -76,8 +76,11 @@ type settingsPage struct {
 	rowHeight float32
 	// controlWidth, when set, is the width of the buttons of an action row.
 	controlWidth float32
-	rows         int // rows declared in the current card
-	opened       int // groups declared so far
+	// choiceOptions is scratch room for the labels of one choice row, reused
+	// between rows so measuring them allocates nothing.
+	choiceOptions [settingsChoiceMax]components.SegmentOption
+	rows          int // rows declared in the current card
+	opened        int // groups declared so far
 	// navList is the scrolling column of categories, whose height and content
 	// say how far the list can be scrolled.
 	navList ui.Box
@@ -149,7 +152,7 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 		title = state.messages.Tools.SearchTitle
 	}
 
-	view.controls, view.options, view.actions, view.colors = view.controls[:0], view.options[:0], view.actions[:0], view.colors[:0]
+	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
 	page := settingsPage{state: state, c: c, f: f, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
 	f.Row().Fill().Children(func() {
 		page.nav(navWidth, searching)
@@ -176,8 +179,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 		control := &state.settings.controls[index]
 		rect := control.slot.Rect()
 		switch control.kind {
-		case controlSegments:
-			components.BeginSegmentedControl(canvas, theme, rect, state.settings.options[control.first:control.first+control.count], control.selected).Paint()
 		case controlMCPSelect:
 			state.ai.cfg.mcpSelectBounds = rect
 		case controlAgentSelect:
@@ -274,8 +275,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 	messages := state.messages
 	page.groups(func() {
 		page.group("", func() {
-			language := state.settingsLanguageOptions()
-			settingsChoiceRow(page, messages.SettingsLanguage, "", language[:], &state.language, settingsLanguageChoices[:], state.settingsLanguageLabel,
+			settingsChoiceRow(page, messages.SettingsLanguage, "", &state.language, settingsLanguageChoices[:], state.settingsLanguageLabel,
 				func() { state.languageChosen = true; state.applyLanguage(); state.save() },
 				func() {
 					if !state.languageChosen {
@@ -283,22 +283,17 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 						state.save()
 					}
 				})
-			appearance := state.settingsAppearanceOptions()
-			settingsChoiceRow(page, messages.SettingsAppearance, "", appearance[:], &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
+			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
-			textSize := state.settingsTextSizeOptions()
-			settingsChoiceRow(page, messages.SettingsTextSize, messages.SettingsTextSizeDescription, textSize[:], &state.textScale, settingsTextSizeChoices[:], state.settingsTextSizeLabel,
+			settingsChoiceRow(page, messages.SettingsTextSize, messages.SettingsTextSizeDescription, &state.textScale, settingsTextSizeChoices[:], state.settingsTextSizeLabel,
 				func() { state.applyTextScale(); state.save() }, nil)
-			toolbarPosition := state.settingsToolbarPositionOptions()
-			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, toolbarPosition[:], &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
+			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
 				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
-			tabs := state.settingsTabOrientationOptions()
-			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, tabs[:], &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
+			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
 				func() { state.applyTabOrientation(); state.save() }, nil)
 			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
-			numberKeys := state.tabNumberOptions()
 			numberKey := state.tabNumberChoice()
-			settingsChoiceRow(page, messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, numberKeys[:], &numberKey, tabNumberChoices[:], state.tabNumberChoiceLabel,
+			settingsChoiceRow(page, messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, &numberKey, tabNumberChoices[:], state.tabNumberChoiceLabel,
 				func() { state.setTabNumberModifier(numberKey.id()); state.save() }, nil)
 			page.toggleRow(messages.SettingsOutputAlerts, messages.SettingsOutputAlertsDescription, state.backgroundOutputAlerts, hitSettingsOutputAlerts)
 			if state.tabOrientation == tabsVertical {
@@ -313,13 +308,11 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				state.paintLoginSetting(page)
 			}
 			if state.closeActionVisible() {
-				options := state.settingsCloseOptions()
-				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, options[:], &state.closeAction, settingsCloseChoices[:], state.settingsCloseLabel,
+				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &state.closeAction, settingsCloseChoices[:], state.settingsCloseLabel,
 					func() { state.save() }, nil)
 			}
 			if state.options.NewWindow != nil {
-				options := state.settingsRelaunchOptions()
-				settingsChoiceRow(page, messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, options[:], &state.relaunchAction, settingsRelaunchChoices[:], state.settingsRelaunchLabel,
+				settingsChoiceRow(page, messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, &state.relaunchAction, settingsRelaunchChoices[:], state.settingsRelaunchLabel,
 					func() { state.save() }, nil)
 			}
 			state.paintToolbarSettingsRows(page)
@@ -330,53 +323,44 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 
 func (state *State) paintTerminalSettings(page *settingsPage) {
 	messages := state.messages
-	option := state.settingsOptionOptions()
-	padding := state.settingsPaddingOptions()
-	lineHeight := state.settingsLineHeightOptions()
-	gutter := state.settingsGutterOptions()
-	intense := state.settingsIntenseOptions()
-	scrollback := state.settingsScrollbackOptions()
-	clipboard := state.settingsClipboardOptions()
-	thickness := state.settingsCursorThicknessOptions()
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
 			page.actionRow(messages.Completion.CatalogRow, status, false,
 				components.ButtonAction{ID: hitCompletionUpdate, Label: messages.Completion.Check, Variant: components.ButtonOutline})
-			completionOptions := state.settingsCompletionOptions()
 			completion := state.completionMode()
-			settingsChoiceRow(page, messages.History.SuggestRow, messages.History.SuggestDescription, completionOptions[:], &completion, settingsCompletionChoices[:], state.settingsCompletionLabel,
+			settingsChoiceRow(page, messages.History.SuggestRow, messages.History.SuggestDescription, &completion, settingsCompletionChoices[:], state.settingsCompletionLabel,
 				func() { state.setCompletionMode(completion); state.save() }, nil)
 			page.toggleRow(messages.History.SettingsRow, messages.History.SettingsDescription, state.history.on, hitSettingsHistoryToggle)
 			page.actionRow(messages.History.ClearRow, messages.History.ClearDescription, false,
 				components.ButtonAction{ID: hitSettingsHistoryClear, Label: messages.History.Clear, Variant: components.ButtonOutline})
 		})
 		page.group("", func() {
-			settingsChoiceRow(page, messages.SettingsTerminalOption, messages.SettingsTerminalOptionDescription, option[:], &state.terminalOption, settingsOptionChoices[:], state.settingsOptionLabel,
+			settingsChoiceRow(page, messages.SettingsTerminalOption, messages.SettingsTerminalOptionDescription, &state.terminalOption, settingsOptionChoices[:], state.settingsOptionLabel,
 				func() { state.save() }, nil)
 			page.actionRow(messages.SettingsTerminalFontSize, messages.SettingsTerminalFontSizeDescription, false,
 				components.ButtonAction{ID: hitSettingsFontSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsFontSizeReset, Label: state.fontSizeLabel(), Variant: components.ButtonGhost},
 				components.ButtonAction{ID: hitSettingsFontSizeUp, Label: "+", Variant: components.ButtonOutline})
-			settingsChoiceRow(page, state.messages.Tools.LineHeightRow, "", lineHeight[:], &state.terminalLineHeight, settingsLineHeightChoices[:], state.settingsLineHeightLabel,
+			settingsChoiceRow(page, state.messages.Tools.LineHeightRow, "", &state.terminalLineHeight, settingsLineHeightChoices[:], state.settingsLineHeightLabel,
 				func() { state.save() }, nil)
 			page.actionRow(messages.SettingsTerminalFontFamily, state.fontDescription(), false,
 				components.ButtonAction{ID: hitSettingsFontPick, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			page.actionRow(state.messages.Tools.FontFallbackRow, state.fallbackDescription(), false, state.fallbackActions()...)
-			settingsChoiceRow(page, state.messages.Tools.PaddingRow, "", padding[:], &state.terminalPad, settingsPaddingChoices[:], state.settingsPaddingLabel,
+			settingsChoiceRow(page, state.messages.Tools.PaddingRow, "", &state.terminalPad, settingsPaddingChoices[:], state.settingsPaddingLabel,
 				func() { state.applyTerminalPadding(); state.save() }, nil)
-			settingsChoiceRow(page, state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, gutter[:], &state.terminalGutter, settingsGutterChoices[:], state.settingsGutterLabel,
+			settingsChoiceRow(page, state.messages.Tools.GutterRow, state.messages.Tools.GutterDescription, &state.terminalGutter, settingsGutterChoices[:], state.settingsGutterLabel,
 				func() { state.applyTerminalGutter(); state.save() }, nil)
 			page.toggleRow(state.messages.Tools.CursorRow, state.messages.Tools.CursorDescription, !state.terminalCursorSteady, hitSettingsCursorToggle)
-			settingsChoiceRow(page, state.messages.Tools.CursorShapeRow, state.messages.Tools.CursorShapeDescription, state.settingsCursorStyleOptions(), &state.terminalCursorStyle, settingsCursorStyleChoices[:], state.settingsCursorStyleLabel,
+			settingsChoiceRow(page, state.messages.Tools.CursorShapeRow, state.messages.Tools.CursorShapeDescription, &state.terminalCursorStyle, settingsCursorStyleChoices[:], state.settingsCursorStyleLabel,
 				func() { state.applyTerminalCursorStyle(); state.save() }, nil)
-			settingsChoiceRow(page, state.messages.Tools.CursorThicknessRow, "", thickness[:], &state.terminalCursorThickness, settingsCursorThicknessChoices[:], state.settingsCursorThicknessLabel,
+			settingsChoiceRow(page, state.messages.Tools.CursorThicknessRow, "", &state.terminalCursorThickness, settingsCursorThicknessChoices[:], state.settingsCursorThicknessLabel,
 				func() { state.save() }, nil)
-			settingsChoiceRow(page, state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, intense[:], &state.terminalIntense, settingsIntenseChoices[:], state.settingsIntenseLabel,
+			settingsChoiceRow(page, state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, &state.terminalIntense, settingsIntenseChoices[:], state.settingsIntenseLabel,
 				func() { state.rebuildTerminalLook(); state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, scrollback[:], &state.terminalScrollback, settingsScrollbackChoices[:], state.settingsScrollbackLabel,
+			settingsChoiceRow(page, messages.SettingsTerminalScrollback, messages.SettingsTerminalScrollbackDescription, &state.terminalScrollback, settingsScrollbackChoices[:], state.settingsScrollbackLabel,
 				func() { state.applyTerminalScrollback(); state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, clipboard[:], &state.terminalClipboard, settingsClipboardChoices[:], state.settingsClipboardLabel,
+			settingsChoiceRow(page, messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, &state.terminalClipboard, settingsClipboardChoices[:], state.settingsClipboardLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
 			page.wordSeparatorsRow()
@@ -384,16 +368,11 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
 			page.toggleRow(state.messages.Tools.LinkPlainClickRow, state.messages.Tools.LinkPlainClickDescription, state.terminalLinkPlainClick, hitSettingsLinkPlainClick)
 			page.toggleRow(state.messages.Tools.BellRow, state.messages.Tools.BellDescription, !state.terminalBellOff, hitSettingsBellToggle)
-			tabTitles := []components.SegmentOption{
-				{ID: hitSettingsTabConnection, Label: state.messages.Tools.TabTitleConnection},
-				{ID: hitSettingsTabTitle, Label: state.messages.Tools.TabTitleTerminal},
-				{ID: hitSettingsTabDirectory, Label: state.messages.Tools.TabTitleDirectory},
-			}
 			tabTitle := state.tabTitleMode
 			if tabTitle != tabTitleTerminal && tabTitle != tabTitleDirectory {
 				tabTitle = tabTitleConnection
 			}
-			settingsChoiceRow(page, state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, tabTitles, &tabTitle, settingsTabTitleChoices[:], state.settingsTabTitleLabel,
+			settingsChoiceRow(page, state.messages.Tools.TabTitleRow, state.messages.Tools.TabTitleDescription, &tabTitle, settingsTabTitleChoices[:], state.settingsTabTitleLabel,
 				func() { state.tabTitleMode = tabTitle; state.save() },
 				func() { state.tabTitleMode = tabTitle; state.save() })
 			page.toggleRow(state.messages.Tools.LatencyRow, state.messages.Tools.LatencyDescription, state.terminalShowLatency, hitSettingsLatencyToggle)
@@ -413,25 +392,20 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 
 func (state *State) paintConnectionSettings(page *settingsPage) {
 	messages := state.messages
-	timeout := state.settingsTimeoutOptions()
-	keepAlive := state.settingsKeepAliveOptions()
-	reconnect := state.settingsReconnectOptions()
-	restore := state.settingsRestoreOptions()
-	networkProxy := state.settingsNetworkProxyOptions()
 	page.groups(func() {
 		page.group("", func() {
-			settingsChoiceRow(page, messages.SettingsConnectionTimeout, messages.SettingsConnectionTimeoutDescription, timeout[:], &state.connectionTimeout, settingsTimeoutChoices[:], state.settingsTimeoutLabel,
+			settingsChoiceRow(page, messages.SettingsConnectionTimeout, messages.SettingsConnectionTimeoutDescription, &state.connectionTimeout, settingsTimeoutChoices[:], state.settingsTimeoutLabel,
 				func() { state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsConnectionKeepAlive, messages.SettingsConnectionKeepAliveDescription, keepAlive[:], &state.connectionKeepAlive, settingsKeepAliveChoices[:], state.settingsKeepAliveLabel,
+			settingsChoiceRow(page, messages.SettingsConnectionKeepAlive, messages.SettingsConnectionKeepAliveDescription, &state.connectionKeepAlive, settingsKeepAliveChoices[:], state.settingsKeepAliveLabel,
 				func() { state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsConnectionReconnect, messages.SettingsConnectionReconnectDescription, reconnect[:], &state.connectionReconnect, settingsReconnectChoices[:], state.settingsReconnectLabel,
+			settingsChoiceRow(page, messages.SettingsConnectionReconnect, messages.SettingsConnectionReconnectDescription, &state.connectionReconnect, settingsReconnectChoices[:], state.settingsReconnectLabel,
 				func() { state.applyReconnectPolicy(); state.save() }, nil)
 			page.toggleRow(messages.SettingsShare, messages.SettingsShareDescription, state.shareConnections != shareConnectionsOff, hitSettingsShareToggle)
-			settingsChoiceRow(page, messages.SettingsRestore, messages.SettingsRestoreDescription, restore[:], &state.restoreConnect, settingsRestoreChoices[:], state.settingsRestoreLabel,
+			settingsChoiceRow(page, messages.SettingsRestore, messages.SettingsRestoreDescription, &state.restoreConnect, settingsRestoreChoices[:], state.settingsRestoreLabel,
 				func() { state.save() }, nil)
 			state.paintStartupSettings(page)
 			state.paintSSHAgentRow(page)
-			settingsChoiceRow(page, messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, networkProxy[:], &state.networkProxy, settingsNetworkProxyChoices[:], state.settingsNetworkProxyLabel,
+			settingsChoiceRow(page, messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, &state.networkProxy, settingsNetworkProxyChoices[:], state.settingsNetworkProxyLabel,
 				func() { state.save() }, nil)
 			state.paintOutboundProxyRow(page)
 		})
@@ -543,14 +517,26 @@ func (page *settingsPage) rowFrameFor(label, description string, minWidth float3
 	return page.line(label, description, max(min(float32(300), max(float32(190), page.width*0.40)), minWidth))
 }
 
-// settingsChoiceRow is a row whose control is a page Choice: labels gives the
-// widths the segmented options need, value is what the choice writes, and changed
-// runs after the user picks an option, when value already holds it.
-func settingsChoiceRow[T comparable](page *settingsPage, label, description string, labels []components.SegmentOption, value *T, choices []T, name func(T) string, changed, same func()) {
-	need := components.SegmentedControlWidth(page.f.Canvas(), page.state.Theme(), labels)
-	// A segmented row keeps the room a row's control normally gets, even when its
-	// own labels need less, and fills it: the segments are equal shares of the
-	// control, so a narrow control squeezes the widest label out of its segment.
+// settingsChoiceWidth is the width a choice row's equal shares need: each option
+// fits its label with the control's padding on both sides, so the widest label
+// sets it. It is the segmented control's own width routine, which drew these
+// rows before they became page Choices.
+func settingsChoiceWidth[T comparable](page *settingsPage, choices []T, name func(T) string) float32 {
+	options := page.choiceOptions[:0]
+	for _, choice := range choices {
+		options = append(options, components.SegmentOption{Label: name(choice)})
+	}
+	return components.SegmentedControlWidth(page.f.Canvas(), page.state.Theme(), options)
+}
+
+// settingsChoiceRow is a row whose control is a page Choice: value is what the
+// choice writes, and changed runs after the user picks an option, when value
+// already holds it.
+func settingsChoiceRow[T comparable](page *settingsPage, label, description string, value *T, choices []T, name func(T) string, changed, same func()) {
+	need := settingsChoiceWidth(page, choices, name)
+	// A choice row keeps the room a row's control normally gets, even when its
+	// own labels need less, and fills it: the options are equal shares of the
+	// control, so a narrow control squeezes the widest label out of its share.
 	controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), need)
 	controlWidth = min(controlWidth, max(page.width-60, 0))
 	page.lineWith(label, description, controlWidth, func() {
@@ -636,12 +622,6 @@ func (page *settingsPage) labels(control gfx.ID, words ui.Box, label string, dis
 func (page *settingsPage) add(control settingsControl) {
 	view := &page.state.settings
 	view.controls = append(view.controls, control)
-}
-
-func (page *settingsPage) segments(slot ui.Box, options []components.SegmentOption, selected gfx.ID) {
-	view := &page.state.settings
-	view.options = append(view.options, options...)
-	page.add(settingsControl{kind: controlSegments, slot: slot, selected: selected, first: len(view.options) - len(options), count: len(options)})
 }
 
 func (page *settingsPage) buttons(slot ui.Box, disabled bool, actions ...components.ButtonAction) {

@@ -3,7 +3,6 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -88,13 +87,6 @@ func terminalToolbarPositionFromString(value string) terminalToolbarPosition {
 		return terminalToolbarLeft
 	default:
 		return terminalToolbarRight
-	}
-}
-
-func (state *State) settingsToolbarPositionOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsToolbarLeft, Label: state.messages.SettingsToolbarPositionLeft},
-		{ID: hitSettingsToolbarRight, Label: state.messages.SettingsToolbarPositionRight},
 	}
 }
 

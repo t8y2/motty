@@ -62,13 +62,6 @@ type verticalTabs struct {
 	tabs        []barTab
 }
 
-func (state *State) settingsTabOrientationOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsTabsHorizontal, Label: state.messages.SettingsTabsHorizontal},
-		{ID: hitSettingsTabsVertical, Label: state.messages.SettingsTabsVertical},
-	}
-}
-
 func (state *State) setTabOrientation(orientation tabOrientation) bool {
 	if state.tabOrientation == orientation {
 		return false

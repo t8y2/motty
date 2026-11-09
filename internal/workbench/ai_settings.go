@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -605,45 +604,6 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 		return &cfg.modelInput
 	}
 	return nil
-}
-
-// The label widths settingsChoiceRow gives the behavior choices. The Choice
-// itself names its options from the typed values.
-func (state *State) aiRiskOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{Label: m.RiskLow},
-		{Label: m.RiskMedium},
-		{Label: m.RiskHigh},
-	}
-}
-
-func (state *State) aiStepsOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{Label: "6"}, {Label: "12"}, {Label: "24"},
-	}
-}
-
-func (state *State) aiContextOptions() [4]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{Label: state.messages.AISettings.ContextOff},
-		{Label: "30"}, {Label: "60"}, {Label: "120"},
-	}
-}
-
-func (state *State) aiTextLimitOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{Label: "1 MiB"}, {Label: "4 MiB"}, {Label: "8 MiB"},
-	}
-}
-
-func (state *State) aiMCPModeOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{Label: m.MCPModeObserve},
-		{Label: m.MCPModeAsk},
-		{Label: m.MCPModeAllowAll},
-	}
 }
 
 // aiPut stores one setting, reads everything back and tells the application.

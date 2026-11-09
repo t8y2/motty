@@ -627,20 +627,18 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 	case state.ai.cfg.clearedDone:
 		description, color = m.ClearHistoryDone, pal.success
 	}
-	riskOptions, stepOptions, contextOptions := state.aiRiskOptions(), state.aiStepsOptions(), state.aiContextOptions()
-	textOptions := state.aiTextLimitOptions()
 	page.group(m.BehaviourTitle, func() {
 		risk := settings.autoUpTo
-		settingsChoiceRow(page, m.AutoRun, m.AutoRunDesc, riskOptions[:], &risk, aiRiskChoices[:], state.aiRiskLabel,
+		settingsChoiceRow(page, m.AutoRun, m.AutoRunDesc, &risk, aiRiskChoices[:], state.aiRiskLabel,
 			func() { state.aiPut("ai.auto_up_to", aiRiskSetting(risk)) }, nil)
 		steps := settings.maxSteps
-		settingsChoiceRow(page, m.MaxSteps, m.MaxStepsDesc, stepOptions[:], &steps, aiStepsChoices[:], strconv.Itoa,
+		settingsChoiceRow(page, m.MaxSteps, m.MaxStepsDesc, &steps, aiStepsChoices[:], strconv.Itoa,
 			func() { state.aiPut("ai.max_steps", strconv.Itoa(steps)) }, nil)
 		lines := settings.contextLines
-		settingsChoiceRow(page, m.ContextLines, m.ContextLinesDesc, contextOptions[:], &lines, aiContextChoices[:], state.aiContextLabel,
+		settingsChoiceRow(page, m.ContextLines, m.ContextLinesDesc, &lines, aiContextChoices[:], state.aiContextLabel,
 			func() { state.aiPut("ai.context_lines", strconv.Itoa(lines)) }, nil)
 		text := settings.maxTextBytes >> 20
-		settingsChoiceRow(page, m.AttachmentTextLimit, m.AttachmentTextLimitDesc, textOptions[:], &text, aiTextLimitChoices[:], aiTextLimitLabel,
+		settingsChoiceRow(page, m.AttachmentTextLimit, m.AttachmentTextLimitDesc, &text, aiTextLimitChoices[:], aiTextLimitLabel,
 			func() { state.aiPut("ai.attachment_text_mib", strconv.Itoa(text)) }, nil)
 		page.aiFrameFor(hitAISetRedact, settingsRowHeight, m.Redact, m.RedactDesc, pal.muted, func() { page.switchSlot(hitAISetRedact, settings.redact, false, m.Redact) })
 		page.aiFrameFor(hitAISetHistory, settingsRowHeight, m.History, m.HistoryDesc, pal.muted, func() { page.switchSlot(hitAISetHistory, settings.keepHistory, false, m.History) })
@@ -654,7 +652,6 @@ func (state *State) paintAIMCP(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
 	settings := &state.ai.settings
 
-	modes := state.aiMCPModeOptions()
 	endpoint := m.MCPOff
 	if settings.mcpEnabled {
 		endpoint = m.MCPNotRunning
@@ -675,7 +672,7 @@ func (state *State) paintAIMCP(page *settingsPage) {
 			page.switchSlot(hitAISetMCPEnabled, settings.mcpEnabled, false, m.MCPEnable)
 		})
 		mode := settings.mcpMode
-		settingsChoiceRow(page, m.MCPMode, m.MCPModeDesc, modes[:], &mode, aiMCPModeChoices[:], state.aiMCPModeLabel,
+		settingsChoiceRow(page, m.MCPMode, m.MCPModeDesc, &mode, aiMCPModeChoices[:], state.aiMCPModeLabel,
 			func() { state.applyAIMCPMode(mode) }, nil)
 		if settings.mcpMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.MCPAllowAllWarning)

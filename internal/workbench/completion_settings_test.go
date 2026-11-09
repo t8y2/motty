@@ -61,13 +61,14 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 			state.selectSettingsCategory(settingsTerminal)
 			var canvas gfx.Canvas
 			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
-			for _, option := range state.settingsCompletionOptions() {
-				hit, ok := settingsChoiceInRow(&canvas, state.messages.History.SuggestRow, option.Label)
-				if !ok || !canvasHasText(&canvas, option.Label) {
-					t.Fatalf("completion mode %q is not offered", option.Label)
+			for _, mode := range settingsCompletionChoices {
+				label := state.settingsCompletionLabel(mode)
+				hit, ok := settingsChoiceInRow(&canvas, state.messages.History.SuggestRow, label)
+				if !ok || !canvasHasText(&canvas, label) {
+					t.Fatalf("completion mode %q is not offered", label)
 				}
-				if want := option.Label == state.settingsCompletionLabel(completionBoth); hit.Selected != want {
-					t.Errorf("mode %q selected=%v, want %v by default", option.Label, hit.Selected, want)
+				if want := label == state.settingsCompletionLabel(completionBoth); hit.Selected != want {
+					t.Errorf("mode %q selected=%v, want %v by default", label, hit.Selected, want)
 				}
 			}
 			state.selectSettingsCategory(settingsShortcuts)

@@ -83,15 +83,6 @@ func (state *State) setCompletionMode(mode completionMode) bool {
 	return true
 }
 
-func (state *State) settingsCompletionOptions() [3]components.SegmentOption {
-	m := state.messages.Completion
-	return [...]components.SegmentOption{
-		{ID: hitSettingsCompletionOff, Label: m.ModeOff},
-		{ID: hitSettingsCompletionList, Label: m.ModeList},
-		{ID: hitSettingsCompletionBoth, Label: m.ModeBoth},
-	}
-}
-
 var settingsCompletionChoices = [...]completionMode{completionOff, completionList, completionBoth}
 
 func (state *State) settingsCompletionLabel(mode completionMode) string {

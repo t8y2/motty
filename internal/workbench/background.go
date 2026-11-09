@@ -32,9 +32,6 @@ var backgroundHits = tree.Feature("background")
 var (
 	hitBgChoose = tree.ID(backgroundHits, "bg-choose")
 	hitBgRemove = tree.ID(backgroundHits, "bg-remove")
-	hitBgSubtle = tree.ID(backgroundHits, "bg-subtle")
-	hitBgMedium = tree.ID(backgroundHits, "bg-medium")
-	hitBgStrong = tree.ID(backgroundHits, "bg-strong")
 )
 
 const (
@@ -377,15 +374,12 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 		}
 	}
 	description := bg.text
-	options := [3]components.SegmentOption{
-		{ID: hitBgSubtle, Label: m.BgSubtle}, {ID: hitBgMedium, Label: m.BgMedium}, {ID: hitBgStrong, Label: m.BgStrong},
-	}
 	strength := bg.strength
 	page.group(m.BgGroup, func() {
 		page.actionRow(m.BgRow, description, false,
 			components.ButtonAction{ID: hitBgChoose, Label: m.BgChoose, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitBgRemove, Label: m.BgRemove, Variant: components.ButtonOutline})
-		settingsChoiceRow(page, m.BgVisibility, "", options[:], &strength, settingsBackgroundStrengthChoices[:], state.settingsBackgroundStrengthLabel,
+		settingsChoiceRow(page, m.BgVisibility, "", &strength, settingsBackgroundStrengthChoices[:], state.settingsBackgroundStrengthLabel,
 			func() {
 				if bg.set {
 					bg.strength = strength

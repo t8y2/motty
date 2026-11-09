@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
@@ -31,15 +30,6 @@ var (
 
 // agentAuditShown is how many of the latest calls the page lists.
 const agentAuditShown = 5
-
-func (state *State) aiAgentModeOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{Label: m.AgentModeObserve},
-		{Label: m.AgentModeRun},
-		{Label: m.MCPModeAllowAll},
-	}
-}
 
 // aiAgentClick handles the controls of the group that are not its mode choice.
 func (state *State) aiAgentClick(id gfx.ID) bool {
@@ -161,7 +151,6 @@ func (state *State) agentAuditLines() []string {
 
 func (state *State) paintAIAgents(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
-	modes := state.aiAgentModeOptions()
 	hosts := state.agentHostsText()
 	entries := state.ai.agentAudit
 	activity := m.AgentActivityNone
@@ -173,7 +162,7 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			page.f.Wrap(m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
 		})
 		mode := state.ai.settings.agentMode
-		settingsChoiceRow(page, m.AgentMode, m.AgentModeDesc, modes[:], &mode, aiAgentModeChoices[:], state.aiAgentModeLabel,
+		settingsChoiceRow(page, m.AgentMode, m.AgentModeDesc, &mode, aiAgentModeChoices[:], state.aiAgentModeLabel,
 			func() { state.applyAIAgentMode(mode) }, nil)
 		if state.ai.settings.agentMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.AgentAllowAllWarning)

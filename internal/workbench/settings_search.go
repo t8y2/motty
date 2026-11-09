@@ -77,7 +77,6 @@ type settingsUI struct {
 	// controls are the page's controls, recorded while it is declared and
 	// painted once it is laid out.
 	controls []settingsControl
-	options  []components.SegmentOption
 	actions  []components.ButtonAction
 	colors   []gfx.Color
 

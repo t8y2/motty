@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
@@ -445,8 +444,7 @@ func (state *State) applyTerminalScrollback() {
 	}
 }
 
-// The choices behind the General page's segmented rows. The Option functions
-// above name them for the widths and the old dispatcher; a page Choice binds the
+// The choices behind the General page's choice rows: a page Choice binds the
 // value itself, so these are the values it offers.
 var (
 	settingsLanguageChoices        = [...]i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese}
@@ -516,8 +514,8 @@ func (state *State) settingsRelaunchLabel(action relaunchAction) string {
 	return state.messages.Tools.GeneralRelaunchRaise
 }
 
-// The choices behind the Terminal and Connection pages. The ...Options
-// functions below name them for the widths; a page Choice binds these values.
+// The choices behind the Terminal and Connection pages, which a page Choice
+// binds.
 var (
 	settingsOptionChoices          = [...]terminalOptionMode{terminalOptionText, terminalOptionMeta}
 	settingsLineHeightChoices      = [...]lineHeight{lineHeightCompact, lineHeightNormal, lineHeightRoomy}
@@ -680,170 +678,6 @@ func (state *State) settingsNetworkProxyLabel(mode networkProxyMode) string {
 		return state.messages.SettingsNetworkProxySystem
 	}
 	return state.messages.SettingsNetworkProxyDirect
-}
-
-func (state *State) settingsLanguageOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsLanguageEnglish, Label: state.messages.SettingsLanguageEnglish},
-		{ID: hitSettingsLanguageChinese, Label: state.messages.SettingsLanguageChinese},
-		{ID: hitSettingsLanguageTraditional, Label: state.messages.SettingsLanguageTraditionalChinese},
-	}
-}
-
-func (state *State) settingsTextSizeOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsTextSmall, Label: state.messages.SettingsTextSizeSmall},
-		{ID: hitSettingsTextRegular, Label: state.messages.SettingsTextSizeRegular},
-		{ID: hitSettingsTextLarge, Label: state.messages.SettingsTextSizeLarge},
-	}
-}
-
-func (state *State) settingsAppearanceOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsAppearanceSystem, Label: state.messages.SettingsAppearanceSystem},
-		{ID: hitSettingsAppearanceDark, Label: state.messages.SettingsAppearanceDark},
-		{ID: hitSettingsAppearanceLight, Label: state.messages.SettingsAppearanceLight},
-	}
-}
-
-func (state *State) settingsNetworkProxyOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsNetworkDirect, Label: state.messages.SettingsNetworkProxyDirect},
-		{ID: hitSettingsNetworkSystem, Label: state.messages.SettingsNetworkProxySystem},
-	}
-}
-
-func (state *State) settingsCloseOptions() [2]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsCloseTray, Label: m.GeneralCloseTray},
-		{ID: hitSettingsCloseQuit, Label: m.GeneralCloseQuit},
-	}
-}
-
-func (state *State) settingsRelaunchOptions() [2]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsRelaunchRaise, Label: m.GeneralRelaunchRaise},
-		{ID: hitSettingsRelaunchNewWindow, Label: m.GeneralRelaunchNewWindow},
-	}
-}
-
-func (state *State) settingsOptionOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsOptionText, Label: state.messages.SettingsTerminalOptionText},
-		{ID: hitSettingsOptionMeta, Label: state.messages.SettingsTerminalOptionMeta},
-	}
-}
-
-func (state *State) settingsCursorThicknessOptions() [3]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsCursorThin, Label: m.CursorThin},
-		{ID: hitSettingsCursorNormal, Label: m.CursorNormal},
-		{ID: hitSettingsCursorThick, Label: m.CursorThick},
-	}
-}
-
-func (state *State) settingsPaddingOptions() [3]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsPadCompact, Label: m.PaddingCompact},
-		{ID: hitSettingsPadNormal, Label: m.PaddingNormal},
-		{ID: hitSettingsPadRoomy, Label: m.PaddingRoomy},
-	}
-}
-
-func (state *State) settingsLineHeightOptions() [3]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsLineHeightCompact, Label: m.LineHeightCompact},
-		{ID: hitSettingsLineHeightNormal, Label: m.LineHeightNormal},
-		{ID: hitSettingsLineHeightRoomy, Label: m.LineHeightRoomy},
-	}
-}
-
-func (state *State) settingsGutterOptions() [4]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsGutterOff, Label: m.GutterOff},
-		{ID: hitSettingsGutterNumbers, Label: m.GutterNumbers},
-		{ID: hitSettingsGutterTime, Label: m.GutterTime},
-		{ID: hitSettingsGutterBoth, Label: m.GutterBoth},
-	}
-}
-
-func (state *State) settingsIntenseOptions() [4]components.SegmentOption {
-	m := state.messages.Tools
-	return [...]components.SegmentOption{
-		{ID: hitSettingsIntenseBoth, Label: m.IntenseBoth},
-		{ID: hitSettingsIntenseBright, Label: m.IntenseBright},
-		{ID: hitSettingsIntenseBold, Label: m.IntenseBold},
-		{ID: hitSettingsIntensePlain, Label: m.IntensePlain},
-	}
-}
-
-func (state *State) settingsScrollbackOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsScrollback1000, Label: state.settingsScrollbackLabel(1000)},
-		{ID: hitSettingsScrollback5000, Label: state.settingsScrollbackLabel(5000)},
-		{ID: hitSettingsScrollback10000, Label: state.settingsScrollbackLabel(10000)},
-	}
-}
-
-func (state *State) settingsTimeoutOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsTimeout5, Label: state.settingsTimeoutLabel(5 * time.Second)},
-		{ID: hitSettingsTimeout10, Label: state.settingsTimeoutLabel(10 * time.Second)},
-		{ID: hitSettingsTimeout30, Label: state.settingsTimeoutLabel(30 * time.Second)},
-	}
-}
-
-func (state *State) settingsKeepAliveOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsKeepAliveOff, Label: state.settingsKeepAliveLabel(0)},
-		{ID: hitSettingsKeepAlive30, Label: state.settingsKeepAliveLabel(30 * time.Second)},
-		{ID: hitSettingsKeepAlive60, Label: state.settingsKeepAliveLabel(60 * time.Second)},
-	}
-}
-
-func (state *State) settingsReconnectOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsReconnectOff, Label: state.messages.SettingsConnectionReconnectOff},
-		{ID: hitSettingsReconnectThree, Label: state.messages.SettingsConnectionReconnectThree},
-		{ID: hitSettingsReconnectForever, Label: state.messages.SettingsConnectionReconnectForever},
-	}
-}
-
-func (state *State) settingsRestoreOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsRestoreOff, Label: state.messages.SettingsRestoreOff},
-		{ID: hitSettingsRestoreActive, Label: state.messages.SettingsRestoreActive},
-		{ID: hitSettingsRestoreAll, Label: state.messages.SettingsRestoreAll},
-	}
-}
-
-func (state *State) settingsLocalStartOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsLocalStartRemember, Label: state.messages.SettingsLocalStartRemember},
-		{ID: hitSettingsLocalStartHome, Label: state.messages.SettingsLocalStartHome},
-	}
-}
-
-func (state *State) settingsClipboardOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsClipboardBlock, Label: state.messages.SettingsTerminalClipboardBlock},
-		{ID: hitSettingsClipboardAsk, Label: state.messages.SettingsTerminalClipboardAsk},
-		{ID: hitSettingsClipboardAllow, Label: state.messages.SettingsTerminalClipboardAllow},
-	}
-}
-
-func (state *State) settingsCursorStyleOptions() []components.SegmentOption {
-	return []components.SegmentOption{
-		{ID: hitSettingsCursorBlock, Label: state.messages.Tools.CursorShapeBlock},
-		{ID: hitSettingsCursorBar, Label: state.messages.Tools.CursorShapeBar},
-		{ID: hitSettingsCursorUnderline, Label: state.messages.Tools.CursorShapeUnderline},
-	}
 }
 
 func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
