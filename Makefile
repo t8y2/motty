@@ -1,4 +1,4 @@
-.PHONY: dev run head check race race-workbench race-heavy race-rest
+.PHONY: dev run head gtk check race race-workbench race-heavy race-rest
 
 RACE_PACKAGES = \
 	./cmd/motty \
@@ -65,6 +65,15 @@ run:
 # component gallery; the release build does not.
 head:
 	go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+
+# Viva's only GTK shell is GTK 3, selected by the upstream tag vivagtk; there
+# is no GTK 1 or 2 backend and the tag carries no version suffix. That shell is
+# what gives Linux the GtkIMContext path, so GTK immodules such as fcitx 4 can
+# compose; the default build stays on XCB + Vulkan. GTK 3 must be installed at
+# run time.
+gtk:
+	@test "$$(go env GOOS)" = linux || { echo "make gtk: the GTK shell is Linux only"; exit 2; }
+	go build -tags vivagtk -o /tmp/motty-gtk ./cmd/motty
 
 # The plain build is the one that ships; the dev build adds the component gallery
 # (see internal/workbench/debug.go), so both are vetted and tested.
