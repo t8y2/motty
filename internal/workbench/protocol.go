@@ -116,6 +116,10 @@ type savedTransport struct {
 	// AgentForward is set for an SSH host whose shells may use the local
 	// ssh-agent.
 	AgentForward bool `json:"agent_forward,omitempty"`
+	// InteractiveOnly is set for an SSH host that must be sent only the pty and
+	// shell requests, the way a gateway that permits only an interactive login
+	// requires. A host that refused the client's probes is saved this way.
+	InteractiveOnly bool `json:"interactive_only,omitempty"`
 	// NoHistory is set for an SSH host whose commands are not remembered.
 	NoHistory bool `json:"no_history,omitempty"`
 	// LoginCommand is the line an SSH host types into its shell after login.
@@ -163,6 +167,7 @@ func (host Host) transport() savedTransport {
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
+	transport.InteractiveOnly = host.InteractiveOnly
 	transport.LoginCommand = host.LoginCommand
 	return transport
 }
@@ -186,6 +191,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		}
 		host.ForwardX11 = transport.ForwardX11
 		host.AgentForward = transport.AgentForward
+		host.InteractiveOnly = transport.InteractiveOnly
 		host.NoHistory = transport.NoHistory
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)

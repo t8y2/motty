@@ -822,6 +822,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		session.method = status.Method
 	}
 	state.adoptSystem(session, status)
+	state.adoptProbeRefusal(session, status)
 	switch {
 	case status.EndpointRole == sshconn.EndpointProxyJump && status.Phase != sshconn.PhaseConnected:
 		session.stage = stageConnect
@@ -974,6 +975,35 @@ func shouldAdoptSystem(known, reported sshconn.RemoteSystem, provisional bool) b
 	return !provisional || known == sshconn.SystemUnknown
 }
 
+// adoptProbeRefusal keeps a host whose server ended the connection on the
+// client's own probes to the interactive session, the only kind it permits. The
+// retry that follows, automatic or by Enter, then opens a shell instead of
+// asking the server the same question again.
+func (state *State) adoptProbeRefusal(session *Session, status sshconn.Status) {
+	if !status.ProbeRefused || !session.host.isSSH() || session.host.InteractiveOnly {
+		return
+	}
+	state.setHostInteractiveOnly(session)
+}
+
+func (state *State) setHostInteractiveOnly(session *Session) {
+	session.host.InteractiveOnly = true
+	if session.HostID != 0 {
+		for index := range state.hosts {
+			if state.hosts[index].ID == session.HostID {
+				state.hosts[index].InteractiveOnly = true
+				break
+			}
+		}
+		for index := range state.sessions {
+			if state.sessions[index].HostID == session.HostID {
+				state.sessions[index].host.InteractiveOnly = true
+			}
+		}
+	}
+	state.save()
+}
+
 func (state *State) setSessionSystem(session *Session, system sshconn.RemoteSystem) {
 	session.host.System = system
 	if session.HostID != 0 {
@@ -1054,6 +1084,9 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		t.say(sgrFail, m.ConnAuthFailed)
 	default:
 		t.say(sgrFail, fmt.Sprintf(m.ConnFailedFmt, status.Err))
+	}
+	if status.ProbeRefused {
+		t.say(sgrWarn, m.ConnProbeRefused)
 	}
 	if session.reconnectPending {
 		t.say(sgrMuted, fmt.Sprintf(m.ConnReconnectWaitingFmt, session.reconnectAttempt, clockText(int64(reconnectDelay(session.reconnectAttempt)/time.Second))))

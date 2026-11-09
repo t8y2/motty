@@ -170,6 +170,11 @@ type Status struct {
 	// OpenSSH, so the guess may name the distribution the host was built from
 	// instead of the one it is: it fills a blank, and never more than that.
 	SystemProvisional bool
+	// ProbeRefused reports that the server ended an established connection on
+	// the client's own optional command probes: the pty and shell it permits
+	// were evidently not the whole of what it accepts. The owner should retry
+	// with Config.InteractiveOnly, which is what such a server requires.
+	ProbeRefused bool
 	// Negotiated is what the last endpoint agreed on, once its handshake is done.
 	Negotiated Negotiated
 	// Skipped names identity files not offered to the server: those the user
@@ -240,6 +245,13 @@ type Config struct {
 	DialTimeout time.Duration
 	// KeepAlive optionally detects an unresponsive established connection.
 	KeepAlive KeepAliveConfig
+	// InteractiveOnly keeps the connection to the interactive session alone:
+	// the client asks for the pty and the shell, and for nothing else. A
+	// gateway that permits only an interactive login ends the whole connection
+	// on a command session, a shell integration probe or a locale request, so
+	// none of those may be sent to one. The cost is that the host's system and
+	// default shell stay unknown, and that directories cannot be followed.
+	InteractiveOnly bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -295,6 +307,11 @@ type Conn struct {
 	// pingPending is set while a keepalive probe sent by Ping is unanswered.
 	pingPending atomic.Bool
 
+	// probes tracks the optional command sessions opened beside the user's
+	// shell. It is shared by every tab on this transport, because the server's
+	// answer to one is about the connection, not the tab.
+	probes *auxiliaryProbes
+
 	// kind is the family of the server's default shell, learned once per client
 	// by defaultShellKind.
 	kindMu     sync.Mutex
@@ -323,7 +340,7 @@ type reply struct {
 func Dial(config Config) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	generation := nextConnectionGeneration.Add(1)
-	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), probes: newAuxiliaryProbes()}
 	conn.status.ConnectionGeneration = generation
 	go conn.run()
 	return conn
@@ -503,9 +520,15 @@ func (conn *Conn) run() {
 			<-keepAlive.done
 		}
 		closedErr := conn.closedError(waitErr)
+		// A gateway that permits only an interactive login answers the client's
+		// own probes by ending the transport. Whether a probe reports the refusal
+		// or the connection's own end is woken first is a race, so the reports
+		// get a bounded moment to name the cause.
+		probeRefused := closedErr != nil && conn.probeState().settle(auxiliaryProbeSettle)
 		conn.update(func(status *Status) {
 			status.Phase = PhaseClosed
 			status.Err = closedErr
+			status.ProbeRefused = probeRefused
 		})
 		conn.endShares(closedErr)
 		return
@@ -580,7 +603,7 @@ func (conn *Conn) connect() error {
 	// until the answer arrives, so a guess that is about to be checked is not
 	// published at all.
 	guess := classifyBanner(serverVersion)
-	ask := standardImplementation(serverVersion) &&
+	ask := !conn.config.InteractiveOnly && standardImplementation(serverVersion) &&
 		(guess == SystemUnknown || guess == SystemUbuntu || guess == SystemDebian)
 	conn.update(func(status *Status) {
 		status.Phase = PhaseConnected

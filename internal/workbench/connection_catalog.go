@@ -358,6 +358,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		DialTimeout:             catalog.connectionTimeout,
 		AdditionalIdentityFiles: catalog.identityPaths(),
 		Authentication:          make(map[sshconn.Endpoint]sshconn.Authentication, 1),
+		InteractiveOnly:         host.InteractiveOnly,
 		Notify:                  env.Notify,
 		Proxy:                   proxy,
 	}

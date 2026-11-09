@@ -117,8 +117,9 @@ func (conn *Conn) dialRelay(previous *ssh.Client, previousEndpoint Endpoint, rel
 		return nil, fmt.Errorf("open a shell on %s: %w", previousEndpoint.address(), err)
 	}
 	// Only an implementation known to take it is asked for a locale: a gateway
-	// with a menu of its own may end the connection on a request it lacks.
-	if standardImplementation(string(previous.ServerVersion())) {
+	// with a menu of its own may end the connection on a request it lacks, and
+	// a route confined to the interactive session is not asked at all.
+	if !conn.config.InteractiveOnly && standardImplementation(string(previous.ServerVersion())) {
 		_ = session.Setenv("LANG", utf8Locale())
 	}
 	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}

@@ -289,8 +289,11 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 	if guess == SystemWindows || guess == SystemDarwin || guess == SystemFreeBSD {
 		return guess, true
 	}
+	probes := conn.probeState()
+	probes.begin()
 	session, err := client.NewSession()
 	if err != nil {
+		probes.end(err)
 		return guess, false
 	}
 	type answer struct {
@@ -312,11 +315,14 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 	var probe answer
 	select {
 	case probe = <-answered:
+		probes.end(probe.err)
 	case <-timer.C:
 		// The channel is left to the server and released with the connection.
+		probes.end(nil)
 		conn.addCloser(session)
 		return guess, false
 	case <-conn.ctx.Done():
+		probes.end(nil)
 		conn.addCloser(session)
 		return guess, false
 	}

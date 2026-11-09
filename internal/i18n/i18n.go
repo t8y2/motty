@@ -698,6 +698,10 @@ type Messages struct {
 	ConnChangedTrustedFmt string
 	ConnChangedPresented  string
 	ConnChangedHintFmt    string
+	// ConnProbeRefused explains a close that the client's own optional probes
+	// caused: the server permits only an interactive session, so the host was
+	// kept to one and the retry can connect.
+	ConnProbeRefused string
 
 	// Host key and password prompts.
 	HostKeyTitle                   string

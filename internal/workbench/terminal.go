@@ -598,8 +598,11 @@ func (state *State) openShell(session *Session) {
 	cols, rows := t.screen.Size()
 	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
 	// Local directory restoration needs reports even with file-panel following
-	// off. SSH enables integration for either file-panel following or path tabs.
-	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && session.host.System != sshconn.SystemWindows &&
+	// off. SSH enables integration for either file-panel following or path tabs,
+	// except on a host confined to the interactive session, whose gateway would
+	// end the connection on the command this starts.
+	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.InteractiveOnly &&
+		session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory))
 	config.IntegrationToken = t.folderToken
 	if !session.isLocal() {

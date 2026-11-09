@@ -459,6 +459,45 @@ func TestABannerGuessNeverReplacesTheSystemTheHostNamed(t *testing.T) {
 	}
 }
 
+// A server that ends the connection on the client's own probes is remembered as
+// an interactive-only host, so the retry it promises can connect.
+func TestAProbeRefusalKeepsTheHostToItsInteractiveSession(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectThree
+	connection := connect(t, state, world)
+	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if world.configs[0].InteractiveOnly {
+		t.Fatal("a host was confined to its interactive session before a server refused a probe")
+	}
+	connection.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = fmt.Errorf("%w: ssh: disconnect, reason 11", sshconn.ErrDisconnected)
+		status.ProbeRefused = true
+	})
+	state.Wake()
+	if !state.hosts[0].InteractiveOnly {
+		t.Fatal("the saved host was not confined to its interactive session")
+	}
+	if !state.sessions[0].host.InteractiveOnly {
+		t.Fatal("the retry would still send probes: the session's host was not updated")
+	}
+	if screen := state.sessions[0].term.screen.Text(); !strings.Contains(screen, state.messages.ConnProbeRefused) {
+		t.Fatalf("the user was not told why the host was confined: %q", screen)
+	}
+	now += time.Second
+	state.Wake()
+	if len(world.conns) != 2 {
+		t.Fatalf("the retry dialed %d connections, want 2", len(world.conns))
+	}
+	if !world.configs[1].InteractiveOnly {
+		t.Fatal("the retry was not dialed as an interactive session")
+	}
+}
+
 func TestHostKeyDialogAnswersTrustOnceRejectAndDismiss(t *testing.T) {
 	for _, test := range []struct {
 		name    string

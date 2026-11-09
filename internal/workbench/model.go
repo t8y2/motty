@@ -44,6 +44,11 @@ type Host struct {
 	// AgentForward asks the server to let programs in this host's shells use
 	// the local ssh-agent. Off unless the user turned it on.
 	AgentForward bool
+	// InteractiveOnly keeps this host to its interactive session: no command
+	// probes, shell integration or locale requests are sent beside the shell.
+	// It is how a gateway that permits only an interactive login is reached,
+	// and is learned from the server that refuses the first probe.
+	InteractiveOnly bool
 	// NoHistory keeps what is typed in this host's terminals out of the command
 	// history, whatever the global switch says.
 	NoHistory bool

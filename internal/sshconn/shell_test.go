@@ -155,6 +155,62 @@ func TestAGatewayThatRejectsLocaleRequestsStillStartsAShell(t *testing.T) {
 	w.waitDone()
 }
 
+// A gateway may advertise an OpenSSH banner and still permit only an
+// interactive login. The probe that makes it end the connection is then the
+// only sign that the probes were what it refused, and the connection must say
+// so: the host can only be reached again without them.
+func TestAGatewayThatLooksLikeOpenSSHIsRecognizedByItsProbeRefusal(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.execFatal = true
+		server.shell = echoShell
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	status := h.phase(PhaseClosed)
+	if !status.ProbeRefused {
+		t.Fatalf("the refused probe was not reported: %+v", status)
+	}
+	if !errors.Is(status.Err, ErrDisconnected) {
+		t.Fatalf("close error = %v, want a disconnect", status.Err)
+	}
+}
+
+// A host confined to the interactive session is sent the pty and shell requests
+// only, as Xshell and ssh are, even when its banner names an implementation the
+// probes usually trust.
+func TestAnInteractiveOnlyHostGetsOnlyPtyAndShell(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.execFatal = true
+		server.shell = echoShell
+	})
+	h := dial(t, server, func(config *Config) { config.InteractiveOnly = true })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+	if system := h.conn.Status().System; system != SystemUnknown {
+		t.Fatalf("an interactive-only host was probed for its system: %v", system)
+	}
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "integration"})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+	_, _, _, env, _ := fakeShellState(server)
+	if locale, ok := env["LANG"]; ok {
+		t.Fatalf("an interactive-only host was sent LANG=%q", locale)
+	}
+	if !w.shell.Write([]byte("exit\r")) {
+		t.Fatal("writing to the shell failed")
+	}
+	w.waitDone()
+}
+
 func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	server := startServer(t, func(server *testServer) {
 		server.password = "secret"
