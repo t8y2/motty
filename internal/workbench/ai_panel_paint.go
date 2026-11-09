@@ -682,7 +682,7 @@ func (state *State) declareAIPanelPage(c ui.C) {
 	// reads their click while it declares them, so an event-pass paint delivers
 	// it there rather than through the window's central dispatcher. The action
 	// runs after the paint, as the central dispatcher did.
-	if canvas := c.Frame().Canvas(); canvas != nil && state.modal == modalNone {
+	if canvas := c.Canvas(); canvas != nil && state.modal == modalNone {
 		switch {
 		case canvas.Clicked(hitAIClose):
 			c.After(state.closeAIPanel)
@@ -757,7 +757,7 @@ func (state *State) declareAIEmpty(c ui.C) ui.Box {
 func (state *State) declareAIExample(c ui.C, index int, example string) {
 	pal, id := state.pal, hitAIExamples.At(index)
 	background := pal.surface
-	if canvas := c.Frame().Canvas(); canvas != nil {
+	if canvas := c.Canvas(); canvas != nil {
 		switch {
 		case canvas.Pressed() == id:
 			background = pal.surfaceHot

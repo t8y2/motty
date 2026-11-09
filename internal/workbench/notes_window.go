@@ -129,7 +129,7 @@ func (d *fileDocument) declareNoteWindow(c ui.C) {
 	s := d.owner
 	theme := s.Theme()
 	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
-		s.fileWindows.declareTabsSection(c, c.Frame().Bounds().Width)
+		s.fileWindows.declareTabsSection(c, c.Bounds().Width)
 		ui.Divider(c).Background(theme.Border)
 		d.ui.contentBox = ui.Slot(c).Grow(1)
 	})

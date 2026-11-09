@@ -356,7 +356,7 @@ func (w *sftpWindow) declarePane(c ui.C) {
 	local := s.local
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	compact := bounds.Height < 230
 	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
 		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}

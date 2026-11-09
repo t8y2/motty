@@ -412,7 +412,7 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 	s := &state.chrome.sftpEmpty
 	session := s.session
 	pal, messages := state.pal, state.messages
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	s.canConnect = session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.
 	middle := bounds.Height * 0.38

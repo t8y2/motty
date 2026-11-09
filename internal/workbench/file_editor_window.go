@@ -504,7 +504,7 @@ func (m *fileWindowManager) declareTabsSection(c ui.C, width float32) {
 // dispatcher does not see it as well.
 func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileDocument, metrics gfx.Metrics, scroll float32) {
 	pal := activeDocument.owner.pal
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	for index, key := range m.order {
 		d := m.documents[key]
 		if d == nil || d.closed {

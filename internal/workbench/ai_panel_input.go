@@ -112,7 +112,7 @@ func (state *State) declareAIMention(c ui.C, index int, name mentionName) {
 	panel, pal := &state.ai.panel, state.pal
 	id := hitAIMentions.At(index)
 	var background gfx.Color
-	if canvas := c.Frame().Canvas(); canvas != nil && (panel.mentionIndex == index || canvas.FocusVisible() == id) {
+	if canvas := c.Canvas(); canvas != nil && (panel.mentionIndex == index || canvas.FocusVisible() == id) {
 		background = pal.surfaceHot
 	}
 	label := "@" + name.name
@@ -549,7 +549,7 @@ func (state *State) declareAIModelMenu(c ui.C) {
 	if len(providers) == 0 || panel.chip.Width <= 0 {
 		return
 	}
-	canvas, size := c.Frame().Canvas(), c.Theme().Metrics.FontSizeM
+	canvas, size := c.Canvas(), c.Theme().Metrics.FontSizeM
 	textWidth := func(value string) float32 {
 		if canvas == nil {
 			return 0
@@ -597,7 +597,7 @@ func (state *State) declareAIAutoScopeMenu(c ui.C) {
 	if _, hasModel := state.aiModelText(); !hasModel {
 		return
 	}
-	canvas, theme := c.Frame().Canvas(), c.Theme()
+	canvas, theme := c.Canvas(), c.Theme()
 	scopes := state.aiScopes()
 	var width float32
 	for _, scope := range scopes {
@@ -628,7 +628,7 @@ func (state *State) declareAIReasoningMenu(c ui.C) {
 	if !ok || len(levels) == 0 || panel.reasoningChip.Width <= 0 {
 		return
 	}
-	canvas, theme := c.Frame().Canvas(), c.Theme()
+	canvas, theme := c.Canvas(), c.Theme()
 	var width float32
 	for _, level := range levels {
 		item := components.ContextMenuItem{Label: state.aiReasoningEffortLabel(level), Kind: components.ContextMenuRadio}

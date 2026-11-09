@@ -142,7 +142,7 @@ func (d *fileDocument) windowPage() *ui.Page {
 // kept here.
 func (d *fileDocument) declareEditWindow(c ui.C) {
 	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	shared := d.owner.fileWindows.painting
 	d.ui.encodingBox, d.ui.saveBox = ui.Box{}, ui.Box{}
 	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {

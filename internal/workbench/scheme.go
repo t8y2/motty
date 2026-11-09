@@ -538,7 +538,7 @@ func (state *State) paintSchemeDrawer(canvas *gfx.Canvas, viewport gfx.Rect) {
 func (state *State) declareSchemeDrawerBody(c ui.C) {
 	m, pal := state.messages.Tools, state.pal
 	scheme := &state.scheme
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	columns := 3
 	if bounds.Width < schemeDrawerNarrow {
 		columns = 2
@@ -579,7 +579,7 @@ func (state *State) declareSchemeDrawerBody(c ui.C) {
 		scheme.reset = false
 		scheme.filter = filter
 		scheme.scroll.ScrollState().ScrollTo(0)
-		if canvas := c.Frame().Canvas(); canvas != nil {
+		if canvas := c.Canvas(); canvas != nil {
 			canvas.RequestFrame()
 		}
 	}

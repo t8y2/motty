@@ -162,7 +162,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 // rows are laid out only there.
 func (state *State) declareCommandPaletteList(c ui.C) {
 	palette := &state.commandPalette
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	width := palette.bodyWidth
 	// The send-target choice can rebuild the list during the event-pass paint,
 	// after the body declared the window this list was sized for; keep the rows

@@ -335,7 +335,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		// The rows are one Viva List. Its header, when the list has one, is a
 		// slot painted after the page is laid out; the List takes the rest.
 		searching, rows := folder.searching(), folder.shownRows()
-		width := max(c.Frame().Bounds().Width-2*sftpPad, 0)
+		width := max(c.Bounds().Width-2*sftpPad, 0)
 		visible := 0
 		if folder.listHeight > 0 {
 			visible = int(folder.listHeight / sftpRowHeight)

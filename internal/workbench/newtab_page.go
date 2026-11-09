@@ -120,7 +120,7 @@ func (state *State) declareNewTabPage(c ui.C) {
 // on the row does too.
 func (state *State) newTabRow(c ui.C, id gfx.ID, host Host, title, address string, separator bool, width float32, shells bool) {
 	pal, m := state.pal, state.messages
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	if shells {
 		state.openLocalShellPickerOn(canvas, id, true)
 	}
